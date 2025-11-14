@@ -2,8 +2,10 @@
 
 use strata_service::CommandCompletionSender;
 
-use crate::state::StatusSummary;
-use crate::task::{TaskIdentifier, TaskStatus};
+use crate::{
+    state::StatusSummary,
+    task::{TaskIdentifier, TaskStatus},
+};
 
 /// Commands that can be sent to ProverService
 #[derive(Debug)]

@@ -55,7 +55,11 @@ impl ClStfOperator {
         end_block: L2BlockCommitment,
         db: &ProofDBSled,
     ) -> Result<Vec<ProofContext>, ProvingTaskError> {
-        info!(?start_block, ?end_block, "Creating EvmEeStf dependencies for ClStf");
+        info!(
+            ?start_block,
+            ?end_block,
+            "Creating EvmEeStf dependencies for ClStf"
+        );
 
         // Check if dependencies already exist
         let cl_stf_ctx = ProofContext::ClStf(start_block, end_block);
@@ -143,7 +147,6 @@ impl ClStfOperator {
             borsh::from_slice(&raw_witness).expect("invalid witness");
         Ok(blk)
     }
-
 }
 
 impl ProofInputFetcher for ClStfOperator {

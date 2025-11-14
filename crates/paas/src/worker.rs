@@ -1,16 +1,15 @@
 //! Worker pool implementation
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use tokio::{spawn, time::sleep};
 use tracing::{debug, error, info};
 
-use crate::error::ProverServiceError;
-use crate::state::ProverServiceState;
-use crate::task::TaskStatus;
-use crate::Prover;
+use crate::{error::ProverServiceError, state::ProverServiceState, task::TaskStatus, Prover};
 
 /// Worker pool that processes tasks for all backends
 pub struct WorkerPool<P: Prover> {
@@ -67,11 +66,19 @@ impl<P: Prover> WorkerPool<P> {
             let current = in_progress.get(&backend).copied().unwrap_or(0);
 
             if current >= worker_limit {
-                debug!(?backend, current, worker_limit, "Worker limit reached, skipping task");
+                debug!(
+                    ?backend,
+                    current, worker_limit, "Worker limit reached, skipping task"
+                );
                 true
             } else {
                 *in_progress.entry(backend.clone()).or_insert(0) += 1;
-                debug!(?backend, old=current, new=current+1, "Incremented worker counter");
+                debug!(
+                    ?backend,
+                    old = current,
+                    new = current + 1,
+                    "Incremented worker counter"
+                );
                 false
             }
         };
@@ -116,11 +123,14 @@ impl<P: Prover> WorkerPool<P> {
                     error!(?task_id, error=%msg, "Transient failure");
 
                     // Get current retry count
-                    let retry_count = if let Ok(TaskStatus::TransientFailure { retry_count, .. }) = state.get_status(&task_id) {
-                        retry_count + 1
-                    } else {
-                        1
-                    };
+                    let retry_count =
+                        if let Ok(TaskStatus::TransientFailure { retry_count, .. }) =
+                            state.get_status(&task_id)
+                        {
+                            retry_count + 1
+                        } else {
+                            1
+                        };
 
                     // Check if should retry
                     if state.config().retry.should_retry(retry_count) {
@@ -135,20 +145,18 @@ impl<P: Prover> WorkerPool<P> {
                         }
                     } else {
                         // Max retries exceeded, mark as permanent failure
-                        if let Err(e) = state.update_status(
-                            &task_id,
-                            TaskStatus::PermanentFailure { error: msg },
-                        ) {
+                        if let Err(e) = state
+                            .update_status(&task_id, TaskStatus::PermanentFailure { error: msg })
+                        {
                             error!(?task_id, ?e, "Failed to mark task as permanent failure");
                         }
                     }
                 }
                 Err(ProverServiceError::PermanentFailure(msg)) => {
                     error!(?task_id, error=%msg, "Permanent failure");
-                    if let Err(e) = state.update_status(
-                        &task_id,
-                        TaskStatus::PermanentFailure { error: msg },
-                    ) {
+                    if let Err(e) =
+                        state.update_status(&task_id, TaskStatus::PermanentFailure { error: msg })
+                    {
                         error!(?task_id, ?e, "Failed to mark task as permanent failure");
                     }
                 }

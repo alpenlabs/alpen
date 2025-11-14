@@ -7,14 +7,12 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_paas::{ProverServiceError, ProverServiceResult, ProofStore};
+use strata_paas::{ProofStore, ProverServiceError, ProverServiceResult};
 use strata_primitives::proof::ProofContext;
 use zkaleido::ProofReceiptWithMetadata;
 
+use super::{proof_key_for, task::ProofTask};
 use crate::operators::checkpoint::CheckpointOperator;
-
-use super::task::ProofTask;
-use super::proof_key_for;
 
 /// Unified proof storage service that handles all proof types
 ///

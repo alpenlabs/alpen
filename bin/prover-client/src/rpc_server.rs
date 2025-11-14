@@ -107,12 +107,18 @@ impl ProverClientRpc {
             let proof_key = proof_key_for(proof_ctx);
 
             // Check if proof already exists
-            if self.db.get_proof(&proof_key).map_err(|e| anyhow::anyhow!("DB error: {}", e))?.is_some() {
+            if self
+                .db
+                .get_proof(&proof_key)
+                .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
+                .is_some()
+            {
                 return Ok(proof_key);
             }
 
             // Get and submit dependencies first (recursive)
-            let proof_deps = self.db
+            let proof_deps = self
+                .db
                 .get_proof_deps(proof_ctx)
                 .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
                 .unwrap_or_default();
@@ -123,7 +129,11 @@ impl ProverClientRpc {
 
             // Submit task to Prover Service (ignore if already exists)
             // Convert ProofContext to ProofTask for Prover Service
-            if let Err(e) = self.prover_handle.submit_task(ProofTask(proof_ctx), zkvm_backend()).await {
+            if let Err(e) = self
+                .prover_handle
+                .submit_task(ProofTask(proof_ctx), zkvm_backend())
+                .await
+            {
                 // Ignore "Task already exists" error - it's okay if already submitted
                 if !e.to_string().contains("Task already exists") {
                     return Err(anyhow::anyhow!("Failed to submit task: {}", e));
@@ -135,9 +145,13 @@ impl ProverClientRpc {
     }
 
     /// Helper to create tasks from proof context (handles dependencies)
-    async fn create_tasks_from_context(&self, proof_ctx: ProofContext) -> Result<Vec<ProofKey>, anyhow::Error> {
+    async fn create_tasks_from_context(
+        &self,
+        proof_ctx: ProofContext,
+    ) -> Result<Vec<ProofKey>, anyhow::Error> {
         // Get or create proof dependencies
-        let proof_deps = self.db
+        let proof_deps = self
+            .db
             .get_proof_deps(proof_ctx)
             .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
             .unwrap_or_default();
@@ -186,10 +200,13 @@ impl StrataProverClientApiServer for ProverClientRpc {
 
     async fn prove_checkpoint(&self, ckp_idx: u64) -> RpcResult<Vec<RpcProofKey>> {
         // Create checkpoint dependencies (ClStf)
-        let cl_stf_deps = self.checkpoint_operator
+        let cl_stf_deps = self
+            .checkpoint_operator
             .create_checkpoint_deps(ckp_idx, &self.db)
             .await
-            .map_err(to_jsonrpsee_error("failed to create checkpoint dependencies"))?;
+            .map_err(to_jsonrpsee_error(
+                "failed to create checkpoint dependencies",
+            ))?;
 
         // Create ClStf dependencies (EvmEeStf) for each ClStf
         for dep_ctx in &cl_stf_deps {
@@ -232,10 +249,13 @@ impl StrataProverClientApiServer for ProverClientRpc {
         };
 
         // Create checkpoint dependencies (ClStf)
-        let cl_stf_deps = self.checkpoint_operator
+        let cl_stf_deps = self
+            .checkpoint_operator
             .create_checkpoint_deps(checkpoint_idx, &self.db)
             .await
-            .map_err(to_jsonrpsee_error("failed to create checkpoint dependencies"))?;
+            .map_err(to_jsonrpsee_error(
+                "failed to create checkpoint dependencies",
+            ))?;
 
         // Create ClStf dependencies (EvmEeStf) for each ClStf
         for dep_ctx in &cl_stf_deps {
@@ -270,7 +290,9 @@ impl StrataProverClientApiServer for ProverClientRpc {
         if let Err(e) = self.db.put_proof_deps(checkpoint_ctx, vec![cl_stf_ctx]) {
             // Ignore "already exists" error - dependency might already be set
             if !e.to_string().contains("EntryAlreadyExists") {
-                return Err(to_jsonrpsee_error("failed to store checkpoint dependencies")(e));
+                return Err(to_jsonrpsee_error(
+                    "failed to store checkpoint dependencies",
+                )(e));
             }
         }
 

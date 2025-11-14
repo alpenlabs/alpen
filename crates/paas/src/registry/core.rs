@@ -5,35 +5,24 @@
 //! discriminants in the public API.
 
 use std::{
-    any::Any,
-    collections::HashMap,
-    future::Future,
-    hash::Hash,
-    marker::PhantomData,
-    pin::Pin,
+    any::Any, collections::HashMap, future::Future, hash::Hash, marker::PhantomData, pin::Pin,
     sync::Arc,
 };
 
 use serde::{Deserialize, Serialize};
 use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram};
 
-use crate::error::{ProverServiceError, ProverServiceResult};
-use crate::ZkVmBackend;
+use crate::{
+    error::{ProverServiceError, ProverServiceResult},
+    ZkVmBackend,
+};
 
 /// Trait that program types must implement for dynamic dispatch
 ///
 /// This trait allows PaaS to extract a routing key from any program type
 /// without the user having to specify it explicitly.
 pub trait ProgramType:
-    Clone +
-    Eq +
-    Hash +
-    Send +
-    Sync +
-    std::fmt::Debug +
-    Serialize +
-    for<'de> Deserialize<'de> +
-    'static
+    Clone + Eq + Hash + Send + Sync + std::fmt::Debug + Serialize + for<'de> Deserialize<'de> + 'static
 {
     /// Routing key type (usually an enum discriminant)
     type RoutingKey: Eq + Hash + Clone + Send + Sync + std::fmt::Debug + 'static;
@@ -53,16 +42,16 @@ impl BoxedInput {
 
     /// Downcast to concrete type
     pub fn downcast<T: 'static>(self) -> Result<Box<T>, ProverServiceError> {
-        self.0
-            .downcast::<T>()
-            .map_err(|_| ProverServiceError::PermanentFailure("Type mismatch in BoxedInput".to_string()))
+        self.0.downcast::<T>().map_err(|_| {
+            ProverServiceError::PermanentFailure("Type mismatch in BoxedInput".to_string())
+        })
     }
 
     /// Downcast reference to concrete type
     pub fn downcast_ref<T: 'static>(&self) -> Result<&T, ProverServiceError> {
-        self.0
-            .downcast_ref::<T>()
-            .ok_or_else(|| ProverServiceError::PermanentFailure("Type mismatch in BoxedInput".to_string()))
+        self.0.downcast_ref::<T>().ok_or_else(|| {
+            ProverServiceError::PermanentFailure("Type mismatch in BoxedInput".to_string())
+        })
     }
 }
 
@@ -77,9 +66,9 @@ impl BoxedProof {
 
     /// Downcast to concrete type
     pub fn downcast<T: 'static>(self) -> Result<Box<T>, ProverServiceError> {
-        self.0
-            .downcast::<T>()
-            .map_err(|_| ProverServiceError::PermanentFailure("Type mismatch in BoxedProof".to_string()))
+        self.0.downcast::<T>().map_err(|_| {
+            ProverServiceError::PermanentFailure("Type mismatch in BoxedProof".to_string())
+        })
     }
 }
 
@@ -120,11 +109,7 @@ impl<P: ProgramType> ProgramRegistry<P> {
     }
 
     /// Register a handler for a specific program variant
-    pub fn register(
-        &mut self,
-        key: P::RoutingKey,
-        handler: Arc<dyn ProgramHandler<P>>,
-    ) {
+    pub fn register(&mut self, key: P::RoutingKey, handler: Arc<dyn ProgramHandler<P>>) {
         self.handlers.insert(key, handler);
     }
 
@@ -136,14 +121,12 @@ impl<P: ProgramType> ProgramRegistry<P> {
 
     /// Fetch input using the appropriate handler
     pub async fn fetch_input(&self, program: &P) -> ProverServiceResult<BoxedInput> {
-        let handler = self
-            .get_handler(program)
-            .ok_or_else(|| {
-                ProverServiceError::PermanentFailure(format!(
-                    "No handler registered for program: {:?}",
-                    program
-                ))
-            })?;
+        let handler = self.get_handler(program).ok_or_else(|| {
+            ProverServiceError::PermanentFailure(format!(
+                "No handler registered for program: {:?}",
+                program
+            ))
+        })?;
 
         handler.fetch_input(program).await
     }
@@ -155,32 +138,24 @@ impl<P: ProgramType> ProgramRegistry<P> {
         input: BoxedInput,
         backend: &ZkVmBackend,
     ) -> ProverServiceResult<BoxedProof> {
-        let handler = self
-            .get_handler(program)
-            .ok_or_else(|| {
-                ProverServiceError::PermanentFailure(format!(
-                    "No handler registered for program: {:?}",
-                    program
-                ))
-            })?;
+        let handler = self.get_handler(program).ok_or_else(|| {
+            ProverServiceError::PermanentFailure(format!(
+                "No handler registered for program: {:?}",
+                program
+            ))
+        })?;
 
         handler.prove(input, backend).await
     }
 
     /// Store proof using the appropriate handler
-    pub async fn store_proof(
-        &self,
-        program: &P,
-        proof: BoxedProof,
-    ) -> ProverServiceResult<()> {
-        let handler = self
-            .get_handler(program)
-            .ok_or_else(|| {
-                ProverServiceError::PermanentFailure(format!(
-                    "No handler registered for program: {:?}",
-                    program
-                ))
-            })?;
+    pub async fn store_proof(&self, program: &P, proof: BoxedProof) -> ProverServiceResult<()> {
+        let handler = self.get_handler(program).ok_or_else(|| {
+            ProverServiceError::PermanentFailure(format!(
+                "No handler registered for program: {:?}",
+                program
+            ))
+        })?;
 
         handler.store_proof(program, proof).await
     }
@@ -267,8 +242,9 @@ where
 
             // Prove using the stored host
             // The backend parameter is ignored - the host determines the backend
-            let proof = Prog::prove(&concrete_input, self.host.as_ref())
-                .map_err(|e| ProverServiceError::PermanentFailure(format!("Proving failed: {}", e)))?;
+            let proof = Prog::prove(&concrete_input, self.host.as_ref()).map_err(|e| {
+                ProverServiceError::PermanentFailure(format!("Proving failed: {}", e))
+            })?;
 
             Ok(BoxedProof::new(proof))
         })

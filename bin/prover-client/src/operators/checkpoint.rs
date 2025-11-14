@@ -27,10 +27,7 @@ pub(crate) struct CheckpointOperator {
 
 impl CheckpointOperator {
     /// Creates a new checkpoint operator.
-    pub(crate) fn new(
-        cl_client: HttpClient,
-        cl_stf_operator: Arc<ClStfOperator>,
-    ) -> Self {
+    pub(crate) fn new(cl_client: HttpClient, cl_stf_operator: Arc<ClStfOperator>) -> Self {
         Self {
             cl_client,
             cl_stf_operator,
@@ -49,7 +46,6 @@ impl CheckpointOperator {
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?
             .ok_or(ProvingTaskError::WitnessNotFound)
     }
-
 
     /// Returns a reference to the internal CL (Consensus Layer) [`HttpClient`].
     pub(crate) fn cl_client(&self) -> &HttpClient {
@@ -86,10 +82,7 @@ impl CheckpointOperator {
         info!(%ckp_idx, "Creating ClStf dependency for checkpoint");
 
         // Create ClStf proof context from the checkpoint's L2 range
-        let cl_stf_ctx = ProofContext::ClStf(
-            ckp_info.l2_range.0,
-            ckp_info.l2_range.1,
-        );
+        let cl_stf_ctx = ProofContext::ClStf(ckp_info.l2_range.0, ckp_info.l2_range.1);
 
         // Store Checkpoint dependencies (ClStf)
         db.put_proof_deps(checkpoint_ctx, vec![cl_stf_ctx])
@@ -132,7 +125,10 @@ impl ProofInputFetcher for CheckpointOperator {
             // Validate that all dependencies are ClStf proofs
             match dep {
                 strata_primitives::proof::ProofContext::ClStf(..) => {}
-                _ => panic!("Checkpoint dependencies must be ClStf proofs, got: {:?}", dep),
+                _ => panic!(
+                    "Checkpoint dependencies must be ClStf proofs, got: {:?}",
+                    dep
+                ),
             };
             let cl_stf_key = ProofKey::new(dep, *task_id.host());
             let proof = db
@@ -148,4 +144,3 @@ impl ProofInputFetcher for CheckpointOperator {
         })
     }
 }
-

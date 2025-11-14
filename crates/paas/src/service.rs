@@ -2,15 +2,16 @@
 
 use std::sync::Arc;
 
+use strata_service::{AsyncService, Response, Service};
 use tokio::spawn;
 use tracing::{debug, info};
 
-use strata_service::{AsyncService, Response, Service};
-
-use crate::commands::ProverCommand;
-use crate::state::{ProverServiceState, StatusSummary};
-use crate::worker::WorkerPool;
-use crate::Prover;
+use crate::{
+    commands::ProverCommand,
+    state::{ProverServiceState, StatusSummary},
+    worker::WorkerPool,
+    Prover,
+};
 
 /// Prover service that manages proof generation tasks
 pub struct ProverService<P: Prover> {

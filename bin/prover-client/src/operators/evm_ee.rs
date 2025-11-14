@@ -49,7 +49,6 @@ impl EvmEeOperator {
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
         Ok(block.header)
     }
-
 }
 
 impl ProofInputFetcher for EvmEeOperator {

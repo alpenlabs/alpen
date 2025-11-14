@@ -1,16 +1,20 @@
 //! Service state management
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use serde::{Deserialize, Serialize};
 use strata_service::ServiceState;
 
-use crate::config::ProverServiceConfig;
-use crate::error::{ProverServiceError, ProverServiceResult};
-use crate::task::{TaskIdentifier, TaskStatus};
-use crate::Prover;
+use crate::{
+    config::ProverServiceConfig,
+    error::{ProverServiceError, ProverServiceResult},
+    task::{TaskIdentifier, TaskStatus},
+    Prover,
+};
 
 /// Task metadata tracked by the service
 #[derive(Debug, Clone)]
@@ -79,7 +83,11 @@ impl<P: Prover> ProverServiceState<P> {
     }
 
     /// Update task status
-    pub fn update_status(&self, task_id: &P::TaskId, status: TaskStatus) -> ProverServiceResult<()> {
+    pub fn update_status(
+        &self,
+        task_id: &P::TaskId,
+        status: TaskStatus,
+    ) -> ProverServiceResult<()> {
         let mut tasks = self.tasks.lock().unwrap();
         let task = tasks
             .get_mut(task_id)

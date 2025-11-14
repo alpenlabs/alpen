@@ -109,8 +109,9 @@ fn test_task_id_equality() {
 
 #[test]
 fn test_task_id_hash() {
-    use serde::{Deserialize, Serialize};
     use std::collections::HashSet;
+
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     enum TestProgram {
@@ -196,7 +197,7 @@ fn test_paas_config_creation() {
     let mut worker_count = HashMap::new();
     worker_count.insert(ZkVmBackend::Native, 2);
 
-    let config = PaaSConfig {
+    let config = ProverServiceConfig {
         workers: WorkerConfig {
             worker_count,
             polling_interval_ms: 50,
@@ -216,16 +217,16 @@ fn test_paas_config_creation() {
 
 #[test]
 fn test_error_display() {
-    let err = PaaSError::TaskNotFound("task_123".into());
+    let err = ProverServiceError::TaskNotFound("task_123".into());
     assert!(err.to_string().contains("task_123"));
 
-    let err = PaaSError::TransientFailure("network error".into());
+    let err = ProverServiceError::TransientFailure("network error".into());
     assert!(err.to_string().contains("network error"));
 
-    let err = PaaSError::PermanentFailure("invalid input".into());
+    let err = ProverServiceError::PermanentFailure("invalid input".into());
     assert!(err.to_string().contains("invalid input"));
 
-    let err = PaaSError::Config("missing config".into());
+    let err = ProverServiceError::Config("missing config".into());
     assert!(err.to_string().contains("missing config"));
 }
 

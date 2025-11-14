@@ -38,18 +38,17 @@ pub enum ZkVmBackend {
 }
 
 // Re-export core registry types at the top level
+// Re-export framework types
+pub use config::{ProverServiceConfig, RetryConfig, WorkerConfig};
+pub use error::{ProverServiceError, ProverServiceResult};
 pub use registry::{
     BoxedInput, BoxedProof, ConcreteHandler, InputProvider, ProgramHandler, ProgramRegistry,
     ProgramType, ProofStore, ProverHandle, ProverServiceBuilder, RegistryProver,
 };
-pub use task_id::TaskId;
-
-// Re-export framework types
-pub use config::{ProverServiceConfig, RetryConfig, WorkerConfig};
-pub use error::{ProverServiceError, ProverServiceResult};
 pub use service::{ProverService, ProverServiceStatus};
 pub use state::{ProverServiceState, StatusSummary};
 pub use task::TaskStatus;
+pub use task_id::TaskId;
 
 // Prover trait for custom implementations
 //

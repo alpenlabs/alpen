@@ -4,14 +4,15 @@ use std::sync::Arc;
 
 use strata_service::{CommandHandle, ServiceMonitor};
 
-use crate::commands::ProverCommand;
-use crate::error::{ProverServiceError, ProverServiceResult};
-use crate::service::ProverServiceStatus;
-use crate::state::StatusSummary;
-use crate::task::TaskStatus;
-use crate::task_id::TaskId;
-use crate::ZkVmBackend;
-use crate::ProgramType;
+use crate::{
+    commands::ProverCommand,
+    error::{ProverServiceError, ProverServiceResult},
+    service::ProverServiceStatus,
+    state::StatusSummary,
+    task::TaskStatus,
+    task_id::TaskId,
+    ProgramType, ZkVmBackend,
+};
 
 /// Handle for interacting with the prover service
 ///
