@@ -22,17 +22,32 @@ pub(crate) use fetchers::{CheckpointFetcher, ClStfFetcher, EvmEeFetcher};
 pub(crate) use store::ProofStoreService;
 pub(crate) use task::{ProofContextVariant, ProofTask};
 
-/// Convert ZkVmBackend to ProofZkVm
-pub(crate) fn backend_to_zkvm(backend: ZkVmBackend) -> ProofZkVm {
-    match backend {
-        ZkVmBackend::SP1 => ProofZkVm::SP1,
-        ZkVmBackend::Native => ProofZkVm::Native,
-        ZkVmBackend::Risc0 => panic!("Risc0 not supported"),
+// ============================================================================
+// Backend Resolution - Unified API
+// ============================================================================
+
+/// Get the current backend for PaaS operations
+///
+/// Returns `ZkVmBackend::SP1` if the `sp1` feature is enabled, otherwise `Native`.
+/// Use this when interacting with PaaS APIs.
+#[inline]
+pub(crate) fn current_paas_backend() -> ZkVmBackend {
+    #[cfg(feature = "sp1")]
+    {
+        ZkVmBackend::SP1
+    }
+    #[cfg(not(feature = "sp1"))]
+    {
+        ZkVmBackend::Native
     }
 }
 
-/// Get the current backend based on feature flags
-pub(crate) fn get_current_backend() -> ProofZkVm {
+/// Get the current zkVM for proof key creation
+///
+/// Returns `ProofZkVm::SP1` if the `sp1` feature is enabled, otherwise `Native`.
+/// Use this when creating ProofKeys or working with the database.
+#[inline]
+pub(crate) fn current_zkvm() -> ProofZkVm {
     #[cfg(feature = "sp1")]
     {
         ProofZkVm::SP1
@@ -40,5 +55,18 @@ pub(crate) fn get_current_backend() -> ProofZkVm {
     #[cfg(not(feature = "sp1"))]
     {
         ProofZkVm::Native
+    }
+}
+
+/// Convert PaaS backend to zkVM type
+///
+/// # Panics
+/// Panics if `backend` is `Risc0` as it's not supported.
+#[inline]
+pub(crate) fn paas_backend_to_zkvm(backend: &ZkVmBackend) -> ProofZkVm {
+    match backend {
+        ZkVmBackend::SP1 => ProofZkVm::SP1,
+        ZkVmBackend::Native => ProofZkVm::Native,
+        ZkVmBackend::Risc0 => panic!("Risc0 backend is not supported"),
     }
 }

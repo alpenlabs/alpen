@@ -7,12 +7,12 @@ use async_trait::async_trait;
 use jsonrpsee::{core::RpcResult, RpcModule};
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_paas::{ProverHandle, TaskId, ZkVmBackend};
+use strata_paas::{ProverHandle, TaskId};
 use strata_primitives::{
     evm_exec::EvmEeBlockCommitment,
     l1::L1BlockCommitment,
     l2::L2BlockCommitment,
-    proof::{ProofContext, ProofKey, ProofZkVm},
+    proof::{ProofContext, ProofKey},
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
 use strata_rpc_api::StrataApiClient;
@@ -22,7 +22,10 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 use zkaleido::ProofReceipt;
 
-use crate::{operators::ProofOperator, paas::ProofTask};
+use crate::{
+    operators::ProofOperator,
+    paas::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
+};
 
 pub(crate) async fn start<T>(
     rpc_impl: &T,
@@ -92,30 +95,14 @@ impl ProverClientRpc {
         start(self, rpc_url, enable_dev_rpc).await
     }
 
-    /// Helper to determine backend based on features
-    fn get_backend() -> ZkVmBackend {
-        #[cfg(feature = "sp1")]
-        {
-            ZkVmBackend::SP1
-        }
-        #[cfg(not(feature = "sp1"))]
-        {
-            ZkVmBackend::Native
-        }
-    }
-
     /// Helper to submit a proof context as a task
     fn submit_proof_context<'a>(
         &'a self,
         proof_ctx: ProofContext,
     ) -> Pin<Box<dyn Future<Output = Result<ProofKey, anyhow::Error>> + 'a + Send>> {
         Box::pin(async move {
-            let backend = Self::get_backend();
-            let zkvm = match backend {
-                ZkVmBackend::SP1 => ProofZkVm::SP1,
-                ZkVmBackend::Native => ProofZkVm::Native,
-                ZkVmBackend::Risc0 => anyhow::bail!("Risc0 not supported"),
-            };
+            let backend = current_paas_backend();
+            let zkvm = paas_backend_to_zkvm(&backend);
 
             let proof_key = ProofKey::new(proof_ctx, zkvm);
 
@@ -321,7 +308,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
             Some(_) => Ok("Completed".to_string()),
             // If proof is not in DB, check PaaS status
             None => {
-                let backend = Self::get_backend();
+                let backend = current_paas_backend();
                 // Wrap ProofContext in ProofTask for PaaS
                 let task_id = TaskId::new(ProofTask(*key.context()), backend);
 
