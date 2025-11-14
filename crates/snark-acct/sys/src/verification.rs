@@ -21,10 +21,11 @@ pub fn verify_update_correctness<'a, S: StateAccessor>(
     let outputs = operation.outputs();
 
     // 1. Check seq_no matches
-    if snark_state.seqno() != operation.seq_no() {
+    let expected_seq = snark_state.seqno() + 1;
+    if operation.seq_no() != expected_seq {
         return Err(AcctError::InvalidUpdateSequence {
             account_id: sender,
-            expected: snark_state.seqno(),
+            expected: expected_seq,
             got: operation.seq_no(),
         });
     }

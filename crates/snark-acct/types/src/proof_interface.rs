@@ -74,6 +74,6 @@ impl UpdateProofPubParams {
 
     pub fn to_ssz_bytes(&self) -> Vec<u8> {
         // todo: use ssz
-        todo!()
+        vec![0; 64]
     }
 }
