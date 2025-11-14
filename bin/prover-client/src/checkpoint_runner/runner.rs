@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 use crate::{
     checkpoint_runner::fetch::fetch_next_unproven_checkpoint_index,
     operators::checkpoint::CheckpointOperator,
-    service::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
+    service::{backend_to_zkvm, zkvm_backend, ProofTask},
 };
 
 /// Holds the current checkpoint index for the runner to track progress.
@@ -82,8 +82,8 @@ async fn submit_checkpoint_task(
     let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
 
     // Determine backend based on features
-    let backend = current_paas_backend();
-    let zkvm = paas_backend_to_zkvm(&backend);
+    let backend = zkvm_backend();
+    let zkvm = backend_to_zkvm(&backend);
 
     let proof_key = ProofKey::new(proof_ctx, zkvm);
 
@@ -135,8 +135,8 @@ fn submit_proof_context_recursive<'a>(
     db: &'a Arc<ProofDBSled>,
 ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a + Send>> {
     Box::pin(async move {
-        let backend = current_paas_backend();
-        let zkvm = paas_backend_to_zkvm(&backend);
+        let backend = zkvm_backend();
+        let zkvm = backend_to_zkvm(&backend);
 
         let proof_key = ProofKey::new(proof_ctx, zkvm);
 
