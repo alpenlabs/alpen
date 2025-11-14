@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use bitcoin::absolute;
+use sha2::{Digest, Sha256};
 use strata_acct_types::{
     AccountId, AccountSerial, AccountTypeId, AcctError, AcctResult, BitcoinAmount, Hash, Mmr64,
     RawAccountTypeId,
@@ -332,12 +333,52 @@ impl StateAccessor for MockStateAccessor {
     }
 
     fn compute_state_root(&self) -> Buf32 {
-        // Simple hash based on state version and l1 view state for testing
-        let mut bytes = [0u8; 32];
-        bytes[0..8].copy_from_slice(&self.state_version.to_le_bytes());
-        bytes[8..12].copy_from_slice(&self.l1_view.cur_epoch.to_le_bytes());
-        bytes[12..16].copy_from_slice(&self.l1_view.last_l1_height.to_le_bytes());
-        Buf32::from(bytes)
+        // Hash actual account data for realistic state root calculation
+        let mut hasher = Sha256::new();
+
+        // Hash global state
+        hasher.update(self.global.cur_slot.to_le_bytes());
+
+        // Hash L1 view state
+        hasher.update(self.l1_view.cur_epoch.to_le_bytes());
+        hasher.update(self.l1_view.last_l1_height.to_le_bytes());
+        // Hash L1 block ID (Buf32 implements AsRef<[u8; 32]>)
+        let l1_blkid: Buf32 = self.l1_view.last_l1_blkid.into();
+        hasher.update(l1_blkid.as_ref() as &[u8]);
+        hasher.update(self.l1_view.total_ledger_balance.to_sat().to_le_bytes());
+
+        // Hash all accounts in sorted order (by AccountId for determinism)
+        let mut sorted_accounts: Vec<_> = self.accounts.iter().collect();
+        sorted_accounts.sort_by_key(|(id, _)| *id);
+
+        for (account_id, account) in sorted_accounts {
+            // Hash account ID
+            hasher.update(account_id.inner());
+
+            // Hash serial
+            let serial: u32 = account.serial.into();
+            hasher.update(serial.to_le_bytes());
+
+            // Hash balance
+            hasher.update(account.balance.to_sat().to_le_bytes());
+
+            // Hash type state
+            match &account.type_state {
+                AccountTypeState::Empty => {
+                    hasher.update(&[0u8]); // Type discriminant
+                }
+                AccountTypeState::Snark(snark_state) => {
+                    hasher.update(&[1u8]); // Type discriminant
+                    hasher.update(snark_state.seqno.to_le_bytes());
+                    hasher.update(snark_state.next_inbox_idx.to_le_bytes());
+                    hasher.update(&snark_state.inner_state_root);
+                    // Note: Not hashing verifier_key or inbox_mmr for simplicity in tests
+                }
+            }
+        }
+
+        let hash_result: [u8; 32] = hasher.finalize().into();
+        Buf32::from(hash_result)
     }
 }
 
@@ -541,5 +582,508 @@ mod block_asm_tests {
         let logs = ctx.into_logs();
         let block = compose_block(&initial_state, &prev_header, txs, None, logs, root);
         validate_block(&mut initial_state, &prev_header, &params, block);
+    }
+}
+
+/// Tests for transaction execution logic
+#[cfg(test)]
+mod transaction_execution_tests {
+    use strata_ol_chain_types_new::{LogData, OLTransaction, TransactionExtra, TransactionPayload};
+    use strata_snark_acct_types::{
+        LedgerRefProofs, OutputTransfer, ProofState, SnarkAccountUpdate,
+        SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
+    };
+
+    use super::*;
+
+    fn create_mock_snark_state() -> MockSnarkAccountState {
+        MockSnarkAccountState {
+            verifier_key: PredicateKey::new(PredicateTypeId::AlwaysAccept, vec![]),
+            seqno: 0,
+            next_inbox_idx: 0,
+            inner_state_root: [0u8; 32],
+            inbox_mmr: Mmr64::new(32),
+        }
+    }
+
+    fn create_account_with_balance(
+        state: &mut MockStateAccessor,
+        id_byte: u8,
+        balance: u64,
+        is_snark: bool,
+    ) -> AccountId {
+        let account_id = AccountId::from([id_byte; 32]);
+        let type_state = if is_snark {
+            AccountTypeState::Snark(create_mock_snark_state())
+        } else {
+            AccountTypeState::Empty
+        };
+
+        state
+            .create_new_account(account_id, type_state)
+            .expect("account creation should succeed");
+
+        // Set balance
+        if balance > 0 {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(balance));
+            state
+                .get_account_state_mut(account_id)
+                .unwrap()
+                .unwrap()
+                .add_balance(coin);
+        }
+
+        account_id
+    }
+
+    fn get_snark_state(state: &MockStateAccessor, account_id: AccountId) -> MockSnarkAccountState {
+        let type_state = state
+            .get_account_state(account_id)
+            .unwrap()
+            .unwrap()
+            .get_type_state()
+            .unwrap();
+        match type_state {
+            AccountTypeState::Snark(s) => s,
+            _ => panic!("Expected snark account"),
+        }
+    }
+
+    fn get_updated_snark_state(
+        state: &MockStateAccessor,
+        account_id: AccountId,
+    ) -> MockSnarkAccountState {
+        let account = state.get_account_state(account_id).unwrap().unwrap();
+        let type_state = account.get_type_state().unwrap();
+        match type_state {
+            AccountTypeState::Snark(s) => s,
+            _ => panic!("Account should still be snark type after update"),
+        }
+    }
+
+    fn assert_account_balance(
+        state: &MockStateAccessor,
+        account_id: AccountId,
+        expected_sat: u64,
+        msg: &str,
+    ) {
+        assert_eq!(
+            state
+                .get_account_state(account_id)
+                .unwrap()
+                .unwrap()
+                .balance(),
+            BitcoinAmount::from_sat(expected_sat),
+            "{}",
+            msg
+        );
+    }
+
+    fn assert_single_log_emitted(
+        ctx: BlockExecContext,
+        expected_account: AccountId,
+    ) -> strata_ol_chain_types_new::OLLog {
+        let logs = ctx.into_logs();
+        assert_eq!(logs.len(), 1, "Should emit exactly one log");
+        let log = logs.into_iter().next().unwrap();
+        assert_eq!(
+            log.account_id(),
+            expected_account,
+            "Log should have correct account ID"
+        );
+        log
+    }
+
+    /// Creates a valid snark update that matches the current state of the account.
+    /// This update will pass verification because:
+    /// - seq_no matches the account's current seqno (required for verification)
+    /// - next_inbox_idx progression is correct (no messages processed)
+    /// - Uses AlwaysAccept predicate which passes witness verification
+    /// - No outputs, so no balance checks needed
+    fn create_valid_snark_update(
+        snark_state: &MockSnarkAccountState,
+    ) -> SnarkAccountUpdateContainer {
+        let seqno = snark_state.seqno() + 1;
+        let cur_inbox_idx = snark_state.next_inbox_idx();
+        let messages = vec![];
+
+        let new_inbox_idx = cur_inbox_idx + messages.len() as u64; // No messages processed
+        let new_inner_state = [1u8; 32]; // Arbitrary new state
+
+        let proof_state = ProofState::new(new_inner_state, new_inbox_idx);
+        let ledger_refs = strata_snark_acct_types::LedgerRefs::new_empty();
+        let outputs = UpdateOutputs::new_empty();
+        let extra_data = vec![];
+
+        let operation = UpdateOperationData::new(
+            seqno,
+            proof_state,
+            messages,
+            ledger_refs,
+            outputs,
+            extra_data,
+        );
+
+        let base = SnarkAccountUpdate::new(operation, vec![]);
+        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
+
+        SnarkAccountUpdateContainer::new(base, accumulator_proofs)
+    }
+
+    /// Creates a valid snark update with outputs (transfers/messages).
+    /// Caller must ensure the account has sufficient balance for total_sent.
+    fn create_valid_snark_update_with_outputs(
+        snark_state: &MockSnarkAccountState,
+        outputs: UpdateOutputs,
+    ) -> SnarkAccountUpdateContainer {
+        let seq_no = snark_state.seqno() + 1;
+        let cur_inbox_idx = snark_state.next_inbox_idx();
+
+        let new_inbox_idx = cur_inbox_idx;
+        let new_inner_state = [2u8; 32];
+
+        let proof_state = ProofState::new(new_inner_state, new_inbox_idx);
+        let ledger_refs = strata_snark_acct_types::LedgerRefs::new_empty();
+
+        let operation =
+            UpdateOperationData::new(seq_no, proof_state, vec![], ledger_refs, outputs, vec![]);
+
+        let base = SnarkAccountUpdate::new(operation, vec![]);
+        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
+
+        SnarkAccountUpdateContainer::new(base, accumulator_proofs)
+    }
+
+    fn create_mock_snark_update() -> SnarkAccountUpdateContainer {
+        let proof_state = ProofState::new([0u8; 32], 0);
+        let ledger_refs = strata_snark_acct_types::LedgerRefs::new_empty();
+        let outputs = UpdateOutputs::new_empty();
+
+        let operation = UpdateOperationData::new(
+            1,           // seq_no
+            proof_state, // proof_state
+            vec![],      // messages
+            ledger_refs, // ledger_refs
+            outputs,     // outputs
+            vec![],      // extra_data
+        );
+        let base = SnarkAccountUpdate::new(operation, vec![]);
+        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
+
+        SnarkAccountUpdateContainer::new(base, accumulator_proofs)
+    }
+
+    #[test]
+    fn test_tx_on_nonexistent_account_fails() {
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(10);
+        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
+        let params = test_rollup_params();
+        let ctx = BlockExecContext::new(prev_header, params);
+
+        let nonexistent = AccountId::from([99u8; 32]);
+        let update = create_mock_snark_update();
+        let tx = OLTransaction::new(
+            TransactionPayload::SnarkAccountUpdate {
+                target: nonexistent,
+                update,
+            },
+            TransactionExtra::default(),
+        );
+
+        let result = execute_transaction(&ctx, &mut state, &tx);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StfError::Account(AcctError::NonExistentAccount(id)) => {
+                assert_eq!(id, nonexistent);
+            }
+            err => panic!("Expected NonExistentAccount error, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_snark_update_on_non_snark_account_fails() {
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(10);
+
+        // Create empty (non-snark) account
+        let account_id = create_account_with_balance(&mut state, 1, 1000, false);
+
+        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
+        let params = test_rollup_params();
+        let ctx = BlockExecContext::new(prev_header, params);
+
+        let update = create_mock_snark_update();
+        let tx = OLTransaction::new(
+            TransactionPayload::SnarkAccountUpdate {
+                target: account_id,
+                update,
+            },
+            TransactionExtra::default(),
+        );
+
+        let result = execute_transaction(&ctx, &mut state, &tx);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StfError::SnarkUpdateForNonSnarkAccount(id) => {
+                assert_eq!(id, account_id);
+            }
+            err => panic!(
+                "Expected SnarkUpdateForNonSnarkAccount error, got {:?}",
+                err
+            ),
+        }
+    }
+
+    #[test]
+    fn test_generic_account_message_unsupported() {
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(10);
+        let account_id = create_account_with_balance(&mut state, 1, 1000, true);
+
+        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
+        let params = test_rollup_params();
+        let ctx = BlockExecContext::new(prev_header, params);
+
+        let tx = OLTransaction::new(
+            TransactionPayload::GenericAccountMessage {
+                target: account_id,
+                payload: vec![1, 2, 3],
+            },
+            TransactionExtra::default(),
+        );
+
+        let result = execute_transaction(&ctx, &mut state, &tx);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StfError::UnsupportedTransaction => {}
+            err => panic!("Expected UnsupportedTransaction error, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_successful_snark_update_no_outputs() {
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(10);
+
+        // Create snark account with some balance
+        let account_id = create_account_with_balance(&mut state, 1, 5000, true);
+        let initial_balance = 5000;
+        let initial_state_root = state.compute_state_root();
+
+        // Get the snark state to create a matching update
+        let snark_state = get_snark_state(&state, account_id);
+
+        let initial_inner_state = snark_state.inner_state_root();
+        let initial_seqno = snark_state.seqno();
+        let initial_inbox_idx = snark_state.next_inbox_idx();
+
+        // Create valid update with no outputs
+        let update = create_valid_snark_update(&snark_state);
+
+        let prev_header = create_test_header(10, 0, 0, initial_state_root);
+        let params = test_rollup_params();
+        let ctx = BlockExecContext::new(prev_header, params);
+
+        let tx = OLTransaction::new(
+            TransactionPayload::SnarkAccountUpdate {
+                target: account_id,
+                update,
+            },
+            TransactionExtra::default(),
+        );
+
+        // Execute transaction
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(result.is_ok(), "Transaction should succeed: {:?}", result);
+
+        // Verify account state changes
+        assert_account_balance(
+            &state,
+            account_id,
+            initial_balance,
+            "Balance should not change without outputs",
+        );
+
+        // Check snark state was updated
+        let updated_snark = get_updated_snark_state(&state, account_id);
+
+        // Inner state should have changed
+        assert_ne!(
+            updated_snark.inner_state_root(),
+            initial_inner_state,
+            "Inner state should change"
+        );
+        assert_eq!(
+            updated_snark.inner_state_root(),
+            [1u8; 32],
+            "Inner state should match update"
+        );
+
+        // Seqno should remain the same (as per current semantics)
+        assert_eq!(
+            updated_snark.seqno(),
+            initial_seqno + 1,
+            "Seqno should increment"
+        );
+
+        // Inbox idx should remain same (no messages processed)
+        assert_eq!(
+            updated_snark.next_inbox_idx(),
+            initial_inbox_idx,
+            "Inbox idx should stay same with no messages"
+        );
+
+        // State root should change
+        let new_state_root = state.compute_state_root();
+        assert_ne!(
+            new_state_root, initial_state_root,
+            "State root should change after update"
+        );
+
+        // Verify log was emitted
+        let log = assert_single_log_emitted(ctx, account_id);
+
+        match log.log_data() {
+            LogData::SnarkAccountUpdate(log_data) => {
+                assert_eq!(
+                    log_data.to_msg_idx(),
+                    initial_inbox_idx,
+                    "Log should have correct inbox idx"
+                );
+                assert_eq!(
+                    log_data.new_proof_state(),
+                    [1u8; 32].into(),
+                    "Log should have correct new state"
+                );
+            }
+            _ => panic!("Expected SnarkAccountUpdate log"),
+        }
+    }
+
+    #[test]
+    fn test_successful_snark_update_with_balance_deduction() {
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(10);
+
+        // Create two accounts: sender (snark) and receiver (empty)
+        let init_sender_bal = 10000;
+        let sender_id = create_account_with_balance(&mut state, 1, init_sender_bal, true);
+        let receiver_id = create_account_with_balance(&mut state, 2, 0, false);
+
+        let transfer_amount = 3000u64;
+
+        // Get the snark state
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Create update with a transfer output
+        let transfer = OutputTransfer::new(receiver_id, BitcoinAmount::from_sat(transfer_amount));
+        let outputs = UpdateOutputs::new(vec![transfer], vec![]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
+        let params = test_rollup_params();
+        let ctx = BlockExecContext::new(prev_header, params);
+
+        let tx = OLTransaction::new(
+            TransactionPayload::SnarkAccountUpdate {
+                target: sender_id,
+                update,
+            },
+            TransactionExtra::default(),
+        );
+
+        // Execute transaction
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(result.is_ok(), "Transaction should succeed: {:?}", result);
+
+        // Verify sender balance was deducted
+        let expected_sender_balance = init_sender_bal - transfer_amount;
+        assert_account_balance(
+            &state,
+            sender_id,
+            expected_sender_balance,
+            "Sender balance should be deducted",
+        );
+
+        // Verify receiver balance increased
+        assert_account_balance(
+            &state,
+            receiver_id,
+            transfer_amount,
+            "Receiver should receive the transfer",
+        );
+
+        // Verify inner state changed
+        let updated_snark = get_updated_snark_state(&state, sender_id);
+        assert_eq!(
+            updated_snark.inner_state_root(),
+            [2u8; 32],
+            "Inner state should match update"
+        );
+
+        // Verify log was emitted
+        assert_single_log_emitted(ctx, sender_id);
+    }
+
+    #[test]
+    fn test_snark_update_insufficient_balance_fails() {
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(10);
+
+        // Create sender with insufficient balance
+        let sender_id = create_account_with_balance(&mut state, 1, 1000, true);
+        let receiver_id = create_account_with_balance(&mut state, 2, 0, false);
+
+        let snark_state = get_snark_state(&state, sender_id);
+
+        // Try to transfer more than available balance
+        let transfer = OutputTransfer::new(receiver_id, BitcoinAmount::from_sat(5000));
+        let outputs = UpdateOutputs::new(vec![transfer], vec![]);
+        let update = create_valid_snark_update_with_outputs(&snark_state, outputs);
+
+        let prev_header = create_test_header(10, 0, 0, state.compute_state_root());
+        let params = test_rollup_params();
+        let ctx = BlockExecContext::new(prev_header, params);
+
+        let tx = OLTransaction::new(
+            TransactionPayload::SnarkAccountUpdate {
+                target: sender_id,
+                update,
+            },
+            TransactionExtra::default(),
+        );
+
+        // Should fail during verification (before balance deduction)
+        let result = execute_transaction(&ctx, &mut state, &tx);
+        assert!(result.is_err(), "Should fail with insufficient balance");
+
+        match result.unwrap_err() {
+            StfError::Account(AcctError::InsufficientBalance {
+                requested,
+                available,
+            }) => {
+                assert_eq!(requested, BitcoinAmount::from_sat(5000));
+                assert_eq!(available, BitcoinAmount::from_sat(1000));
+            }
+            err => panic!("Expected InsufficientBalance error, got {:?}", err),
+        }
+
+        // Verify balances unchanged
+        assert_account_balance(
+            &state,
+            sender_id,
+            1000,
+            "Sender balance should be unchanged",
+        );
+        assert_account_balance(
+            &state,
+            receiver_id,
+            0,
+            "Receiver balance should be unchanged",
+        );
     }
 }

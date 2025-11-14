@@ -156,7 +156,7 @@ pub fn process_asm_manifests(
     Ok(L1BlockCommitment::new(cur_height, cur_blkid))
 }
 
-fn execute_transaction<S: StateAccessor>(
+pub(crate) fn execute_transaction<S: StateAccessor>(
     ctx: &BlockExecContext,
     state_accessor: &mut S,
     tx: &OLTransaction,
@@ -245,6 +245,9 @@ fn process_snark_update<S: StateAccessor>(
         seq_no,
     );
 
+    // Write the updated snark state back to the account state
+    acct_state.set_type_state(AccountTypeState::Snark(snark_state))?;
+
     // Construct and emit SnarkUpdate Log.
     let log = construct_update_log(target, operation);
     ctx.emit_log(log);
@@ -262,4 +265,336 @@ fn construct_update_log(target: AccountId, operation: UpdateOperationData) -> OL
         operation.new_state().inner_state().into(),
         log_extra,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_ledger_types::{IGlobalState, StateAccessor};
+    use strata_ol_chain_types_new::TransactionExtra;
+
+    use super::*;
+
+    // Minimal mock for testing validate_tx_extra
+    #[derive(Default, Clone)]
+    struct MockGlobalState {
+        cur_slot: u64,
+    }
+
+    impl IGlobalState for MockGlobalState {
+        fn cur_slot(&self) -> u64 {
+            self.cur_slot
+        }
+
+        fn set_cur_slot(&mut self, slot: u64) {
+            self.cur_slot = slot;
+        }
+    }
+
+    #[derive(Clone)]
+    struct StubL1ViewState;
+
+    impl strata_ledger_types::IL1ViewState for StubL1ViewState {
+        fn cur_epoch(&self) -> strata_primitives::Epoch {
+            0
+        }
+
+        fn set_cur_epoch(&mut self, _epoch: strata_primitives::Epoch) {}
+
+        fn last_l1_blkid(&self) -> &strata_primitives::L1BlockId {
+            unimplemented!()
+        }
+
+        fn set_last_l1_blkid(&mut self, _blkid: strata_primitives::L1BlockId) {}
+
+        fn last_l1_height(&self) -> u32 {
+            0
+        }
+
+        fn set_last_l1_height(&mut self, _height: u32) {}
+
+        fn append_manifest(&mut self, _mf: strata_asm_common::AsmManifest) {}
+
+        fn asm_manifests_mmr(&self) -> &strata_acct_types::Mmr64 {
+            unimplemented!()
+        }
+
+        fn asm_recorded_epoch(&self) -> &strata_primitives::EpochCommitment {
+            unimplemented!()
+        }
+
+        fn set_asm_recorded_epoch(&mut self, _epoch: strata_primitives::EpochCommitment) {}
+
+        fn total_ledger_balance(&self) -> strata_acct_types::BitcoinAmount {
+            0.into()
+        }
+
+        fn increment_total_ledger_balance(
+            &mut self,
+            _amt: strata_acct_types::BitcoinAmount,
+        ) -> strata_acct_types::BitcoinAmount {
+            0.into()
+        }
+
+        fn decrement_total_ledger_balance(
+            &mut self,
+            _amt: strata_acct_types::BitcoinAmount,
+        ) -> strata_acct_types::BitcoinAmount {
+            0.into()
+        }
+    }
+
+    struct MinimalStateAccessor {
+        global: MockGlobalState,
+        l1_view: StubL1ViewState,
+    }
+
+    impl MinimalStateAccessor {
+        fn with_slot(slot: u64) -> Self {
+            Self {
+                global: MockGlobalState { cur_slot: slot },
+                l1_view: StubL1ViewState,
+            }
+        }
+    }
+
+    // Minimal stub account state for testing
+    #[derive(Clone, Debug)]
+    struct StubAccountState;
+
+    #[derive(Clone, Debug)]
+    struct StubSnarkAccountState;
+
+    impl strata_ledger_types::ISnarkAccountState for StubSnarkAccountState {
+        fn verifier_key(&self) -> &strata_predicate::PredicateKey {
+            unimplemented!()
+        }
+
+        fn seqno(&self) -> u64 {
+            0
+        }
+
+        fn next_inbox_idx(&self) -> u64 {
+            0
+        }
+
+        fn inner_state_root(&self) -> strata_acct_types::Hash {
+            [0u8; 32]
+        }
+
+        fn set_proof_state_directly(
+            &mut self,
+            _state: strata_acct_types::Hash,
+            _next_inbox_idx: u64,
+            _seqno: u64,
+        ) {
+        }
+
+        fn update_inner_state(
+            &mut self,
+            _state: strata_acct_types::Hash,
+            _seqno: u64,
+            _extra_data: &[u8],
+        ) -> strata_acct_types::AcctResult<()> {
+            Ok(())
+        }
+
+        fn inbox_mmr(&self) -> &strata_acct_types::Mmr64 {
+            unimplemented!()
+        }
+
+        fn insert_inbox_message(
+            &mut self,
+            _entry: strata_snark_acct_types::MessageEntry,
+        ) -> strata_acct_types::AcctResult<()> {
+            Ok(())
+        }
+    }
+
+    impl strata_ledger_types::IAccountState for StubAccountState {
+        type SnarkAccountState = StubSnarkAccountState;
+
+        fn serial(&self) -> strata_acct_types::AccountSerial {
+            0.into()
+        }
+
+        fn balance(&self) -> strata_acct_types::BitcoinAmount {
+            0.into()
+        }
+
+        fn add_balance(&mut self, _coin: strata_ledger_types::Coin) {}
+
+        fn take_balance(
+            &mut self,
+            _amt: strata_acct_types::BitcoinAmount,
+        ) -> strata_acct_types::AcctResult<strata_ledger_types::Coin> {
+            unimplemented!()
+        }
+
+        fn raw_ty(&self) -> strata_acct_types::AcctResult<strata_acct_types::RawAccountTypeId> {
+            Ok(0)
+        }
+
+        fn ty(&self) -> strata_acct_types::AcctResult<strata_acct_types::AccountTypeId> {
+            Ok(strata_acct_types::AccountTypeId::Empty)
+        }
+
+        fn get_type_state(
+            &self,
+        ) -> strata_acct_types::AcctResult<strata_ledger_types::AccountTypeState<Self>> {
+            Ok(strata_ledger_types::AccountTypeState::Empty)
+        }
+
+        fn get_type_state_mut(
+            &mut self,
+        ) -> strata_acct_types::AcctResult<&mut strata_ledger_types::AccountTypeState<Self>> {
+            unimplemented!()
+        }
+
+        fn set_type_state(
+            &mut self,
+            _state: strata_ledger_types::AccountTypeState<Self>,
+        ) -> strata_acct_types::AcctResult<()> {
+            unimplemented!()
+        }
+    }
+
+    impl StateAccessor for MinimalStateAccessor {
+        type GlobalState = MockGlobalState;
+        type L1ViewState = StubL1ViewState;
+        type AccountState = StubAccountState;
+
+        fn global(&self) -> &Self::GlobalState {
+            &self.global
+        }
+
+        fn global_mut(&mut self) -> &mut Self::GlobalState {
+            &mut self.global
+        }
+
+        fn l1_view(&self) -> &Self::L1ViewState {
+            &self.l1_view
+        }
+
+        fn l1_view_mut(&mut self) -> &mut Self::L1ViewState {
+            &mut self.l1_view
+        }
+
+        fn check_account_exists(
+            &self,
+            _id: strata_acct_types::AccountId,
+        ) -> strata_acct_types::AcctResult<bool> {
+            unimplemented!()
+        }
+
+        fn get_account_id_from_serial(
+            &self,
+            _serial: strata_acct_types::AccountSerial,
+        ) -> strata_acct_types::AcctResult<Option<strata_acct_types::AccountId>> {
+            unimplemented!()
+        }
+
+        fn get_account_state(
+            &self,
+            _id: strata_acct_types::AccountId,
+        ) -> strata_acct_types::AcctResult<Option<&Self::AccountState>> {
+            unimplemented!()
+        }
+
+        fn get_account_state_mut(
+            &mut self,
+            _id: strata_acct_types::AccountId,
+        ) -> strata_acct_types::AcctResult<Option<&mut Self::AccountState>> {
+            unimplemented!()
+        }
+
+        fn update_account_state(
+            &mut self,
+            _id: strata_acct_types::AccountId,
+            _state: Self::AccountState,
+        ) -> strata_acct_types::AcctResult<()> {
+            unimplemented!()
+        }
+
+        fn create_new_account(
+            &mut self,
+            _id: strata_acct_types::AccountId,
+            _state: strata_ledger_types::AccountTypeState<Self::AccountState>,
+        ) -> strata_acct_types::AcctResult<strata_acct_types::AccountSerial> {
+            unimplemented!()
+        }
+
+        fn compute_state_root(&self) -> strata_primitives::Buf32 {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn test_valid_tx_extra_no_constraints() {
+        let state = MinimalStateAccessor::with_slot(100);
+        let extra = TransactionExtra::default();
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_tx_extra_within_range() {
+        let state = MinimalStateAccessor::with_slot(100);
+        let extra = TransactionExtra::new(Some(50), Some(150));
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_tx_extra_min_slot_too_high() {
+        let state = MinimalStateAccessor::with_slot(100);
+
+        // min_slot is 150, current is 100
+        let extra = TransactionExtra::new(Some(150), None);
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StfError::InvalidTxExtra => {}
+            err => panic!("Expected InvalidTxExtra, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_invalid_tx_extra_max_slot_too_low() {
+        let state = MinimalStateAccessor::with_slot(100);
+
+        // max_slot is 50, current is 100
+        let extra = TransactionExtra::new(None, Some(50));
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StfError::InvalidTxExtra => {}
+            err => panic!("Expected InvalidTxExtra, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_valid_tx_extra_boundary_min() {
+        let state = MinimalStateAccessor::with_slot(100);
+
+        // min_slot equals current slot
+        let extra = TransactionExtra::new(Some(100), None);
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_tx_extra_boundary_max() {
+        let state = MinimalStateAccessor::with_slot(100);
+
+        // max_slot equals current slot
+        let extra = TransactionExtra::new(None, Some(100));
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
+    }
 }
