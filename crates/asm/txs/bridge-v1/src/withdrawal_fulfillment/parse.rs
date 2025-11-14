@@ -1,40 +1,25 @@
 use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::{ScriptBuf, Txid, hashes::Hash};
+use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
-use strata_bridge_types::OperatorIdx;
-use strata_primitives::l1::{BitcoinAmount, BitcoinTxid};
+use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
     constants::WITHDRAWAL_TX_TYPE, errors::WithdrawalParseError,
     withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
 };
 
-const OPERATOR_IDX_SIZE: usize = 4;
 const DEPOSIT_IDX_SIZE: usize = 4;
-const DEPOSIT_TXID_SIZE: usize = 32;
-
-const OPERATOR_IDX_OFFSET: usize = 0;
-const DEPOSIT_IDX_OFFSET: usize = OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE;
-const DEPOSIT_TXID_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
 
 /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
-pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
-    OPERATOR_IDX_SIZE + DEPOSIT_IDX_SIZE + DEPOSIT_TXID_SIZE;
+pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE;
 
 /// Information extracted from a Bitcoin withdrawal transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalFulfillmentInfo {
-    /// The index of the operator who processed this withdrawal.
-    pub operator_idx: OperatorIdx,
-
     /// The index of the deposit that the operator wishes to receive payout from later.
     /// This must be validated against the operator's assigned deposits in the state's assignments
     /// table to ensure the operator is authorized to claim this specific deposit.
     pub deposit_idx: u32,
-
-    /// The transaction ID of the deposit that the operator wishes to claim for payout.
-    /// This must match the deposit referenced by `deposit_idx` in the assignments table.
-    pub deposit_txid: BitcoinTxid,
 
     /// The Bitcoin script address where the withdrawn funds are being sent.
     pub withdrawal_destination: ScriptBuf,
@@ -49,9 +34,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 
         let withdrawal_destination = Descriptor::arbitrary(u)?.to_script();
         Ok(WithdrawalFulfillmentInfo {
-            operator_idx: u32::arbitrary(u)?,
             deposit_idx: u32::arbitrary(u)?,
-            deposit_txid: BitcoinTxid::arbitrary(u)?,
             withdrawal_destination,
             withdrawal_amount: BitcoinAmount::from_sat(u64::arbitrary(u)?),
         })
@@ -66,9 +49,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// structure.
 ///
 /// The function validates the transaction structure and parses the auxiliary data containing:
-/// - Operator index (4 bytes, big-endian u32)
 /// - Deposit index (4 bytes, big-endian u32)
-/// - Deposit transaction ID (32 bytes)
 ///
 /// # Parameters
 ///
@@ -95,43 +76,27 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
     }
 
     let withdrawal_auxdata = tx.tag().aux_data();
-
     if withdrawal_auxdata.len() != WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN {
         return Err(WithdrawalParseError::InvalidAuxiliaryData(
             withdrawal_auxdata.len(),
         ));
     }
 
+    let mut deposit_idx_bytes = [0u8; DEPOSIT_IDX_SIZE];
+    deposit_idx_bytes.copy_from_slice(&withdrawal_auxdata[0..DEPOSIT_IDX_SIZE]);
+    let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
+
     let withdrawal_fulfillment_output = &tx
         .tx()
         .output
         .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
         .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
-    let mut operator_idx_bytes = [0u8; OPERATOR_IDX_SIZE];
-    operator_idx_bytes.copy_from_slice(
-        &withdrawal_auxdata[OPERATOR_IDX_OFFSET..OPERATOR_IDX_OFFSET + OPERATOR_IDX_SIZE],
-    );
-    let operator_idx = u32::from_be_bytes(operator_idx_bytes);
-
-    let mut deposit_idx_bytes = [0u8; DEPOSIT_IDX_SIZE];
-    deposit_idx_bytes.copy_from_slice(
-        &withdrawal_auxdata[DEPOSIT_IDX_OFFSET..DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE],
-    );
-    let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
-
-    let mut deposit_txid_bytes = [0u8; DEPOSIT_TXID_SIZE];
-    deposit_txid_bytes.copy_from_slice(
-        &withdrawal_auxdata[DEPOSIT_TXID_OFFSET..DEPOSIT_TXID_OFFSET + DEPOSIT_TXID_SIZE],
-    );
-    let deposit_txid = Txid::from_byte_array(deposit_txid_bytes);
 
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
     Ok(WithdrawalFulfillmentInfo {
-        operator_idx,
         deposit_idx,
-        deposit_txid: deposit_txid.into(),
         withdrawal_destination,
         withdrawal_amount,
     })
@@ -141,7 +106,6 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
 mod tests {
 
     use strata_asm_common::TxInputRef;
-    use strata_bridge_types::OperatorIdx;
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -159,14 +123,8 @@ mod tests {
     /// which would break the wire format compatibility for auxiliary data parsing.
     #[test]
     fn test_valid_size() {
-        let operator_idx_size: usize = std::mem::size_of::<OperatorIdx>();
-        assert_eq!(operator_idx_size, OPERATOR_IDX_SIZE);
-
         let deposit_idx_size: usize = std::mem::size_of::<u32>();
         assert_eq!(deposit_idx_size, DEPOSIT_IDX_SIZE);
-
-        let deposit_txid_size: usize = std::mem::size_of::<Txid>();
-        assert_eq!(deposit_txid_size, DEPOSIT_TXID_SIZE)
     }
 
     #[test]

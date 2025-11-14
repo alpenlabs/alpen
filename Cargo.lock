@@ -13470,7 +13470,6 @@ dependencies = [
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "strata-asm-common",
- "strata-bridge-types",
  "strata-crypto",
  "strata-l1-txfmt",
  "strata-primitives",

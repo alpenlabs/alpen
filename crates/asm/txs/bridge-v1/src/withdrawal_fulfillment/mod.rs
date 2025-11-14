@@ -6,7 +6,7 @@
 //! ## Withdrawal Transaction Structure
 //!
 //! A withdrawal transaction is a **frontpayment transaction** where an operator pays out
-//! the withdrawal request before being able to withdraw the corresponding locked deposit.
+//! the user's withdrawal request before being able to withdraw the corresponding locked deposit.
 //! This transaction has the following structure:
 //!
 //! ### Inputs
@@ -20,10 +20,9 @@
 //!    - Magic number (4 bytes): Protocol instance identifier
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier
 //!    - Transaction type (1 byte): Withdrawal transaction type
-//!    - Auxiliary data (≤74 bytes):
-//!      - Operator index (4 bytes, big-endian u32): Index of the operator processing the withdrawal
-//!      - Deposit index (4 bytes, big-endian u32): Index of the original deposit being withdrawn
-//!      - Deposit transaction ID (32 bytes): TXID of the deposit transaction being spent
+//!    - Auxiliary data (=4 bytes):
+//!      - Deposit index (4 bytes, big-endian u32): Index of the deposit that has been assigned to
+//!        the operator
 //!
 //! 2. **Withdrawal Fulfillment Output (Index 1)** (required): The actual withdrawal containing:
 //!    - The recipient's Bitcoin address (script_pubkey)

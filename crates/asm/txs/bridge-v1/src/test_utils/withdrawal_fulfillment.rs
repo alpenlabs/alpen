@@ -36,10 +36,8 @@ pub fn create_test_withdrawal_fulfillment_tx(
     tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID
     tagged_payload.push(WITHDRAWAL_TX_TYPE); // 1 byte transaction type
 
-    // Auxiliary data: [OPERATOR_IDX][DEPOSIT_IDX][DEPOSIT_TXID]
-    tagged_payload.extend_from_slice(&withdrawal_info.operator_idx.to_be_bytes()); // 4 bytes
+    // Auxiliary data: [DEPOSIT_IDX]
     tagged_payload.extend_from_slice(&withdrawal_info.deposit_idx.to_be_bytes()); // 4 bytes
-    tagged_payload.extend_from_slice(withdrawal_info.deposit_txid.inner_raw().as_bytes()); // 32 bytes
 
     // Create OP_RETURN script with the tagged payload
     let op_return_script = ScriptBuf::new_op_return(
