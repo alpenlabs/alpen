@@ -45,8 +45,8 @@ pub use registry::{
 pub use task_id::TaskId;
 
 // Re-export framework types
-pub use config::{PaaSConfig, RetryConfig, WorkerConfig};
-pub use error::{PaaSError, PaaSResult};
+pub use config::{ProverServiceConfig, RetryConfig, WorkerConfig};
+pub use error::{ProverServiceError, ProverServiceResult};
 pub use service::{ProverService, ProverServiceStatus};
 pub use state::{ProverServiceState, StatusSummary};
 pub use task::TaskStatus;
@@ -64,5 +64,5 @@ pub trait Prover: Send + Sync + 'static {
     fn prove(
         &self,
         task_id: Self::TaskId,
-    ) -> impl std::future::Future<Output = PaaSResult<()>> + Send;
+    ) -> impl std::future::Future<Output = ProverServiceResult<()>> + Send;
 }

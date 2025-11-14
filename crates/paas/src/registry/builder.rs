@@ -6,8 +6,8 @@ use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 use zkaleido::ZkVmProgram;
 
-use crate::config::PaaSConfig;
-use crate::error::PaaSResult;
+use crate::config::ProverServiceConfig;
+use crate::error::ProverServiceResult;
 use crate::service::ProverService;
 use crate::state::ProverServiceState;
 use crate::ZkVmBackend;
@@ -43,12 +43,12 @@ use super::prover::RegistryProver;
 /// ```
 pub struct ProverServiceBuilder<P: ProgramType> {
     registry: ProgramRegistry<P>,
-    config: PaaSConfig<ZkVmBackend>,
+    config: ProverServiceConfig<ZkVmBackend>,
 }
 
 impl<P: ProgramType> ProverServiceBuilder<P> {
     /// Create a new builder with the given configuration
-    pub fn new(config: PaaSConfig<ZkVmBackend>) -> Self {
+    pub fn new(config: ProverServiceConfig<ZkVmBackend>) -> Self {
         Self {
             registry: ProgramRegistry::new(),
             config,
@@ -105,7 +105,7 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
     pub async fn launch(
         self,
         executor: &TaskExecutor,
-    ) -> PaaSResult<ProverHandle<P>> {
+    ) -> ProverServiceResult<ProverHandle<P>> {
         let prover = Arc::new(RegistryProver::new(Arc::new(self.registry)));
         let state = ProverServiceState::new(prover.clone(), self.config);
 
@@ -121,7 +121,7 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
         let monitor = service_builder
             .launch_async("prover", executor)
             .await
-            .map_err(crate::error::PaaSError::Internal)?;
+            .map_err(crate::error::ProverServiceError::Internal)?;
 
         // Return handle
         Ok(ProverHandle::new(command_handle, monitor))

@@ -7,7 +7,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_paas::{PaaSError, PaaSResult, ProofStore};
+use strata_paas::{ProverServiceError, ProverServiceResult, ProofStore};
 use strata_primitives::proof::ProofContext;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -42,7 +42,7 @@ impl ProofStore<ProofTask> for ProofStoreService {
         &'a self,
         program: &'a ProofTask,
         proof: ProofReceiptWithMetadata,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
@@ -52,7 +52,7 @@ impl ProofStore<ProofTask> for ProofStoreService {
             // Store proof in database
             self.db
                 .put_proof(proof_key, proof)
-                .map_err(|e| PaaSError::PermanentFailure(e.to_string()))?;
+                .map_err(|e| ProverServiceError::PermanentFailure(e.to_string()))?;
 
             // If this is a checkpoint proof, submit it to the CL client
             if let ProofContext::Checkpoint(checkpoint_idx) = proof_context {
@@ -65,7 +65,7 @@ impl ProofStore<ProofTask> for ProofStoreService {
                             "Failed to submit checkpoint proof to CL: {}",
                             e
                         );
-                        PaaSError::TransientFailure(format!(
+                        ProverServiceError::TransientFailure(format!(
                             "Checkpoint proof stored but CL submission failed: {}",
                             e
                         ))

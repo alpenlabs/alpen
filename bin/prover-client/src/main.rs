@@ -14,7 +14,7 @@ use service::{CheckpointInputProvider, ClStfInputProvider, EvmEeInputProvider, P
 use service::{ProofContextVariant, ProofTask};
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
-use strata_paas::{PaaSConfig, ProverServiceBuilder, ZkVmBackend};
+use strata_paas::{ProverServiceConfig, ProverServiceBuilder, ZkVmBackend};
 use strata_primitives::proof::ProofZkVm;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
@@ -128,7 +128,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         *workers.get(&ProofZkVm::Native).unwrap_or(&1),
     );
 
-    let paas_config = PaaSConfig::new(worker_counts);
+    let paas_config = ProverServiceConfig::new(worker_counts);
 
     // Create runtime and task manager
     let runtime = tokio::runtime::Builder::new_multi_thread()

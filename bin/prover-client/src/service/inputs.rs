@@ -7,7 +7,7 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_paas::{InputProvider, PaaSError, PaaSResult};
+use strata_paas::{InputProvider, ProverServiceError, ProverServiceResult};
 use zkaleido::ZkVmProgram;
 
 use crate::errors::ProvingTaskError;
@@ -16,17 +16,17 @@ use crate::operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, ev
 use super::proof_key_for;
 use super::task::ProofTask;
 
-/// Convert ProvingTaskError to PaaSError
+/// Convert ProvingTaskError to ProverServiceError
 ///
 /// Classifies errors as transient (retriable) or permanent based on the error type.
 /// Transient errors include RPC failures and missing dependencies, which may resolve
 /// on retry. All other errors are considered permanent.
-fn to_paas_error(e: ProvingTaskError) -> PaaSError {
+fn to_paas_error(e: ProvingTaskError) -> ProverServiceError {
     match e {
         ProvingTaskError::RpcError(_)
         | ProvingTaskError::ProofNotFound(_)
-        | ProvingTaskError::DependencyNotFound(_) => PaaSError::TransientFailure(e.to_string()),
-        _ => PaaSError::PermanentFailure(e.to_string()),
+        | ProvingTaskError::DependencyNotFound(_) => ProverServiceError::TransientFailure(e.to_string()),
+        _ => ProverServiceError::PermanentFailure(e.to_string()),
     }
 }
 
@@ -56,7 +56,7 @@ where
     fn provide_input<'a>(
         &'a self,
         program: &'a ProofTask,
-    ) -> Pin<Box<dyn Future<Output = PaaSResult<Prog::Input>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ProverServiceResult<Prog::Input>> + Send + 'a>> {
         Box::pin(async move {
             let proof_context = program.0;
             let proof_key = proof_key_for(proof_context);

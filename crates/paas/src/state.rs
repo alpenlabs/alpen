@@ -7,8 +7,8 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use strata_service::ServiceState;
 
-use crate::config::PaaSConfig;
-use crate::error::{PaaSError, PaaSResult};
+use crate::config::ProverServiceConfig;
+use crate::error::{ProverServiceError, ProverServiceResult};
 use crate::task::{TaskIdentifier, TaskStatus};
 use crate::Prover;
 
@@ -29,7 +29,7 @@ pub struct ProverServiceState<P: Prover> {
     pub(crate) prover: Arc<P>,
 
     /// Configuration
-    pub(crate) config: PaaSConfig<P::Backend>,
+    pub(crate) config: ProverServiceConfig<P::Backend>,
 
     /// Task tracker (thread-safe)
     pub(crate) tasks: TaskMap<P::TaskId>,
@@ -40,7 +40,7 @@ pub struct ProverServiceState<P: Prover> {
 
 impl<P: Prover> ProverServiceState<P> {
     /// Create new service state
-    pub fn new(prover: Arc<P>, config: PaaSConfig<P::Backend>) -> Self {
+    pub fn new(prover: Arc<P>, config: ProverServiceConfig<P::Backend>) -> Self {
         Self {
             prover,
             config,
@@ -50,11 +50,11 @@ impl<P: Prover> ProverServiceState<P> {
     }
 
     /// Submit a new task
-    pub fn submit_task(&self, task_id: P::TaskId) -> PaaSResult<()> {
+    pub fn submit_task(&self, task_id: P::TaskId) -> ProverServiceResult<()> {
         let mut tasks = self.tasks.lock().unwrap();
 
         if tasks.contains_key(&task_id) {
-            return Err(PaaSError::Config("Task already exists".into()));
+            return Err(ProverServiceError::Config("Task already exists".into()));
         }
 
         tasks.insert(
@@ -70,20 +70,20 @@ impl<P: Prover> ProverServiceState<P> {
     }
 
     /// Get task status
-    pub fn get_status(&self, task_id: &P::TaskId) -> PaaSResult<TaskStatus> {
+    pub fn get_status(&self, task_id: &P::TaskId) -> ProverServiceResult<TaskStatus> {
         let tasks = self.tasks.lock().unwrap();
         tasks
             .get(task_id)
             .map(|info| info.status.clone())
-            .ok_or_else(|| PaaSError::TaskNotFound(format!("{:?}", task_id)))
+            .ok_or_else(|| ProverServiceError::TaskNotFound(format!("{:?}", task_id)))
     }
 
     /// Update task status
-    pub fn update_status(&self, task_id: &P::TaskId, status: TaskStatus) -> PaaSResult<()> {
+    pub fn update_status(&self, task_id: &P::TaskId, status: TaskStatus) -> ProverServiceResult<()> {
         let mut tasks = self.tasks.lock().unwrap();
         let task = tasks
             .get_mut(task_id)
-            .ok_or_else(|| PaaSError::TaskNotFound(format!("{:?}", task_id)))?;
+            .ok_or_else(|| ProverServiceError::TaskNotFound(format!("{:?}", task_id)))?;
 
         task.status = status;
         task.updated_at = Instant::now();
@@ -120,7 +120,7 @@ impl<P: Prover> ProverServiceState<P> {
     }
 
     /// Get configuration
-    pub fn config(&self) -> &PaaSConfig<P::Backend> {
+    pub fn config(&self) -> &ProverServiceConfig<P::Backend> {
         &self.config
     }
 
