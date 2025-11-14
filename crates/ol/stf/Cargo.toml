@@ -20,6 +20,7 @@ strata-snark-acct-types.workspace = true
 [dev-dependencies]
 bitcoin.workspace = true
 sha2.workspace = true
+strata-merkle.workspace = true
 
 strata-btc-types.workspace = true
 strata-predicate.workspace = true

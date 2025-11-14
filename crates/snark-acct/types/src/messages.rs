@@ -48,8 +48,21 @@ impl MessageEntry {
     }
 
     // FIXME: just a placeholder until ssz
+    // Simple serialization for testing - NOT the real SSZ format
     pub fn to_ssz_bytes(&self) -> Vec<u8> {
-        todo!()
+        let mut bytes = Vec::new();
+        // Serialize source account ID (32 bytes)
+        bytes.extend_from_slice(self.source.inner());
+        // Serialize epoch (8 bytes)
+        bytes.extend_from_slice(&self.incl_epoch.to_le_bytes());
+        // Serialize payload value (8 bytes)
+        bytes.extend_from_slice(&self.payload.value().to_sat().to_le_bytes());
+        // Serialize payload data length (8 bytes)
+        let data_len = self.payload.data().len() as u64;
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        // Serialize payload data
+        bytes.extend_from_slice(self.payload.data());
+        bytes
     }
 }
 
