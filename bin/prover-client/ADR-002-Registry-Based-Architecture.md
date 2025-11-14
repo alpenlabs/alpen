@@ -111,13 +111,13 @@ let builder = RegistryProverServiceBuilder::<ProofContext>::new(paas_config)
         ProofContextVariant::Checkpoint,
         checkpoint_fetcher,
         proof_store.clone(),
-        resolve_host!(host_resolver::sample_checkpoint()),
+        resolve_host!(ProofContextVariant::Checkpoint),
     )
     .register::<ClStfProgram, _, _, _>(
         ProofContextVariant::ClStf,
         cl_stf_fetcher,
         proof_store.clone(),
-        resolve_host!(host_resolver::sample_cl_stf()),
+        resolve_host!(ProofContextVariant::ClStf),
     );
 
 let handle = builder.launch(&executor).await?;
@@ -190,37 +190,44 @@ where
 
 ### Integration Components
 
-#### Host Resolver (`bin/prover-client/src/host_resolver.rs`)
+#### Host Resolver (`bin/prover-client/src/service/mod.rs`)
 
-Centralizes zkVM host resolution with feature flags:
+Centralizes zkVM host resolution with feature flags using `ProofContextVariant`:
 
 ```rust
-/// Get a sample ProofContext for checkpoint (used for host initialization)
-pub(crate) fn sample_checkpoint() -> ProofContext {
-    ProofContext::Checkpoint(0)
-}
-
-/// Macro to resolve host based on feature flags
+/// Macro to resolve zkVM host based on proof context variant and feature flags
 #[macro_export]
 macro_rules! resolve_host {
-    ($ctx:expr) => {{
+    ($variant:expr) => {{
+        // Create a sample ProofContext for host initialization
+        let ctx = match $variant {
+            ProofContextVariant::Checkpoint => ProofContext::Checkpoint(0),
+            ProofContextVariant::ClStf => {
+                let null = strata_primitives::l2::L2BlockCommitment::null();
+                ProofContext::ClStf(null, null)
+            }
+            ProofContextVariant::EvmEeStf => {
+                let null = strata_primitives::evm_exec::EvmEeBlockCommitment::null();
+                ProofContext::EvmEeStf(null, null)
+            }
+        };
+
+        // Resolve host based on feature flags
         #[cfg(feature = "sp1")]
-        {
-            std::sync::Arc::from(strata_zkvm_hosts::sp1::get_host(&$ctx))
-        }
+        { std::sync::Arc::from(strata_zkvm_hosts::sp1::get_host(&ctx)) }
         #[cfg(not(feature = "sp1"))]
-        {
-            std::sync::Arc::from(strata_zkvm_hosts::native::get_host(&$ctx))
-        }
+        { std::sync::Arc::from(strata_zkvm_hosts::native::get_host(&ctx)) }
     }};
 }
 ```
 
 **Usage:**
 ```rust
-resolve_host!(host_resolver::sample_checkpoint())
+resolve_host!(ProofContextVariant::Checkpoint)
 // Returns Arc<NativeHost> or Arc<SP1Host> depending on features
 ```
+
+The macro automatically creates sample contexts internally, eliminating the need for separate helper functions.
 
 #### Unified Proof Storage (`bin/prover-client/src/paas_integration.rs`)
 
@@ -301,19 +308,19 @@ let builder = RegistryProverServiceBuilder::<ProofContext>::new(paas_config)
         ProofContextVariant::Checkpoint,
         checkpoint_fetcher,
         proof_store.clone(),
-        resolve_host!(host_resolver::sample_checkpoint()),
+        resolve_host!(ProofContextVariant::Checkpoint),
     )
     .register::<ClStfProgram, _, _, _>(
         ProofContextVariant::ClStf,
         cl_stf_fetcher,
         proof_store.clone(),
-        resolve_host!(host_resolver::sample_cl_stf()),
+        resolve_host!(ProofContextVariant::ClStf),
     )
     .register::<EvmEeProgram, _, _, _>(
         ProofContextVariant::EvmEeStf,
         evm_ee_fetcher,
         proof_store,
-        resolve_host!(host_resolver::sample_evm_ee()),
+        resolve_host!(ProofContextVariant::EvmEeStf),
     );
 
 let paas_handle = builder.launch(&executor).await?;
@@ -378,7 +385,7 @@ match status {
    - Compile-time verification of handler correctness
 
 4. **Better Code Organization**
-   - Host resolution centralized in `host_resolver.rs`
+   - Host resolution centralized in `service/mod.rs`
    - Proof storage unified in `ProofStoreService`
    - Clear separation between fetching, proving, storing
 
@@ -576,7 +583,7 @@ handle.submit_task(
    - Updated `primitives.rs` - ProgramType impl
 
 2. **Prover Client** (`bin/prover-client/`):
-   - Added `host_resolver.rs` - Host resolution helpers
+   - Moved host resolution macro to `service/mod.rs` with ProofContextVariant
    - Refactored `paas_integration.rs` - Registry traits
    - Updated `main.rs` - Registry-based registration
    - Updated `rpc_server.rs` - Use RegistryProverHandle
@@ -630,7 +637,7 @@ handle.submit_task(
 ## References
 
 - PaaS registry: `crates/paas/src/registry*.rs`
-- Host resolver: `bin/prover-client/src/host_resolver.rs`
+- Host resolver: `bin/prover-client/src/service/mod.rs` (resolve_host! macro)
 - Integration: `bin/prover-client/src/paas_integration.rs`
 - Builder example: `bin/prover-client/src/main.rs:143-161`
 - Type erasure explanation: [Rust by Example - Any](https://doc.rust-lang.org/std/any/index.html)
@@ -732,7 +739,7 @@ let builder = builder.register::<MyNewProgram, _, _, _>(
     ProofContextVariant::MyNew,
     my_new_fetcher,
     proof_store.clone(),
-    resolve_host!(host_resolver::sample_my_new()),
+    resolve_host!(ProofContextVariant::MyNew),
 );
 ```
 

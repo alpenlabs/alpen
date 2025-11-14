@@ -43,12 +43,12 @@ handle.submit_task(
 
 1. **Registration at Startup** (`main.rs`):
 ```rust
-let builder = RegistryProverServiceBuilder::<ProofContext>::new(paas_config)
+let builder = ProverServiceBuilder::<ProofContext>::new(paas_config)
     .register::<CheckpointProgram, _, _, _>(
         ProofContextVariant::Checkpoint,
         checkpoint_fetcher,
         proof_store.clone(),
-        resolve_host!(host_resolver::sample_checkpoint()),
+        resolve_host!(ProofContextVariant::Checkpoint),
     );
 ```
 

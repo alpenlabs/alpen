@@ -72,3 +72,43 @@ pub(crate) fn paas_backend_to_zkvm(backend: &ZkVmBackend) -> ProofZkVm {
         ZkVmBackend::Risc0 => panic!("Risc0 backend is not supported"),
     }
 }
+
+/// Macro to resolve zkVM host based on proof context variant and feature flags
+///
+/// Takes a `ProofContextVariant` and returns an `Arc<Host>` for the appropriate
+/// backend (SP1 or Native) based on compile-time feature flags.
+///
+/// # Example
+/// ```ignore
+/// use crate::service::ProofContextVariant;
+/// let host = resolve_host!(ProofContextVariant::Checkpoint);
+/// ```
+#[macro_export]
+macro_rules! resolve_host {
+    ($variant:expr) => {{
+        // Create a sample ProofContext for host initialization
+        let ctx = match $variant {
+            $crate::service::ProofContextVariant::Checkpoint => {
+                strata_primitives::proof::ProofContext::Checkpoint(0)
+            }
+            $crate::service::ProofContextVariant::ClStf => {
+                let null = strata_primitives::l2::L2BlockCommitment::null();
+                strata_primitives::proof::ProofContext::ClStf(null, null)
+            }
+            $crate::service::ProofContextVariant::EvmEeStf => {
+                let null = strata_primitives::evm_exec::EvmEeBlockCommitment::null();
+                strata_primitives::proof::ProofContext::EvmEeStf(null, null)
+            }
+        };
+
+        // Resolve host based on feature flags
+        #[cfg(feature = "sp1")]
+        {
+            std::sync::Arc::from(strata_zkvm_hosts::sp1::get_host(&ctx))
+        }
+        #[cfg(not(feature = "sp1"))]
+        {
+            std::sync::Arc::from(strata_zkvm_hosts::native::get_host(&ctx))
+        }
+    }};
+}
