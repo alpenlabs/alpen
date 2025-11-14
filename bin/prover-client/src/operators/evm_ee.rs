@@ -50,14 +50,16 @@ impl EvmEeOperator {
         Ok(block.header)
     }
 
-    /// Fetches the input required for EVM EE STF proof generation.
-    ///
-    /// This is used by the PaaS integration layer to fetch inputs for proving tasks.
-    pub(crate) async fn fetch_input(
+}
+
+impl ProofInputFetcher for EvmEeOperator {
+    type Input = EvmEeProofInput;
+
+    async fn fetch_input(
         &self,
         task_id: &ProofKey,
         _db: &ProofDBSled,
-    ) -> Result<EvmEeProofInput, ProvingTaskError> {
+    ) -> Result<Self::Input, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
             strata_primitives::proof::ProofContext::EvmEeStf(start, end) => (*start, *end),
             _ => return Err(ProvingTaskError::InvalidInput("EvmEe".to_string())),
@@ -90,18 +92,5 @@ impl EvmEeOperator {
         mini_batch.reverse();
 
         Ok(mini_batch)
-    }
-}
-
-impl ProofInputFetcher for EvmEeOperator {
-    type Input = EvmEeProofInput;
-
-    async fn fetch_input(
-        &self,
-        task_id: &ProofKey,
-        db: &ProofDBSled,
-    ) -> Result<Self::Input, ProvingTaskError> {
-        // Delegate to the existing method
-        self.fetch_input(task_id, db).await
     }
 }
