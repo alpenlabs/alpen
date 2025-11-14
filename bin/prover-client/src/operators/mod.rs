@@ -12,9 +12,12 @@
 //! - Native
 //! - SP1 (requires `sp1` feature enabled)
 
-use std::future::Future;
+use std::{future::Future, sync::Arc};
 
+use bitcoind_async_client::Client;
+use jsonrpsee::http_client::HttpClient;
 use strata_db_store_sled::prover::ProofDBSled;
+use strata_params::RollupParams;
 use strata_primitives::proof::ProofKey;
 
 use crate::errors::ProvingTaskError;
@@ -22,9 +25,10 @@ use crate::errors::ProvingTaskError;
 pub(crate) mod checkpoint;
 pub(crate) mod cl_stf;
 pub(crate) mod evm_ee;
-pub(crate) mod operator;
 
-pub(crate) use operator::ProofOperator;
+pub(crate) use checkpoint::CheckpointOperator;
+pub(crate) use cl_stf::ClStfOperator;
+pub(crate) use evm_ee::EvmEeOperator;
 
 /// Trait for operators that can fetch proof inputs
 ///
@@ -46,5 +50,33 @@ pub(crate) trait ProofInputFetcher: Send + Sync {
         task_id: &ProofKey,
         db: &ProofDBSled,
     ) -> impl Future<Output = Result<Self::Input, ProvingTaskError>> + Send;
+}
+
+/// Initialize all proof operators
+///
+/// Creates and configures the EVM EE, CL STF, and Checkpoint operators
+/// with proper dependency injection between them.
+///
+/// Returns: (CheckpointOperator, ClStfOperator, EvmEeOperator)
+pub(crate) fn init_operators(
+    _btc_client: Client,
+    evm_ee_client: HttpClient,
+    cl_client: HttpClient,
+    rollup_params: RollupParams,
+) -> (CheckpointOperator, ClStfOperator, EvmEeOperator) {
+    let rollup_params = Arc::new(rollup_params);
+
+    let evm_ee_operator = EvmEeOperator::new(evm_ee_client.clone());
+    let cl_stf_operator = ClStfOperator::new(
+        cl_client.clone(),
+        Arc::new(evm_ee_operator.clone()),
+        rollup_params.clone(),
+    );
+    let checkpoint_operator = CheckpointOperator::new(
+        cl_client.clone(),
+        Arc::new(cl_stf_operator.clone()),
+    );
+
+    (checkpoint_operator, cl_stf_operator, evm_ee_operator)
 }
 
