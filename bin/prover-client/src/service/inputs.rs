@@ -1,4 +1,4 @@
-//! Input providers for PaaS service
+//! Input providers for Prover Service
 //!
 //! This module implements InputProvider for each program type,
 //! bridging between operators (which work with ProofContext) and PaaS

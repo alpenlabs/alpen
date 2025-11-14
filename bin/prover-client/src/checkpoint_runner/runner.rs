@@ -65,14 +65,14 @@ async fn process_checkpoint(
         return Ok(());
     }
 
-    // Submit checkpoint task using PaaS
+    // Submit checkpoint task using Prover Service
     submit_checkpoint_task(fetched_ckpt, operator, prover_handle, db).await?;
     runner_state.current_checkpoint_idx = Some(fetched_ckpt);
 
     Ok(())
 }
 
-/// Submit a checkpoint task to PaaS, handling dependencies
+/// Submit a checkpoint task to Prover Service, handling dependencies
 async fn submit_checkpoint_task(
     checkpoint_idx: u64,
     operator: &CheckpointOperator,
@@ -114,7 +114,7 @@ async fn submit_checkpoint_task(
     }
 
     // Submit main checkpoint task
-    // Convert ProofContext to ProofTask for PaaS
+    // Convert ProofContext to ProofTask for Prover Service
     prover_handle
         .submit_task(ProofTask(proof_ctx), zkvm_backend())
         .await
@@ -152,8 +152,8 @@ fn submit_proof_context_recursive<'a>(
             submit_proof_context_recursive(*dep_ctx, prover_handle, db).await?;
         }
 
-        // Submit main task to PaaS
-        // Convert ProofContext to ProofTask for PaaS
+        // Submit main task to Prover Service
+        // Convert ProofContext to ProofTask for Prover Service
         prover_handle
             .submit_task(ProofTask(proof_ctx), zkvm_backend())
             .await

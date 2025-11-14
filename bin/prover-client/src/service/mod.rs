@@ -1,8 +1,8 @@
-//! Service layer for PaaS integration
+//! Service layer for Prover Service integration
 //!
-//! This module bridges between PaaS (which works with ProofTask) and the
+//! This module bridges between Prover Service (which works with ProofTask) and the
 //! operators (which work with ProofContext), implementing the input provisioning
-//! and proof storage for the PaaS service.
+//! and proof storage for the Prover Service.
 //!
 //! ## Structure
 //!
@@ -31,7 +31,7 @@ pub(crate) use task::{ProofContextVariant, ProofTask};
 /// Get the current zkVM backend based on feature flags
 ///
 /// Returns `ZkVmBackend::SP1` if the `sp1` feature is enabled, otherwise `Native`.
-/// Use this when submitting tasks to PaaS.
+/// Use this when submitting tasks to Prover Service.
 ///
 /// # Example
 /// ```ignore

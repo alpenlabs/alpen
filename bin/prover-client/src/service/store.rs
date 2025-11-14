@@ -1,4 +1,4 @@
-//! ProofStore implementation for PaaS
+//! ProofStore implementation for Prover Service
 //!
 //! This module implements ProofStore, handling proof persistence
 //! and checkpoint submission to the CL client.

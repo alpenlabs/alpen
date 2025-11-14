@@ -4,7 +4,7 @@
 //! for fetching data needed for proof generation.
 //!
 //! NOTE: The original ProvingOp trait and task creation methods have been removed
-//! as they are now handled by the PaaS (Prover-as-a-Service) framework.
+//! as they are now handled by the PaaS  framework.
 //! This module now only contains minimal accessor methods for RPC clients.
 //!
 //! Supported ZKVMs:
