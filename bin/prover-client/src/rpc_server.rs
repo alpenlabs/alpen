@@ -24,7 +24,7 @@ use zkaleido::ProofReceipt;
 
 use crate::{
     operators::ProofOperator,
-    service::{current_paas_backend, paas_backend_to_zkvm, ProofTask},
+    service::{backend_to_zkvm, zkvm_backend, ProofTask},
 };
 
 pub(crate) async fn start<T>(
@@ -101,8 +101,8 @@ impl ProverClientRpc {
         proof_ctx: ProofContext,
     ) -> Pin<Box<dyn Future<Output = Result<ProofKey, anyhow::Error>> + 'a + Send>> {
         Box::pin(async move {
-            let backend = current_paas_backend();
-            let zkvm = paas_backend_to_zkvm(&backend);
+            let backend = zkvm_backend();
+            let zkvm = backend_to_zkvm(&backend);
 
             let proof_key = ProofKey::new(proof_ctx, zkvm);
 
@@ -308,7 +308,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
             Some(_) => Ok("Completed".to_string()),
             // If proof is not in DB, check PaaS status
             None => {
-                let backend = current_paas_backend();
+                let backend = zkvm_backend();
                 // Wrap ProofContext in ProofTask for PaaS
                 let task_id = TaskId::new(ProofTask(*key.context()), backend);
 

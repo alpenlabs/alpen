@@ -28,12 +28,18 @@ pub(crate) use task::{ProofContextVariant, ProofTask};
 // Backend Resolution - Unified API
 // ============================================================================
 
-/// Get the current backend for PaaS operations
+/// Get the current zkVM backend based on feature flags
 ///
 /// Returns `ZkVmBackend::SP1` if the `sp1` feature is enabled, otherwise `Native`.
-/// Use this when interacting with PaaS APIs.
+/// Use this when interacting with PaaS APIs or submitting tasks.
+///
+/// # Example
+/// ```ignore
+/// let backend = zkvm_backend();
+/// prover_handle.submit_task(task, backend).await?;
+/// ```
 #[inline]
-pub(crate) fn current_paas_backend() -> ZkVmBackend {
+pub(crate) fn zkvm_backend() -> ZkVmBackend {
     #[cfg(feature = "sp1")]
     {
         ZkVmBackend::SP1
@@ -44,28 +50,23 @@ pub(crate) fn current_paas_backend() -> ZkVmBackend {
     }
 }
 
-/// Get the current zkVM for proof key creation
+/// Convert ZkVmBackend to ProofZkVm for database operations
 ///
-/// Returns `ProofZkVm::SP1` if the `sp1` feature is enabled, otherwise `Native`.
-/// Use this when creating ProofKeys or working with the database.
-#[inline]
-pub(crate) fn current_zkvm() -> ProofZkVm {
-    #[cfg(feature = "sp1")]
-    {
-        ProofZkVm::SP1
-    }
-    #[cfg(not(feature = "sp1"))]
-    {
-        ProofZkVm::Native
-    }
-}
-
-/// Convert PaaS backend to zkVM type
+/// Use this when creating ProofKeys or interacting with the proof database.
+/// Typically used as `backend_to_zkvm(&zkvm_backend())` to get the current zkVM type.
+///
+/// # Example
+/// ```ignore
+/// let backend = zkvm_backend();
+/// let zkvm = backend_to_zkvm(&backend);
+/// let proof_key = ProofKey::new(proof_ctx, zkvm);
+/// db.get_proof(&proof_key)?;
+/// ```
 ///
 /// # Panics
 /// Panics if `backend` is `Risc0` as it's not supported.
 #[inline]
-pub(crate) fn paas_backend_to_zkvm(backend: &ZkVmBackend) -> ProofZkVm {
+pub(crate) fn backend_to_zkvm(backend: &ZkVmBackend) -> ProofZkVm {
     match backend {
         ZkVmBackend::SP1 => ProofZkVm::SP1,
         ZkVmBackend::Native => ProofZkVm::Native,

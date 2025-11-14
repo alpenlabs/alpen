@@ -16,7 +16,7 @@ use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, program::EvmEePro
 use crate::errors::ProvingTaskError;
 use crate::operators::{checkpoint::CheckpointOperator, cl_stf::ClStfOperator, evm_ee::EvmEeOperator};
 
-use super::current_zkvm;
+use super::{backend_to_zkvm, zkvm_backend};
 use super::task::ProofTask;
 
 /// Input provider for checkpoint proofs
@@ -34,7 +34,8 @@ impl InputProvider<ProofTask, CheckpointProgram> for CheckpointInputProvider {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let proof_key = ProofKey::new(proof_context, current_zkvm());
+            let zkvm = backend_to_zkvm(&zkvm_backend());
+            let proof_key = ProofKey::new(proof_context, zkvm);
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -65,7 +66,8 @@ impl InputProvider<ProofTask, ClStfProgram> for ClStfInputProvider {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let proof_key = ProofKey::new(proof_context, current_zkvm());
+            let zkvm = backend_to_zkvm(&zkvm_backend());
+            let proof_key = ProofKey::new(proof_context, zkvm);
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
@@ -96,7 +98,8 @@ impl InputProvider<ProofTask, EvmEeProgram> for EvmEeInputProvider {
         Box::pin(async move {
             // Extract ProofContext from ProofTask wrapper
             let proof_context = program.0;
-            let proof_key = ProofKey::new(proof_context, current_zkvm());
+            let zkvm = backend_to_zkvm(&zkvm_backend());
+            let proof_key = ProofKey::new(proof_context, zkvm);
             self.operator
                 .fetch_input(&proof_key, &self.db)
                 .await
