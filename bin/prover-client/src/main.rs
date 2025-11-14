@@ -30,7 +30,6 @@ mod args;
 mod checkpoint_runner;
 mod config;
 mod errors;
-mod host_resolver;
 mod operators;
 mod rpc_server;
 mod service;
@@ -146,19 +145,19 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             ProofContextVariant::Checkpoint,
             checkpoint_input,
             proof_store.clone(),
-            resolve_host!(host_resolver::sample_checkpoint()),
+            resolve_host!(ProofContextVariant::Checkpoint),
         )
         .with_program::<ClStfProgram, _, _, _>(
             ProofContextVariant::ClStf,
             cl_stf_input,
             proof_store.clone(),
-            resolve_host!(host_resolver::sample_cl_stf()),
+            resolve_host!(ProofContextVariant::ClStf),
         )
         .with_program::<EvmEeProgram, _, _, _>(
             ProofContextVariant::EvmEeStf,
             evm_ee_input,
             proof_store,
-            resolve_host!(host_resolver::sample_evm_ee()),
+            resolve_host!(ProofContextVariant::EvmEeStf),
         );
 
     // Launch the service
