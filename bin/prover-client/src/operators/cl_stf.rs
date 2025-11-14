@@ -144,14 +144,16 @@ impl ClStfOperator {
         Ok(blk)
     }
 
-    /// Fetches the input required for CL STF proof generation.
-    ///
-    /// This is used by the PaaS integration layer to fetch inputs for proving tasks.
-    pub(crate) async fn fetch_input(
+}
+
+impl ProofInputFetcher for ClStfOperator {
+    type Input = ClStfInput;
+
+    async fn fetch_input(
         &self,
         task_id: &ProofKey,
         db: &ProofDBSled,
-    ) -> Result<ClStfInput, ProvingTaskError> {
+    ) -> Result<Self::Input, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
             strata_primitives::proof::ProofContext::ClStf(start, end) => (*start, *end),
             _ => return Err(ProvingTaskError::InvalidInput("CL_STF".to_string())),
@@ -211,18 +213,5 @@ impl ClStfOperator {
             l2_blocks,
             evm_ee_proof_with_vk,
         })
-    }
-}
-
-impl ProofInputFetcher for ClStfOperator {
-    type Input = ClStfInput;
-
-    async fn fetch_input(
-        &self,
-        task_id: &ProofKey,
-        db: &ProofDBSled,
-    ) -> Result<Self::Input, ProvingTaskError> {
-        // Delegate to the existing method
-        self.fetch_input(task_id, db).await
     }
 }

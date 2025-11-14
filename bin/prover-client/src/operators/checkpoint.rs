@@ -50,44 +50,6 @@ impl CheckpointOperator {
             .ok_or(ProvingTaskError::WitnessNotFound)
     }
 
-    /// Fetches the input required for checkpoint proof generation.
-    ///
-    /// This is used by the PaaS integration layer to fetch inputs for proving tasks.
-    pub(crate) async fn fetch_input(
-        &self,
-        task_id: &ProofKey,
-        db: &ProofDBSled,
-    ) -> Result<CheckpointProverInput, ProvingTaskError> {
-        let deps = db
-            .get_proof_deps(*task_id.context())
-            .map_err(ProvingTaskError::DatabaseError)?
-            .ok_or(ProvingTaskError::DependencyNotFound(*task_id))?;
-
-        assert!(!deps.is_empty(), "checkpoint must have some CL STF proofs");
-
-        let cl_stf_key = ProofKey::new(deps[0], *task_id.host());
-        let cl_stf_vk = get_verification_key(&cl_stf_key);
-
-        let mut cl_stf_proofs = Vec::with_capacity(deps.len());
-        for dep in deps {
-            // Validate that all dependencies are ClStf proofs
-            match dep {
-                strata_primitives::proof::ProofContext::ClStf(..) => {}
-                _ => panic!("Checkpoint dependencies must be ClStf proofs, got: {:?}", dep),
-            };
-            let cl_stf_key = ProofKey::new(dep, *task_id.host());
-            let proof = db
-                .get_proof(&cl_stf_key)
-                .map_err(ProvingTaskError::DatabaseError)?
-                .ok_or(ProvingTaskError::ProofNotFound(cl_stf_key))?;
-            cl_stf_proofs.push(proof);
-        }
-
-        Ok(CheckpointProverInput {
-            cl_stf_proofs,
-            cl_stf_vk,
-        })
-    }
 
     /// Returns a reference to the internal CL (Consensus Layer) [`HttpClient`].
     pub(crate) fn cl_client(&self) -> &HttpClient {
@@ -155,8 +117,35 @@ impl ProofInputFetcher for CheckpointOperator {
         task_id: &ProofKey,
         db: &ProofDBSled,
     ) -> Result<Self::Input, ProvingTaskError> {
-        // Delegate to the existing method
-        self.fetch_input(task_id, db).await
+        let deps = db
+            .get_proof_deps(*task_id.context())
+            .map_err(ProvingTaskError::DatabaseError)?
+            .ok_or(ProvingTaskError::DependencyNotFound(*task_id))?;
+
+        assert!(!deps.is_empty(), "checkpoint must have some CL STF proofs");
+
+        let cl_stf_key = ProofKey::new(deps[0], *task_id.host());
+        let cl_stf_vk = get_verification_key(&cl_stf_key);
+
+        let mut cl_stf_proofs = Vec::with_capacity(deps.len());
+        for dep in deps {
+            // Validate that all dependencies are ClStf proofs
+            match dep {
+                strata_primitives::proof::ProofContext::ClStf(..) => {}
+                _ => panic!("Checkpoint dependencies must be ClStf proofs, got: {:?}", dep),
+            };
+            let cl_stf_key = ProofKey::new(dep, *task_id.host());
+            let proof = db
+                .get_proof(&cl_stf_key)
+                .map_err(ProvingTaskError::DatabaseError)?
+                .ok_or(ProvingTaskError::ProofNotFound(cl_stf_key))?;
+            cl_stf_proofs.push(proof);
+        }
+
+        Ok(CheckpointProverInput {
+            cl_stf_proofs,
+            cl_stf_vk,
+        })
     }
 }
 
