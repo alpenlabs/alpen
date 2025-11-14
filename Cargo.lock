@@ -14764,6 +14764,7 @@ dependencies = [
  "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-consensus-logic",
+ "strata-crypto",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",

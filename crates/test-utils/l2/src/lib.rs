@@ -11,6 +11,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use strata_bridge_types::OperatorPubkeys;
 use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
 use strata_consensus_logic::genesis::make_l2_genesis;
+use strata_crypto::schnorr::EvenSecretKey;
 use strata_ol_chain_types::{
     L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2Header,
     SignedL2BlockHeader,
@@ -135,8 +136,10 @@ fn gen_params_with_seed(seed: u64) -> Params {
 fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> OperatorPubkeys {
     let mut rng = StdRng::seed_from_u64(seed);
     let sk = SecretKey::new(&mut rng);
-    let x_only_public_key = sk.x_only_public_key(SECP256K1);
-    let (pk, _) = x_only_public_key;
+    // Ensure the key has even parity for taproot compatibility
+    let even_sk = EvenSecretKey::from(sk);
+    let x_only_public_key = even_sk.x_only_public_key(SECP256K1);
+    let (pk, _parity) = x_only_public_key;
     OperatorPubkeys::new(pk.into(), pk.into())
 }
 
