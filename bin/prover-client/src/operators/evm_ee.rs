@@ -5,6 +5,7 @@ use strata_primitives::{buf::Buf32, proof::ProofKey};
 use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, EvmBlockStfInput};
 use tracing::error;
 
+use super::ProofInputFetcher;
 use crate::errors::ProvingTaskError;
 
 /// Operator for EVM Execution Environment (EE) State Transition Function (STF) proof generation.
@@ -89,5 +90,18 @@ impl EvmEeOperator {
         mini_batch.reverse();
 
         Ok(mini_batch)
+    }
+}
+
+impl ProofInputFetcher for EvmEeOperator {
+    type Input = EvmEeProofInput;
+
+    async fn fetch_input(
+        &self,
+        task_id: &ProofKey,
+        db: &ProofDBSled,
+    ) -> Result<Self::Input, ProvingTaskError> {
+        // Delegate to the existing method
+        self.fetch_input(task_id, db).await
     }
 }

@@ -12,10 +12,38 @@
 //! - Native
 //! - SP1 (requires `sp1` feature enabled)
 
+use strata_db_store_sled::prover::ProofDBSled;
+use strata_primitives::proof::ProofKey;
+
+use crate::errors::ProvingTaskError;
+
 pub(crate) mod checkpoint;
 pub(crate) mod cl_stf;
 pub(crate) mod evm_ee;
 pub(crate) mod operator;
 
 pub(crate) use operator::ProofOperator;
+
+/// Trait for operators that can fetch proof inputs
+///
+/// This provides a unified interface for all proof operators to fetch
+/// the inputs required for proof generation. All operators (Checkpoint,
+/// ClStf, EvmEe) implement this trait, establishing a common contract.
+#[allow(dead_code)]
+pub(crate) trait ProofInputFetcher {
+    /// The type of input this operator fetches
+    type Input;
+
+    /// Fetch the input required for proof generation
+    ///
+    /// # Arguments
+    ///
+    /// * `task_id` - The proof key identifying what to prove
+    /// * `db` - The proof database for retrieving dependencies
+    async fn fetch_input(
+        &self,
+        task_id: &ProofKey,
+        db: &ProofDBSled,
+    ) -> Result<Self::Input, ProvingTaskError>;
+}
 
