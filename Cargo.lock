@@ -14286,6 +14286,7 @@ name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "sha2 0.10.9",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",
