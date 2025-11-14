@@ -14,7 +14,7 @@ use crate::ZkVmBackend;
 use crate::ProgramType;
 
 use super::core::{ConcreteHandler, InputProvider, ProofStore, ProgramRegistry};
-use super::handle::RegistryProverHandle;
+use super::handle::ProverHandle;
 use super::prover::RegistryProver;
 
 /// Builder for creating a prover service
@@ -105,7 +105,7 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
     pub async fn launch(
         self,
         executor: &TaskExecutor,
-    ) -> PaaSResult<RegistryProverHandle<P>> {
+    ) -> PaaSResult<ProverHandle<P>> {
         let prover = Arc::new(RegistryProver::new(Arc::new(self.registry)));
         let state = ProverServiceState::new(prover.clone(), self.config);
 
@@ -124,6 +124,6 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
             .map_err(crate::error::PaaSError::Internal)?;
 
         // Return handle
-        Ok(RegistryProverHandle::new(command_handle, monitor))
+        Ok(ProverHandle::new(command_handle, monitor))
     }
 }
