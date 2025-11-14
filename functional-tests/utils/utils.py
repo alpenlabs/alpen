@@ -534,6 +534,7 @@ def generate_seed_at(path: str):
     # fmt: off
     cmd = [
         "strata-datatool",
+        "-b", "regtest",  # Global option: must come before subcommand
         "genxpriv",
         "-f", path
     ]
@@ -548,6 +549,7 @@ def generate_seqpubkey_from_seed(path: str) -> str:
     # fmt: off
     cmd = [
         "strata-datatool",
+        "-b", "regtest",  # Global option: must come before subcommand
         "genseqpubkey",
         "-f", path
     ]
@@ -569,6 +571,7 @@ def generate_opxpub_from_seed(path: str) -> str:
     # fmt: off
     cmd = [
         "strata-datatool",
+        "-b", "regtest",  # Global option: must come before subcommand
         "genopxpub",
         "-f", path,
         "-w"
