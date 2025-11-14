@@ -13,17 +13,17 @@ use crate::task_id::TaskId;
 use crate::ZkVmBackend;
 use crate::ProgramType;
 
-/// Handle for interacting with the registry-based prover service
+/// Handle for interacting with the prover service
 ///
 /// This handle provides a clean API for submitting tasks without needing
 /// to specify discriminants - just pass your program and backend.
 #[derive(Clone)]
-pub struct RegistryProverHandle<P: ProgramType> {
+pub struct ProverHandle<P: ProgramType> {
     command_handle: Arc<CommandHandle<ProverCommand<TaskId<P>>>>,
     monitor: ServiceMonitor<ProverServiceStatus>,
 }
 
-impl<P: ProgramType> RegistryProverHandle<P> {
+impl<P: ProgramType> ProverHandle<P> {
     /// Create a new handle
     pub fn new(
         command_handle: CommandHandle<ProverCommand<TaskId<P>>>,

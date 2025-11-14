@@ -37,5 +37,5 @@ pub use core::{
     BoxedInput, BoxedProof, ConcreteHandler, InputProvider, ProgramHandler, ProgramRegistry,
     ProgramType, ProofStore,
 };
-pub use handle::RegistryProverHandle as ProverHandle;
+pub use handle::ProverHandle;
 pub use prover::RegistryProver;

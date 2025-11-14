@@ -48,7 +48,7 @@ We decided to refactor PaaS to use a **registry pattern** for dynamic handler re
 ```
 User API (Clean)
     ↓
-RegistryProverHandle
+ProverHandle
     .submit_task(ProofContext, ZkVmBackend)  // No discriminants
     ↓
 RegistryProverService
@@ -331,7 +331,7 @@ let paas_handle = builder.launch(&executor).await?;
 
 ```rust
 // Clean API - backend determined by features
-let handle: RegistryProverHandle<ProofContext> = ...;
+let handle: ProverHandle<ProofContext> = ...;
 
 handle.submit_task(
     ProofContext::Checkpoint(42),
@@ -585,7 +585,7 @@ handle.submit_task(
    - Moved host resolution macro to `service/mod.rs` with ProofContextVariant
    - Refactored `paas_integration.rs` - Registry traits
    - Updated `main.rs` - Registry-based registration
-   - Updated `rpc_server.rs` - Use RegistryProverHandle
+   - Updated `rpc_server.rs` - Use ProverHandle
    - Updated `checkpoint_runner/runner.rs` - Registry submission
 
 3. **Code Quality**:
