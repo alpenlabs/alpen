@@ -64,9 +64,9 @@ impl VerifiedAuxData {
     /// Returns `AuxError::InvalidBitcoinTx` if any transaction fails to decode or is malformed.
     /// Returns `AuxError::InvalidMmrProof` if any manifest hash's MMR proof fails verification.
     pub fn try_new(data: &AuxData, compact_mmr: &CompactMmr64<[u8; 32]>) -> AuxResult<Self> {
-        let txs = Self::verify_and_index_bitcoin_txs(&data.bitcoin_txs)?;
+        let txs = Self::verify_and_index_bitcoin_txs(data.bitcoin_txs())?;
         let manifest_hashes =
-            Self::verify_and_index_manifest_hashes(&data.manifest_hashes, compact_mmr)?;
+            Self::verify_and_index_manifest_hashes(data.manifest_hashes(), compact_mmr)?;
 
         Ok(Self::new(txs, manifest_hashes))
     }
@@ -109,13 +109,13 @@ impl VerifiedAuxData {
         let mut manifest_hashes = HashMap::with_capacity(hashes.len());
 
         for item in hashes {
-            if !compact_mmr.verify::<AsmHasher>(&item.proof, &item.hash) {
+            if !compact_mmr.verify::<AsmHasher>(item.proof(), item.hash()) {
                 return Err(AuxError::InvalidMmrProof {
-                    index: item.proof.index(),
-                    hash: item.hash,
+                    index: item.proof().index(),
+                    hash: *item.hash(),
                 });
             }
-            manifest_hashes.insert(item.proof.index(), item.hash);
+            manifest_hashes.insert(item.proof().index(), *item.hash());
         }
 
         Ok(manifest_hashes)
@@ -177,10 +177,7 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let compact: AsmCompactMmr = mmr.into();
 
-        let aux_data = AuxData {
-            manifest_hashes: vec![],
-            bitcoin_txs: vec![],
-        };
+        let aux_data = AuxData::default();
 
         let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
 
@@ -203,10 +200,7 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let compact: AsmCompactMmr = mmr.into();
 
-        let aux_data = AuxData {
-            manifest_hashes: vec![],
-            bitcoin_txs: vec![raw_tx],
-        };
+        let aux_data = AuxData::new(vec![], vec![raw_tx]);
 
         let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
 
@@ -221,10 +215,7 @@ mod tests {
         let mmr = AsmMmr::new(16);
         let compact: AsmCompactMmr = mmr.into();
 
-        let aux_data = AuxData {
-            manifest_hashes: vec![],
-            bitcoin_txs: vec![],
-        };
+        let aux_data = AuxData::default();
 
         let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
 

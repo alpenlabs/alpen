@@ -27,10 +27,9 @@ impl AuxRequestCollector {
     /// * `start_height` - Starting L1 block height (inclusive)
     /// * `end_height` - Ending L1 block height (inclusive)
     pub fn request_manifest_hashes(&mut self, start_height: u64, end_height: u64) {
-        self.requests.manifest_hashes.push(ManifestHashRange {
-            start_height,
-            end_height,
-        });
+        self.requests
+            .manifest_hashes
+            .push(ManifestHashRange::new(start_height, end_height));
     }
 
     /// Requests a raw Bitcoin transaction by its txid.
@@ -64,10 +63,10 @@ mod tests {
 
         let requests = collector.into_requests();
         assert_eq!(requests.manifest_hashes.len(), 2);
-        assert_eq!(requests.manifest_hashes[0].start_height, 100);
-        assert_eq!(requests.manifest_hashes[0].end_height, 200);
-        assert_eq!(requests.manifest_hashes[1].start_height, 201);
-        assert_eq!(requests.manifest_hashes[1].end_height, 300);
+        assert_eq!(requests.manifest_hashes[0].start_height(), 100);
+        assert_eq!(requests.manifest_hashes[0].end_height(), 200);
+        assert_eq!(requests.manifest_hashes[1].start_height(), 201);
+        assert_eq!(requests.manifest_hashes[1].end_height(), 300);
     }
 
     #[test]

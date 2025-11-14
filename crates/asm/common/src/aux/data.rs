@@ -16,10 +16,22 @@ use crate::{AsmMerkleProof, Hash32};
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxRequests {
     /// Requested manifest hash height ranges.
-    pub manifest_hashes: Vec<ManifestHashRange>,
+    pub(crate) manifest_hashes: Vec<ManifestHashRange>,
 
     /// [Txid](bitcoin::Txid) of the requested transactions.
-    pub bitcoin_txs: Vec<BitcoinTxid>,
+    pub(crate) bitcoin_txs: Vec<BitcoinTxid>,
+}
+
+impl AuxRequests {
+    /// Returns a slice of the requested manifest hash ranges.
+    pub fn manifest_hashes(&self) -> &[ManifestHashRange] {
+        &self.manifest_hashes
+    }
+
+    /// Returns a slice of the requested Bitcoin transaction IDs.
+    pub fn bitcoin_txs(&self) -> &[BitcoinTxid] {
+        &self.bitcoin_txs
+    }
 }
 
 /// Collection of auxiliary data responses for subprotocols.
@@ -29,9 +41,32 @@ pub struct AuxRequests {
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Manifest hashes with their MMR proofs (unverified)
-    pub manifest_hashes: Vec<VerifiableManifestHash>,
+    manifest_hashes: Vec<VerifiableManifestHash>,
     /// Raw Bitcoin transaction data (unverified)
-    pub bitcoin_txs: Vec<RawBitcoinTx>,
+    bitcoin_txs: Vec<RawBitcoinTx>,
+}
+
+impl AuxData {
+    /// Creates a new auxiliary data collection.
+    pub fn new(
+        manifest_hashes: Vec<VerifiableManifestHash>,
+        bitcoin_txs: Vec<RawBitcoinTx>,
+    ) -> Self {
+        Self {
+            manifest_hashes,
+            bitcoin_txs,
+        }
+    }
+
+    /// Returns a slice of manifest hashes with their MMR proofs.
+    pub fn manifest_hashes(&self) -> &[VerifiableManifestHash] {
+        &self.manifest_hashes
+    }
+
+    /// Returns a slice of raw Bitcoin transactions.
+    pub fn bitcoin_txs(&self) -> &[RawBitcoinTx] {
+        &self.bitcoin_txs
+    }
 }
 
 /// Manifest hash height range (inclusive).
@@ -40,9 +75,29 @@ pub struct AuxData {
 #[derive(Debug, Clone, Copy, BorshSerialize, BorshDeserialize)]
 pub struct ManifestHashRange {
     /// Start height (inclusive)
-    pub start_height: u64,
+    pub(crate) start_height: u64,
     /// End height (inclusive)
-    pub end_height: u64,
+    pub(crate) end_height: u64,
+}
+
+impl ManifestHashRange {
+    /// Creates a new manifest hash range.
+    pub fn new(start_height: u64, end_height: u64) -> Self {
+        Self {
+            start_height,
+            end_height,
+        }
+    }
+
+    /// Returns the start height (inclusive).
+    pub fn start_height(&self) -> u64 {
+        self.start_height
+    }
+
+    /// Returns the end height (inclusive).
+    pub fn end_height(&self) -> u64 {
+        self.end_height
+    }
 }
 
 /// Manifest hash with its MMR proof.
@@ -55,7 +110,24 @@ pub struct ManifestHashRange {
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct VerifiableManifestHash {
     /// The hash of an [`AsmManifest`](crate::AsmManifest)
-    pub hash: Hash32,
+    hash: Hash32,
     /// The MMR proof for this manifest hash
-    pub proof: AsmMerkleProof,
+    proof: AsmMerkleProof,
+}
+
+impl VerifiableManifestHash {
+    /// Creates a new verifiable manifest hash.
+    pub fn new(hash: Hash32, proof: AsmMerkleProof) -> Self {
+        Self { hash, proof }
+    }
+
+    /// Returns the manifest hash.
+    pub fn hash(&self) -> &Hash32 {
+        &self.hash
+    }
+
+    /// Returns a reference to the MMR proof.
+    pub fn proof(&self) -> &AsmMerkleProof {
+        &self.proof
+    }
 }
