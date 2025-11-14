@@ -1,13 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
-use bitcoin::{
-    consensus::deserialize,
-    hashes::Hash,
-    key::Parity,
-    secp256k1::{PublicKey, XOnlyPublicKey},
-    Transaction as BTransaction, Txid,
-};
+use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
 use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult;
 use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
@@ -28,6 +22,7 @@ use strata_ol_chainstate_types::Chainstate;
 use strata_params::Params;
 use strata_primitives::{
     buf::Buf32,
+    crypto::EvenPublicKey,
     epoch::EpochCommitment,
     hash,
     l1::{L1BlockCommitment, L1BlockId},
@@ -535,17 +530,13 @@ impl StrataApiServer for StrataRpcImpl {
             .status_channel
             .cur_tip_operator_table()
             .ok_or(Error::BeforeGenesis)?;
-        let operator_map: BTreeMap<OperatorIdx, PublicKey> = operator_table
+        let operator_map: BTreeMap<OperatorIdx, EvenPublicKey> = operator_table
             .operators()
             .iter()
             .fold(BTreeMap::new(), |mut map, entry| {
-                let pubkey = XOnlyPublicKey::try_from(*entry.wallet_pk())
-                    .expect("something has gone horribly wrong");
-
-                // This is a taproot pubkey so its parity has to be even.
-                let pubkey = pubkey.public_key(Parity::Even);
-
-                map.insert(entry.idx(), pubkey);
+                let even_pk = EvenPublicKey::try_from(*entry.wallet_pk())
+                    .expect("wallet_pk should be a valid even public key");
+                map.insert(entry.idx(), even_pk);
                 map
             });
 

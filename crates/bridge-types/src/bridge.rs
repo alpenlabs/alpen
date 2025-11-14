@@ -1,19 +1,21 @@
 //! Primitive data types related to the bridge.
 
-use std::{
-    collections::BTreeMap,
-    io::{Read, Write},
-};
+use std::io::{Read, Write};
+#[cfg(not(target_os = "zkvm"))]
+use std::{collections::BTreeMap, io};
 
 use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::{
-    key::{constants::PUBLIC_KEY_SIZE, rand},
-    secp256k1::{PublicKey, SecretKey},
-};
+#[cfg(not(target_os = "zkvm"))]
+use bitcoin::{key::constants::PUBLIC_KEY_SIZE, secp256k1::PublicKey};
+use bitcoin::{key::rand, secp256k1::SecretKey};
 use borsh::{BorshDeserialize, BorshSerialize};
-use musig2::{errors::KeyAggError, KeyAggContext, NonceSeed, PartialSignature, PubNonce, SecNonce};
+#[cfg(not(target_os = "zkvm"))]
+use musig2::{errors::KeyAggError, KeyAggContext};
+use musig2::{NonceSeed, PartialSignature, PubNonce, SecNonce};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_os = "zkvm"))]
+use strata_primitives::crypto::EvenPublicKey;
 use strata_primitives::l1::{BitcoinPsbt, TaprootSpendPath};
 
 use crate::{
@@ -158,32 +160,42 @@ impl<'a> Arbitrary<'a> for Musig2SecNonce {
 
 /// A table that maps [`OperatorIdx`] to the corresponding [`PublicKey`].
 ///
-/// We use a [`PublicKey`] instead of an [`bitcoin::secp256k1::XOnlyPublicKey`] for convenience
+/// We use an [`EvenPublicKey`] instead of an [`bitcoin::secp256k1::XOnlyPublicKey`] for convenience
 /// since the [`musig2`] crate has functions that expect a [`PublicKey`] and this table is most
 /// useful for interacting with those functions.
+#[cfg(not(target_os = "zkvm"))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct PublickeyTable(pub BTreeMap<OperatorIdx, PublicKey>);
+pub struct PublickeyTable(pub BTreeMap<OperatorIdx, EvenPublicKey>);
 
-impl From<BTreeMap<OperatorIdx, PublicKey>> for PublickeyTable {
-    fn from(value: BTreeMap<OperatorIdx, PublicKey>) -> Self {
+#[cfg(not(target_os = "zkvm"))]
+impl From<BTreeMap<OperatorIdx, EvenPublicKey>> for PublickeyTable {
+    fn from(value: BTreeMap<OperatorIdx, EvenPublicKey>) -> Self {
         Self(value)
     }
 }
 
-impl From<PublickeyTable> for Vec<PublicKey> {
+#[cfg(not(target_os = "zkvm"))]
+impl From<PublickeyTable> for Vec<EvenPublicKey> {
     fn from(value: PublickeyTable) -> Self {
         value.0.values().copied().collect()
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl TryFrom<PublickeyTable> for KeyAggContext {
     type Error = KeyAggError;
 
     fn try_from(value: PublickeyTable) -> Result<Self, Self::Error> {
-        KeyAggContext::new(Into::<Vec<PublicKey>>::into(value))
+        let public_keys: Vec<PublicKey> = value
+            .0
+            .values()
+            .map(|even_pk| PublicKey::from(*even_pk))
+            .collect();
+        KeyAggContext::new(public_keys)
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl BorshSerialize for PublickeyTable {
     fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         // Serialize the length of the BTreeMap
@@ -194,12 +206,14 @@ impl BorshSerialize for PublickeyTable {
             // Serialize the operator index
             BorshSerialize::serialize(operator_idx, writer)?;
             // Serialize the public key as a byte array (33 bytes for secp256k1 public keys)
-            writer.write_all(&public_key.serialize())?;
+            let pk: PublicKey = PublicKey::from(*public_key);
+            writer.write_all(&pk.serialize())?;
         }
         Ok(())
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl BorshDeserialize for PublickeyTable {
     fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
         let len = u32::deserialize_reader(reader)? as usize;
@@ -211,18 +225,18 @@ impl BorshDeserialize for PublickeyTable {
             // Deserialize the public key (read 33 bytes for secp256k1 compressed public key)
             let mut key_bytes = [0u8; PUBLIC_KEY_SIZE];
             reader.read_exact(&mut key_bytes)?;
-            // Convert the byte array back into a PublicKey
-            let public_key = PublicKey::from_slice(&key_bytes).map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid public key")
-            })?;
+            // Convert the byte array back into a PublicKey, then to EvenPublicKey
+            let public_key = PublicKey::from_slice(&key_bytes)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid public key"))?;
             // Insert into the BTreeMap
-            map.insert(operator_idx, public_key);
+            map.insert(operator_idx, EvenPublicKey::from(public_key));
         }
 
         Ok(PublickeyTable(map))
     }
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl<'a> Arbitrary<'a> for PublickeyTable {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         // Limit the number of entries in the BTreeMap to a practical size (e.g., 10)
@@ -242,7 +256,7 @@ impl<'a> Arbitrary<'a> for PublickeyTable {
                 PublicKey::from_slice(key_bytes).map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
             // Insert into the BTreeMap
-            map.insert(operator_idx, public_key);
+            map.insert(operator_idx, EvenPublicKey::from(public_key));
         }
 
         // Return the PublickeyTable with the generated map
@@ -309,6 +323,7 @@ mod tests {
         secp256k1::{PublicKey, SecretKey, SECP256K1},
     };
     use borsh::{BorshDeserialize, BorshSerialize};
+    use strata_primitives::crypto::EvenPublicKey;
 
     use super::{Musig2PartialSignature, Musig2PubNonce, Musig2SecNonce, PublickeyTable};
     use crate::constants::{MUSIG2_PARTIAL_SIG_SIZE, PUB_NONCE_SIZE, SEC_NONCE_SIZE};
@@ -564,10 +579,11 @@ mod tests {
         );
     }
 
-    // Helper function to create a random secp256k1 PublicKey
-    fn generate_public_key() -> PublicKey {
+    // Helper function to create a random secp256k1 EvenPublicKey
+    fn generate_public_key() -> EvenPublicKey {
         let secret_key =
             SecretKey::from_slice(&[0x01; SECRET_KEY_SIZE]).expect("32 bytes, within curve order");
-        PublicKey::from_secret_key(SECP256K1, &secret_key)
+        let public_key = PublicKey::from_secret_key(SECP256K1, &secret_key);
+        EvenPublicKey::from(public_key)
     }
 }

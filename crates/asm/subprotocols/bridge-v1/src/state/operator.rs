@@ -5,7 +5,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::{OperatorIdx, OperatorPubkeys};
-use strata_crypto::multisig::aggregate_schnorr_keys;
+use strata_crypto::{multisig::aggregate_schnorr_keys, schnorr::EvenPublicKey};
 use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
 
 use super::bitmap::OperatorBitmap;
@@ -40,7 +40,7 @@ pub struct OperatorEntry {
     signing_pk: Buf32,
 
     /// Wallet public key used to compute MuSig2 public key from a set of operators.
-    wallet_pk: Buf32,
+    wallet_pk: EvenPublicKey,
 }
 
 impl PartialOrd for OperatorEntry {
@@ -84,8 +84,8 @@ impl OperatorEntry {
     ///
     /// # Returns
     ///
-    /// Reference to the wallet public key as [`Buf32`].
-    pub fn wallet_pk(&self) -> &Buf32 {
+    /// Reference to the wallet public key as [`EvenPublicKey`].
+    pub fn wallet_pk(&self) -> &EvenPublicKey {
         &self.wallet_pk
     }
 }
@@ -185,7 +185,8 @@ impl OperatorTable {
                     .map(|(i, e)| OperatorEntry {
                         idx: i as OperatorIdx,
                         signing_pk: *e.signing_pk(),
-                        wallet_pk: *e.wallet_pk(),
+                        wallet_pk: EvenPublicKey::try_from(*e.wallet_pk())
+                            .expect("wallet_pk should be a valid even public key"),
                     })
                     .collect(),
             ),
@@ -287,7 +288,8 @@ impl OperatorTable {
             let entry = OperatorEntry {
                 idx,
                 signing_pk: *op_keys.signing_pk(),
-                wallet_pk: *op_keys.wallet_pk(),
+                wallet_pk: EvenPublicKey::try_from(*op_keys.wallet_pk())
+                    .expect("wallet_pk should be a valid even public key"),
             };
 
             // SortedVec handles insertion and maintains sorted order
@@ -321,17 +323,21 @@ impl OperatorTable {
 
         if !updates.is_empty() || !inserts.is_empty() {
             // Recalculate aggregated key based on active operators
-            let active_keys: Vec<&Buf32> = self
+            let active_keys: Vec<Buf32> = self
                 .active_operators
                 .active_indices()
-                .filter_map(|op| self.get_operator(op).map(|entry| entry.wallet_pk()))
+                .filter_map(|op| {
+                    self.get_operator(op).map(|entry| {
+                        Buf32::from(entry.wallet_pk().x_only_public_key().0.serialize())
+                    })
+                })
                 .collect();
 
             if active_keys.is_empty() {
                 panic!("Cannot have empty multisig - at least one operator must be active");
             }
 
-            self.agg_key = aggregate_schnorr_keys(active_keys.into_iter())
+            self.agg_key = aggregate_schnorr_keys(active_keys.iter())
                 .expect("Failed to generate aggregated key")
                 .into();
         }
@@ -387,7 +393,7 @@ mod tests {
             let entry = table.get_operator(i as u32).unwrap();
             assert_eq!(entry.idx(), i as u32);
             assert_eq!(entry.signing_pk(), op.signing_pk());
-            assert_eq!(entry.wallet_pk(), op.wallet_pk());
+            assert_eq!(Buf32::from(*entry.wallet_pk()), *op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
@@ -409,7 +415,7 @@ mod tests {
             let entry = table.get_operator(idx).unwrap();
             assert_eq!(entry.idx(), idx);
             assert_eq!(entry.signing_pk(), op.signing_pk());
-            assert_eq!(entry.wallet_pk(), op.wallet_pk());
+            assert_eq!(Buf32::from(*entry.wallet_pk()), *op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
