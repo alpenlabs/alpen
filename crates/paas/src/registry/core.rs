@@ -4,10 +4,15 @@
 //! program types to be registered and dispatched dynamically without exposing
 //! discriminants in the public API.
 
-use std::any::Any;
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::sync::Arc;
+use std::{
+    any::Any,
+    collections::HashMap,
+    future::Future,
+    hash::Hash,
+    marker::PhantomData,
+    pin::Pin,
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram};
@@ -84,21 +89,21 @@ pub trait ProgramHandler<P: ProgramType>: Send + Sync + 'static {
     fn fetch_input<'a>(
         &'a self,
         program: &'a P,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<BoxedInput>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedInput>> + Send + 'a>>;
 
     /// Prove with the given backend
     fn prove<'a>(
         &'a self,
         input: BoxedInput,
         backend: &'a ZkVmBackend,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<BoxedProof>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedProof>> + Send + 'a>>;
 
     /// Store the completed proof
     fn store_proof<'a>(
         &'a self,
         program: &'a P,
         proof: BoxedProof,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<()>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>>;
 }
 
 /// Registry that routes programs to their handlers
@@ -203,31 +208,31 @@ pub struct ConcreteHandler<P, Prog, I, S, H>
 where
     P: ProgramType,
     Prog: ZkVmProgram,
-    I: InputFetcher<P, Prog>,
+    I: InputProvider<P, Prog>,
     S: ProofStore<P>,
     H: zkaleido::ZkVmHost + Send + Sync + 'static,
 {
-    input_fetcher: Arc<I>,
+    input_provider: Arc<I>,
     proof_store: Arc<S>,
     host: Arc<H>,
-    _phantom: std::marker::PhantomData<(P, Prog)>,
+    _phantom: PhantomData<(P, Prog)>,
 }
 
 impl<P, Prog, I, S, H> ConcreteHandler<P, Prog, I, S, H>
 where
     P: ProgramType,
     Prog: ZkVmProgram,
-    I: InputFetcher<P, Prog>,
+    I: InputProvider<P, Prog>,
     S: ProofStore<P>,
     H: zkaleido::ZkVmHost + Send + Sync + 'static,
 {
     /// Create a new concrete handler with a specific host
-    pub fn new(input_fetcher: Arc<I>, proof_store: Arc<S>, host: Arc<H>) -> Self {
+    pub fn new(input_provider: Arc<I>, proof_store: Arc<S>, host: Arc<H>) -> Self {
         Self {
-            input_fetcher,
+            input_provider,
             proof_store,
             host,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -237,16 +242,16 @@ where
     P: ProgramType,
     Prog: ZkVmProgram + Send + Sync + 'static,
     Prog::Input: Send + Sync + 'static,
-    I: InputFetcher<P, Prog>,
+    I: InputProvider<P, Prog>,
     S: ProofStore<P>,
     H: zkaleido::ZkVmHost + Send + Sync + 'static,
 {
     fn fetch_input<'a>(
         &'a self,
         program: &'a P,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<BoxedInput>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedInput>> + Send + 'a>> {
         Box::pin(async move {
-            let input = self.input_fetcher.fetch_input(program).await?;
+            let input = self.input_provider.provide_input(program).await?;
             Ok(BoxedInput::new(input))
         })
     }
@@ -255,7 +260,7 @@ where
         &'a self,
         input: BoxedInput,
         _backend: &'a ZkVmBackend,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<BoxedProof>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<BoxedProof>> + Send + 'a>> {
         Box::pin(async move {
             // Downcast to concrete input type
             let concrete_input = input.downcast::<Prog::Input>()?;
@@ -273,7 +278,7 @@ where
         &'a self,
         program: &'a P,
         proof: BoxedProof,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<()>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Downcast to concrete proof type
             let concrete_proof = proof.downcast::<ProofReceiptWithMetadata>()?;
@@ -283,17 +288,17 @@ where
     }
 }
 
-/// Trait for fetching inputs for a specific zkVM program
-pub trait InputFetcher<P, Prog>: Send + Sync + 'static
+/// Trait for providing inputs for a specific zkVM program
+pub trait InputProvider<P, Prog>: Send + Sync + 'static
 where
     P: ProgramType,
     Prog: ZkVmProgram,
 {
-    /// Fetch input for the given program
-    fn fetch_input<'a>(
+    /// Provide input for the given program
+    fn provide_input<'a>(
         &'a self,
         program: &'a P,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<Prog::Input>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<Prog::Input>> + Send + 'a>>;
 }
 
 /// Trait for storing completed proofs
@@ -306,5 +311,5 @@ where
         &'a self,
         program: &'a P,
         proof: ProofReceiptWithMetadata,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = PaaSResult<()>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = PaaSResult<()>> + Send + 'a>>;
 }

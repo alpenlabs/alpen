@@ -14,15 +14,15 @@ use paas::{ProofContextVariant, ProofTask};
 use rpc_server::ProverClientRpc;
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
-use strata_paas::{PaaSConfig, RegistryProverServiceBuilder, ZkVmBackend};
+use strata_paas::{PaaSConfig, ProverServiceBuilder, ZkVmBackend};
+use strata_primitives::proof::ProofZkVm;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
 use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
 use strata_tasks::TaskManager;
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder as _;
-use tokio::spawn;
-use tracing::debug;
+use tracing::{debug, info};
 #[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
 
@@ -35,10 +35,9 @@ mod operators;
 mod paas;
 mod rpc_server;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
-    if let Err(e) = main_inner(args).await {
+    if let Err(e) = main_inner(args) {
         eprintln!("FATAL ERROR: {e}");
 
         return Err(e);
@@ -47,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn main_inner(args: Args) -> anyhow::Result<()> {
+fn main_inner(args: Args) -> anyhow::Result<()> {
     logging::init(logging::LoggerConfig::with_base_name(
         "strata-prover-client",
     ));
@@ -121,40 +120,41 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     {
         worker_counts.insert(
             ZkVmBackend::SP1,
-            *workers
-                .get(&strata_primitives::proof::ProofZkVm::SP1)
-                .unwrap_or(&0),
+            *workers.get(&ProofZkVm::SP1).unwrap_or(&0),
         );
     }
     worker_counts.insert(
         ZkVmBackend::Native,
-        *workers
-            .get(&strata_primitives::proof::ProofZkVm::Native)
-            .unwrap_or(&1),
+        *workers.get(&ProofZkVm::Native).unwrap_or(&1),
     );
 
     let paas_config = PaaSConfig::new(worker_counts);
 
-    // Create task manager and executor
-    let task_manager = TaskManager::new(tokio::runtime::Handle::current());
+    // Create runtime and task manager
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("prover-rt")
+        .build()
+        .context("Failed to build runtime")?;
+    let task_manager = TaskManager::new(runtime.handle().clone());
     let executor = task_manager.create_executor();
 
-    // Create and launch PaaS service with registry-based API
+    // Create and launch PaaS service
     // Register each program type with its handler and host
-    let builder = RegistryProverServiceBuilder::<ProofTask>::new(paas_config)
-        .register::<CheckpointProgram, _, _, _>(
+    let builder = ProverServiceBuilder::<ProofTask>::new(paas_config)
+        .with_program::<CheckpointProgram, _, _, _>(
             ProofContextVariant::Checkpoint,
             checkpoint_fetcher,
             proof_store.clone(),
             resolve_host!(host_resolver::sample_checkpoint()),
         )
-        .register::<ClStfProgram, _, _, _>(
+        .with_program::<ClStfProgram, _, _, _>(
             ProofContextVariant::ClStf,
             cl_stf_fetcher,
             proof_store.clone(),
             resolve_host!(host_resolver::sample_cl_stf()),
         )
-        .register::<EvmEeProgram, _, _, _>(
+        .with_program::<EvmEeProgram, _, _, _>(
             ProofContextVariant::EvmEeStf,
             evm_ee_fetcher,
             proof_store,
@@ -162,9 +162,8 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         );
 
     // Launch the service
-    let paas_handle = builder
-        .launch(&executor)
-        .await
+    let paas_handle = runtime
+        .block_on(builder.launch(&executor))
         .context("Failed to launch prover service")?;
 
     debug!("Initialized PaaS prover service");
@@ -175,7 +174,7 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
         let checkpoint_handle = paas_handle.clone();
         let checkpoint_poll_interval = config.checkpoint_poll_interval;
         let checkpoint_db = db.clone();
-        spawn(async move {
+        executor.spawn_critical_async("checkpoint-runner", async move {
             checkpoint_proof_runner(
                 checkpoint_operator,
                 checkpoint_poll_interval,
@@ -183,15 +182,27 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
                 checkpoint_db,
             )
             .await;
+            Ok(())
         });
         debug!("Spawned checkpoint proof runner");
     }
 
     let rpc_server = ProverClientRpc::new(paas_handle.clone(), operator, db);
-    rpc_server
-        .start_server(config.get_dev_rpc_url(), config.enable_dev_rpcs)
-        .await
-        .context("Failed to start the RPC server")?;
+    let rpc_url = config.get_dev_rpc_url();
+    let enable_dev_rpcs = config.enable_dev_rpcs;
+    executor.spawn_critical_async("rpc-server", async move {
+        rpc_server
+            .start_server(rpc_url, enable_dev_rpcs)
+            .await
+            .context("Failed to start the RPC server")
+    });
 
+    info!("All services started");
+
+    // Monitor tasks and block until shutdown
+    task_manager.start_signal_listeners();
+    task_manager.monitor(Some(std::time::Duration::from_secs(5)))?;
+
+    info!("Shutting down");
     Ok(())
 }

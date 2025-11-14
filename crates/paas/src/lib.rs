@@ -6,11 +6,11 @@
 //! ## Architecture
 //!
 //! PaaS is built around the registry pattern for dynamic program dispatch.
-//! To use PaaS, you implement the registry traits:
+//! To use PaaS, you implement the traits:
 //!
 //! - `ProgramType`: Your program type with routing key
-//! - `RegistryInputFetcher<P, Prog>`: Fetches inputs for zkaleido programs
-//! - `RegistryProofStore<P>`: Stores completed proofs
+//! - `InputProvider<P, Prog>`: Provides inputs for zkaleido programs
+//! - `ProofStore<P>`: Stores completed proofs
 //!
 //! See the `registry` module documentation for complete examples.
 
@@ -39,9 +39,8 @@ pub enum ZkVmBackend {
 
 // Re-export core registry types at the top level
 pub use registry::{
-    BoxedInput, BoxedProof, ConcreteHandler, InputFetcher as RegistryInputFetcher,
-    ProgramHandler, ProgramRegistry, ProgramType, ProofStore as RegistryProofStore,
-    RegistryProverHandle, RegistryProverServiceBuilder, RegistryProver,
+    BoxedInput, BoxedProof, ConcreteHandler, InputProvider, ProgramHandler, ProgramRegistry,
+    ProgramType, ProofStore, ProverHandle, ProverServiceBuilder, RegistryProver,
 };
 pub use task_id::TaskId;
 
