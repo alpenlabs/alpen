@@ -13,12 +13,14 @@ const DEPOSIT_IDX_SIZE: usize = 4;
 /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
 pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE;
 
-/// Information extracted from a Bitcoin withdrawal transaction.
+/// Information extracted from a Bitcoin withdrawal fulfillment transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalFulfillmentInfo {
-    /// The index of the deposit that the operator wishes to receive payout from later.
-    /// This must be validated against the operator's assigned deposits in the state's assignments
-    /// table to ensure the operator is authorized to claim this specific deposit.
+    /// The index of the locked deposit UTXO that the operator will receive payout from.
+    /// This index is used to verify that the operator correctly fulfilled their assignment
+    /// (correct amount to the correct user within the assigned deadline). Upon successful
+    /// verification against the state's assignments table, the operator is authorized to
+    /// claim the payout from this deposit.
     pub deposit_idx: u32,
 
     /// The Bitcoin script address where the withdrawn funds are being sent.
@@ -43,22 +45,22 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 
 /// Parses withdrawal fulfillment transaction to extract [`WithdrawalFulfillmentInfo`].
 ///
-/// Parses a withdrawal transaction following the SPS-50 specification and extracts
-/// the withdrawal information including operator index, deposit references, recipient address,
-/// and withdrawal amount. See the module-level documentation for the complete transaction
-/// structure.
+/// Parses a withdrawal fulfillment transaction following the SPS-50 specification and extracts
+/// the withdrawal fulfillment information including the deposit index, recipient address, and
+/// withdrawal amount. See the module-level documentation for the complete transaction structure.
 ///
 /// The function validates the transaction structure and parses the auxiliary data containing:
-/// - Deposit index (4 bytes, big-endian u32)
+/// - Deposit index (4 bytes, big-endian u32) - identifies the locked deposit UTXO that the
+///   operator will receive payout from after successful verification of assignment fulfillment
 ///
 /// # Parameters
 ///
-/// - `tx` - Reference to the transaction input containing the withdrawal transaction and its
-///   associated tag data
+/// - `tx` - Reference to the transaction input containing the withdrawal fulfillment transaction
+///   and its associated tag data
 ///
 /// # Returns
 ///
-/// - `Ok(WithdrawalInfo)` - Successfully parsed withdrawal information
+/// - `Ok(WithdrawalFulfillmentInfo)` - Successfully parsed withdrawal fulfillment information
 /// - `Err(WithdrawalParseError)` - If the transaction structure is invalid, has insufficient
 ///   outputs, invalid metadata size, or any parsing step encounters malformed data
 ///

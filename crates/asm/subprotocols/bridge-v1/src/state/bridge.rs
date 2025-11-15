@@ -261,8 +261,7 @@ impl BridgeV1State {
     ///
     /// # Parameters
     ///
-    /// - `withdrawal_info` - Parsed withdrawal information containing operator, deposit details,
-    ///   and amounts
+    /// - `withdrawal_info` - Parsed withdrawal information containing deposit details and amounts
     ///
     /// # Returns
     ///
@@ -273,7 +272,6 @@ impl BridgeV1State {
     ///
     /// Returns error if:
     /// - No assignment exists for the referenced deposit
-    /// - The operator doesn't match the assigned operator
     /// - The withdrawal specifications don't match the assignment
     fn validate_withdrawal_fulfillment(
         &self,
@@ -321,8 +319,8 @@ impl BridgeV1State {
     /// # Parameters
     ///
     /// - `tx` - The withdrawal fulfillment transaction
-    /// - `withdrawal_info` - Parsed withdrawal information containing operator, deposit details,
-    ///   and withdrawal amounts
+    /// - `withdrawal_info` - Parsed withdrawal information containing deposit details and
+    ///   withdrawal amounts
     ///
     /// # Returns
     ///
@@ -334,7 +332,6 @@ impl BridgeV1State {
     ///
     /// Returns error if:
     /// - No assignment exists for the referenced deposit
-    /// - The operator doesn't match the assigned operator
     /// - The withdrawal specifications don't match the assignment
     /// - The deposit referenced in the withdrawal doesn't exist
     pub fn process_withdrawal_fulfillment_tx(
