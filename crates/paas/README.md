@@ -1,6 +1,6 @@
-# Strata PaaS - Prover as a Service
+# Prover Service
 
-General-purpose framework for managing proof generation with worker pools, retry logic, and lifecycle management.
+Framework for managing proof generation with worker pools, retry logic, and lifecycle management.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ pub trait Prover: Send + Sync + 'static {
     type Backend: Clone + Eq + Hash + Debug + Send + Sync + 'static;
 
     fn backend(&self, task_id: &Self::TaskId) -> Self::Backend;
-    fn prove(&self, task_id: Self::TaskId) -> impl Future<Output = PaaSResult<()>> + Send;
+    fn prove(&self, task_id: Self::TaskId) -> impl Future<Output = ProverServiceResult<()>> + Send;
 }
 ```
 
@@ -22,7 +22,7 @@ The caller implements this trait to define:
 - **Task ID type**: Any type that's hashable, serializable, and unique
 - **Backend type**: Identifier for worker pooling (e.g., "sp1", "native")
 - **backend()**: Maps tasks to backends for worker allocation
-- **prove()**: The actual proving logic (completely opaque to PaaS)
+- **prove()**: The actual proving logic (fully isolated from service internals)
 
 ### Task Lifecycle
 
@@ -62,7 +62,7 @@ multiple program handlers dynamically:
 
 ```rust
 use strata_paas::registry::RegistryProverServiceBuilder;
-use strata_paas::PaaSConfig;
+use strata_paas::ProverServiceConfig;
 
 // Define your program type with routing
 enum MyProgram {
@@ -111,7 +111,7 @@ See the `registry` module documentation for complete examples.
 
 ## Design Principles
 
-1. **Separation of Concerns**: PaaS handles lifecycle/pooling, caller handles proving
+1. **Separation of Concerns**: Service handles lifecycle/pooling, caller handles proving
 2. **Type Safety**: Generic over task ID and backend types
 3. **Flexibility**: Works with any proof system (SP1, RISC0, native, etc.)
 4. **Observability**: Built-in status reporting and metrics
