@@ -3,153 +3,42 @@ use std::sync::Arc;
 use jsonrpsee::http_client::HttpClient;
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_primitives::{
-    l1::L1BlockCommitment,
-    l2::L2BlockCommitment,
-    proof::{ProofContext, ProofKey},
-};
-use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
+use strata_primitives::proof::{ProofContext, ProofKey};
+use strata_proofimpl_checkpoint::program::CheckpointProverInput;
 use strata_rpc_api::StrataApiClient;
-use strata_rpc_types::{RpcCheckpointConfStatus, RpcCheckpointInfo};
+use strata_rpc_types::RpcCheckpointInfo;
 use strata_zkvm_hosts::get_verification_key;
-use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use super::{cl_stf::ClStfOperator, ProvingOp};
+use super::{cl_stf::ClStfOperator, ProofInputFetcher};
 use crate::{
     checkpoint_runner::{errors::CheckpointResult, submit::submit_checkpoint_proof},
     errors::ProvingTaskError,
-    operators::cl_stf::ClStfParams,
-    task_tracker::TaskTracker,
 };
 
-/// A struct that implements the [`ProvingOp`] for Checkpoint Proof.
+/// Operator for checkpoint proof generation.
 ///
-/// It is responsible for managing the data and tasks required to generate Checkpoint Proof. It
-/// fetches the necessary inputs for the [`CheckpointProgram`] by:
-// TODO: update docstring here
+/// Provides access to CL client and checkpoint submission functionality.
 #[derive(Debug, Clone)]
 pub(crate) struct CheckpointOperator {
     cl_client: HttpClient,
     cl_stf_operator: Arc<ClStfOperator>,
-    enable_checkpoint_runner: bool,
 }
 
 impl CheckpointOperator {
-    /// Creates a new BTC operations instance.
-    pub(crate) fn new(
-        cl_client: HttpClient,
-        cl_stf_operator: Arc<ClStfOperator>,
-        enable_checkpoint_runner: bool,
-    ) -> Self {
+    /// Creates a new checkpoint operator.
+    pub(crate) fn new(cl_client: HttpClient, cl_stf_operator: Arc<ClStfOperator>) -> Self {
         Self {
             cl_client,
             cl_stf_operator,
-            enable_checkpoint_runner,
         }
     }
 
-    /// Creates dependency tasks for the given `checkpoint_info`.
-    ///
-    /// # Arguments
-    ///
-    /// - `checkpoint_info`: checkpoint data.
-    /// - `db`: A reference to the proof database.
-    /// - `task_tracker`: A shared task tracker for managing task dependencies.
-    ///
-    /// # Returns
-    ///
-    /// A [`Vec`] containing the [`ProofKey`] for the dependent proving operations.
-    async fn create_deps_tasks_inner(
+    /// Fetches checkpoint information from the CL client.
+    pub(crate) async fn fetch_ckp_info(
         &self,
-        checkpoint_info: RpcCheckpointInfo,
-        db: &ProofDBSled,
-        task_tracker: Arc<Mutex<TaskTracker>>,
-    ) -> Result<Vec<ProofKey>, ProvingTaskError> {
-        let ckp_idx = checkpoint_info.idx;
-        let l2_blocks_len = checkpoint_info.l2_range.1.slot() - checkpoint_info.l2_range.0.slot();
-        info!(%ckp_idx, %l2_blocks_len);
-
-        // Since the L1Manifests are only included on the terminal block of epoch transition, we can
-        // strategize to split the L2 Blocks as following:
-        // 1. Prove CL terminal block separately
-        // 2. Split other blocks on a on chunks of 20?
-        // TODO: add better heuristic to split, so that it is most efficient
-        // Since the EVM EE STF will be the heaviest, the splitting can be done based on that
-        //
-        // For now, do everything on a single chunk
-        let cl_stf_params = ClStfParams {
-            l2_range: checkpoint_info.l2_range,
-        };
-        self.cl_stf_operator
-            .create_task(cl_stf_params, task_tracker, db)
-            .await
-    }
-
-    /// Manual creation of checkpoint task. Intended to be used in tests.
-    ///
-    /// #Note
-    ///
-    /// This is analogous to [`ProvingOp::create_task`].
-    /// In fact, a forked version with construction of dependency tasks from manually constructed
-    /// [`RpcCheckpointInfo`].
-    ///
-    /// # Arguments
-    ///
-    /// - `checkpoint_idx`: index of the checkpoint.
-    /// - `l1_range`: range of blocks on L1 to be included in the checkpoint.
-    /// - `l2_range`: range of block on L2 to be included in the  checkpoint.
-    /// - `task_tracker`: A shared task tracker for managing task dependencies.
-    /// - `db`: A reference to the proof database.
-    ///
-    /// # Returns
-    ///
-    /// A vector of [`ProofKey`] corresponding to the checkpoint proving operation.
-    pub(crate) async fn create_task_raw(
-        &self,
-        checkpoint_idx: u64,
-        l1_range: (L1BlockCommitment, L1BlockCommitment),
-        l2_range: (L2BlockCommitment, L2BlockCommitment),
-        task_tracker: Arc<Mutex<TaskTracker>>,
-        db: &ProofDBSled,
-    ) -> Result<Vec<ProofKey>, ProvingTaskError> {
-        let checkpoint_info = RpcCheckpointInfo {
-            idx: checkpoint_idx,
-            l1_range,
-            l2_range,
-            l1_reference: None,
-            confirmation_status: RpcCheckpointConfStatus::Pending,
-        };
-        let proof_ctx = self.construct_proof_ctx(&checkpoint_idx)?;
-
-        // Try to fetch the existing prover tasks for dependencies.
-        let proof_deps = db
-            .get_proof_deps(proof_ctx)
-            .map_err(ProvingTaskError::DatabaseError)?;
-
-        let deps_ctx = match proof_deps {
-            // Reuse the existing dependency tasks fetched from DB.
-            Some(v) => v,
-            // Create new dependency tasks.
-            None => {
-                let deps_keys = self
-                    .create_deps_tasks_inner(checkpoint_info, db, task_tracker.clone())
-                    .await?;
-                let deps: Vec<_> = deps_keys.iter().map(|v| v.context().to_owned()).collect();
-
-                if !deps.is_empty() {
-                    db.put_proof_deps(proof_ctx, deps.clone())
-                        .map_err(ProvingTaskError::DatabaseError)?;
-                }
-                deps
-            }
-        };
-
-        let mut task_tracker = task_tracker.lock().await;
-        task_tracker.create_tasks(proof_ctx, deps_ctx, db)
-    }
-
-    async fn fetch_ckp_info(&self, ckp_idx: u64) -> Result<RpcCheckpointInfo, ProvingTaskError> {
+        ckp_idx: u64,
+    ) -> Result<RpcCheckpointInfo, ProvingTaskError> {
         self.cl_client
             .get_checkpoint_info(ckp_idx)
             .await
@@ -163,35 +52,64 @@ impl CheckpointOperator {
         &self.cl_client
     }
 
+    /// Returns a reference to the ClStf operator.
+    pub(crate) fn cl_stf_operator(&self) -> &Arc<ClStfOperator> {
+        &self.cl_stf_operator
+    }
+
+    /// Creates and stores the ClStf proof dependencies for a checkpoint.
+    ///
+    /// This fetches the checkpoint info from the CL client and creates a ClStf proof context
+    /// for the L2 block range covered by the checkpoint.
+    pub(crate) async fn create_checkpoint_deps(
+        &self,
+        ckp_idx: u64,
+        db: &ProofDBSled,
+    ) -> Result<Vec<ProofContext>, ProvingTaskError> {
+        // Check if dependencies already exist
+        let checkpoint_ctx = ProofContext::Checkpoint(ckp_idx);
+        if let Some(existing_deps) = db
+            .get_proof_deps(checkpoint_ctx)
+            .map_err(ProvingTaskError::DatabaseError)?
+        {
+            info!(%ckp_idx, "Checkpoint dependencies already exist, skipping creation");
+            return Ok(existing_deps);
+        }
+
+        // Fetch checkpoint info to get L2 range
+        let ckp_info = self.fetch_ckp_info(ckp_idx).await?;
+
+        info!(%ckp_idx, "Creating ClStf dependency for checkpoint");
+
+        // Create ClStf proof context from the checkpoint's L2 range
+        let cl_stf_ctx = ProofContext::ClStf(ckp_info.l2_range.0, ckp_info.l2_range.1);
+
+        // Store Checkpoint dependencies (ClStf)
+        db.put_proof_deps(checkpoint_ctx, vec![cl_stf_ctx])
+            .map_err(ProvingTaskError::DatabaseError)?;
+
+        Ok(vec![cl_stf_ctx])
+    }
+
+    /// Submits a checkpoint proof to the CL client.
     pub(crate) async fn submit_checkpoint_proof(
         &self,
         checkpoint_index: u64,
         proof_key: &ProofKey,
         proof_db: &ProofDBSled,
     ) -> CheckpointResult<()> {
-        if !self.enable_checkpoint_runner {
-            return Ok(());
-        }
         submit_checkpoint_proof(checkpoint_index, self.cl_client(), proof_key, proof_db).await
     }
 }
 
-impl ProvingOp for CheckpointOperator {
-    type Program = CheckpointProgram;
-    type Params = u64;
-
-    fn construct_proof_ctx(
-        &self,
-        ckp_idx: &Self::Params,
-    ) -> Result<ProofContext, ProvingTaskError> {
-        Ok(ProofContext::Checkpoint(*ckp_idx))
-    }
+impl ProofInputFetcher for CheckpointOperator {
+    type Input = CheckpointProverInput;
 
     async fn fetch_input(
         &self,
         task_id: &ProofKey,
         db: &ProofDBSled,
-    ) -> Result<CheckpointProverInput, ProvingTaskError> {
+    ) -> Result<Self::Input, ProvingTaskError> {
         let deps = db
             .get_proof_deps(*task_id.context())
             .map_err(ProvingTaskError::DatabaseError)?
@@ -204,9 +122,13 @@ impl ProvingOp for CheckpointOperator {
 
         let mut cl_stf_proofs = Vec::with_capacity(deps.len());
         for dep in deps {
+            // Validate that all dependencies are ClStf proofs
             match dep {
-                ProofContext::ClStf(..) => {}
-                _ => panic!("invalid"),
+                strata_primitives::proof::ProofContext::ClStf(..) => {}
+                _ => panic!(
+                    "Checkpoint dependencies must be ClStf proofs, got: {:?}",
+                    dep
+                ),
             };
             let cl_stf_key = ProofKey::new(dep, *task_id.host());
             let proof = db
@@ -220,16 +142,5 @@ impl ProvingOp for CheckpointOperator {
             cl_stf_proofs,
             cl_stf_vk,
         })
-    }
-
-    async fn create_deps_tasks(
-        &self,
-        ckp_idx: Self::Params,
-        db: &ProofDBSled,
-        task_tracker: Arc<Mutex<TaskTracker>>,
-    ) -> Result<Vec<ProofKey>, ProvingTaskError> {
-        let checkpoint_info = self.fetch_ckp_info(ckp_idx).await?;
-        self.create_deps_tasks_inner(checkpoint_info, db, task_tracker)
-            .await
     }
 }

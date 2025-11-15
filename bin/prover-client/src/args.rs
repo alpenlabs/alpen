@@ -187,6 +187,11 @@ pub(crate) struct ResolvedConfig {
     pub(crate) sp1_workers: usize,
 
     /// Wait time in milliseconds for the prover manager loop.
+    /// Note: Kept for config compatibility but no longer used with PaaS.
+    #[expect(
+        dead_code,
+        reason = "Kept for backward config compatibility with non-PaaS setups"
+    )]
     pub(crate) polling_interval: u64,
 
     /// Checkpoint polling interval in seconds.
@@ -205,6 +210,11 @@ pub(crate) struct ResolvedConfig {
     pub(crate) bitcoin_retry_interval: u64,
 
     /// Maximum number of retries for transient failures.
+    /// Note: Kept for config compatibility but no longer used with PaaS.
+    #[expect(
+        dead_code,
+        reason = "Kept for backward config compatibility with non-PaaS setups"
+    )]
     pub(crate) max_retry_counter: u64,
 
     /// Path to the custom rollup configuration file.

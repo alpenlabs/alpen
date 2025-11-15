@@ -1,0 +1,32 @@
+[package]
+name = "strata-paas"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+
+# Service framework
+strata-service = { workspace = true }
+strata-tasks = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+
+# Logging
+tracing = { workspace = true }
+
+# ZkVm support (required)
+zkaleido = { workspace = true }
+
+# Async trait for registry trait objects
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio-test = "0.4"
+serde_json = { workspace = true }

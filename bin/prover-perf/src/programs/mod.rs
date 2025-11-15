@@ -39,13 +39,13 @@ pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
     programs
         .iter()
         .map(|program| match program {
-            GuestProgram::EvmEeStf => evm_ee::gen_perf_report(&*EVM_EE_STF_HOST),
+            GuestProgram::EvmEeStf => evm_ee::gen_perf_report(&**EVM_EE_STF_HOST),
             GuestProgram::ClStf => {
-                cl_stf::gen_perf_report(&*CL_STF_HOST, evm_ee::proof_with_vk(&*EVM_EE_STF_HOST))
+                cl_stf::gen_perf_report(&**CL_STF_HOST, evm_ee::proof_with_vk(&**EVM_EE_STF_HOST))
             }
             GuestProgram::Checkpoint => checkpoint::gen_perf_report(
-                &*CHECKPOINT_HOST,
-                cl_stf::proof_with_vk(&*CL_STF_HOST, &*EVM_EE_STF_HOST),
+                &**CHECKPOINT_HOST,
+                cl_stf::proof_with_vk(&**CL_STF_HOST, &**EVM_EE_STF_HOST),
             ),
         })
         .collect()
