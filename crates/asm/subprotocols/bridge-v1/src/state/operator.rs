@@ -15,12 +15,11 @@ use super::bitmap::OperatorBitmap;
 /// Each operator registered in the bridge has:
 ///
 /// - **`idx`** - Unique identifier used to reference the operator globally
-/// - **`signing_pk`** - Public key for message signature verification between operators
-/// - **`wallet_pk`** - Public key for Bitcoin transaction signatures (MuSig2 compatible)
+/// - **`musig2_pk`** - Public key for Bitcoin transaction signatures (MuSig2 compatible)
 ///
 /// # Bitcoin Compatibility
 ///
-/// The `wallet_pk` follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
+/// The `musig2_pk` follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
 /// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
 /// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
 #[derive(
@@ -56,15 +55,15 @@ impl OperatorEntry {
         self.idx
     }
 
-    /// Returns the wallet public key for Bitcoin transactions.
+    /// Returns the MuSig2 public key for Bitcoin transactions.
     ///
     /// This key is used in MuSig2 aggregation for Bitcoin transaction signatures
     /// and follows BIP 340 standard for Taproot compatibility.
     ///
     /// # Returns
     ///
-    /// Reference to the wallet public key as [`EvenPublicKey`].
-    pub fn wallet_pk(&self) -> &EvenPublicKey {
+    /// Reference to the MuSig2 public key as [`EvenPublicKey`].
+    pub fn musig2_pk(&self) -> &EvenPublicKey {
         &self.musig2_pk
     }
 }
@@ -110,10 +109,10 @@ pub struct OperatorTable {
     /// with the aggregated public key for signature operations.
     active_operators: OperatorBitmap,
 
-    /// Aggregated public key derived from operator wallet keys that are currently active in the
+    /// Aggregated public key derived from operator MuSig2 keys that are currently active in the
     /// N/N multisig.
     ///
-    /// This key is computed by aggregating the wallet public keys of only those operators
+    /// This key is computed by aggregating the MuSig2 public keys of only those operators
     /// marked as active in the `active_operators` bitmap, using the MuSig2 key aggregation
     /// protocol. It serves as the collective public key for multi-signature operations and is
     /// used for:
@@ -135,7 +134,7 @@ impl OperatorTable {
     ///
     /// # Parameters
     ///
-    /// - `entries` - Slice of [`OperatorPubkeys`] containing signing and wallet keys
+    /// - `entries` - Slice of [`OperatorPubkeys`] containing MuSig2 keys
     ///
     /// # Returns
     ///
@@ -164,7 +163,7 @@ impl OperatorTable {
                     .map(|(i, e)| OperatorEntry {
                         idx: i as OperatorIdx,
                         musig2_pk: EvenPublicKey::try_from(*e.wallet_pk())
-                            .expect("wallet_pk should be a valid even public key"),
+                            .expect("MuSig2 public key should be a valid even public key"),
                     })
                     .collect(),
             ),
@@ -188,7 +187,9 @@ impl OperatorTable {
         self.operators.as_slice()
     }
 
-    /// Returns the aggregated public key of the current active operators
+    /// Returns the aggregated public key of the current active operators.
+    ///
+    /// This key is computed by aggregating the MuSig2 public keys of all active operators.
     pub fn agg_key(&self) -> &BitcoinXOnlyPublicKey {
         &self.agg_key
     }
@@ -266,7 +267,7 @@ impl OperatorTable {
             let entry = OperatorEntry {
                 idx,
                 musig2_pk: EvenPublicKey::try_from(*op_keys.wallet_pk())
-                    .expect("wallet_pk should be a valid even public key"),
+                    .expect("MuSig2 public key should be a valid even public key"),
             };
 
             // SortedVec handles insertion and maintains sorted order
@@ -305,7 +306,7 @@ impl OperatorTable {
                 .active_indices()
                 .filter_map(|op| {
                     self.get_operator(op).map(|entry| {
-                        Buf32::from(entry.wallet_pk().x_only_public_key().0.serialize())
+                        Buf32::from(entry.musig2_pk().x_only_public_key().0.serialize())
                     })
                 })
                 .collect();
@@ -369,7 +370,7 @@ mod tests {
         for (i, op) in operators.iter().enumerate() {
             let entry = table.get_operator(i as u32).unwrap();
             assert_eq!(entry.idx(), i as u32);
-            assert_eq!(Buf32::from(*entry.wallet_pk()), *op.wallet_pk());
+            assert_eq!(Buf32::from(*entry.musig2_pk()), *op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
@@ -390,7 +391,7 @@ mod tests {
             let idx = (i + 1) as u32;
             let entry = table.get_operator(idx).unwrap();
             assert_eq!(entry.idx(), idx);
-            assert_eq!(Buf32::from(*entry.wallet_pk()), *op.wallet_pk());
+            assert_eq!(Buf32::from(*entry.musig2_pk()), *op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
     }

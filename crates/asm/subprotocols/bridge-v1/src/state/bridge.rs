@@ -429,8 +429,8 @@ mod tests {
             .map(|sk| {
                 let pk = PublicKey::from_secret_key(&secp, sk);
                 let (xonly, _) = pk.x_only_public_key();
-                let wallet_pk = Buf32::new(xonly.serialize());
-                OperatorPubkeys::new(wallet_pk, wallet_pk) // Use same key for signing and wallet
+                let musig2_pk = Buf32::new(xonly.serialize());
+                OperatorPubkeys::new(musig2_pk, musig2_pk) // Use same key for both parameters
             })
             .collect();
 
