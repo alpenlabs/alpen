@@ -29,5 +29,6 @@ pub(crate) fn handle_bridge_gateway_transfer<S: StateAccessor>(
     _from: AccountId,
     _amt: BitcoinAmount,
 ) -> StfResult<()> {
+    // TODO: do something about this
     Err(StfError::UnsupportedTransferTo(SystemAccount::Bridge.id()))
 }

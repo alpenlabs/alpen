@@ -133,7 +133,7 @@ pub struct SnarkAccountUpdateLogData {
     /// New proof state after the update.
     new_proof_state: Buf32,
 
-    /// Any extra data
+    /// Any extra data.
     extra_data: Vec<u8>,
 }
 

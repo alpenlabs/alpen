@@ -54,7 +54,7 @@ pub enum AccountTypeState<T: IAccountState> {
 /// Abstract snark account state.
 pub trait ISnarkAccountState: Sized {
     /// Verifier key to verify the updates.
-    fn verifier_key(&self) -> &PredicateKey;
+    fn verification_key(&self) -> &PredicateKey;
 
     // Proof state accessors
 

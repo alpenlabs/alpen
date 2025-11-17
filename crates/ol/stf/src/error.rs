@@ -52,9 +52,7 @@ pub enum StfError {
     UnsupportedTransfer(String),
 
     #[error("Epoch overflow: current epoch {cur_epoch}")]
-    EpochOverflow {
-        cur_epoch: Epoch,
-    },
+    EpochOverflow { cur_epoch: Epoch },
 
     #[error("Unsupported transfer to {0:?}")]
     UnsupportedTransferTo(AccountId),
@@ -63,10 +61,7 @@ pub enum StfError {
     Codec(#[from] CodecError),
 
     #[error("Preseal root mismatch(expected {expected}, got {got})")]
-    PresealRootMismatch {
-        expected: Buf32,
-        got: Buf32,
-    },
+    PresealRootMismatch { expected: Buf32, got: Buf32 },
 
     #[error("Received Snark update for non-snark account: {0:?}")]
     SnarkUpdateForNonSnarkAccount(AccountId),

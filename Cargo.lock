@@ -13273,7 +13273,7 @@ dependencies = [
  "strata-merkle",
  "strata-msg-fmt",
  "strata-test-utils",
- "thiserror 2.0.17",
+ "thiserror 2.0.16",
  "tracing",
 ]
 
@@ -14301,6 +14301,7 @@ dependencies = [
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "thiserror 2.0.16",
+ "tracing",
 ]
 
 [[package]]

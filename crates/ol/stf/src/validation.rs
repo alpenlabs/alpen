@@ -133,7 +133,12 @@ mod tests {
 
     use super::*;
 
-    fn create_test_header(slot: u64, epoch: Epoch, timestamp: u64, state_root: Buf32) -> OLBlockHeader {
+    fn create_test_header(
+        slot: u64,
+        epoch: Epoch,
+        timestamp: u64,
+        state_root: Buf32,
+    ) -> OLBlockHeader {
         OLBlockHeader::new(
             timestamp,
             slot,
@@ -165,7 +170,10 @@ mod tests {
             checkpoint_tag: "ckpt".to_string(),
             cred_rule: CredRule::Unchecked,
             genesis_l1_view: GenesisL1View {
-                blk: L1BlockCommitment::new(absolute::Height::ZERO, strata_primitives::L1BlockId::from(Buf32::zero())),
+                blk: L1BlockCommitment::new(
+                    absolute::Height::ZERO,
+                    strata_primitives::L1BlockId::from(Buf32::zero()),
+                ),
                 next_target: 0x1d00ffff,
                 epoch_start_timestamp: 0,
                 last_11_timestamps: [0; 11],

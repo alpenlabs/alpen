@@ -114,7 +114,7 @@ pub fn verify_update_witness<S: StateAccessor>(
     update: &SnarkAccountUpdate,
     _state_accessor: &S,
 ) -> AcctResult<()> {
-    let vk = snark_state.verifier_key();
+    let vk = snark_state.verification_key();
     let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
     let is_valid = vk
         .verify_claim_witness(&claim, update.update_proof())

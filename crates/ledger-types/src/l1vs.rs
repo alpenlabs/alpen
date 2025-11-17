@@ -47,8 +47,6 @@ pub trait IL1ViewState {
     fn asm_recorded_epoch(&self) -> &EpochCommitment;
 
     /// Sets the field for the epoch that the ASM considers to be finalized.
-    ///
-    /// This is our perspective of the last block's ASM manifest we've accepted.
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment);
 
     /// Gets the total OL ledger balance.

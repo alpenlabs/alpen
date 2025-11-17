@@ -38,7 +38,7 @@ struct MockSnarkAccountState {
 }
 
 impl ISnarkAccountState for MockSnarkAccountState {
-    fn verifier_key(&self) -> &PredicateKey {
+    fn verification_key(&self) -> &PredicateKey {
         &self.verifier_key
     }
 
@@ -488,7 +488,8 @@ mod block_asm_tests {
         block: OLBlock,
     ) {
         let ctx = BlockExecContext::new(prev_header.clone(), params.clone());
-        execute_block(ctx, initial_state, block).expect("composed block should pass validation");
+        validate_and_execute_block(ctx, initial_state, block)
+            .expect("composed block should pass validation");
     }
 
     /// Tests terminal block (epoch sealing) composition and validation.
@@ -1682,5 +1683,95 @@ mod transaction_execution_tests {
             final_state.inbox_messages.len(),
             final_state.next_inbox_idx()
         );
+    }
+}
+
+/// Tests for transaction extra validation
+#[cfg(test)]
+mod validation {
+    use strata_ol_chain_types_new::TransactionExtra;
+
+    use super::*;
+
+    #[test]
+    fn test_valid_tx_extra_no_constraints() {
+        let cur_slot = 100;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+        let extra = TransactionExtra::default();
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_tx_extra_within_range() {
+        let cur_slot = 100;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+        let extra = TransactionExtra::new(Some(50), Some(150));
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_tx_extra_min_slot_too_high() {
+        let cur_slot = 100;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // min_slot is 150, current is 100
+        let extra = TransactionExtra::new(Some(150), None);
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StfError::InvalidTxExtra => {}
+            err => panic!("Expected InvalidTxExtra, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_invalid_tx_extra_max_slot_too_low() {
+        let cur_slot = 100;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // max_slot is 50, current is 100
+        let extra = TransactionExtra::new(None, Some(50));
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StfError::InvalidTxExtra => {}
+            err => panic!("Expected InvalidTxExtra, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_valid_tx_extra_boundary_min() {
+        let cur_slot = 100;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // min_slot equals current slot
+        let extra = TransactionExtra::new(Some(100), None);
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_tx_extra_boundary_max() {
+        let cur_slot = 100;
+        let mut state = MockStateAccessor::default();
+        state.set_cur_slot(cur_slot);
+
+        // max_slot equals current slot
+        let extra = TransactionExtra::new(None, Some(100));
+
+        let result = validate_tx_extra(&state, &extra);
+        assert!(result.is_ok());
     }
 }

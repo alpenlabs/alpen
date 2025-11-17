@@ -5,6 +5,7 @@ use strata_ledger_types::{IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::{LogEmitter, OLLog};
 use strata_primitives::l1::BitcoinAmount;
 use thiserror::Error;
+use tracing::debug;
 
 use crate::{
     context::BlockExecContext,
@@ -58,7 +59,8 @@ fn process_deposit(
     )?;
 
     let log = OLLog::deposit_ack(acct_id, dep.addr.clone(), dep.amount.into());
-    LogEmitter::emit_log(ctx, log);
+    debug!(?log, "emitting checkpoint ack log");
+    ctx.emit_log(log);
 
     // Increment bridged btc.
     let l1_view = state_accessor.l1_view_mut();
@@ -80,6 +82,7 @@ fn process_checkpoint(
     // Using system account zero address here since checkpoint is not associated with any account
     // and we have account id in OLLog. I don't want to make it optional.
     let log = OLLog::checkpoint_ack(SystemAccount::Zero.id(), ckpt.epoch_commitment);
+    debug!(?log, "emitting checkpoint ack log");
     ctx.emit_log(log);
     Ok(())
 }

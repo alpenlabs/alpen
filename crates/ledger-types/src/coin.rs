@@ -27,6 +27,18 @@ impl Coin {
         self.0
     }
 
+    /// Splits the coin into two: `value` and the rest.
+    ///
+    /// # Panics
+    /// When the `value` is greater than the coin's current value.
+    pub fn split(self, value: BitcoinAmount) -> (Coin, Coin) {
+        let rest = self.0.checked_sub(value).expect("coin: invalid split"); // TODO: expect
+        // Destroy self
+        mem::forget(self);
+
+        (Coin::new_unchecked(value), Coin::new_unchecked(rest))
+    }
+
     /// Consumes the coin without panicking.
     ///
     /// Care must be used to ensure that this does not destroy value.

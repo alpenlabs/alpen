@@ -67,7 +67,7 @@ impl TransactionPayload {
     }
 }
 
-/// Additional data in a transaction.
+/// Additional data in a transaction that may change things about how we interpret the transaction.
 #[derive(Clone, Debug, Default)]
 pub struct TransactionExtra {
     min_slot: Option<Slot>,
