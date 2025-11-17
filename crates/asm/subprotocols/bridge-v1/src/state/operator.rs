@@ -18,12 +18,6 @@ use super::bitmap::OperatorBitmap;
 /// - **`signing_pk`** - Public key for message signature verification between operators
 /// - **`wallet_pk`** - Public key for Bitcoin transaction signatures (MuSig2 compatible)
 ///
-/// # Key Separation Design
-///
-/// The two separate keys allow for different cryptographic schemes:
-/// - Message signing can use a different mechanism than Bitcoin transactions
-/// - Currently, only `wallet_pk` is actively used for signatures
-///
 /// # Bitcoin Compatibility
 ///
 /// The `wallet_pk` follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
@@ -35,9 +29,6 @@ use super::bitmap::OperatorBitmap;
 pub struct OperatorEntry {
     /// Global operator index.
     idx: OperatorIdx,
-
-    /// Public key used to verify signed messages from the operator.
-    signing_pk: Buf32,
 
     /// Wallet public key used to compute MuSig2 public key from a set of operators.
     wallet_pk: EvenPublicKey,
@@ -63,18 +54,6 @@ impl OperatorEntry {
     /// The [`OperatorIdx`] that uniquely identifies this operator.
     pub fn idx(&self) -> OperatorIdx {
         self.idx
-    }
-
-    /// Returns the signing public key for message verification.
-    ///
-    /// This key is used to verify signed messages between operators in the
-    /// bridge communication protocol.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the signing public key as [`Buf32`].
-    pub fn signing_pk(&self) -> &Buf32 {
-        &self.signing_pk
     }
 
     /// Returns the wallet public key for Bitcoin transactions.
@@ -184,7 +163,6 @@ impl OperatorTable {
                     .enumerate()
                     .map(|(i, e)| OperatorEntry {
                         idx: i as OperatorIdx,
-                        signing_pk: *e.signing_pk(),
                         wallet_pk: EvenPublicKey::try_from(*e.wallet_pk())
                             .expect("wallet_pk should be a valid even public key"),
                     })
@@ -287,7 +265,6 @@ impl OperatorTable {
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
-                signing_pk: *op_keys.signing_pk(),
                 wallet_pk: EvenPublicKey::try_from(*op_keys.wallet_pk())
                     .expect("wallet_pk should be a valid even public key"),
             };
@@ -392,7 +369,6 @@ mod tests {
         for (i, op) in operators.iter().enumerate() {
             let entry = table.get_operator(i as u32).unwrap();
             assert_eq!(entry.idx(), i as u32);
-            assert_eq!(entry.signing_pk(), op.signing_pk());
             assert_eq!(Buf32::from(*entry.wallet_pk()), *op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
@@ -414,7 +390,6 @@ mod tests {
             let idx = (i + 1) as u32;
             let entry = table.get_operator(idx).unwrap();
             assert_eq!(entry.idx(), idx);
-            assert_eq!(entry.signing_pk(), op.signing_pk());
             assert_eq!(Buf32::from(*entry.wallet_pk()), *op.wallet_pk());
             assert!(table.is_in_current_multisig(i as u32));
         }
