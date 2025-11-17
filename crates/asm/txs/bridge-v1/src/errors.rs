@@ -110,3 +110,27 @@ pub enum CommitParseError {
     #[error("Invalid transaction type: expected type to be {COMMIT_TX_TYPE}, got {0}")]
     InvalidTxType(TxType),
 }
+
+/// Errors that can occur during commit transaction input/output validation.
+#[derive(Debug, Error, Clone)]
+pub enum CommitInputError {
+    /// The operator public key is malformed or invalid.
+    #[error("Invalid operator public key")]
+    InvalidOperatorKey,
+
+    /// The commit transaction has no inputs.
+    #[error("Commit transaction has no inputs")]
+    MissingInput,
+
+    /// The first input's previous output script is not locked to the N/N aggregated operator key.
+    #[error("First input is not locked to the N/N aggregated operator key")]
+    WrongInputLock,
+
+    /// Missing the second output at index 1.
+    #[error("Missing second output (N/N continuation output) at index 1")]
+    MissingSecondOutput,
+
+    /// The second output is not locked to the N/N aggregated operator key.
+    #[error("Second output is not locked to the N/N aggregated operator key")]
+    WrongSecondOutputLock,
+}
