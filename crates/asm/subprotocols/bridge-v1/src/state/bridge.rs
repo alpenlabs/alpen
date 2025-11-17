@@ -389,11 +389,9 @@ mod tests {
         deposit::DepositInfo,
         test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
     };
-    use strata_bridge_types::OperatorPubkeys;
-    use strata_crypto::EvenSecretKey;
+    use strata_crypto::{EvenSecretKey, schnorr::EvenPublicKey};
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
-        buf::Buf32,
         l1::{BitcoinAmount, L1BlockCommitment},
     };
     use strata_test_utils::ArbitraryGenerator;
@@ -411,9 +409,9 @@ mod tests {
     ///
     /// # Returns
     ///
-    /// - `Vec<SecretKey>` - Private keys for creating test transactions
-    /// - `Vec<OperatorPubkeys>` - Public keys for bridge configuration
-    fn create_test_operators() -> (Vec<EvenSecretKey>, Vec<OperatorPubkeys>) {
+    /// - `Vec<EvenSecretKey>` - Private keys for creating test transactions
+    /// - `Vec<EvenPublicKey>` - MuSig2 public keys for bridge configuration
+    fn create_test_operators() -> (Vec<EvenSecretKey>, Vec<EvenPublicKey>) {
         let secp = Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
         let num_operators = rng.gen_range(2..=5);
@@ -423,14 +421,12 @@ mod tests {
             .map(|_| SecretKey::new(&mut rng).into())
             .collect();
 
-        // Create operator pubkeys for config
-        let operator_pubkeys: Vec<OperatorPubkeys> = operators_privkeys
+        // Create operator MuSig2 public keys for config
+        let operator_pubkeys: Vec<EvenPublicKey> = operators_privkeys
             .iter()
             .map(|sk| {
                 let pk = PublicKey::from_secret_key(&secp, sk);
-                let (xonly, _) = pk.x_only_public_key();
-                let wallet_pk = Buf32::new(xonly.serialize());
-                OperatorPubkeys::new(wallet_pk, wallet_pk) // Use same key for signing and wallet
+                EvenPublicKey::from(pk)
             })
             .collect();
 

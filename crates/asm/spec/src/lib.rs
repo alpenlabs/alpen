@@ -11,7 +11,7 @@ use strata_asm_proto_checkpoint_v0::{
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, RollupParams};
-use strata_primitives::l1::BitcoinAmount;
+use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
 
 /// ASM specification for the Strata protocol.
 ///
@@ -69,16 +69,23 @@ impl StrataAsmSpec {
             },
         };
 
+        let operators = operators
+            .iter()
+            .map(|o| EvenPublicKey::try_from(*o.wallet_pk()).unwrap())
+            .collect();
+
+        let bridge_v1_genesis = BridgeV1Config {
+            operators,
+            denomination: BitcoinAmount::from_sat(params.deposit_amount.to_sat()),
+            assignment_duration: params.dispatch_assignment_dur as u64,
+            // TODO(QQ): adjust
+            operator_fee: BitcoinAmount::ZERO,
+        };
+
         Self {
             magic_bytes: params.magic_bytes,
             checkpoint_v0_params,
-            bridge_v1_genesis: BridgeV1Config {
-                operators,
-                denomination: BitcoinAmount::from_sat(params.deposit_amount.to_sat()),
-                assignment_duration: params.dispatch_assignment_dur as u64,
-                // TODO(QQ): adjust
-                operator_fee: BitcoinAmount::ZERO,
-            },
+            bridge_v1_genesis,
         }
     }
 }
