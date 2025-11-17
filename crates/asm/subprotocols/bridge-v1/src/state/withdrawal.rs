@@ -118,12 +118,12 @@ impl WithdrawOutput {
 ///
 /// # Important Notes
 ///
-/// - The `operator_idx` always refers to the **assigned operator** from the assignment entry,
-///   not necessarily the party who made the actual frontpayment (since frontpayment identity
-///   is not validated during transaction processing).
+/// - The `operator_idx` always refers to the **assigned operator** from the assignment entry, not
+///   necessarily the party who made the actual frontpayment (since frontpayment identity is not
+///   validated during transaction processing).
 /// - This data is stored in the MohoState and emitted as an ASM log via `NewExportEntry`.
-/// - The Bridge proof system consumes these entries to verify operators have correctly
-///   fulfilled withdrawal obligations before allowing them to unlock deposit UTXOs.
+/// - The Bridge proof system consumes these entries to verify operators have correctly fulfilled
+///   withdrawal obligations before allowing them to unlock deposit UTXOs.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct OperatorClaimUnlock {
     /// The index of the deposit that was fulfilled.
