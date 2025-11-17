@@ -4,7 +4,7 @@ use strata_asm_common::TxInputRef;
 use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
-    constants::WITHDRAWAL_TX_TYPE, errors::WithdrawalParseError,
+    constants::WITHDRAWAL_FULFILLMENT_TX_TYPE, errors::WithdrawalParseError,
     withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
 };
 
@@ -50,8 +50,8 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// withdrawal amount. See the module-level documentation for the complete transaction structure.
 ///
 /// The function validates the transaction structure and parses the auxiliary data containing:
-/// - Deposit index (4 bytes, big-endian u32) - identifies the locked deposit UTXO that the
-///   operator will receive payout from after successful verification of assignment fulfillment
+/// - Deposit index (4 bytes, big-endian u32) - identifies the locked deposit UTXO that the operator
+///   will receive payout from after successful verification of assignment fulfillment
 ///
 /// # Parameters
 ///
@@ -73,7 +73,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
-    if tx.tag().tx_type() != WITHDRAWAL_TX_TYPE {
+    if tx.tag().tx_type() != WITHDRAWAL_FULFILLMENT_TX_TYPE {
         return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
     }
 
@@ -201,8 +201,11 @@ mod tests {
 
         // Mutate the OP_RETURN output to have shorter aux len
         let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, aux_data);
+        let tagged_payload = create_tagged_payload(
+            BRIDGE_V1_SUBPROTOCOL_ID,
+            WITHDRAWAL_FULFILLMENT_TX_TYPE,
+            aux_data,
+        );
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
@@ -218,8 +221,11 @@ mod tests {
 
         // Mutate the OP_RETURN output to have longer aux len
         let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, aux_data);
+        let tagged_payload = create_tagged_payload(
+            BRIDGE_V1_SUBPROTOCOL_ID,
+            WITHDRAWAL_FULFILLMENT_TX_TYPE,
+            aux_data,
+        );
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
