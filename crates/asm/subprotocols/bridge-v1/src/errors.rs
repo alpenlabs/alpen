@@ -6,7 +6,7 @@ use strata_asm_txs_bridge_v1::errors::{
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
-use strata_primitives::l1::{BitcoinAmount, BitcoinTxid};
+use strata_primitives::l1::BitcoinAmount;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -65,14 +65,6 @@ pub enum WithdrawalValidationError {
     /// No assignment found for the deposit
     #[error("No assignment found for deposit index {deposit_idx}")]
     NoAssignmentFound { deposit_idx: u32 },
-
-    /// Operator performing withdrawal doesn't match assigned operator
-    #[error("Operator mismatch {0}")]
-    OperatorMismatch(Mismatch<OperatorIdx>),
-
-    /// Deposit txid in withdrawal doesn't match the actual deposit
-    #[error("Deposit txid mismatch {0}")]
-    DepositTxidMismatch(Mismatch<BitcoinTxid>),
 
     /// Withdrawal amount doesn't match assignment amount
     #[error("Withdrawal amount mismatch {0}")]
