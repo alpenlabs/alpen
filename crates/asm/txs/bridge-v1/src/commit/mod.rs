@@ -11,9 +11,11 @@
 //! transaction.
 //!
 //! ### Inputs
-//! - **Operator Inputs** (flexible): Any inputs controlled by the operator making the commitment
-//!   - The operator is responsible for funding this transaction from their own UTXOs
-//!   - No specific input structure is enforced - it's up to the operator to handle funding
+//! - **First Input** (required): Must spend the first output of a Claim transaction
+//!   - The input must be locked to the N/N aggregated operator key (key-spend only P2TR)
+//!   - This ensures only the operator set can commit to deposits
+//!   - While we don't verify it came from a specific Claim transaction during parsing, later
+//!     validation checks that it was properly spent from the N/N multisig
 //!
 //! ### Outputs
 //! 1. **OP_RETURN Output (Index 0)** (required): Contains SPS-50 tagged data with:
@@ -23,7 +25,14 @@
 //!    - Auxiliary data (4 bytes):
 //!      - Deposit index (4 bytes, big-endian u32): Index of the deposit being committed to
 //!
+//! 2. **N/N Output (Index 1)** (required): Must be locked to the N/N aggregated operator key
+//!    - Pay-to-Taproot script with aggregated operator key as internal key
+//!    - No merkle root (key-spend only)
+//!    - This output continues to the payout transaction
+//!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod parse;
+mod validation;
 
 pub use parse::{COMMIT_TX_AUX_DATA_LEN, CommitInfo, parse_commit_tx};
+pub use validation::{CLAIM_OUTPUT_INDEX, COMMIT_NN_OUTPUT_INDEX, validate_commit_nn_output};
