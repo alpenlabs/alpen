@@ -336,7 +336,6 @@ impl BridgeV1State {
     /// - The deposit referenced in the withdrawal doesn't exist
     pub fn process_withdrawal_fulfillment_tx(
         &mut self,
-        tx: &Transaction,
         withdrawal_info: &WithdrawalFulfillmentInfo,
     ) -> Result<OperatorClaimUnlock, WithdrawalValidationError> {
         self.validate_withdrawal_fulfillment(withdrawal_info)?;
@@ -349,8 +348,6 @@ impl BridgeV1State {
             .expect("Assignment must exist after successful validation");
 
         Ok(OperatorClaimUnlock {
-            fulfillment_txid: tx.compute_txid().into(),
-            deposit_txid: removed_assignment.deposit_txid(),
             deposit_idx: removed_assignment.deposit_idx(),
             operator_idx: removed_assignment.current_assignee(),
         })
@@ -361,10 +358,7 @@ impl BridgeV1State {
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::Rng;
-    use strata_asm_txs_bridge_v1::{
-        deposit::DepositInfo,
-        test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
-    };
+    use strata_asm_txs_bridge_v1::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
     use strata_crypto::{EvenSecretKey, schnorr::EvenPublicKey};
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
@@ -660,8 +654,7 @@ mod tests {
         for _ in 0..count {
             let assignment = bridge_state.assignments().assignments().first().unwrap();
             let withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-            let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
-            let res = bridge_state.process_withdrawal_fulfillment_tx(&tx, &withdrawal_info);
+            let res = bridge_state.process_withdrawal_fulfillment_tx(&withdrawal_info);
             assert!(res.is_ok());
         }
     }
@@ -683,9 +676,8 @@ mod tests {
 
         let correct_withdrawal_destination = withdrawal_info.withdrawal_destination.clone();
         withdrawal_info.withdrawal_destination = arb.generate::<Descriptor>().to_script();
-        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let err = bridge_state
-            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .process_withdrawal_fulfillment_tx(&withdrawal_info)
             .unwrap_err();
 
         assert!(matches!(
@@ -715,9 +707,8 @@ mod tests {
 
         let correct_withdrawal_amount = withdrawal_info.withdrawal_amount;
         withdrawal_info.withdrawal_amount = arb.generate();
-        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let err = bridge_state
-            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .process_withdrawal_fulfillment_tx(&withdrawal_info)
             .unwrap_err();
 
         assert!(matches!(err, WithdrawalValidationError::AmountMismatch(_)));
@@ -743,9 +734,8 @@ mod tests {
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
         withdrawal_info.deposit_idx = arb.generate();
 
-        let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
         let err = bridge_state
-            .process_withdrawal_fulfillment_tx(&tx, &withdrawal_info)
+            .process_withdrawal_fulfillment_tx(&withdrawal_info)
             .unwrap_err();
 
         assert!(matches!(
