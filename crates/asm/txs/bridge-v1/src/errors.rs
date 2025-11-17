@@ -5,7 +5,7 @@ use strata_l1_txfmt::TxType;
 use thiserror::Error;
 
 use crate::{
-    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
+    constants::{COMMIT_TX_TYPE, DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
     deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
 };
 
@@ -94,4 +94,19 @@ pub enum WithdrawalParseError {
 
     #[error("Transaction is missing output that fulfilled user withdrawal request")]
     MissingUserFulfillmentOutput,
+}
+
+/// Errors that can occur when parsing commit transactions.
+///
+/// When these parsing errors occur, they are logged and the transaction is skipped.
+/// No further processing is performed on transactions that fail to parse.
+#[derive(Debug, Error)]
+pub enum CommitParseError {
+    /// The auxiliary data in the commit transaction doesn't have correct length.
+    #[error("Invalid auxiliary data: expected 4 bytes, got {0} bytes")]
+    InvalidAuxiliaryData(usize),
+
+    /// The transaction type byte in the tag does not match the expected commit transaction type.
+    #[error("Invalid transaction type: expected type to be {COMMIT_TX_TYPE}, got {0}")]
+    InvalidTxType(TxType),
 }
