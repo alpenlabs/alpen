@@ -30,8 +30,8 @@ pub struct OperatorEntry {
     /// Global operator index.
     idx: OperatorIdx,
 
-    /// Wallet public key used to compute MuSig2 public key from a set of operators.
-    wallet_pk: EvenPublicKey,
+    /// Public key used to compute MuSig2 public key from a set of operators.
+    musig2_pk: EvenPublicKey,
 }
 
 impl PartialOrd for OperatorEntry {
@@ -65,7 +65,7 @@ impl OperatorEntry {
     ///
     /// Reference to the wallet public key as [`EvenPublicKey`].
     pub fn wallet_pk(&self) -> &EvenPublicKey {
-        &self.wallet_pk
+        &self.musig2_pk
     }
 }
 
@@ -163,7 +163,7 @@ impl OperatorTable {
                     .enumerate()
                     .map(|(i, e)| OperatorEntry {
                         idx: i as OperatorIdx,
-                        wallet_pk: EvenPublicKey::try_from(*e.wallet_pk())
+                        musig2_pk: EvenPublicKey::try_from(*e.wallet_pk())
                             .expect("wallet_pk should be a valid even public key"),
                     })
                     .collect(),
@@ -265,7 +265,7 @@ impl OperatorTable {
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
-                wallet_pk: EvenPublicKey::try_from(*op_keys.wallet_pk())
+                musig2_pk: EvenPublicKey::try_from(*op_keys.wallet_pk())
                     .expect("wallet_pk should be a valid even public key"),
             };
 
