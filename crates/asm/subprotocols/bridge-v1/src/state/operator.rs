@@ -4,7 +4,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::{OperatorIdx, OperatorPubkeys};
+use strata_bridge_types::OperatorIdx;
 use strata_crypto::{multisig::aggregate_schnorr_keys, schnorr::EvenPublicKey};
 use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
 
@@ -134,7 +134,7 @@ impl OperatorTable {
     ///
     /// # Parameters
     ///
-    /// - `entries` - Slice of [`OperatorPubkeys`] containing MuSig2 keys
+    /// - `entries` - Slice of [`EvenPublicKey`] containing MuSig2 keys
     ///
     /// # Returns
     ///
@@ -143,15 +143,21 @@ impl OperatorTable {
     /// # Panics
     ///
     /// Panics if `entries` is empty. At least one operator is required.
-    pub fn from_operator_list(entries: &[OperatorPubkeys]) -> Self {
+    pub fn from_operator_list(entries: &[EvenPublicKey]) -> Self {
         if entries.is_empty() {
             panic!(
                 "Cannot create operator table with empty entries - at least one operator is required"
             );
         }
-        let agg_operator_key = aggregate_schnorr_keys(entries.iter().map(|o| o.wallet_pk()))
-            .unwrap()
-            .into();
+        let agg_operator_key = aggregate_schnorr_keys(
+            entries
+                .iter()
+                .map(|pk| Buf32::from(pk.x_only_public_key().0.serialize()))
+                .collect::<Vec<_>>()
+                .iter(),
+        )
+        .unwrap()
+        .into();
         // Create bitmap with all initial operators as active (0, 1, 2, ..., n-1)
         let bitmap = OperatorBitmap::new_with_size(entries.len(), true);
         Self {
@@ -160,10 +166,9 @@ impl OperatorTable {
                 entries
                     .iter()
                     .enumerate()
-                    .map(|(i, e)| OperatorEntry {
+                    .map(|(i, pk)| OperatorEntry {
                         idx: i as OperatorIdx,
-                        musig2_pk: EvenPublicKey::try_from(*e.wallet_pk())
-                            .expect("MuSig2 public key should be a valid even public key"),
+                        musig2_pk: *pk,
                     })
                     .collect(),
             ),
@@ -241,7 +246,7 @@ impl OperatorTable {
     /// # Parameters
     ///
     /// - `updates` - Slice of (operator_index, is_active) pairs for existing operators
-    /// - `inserts` - Slice of new operators to insert (marked as active by default)
+    /// - `inserts` - Slice of new operator MuSig2 public keys to insert (marked as active by default)
     ///
     /// # Processing Order
     ///
@@ -259,15 +264,14 @@ impl OperatorTable {
     pub fn update_multisig_and_recalc_key(
         &mut self,
         updates: &[(OperatorIdx, bool)],
-        inserts: &[OperatorPubkeys],
+        inserts: &[EvenPublicKey],
     ) {
         // Handle inserts first
-        for op_keys in inserts {
+        for musig2_pk in inserts {
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
-                musig2_pk: EvenPublicKey::try_from(*op_keys.wallet_pk())
-                    .expect("MuSig2 public key should be a valid even public key"),
+                musig2_pk: *musig2_pk,
             };
 
             // SortedVec handles insertion and maintains sorted order
@@ -325,25 +329,20 @@ impl OperatorTable {
 #[cfg(test)]
 mod tests {
     use bitcoin::secp256k1::{SECP256K1, SecretKey};
-    use strata_bridge_types::OperatorPubkeys;
 
     use super::*;
 
-    /// Creates test operator pubkeys with randomly generated valid secp256k1 keys
-    fn create_test_operator_pubkeys(count: usize) -> Vec<OperatorPubkeys> {
+    /// Creates test operator MuSig2 public keys with randomly generated valid secp256k1 keys
+    fn create_test_operator_pubkeys(count: usize) -> Vec<EvenPublicKey> {
         use bitcoin::secp256k1::rand;
         let mut keys = Vec::with_capacity(count);
 
         for _ in 0..count {
-            // Generate random signing key
-            let signing_sk = SecretKey::new(&mut rand::thread_rng());
-            let (signing_pk, _) = signing_sk.x_only_public_key(SECP256K1);
+            // Generate random MuSig2 key
+            let sk = SecretKey::new(&mut rand::thread_rng());
+            let (xonly, _) = sk.x_only_public_key(SECP256K1);
 
-            // Generate random wallet key
-            let wallet_sk = SecretKey::new(&mut rand::thread_rng());
-            let (wallet_pk, _) = wallet_sk.x_only_public_key(SECP256K1);
-
-            keys.push(OperatorPubkeys::new(signing_pk.into(), wallet_pk.into()));
+            keys.push(EvenPublicKey::try_from(Buf32::from(xonly)).expect("valid even public key"));
         }
 
         keys
@@ -367,10 +366,10 @@ mod tests {
         assert_eq!(table.next_idx, 3);
 
         // Verify operators are correctly indexed and stored
-        for (i, op) in operators.iter().enumerate() {
+        for (i, op_pk) in operators.iter().enumerate() {
             let entry = table.get_operator(i as u32).unwrap();
             assert_eq!(entry.idx(), i as u32);
-            assert_eq!(Buf32::from(*entry.musig2_pk()), *op.wallet_pk());
+            assert_eq!(entry.musig2_pk(), op_pk);
             assert!(table.is_in_current_multisig(i as u32));
         }
     }
@@ -387,12 +386,12 @@ mod tests {
         assert_eq!(table.next_idx, 3);
 
         // Verify inserted operators are correctly stored and active
-        for (i, op) in new_operators.iter().enumerate() {
+        for (i, op_pk) in new_operators.iter().enumerate() {
             let idx = (i + 1) as u32;
             let entry = table.get_operator(idx).unwrap();
             assert_eq!(entry.idx(), idx);
-            assert_eq!(Buf32::from(*entry.musig2_pk()), *op.wallet_pk());
-            assert!(table.is_in_current_multisig(i as u32));
+            assert_eq!(entry.musig2_pk(), op_pk);
+            assert!(table.is_in_current_multisig(idx));
         }
     }
 

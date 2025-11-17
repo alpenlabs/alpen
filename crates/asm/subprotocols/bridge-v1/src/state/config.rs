@@ -5,14 +5,14 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::OperatorPubkeys;
+use strata_crypto::schnorr::EvenPublicKey;
 use strata_primitives::l1::BitcoinAmount;
 
 /// Configuration for the BridgeV1 subprotocol.
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct BridgeV1Config {
-    /// Initial operator public keys for the bridge
-    pub operators: Vec<OperatorPubkeys>,
+    /// Initial operator MuSig2 public keys for the bridge
+    pub operators: Vec<EvenPublicKey>,
     /// The amount of bitcoin expected to be locked in the N/N multisig.
     pub denomination: BitcoinAmount,
     /// Duration in blocks for assignment execution deadlines
