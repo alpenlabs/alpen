@@ -89,7 +89,9 @@ pub enum WithdrawalParseError {
 
     /// The transaction type byte in the tag does not match the expected withdrawal fulfillment
     /// transaction type.
-    #[error("Invalid transaction type: expected type to be {WITHDRAWAL_FULFILLMENT_TX_TYPE}, got {0}")]
+    #[error(
+        "Invalid transaction type: expected type to be {WITHDRAWAL_FULFILLMENT_TX_TYPE}, got {0}"
+    )]
     InvalidTxType(TxType),
 
     #[error("Transaction is missing output that fulfilled user withdrawal request")]
