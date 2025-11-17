@@ -246,7 +246,8 @@ impl OperatorTable {
     /// # Parameters
     ///
     /// - `updates` - Slice of (operator_index, is_active) pairs for existing operators
-    /// - `inserts` - Slice of new operator MuSig2 public keys to insert (marked as active by default)
+    /// - `inserts` - Slice of new operator MuSig2 public keys to insert (marked as active by
+    ///   default)
     ///
     /// # Processing Order
     ///
@@ -340,9 +341,8 @@ mod tests {
         for _ in 0..count {
             // Generate random MuSig2 key
             let sk = SecretKey::new(&mut rand::thread_rng());
-            let (xonly, _) = sk.x_only_public_key(SECP256K1);
-
-            keys.push(EvenPublicKey::try_from(Buf32::from(xonly)).expect("valid even public key"));
+            let pk = sk.public_key(SECP256K1);
+            keys.push(EvenPublicKey::from(pk));
         }
 
         keys

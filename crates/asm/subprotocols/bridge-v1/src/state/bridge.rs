@@ -389,10 +389,9 @@ mod tests {
         deposit::DepositInfo,
         test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
     };
-    use strata_crypto::{schnorr::EvenPublicKey, EvenSecretKey};
+    use strata_crypto::{EvenSecretKey, schnorr::EvenPublicKey};
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
-        buf::Buf32,
         l1::{BitcoinAmount, L1BlockCommitment},
     };
     use strata_test_utils::ArbitraryGenerator;
@@ -427,9 +426,7 @@ mod tests {
             .iter()
             .map(|sk| {
                 let pk = PublicKey::from_secret_key(&secp, sk);
-                let (xonly, _) = pk.x_only_public_key();
-                let musig2_pk = Buf32::new(xonly.serialize());
-                EvenPublicKey::try_from(musig2_pk).expect("valid even public key")
+                EvenPublicKey::from(pk)
             })
             .collect();
 
