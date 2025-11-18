@@ -8,11 +8,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use strata_codec::decode_buf_exact;
+use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_db_types::{traits::MempoolDatabase, types::MempoolTxMetadata};
 use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::OLTransaction;
 use tokio::sync::broadcast;
+use tracing::{debug, info, warn};
 
 use crate::{
     error::{MempoolError, MempoolResult},
@@ -94,6 +95,47 @@ pub trait Mempool: Send + Sync {
     /// Multiple subscribers can listen independently. If a subscriber falls behind and
     /// the channel buffer fills, older messages will be dropped (broadcast channel behavior).
     fn subscribe(&self) -> broadcast::Receiver<MempoolEvent>;
+
+    /// Update mempool based on chain tip update from Fork Choice Manager.
+    ///
+    /// This is the main lifecycle method called by the fork choice manager when:
+    /// - A new block is finalized (transactions included)
+    /// - The chain tip advances (slot progression, expiration)
+    /// - A reorganization occurs (need to re-add orphaned transactions)
+    ///
+    /// The mempool handles errors internally (logs them) and does not propagate failures
+    /// to avoid blocking fork choice manager operations.
+    fn on_chain_tip_update(&self, update: ChainTipUpdate);
+}
+
+/// Chain tip update for mempool lifecycle management.
+///
+/// Provides all information the mempool needs to maintain consistency with the chain tip.
+/// This is derived from FCM's `TipUpdate` events and includes additional derived information
+/// like mined transactions and orphaned transactions.
+#[derive(Debug, Clone)]
+pub struct ChainTipUpdate {
+    /// Current slot after this update.
+    pub current_slot: u64,
+
+    /// Transaction IDs that were included in finalized blocks.
+    pub mined_transactions: Vec<OLTxId>,
+
+    /// Kind of update (commit or reorg).
+    pub update_kind: PoolUpdateKind,
+
+    /// Transactions from orphaned blocks (only present for reorgs).
+    pub orphaned_txs: Vec<OLTransaction>,
+}
+
+/// Type of canonical state update.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoolUpdateKind {
+    /// Normal chain progression - new blocks committed.
+    Commit,
+
+    /// Chain reorganization - some blocks orphaned.
+    Reorg,
 }
 
 /// Default capacity for event broadcast channel.
@@ -446,6 +488,158 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
     fn subscribe(&self) -> broadcast::Receiver<MempoolEvent> {
         let inner = self.inner.lock().unwrap();
         inner.event_sender.subscribe()
+    }
+
+    fn on_chain_tip_update(&self, update: ChainTipUpdate) {
+        let mut inner = self.inner.lock().unwrap();
+
+        // Update current slot
+        inner.current_slot = update.current_slot;
+
+        // 1. Remove mined transactions
+        for txid in &update.mined_transactions {
+            if let Some((_blob, _tx, metadata)) = inner.transactions.remove(txid) {
+                // Remove from database (log error but don't fail)
+                if let Err(e) = inner.database.del_tx_entry(txid) {
+                    warn!(target: "mempool", %txid, %e, "failed to remove mined tx from db");
+                }
+
+                // Remove from ordering index
+                inner.ordering.remove(txid);
+
+                // Update stats
+                inner.stats.current_tx_count -= 1;
+                inner.stats.current_total_size -= metadata.size_bytes;
+
+                // Emit removal event
+                inner.emit_event(MempoolEvent::TransactionRemoved {
+                    txid: *txid,
+                    reason: RemovalReason::Included,
+                });
+            }
+        }
+
+        // 2. Expire transactions based on current slot
+        let mut expired_txids = Vec::new();
+
+        for (txid, (_blob, tx, _metadata)) in &inner.transactions {
+            if let Some(max_slot) = tx.attachments().max_slot()
+                && max_slot < update.current_slot
+            {
+                expired_txids.push(*txid);
+            }
+        }
+
+        if !expired_txids.is_empty() {
+            debug!(target: "mempool", count = expired_txids.len(), "expiring transactions");
+        }
+
+        for txid in expired_txids {
+            if let Some((_blob, _tx, metadata)) = inner.transactions.remove(&txid) {
+                // Remove from database (log error but don't fail)
+                if let Err(e) = inner.database.del_tx_entry(&txid) {
+                    warn!(target: "mempool", %txid, %e, "failed to remove expired tx from db");
+                }
+
+                // Remove from ordering index
+                inner.ordering.remove(&txid);
+
+                // Update stats
+                inner.stats.current_tx_count -= 1;
+                inner.stats.current_total_size -= metadata.size_bytes;
+
+                // Emit expiration event
+                inner.emit_event(MempoolEvent::TransactionRemoved {
+                    txid,
+                    reason: RemovalReason::Expired,
+                });
+            }
+        }
+
+        // 3. Handle reorg - re-add orphaned transactions
+        if update.update_kind == PoolUpdateKind::Reorg {
+            let orphaned_count = update.orphaned_txs.len();
+            if orphaned_count > 0 {
+                info!(target: "mempool", count = orphaned_count, "handling reorg");
+            }
+
+            let mut added_back = 0;
+            let mut failed = 0;
+            let mut orphaned_blobs = Vec::new();
+
+            // Convert orphaned transactions to blobs while holding the lock
+            for tx in update.orphaned_txs {
+                let txid = tx.compute_txid();
+
+                // Skip if already in mempool
+                if inner.transactions.contains_key(&txid) {
+                    continue;
+                }
+
+                // Convert transaction to blob for re-submission
+                match encode_to_vec(&tx) {
+                    Ok(blob) => {
+                        orphaned_blobs.push((txid, blob, tx));
+                    }
+                    Err(e) => {
+                        warn!(target: "mempool", %txid, ?e, "failed to encode orphaned tx");
+                        failed += 1;
+                    }
+                }
+            }
+
+            // Release lock before re-submitting (to avoid deadlock)
+            drop(inner);
+
+            // Re-submit orphaned transactions
+            for (txid, blob, tx) in orphaned_blobs {
+                // Validate on new chain (need to re-acquire lock)
+                let inner = self.inner.lock().unwrap();
+
+                // Check if still not in mempool (could have been added by another thread)
+                if inner.transactions.contains_key(&txid) {
+                    continue;
+                }
+
+                // Compute metadata
+                let size_bytes = blob.len();
+                let metadata = MempoolTxMetadata {
+                    entry_slot: update.current_slot,
+                    entry_time: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    size_bytes,
+                };
+
+                // Validate on new chain
+                if inner
+                    .validator
+                    .validate(&tx, &metadata, update.current_slot)
+                    .is_err()
+                {
+                    debug!(target: "mempool", %txid, "orphaned tx invalid on new chain");
+                    failed += 1;
+                    continue;
+                }
+
+                // Release lock before calling submit_transaction (which will acquire it again)
+                drop(inner);
+
+                // Try to re-add using the public API
+                match self.submit_transaction(blob) {
+                    Ok(_) => added_back += 1,
+                    Err(e) => {
+                        debug!(target: "mempool", %txid, ?e, "failed to re-add orphaned tx");
+                        failed += 1;
+                    }
+                }
+            }
+
+            if added_back > 0 || failed > 0 {
+                info!(target: "mempool", added_back, failed, "reorg recovery complete");
+            }
+        }
     }
 }
 
@@ -1007,5 +1201,206 @@ mod tests {
         assert_eq!(event1.txid(), txid);
         assert_eq!(event2.txid(), txid);
         assert_eq!(event3.txid(), txid);
+    }
+
+    #[test]
+    fn test_on_chain_tip_update_commit() {
+        let config = MempoolConfig::default();
+        let validator = BasicValidator::new(config.max_tx_size);
+        let strategy = FifoOrdering;
+        let database = PersistentMockDatabase::new();
+        let mempool = InMemoryMempool::new(config, strategy, validator, database, 100);
+
+        // Subscribe to events
+        let mut rx = mempool.subscribe();
+
+        // Submit three transactions
+        let blob1 = create_test_tx_blob(vec![1, 2, 3]);
+        let tx1: OLTransaction = decode_buf_exact(&blob1).unwrap();
+        let txid1 = tx1.compute_txid();
+
+        let blob2 = create_test_tx_blob(vec![4, 5, 6]);
+        let tx2: OLTransaction = decode_buf_exact(&blob2).unwrap();
+        let txid2 = tx2.compute_txid();
+
+        let blob3 = create_test_tx_blob(vec![7, 8, 9]);
+
+        mempool.update_current_slot(100);
+        mempool.submit_transaction(blob1).unwrap();
+        mempool.update_current_slot(101);
+        mempool.submit_transaction(blob2).unwrap();
+        mempool.update_current_slot(102);
+        mempool.submit_transaction(blob3).unwrap();
+
+        // Clear subscription events
+        let _ = rx.try_recv();
+        let _ = rx.try_recv();
+        let _ = rx.try_recv();
+
+        assert_eq!(mempool.stats().unwrap().current_tx_count, 3);
+
+        // Commit block with tx1 and tx2
+        let update = ChainTipUpdate {
+            current_slot: 105,
+            mined_transactions: vec![txid1, txid2],
+            update_kind: PoolUpdateKind::Commit,
+            orphaned_txs: vec![],
+        };
+        mempool.on_chain_tip_update(update);
+
+        assert_eq!(mempool.stats().unwrap().current_tx_count, 1);
+
+        // Check events were emitted
+        let event1 = rx.try_recv().unwrap();
+        assert!(event1.is_removed());
+        if let MempoolEvent::TransactionRemoved { reason, .. } = event1 {
+            assert_eq!(reason, RemovalReason::Included);
+        }
+
+        let event2 = rx.try_recv().unwrap();
+        assert!(event2.is_removed());
+        if let MempoolEvent::TransactionRemoved { reason, .. } = event2 {
+            assert_eq!(reason, RemovalReason::Included);
+        }
+
+        // Only tx3 should remain
+        let txs = mempool.get_transactions(10).unwrap();
+        assert_eq!(txs.len(), 1);
+    }
+
+    #[test]
+    fn test_on_chain_tip_update_expiration() {
+        let config = MempoolConfig::default();
+        let validator = BasicValidator::new(config.max_tx_size);
+        let strategy = FifoOrdering;
+        let database = PersistentMockDatabase::new();
+        let mempool = InMemoryMempool::new(config, strategy, validator, database, 100);
+
+        // Subscribe to events
+        let mut rx = mempool.subscribe();
+
+        // Create transactions with different expirations
+        let blob_expires_120 = create_test_tx_with_max_slot(vec![1, 2, 3], Some(120));
+        let blob_expires_150 = create_test_tx_with_max_slot(vec![4, 5, 6], Some(150));
+        let blob_no_expiry = create_test_tx_blob(vec![7, 8, 9]);
+
+        mempool.update_current_slot(100);
+        mempool.submit_transaction(blob_expires_120).unwrap();
+        mempool.submit_transaction(blob_expires_150).unwrap();
+        mempool.submit_transaction(blob_no_expiry).unwrap();
+
+        // Clear subscription events
+        let _ = rx.try_recv();
+        let _ = rx.try_recv();
+        let _ = rx.try_recv();
+
+        assert_eq!(mempool.stats().unwrap().current_tx_count, 3);
+
+        // Advance to slot 130 (tx_expires_120 should be removed)
+        let update1 = ChainTipUpdate {
+            current_slot: 130,
+            mined_transactions: vec![],
+            update_kind: PoolUpdateKind::Commit,
+            orphaned_txs: vec![],
+        };
+        mempool.on_chain_tip_update(update1);
+
+        assert_eq!(mempool.stats().unwrap().current_tx_count, 2);
+
+        // Check expiration event
+        let event = rx.try_recv().unwrap();
+        assert!(event.is_removed());
+        if let MempoolEvent::TransactionRemoved { reason, .. } = event {
+            assert_eq!(reason, RemovalReason::Expired);
+        }
+
+        // Advance to slot 160 (tx_expires_150 should be removed)
+        let update2 = ChainTipUpdate {
+            current_slot: 160,
+            mined_transactions: vec![],
+            update_kind: PoolUpdateKind::Commit,
+            orphaned_txs: vec![],
+        };
+        mempool.on_chain_tip_update(update2);
+
+        assert_eq!(mempool.stats().unwrap().current_tx_count, 1);
+
+        // Check expiration event
+        let event = rx.try_recv().unwrap();
+        assert!(event.is_removed());
+        if let MempoolEvent::TransactionRemoved { reason, .. } = event {
+            assert_eq!(reason, RemovalReason::Expired);
+        }
+
+        // tx_no_expiry should remain
+        let txs = mempool.get_transactions(10).unwrap();
+        assert_eq!(txs.len(), 1);
+    }
+
+    #[test]
+    fn test_on_chain_tip_update_reorg() {
+        let config = MempoolConfig::default();
+        let validator = BasicValidator::new(config.max_tx_size);
+        let strategy = FifoOrdering;
+        let database = PersistentMockDatabase::new();
+        let mempool = InMemoryMempool::new(config, strategy, validator, database, 100);
+
+        // Create orphaned transactions
+        let blob1 = create_test_tx_blob(vec![1, 2, 3]);
+        let tx1: OLTransaction = decode_buf_exact(&blob1).unwrap();
+
+        let blob2 = create_test_tx_blob(vec![4, 5, 6]);
+        let tx2: OLTransaction = decode_buf_exact(&blob2).unwrap();
+
+        // Create an expired transaction that should fail validation
+        let blob_expired = create_test_tx_with_max_slot(vec![7, 8, 9], Some(50));
+        let tx_expired: OLTransaction = decode_buf_exact(&blob_expired).unwrap();
+
+        let orphaned_txs = vec![tx1.clone(), tx2.clone(), tx_expired];
+
+        // Reorg at slot 100 (tx_expired should fail validation)
+        let update = ChainTipUpdate {
+            current_slot: 100,
+            mined_transactions: vec![],
+            update_kind: PoolUpdateKind::Reorg,
+            orphaned_txs,
+        };
+        mempool.on_chain_tip_update(update);
+
+        // Check that tx1 and tx2 are in mempool (tx_expired failed)
+        let stats = mempool.stats().unwrap();
+        assert_eq!(stats.current_tx_count, 2);
+
+        let txs = mempool.get_transactions(10).unwrap();
+        assert_eq!(txs.len(), 2);
+        assert_eq!(txs[0].1, tx1);
+        assert_eq!(txs[1].1, tx2);
+    }
+
+    #[test]
+    fn test_on_chain_tip_update_reorg_skip_duplicates() {
+        let config = MempoolConfig::default();
+        let validator = BasicValidator::new(config.max_tx_size);
+        let strategy = FifoOrdering;
+        let database = PersistentMockDatabase::new();
+        let mempool = InMemoryMempool::new(config, strategy, validator, database, 100);
+
+        // Submit tx1 to mempool
+        let blob1 = create_test_tx_blob(vec![1, 2, 3]);
+        let tx1: OLTransaction = decode_buf_exact(&blob1).unwrap();
+
+        mempool.update_current_slot(100);
+        mempool.submit_transaction(blob1).unwrap();
+
+        // Try to re-add same transaction via reorg
+        let update = ChainTipUpdate {
+            current_slot: 100,
+            mined_transactions: vec![],
+            update_kind: PoolUpdateKind::Reorg,
+            orphaned_txs: vec![tx1],
+        };
+        mempool.on_chain_tip_update(update);
+
+        assert_eq!(mempool.stats().unwrap().current_tx_count, 1); // Still just 1 (skipped duplicate)
     }
 }
