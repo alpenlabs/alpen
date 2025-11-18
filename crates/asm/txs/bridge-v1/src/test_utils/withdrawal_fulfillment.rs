@@ -1,7 +1,8 @@
 use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
-    script::PushBytesBuf, transaction::Version,
+    transaction::Version,
 };
+use strata_l1_txfmt::{ParseConfig, TagData};
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_FULFILLMENT_TX_TYPE},
@@ -39,10 +40,10 @@ pub fn create_test_withdrawal_fulfillment_tx(
     // Auxiliary data: [DEPOSIT_IDX]
     tagged_payload.extend_from_slice(&withdrawal_info.deposit_idx.to_be_bytes()); // 4 bytes
 
-    // Create OP_RETURN script with the tagged payload
-    let op_return_script = ScriptBuf::new_op_return(
-        PushBytesBuf::try_from(tagged_payload).expect("Tagged payload should fit in push bytes"),
-    );
+    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, aux_data).unwrap();
+    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+        .encode_script_buf(&td.as_ref())
+        .unwrap();
 
     Transaction {
         version: Version(2),
