@@ -1,3 +1,4 @@
+use strata_identifiers::AccountId;
 use thiserror::Error;
 
 use crate::{AccountTypeId, RawAccountTypeId};
@@ -20,4 +21,10 @@ pub enum AcctError {
 
     #[error("invalid account id {0}")]
     InvalidAcctTypeId(RawAccountTypeId),
+
+    #[error("tried to create account with existing ID ({0:?})")]
+    AccountIdExists(AccountId),
+
+    #[error("tried to access account that does not exist ({0:?})")]
+    MissingExpectedAccount(AccountId),
 }

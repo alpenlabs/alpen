@@ -1,11 +1,9 @@
 use strata_acct_types::{
     AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64, RawAccountTypeId,
 };
-use strata_snark_acct_types::MessageEntry;
+use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::coin::Coin;
-
-type Seqno = u64;
 
 /// Abstract account state.
 pub trait IAccountState: Sized {
@@ -34,7 +32,7 @@ pub trait IAccountState: Sized {
     fn get_type_state(&self) -> AcctResult<AccountTypeState<Self>>;
 
     /// Sets the account type state.
-    fn set_type_state(&self, state: AccountTypeState<Self>) -> AcctResult<()>;
+    fn set_type_state(&mut self, state: AccountTypeState<Self>) -> AcctResult<()>;
 }
 
 /// Account type state enum.
@@ -58,7 +56,7 @@ pub trait ISnarkAccountState: Sized {
     fn inner_state_root(&self) -> Hash;
 
     /// Sets the inner state root unconditionally.
-    fn set_proof_state_directly(&mut self, state: Hash, seqno: Seqno);
+    fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno);
 
     /// Sets an account's inner state, but also taking the update extra data arg
     /// (which is not used directly, but is useful for DA reasons).
@@ -67,6 +65,7 @@ pub trait ISnarkAccountState: Sized {
     fn update_inner_state(
         &mut self,
         state: Hash,
+        next_read_idx: u64,
         seqno: Seqno,
         extra_data: &[u8],
     ) -> AcctResult<()>;

@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountTypeId, AccountTypeState, Hash, Mmr64, impl_opaque_thin_wrapper};
 
-use crate::ssz_generated::ssz::state::{ProofState, SnarkAccountState};
+use crate::ssz_generated::ssz::state::*;
 
 /// State root type.
 type Root = Hash;
@@ -17,8 +17,12 @@ pub struct Seqno(RawSeqno);
 impl_opaque_thin_wrapper!(Seqno => RawSeqno);
 
 impl Seqno {
+    pub fn zero() -> Self {
+        Self(0)
+    }
+
     /// Gets the incremented seqno.
-    pub fn incr(self) -> Seqno {
+    pub fn incr(self) -> Self {
         // do we really have to panic here?
         if *self.inner() == RawSeqno::MAX {
             panic!("snarkacct: reached max seqno");

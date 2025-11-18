@@ -227,7 +227,7 @@ strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
-strata-merkle = { git = "https://github.com/alpenlabs/strata-common", branch = "merkle-proof-ssz", features = [
+strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
   "ssz",
 ] }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }

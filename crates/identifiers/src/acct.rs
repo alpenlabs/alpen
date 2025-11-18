@@ -13,6 +13,12 @@ pub struct AccountId(RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
 
+impl AccountId {
+    pub fn zero() -> Self {
+        Self([0; 32])
+    }
+}
+
 // Manual TreeHash implementation for transparent wrapper
 impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for AccountId {
     fn tree_hash_type() -> tree_hash::TreeHashType {

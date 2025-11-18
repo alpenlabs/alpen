@@ -1,4 +1,10 @@
 //! All the types definitions for OL.
-mod state;
 
-pub use state::{L1View, OLState};
+mod account;
+mod epochal;
+mod global;
+mod ledger;
+mod snark_account;
+mod toplevel;
+
+pub use toplevel::OLState;

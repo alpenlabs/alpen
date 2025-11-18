@@ -1,14 +1,7 @@
 //! Update message types.
 
 use crate::ssz_generated::ssz::{
-    accumulators::{AccumulatorClaim, MmrEntryProof},
-    messages::{MessageEntry, MessageEntryProof},
-    outputs::UpdateOutputs,
-    state::ProofState,
-    update::{
-        LedgerRefProofs, LedgerRefs, SnarkAccountUpdate, SnarkAccountUpdateContainer,
-        UpdateAccumulatorProofs, UpdateInputData, UpdateOperationData, UpdateStateData,
-    },
+    accumulators::*, messages::*, outputs::UpdateOutputs, state::ProofState, update::*,
 };
 
 impl UpdateStateData {
