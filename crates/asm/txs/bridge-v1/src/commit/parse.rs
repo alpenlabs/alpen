@@ -4,11 +4,13 @@ use strata_asm_common::TxInputRef;
 use crate::{constants::COMMIT_TX_TYPE, errors::CommitParseError};
 
 const DEPOSIT_IDX_SIZE: usize = 4;
+const GAME_IDX_SIZE: usize = 4;
 
 const DEPOSIT_IDX_OFFSET: usize = 0;
+const GAME_IDX_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
 
 /// Length of auxiliary data for commit transactions.
-pub const COMMIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE;
+pub const COMMIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE + GAME_IDX_SIZE;
 
 /// Information extracted from a Bitcoin commit transaction.
 ///
@@ -21,12 +23,16 @@ pub struct CommitInfo {
     /// This must be validated against the operator's assigned deposits in the state's assignments
     /// table to ensure the operator is authorized to commit to this specific deposit.
     pub deposit_idx: u32,
+
+    /// The index of the game being committed to.
+    pub game_idx: u32,
 }
 
 impl<'a> Arbitrary<'a> for CommitInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(CommitInfo {
             deposit_idx: u32::arbitrary(u)?,
+            game_idx: u32::arbitrary(u)?,
         })
     }
 }
@@ -38,6 +44,7 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 ///
 /// The function validates the transaction structure and parses the auxiliary data containing:
 /// - Deposit index (4 bytes, big-endian u32)
+/// - Game index (4 bytes, big-endian u32)
 ///
 /// # Parameters
 ///
@@ -54,7 +61,7 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 ///
 /// This function will return an error if:
 /// - The transaction type doesn't match the expected commit transaction type
-/// - The auxiliary data size doesn't match the expected metadata size (4 bytes)
+/// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
 /// - Any of the metadata fields cannot be parsed correctly
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
     if tx.tag().tx_type() != COMMIT_TX_TYPE {
@@ -73,7 +80,16 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     );
     let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
 
-    Ok(CommitInfo { deposit_idx })
+    let mut game_idx_bytes = [0u8; GAME_IDX_SIZE];
+    game_idx_bytes.copy_from_slice(
+        &commit_auxdata[GAME_IDX_OFFSET..GAME_IDX_OFFSET + GAME_IDX_SIZE],
+    );
+    let game_idx = u32::from_be_bytes(game_idx_bytes);
+
+    Ok(CommitInfo {
+        deposit_idx,
+        game_idx,
+    })
 }
 
 #[cfg(test)]
@@ -98,6 +114,9 @@ mod tests {
     fn test_valid_size() {
         let deposit_idx_size: usize = std::mem::size_of::<u32>();
         assert_eq!(deposit_idx_size, DEPOSIT_IDX_SIZE);
+
+        let game_idx_size: usize = std::mem::size_of::<u32>();
+        assert_eq!(game_idx_size, GAME_IDX_SIZE);
     }
 
     #[test]

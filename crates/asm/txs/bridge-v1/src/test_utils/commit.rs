@@ -27,9 +27,11 @@ use crate::{
 ///
 /// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
 pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
-    // Auxiliary data: [DEPOSIT_IDX]
-    let aux_data = commit_info.deposit_idx.to_be_bytes();
-    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data.to_vec()).unwrap();
+    // Auxiliary data: [DEPOSIT_IDX][GAME_IDX]
+    let mut aux_data = Vec::with_capacity(8);
+    aux_data.extend_from_slice(&commit_info.deposit_idx.to_be_bytes());
+    aux_data.extend_from_slice(&commit_info.game_idx.to_be_bytes());
+    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data).unwrap();
     let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();
