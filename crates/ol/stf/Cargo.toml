@@ -5,8 +5,13 @@ edition = "2024"
 
 [dependencies]
 strata-acct-types.workspace = true
+strata-asm-common.workspace = true
+strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types-new.workspace = true
+strata-snark-acct-types.workspace = true
+
+thiserror.workspace = true
 
 [lints]
 workspace = true

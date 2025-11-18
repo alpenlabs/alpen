@@ -1,6 +1,4 @@
-use strata_identifiers::Buf32;
-
-// Type aliases for clarity
+// Type aliases for clarity.
 pub type Slot = u64;
 pub type Epoch = u32;
 

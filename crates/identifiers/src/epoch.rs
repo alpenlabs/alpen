@@ -25,6 +25,9 @@ use crate::{
     ol::{OLBlockCommitment, OLBlockId},
 };
 
+// TODO convert to u32
+type RawEpoch = u64;
+
 /// Commits to a particular epoch by the last block and slot.
 #[derive(
     Copy,
@@ -41,14 +44,14 @@ use crate::{
     Serialize,
 )]
 pub struct EpochCommitment {
-    epoch: u64,
+    epoch: RawEpoch,
     last_slot: u64,
     last_blkid: OLBlockId,
     // TODO convert to using OLBlockCommitment?
 }
 
 impl EpochCommitment {
-    pub fn new(epoch: u64, last_slot: u64, last_blkid: OLBlockId) -> Self {
+    pub fn new(epoch: RawEpoch, last_slot: u64, last_blkid: OLBlockId) -> Self {
         Self {
             epoch,
             last_slot,
@@ -58,7 +61,7 @@ impl EpochCommitment {
 
     /// Creates a new instance given the terminal block of an epoch and the
     /// epoch index.
-    pub fn from_terminal(epoch: u64, block: OLBlockCommitment) -> Self {
+    pub fn from_terminal(epoch: RawEpoch, block: OLBlockCommitment) -> Self {
         Self::new(epoch, block.slot(), *block.blkid())
     }
 
@@ -67,7 +70,7 @@ impl EpochCommitment {
         Self::new(0, 0, OLBlockId::from(Buf32::zero()))
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> RawEpoch {
         self.epoch
     }
 

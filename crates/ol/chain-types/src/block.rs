@@ -1,5 +1,5 @@
-use strata_asm_common::AsmLogEntry;
-use strata_identifiers::{Buf32, Buf64};
+use strata_asm_common::AsmManifest;
+use strata_identifiers::{Buf32, Buf64, L1BlockId};
 
 use crate::{Epoch, OLBlockId, OLTransaction, Slot};
 
@@ -114,8 +114,8 @@ impl OLBlockHeader {
         self.epoch
     }
 
-    pub fn parent_blkid(&self) -> Buf32 {
-        self.parent_blkid
+    pub fn parent_blkid(&self) -> &OLBlockId {
+        &self.parent_blkid
     }
 
     pub fn body_root(&self) -> Buf32 {
@@ -138,11 +138,11 @@ pub struct OLBlockBody {
     tx_segment: OLTxSegment,
 
     /// Updates from L1.
-    l1_update: Option<L1Update>,
+    l1_update: Option<OLL1Update>,
 }
 
 impl OLBlockBody {
-    pub(crate) fn new(tx_segment: OLTxSegment, l1_update: Option<L1Update>) -> Self {
+    pub(crate) fn new(tx_segment: OLTxSegment, l1_update: Option<OLL1Update>) -> Self {
         Self {
             tx_segment,
             l1_update,
@@ -154,7 +154,7 @@ impl OLBlockBody {
     }
 
     // TODO convert to builder?
-    pub fn set_l1_update(&mut self, l1_update: L1Update) {
+    pub fn set_l1_update(&mut self, l1_update: OLL1Update) {
         self.l1_update = Some(l1_update);
     }
 
@@ -162,7 +162,7 @@ impl OLBlockBody {
         &self.tx_segment
     }
 
-    pub fn l1_update(&self) -> Option<&L1Update> {
+    pub fn l1_update(&self) -> Option<&OLL1Update> {
         self.l1_update.as_ref()
     }
 }
@@ -186,7 +186,7 @@ impl OLTxSegment {
 
 /// Represents an update from L1.
 #[derive(Clone, Debug)]
-pub struct L1Update {
+pub struct OLL1Update {
     /// The state root before applying updates from L1.
     pub preseal_state_root: Buf32,
 
@@ -194,7 +194,7 @@ pub struct L1Update {
     pub manifests: Vec<AsmManifest>,
 }
 
-impl L1Update {
+impl OLL1Update {
     pub fn new(preseal_state_root: Buf32, manifests: Vec<AsmManifest>) -> Self {
         Self {
             preseal_state_root,
@@ -206,35 +206,13 @@ impl L1Update {
         self.preseal_state_root
     }
 
+    pub fn manifests(&self) -> &[AsmManifest] {
+        &self.manifests
+    }
+
     /// If there are new manifests (which there should be), returns the blkid of
     /// the last one.  This is the blkid that we use as the new L1 chain tip.
-    pub fn new_l1_blkid(&self) -> Option<&Buf32> {
-        self.manifests.last().map(|mf| mf.l1blkid())
-    }
-}
-
-/// A manifest containing ASM data corresponding to a L1 block.
-// TODO maybe convert to using exported types from ASM crates?
-#[derive(Debug, Clone)]
-pub struct AsmManifest {
-    /// L1 block id.
-    l1blkid: Buf32,
-
-    /// Logs from ASM STF.
-    logs: Vec<AsmLogEntry>,
-    // TODO add wtxs root
-}
-
-impl AsmManifest {
-    pub fn new(l1blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
-        Self { l1blkid, logs }
-    }
-
-    pub fn l1blkid(&self) -> &Buf32 {
-        &self.l1blkid
-    }
-
-    pub fn logs(&self) -> &[AsmLogEntry] {
-        &self.logs
+    pub fn new_l1_blkid(&self) -> Option<&L1BlockId> {
+        self.manifests.last().map(|mf| mf.blkid())
     }
 }

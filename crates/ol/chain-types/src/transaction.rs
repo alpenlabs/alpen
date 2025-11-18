@@ -2,7 +2,7 @@ use std::fmt;
 
 use int_enum::IntEnum;
 use strata_acct_types::AccountId;
-use strata_snark_acct_types::SnarkAccountUpdate;
+use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 use crate::Slot;
 
@@ -22,7 +22,7 @@ impl OLTransaction {
         Self { payload, extra }
     }
 
-    pub fn extra(&self) -> &TransactionAttachment {
+    pub fn attachments(&self) -> &TransactionAttachment {
         &self.extra
     }
 
@@ -39,14 +39,8 @@ impl OLTransaction {
 // TODO probably convert these from being struct-like variants
 #[derive(Clone, Debug)]
 pub enum TransactionPayload {
-    GenericAccountMessage {
-        target: AccountId,
-        payload: Vec<u8>,
-    },
-    SnarkAccountUpdate {
-        target: AccountId,
-        update: SnarkAccountUpdate,
-    },
+    GenericAccountMessage(GamTxPayload),
+    SnarkAccountUpdate(SnarkAccountUpdateTxPayload),
 }
 
 impl TransactionPayload {
@@ -58,7 +52,9 @@ impl TransactionPayload {
     }
 }
 
-/// Additional data in a transaction.
+/// Additional constraints that we can place on a transaction.
+///
+/// This isn't *that* useful for now, but will be in the future.
 #[derive(Clone, Debug, Default)]
 pub struct TransactionAttachment {
     min_slot: Option<Slot>,
@@ -92,7 +88,7 @@ impl TransactionAttachment {
 
 /// Type ID to indicate transaction types.
 #[repr(u16)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, IntEnum)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, IntEnum)]
 pub enum TxTypeId {
     /// Transactions that are messages being sent to other accounts.
     GenericAccountMessage = 1,
@@ -108,5 +104,50 @@ impl fmt::Display for TxTypeId {
             TxTypeId::GenericAccountMessage => "generic-account-message",
         };
         f.write_str(s)
+    }
+}
+
+/// "Generic Account Message" tx payload.
+#[derive(Clone, Debug)]
+pub struct GamTxPayload {
+    target: AccountId,
+    payload: Vec<u8>,
+}
+
+impl GamTxPayload {
+    pub fn new(target: AccountId, payload: Vec<u8>) -> Self {
+        Self { target, payload }
+    }
+
+    pub fn target(&self) -> &AccountId {
+        &self.target
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+}
+
+/// Snark account update payload.
+#[derive(Clone, Debug)]
+pub struct SnarkAccountUpdateTxPayload {
+    target: AccountId,
+    update_container: SnarkAccountUpdateContainer,
+}
+
+impl SnarkAccountUpdateTxPayload {
+    pub fn new(target: AccountId, update_container: SnarkAccountUpdateContainer) -> Self {
+        Self {
+            target,
+            update_container,
+        }
+    }
+
+    pub fn target(&self) -> &AccountId {
+        &self.target
+    }
+
+    pub fn update_container(&self) -> &SnarkAccountUpdateContainer {
+        &self.update_container
     }
 }

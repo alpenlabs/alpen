@@ -14440,8 +14440,12 @@ name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
+ "strata-asm-common",
+ "strata-identifiers",
  "strata-ledger-types",
  "strata-ol-chain-types-new",
+ "strata-snark-acct-types",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
