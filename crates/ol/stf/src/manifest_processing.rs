@@ -68,19 +68,20 @@ fn process_asm_log<S: StateAccessor>(
 }
 
 // temporary defs until we move these to a better place
-type DepositLogData = ();
+// TODO move these to asm-manifest-types in new module
+type DepositIntentLogData = ();
 type CheckpointAckLogData = ();
 
-fn process_deposit_log<S: StateAccessor>(
+fn process_deposit_intent_log<S: StateAccessor>(
     state: &mut S,
-    data: &DepositLogData,
+    data: &DepositIntentLogData,
     context: &SlotExecContext,
 ) -> ExecResult<()> {
     // TODO increment ledger balance, send message off to target with funds
     Ok(())
 }
 
-fn process_checkpoint_ack<S: StateAccessor>(
+fn process_checkpoint_ack_log<S: StateAccessor>(
     state: &mut S,
     data: &CheckpointAckLogData,
     context: &SlotExecContext,

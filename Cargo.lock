@@ -13418,9 +13418,9 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-asm-manifest-types",
  "strata-asm-types",
  "strata-btc-types",
- "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-msg-fmt",
@@ -13440,6 +13440,17 @@ dependencies = [
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
+]
+
+[[package]]
+name = "strata-asm-manifest-types"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "serde",
+ "strata-identifiers",
+ "strata-msg-fmt",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
