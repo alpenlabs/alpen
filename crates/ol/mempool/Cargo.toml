@@ -15,3 +15,4 @@ strata-ol-chain-types-new.workspace = true
 
 futures.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }

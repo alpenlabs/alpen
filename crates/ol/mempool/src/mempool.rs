@@ -12,9 +12,11 @@ use strata_codec::decode_buf_exact;
 use strata_db_types::{traits::MempoolDatabase, types::MempoolTxMetadata};
 use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::OLTransaction;
+use tokio::sync::broadcast;
 
 use crate::{
     error::{MempoolError, MempoolResult},
+    events::{MempoolEvent, RemovalReason},
     ordering::{OrderingIndex, OrderingStrategy},
     types::{MempoolConfig, MempoolStats},
     validation::TransactionValidator,
@@ -83,7 +85,19 @@ pub trait Mempool: Send + Sync {
     ///
     /// Returns statistics including transaction count, total size, and rejection counts.
     fn stats(&self) -> MempoolResult<MempoolStats>;
+
+    /// Subscribe to mempool events.
+    ///
+    /// Returns a broadcast receiver that will receive all mempool events (transaction
+    /// additions, removals, evictions).
+    ///
+    /// Multiple subscribers can listen independently. If a subscriber falls behind and
+    /// the channel buffer fills, older messages will be dropped (broadcast channel behavior).
+    fn subscribe(&self) -> broadcast::Receiver<MempoolEvent>;
 }
+
+/// Default capacity for event broadcast channel.
+const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1000;
 
 /// In-memory mempool implementation with database persistence.
 ///
@@ -117,6 +131,9 @@ struct InMemoryMempoolInner<S: OrderingStrategy, V: TransactionValidator, D: Mem
 
     /// Current slot (for computing entry_slot in metadata).
     current_slot: u64,
+
+    /// Event broadcast sender for notifying subscribers.
+    event_sender: broadcast::Sender<MempoolEvent>,
 }
 
 impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase + 'static>
@@ -131,6 +148,7 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase 
         database: D,
         current_slot: u64,
     ) -> Self {
+        let (event_sender, _) = broadcast::channel(DEFAULT_EVENT_CHANNEL_CAPACITY);
         Self {
             inner: Arc::new(Mutex::new(InMemoryMempoolInner {
                 validator,
@@ -140,6 +158,7 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase 
                 stats: MempoolStats::default(),
                 config,
                 current_slot,
+                event_sender,
             })),
         }
     }
@@ -156,6 +175,7 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase 
         database: D,
         current_slot: u64,
     ) -> MempoolResult<Self> {
+        let (event_sender, _) = broadcast::channel(DEFAULT_EVENT_CHANNEL_CAPACITY);
         let mut inner = InMemoryMempoolInner {
             validator,
             ordering: OrderingIndex::new(strategy),
@@ -164,6 +184,7 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase 
             stats: MempoolStats::default(),
             config,
             current_slot,
+            event_sender,
         };
         inner.restore_from_database(current_slot)?;
         Ok(Self {
@@ -243,22 +264,27 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
     ///
     /// Returns [`MempoolError::DatabaseError`] if database deletion fails.
     fn try_evict_one(&mut self) -> MempoolResult<bool> {
-        // Get the lowest priority transaction (last in ordering)
-        let lowest_priority_txids = self.ordering.get_ordered_txids(usize::MAX);
+        // Get all transactions ordered by priority (highest first)
+        let ordered_txids = self.ordering.get_ordered_txids(usize::MAX);
 
-        if let Some(txid) = lowest_priority_txids.last() {
-            let txid = *txid;
-            if let Some((_blob, _tx, metadata)) = self.transactions.remove(&txid) {
-                // Remove from database
-                self.database
-                    .del_tx_entry(&txid)
-                    .map_err(|e| MempoolError::DatabaseError(e.to_string()))?;
-                self.ordering.remove(&txid);
-                self.stats.current_tx_count -= 1;
-                self.stats.current_total_size -= metadata.size_bytes;
-                self.stats.evicted_tx_total += 1;
-                return Ok(true);
-            }
+        // Evict the last one (lowest priority)
+        if let Some(&txid) = ordered_txids.last()
+            && let Some((_blob, _tx, metadata)) = self.transactions.remove(&txid)
+        {
+            // Remove from database
+            self.database
+                .del_tx_entry(&txid)
+                .map_err(|e| MempoolError::DatabaseError(e.to_string()))?;
+
+            self.ordering.remove(&txid);
+            self.stats.current_tx_count -= 1;
+            self.stats.current_total_size -= metadata.size_bytes;
+            self.stats.evicted_tx_total += 1;
+
+            // Emit eviction event
+            self.emit_event(MempoolEvent::TransactionEvicted { txid });
+
+            return Ok(true);
         }
 
         Ok(false)
@@ -301,6 +327,14 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
             size_bytes: blob_size,
         }
     }
+
+    /// Emit an event to all subscribers.
+    ///
+    /// If there are no active subscribers, the event is dropped (no error).
+    fn emit_event(&self, event: MempoolEvent) {
+        // Ignore send errors - if there are no subscribers, that's fine
+        let _ = self.event_sender.send(event);
+    }
 }
 
 impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase> Mempool
@@ -338,6 +372,9 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
             .put_tx_entry(&txid, &blob)
             .map_err(|e| MempoolError::DatabaseError(e.to_string()))?;
 
+        // Get priority for event
+        let priority = inner.ordering.strategy().compute_priority(&tx, &metadata);
+
         // Insert into ordering index
         inner.ordering.insert(txid, &tx, &metadata);
 
@@ -351,6 +388,9 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
         inner.stats.current_tx_count += 1;
         inner.stats.current_total_size += metadata.size_bytes;
         inner.stats.enqueued_tx_total += 1;
+
+        // Emit event
+        inner.emit_event(MempoolEvent::TransactionAdded { txid, priority });
 
         Ok(txid)
     }
@@ -387,6 +427,12 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
                 inner.stats.current_tx_count -= 1;
                 inner.stats.current_total_size -= metadata.size_bytes;
                 removed.push(*txid);
+
+                // Emit removal event (default reason: Included)
+                inner.emit_event(MempoolEvent::TransactionRemoved {
+                    txid: *txid,
+                    reason: RemovalReason::Included,
+                });
             }
         }
         Ok(removed)
@@ -395,6 +441,11 @@ impl<S: OrderingStrategy + 'static, V: TransactionValidator, D: MempoolDatabase>
     fn stats(&self) -> MempoolResult<MempoolStats> {
         let inner = self.inner.lock().unwrap();
         Ok(inner.stats.clone())
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<MempoolEvent> {
+        let inner = self.inner.lock().unwrap();
+        inner.event_sender.subscribe()
     }
 }
 
@@ -843,5 +894,118 @@ mod tests {
             assert_eq!(txs.len(), 1);
             assert_eq!(txs[0].1, tx2); // Only tx2 remains
         }
+    }
+
+    #[test]
+    fn test_event_listeners() {
+        let config = MempoolConfig::default();
+        let validator = BasicValidator::new(config.max_tx_size);
+        let strategy = FifoOrdering;
+        let database = PersistentMockDatabase::new();
+        let mempool = InMemoryMempool::new(config, strategy, validator, database, 100);
+
+        // Subscribe to events
+        let mut rx = mempool.subscribe();
+
+        let blob1 = create_test_tx_blob(vec![1, 2, 3]);
+        let tx1: OLTransaction = decode_buf_exact(&blob1).unwrap();
+        let txid1 = tx1.compute_txid();
+
+        // Submit transaction
+        mempool.update_current_slot(100);
+        mempool.submit_transaction(blob1).unwrap();
+
+        // Check that we received TransactionAdded event
+        let event = rx.try_recv().unwrap();
+        assert!(event.is_added());
+        assert_eq!(event.txid(), txid1);
+
+        // Remove transaction
+        mempool.remove_transactions(&[txid1]).unwrap();
+
+        // Check that we received TransactionRemoved event
+        let event = rx.try_recv().unwrap();
+        assert!(event.is_removed());
+        assert_eq!(event.txid(), txid1);
+        if let MempoolEvent::TransactionRemoved { reason, .. } = event {
+            assert_eq!(reason, RemovalReason::Included);
+        }
+    }
+
+    #[test]
+    fn test_eviction_events() {
+        let config = MempoolConfig {
+            max_tx_count: 2,
+            max_tx_size: 500,
+        };
+        let validator = BasicValidator::new(config.max_tx_size);
+        let strategy = FifoOrdering;
+        let database = PersistentMockDatabase::new();
+        let mempool = InMemoryMempool::new(config, strategy, validator, database, 100);
+
+        // Subscribe to events
+        let mut rx = mempool.subscribe();
+
+        let blob1 = create_test_tx_blob(vec![1; 100]);
+        let blob2 = create_test_tx_blob(vec![2; 100]);
+        let blob3 = create_test_tx_blob(vec![3; 100]);
+
+        // Parse to get txid2 for verification
+        let tx2: OLTransaction = decode_buf_exact(&blob2).unwrap();
+        let txid2 = tx2.compute_txid();
+
+        // Submit first two transactions
+        mempool.update_current_slot(100);
+        mempool.submit_transaction(blob1).unwrap();
+        let _ = rx.try_recv(); // Discard first added event
+
+        mempool.update_current_slot(101);
+        mempool.submit_transaction(blob2).unwrap();
+        let _ = rx.try_recv(); // Discard second added event
+
+        // Submit third transaction, should evict tx2 (lowest priority = latest entry_slot)
+        mempool.update_current_slot(102);
+        mempool.submit_transaction(blob3).unwrap();
+
+        // Check for eviction event (should be tx2 as it has lowest priority)
+        let eviction_event = rx.try_recv().unwrap();
+        assert!(eviction_event.is_evicted());
+        // The evicted tx should be tx2 (latest entry_slot = 101, lowest priority in FIFO)
+        assert_eq!(eviction_event.txid(), txid2);
+
+        // Check for addition event
+        let addition_event = rx.try_recv().unwrap();
+        assert!(addition_event.is_added());
+    }
+
+    #[test]
+    fn test_multiple_subscribers() {
+        let config = MempoolConfig::default();
+        let validator = BasicValidator::new(config.max_tx_size);
+        let strategy = FifoOrdering;
+        let database = PersistentMockDatabase::new();
+        let mempool = InMemoryMempool::new(config, strategy, validator, database, 100);
+
+        // Create multiple subscribers
+        let mut rx1 = mempool.subscribe();
+        let mut rx2 = mempool.subscribe();
+        let mut rx3 = mempool.subscribe();
+
+        let blob = create_test_tx_blob(vec![1, 2, 3]);
+        let tx: OLTransaction = decode_buf_exact(&blob).unwrap();
+        let txid = tx.compute_txid();
+
+        // Submit transaction
+        mempool.update_current_slot(100);
+        mempool.submit_transaction(blob).unwrap();
+
+        // All subscribers should receive the event
+        let event1 = rx1.try_recv().unwrap();
+        let event2 = rx2.try_recv().unwrap();
+        let event3 = rx3.try_recv().unwrap();
+
+        assert_eq!(event1.txid(), txid);
+        assert_eq!(event2.txid(), txid);
+        assert_eq!(event3.txid(), txid);
     }
 }

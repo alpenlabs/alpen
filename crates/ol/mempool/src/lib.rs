@@ -3,6 +3,7 @@
 //! Provides types and implementation for managing pending OL transactions.
 
 pub mod error;
+pub mod events;
 pub mod mempool;
 pub mod ordering;
 pub mod provider;
@@ -11,6 +12,7 @@ pub mod validation;
 
 // Re-export for convenience
 pub use error::{MempoolError, MempoolResult};
+pub use events::{MempoolEvent, RemovalReason};
 pub use mempool::{InMemoryMempool, Mempool};
 pub use ordering::{FifoOrdering, OrderingIndex, OrderingStrategy};
 pub use provider::{OLTxProvider, OLTxProviderError};

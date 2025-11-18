@@ -14417,6 +14417,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
