@@ -4,7 +4,8 @@ use alloy_consensus::Header;
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::ExecHeader;
 
-use super::{Hash, decode_rlp_with_length, encode_rlp_with_length};
+use super::Hash;
+use crate::codec_shims::{decode_rlp_with_length, encode_rlp_with_length};
 
 /// Block header for EVM execution.
 ///

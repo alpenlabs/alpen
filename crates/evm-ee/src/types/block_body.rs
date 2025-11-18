@@ -5,7 +5,7 @@ use reth_primitives::TransactionSigned;
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::ExecBlockBody;
 
-use super::{decode_rlp_with_length, encode_rlp_with_length};
+use crate::codec_shims::{decode_rlp_with_length, encode_rlp_with_length};
 
 /// Block body for EVM execution containing transactions.
 ///

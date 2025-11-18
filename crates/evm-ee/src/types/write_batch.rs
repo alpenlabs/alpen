@@ -4,7 +4,8 @@ use reth_trie::HashedPostState;
 use revm_primitives::alloy_primitives::Bloom;
 use strata_codec::{Codec, CodecError};
 
-use super::{Hash, decode_bytes_with_length, encode_bytes_with_length};
+use super::Hash;
+use crate::codec_shims::{decode_bytes_with_length, encode_bytes_with_length};
 
 /// Write batch for EVM execution containing state changes.
 ///
