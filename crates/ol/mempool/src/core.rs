@@ -161,6 +161,17 @@ impl MempoolCore {
         self.transactions.contains_key(txid)
     }
 
+    /// Iterate over all transactions in the mempool.
+    ///
+    /// Returns an iterator over (txid, transaction, metadata) tuples.
+    pub fn transactions(
+        &self,
+    ) -> impl Iterator<Item = (&OLTxId, &OLTransaction, &MempoolTxMetadata)> {
+        self.transactions
+            .iter()
+            .map(|(txid, (tx, metadata))| (txid, tx, metadata))
+    }
+
     /// Check if mempool has capacity for a transaction of the given size.
     fn has_capacity(&self, tx_size: usize) -> bool {
         let new_count = self.stats.current_tx_count + 1;

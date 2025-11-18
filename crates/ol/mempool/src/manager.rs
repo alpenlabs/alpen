@@ -213,6 +213,108 @@ impl MempoolManager {
         self.event_sender.subscribe()
     }
 
+    /// Update mempool based on chain tip update.
+    ///
+    /// This method is called by the mempool service when it receives chain tip updates
+    /// from the fork choice manager. It handles:
+    /// - Updating current slot
+    /// - Removing mined transactions
+    /// - Expiring transactions past their max_slot
+    /// - Re-adding orphaned transactions on reorg
+    ///
+    /// Errors are logged but not propagated to avoid blocking the service.
+    pub fn on_chain_tip_update(&self, update: crate::types::ChainTipUpdate) {
+        use tracing::{debug, info, warn};
+
+        use crate::types::PoolUpdateKind;
+
+        // Update current slot
+        self.update_current_slot(update.current_slot);
+
+        // 1. Remove mined transactions
+        if !update.mined_transactions.is_empty() {
+            let _removed = self.remove_transactions(&update.mined_transactions);
+            // Already emits TransactionRemoved events with Included reason
+        }
+
+        // 2. Expire transactions based on current slot
+        let expired_txids: Vec<OLTxId> = {
+            let core = self.core.lock().unwrap();
+            core.transactions()
+                .filter_map(|(txid, tx, _metadata)| {
+                    if let Some(max_slot) = tx.attachments().max_slot()
+                        && max_slot < update.current_slot
+                    {
+                        return Some(*txid);
+                    }
+                    None
+                })
+                .collect()
+        };
+
+        if !expired_txids.is_empty() {
+            debug!(target: "mempool", count = expired_txids.len(), "expiring transactions");
+
+            // Remove from database
+            if let Err(e) = self.storage.mempool().del_tx_entries(&expired_txids) {
+                warn!(target: "mempool", ?e, "failed to remove expired txs from db");
+            }
+
+            // Remove from in-memory core and emit events
+            let mut core = self.core.lock().unwrap();
+            for txid in expired_txids {
+                if !core.remove_transactions(&[txid]).is_empty() {
+                    self.emit_event(MempoolEvent::TransactionRemoved {
+                        txid,
+                        reason: RemovalReason::Expired,
+                    });
+                }
+            }
+        }
+
+        // 3. Handle reorg - re-add orphaned transactions
+        if update.update_kind == PoolUpdateKind::Reorg {
+            let orphaned_count = update.orphaned_txs.len();
+            if orphaned_count > 0 {
+                info!(target: "mempool", count = orphaned_count, "handling reorg");
+            }
+
+            let mut added_back = 0;
+            let mut failed = 0;
+
+            for tx in update.orphaned_txs {
+                let txid = tx.compute_txid();
+
+                // Skip if already in mempool
+                if self.contains(&txid) {
+                    continue;
+                }
+
+                // Convert transaction to blob for re-submission
+                match encode_to_vec(&tx) {
+                    Ok(blob) => {
+                        // Try to re-add using the public API
+                        match self.submit_transaction(blob) {
+                            Ok(_) => added_back += 1,
+                            Err(e) => {
+                                debug!(target: "mempool", %txid, ?e, "failed to re-add orphaned tx");
+                                failed += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(target: "mempool", %txid, ?e, "failed to encode orphaned tx");
+                        failed += 1;
+                    }
+                }
+            }
+
+            if added_back > 0 || failed > 0 {
+                info!(target: "mempool", added_back, failed, "reorg recovery complete");
+            }
+        }
+    }
+
     /// Emit an event to all subscribers.
     ///
     /// If there are no active subscribers, the event is dropped (no error).
