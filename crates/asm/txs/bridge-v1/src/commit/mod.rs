@@ -6,9 +6,7 @@
 //! ## Commit Transaction Structure
 //!
 //! A commit transaction is posted by an operator to commit to a specific deposit and its
-//! associated payouts among many available deposits. There is 1 Commit transaction,
-//! 1 Uncontested Payout Transaction and 1 Contested Payout Transaction for each Deposit
-//! transaction.
+//! associated payouts among many available deposits.
 //!
 //! ### Inputs
 //! - **First Input** (required): Must spend the first output of a Claim transaction
