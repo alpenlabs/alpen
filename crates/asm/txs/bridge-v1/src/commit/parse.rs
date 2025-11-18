@@ -13,10 +13,6 @@ const GAME_IDX_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
 pub const COMMIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE + GAME_IDX_SIZE;
 
 /// Information extracted from a Bitcoin commit transaction.
-///
-/// The operator posts this transaction to commit to a specific deposit and its associated payouts
-/// among many available deposits. There is 1 Commit transaction, 1 Uncontested Payout Transaction
-/// and 1 Contested Payout Transaction for each Deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitInfo {
     /// The index of the deposit that the operator is committing to.
@@ -81,9 +77,8 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
 
     let mut game_idx_bytes = [0u8; GAME_IDX_SIZE];
-    game_idx_bytes.copy_from_slice(
-        &commit_auxdata[GAME_IDX_OFFSET..GAME_IDX_OFFSET + GAME_IDX_SIZE],
-    );
+    game_idx_bytes
+        .copy_from_slice(&commit_auxdata[GAME_IDX_OFFSET..GAME_IDX_OFFSET + GAME_IDX_SIZE]);
     let game_idx = u32::from_be_bytes(game_idx_bytes);
 
     Ok(CommitInfo {
