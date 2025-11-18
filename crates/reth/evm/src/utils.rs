@@ -29,7 +29,11 @@ pub(crate) fn wei_to_sats(wei: U256) -> (U256, U256) {
 /// # Note
 ///
 /// A [`Descriptor`], if invalid does not create a [`WithdrawalIntent`].
-pub fn withdrawal_intents<'a>(
+///
+/// # Panics
+///
+/// Panics if the number of transactions does not match the number of receipts.
+pub fn extract_withdrawal_intents<'a>(
     transactions: &'a [TransactionSigned],
     receipts: &'a [Receipt],
 ) -> impl Iterator<Item = WithdrawalIntent> + 'a {

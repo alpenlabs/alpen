@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_consensus::{BlockHeader, EthBlock, Header, TxReceipt};
-use alpen_reth_evm::{evm::AlpenEvmFactory, withdrawal_intents};
+use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
 use reth_evm::execute::{BasicBlockExecutor, ExecutionOutcome, Executor};
 use reth_evm_ethereum::EthEvmConfig;
@@ -71,7 +71,7 @@ pub fn process_block(mut input: EthClientExecutorInput) -> Result<EvmBlockStfOut
     // Accumulate withdrawal intents from the executed transactions.
     let withdrawal_intents = profile_report!(COLLECT_WITHDRAWAL_INTENTS, {
         let transactions = block.into_transactions();
-        withdrawal_intents(&transactions, &execution_output.receipts).collect::<Vec<_>>()
+        extract_withdrawal_intents(&transactions, &execution_output.receipts).collect::<Vec<_>>()
     });
 
     // Convert the output to an execution outcome.

@@ -82,8 +82,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         &self,
         pre_state: &Self::PartialState,
         exec_payload: &ExecPayload<'_, Self::Block>,
-        // TODO: get feedbacks from Trey if this field can be unused in Eth context
-        _inputs: &BlockInputs,
+        inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
         // Step 1: Build block from exec_payload and recover senders
         let block = build_and_recover_block(exec_payload)?;
@@ -96,6 +95,11 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             self.evm_config.chain_spec().clone(),
         )
         .map_err(|_| EnvError::InvalidBlock)?;
+
+        // Step 2a: Validate deposits from BlockInputs against block withdrawals
+        // The withdrawals header field is hijacked to represent deposits from the OL.
+        // We need to ensure the authenticated deposits from BlockInputs match what's in the block.
+        validate_deposits_against_block(&block, inputs)?;
 
         // Step 3: Prepare witness database from partial state (expensive operation)
         let db = {
