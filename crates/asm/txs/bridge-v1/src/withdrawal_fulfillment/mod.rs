@@ -30,6 +30,7 @@
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod parse;
+mod tag;
 
 pub const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
 

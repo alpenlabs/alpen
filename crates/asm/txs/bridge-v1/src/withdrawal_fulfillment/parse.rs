@@ -1,11 +1,15 @@
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
+use strata_codec::{BufDecoder, Codec};
 use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
-    constants::WITHDRAWAL_FULFILLMENT_TX_TYPE, errors::WithdrawalParseError,
-    withdrawal_fulfillment::USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
+    constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
+    errors::WithdrawalParseError,
+    withdrawal_fulfillment::{
+        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, tag::WithdrawalFulfillmentTxTagData,
+    },
 };
 
 const DEPOSIT_IDX_SIZE: usize = 4;
@@ -77,16 +81,8 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
         return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
     }
 
-    let withdrawal_auxdata = tx.tag().aux_data();
-    if withdrawal_auxdata.len() != WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN {
-        return Err(WithdrawalParseError::InvalidAuxiliaryData(
-            withdrawal_auxdata.len(),
-        ));
-    }
-
-    let mut deposit_idx_bytes = [0u8; DEPOSIT_IDX_SIZE];
-    deposit_idx_bytes.copy_from_slice(&withdrawal_auxdata[0..DEPOSIT_IDX_SIZE]);
-    let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
+    let mut decoder = BufDecoder::new(tx.tag().aux_data());
+    let withdrawal_auxdata = WithdrawalFulfillmentTxTagData::decode(&mut decoder).unwrap();
 
     let withdrawal_fulfillment_output = &tx
         .tx()
@@ -98,7 +94,7 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
     Ok(WithdrawalFulfillmentInfo {
-        deposit_idx,
+        deposit_idx: withdrawal_auxdata.deposit_idx,
         withdrawal_destination,
         withdrawal_amount,
     })
