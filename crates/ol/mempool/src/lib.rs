@@ -4,6 +4,7 @@
 
 pub mod core;
 pub mod error;
+pub mod events;
 pub mod manager;
 pub mod ordering;
 pub mod provider;
@@ -14,6 +15,7 @@ pub mod validation;
 pub use core::MempoolCore;
 
 pub use error::{MempoolError, MempoolResult};
+pub use events::{MempoolEvent, RemovalReason};
 pub use manager::MempoolManager;
 pub use ordering::{FifoOrdering, OrderingIndex, OrderingStrategy};
 pub use provider::{OLTxProvider, OLTxProviderError};

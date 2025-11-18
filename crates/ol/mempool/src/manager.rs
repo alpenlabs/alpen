@@ -9,12 +9,17 @@ use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::OLTransaction;
 use strata_storage::NodeStorage;
+use tokio::sync::broadcast;
 
 use crate::{
     core::MempoolCore,
     error::{MempoolError, MempoolResult},
+    events::{MempoolEvent, RemovalReason},
     types::{MempoolConfig, MempoolStats},
 };
+
+/// Default capacity for event broadcast channel.
+const DEFAULT_EVENT_CHANNEL_CAPACITY: usize = 1000;
 
 /// Mempool manager providing synchronous API with database persistence.
 ///
@@ -23,6 +28,7 @@ use crate::{
 /// - Block assembly to retrieve transactions
 /// - Management operations (update slot, get stats)
 /// - Database persistence for durability across restarts
+/// - Event broadcasting for transaction state changes
 #[derive(Clone)]
 pub struct MempoolManager {
     /// Core mempool protected by mutex.
@@ -30,14 +36,19 @@ pub struct MempoolManager {
 
     /// Storage for persistence.
     storage: Arc<NodeStorage>,
+
+    /// Event broadcast sender for notifying subscribers.
+    event_sender: broadcast::Sender<MempoolEvent>,
 }
 
 impl MempoolManager {
     /// Create a new mempool manager with the given configuration, current slot, and storage.
     pub fn new(config: MempoolConfig, current_slot: u64, storage: Arc<NodeStorage>) -> Self {
+        let (event_sender, _) = broadcast::channel(DEFAULT_EVENT_CHANNEL_CAPACITY);
         Self {
             core: Arc::new(Mutex::new(MempoolCore::new(config, current_slot))),
             storage,
+            event_sender,
         }
     }
 
@@ -131,7 +142,12 @@ impl MempoolManager {
 
         // Then add to in-memory core
         let mut core = self.core.lock().unwrap();
-        core.submit_transaction(tx, blob_size)
+        let (txid, priority) = core.submit_transaction(tx, blob_size)?;
+
+        // Emit event
+        self.emit_event(MempoolEvent::TransactionAdded { txid, priority });
+
+        Ok(txid)
     }
 
     /// Retrieves transactions from the mempool for block assembly.
@@ -159,7 +175,17 @@ impl MempoolManager {
 
         // Then remove from in-memory core
         let mut core = self.core.lock().unwrap();
-        Ok(core.remove_transactions(txids))
+        let removed = core.remove_transactions(txids);
+
+        // Emit events for successfully removed transactions
+        for txid in &removed {
+            self.emit_event(MempoolEvent::TransactionRemoved {
+                txid: *txid,
+                reason: RemovalReason::Included,
+            });
+        }
+
+        Ok(removed)
     }
 
     /// Gets statistics about the current mempool state.
@@ -174,6 +200,25 @@ impl MempoolManager {
     pub fn contains(&self, txid: &OLTxId) -> bool {
         let core = self.core.lock().unwrap();
         core.contains(txid)
+    }
+
+    /// Subscribe to mempool events.
+    ///
+    /// Returns a broadcast receiver that will receive all mempool events (transaction
+    /// additions, removals, evictions).
+    ///
+    /// Multiple subscribers can listen independently. If a subscriber falls behind and
+    /// the channel buffer fills, older messages will be dropped (broadcast channel behavior).
+    pub fn subscribe(&self) -> broadcast::Receiver<MempoolEvent> {
+        self.event_sender.subscribe()
+    }
+
+    /// Emit an event to all subscribers.
+    ///
+    /// If there are no active subscribers, the event is dropped (no error).
+    fn emit_event(&self, event: MempoolEvent) {
+        // Ignore send errors - if there are no subscribers, that's fine
+        let _ = self.event_sender.send(event);
     }
 }
 

@@ -126,6 +126,11 @@ impl<S: OrderingStrategy> OrderingIndex<S> {
     pub fn strategy_name(&self) -> &'static str {
         self.strategy.name()
     }
+
+    /// Get a reference to the ordering strategy.
+    pub fn strategy(&self) -> &S {
+        &self.strategy
+    }
 }
 
 #[cfg(test)]

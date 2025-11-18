@@ -14,7 +14,7 @@ use strata_ol_chain_types_new::OLTransaction;
 
 use crate::{
     error::{MempoolError, MempoolResult},
-    ordering::{FifoOrdering, OrderingIndex},
+    ordering::{FifoOrdering, OrderingIndex, OrderingStrategy},
     types::{MempoolConfig, MempoolStats},
     validation::{BasicValidator, TransactionValidator},
 };
@@ -74,19 +74,20 @@ impl MempoolCore {
 
     /// Submit a transaction to the mempool.
     ///
-    /// Returns the transaction ID if successful.
-    /// Idempotent: returns success if transaction already exists.
+    /// Returns the transaction ID and computed priority if successful.
+    /// Idempotent: returns success if transaction already exists (with priority 0 for existing).
     pub fn submit_transaction(
         &mut self,
         tx: OLTransaction,
         blob_size: usize,
-    ) -> MempoolResult<OLTxId> {
+    ) -> MempoolResult<(OLTxId, u64)> {
         // Compute transaction ID
         let txid = tx.compute_txid();
 
         // Check for duplicates - idempotent operation, return success if already exists
+        // Priority is 0 for existing transactions (not re-computed)
         if self.transactions.contains_key(&txid) {
-            return Ok(txid);
+            return Ok((txid, 0));
         }
 
         // Compute metadata
@@ -101,6 +102,9 @@ impl MempoolCore {
         // Ensure capacity (may evict lowest priority transactions)
         self.ensure_capacity(metadata.size_bytes)?;
 
+        // Compute priority (before inserting, following original design)
+        let priority = self.ordering.strategy().compute_priority(&tx, &metadata);
+
         // Insert into ordering index
         self.ordering.insert(txid, &tx, &metadata);
 
@@ -112,7 +116,7 @@ impl MempoolCore {
         self.stats.current_total_size += metadata.size_bytes;
         self.stats.enqueued_tx_total += 1;
 
-        Ok(txid)
+        Ok((txid, priority))
     }
 
     /// Retrieve transactions for block assembly.
@@ -269,8 +273,11 @@ mod tests {
         let (tx2, size2) = create_test_tx(vec![4, 5, 6]);
 
         // Submit transactions
-        let txid1 = core.submit_transaction(tx1, size1).unwrap();
-        let txid2 = core.submit_transaction(tx2, size2).unwrap();
+        let (txid1, priority1) = core.submit_transaction(tx1, size1).unwrap();
+        let (txid2, priority2) = core.submit_transaction(tx2, size2).unwrap();
+
+        // Both submitted at same slot, should have equal priority
+        assert_eq!(priority1, priority2);
 
         // Get transactions (should be in FIFO order - earliest first)
         let txs = core.get_transactions(10);
@@ -292,10 +299,10 @@ mod tests {
         let (tx, size) = create_test_tx(vec![1, 2, 3]);
 
         // First submission succeeds
-        let txid1 = core.submit_transaction(tx.clone(), size).unwrap();
+        let (txid1, _priority1) = core.submit_transaction(tx.clone(), size).unwrap();
 
         // Second submission is idempotent - returns same txid
-        let txid2 = core.submit_transaction(tx, size).unwrap();
+        let (txid2, _priority2) = core.submit_transaction(tx, size).unwrap();
         assert_eq!(txid1, txid2);
 
         // Verify only one transaction in mempool
@@ -312,7 +319,7 @@ mod tests {
         let (tx2, size2) = create_test_tx(vec![4, 5, 6]);
 
         // Submit transactions
-        let txid1 = core.submit_transaction(tx1, size1).unwrap();
+        let (txid1, _priority1) = core.submit_transaction(tx1, size1).unwrap();
         core.submit_transaction(tx2, size2).unwrap();
 
         // Remove tx1
@@ -343,11 +350,11 @@ mod tests {
         let (tx3, size3) = create_test_tx(vec![3; 200]);
 
         // Submit first two transactions
-        core.submit_transaction(tx1, size1).unwrap();
-        core.submit_transaction(tx2, size2).unwrap();
+        let (_txid1, _priority1) = core.submit_transaction(tx1, size1).unwrap();
+        let (_txid2, _priority2) = core.submit_transaction(tx2, size2).unwrap();
 
         // Third submission should evict tx1 (lowest priority = earliest)
-        core.submit_transaction(tx3, size3).unwrap();
+        let (_txid3, _priority3) = core.submit_transaction(tx3, size3).unwrap();
 
         // Check that tx3 was added and tx1 was evicted
         let txs = core.get_transactions(10);
@@ -365,10 +372,17 @@ mod tests {
         let mut core = MempoolCore::new(config, 100);
 
         // Submit transactions with increasing entry slots
+        let mut priorities = Vec::new();
         for i in 0..5 {
             core.update_current_slot(100 + i);
             let (tx, size) = create_test_tx(vec![i as u8]);
-            core.submit_transaction(tx, size).unwrap();
+            let (_txid, priority) = core.submit_transaction(tx, size).unwrap();
+            priorities.push(priority);
+        }
+
+        // Verify priorities decrease as slot increases (FIFO = earlier is higher priority)
+        for i in 1..5 {
+            assert!(priorities[i - 1] > priorities[i]);
         }
 
         // Get transactions - should be in FIFO order (earliest first)
@@ -399,7 +413,7 @@ mod tests {
         let mut core = MempoolCore::new(config, 100);
 
         let (tx, size) = create_test_tx(vec![1, 2, 3]);
-        let txid = core.submit_transaction(tx, size).unwrap();
+        let (txid, _priority) = core.submit_transaction(tx, size).unwrap();
 
         assert!(core.contains(&txid));
         assert!(!core.contains(&OLTxId::from(Buf32([0u8; 32]))));

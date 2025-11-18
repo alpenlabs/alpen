@@ -14602,6 +14602,7 @@ dependencies = [
  "strata-storage",
  "thiserror 2.0.17",
  "threadpool",
+ "tokio",
 ]
 
 [[package]]
