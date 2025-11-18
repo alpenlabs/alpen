@@ -415,7 +415,10 @@ impl<S: OrderingStrategy, V: TransactionValidator, D: MempoolDatabase> std::fmt:
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
 
     use strata_acct_types::{AccountId, VarVec};
     use strata_codec::encode_to_vec;
@@ -455,6 +458,57 @@ mod tests {
         }
     }
 
+    /// Persistent in-memory database for testing restore functionality.
+    #[derive(Debug, Clone)]
+    struct PersistentMockDatabase {
+        storage: Arc<Mutex<HashMap<OLTxId, Vec<u8>>>>,
+    }
+
+    impl PersistentMockDatabase {
+        fn new() -> Self {
+            Self {
+                storage: Arc::new(Mutex::new(HashMap::new())),
+            }
+        }
+    }
+
+    impl MempoolDatabase for PersistentMockDatabase {
+        fn put_tx_entry(&self, txid: &OLTxId, blob: &[u8]) -> DbResult<()> {
+            self.storage.lock().unwrap().insert(*txid, blob.to_vec());
+            Ok(())
+        }
+
+        fn get_tx_entry(&self, txid: &OLTxId) -> DbResult<Option<Vec<u8>>> {
+            Ok(self.storage.lock().unwrap().get(txid).cloned())
+        }
+
+        fn get_tx_entries(&self, txids: &[OLTxId]) -> DbResult<HashMap<OLTxId, Vec<u8>>> {
+            let storage = self.storage.lock().unwrap();
+            let result = txids
+                .iter()
+                .filter_map(|txid| storage.get(txid).map(|blob| (*txid, blob.clone())))
+                .collect();
+            Ok(result)
+        }
+
+        fn del_tx_entry(&self, txid: &OLTxId) -> DbResult<()> {
+            self.storage.lock().unwrap().remove(txid);
+            Ok(())
+        }
+
+        fn del_tx_entries(&self, txids: &[OLTxId]) -> DbResult<()> {
+            let mut storage = self.storage.lock().unwrap();
+            for txid in txids {
+                storage.remove(txid);
+            }
+            Ok(())
+        }
+
+        fn get_all_tx_ids(&self) -> DbResult<Vec<OLTxId>> {
+            Ok(self.storage.lock().unwrap().keys().copied().collect())
+        }
+    }
+
     fn create_test_tx_blob(payload_bytes: Vec<u8>) -> Vec<u8> {
         let payload = GamTxPayload::new(
             AccountId::new([0u8; 32]),
@@ -462,6 +516,20 @@ mod tests {
         );
         let tx = OLTransaction::new(
             TransactionAttachment::new_empty(),
+            TransactionPayload::GenericAccountMessage(payload),
+        );
+        encode_to_vec(&tx).unwrap()
+    }
+
+    fn create_test_tx_with_max_slot(payload_bytes: Vec<u8>, max_slot: Option<u64>) -> Vec<u8> {
+        let payload = GamTxPayload::new(
+            AccountId::new([0u8; 32]),
+            VarVec::from_vec(payload_bytes).unwrap(),
+        );
+        let mut attachment = TransactionAttachment::new_empty();
+        attachment.set_max_slot(max_slot);
+        let tx = OLTransaction::new(
+            attachment,
             TransactionPayload::GenericAccountMessage(payload),
         );
         encode_to_vec(&tx).unwrap()
@@ -614,5 +682,166 @@ mod tests {
         // Request only 3 transactions
         let txs = mempool.get_transactions(3).unwrap();
         assert_eq!(txs.len(), 3);
+    }
+
+    #[test]
+    fn test_restart_restores_state() {
+        let config = MempoolConfig::default();
+        let database = PersistentMockDatabase::new();
+
+        let blob1 = create_test_tx_blob(vec![1, 2, 3]);
+        let blob2 = create_test_tx_blob(vec![4, 5, 6]);
+
+        // Parse to get txids for verification
+        let tx1: OLTransaction = decode_buf_exact(&blob1).unwrap();
+        let tx2: OLTransaction = decode_buf_exact(&blob2).unwrap();
+        let txid1 = tx1.compute_txid();
+        let txid2 = tx2.compute_txid();
+
+        // Phase 1: Create mempool and submit transactions
+        {
+            let validator = BasicValidator::new(config.max_tx_size);
+            let strategy = FifoOrdering;
+            let mempool =
+                InMemoryMempool::new(config.clone(), strategy, validator, database.clone(), 100);
+
+            mempool.update_current_slot(100);
+            let submitted_txid1 = mempool.submit_transaction(blob1.clone()).unwrap();
+            assert_eq!(submitted_txid1, txid1);
+
+            mempool.update_current_slot(101);
+            let submitted_txid2 = mempool.submit_transaction(blob2.clone()).unwrap();
+            assert_eq!(submitted_txid2, txid2);
+
+            // Verify initial state
+            let stats = mempool.stats().unwrap();
+            assert_eq!(stats.current_tx_count, 2);
+            assert_eq!(stats.enqueued_tx_total, 2);
+
+            // mempool dropped here
+        }
+
+        // Phase 2: Create new mempool and restore from database
+        {
+            let validator = BasicValidator::new(config.max_tx_size);
+            let strategy = FifoOrdering;
+            let mempool = InMemoryMempool::new_with_restore(
+                config.clone(),
+                strategy,
+                validator,
+                database.clone(),
+                100,
+            )
+            .unwrap();
+
+            // Verify restored state
+            let stats = mempool.stats().unwrap();
+            assert_eq!(stats.current_tx_count, 2);
+
+            // Verify transactions restored in correct order
+            let txs = mempool.get_transactions(10).unwrap();
+            assert_eq!(txs.len(), 2);
+            assert_eq!(txs[0].0, txid1); // tx1 first (FIFO)
+            assert_eq!(txs[1].0, txid2); // tx2 second
+            assert_eq!(txs[0].1, tx1);
+            assert_eq!(txs[1].1, tx2);
+        }
+    }
+
+    #[test]
+    fn test_restart_filters_expired_transactions() {
+        let config = MempoolConfig::default();
+        let database = PersistentMockDatabase::new();
+
+        // Create transactions with different expirations
+        let blob_valid = create_test_tx_with_max_slot(vec![1, 2, 3], Some(150)); // Expires at slot 150
+        let blob_expired = create_test_tx_with_max_slot(vec![4, 5, 6], Some(120)); // Expires at slot 120
+
+        // Parse to get tx for verification
+        let tx_valid: OLTransaction = decode_buf_exact(&blob_valid).unwrap();
+
+        // Phase 1: Submit transactions at slot 100
+        {
+            let validator = BasicValidator::new(config.max_tx_size);
+            let strategy = FifoOrdering;
+            let mempool =
+                InMemoryMempool::new(config.clone(), strategy, validator, database.clone(), 100);
+
+            mempool.update_current_slot(100);
+            mempool.submit_transaction(blob_valid.clone()).unwrap();
+            mempool.submit_transaction(blob_expired.clone()).unwrap();
+
+            let stats = mempool.stats().unwrap();
+            assert_eq!(stats.current_tx_count, 2);
+        }
+
+        // Phase 2: Restore at slot 130 (after tx_expired expires at 120)
+        {
+            let validator = BasicValidator::new(config.max_tx_size);
+            let strategy = FifoOrdering;
+            let mempool = InMemoryMempool::new_with_restore(
+                config, strategy, validator, database, 130, // Current slot is 130
+            )
+            .unwrap();
+
+            // Only the valid transaction should remain
+            let stats = mempool.stats().unwrap();
+            assert_eq!(stats.current_tx_count, 1);
+
+            let txs = mempool.get_transactions(10).unwrap();
+            assert_eq!(txs.len(), 1);
+            assert_eq!(txs[0].1, tx_valid); // Only tx_valid remains
+        }
+    }
+
+    #[test]
+    fn test_remove_persists_to_database() {
+        let config = MempoolConfig::default();
+        let database = PersistentMockDatabase::new();
+
+        let blob1 = create_test_tx_blob(vec![1, 2, 3]);
+        let blob2 = create_test_tx_blob(vec![4, 5, 6]);
+
+        // Parse to get txids and tx for verification
+        let tx1: OLTransaction = decode_buf_exact(&blob1).unwrap();
+        let tx2: OLTransaction = decode_buf_exact(&blob2).unwrap();
+        let txid1 = tx1.compute_txid();
+
+        // Phase 1: Submit and remove transaction
+        {
+            let validator = BasicValidator::new(config.max_tx_size);
+            let strategy = FifoOrdering;
+            let mempool =
+                InMemoryMempool::new(config.clone(), strategy, validator, database.clone(), 100);
+
+            mempool.update_current_slot(100);
+            mempool.submit_transaction(blob1).unwrap();
+            mempool.update_current_slot(101);
+            mempool.submit_transaction(blob2.clone()).unwrap();
+
+            // Remove first transaction
+            let removed = mempool.remove_transactions(&[txid1]).unwrap();
+            assert_eq!(removed.len(), 1);
+
+            let stats = mempool.stats().unwrap();
+            assert_eq!(stats.current_tx_count, 1);
+        }
+
+        // Phase 2: Restore and verify removal persisted
+        {
+            let validator = BasicValidator::new(config.max_tx_size);
+            let strategy = FifoOrdering;
+            let mempool =
+                InMemoryMempool::new_with_restore(config, strategy, validator, database, 100)
+                    .unwrap();
+
+            // Only the second transaction should be present
+            let stats = mempool.stats().unwrap();
+            assert_eq!(stats.current_tx_count, 1);
+
+            let txs = mempool.get_transactions(10).unwrap();
+            assert_eq!(txs.len(), 1);
+            assert_eq!(txs[0].1, tx2); // Only tx2 remains
+        }
     }
 }
