@@ -4,7 +4,6 @@ use bitcoin::{
     Amount, ScriptBuf, Sequence, TapNodeHash, Transaction, TxIn, TxOut, Witness,
     absolute::LockTime,
     hashes::Hash,
-    script::PushBytesBuf,
     secp256k1::Secp256k1,
     sighash::{Prevouts, SighashCache, TapSighashType},
 };
@@ -12,6 +11,7 @@ use strata_crypto::{
     EvenSecretKey,
     test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
+use strata_l1_txfmt::{ParseConfig, TagData};
 
 use crate::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 
@@ -43,16 +43,13 @@ pub fn create_test_deposit_tx(
     // Create auxiliary data in the expected format for deposit transactions
     let mut aux_data = Vec::new();
     aux_data.extend_from_slice(&deposit_info.deposit_idx.to_be_bytes()); // 4 bytes
-    aux_data.extend_from_slice(deposit_info.drt_tapscript_merkle_root.as_ref()); // 32 bytes  
+    aux_data.extend_from_slice(deposit_info.drt_tapscript_merkle_root.as_ref()); // 32 bytes
     aux_data.extend_from_slice(&deposit_info.address); // variable length
 
-    // Create the complete SPS-50 tagged payload
-    // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
-    let mut tagged_payload = Vec::new();
-    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
-    tagged_payload.extend_from_slice(&BRIDGE_V1_SUBPROTOCOL_ID.to_be_bytes()); // 4 bytes subprotocol ID
-    tagged_payload.extend_from_slice(&DEPOSIT_TX_TYPE.to_be_bytes()); // 4 bytes transaction type
-    tagged_payload.extend_from_slice(&aux_data); // auxiliary data
+    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data).unwrap();
+    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+        .encode_script_buf(&td.as_ref())
+        .unwrap();
 
     let secp = Secp256k1::new();
 
@@ -87,9 +84,7 @@ pub fn create_test_deposit_tx(
             // OP_RETURN output at index 0 (contains the SPS-50 tagged data)
             TxOut {
                 value: Amount::ZERO,
-                script_pubkey: ScriptBuf::new_op_return(
-                    PushBytesBuf::try_from(tagged_payload).unwrap(),
-                ),
+                script_pubkey: op_return_script,
             },
             // Deposit output at index 1 (P2TR locked to aggregated operator key)
             TxOut {

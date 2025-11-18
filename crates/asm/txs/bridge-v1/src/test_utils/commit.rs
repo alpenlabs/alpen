@@ -1,7 +1,8 @@
 use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
-    script::PushBytesBuf, transaction::Version,
+    transaction::Version,
 };
+use strata_l1_txfmt::{ParseConfig, TagData};
 
 use crate::{
     commit::CommitInfo,
@@ -26,19 +27,12 @@ use crate::{
 ///
 /// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
 pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
-    // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
-    let mut tagged_payload = Vec::new();
-    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
-    tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID
-    tagged_payload.push(COMMIT_TX_TYPE); // 1 byte transaction type
-
     // Auxiliary data: [DEPOSIT_IDX]
-    tagged_payload.extend_from_slice(&commit_info.deposit_idx.to_be_bytes()); // 4 bytes
-
-    // Create OP_RETURN script with the tagged payload
-    let op_return_script = ScriptBuf::new_op_return(
-        PushBytesBuf::try_from(tagged_payload).expect("Tagged payload should fit in push bytes"),
-    );
+    let aux_data = commit_info.deposit_idx.to_be_bytes();
+    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data.to_vec()).unwrap();
+    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+        .encode_script_buf(&td.as_ref())
+        .unwrap();
 
     Transaction {
         version: Version(2),
