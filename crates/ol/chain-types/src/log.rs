@@ -4,12 +4,11 @@ use strata_acct_types::AccountSerial;
 #[derive(Clone, Debug)]
 pub struct OLLog {
     /// Account this log is related to.
-    // TODO: Determine if this should be here or inside payload
+    // TODO should this actually be the ID and we can encode it in the diff more succinctly?
     account_serial: AccountSerial,
 
     /// Opaque log payload.
     payload: Vec<u8>,
-    // TODO: add more concrete fields.
 }
 
 impl OLLog {

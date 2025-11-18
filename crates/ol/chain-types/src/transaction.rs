@@ -9,28 +9,25 @@ use crate::Slot;
 /// Represents a single transaction within a block.
 #[derive(Clone, Debug)]
 pub struct OLTransaction {
+    /// Any extra data associated with the transaction.
+    extra: TransactionAttachment,
+
     /// The actual payload for the transaction.
     payload: TransactionPayload,
-
-    /// Any extra data associated with the transaction.
-    extra: TransactionExtra,
 }
 
 impl OLTransaction {
-    pub fn new(payload: TransactionPayload, extra: TransactionExtra) -> Self {
+    // TODO use a builder
+    pub(crate) fn new(extra: TransactionAttachment, payload: TransactionPayload) -> Self {
         Self { payload, extra }
+    }
+
+    pub fn extra(&self) -> &TransactionAttachment {
+        &self.extra
     }
 
     pub fn payload(&self) -> &TransactionPayload {
         &self.payload
-    }
-
-    pub fn extra(&self) -> &TransactionExtra {
-        &self.extra
-    }
-
-    pub fn target(&self) -> Option<AccountId> {
-        self.payload().target()
     }
 
     pub fn type_id(&self) -> TxTypeId {
@@ -39,6 +36,7 @@ impl OLTransaction {
 }
 
 /// The actual payload of the transaction.
+// TODO probably convert these from being struct-like variants
 #[derive(Clone, Debug)]
 pub enum TransactionPayload {
     GenericAccountMessage {
@@ -52,13 +50,6 @@ pub enum TransactionPayload {
 }
 
 impl TransactionPayload {
-    pub fn target(&self) -> Option<AccountId> {
-        match self {
-            TransactionPayload::SnarkAccountUpdate { target, .. } => Some(*target),
-            TransactionPayload::GenericAccountMessage { target, .. } => Some(*target),
-        }
-    }
-
     pub fn type_id(&self) -> TxTypeId {
         match self {
             TransactionPayload::GenericAccountMessage { .. } => TxTypeId::GenericAccountMessage,
@@ -69,26 +60,37 @@ impl TransactionPayload {
 
 /// Additional data in a transaction.
 #[derive(Clone, Debug, Default)]
-pub struct TransactionExtra {
+pub struct TransactionAttachment {
     min_slot: Option<Slot>,
     max_slot: Option<Slot>,
 }
 
-impl TransactionExtra {
-    pub fn new(min_slot: Option<Slot>, max_slot: Option<Slot>) -> Self {
-        Self { min_slot, max_slot }
+impl TransactionAttachment {
+    pub fn new_empty() -> Self {
+        Self {
+            min_slot: None,
+            max_slot: None,
+        }
     }
 
     pub fn min_slot(&self) -> Option<Slot> {
         self.min_slot
     }
 
+    pub fn set_min_slot(&mut self, min_slot: Option<Slot>) {
+        self.min_slot = min_slot;
+    }
+
     pub fn max_slot(&self) -> Option<Slot> {
         self.max_slot
     }
+
+    pub fn set_max_slot(&mut self, max_slot: Option<Slot>) {
+        self.max_slot = max_slot;
+    }
 }
 
-/// A type-safe representation of transaction type id.
+/// Type ID to indicate transaction types.
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, IntEnum)]
 pub enum TxTypeId {
@@ -105,6 +107,6 @@ impl fmt::Display for TxTypeId {
             TxTypeId::SnarkAccountUpdate => "snark-account-update",
             TxTypeId::GenericAccountMessage => "generic-account-message",
         };
-        write!(f, "{}", s)
+        f.write_str(s)
     }
 }

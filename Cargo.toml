@@ -56,6 +56,7 @@ members = [
   "crates/ol/chain-types",
   "crates/ol/mempool",
   "crates/ol/state-types",
+  "crates/ol/stf",
   "crates/ol-chainstate-types",
   "crates/params",
   "crates/primitives",
@@ -197,6 +198,7 @@ strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
+strata-ol-stf = { path = "crates/ol/stf" }
 strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }

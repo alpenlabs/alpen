@@ -1,4 +1,5 @@
-//! All the types related to OL chain.
+//! Orchestration layer blockchain structures.
+
 mod block;
 mod common;
 mod log;

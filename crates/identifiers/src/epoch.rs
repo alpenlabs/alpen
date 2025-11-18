@@ -44,6 +44,7 @@ pub struct EpochCommitment {
     epoch: u64,
     last_slot: u64,
     last_blkid: OLBlockId,
+    // TODO convert to using OLBlockCommitment?
 }
 
 impl EpochCommitment {
@@ -93,7 +94,7 @@ impl EpochCommitment {
 impl fmt::Display for EpochCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Show first 2 and last 2 bytes of block ID (4 hex chars each)
-        let blkid_bytes = self.last_blkid.as_ref();
+        let blkid_bytes = self.last_blkid().as_ref();
         let first_2 = &blkid_bytes[..2];
         let last_2 = &blkid_bytes[30..];
 
@@ -103,15 +104,14 @@ impl fmt::Display for EpochCommitment {
             .expect("Failed to encode first 2 bytes to hex");
         hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
 
+        // SAFETY: we made sure of it
         write!(
             f,
             "{}[{}]@{}..{}",
-            self.last_slot,
-            self.epoch,
-            std::str::from_utf8(&first_hex)
-                .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
-            std::str::from_utf8(&last_hex)
-                .expect("Failed to convert last 2 hex bytes to UTF-8 string")
+            self.last_slot(),
+            self.epoch(),
+            unsafe { std::str::from_utf8_unchecked(&first_hex) },
+            unsafe { std::str::from_utf8_unchecked(&last_hex) },
         )
     }
 }
@@ -121,7 +121,9 @@ impl fmt::Debug for EpochCommitment {
         write!(
             f,
             "EpochCommitment(epoch={}, last_slot={}, last_blkid={:?})",
-            self.epoch, self.last_slot, self.last_blkid
+            self.epoch(),
+            self.last_slot(),
+            self.last_blkid()
         )
     }
 }

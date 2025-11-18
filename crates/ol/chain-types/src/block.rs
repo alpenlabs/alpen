@@ -1,9 +1,9 @@
 use strata_asm_common::AsmLogEntry;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_identifiers::{Buf32, Buf64};
 
 use crate::{Epoch, OLBlockId, OLTransaction, Slot};
 
-/// The Orchestration Layer(OL) block.
+/// Signed full orchestration layer block.
 #[derive(Clone, Debug)]
 pub struct OLBlock {
     signed_header: SignedOLBlockHeader,
@@ -18,20 +18,21 @@ impl OLBlock {
         }
     }
 
-    pub fn body(&self) -> &OLBlockBody {
-        &self.body
-    }
-
     pub fn signed_header(&self) -> &SignedOLBlockHeader {
         &self.signed_header
     }
 
+    /// Returns the actual block header inside the signed header structure.
     pub fn header(&self) -> &OLBlockHeader {
         self.signed_header.header()
     }
+
+    pub fn body(&self) -> &OLBlockBody {
+        &self.body
+    }
 }
 
-/// OL Block header with signature.
+/// OL header with signature.
 #[derive(Clone, Debug)]
 pub struct SignedOLBlockHeader {
     header: OLBlockHeader,
@@ -47,12 +48,15 @@ impl SignedOLBlockHeader {
         &self.header
     }
 
+    /// This MUST be a schnorr signature for now.
     pub fn signature(&self) -> Buf64 {
         self.signature
     }
 }
 
-/// OL Block header without signature.
+/// OL header.
+///
+/// This should not be directly used itself during execution.
 #[derive(Clone, Debug)]
 pub struct OLBlockHeader {
     /// The timestamp the block was created at.
@@ -70,11 +74,11 @@ pub struct OLBlockHeader {
     /// Root of the block body.
     body_root: Buf32,
 
-    /// Root of the block logs.
-    logs_root: Buf32,
-
     /// The state root resulting after the block execution.
     state_root: Buf32,
+
+    /// Root of the block logs.
+    logs_root: Buf32,
 }
 
 impl OLBlockHeader {
@@ -84,8 +88,8 @@ impl OLBlockHeader {
         epoch: Epoch,
         parent_blkid: OLBlockId,
         body_root: Buf32,
-        logs_root: Buf32,
         state_root: Buf32,
+        logs_root: Buf32,
     ) -> Self {
         Self {
             timestamp,
@@ -93,8 +97,8 @@ impl OLBlockHeader {
             epoch,
             parent_blkid,
             body_root,
-            logs_root,
             state_root,
+            logs_root,
         }
     }
 
@@ -118,12 +122,12 @@ impl OLBlockHeader {
         self.body_root
     }
 
-    pub fn logs_root(&self) -> Buf32 {
-        self.logs_root
-    }
-
     pub fn state_root(&self) -> Buf32 {
         self.state_root
+    }
+
+    pub fn logs_root(&self) -> Buf32 {
+        self.logs_root
     }
 }
 
@@ -134,27 +138,32 @@ pub struct OLBlockBody {
     tx_segment: OLTxSegment,
 
     /// Updates from L1.
-    l1_update: L1Update,
+    l1_update: Option<L1Update>,
 }
 
 impl OLBlockBody {
-    pub fn new(tx_segment: OLTxSegment, l1_update: L1Update) -> Self {
+    pub(crate) fn new(tx_segment: OLTxSegment, l1_update: Option<L1Update>) -> Self {
         Self {
             tx_segment,
             l1_update,
         }
     }
 
-    pub fn txs(&self) -> &[OLTransaction] {
-        self.tx_segment.txs()
+    pub fn new_regular(tx_segment: OLTxSegment) -> Self {
+        Self::new(tx_segment, None)
     }
 
-    pub fn l1_update(&self) -> &L1Update {
-        &self.l1_update
+    // TODO convert to builder?
+    pub fn set_l1_update(&mut self, l1_update: L1Update) {
+        self.l1_update = Some(l1_update);
     }
 
     pub fn tx_segment(&self) -> &OLTxSegment {
         &self.tx_segment
+    }
+
+    pub fn l1_update(&self) -> Option<&L1Update> {
+        self.l1_update.as_ref()
     }
 }
 
@@ -181,27 +190,14 @@ pub struct L1Update {
     /// The state root before applying updates from L1.
     pub preseal_state_root: Buf32,
 
-    /// L1 height the manifests are read upto.
-    pub new_l1_blk_height: u64,
-
-    /// L1 block hash the manifests are read upto.
-    pub new_l1_blkid: Buf32,
-
     /// Manifests from last l1 height to the new l1 height.
     pub manifests: Vec<AsmManifest>,
 }
 
 impl L1Update {
-    pub fn new(
-        preseal_state_root: Buf32,
-        new_l1_blk_height: u64,
-        new_l1_blkid: Buf32,
-        manifests: Vec<AsmManifest>,
-    ) -> Self {
+    pub fn new(preseal_state_root: Buf32, manifests: Vec<AsmManifest>) -> Self {
         Self {
             preseal_state_root,
-            new_l1_blk_height,
-            new_l1_blkid,
             manifests,
         }
     }
@@ -210,16 +206,15 @@ impl L1Update {
         self.preseal_state_root
     }
 
-    pub fn new_l1_blk_height(&self) -> u64 {
-        self.new_l1_blk_height
-    }
-
-    pub fn new_l1_blkid(&self) -> Buf32 {
-        self.new_l1_blkid
+    /// If there are new manifests (which there should be), returns the blkid of
+    /// the last one.  This is the blkid that we use as the new L1 chain tip.
+    pub fn new_l1_blkid(&self) -> Option<&Buf32> {
+        self.manifests.last().map(|mf| mf.l1blkid())
     }
 }
 
 /// A manifest containing ASM data corresponding to a L1 block.
+// TODO maybe convert to using exported types from ASM crates?
 #[derive(Debug, Clone)]
 pub struct AsmManifest {
     /// L1 block id.
@@ -227,6 +222,7 @@ pub struct AsmManifest {
 
     /// Logs from ASM STF.
     logs: Vec<AsmLogEntry>,
+    // TODO add wtxs root
 }
 
 impl AsmManifest {
@@ -234,8 +230,8 @@ impl AsmManifest {
         Self { l1blkid, logs }
     }
 
-    pub fn l1blkid(&self) -> Buf32 {
-        self.l1blkid
+    pub fn l1blkid(&self) -> &Buf32 {
+        &self.l1blkid
     }
 
     pub fn logs(&self) -> &[AsmLogEntry] {
