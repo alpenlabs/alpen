@@ -1,5 +1,7 @@
 use arbitrary::{Arbitrary, Unstructured};
+use bitcoin::Txid;
 use strata_asm_common::TxInputRef;
+use strata_primitives::Buf32;
 use strata_codec::decode_buf_exact;
 
 use crate::{commit::aux::CommitTxHeaderAux, constants::COMMIT_TX_TYPE, errors::CommitParseError};
@@ -19,13 +21,16 @@ pub struct CommitInfo {
 
     /// The index of the game being committed to.
     pub game_idx: u32,
+    pub claim_txid: Txid,
 }
 
 impl<'a> Arbitrary<'a> for CommitInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let claim_txid: Txid = Buf32::arbitrary(u)?.into();
         Ok(CommitInfo {
             deposit_idx: u32::arbitrary(u)?,
             game_idx: u32::arbitrary(u)?,
+            claim_txid,
         })
     }
 }
@@ -64,9 +69,12 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     // Parse auxiliary data using CommitTxHeaderAux
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
+    let claim_txid = tx.tx().input[0].previous_output.txid;
+
     Ok(CommitInfo {
         deposit_idx: header_aux.deposit_idx,
         game_idx: header_aux.game_idx,
+        claim_txid,
     })
 }
 
@@ -77,12 +85,11 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-
     use crate::{
         BRIDGE_V1_SUBPROTOCOL_ID,
         test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_commit_tx, mutate_op_return_output,
-            parse_tx,
+            TEST_MAGIC_BYTES, create_tagged_payload, create_test_commit_tx,
+            mutate_op_return_output, parse_tx,
         },
     };
 

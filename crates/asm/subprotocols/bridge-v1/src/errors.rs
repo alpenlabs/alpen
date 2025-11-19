@@ -2,7 +2,8 @@ use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
+    CommitParseError, DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch,
+    WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
@@ -14,11 +15,14 @@ pub enum BridgeSubprotocolError {
     #[error("failed to parse deposit tx")]
     DepositTxParse(#[from] DepositTxParseError),
 
-    #[error("failed to process deposit tx")]
-    DepositTxProcess(#[from] DepositValidationError),
-
     #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxParse(#[from] WithdrawalParseError),
+
+    #[error("failed to parse commit tx")]
+    CommitTxParse(#[from] CommitParseError),
+
+    #[error("failed to process deposit tx")]
+    DepositTxProcess(#[from] DepositValidationError),
 
     #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxProcess(#[from] WithdrawalValidationError),

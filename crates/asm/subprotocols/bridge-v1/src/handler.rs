@@ -1,3 +1,8 @@
+use bitcoin::{
+    TapSighashType,
+    hex::parse,
+    sighash::{Prevouts, SighashCache},
+};
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
 
@@ -44,6 +49,21 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
+        ParsedTx::Commit(parsed_commit_tx) => {
+            let claim_tx = aux_data
+                .get_bitcoin_tx(parsed_commit_tx.info.claim_txid)
+                .expect("valid aux data"); //FIXME:
+
+            let sighash = SighashCache::new(parsed_commit_tx.tx)
+                .taproot_key_spend_signature_hash(
+                    0,
+                    &Prevouts::All(&claim_tx.output),
+                    TapSighashType::Default,
+                )
+                .unwrap(); // FIXME:
+
+            Ok(())
+        }
     }
 }
 
@@ -55,5 +75,6 @@ pub(crate) fn preprocess_parsed_tx<'t>(
     match parsed_tx {
         ParsedTx::Deposit(_) => {}
         ParsedTx::WithdrawalFulfillment(_) => {}
+        ParsedTx::Commit(_) => {}
     }
 }
