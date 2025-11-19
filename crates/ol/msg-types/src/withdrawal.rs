@@ -211,3 +211,122 @@ impl Codec for WithdrawalRejectionMsgData {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+
+    #[test]
+    fn test_withdrawal_msg_data_codec() {
+        // Create test data
+        let msg_data = WithdrawalMsgData {
+            fees: 10_000,
+            dest_desc: VarVec::from_vec(b"bc1qtest123".to_vec()).unwrap(),
+        };
+
+        // Encode
+        let encoded = encode_to_vec(&msg_data).unwrap();
+
+        // Decode
+        let decoded: WithdrawalMsgData = decode_buf_exact(&encoded).unwrap();
+
+        // Verify round-trip
+        assert_eq!(decoded.fees, msg_data.fees);
+        assert_eq!(decoded.dest_desc.as_ref(), msg_data.dest_desc.as_ref());
+    }
+
+    #[test]
+    fn test_withdrawal_msg_data_empty_desc() {
+        // Test with empty descriptor
+        let msg_data = WithdrawalMsgData {
+            fees: 0,
+            dest_desc: VarVec::from_vec(vec![]).unwrap(),
+        };
+
+        let encoded = encode_to_vec(&msg_data).unwrap();
+        let decoded: WithdrawalMsgData = decode_buf_exact(&encoded).unwrap();
+
+        assert_eq!(decoded.fees, 0);
+        assert!(decoded.dest_desc.is_empty());
+    }
+
+    #[test]
+    fn test_withdrawal_msg_data_max_fees() {
+        // Test with max fees
+        let msg_data = WithdrawalMsgData {
+            fees: u32::MAX,
+            dest_desc: VarVec::from_vec(vec![255u8; 100]).unwrap(),
+        };
+
+        let encoded = encode_to_vec(&msg_data).unwrap();
+        let decoded: WithdrawalMsgData = decode_buf_exact(&encoded).unwrap();
+
+        assert_eq!(decoded.fees, u32::MAX);
+        assert_eq!(decoded.dest_desc.len(), 100);
+    }
+
+    #[test]
+    fn test_withdrawal_fee_bump_msg_data_codec() {
+        // Create test data
+        let msg_data = WithdrawalFeeBumpMsgData {
+            withdrawal_intent_idx: 42,
+            source_subject: SubjectId::from([1u8; 32]),
+        };
+
+        // Encode
+        let encoded = encode_to_vec(&msg_data).unwrap();
+
+        // Decode
+        let decoded: WithdrawalFeeBumpMsgData = decode_buf_exact(&encoded).unwrap();
+
+        // Verify round-trip
+        assert_eq!(decoded.withdrawal_intent_idx, msg_data.withdrawal_intent_idx);
+        assert_eq!(decoded.source_subject, msg_data.source_subject);
+    }
+
+    #[test]
+    fn test_withdrawal_rejection_msg_data_codec() {
+        // Test with RejectedEntirely
+        let msg_data = WithdrawalRejectionMsgData {
+            withdrawal_intent_idx: 100,
+            rejection_type: WithdrawalRejectionType::RejectedEntirely,
+            source_subject: SubjectId::from([2u8; 32]),
+        };
+
+        let encoded = encode_to_vec(&msg_data).unwrap();
+        let decoded: WithdrawalRejectionMsgData = decode_buf_exact(&encoded).unwrap();
+
+        assert_eq!(decoded.withdrawal_intent_idx, msg_data.withdrawal_intent_idx);
+        assert_eq!(decoded.rejection_type, WithdrawalRejectionType::RejectedEntirely);
+        assert_eq!(decoded.source_subject, msg_data.source_subject);
+    }
+
+    #[test]
+    fn test_withdrawal_rejection_fee_bump_codec() {
+        // Test with FeeBumpRejection
+        let msg_data = WithdrawalRejectionMsgData {
+            withdrawal_intent_idx: 0,
+            rejection_type: WithdrawalRejectionType::FeeBumpRejection,
+            source_subject: SubjectId::from([255u8; 32]),
+        };
+
+        let encoded = encode_to_vec(&msg_data).unwrap();
+        let decoded: WithdrawalRejectionMsgData = decode_buf_exact(&encoded).unwrap();
+
+        assert_eq!(decoded.withdrawal_intent_idx, 0);
+        assert_eq!(decoded.rejection_type, WithdrawalRejectionType::FeeBumpRejection);
+        assert_eq!(decoded.source_subject, SubjectId::from([255u8; 32]));
+    }
+
+    #[test]
+    fn test_withdrawal_rejection_type_conversion() {
+        // Test type conversions
+        assert_eq!(WithdrawalRejectionType::from_u8(0), Some(WithdrawalRejectionType::RejectedEntirely));
+        assert_eq!(WithdrawalRejectionType::from_u8(1), Some(WithdrawalRejectionType::FeeBumpRejection));
+        assert_eq!(WithdrawalRejectionType::from_u8(2), None);
+
+        assert_eq!(WithdrawalRejectionType::RejectedEntirely.to_u8(), 0);
+        assert_eq!(WithdrawalRejectionType::FeeBumpRejection.to_u8(), 1);
+    }
+}
