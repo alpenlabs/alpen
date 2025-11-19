@@ -40,8 +40,8 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
         ParsedTx::WithdrawalFulfillment(parsed_withdrawal_fulfillment) => {
-            let ParsedWithdrawalFulfillmentTx { tx, info } = parsed_withdrawal_fulfillment;
-            state.process_withdrawal_fulfillment_tx(tx, &info)?;
+            let ParsedWithdrawalFulfillmentTx { tx: _, info } = parsed_withdrawal_fulfillment;
+            state.process_withdrawal_fulfillment_tx(&info)?;
             Ok(())
         }
         ParsedTx::Commit(parsed_commit_tx) => {
