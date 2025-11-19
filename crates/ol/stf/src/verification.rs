@@ -116,6 +116,11 @@ impl<'b> BlockExecInput<'b> {
     pub fn manifest_container(&self) -> Option<&'b OLL1ManifestContainer> {
         self.manifest_container
     }
+
+    /// Checks if the body implied by this input is implied to be a terminal block.
+    pub fn is_body_terminal(&self) -> bool {
+        self.manifest_container().is_some()
+    }
 }
 
 /// Verifies a block classically by executing it the normal way.
@@ -131,19 +136,18 @@ pub fn verify_block_classically<S: StateAccessor>(
     // 0. Construct the block exec context for tracking verification state
     // across phases.
     let block_info = BlockInfo::from_header(header);
-    let block_context = BlockContext::new(block_info, parent_header);
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
-    let is_epoch_initial = block_context.is_probably_epoch_initial();
-    let epoch_context = block_context.to_epoch_initial_context();
-    if is_epoch_initial {
+    let block_context = BlockContext::new(&block_info, parent_header.as_ref());
+    if block_context.is_probably_epoch_initial() {
+        let epoch_context = block_context.to_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &epoch_context)?;
     }
 
     // 2. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
-    let tx_ctx = TxExecContext::new(block_context, &basic_ctx);
+    let tx_ctx = TxExecContext::new(&basic_ctx, parent_header.as_ref());
     transaction_processing::process_block_tx_segment(
         state,
         block_exec_input.tx_segment(),
@@ -155,8 +159,7 @@ pub fn verify_block_classically<S: StateAccessor>(
     // - if it *is* a terminal, then check against the preseal state root
     let pre_manifest_state_root = state.compute_state_root()?;
 
-    let is_terminal = block_exec_input.manifest_container().is_some();
-    if is_terminal {
+    if block_exec_input.is_body_terminal() {
         // For terminal blocks, check against the preseal state root
         let expected_preseal = exp
             .post_state_roots

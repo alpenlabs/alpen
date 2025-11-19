@@ -84,7 +84,7 @@ impl BlockExecOutputs {
 /// This closely aligns with `verify_block_classically`.
 pub fn execute_block_inputs<S: StateAccessor>(
     state: &mut S,
-    block_context: &BlockContext,
+    block_context: BlockContext<'_>,
     block_exec_input: BlockExecInput<'_>,
 ) -> ExecResult<BlockExecOutputs> {
     // 0. Construct the block exec context for tracking verification state
@@ -99,7 +99,7 @@ pub fn execute_block_inputs<S: StateAccessor>(
 
     // 2. Call process_block_tx_segment for every block as usual.
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);
-    let tx_ctx = TxExecContext::new(block_context.clone(), &basic_ctx);
+    let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     transaction_processing::process_block_tx_segment(
         state,
         block_exec_input.tx_segment(),
@@ -186,7 +186,7 @@ impl CompletedBlock {
 /// components of a block that can be signed.
 pub fn execute_and_complete_block<S: StateAccessor>(
     state: &mut S,
-    block_context: &BlockContext,
+    block_context: BlockContext<'_>,
     block_components: BlockComponents,
 ) -> ExecResult<CompletedBlock> {
     // 1. First just execute the block with the inputs.

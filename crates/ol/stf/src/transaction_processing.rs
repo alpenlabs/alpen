@@ -40,7 +40,7 @@ pub fn process_single_tx<S: StateAccessor>(
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Check the transaction's attachments.
-    if !check_tx_attachments(tx.attachments(), context.block_context()) {
+    if !check_tx_attachments(tx.attachments(), &context.to_block_context()) {
         return Err(ExecError::TxConditionCheckFailed);
     }
 
@@ -97,7 +97,7 @@ fn process_update_tx<S: StateAccessor>(
 /// false if any condition is not satisfied.
 ///
 /// This DOES NOT perform any other validation on the tx.
-fn check_tx_attachments(atch: &TransactionAttachment, context: &BlockContext) -> bool {
+fn check_tx_attachments(atch: &TransactionAttachment, context: &BlockContext<'_>) -> bool {
     // Check slot ranges.
     if let Some(min_slot) = atch.min_slot() {
         if context.slot() < min_slot {

@@ -84,20 +84,20 @@ impl EpochInfo {
 }
 
 /// Block context relating a block with its header.
-#[derive(Clone, Debug)]
-pub struct BlockContext {
-    block_info: BlockInfo,
-    parent_header: Option<OLBlockHeader>,
+#[derive(Copy, Clone, Debug)]
+pub struct BlockContext<'b> {
+    block_info: &'b BlockInfo,
+    parent_header: Option<&'b OLBlockHeader>,
 }
 
-impl BlockContext {
+impl<'b> BlockContext<'b> {
     /// Constructs a new instance.
     ///
     /// # Panics
     ///
     /// If there is no parent block but the epoch/slot is nonzero, as that can
     /// only be valid if we're the genesis block.
-    pub(crate) fn new(block_info: BlockInfo, parent_header: Option<OLBlockHeader>) -> Self {
+    pub(crate) fn new(block_info: &'b BlockInfo, parent_header: Option<&'b OLBlockHeader>) -> Self {
         // Sanity check.
         if parent_header.is_none() && (block_info.slot != 0 || block_info.epoch != 0) {
             panic!("stf/context: headers are all fucked up");
@@ -109,22 +109,12 @@ impl BlockContext {
         }
     }
 
-    /// Constructs a context for regular blocks from their headers.
-    pub fn from_headers(bh: &OLBlockHeader, parent: OLBlockHeader) -> Self {
-        Self::new(BlockInfo::from_header(bh), Some(parent))
-    }
-
-    /// Constructs a context for the genesis block.
-    pub fn new_genesis(timestamp: u64) -> Self {
-        Self::new(BlockInfo::new_genesis(timestamp), None)
-    }
-
     pub fn block_info(&self) -> &BlockInfo {
-        &self.block_info
+        self.block_info
     }
 
     pub fn parent_header(&self) -> Option<&OLBlockHeader> {
-        self.parent_header.as_ref()
+        self.parent_header
     }
 
     pub fn timestamp(&self) -> u64 {
@@ -229,6 +219,10 @@ impl<'b> BasicExecContext<'b> {
         }
     }
 
+    fn block_info(&self) -> &BlockInfo {
+        &self.block_info
+    }
+
     pub fn output(self) -> &'b ExecOutputBuffer {
         self.output_buffer
     }
@@ -251,31 +245,33 @@ impl<'b> OutputCtx for BasicExecContext<'b> {
 /// Richer execution context which can be used outside of epoch sealing.
 #[derive(Clone, Debug)]
 pub struct TxExecContext<'b> {
-    // FIXME there's a little bit of duplicated information here, should find a
-    // way to resolve
-    block_context: BlockContext,
-    epoch_context: &'b BasicExecContext<'b>,
+    basic_context: &'b BasicExecContext<'b>,
+    parent_header: Option<&'b OLBlockHeader>,
 }
 
 impl<'b> TxExecContext<'b> {
-    pub fn new(block_context: BlockContext, epoch_context: &'b BasicExecContext<'b>) -> Self {
+    pub fn new(
+        epoch_context: &'b BasicExecContext<'b>,
+        parent_header: Option<&'b OLBlockHeader>,
+    ) -> Self {
         Self {
-            block_context,
-            epoch_context,
+            basic_context: epoch_context,
+            parent_header,
         }
     }
 
-    pub fn block_context(&self) -> &BlockContext {
-        &self.block_context
+    pub fn basic_context(&self) -> &'b BasicExecContext<'b> {
+        self.basic_context
     }
 
-    pub fn basic_context(&self) -> &'b BasicExecContext<'b> {
-        self.epoch_context
+    /// Makes a block context from this exec context.
+    pub fn to_block_context(&self) -> BlockContext<'b> {
+        BlockContext::new(self.basic_context.block_info(), self.parent_header)
     }
 }
 
 impl<'b> OutputCtx for TxExecContext<'b> {
     fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
-        self.epoch_context.emit_logs(logs);
+        self.basic_context.emit_logs(logs);
     }
 }
