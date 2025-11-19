@@ -1,5 +1,5 @@
 use strata_asm_common::AsmManifest;
-use strata_identifiers::{Buf32, Buf64, L1BlockId};
+use strata_identifiers::{Buf32, Buf64};
 
 use crate::{Epoch, OLBlockId, OLTransaction, Slot};
 
@@ -49,8 +49,8 @@ impl SignedOLBlockHeader {
     }
 
     /// This MUST be a schnorr signature for now.
-    pub fn signature(&self) -> Buf64 {
-        self.signature
+    pub fn signature(&self) -> &Buf64 {
+        &self.signature
     }
 }
 
@@ -118,16 +118,16 @@ impl OLBlockHeader {
         &self.parent_blkid
     }
 
-    pub fn body_root(&self) -> Buf32 {
-        self.body_root
+    pub fn body_root(&self) -> &Buf32 {
+        &self.body_root
     }
 
-    pub fn state_root(&self) -> Buf32 {
-        self.state_root
+    pub fn state_root(&self) -> &Buf32 {
+        &self.state_root
     }
 
-    pub fn logs_root(&self) -> Buf32 {
-        self.logs_root
+    pub fn logs_root(&self) -> &Buf32 {
+        &self.logs_root
     }
 }
 
@@ -188,31 +188,41 @@ impl OLTxSegment {
 #[derive(Clone, Debug)]
 pub struct OLL1Update {
     /// The state root before applying updates from L1.
-    pub preseal_state_root: Buf32,
+    preseal_state_root: Buf32,
 
-    /// Manifests from last l1 height to the new l1 height.
-    pub manifests: Vec<AsmManifest>,
+    /// The manifests we extend the chain with.
+    manifest_cont: OLL1ManifestContainer,
 }
 
 impl OLL1Update {
-    pub fn new(preseal_state_root: Buf32, manifests: Vec<AsmManifest>) -> Self {
+    pub fn new(preseal_state_root: Buf32, manifest_cont: OLL1ManifestContainer) -> Self {
         Self {
             preseal_state_root,
-            manifests,
+            manifest_cont,
         }
     }
 
-    pub fn preseal_state_root(&self) -> Buf32 {
-        self.preseal_state_root
+    pub fn preseal_state_root(&self) -> &Buf32 {
+        &self.preseal_state_root
+    }
+
+    pub fn manifest_cont(&self) -> &OLL1ManifestContainer {
+        &self.manifest_cont
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct OLL1ManifestContainer {
+    /// Manifests building on top of previous l1 height to the new l1 height.
+    manifests: Vec<AsmManifest>,
+}
+
+impl OLL1ManifestContainer {
+    pub fn new(manifests: Vec<AsmManifest>) -> Self {
+        Self { manifests }
     }
 
     pub fn manifests(&self) -> &[AsmManifest] {
         &self.manifests
-    }
-
-    /// If there are new manifests (which there should be), returns the blkid of
-    /// the last one.  This is the blkid that we use as the new L1 chain tip.
-    pub fn new_l1_blkid(&self) -> Option<&L1BlockId> {
-        self.manifests.last().map(|mf| mf.blkid())
     }
 }

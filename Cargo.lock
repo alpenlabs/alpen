@@ -14430,6 +14430,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-da"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
@@ -14458,6 +14469,7 @@ dependencies = [
  "strata-ledger-types",
  "strata-msg-fmt",
  "strata-ol-chain-types-new",
+ "strata-ol-da",
  "strata-snark-acct-types",
  "thiserror 2.0.16",
 ]

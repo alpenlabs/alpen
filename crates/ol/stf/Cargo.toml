@@ -11,6 +11,7 @@ strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types-new.workspace = true
+strata-ol-da.workspace = true
 strata-snark-acct-types.workspace = true
 
 thiserror.workspace = true

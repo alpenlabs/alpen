@@ -14,15 +14,26 @@ use crate::{
     errors::{ExecError, ExecResult},
 };
 
+/// Process a block's transaction segment.
+///
+/// This is called for every block.
 pub fn process_block_tx_segment<S: StateAccessor>(
     state: &mut S,
-    txseg: &OLTxSegment,
-    context: &SlotExecContext,
+    tx_seg: &OLTxSegment,
+    context: &mut SlotExecContext,
 ) -> ExecResult<()> {
+    for tx in tx_seg.txs() {
+        process_single_tx(state, tx, context)?;
+    }
+
     // TODO
     Ok(())
 }
 
+/// Processes a single tx, typically as part of a block.
+///
+/// This can also be used in mempool logic for trying to figure out if we can
+/// apply a tx into a block.
 pub fn process_single_tx<S: StateAccessor>(
     state: &mut S,
     tx: &OLTransaction,

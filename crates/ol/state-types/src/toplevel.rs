@@ -76,4 +76,9 @@ impl StateAccessor for OLState {
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
         Ok(self.ledger.get_serial_acct_id(serial).copied())
     }
+
+    fn compute_state_root(&self) -> AcctResult<Buf32> {
+        // We can do something "stupid simple" and replace with SSZ later.
+        todo!()
+    }
 }

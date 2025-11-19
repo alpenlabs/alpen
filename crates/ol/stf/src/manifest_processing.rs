@@ -6,7 +6,7 @@ use strata_asm_manifest_types::{CheckpointAckLogData, DepositIntentLogData};
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::{IL1ViewState, StateAccessor};
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
-use strata_ol_chain_types_new::OLL1Update;
+use strata_ol_chain_types_new::{OLL1ManifestContainer, OLL1Update};
 
 use crate::{
     account_processing,
@@ -15,19 +15,19 @@ use crate::{
     errors::{ExecError, ExecResult},
 };
 
-/// Processes the L1 update from a block, which is part of the epoch sealing
+/// Processes the manifests from a block, which is part of the epoch sealing
 /// processing.
 ///
 /// This does NOT check the preseal root.
-pub fn process_block_l1_update<S: StateAccessor>(
+pub fn process_block_manifests<S: StateAccessor>(
     state: &mut S,
-    update: &OLL1Update,
+    mf_cont: &OLL1ManifestContainer,
     context: &mut SlotExecContext,
 ) -> ExecResult<()> {
     let orig_l1_height = state.l1_view().last_l1_height();
     let mut last = None;
 
-    for (i, mf) in update.manifests().iter().enumerate() {
+    for (i, mf) in mf_cont.manifests().iter().enumerate() {
         let real_height = orig_l1_height + i as u32;
         last = Some((real_height, mf));
         process_asm_manifest(state, real_height, mf, context)?;
