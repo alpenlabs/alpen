@@ -1,5 +1,6 @@
 use bitcoin::{
     TapSighashType,
+    hashes::Hash,
     hex::parse,
     sighash::{Prevouts, SighashCache},
 };
@@ -57,10 +58,15 @@ pub(crate) fn handle_parsed_tx<'t>(
                 )
                 .unwrap(); // FIXME:
 
-            // let container_id = 0; // Replace with actual logic to determine container ID
-            // let withdrawal_processed_log =
-            //     NewExportEntry::new(container_id, unlock.to_export_entry());
-            // relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
+            let unlock = state.process_commit_tx(
+                &parsed_commit_tx.info,
+                sighash.to_raw_hash().to_byte_array(),
+            )?;
+
+            let container_id = 0; // Replace with actual logic to determine container ID
+            let withdrawal_processed_log =
+                NewExportEntry::new(container_id, unlock.to_export_entry());
+            relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
 
             Ok(())
         }

@@ -369,6 +369,7 @@ impl BridgeV1State {
     pub fn process_commit_tx(
         &mut self,
         commit_info: &CommitInfo,
+        sighash: [u8; 32],
     ) -> Result<OperatorClaimUnlock, CommitValidationError> {
         let fulfillment = self.fulfillments.get(commit_info.deposit_idx).unwrap();
 
@@ -383,10 +384,7 @@ impl BridgeV1State {
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::Rng;
-    use strata_asm_txs_bridge_v1::{
-        deposit::DepositInfo,
-        test_utils::{create_test_deposit_tx, create_test_withdrawal_fulfillment_tx},
-    };
+    use strata_asm_txs_bridge_v1::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
     use strata_bridge_types::OperatorPubkeys;
     use strata_crypto::EvenSecretKey;
     use strata_primitives::{

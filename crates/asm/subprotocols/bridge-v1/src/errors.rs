@@ -27,6 +27,9 @@ pub enum BridgeSubprotocolError {
     #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxProcess(#[from] WithdrawalValidationError),
 
+    #[error("failed to process commit tx")]
+    CommitTxProcess(#[from] CommitValidationError),
+
     #[error("unsupported tx type {0}")]
     UnsupportedTxType(TxType),
 }
