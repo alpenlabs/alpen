@@ -1,16 +1,18 @@
 //! Message parsing utilities for orchestration layer messages.
+// TODO this is some weird thing claude invented, I've seen it before but it seems tedious to keep
+// maintained, maybe we should get rid of it?
 
 use strata_codec::decode_buf_exact;
 use strata_msg_fmt::{Msg, MsgRef};
 
 use crate::{
-    DepositMsgData, WithdrawalMsgData, WithdrawalFeeBumpMsgData, WithdrawalRejectionMsgData,
-    DEPOSIT_MSG_TYPE_ID, WITHDRAWAL_MSG_TYPE_ID, WITHDRAWAL_FEE_BUMP_MSG_TYPE_ID,
-    WITHDRAWAL_REJECTION_MSG_TYPE_ID,
+    DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_FEE_BUMP_MSG_TYPE_ID, WITHDRAWAL_MSG_TYPE_ID,
+    WITHDRAWAL_REJECTION_MSG_TYPE_ID, WithdrawalFeeBumpMsgData, WithdrawalMsgData,
+    WithdrawalRejectionMsgData,
 };
 
 /// Helper function to decode a message body with proper error handling.
-pub fn decode_msg_body<T: strata_codec::Codec>(body: &[u8]) -> Option<T> {
+fn decode_msg_body<T: strata_codec::Codec>(body: &[u8]) -> Option<T> {
     decode_buf_exact(body).ok()
 }
 
