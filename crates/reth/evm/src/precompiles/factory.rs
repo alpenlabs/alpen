@@ -13,7 +13,7 @@ pub fn create_precompiles_map(spec: SpecId) -> PrecompilesMap {
 
     // Add bridge precompile using DynPrecompile for compatibility
     precompiles.apply_precompile(&BRIDGEOUT_PRECOMPILE_ADDRESS, |_| {
-        Some(DynPrecompile::new(
+        Some(DynPrecompile::new_stateful(
             PrecompileId::custom(BRIDGEOUT_PRECOMPILE_ID),
             bridge_context_call,
         ))
