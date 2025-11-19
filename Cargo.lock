@@ -13448,6 +13448,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "serde",
+ "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",
  "thiserror 2.0.16",
@@ -14452,8 +14453,10 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-common",
+ "strata-asm-manifest-types",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-msg-fmt",
  "strata-ol-chain-types-new",
  "strata-snark-acct-types",
  "thiserror 2.0.16",

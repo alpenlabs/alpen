@@ -79,6 +79,11 @@ impl TsnlLedgerAccountsTable {
         self.accounts.push(entry);
         Ok(serial)
     }
+
+    /// Gets the account ID corresponding to a serial.
+    pub(crate) fn get_serial_acct_id(&self, serial: AccountSerial) -> Option<&AccountId> {
+        self.serials.get(*serial.inner() as usize)
+    }
 }
 
 #[derive(Clone, Debug)]

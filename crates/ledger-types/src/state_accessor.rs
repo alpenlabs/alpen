@@ -59,4 +59,7 @@ pub trait StateAccessor {
         id: AccountId,
         state: AccountTypeState<Self::AccountState>,
     ) -> AcctResult<AccountSerial>;
+
+    /// Resolves an account serial to an account ID.
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>>;
 }

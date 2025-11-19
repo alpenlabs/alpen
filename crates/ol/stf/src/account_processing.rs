@@ -12,6 +12,7 @@ use crate::{
 /// touching the ledger state.
 pub(crate) fn process_message<S: StateAccessor>(
     state: &mut S,
+    sender: AccountId,
     target: AccountId,
     msg: MsgPayload,
     context: &mut SlotExecContext,

@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display};
 
+use strata_codec::CodecError;
 use strata_msg_fmt::TypeId;
 use thiserror::Error;
 
@@ -34,6 +35,10 @@ pub enum AsmManifestError {
     /// Message format error.
     #[error("msgfmt: {0:?}")]
     MsgFmtError(#[from] strata_msg_fmt::Error),
+
+    /// Codec error.
+    #[error("codec: {0}")]
+    Codec(#[from] CodecError),
 }
 
 /// Wrapper result type for ASM operations.

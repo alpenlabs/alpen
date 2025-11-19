@@ -9,6 +9,7 @@ use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 use crate::{
     account_processing,
+    constants::SEQUENCER_ACCT_ID,
     context::{BlockContext, SlotExecContext},
     errors::{ExecError, ExecResult},
 };
@@ -37,7 +38,13 @@ pub fn process_single_tx<S: StateAccessor>(
         TransactionPayload::GenericAccountMessage(gam) => {
             // Construct the message we want to send and then hand it off.
             let mp = MsgPayload::new(BitcoinAmount::from(0), gam.payload().to_vec());
-            account_processing::process_message(state, *gam.target(), mp, context)?;
+            account_processing::process_message(
+                state,
+                SEQUENCER_ACCT_ID,
+                *gam.target(),
+                mp,
+                context,
+            )?;
         }
 
         TransactionPayload::SnarkAccountUpdate(update) => {

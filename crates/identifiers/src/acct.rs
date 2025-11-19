@@ -3,6 +3,12 @@ use std::fmt;
 use int_enum::IntEnum;
 use ssz_derive::{Decode, Encode};
 
+/// Total number of system reserved accounts, which is the space where we do special casing of
+/// things.
+pub const SYSTEM_RESERVED_ACCTS: u32 = 128;
+
+const SPECIAL_ACCT_ID_BYTE: usize = 31;
+
 type RawAccountId = [u8; 32];
 
 /// Universal account identifier.
@@ -14,8 +20,37 @@ pub struct AccountId(RawAccountId);
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
 
 impl AccountId {
-    pub fn zero() -> Self {
+    /// The "zero" account ID.
+    pub const fn zero() -> Self {
         Self([0; 32])
+    }
+
+    /// Gets a special account ID for reserved accounts.
+    ///
+    /// This is permitted to produce the zero ID.
+    pub const fn special(b: u8) -> Self {
+        let mut buf = [0; 32];
+        buf[SPECIAL_ACCT_ID_BYTE] = b;
+        Self(buf)
+    }
+
+    /// Checks if this is the zero account ID.
+    pub fn is_zero(&self) -> bool {
+        self.0.iter().all(|b| *b == 0)
+    }
+
+    /// Checks if this is a special account ID.
+    ///
+    /// This includes the zero ID.
+    pub fn is_special(&self) -> bool {
+        self.0[..SPECIAL_ACCT_ID_BYTE].iter().all(|b| *b == 0)
+    }
+
+    /// Checks if this is a particular special account ID.
+    ///
+    /// This is permitted to check if this is the zero account ID.
+    pub fn is_special_id(&self, b: u8) -> bool {
+        self.is_special() && self.0[SPECIAL_ACCT_ID_BYTE] == b
     }
 }
 
@@ -63,12 +98,29 @@ pub struct AccountSerial(RawAccountSerial);
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
 
 impl AccountSerial {
+    /// Creates a serial for one of the reserved accounts.
+    ///
+    /// # Panics
+    ///
+    /// If the ID provided is outside the valid range.
+    pub const fn reserved(b: u8) -> Self {
+        assert!(
+            (b as RawAccountSerial) < SYSTEM_RESERVED_ACCTS,
+            "acct: out of bounds reserved serial"
+        );
+        Self(b as RawAccountSerial)
+    }
+
     pub fn incr(self) -> AccountSerial {
         if *self.inner() == RawAccountSerial::MAX {
             panic!("acctsys: reached max serial number");
         }
 
         AccountSerial::new(self.inner() + 1)
+    }
+
+    pub fn is_reserved(&self) -> bool {
+        self.0 < SYSTEM_RESERVED_ACCTS
     }
 }
 

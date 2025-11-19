@@ -1,11 +1,19 @@
 //! ASM manifest processing.
 
+use strata_acct_types::{AccountId, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_identifiers::L1Height;
+use strata_asm_manifest_types::{CheckpointAckLogData, DepositIntentLogData};
+use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::{IL1ViewState, StateAccessor};
+use strata_msg_fmt::{Msg, MsgRef, TypeId};
 use strata_ol_chain_types_new::OLL1Update;
 
-use crate::{context::SlotExecContext, errors::ExecResult};
+use crate::{
+    account_processing,
+    constants::BRIDGE_GATEWAY_ACCT_ID,
+    context::SlotExecContext,
+    errors::{ExecError, ExecResult},
+};
 
 /// Processes the L1 update from a block, which is part of the epoch sealing
 /// processing.
@@ -14,7 +22,7 @@ use crate::{context::SlotExecContext, errors::ExecResult};
 pub fn process_block_l1_update<S: StateAccessor>(
     state: &mut S,
     update: &OLL1Update,
-    context: &SlotExecContext,
+    context: &mut SlotExecContext,
 ) -> ExecResult<()> {
     let orig_l1_height = state.l1_view().last_l1_height();
     let mut last = None;
@@ -37,7 +45,7 @@ fn process_asm_manifest<S: StateAccessor>(
     state: &mut S,
     real_height: L1Height,
     mf: &AsmManifest,
-    context: &SlotExecContext,
+    context: &mut SlotExecContext,
 ) -> ExecResult<()> {
     let estate = state.l1_view();
 
@@ -56,36 +64,82 @@ fn process_asm_log<S: StateAccessor>(
     state: &mut S,
     log: &AsmLogEntry,
     real_height: L1Height,
-    context: &SlotExecContext,
+    context: &mut SlotExecContext,
 ) -> ExecResult<()> {
-    // TODO process the logs
-    // - log as msgfmt
-    // - match on ID
-    // - parse body if we recognize it
-    // - call out to handler fn below
+    // Try to parse the log as an SPS-52 message.
+    let Some(msg) = log.try_as_msg() else {
+        // Not a valid message format, skip it.
+        return Ok(());
+    };
+
+    // Match on the type ID to determine how to process the log.
+    match msg.ty() {
+        strata_asm_manifest_types::DEPOSIT_INTENT_ASM_LOG_TYPE_ID => {
+            // Parse the deposit intent data, skip if it fails to parse.
+            let Ok(data) = log.try_into_log::<DepositIntentLogData>() else {
+                return Ok(());
+            };
+            process_deposit_intent_log(state, &data, context)?;
+        }
+
+        strata_asm_manifest_types::CHECKPOINT_ACK_ASM_LOG_TYPE_ID => {
+            // Parse the checkpoint acknowledgment data, skip if it fails to parse.
+            let Ok(data) = log.try_into_log::<CheckpointAckLogData>() else {
+                return Ok(());
+            };
+            process_checkpoint_ack_log(state, &data, context)?;
+        }
+
+        _ => {
+            // Some other log type, which we don't care about, skip it.
+        }
+    }
 
     Ok(())
 }
 
-// temporary defs until we move these to a better place
-// TODO move these to asm-manifest-types in new module
-type DepositIntentLogData = ();
-type CheckpointAckLogData = ();
-
 fn process_deposit_intent_log<S: StateAccessor>(
     state: &mut S,
     data: &DepositIntentLogData,
-    context: &SlotExecContext,
+    context: &mut SlotExecContext,
 ) -> ExecResult<()> {
-    // TODO increment ledger balance, send message off to target with funds
+    // Convert the account serial to account ID.
+    let Some(dest_id) = state.find_account_id_by_serial(data.dest_acct_serial)? else {
+        // Account serial not found, skip this deposit
+        // This could happen if the account doesn't exist yet
+        return Ok(());
+    };
+
+    // Create the message payload containing the subject ID.
+    // TODO make better handling for this like we have to ASM logs
+    let mut msg_data = Vec::new();
+    let subject_bytes: [u8; 32] = data.dest_subject.into();
+    msg_data.extend_from_slice(&subject_bytes);
+
+    let msg_payload = MsgPayload::new(data.amt.into(), msg_data);
+
+    // Deliver the deposit message to the target account
+    account_processing::process_message(
+        state,
+        BRIDGE_GATEWAY_ACCT_ID,
+        dest_id,
+        msg_payload,
+        context,
+    )?;
+
     Ok(())
 }
 
 fn process_checkpoint_ack_log<S: StateAccessor>(
     state: &mut S,
     data: &CheckpointAckLogData,
-    context: &SlotExecContext,
+    context: &mut SlotExecContext,
 ) -> ExecResult<()> {
-    // TODO update the fields
+    // Update the L1 view state with the acknowledged epoch
+    // This records that a checkpoint has been observed on L1
+    state
+        .l1_view_mut()
+        .set_asm_recorded_epoch(data.epoch.clone());
+
     Ok(())
 }

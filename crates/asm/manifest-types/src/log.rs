@@ -1,6 +1,7 @@
 // Re-export from the separate logs crate
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_codec::{Codec, decode_buf_exact, encode_to_vec};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg, TypeId};
 
 use crate::{AsmManifestError, AsmManifestResult};
@@ -10,8 +11,7 @@ use crate::{AsmManifestError, AsmManifestResult};
 /// This trait provides a consistent interface for log entries that need to be
 /// serialized, stored, and later deserialized from the ASM state. Each log type
 /// has a unique type identifier and must be serializable.
-// TODO migrate from borsh for this
-pub trait AsmLog: BorshSerialize + BorshDeserialize {
+pub trait AsmLog: Codec {
     /// Unique type identifier for this log type.
     ///
     /// This constant is used to distinguish between different log types when
@@ -55,8 +55,7 @@ impl AsmLogEntry {
     /// This provides backwards compatibility with typed log entries.
     pub fn from_log<T: AsmLog>(log: &T) -> AsmManifestResult<Self> {
         let ty = TypeId::from(T::TY);
-        // TODO as above, migrate from borsh for this
-        let body = borsh::to_vec(log).map_err(|e| AsmManifestError::TypeIdSerialization(ty, e))?;
+        let body = encode_to_vec(log)?;
         Self::from_msg(ty, body)
     }
 
@@ -92,9 +91,7 @@ impl AsmLogEntry {
             }));
         }
 
-        // TODO as above, migrate from borsh for this
-        borsh::from_slice(msg.body())
-            .map_err(|e| AsmManifestError::TypeIdDeserialization(expected_ty, e))
+        decode_buf_exact(msg.body()).map_err(|e| e.into())
     }
 
     /// Get the raw bytes of this log entry.

@@ -72,4 +72,8 @@ impl StateAccessor for OLState {
         let account = AccountState::new(serial, BitcoinAmount::from(0), state);
         self.ledger.create_account(id, account)
     }
+
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+        Ok(self.ledger.get_serial_acct_id(serial).copied())
+    }
 }

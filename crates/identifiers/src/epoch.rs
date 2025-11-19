@@ -20,6 +20,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
 
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
+
 use crate::{
     buf::Buf32,
     ol::{OLBlockCommitment, OLBlockId},
@@ -91,6 +93,29 @@ impl EpochCommitment {
     /// for the genesis epoch (0) before the it is completed.
     pub fn is_null(&self) -> bool {
         Buf32::from(self.last_blkid).is_zero()
+    }
+}
+
+impl Codec for EpochCommitment {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.epoch.encode(enc)?;
+        self.last_slot.encode(enc)?;
+        // OLBlockId wraps Buf32 which is [u8; 32]
+        let blkid_bytes: &[u8; 32] = self.last_blkid.as_ref();
+        blkid_bytes.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let epoch = u64::decode(dec)?;
+        let last_slot = u64::decode(dec)?;
+        let blkid_bytes = <[u8; 32]>::decode(dec)?;
+        let last_blkid = OLBlockId::from(Buf32::from(blkid_bytes));
+        Ok(Self {
+            epoch,
+            last_slot,
+            last_blkid,
+        })
     }
 }
 

@@ -6,10 +6,12 @@
 mod errors;
 mod log;
 mod manifest;
+mod payloads;
 
 pub use errors::*;
 pub use log::*;
 pub use manifest::*;
+pub use payloads::*;
 
 /// Type alias for a 32-byte hash.
 // TODO use Buf32 from identifiers?
