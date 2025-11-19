@@ -77,9 +77,6 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use bitcoin::secp256k1::{Keypair, Secp256k1};
-    use rand::rngs::OsRng;
-    use strata_crypto::even_kp;
 
     use crate::{
         BRIDGE_V1_SUBPROTOCOL_ID,
@@ -104,17 +101,8 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let info: CommitInfo = arb.generate();
 
-        // Generate operator private keys for N/N multisig
-        let secp = Secp256k1::new();
-        let operators_privkeys: Vec<_> = (0..3)
-            .map(|_| {
-                let kp = Keypair::new(&secp, &mut OsRng);
-                even_kp((kp.secret_key(), kp.public_key())).0
-            })
-            .collect();
-
-        // Create the funding and commit transactions
-        let (_funding_tx, tx) = create_test_commit_tx(&info, &operators_privkeys);
+        // Create the commit transaction
+        let tx = create_test_commit_tx(&info);
 
         // Parse the transaction using the SPS-50 parser
         let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
@@ -133,16 +121,7 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let info: CommitInfo = arb.generate();
 
-        // Generate operator private keys for N/N multisig
-        let secp = Secp256k1::new();
-        let operators_privkeys: Vec<_> = (0..3)
-            .map(|_| {
-                let kp = Keypair::new(&secp, &mut OsRng);
-                even_kp((kp.secret_key(), kp.public_key())).0
-            })
-            .collect();
-
-        let (_funding_tx, mut tx) = create_test_commit_tx(&info, &operators_privkeys);
+        let mut tx = create_test_commit_tx(&info);
 
         // Mutate the OP_RETURN output to have wrong transaction type
         let aux_data = vec![0u8; 4]; // Some dummy aux data
@@ -162,16 +141,7 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let info: CommitInfo = arb.generate();
 
-        // Generate operator private keys for N/N multisig
-        let secp = Secp256k1::new();
-        let operators_privkeys: Vec<_> = (0..3)
-            .map(|_| {
-                let kp = Keypair::new(&secp, &mut OsRng);
-                even_kp((kp.secret_key(), kp.public_key())).0
-            })
-            .collect();
-
-        let (_funding_tx, mut tx) = create_test_commit_tx(&info, &operators_privkeys);
+        let mut tx = create_test_commit_tx(&info);
 
         // Mutate the OP_RETURN output to have shorter aux len
         let aux_data = vec![0u8; COMMIT_TX_AUX_DATA_LEN - 1];
