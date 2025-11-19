@@ -1,5 +1,6 @@
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, hashes::Hash,
+    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    hashes::Hash,
     secp256k1::{Keypair, Secp256k1},
     sighash::{Prevouts, SighashCache, TapSighashType},
 };
