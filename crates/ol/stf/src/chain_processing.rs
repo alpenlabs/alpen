@@ -4,7 +4,7 @@ use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_ledger_types::{IL1ViewState, StateAccessor};
 
 use crate::{
-    context::SlotExecContext,
+    context::EpochInitialContext,
     errors::{ExecError, ExecResult},
 };
 
@@ -13,18 +13,17 @@ use crate::{
 /// This is done outside of the checked DA range.
 pub fn process_epoch_initial<S: StateAccessor>(
     state: &mut S,
-    context: &SlotExecContext,
+    context: &EpochInitialContext,
 ) -> ExecResult<()> {
-    let bc = context.block_context();
     let estate = state.l1_view_mut();
 
     // 1. Check that this is the first block of the epoch.
-    // TODO
+    // TODO maybe we actually do this implicitly?
 
     // 2. Update the epoch field and insert its commitment into the MMR.
     let state_cur_epoch = estate.cur_epoch();
     let state_next_epoch = state_cur_epoch + 1;
-    let block_cur_epoch = bc.epoch() as u32;
+    let block_cur_epoch = context.epoch() as u32;
     if block_cur_epoch != state_next_epoch {
         return Err(ExecError::ChainIntegrity);
     }
@@ -32,8 +31,7 @@ pub fn process_epoch_initial<S: StateAccessor>(
     estate.set_cur_epoch(block_cur_epoch);
 
     // TODO sanity check this works for the genesis block
-    let parent_block = bc.compute_parent_commitment();
-    let prev_ec = EpochCommitment::from_terminal(state_cur_epoch as u64, parent_block);
+    let prev_ec = EpochCommitment::from_terminal(state_cur_epoch as u64, context.prev_terminal());
 
     // TODO insert into MMR
 

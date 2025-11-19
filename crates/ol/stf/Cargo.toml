@@ -9,6 +9,7 @@ strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
+strata-merkle.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-da.workspace = true

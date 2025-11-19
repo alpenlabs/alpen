@@ -165,6 +165,13 @@ impl OLBlockBody {
     pub fn l1_update(&self) -> Option<&OLL1Update> {
         self.l1_update.as_ref()
     }
+
+    /// Computes the hash commitment of this block body.
+    /// TODO: This will use SSZ merkle hashing when ready.
+    pub fn compute_hash_commitment(&self) -> Buf32 {
+        // Stub implementation - will be replaced with SSZ merkle hashing
+        Buf32::zero()
+    }
 }
 
 #[derive(Clone, Debug)]

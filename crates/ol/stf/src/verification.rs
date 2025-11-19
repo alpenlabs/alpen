@@ -4,14 +4,22 @@
 //! assembly as they perform all of the block validation checks including
 //! outputs (corresponding with headers/checkpoints/etc).
 
-use strata_identifiers::Buf32;
+use strata_identifiers::{Buf32, hash};
 use strata_ledger_types::StateAccessor;
+use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLTxSegment,
+    OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog, OLTxSegment,
 };
 use strata_ol_da::DaScheme;
 
-use crate::errors::{ExecError, ExecResult};
+use crate::{
+    chain_processing,
+    context::{
+        BlockContext, EpochInitialContext, EpochTerminalContext, ExecOutputBuffer, SlotExecContext,
+    },
+    errors::{ExecError, ExecResult},
+    manifest_processing, transaction_processing,
+};
 
 /// Commitments that we are checking against a block.
 ///
@@ -96,6 +104,16 @@ impl<'b> BlockExecInput<'b> {
             body.l1_update().map(|u| u.manifest_cont()),
         )
     }
+
+    /// Returns the transaction segment.
+    pub fn tx_segment(&self) -> &'b OLTxSegment {
+        self.tx_segment
+    }
+
+    /// Returns the manifest container if present.
+    pub fn manifest_container(&self) -> Option<&'b OLL1ManifestContainer> {
+        self.manifest_container
+    }
 }
 
 /// Verifies a block classically by executing it the normal way.
@@ -104,32 +122,111 @@ impl<'b> BlockExecInput<'b> {
 pub fn verify_block_classically<S: StateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
+    parent_header: Option<OLBlockHeader>,
     block_exec_input: BlockExecInput<'_>,
     exp: &BlockExecExpectations,
 ) -> ExecResult<()> {
     // 0. Construct the block exec context for tracking verification state
     // across phases.
-    // TODO
+    let block_context = BlockContext::new(
+        header.timestamp(),
+        header.slot(),
+        header.epoch(),
+        parent_header,
+    );
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
-    // TODO
+    let is_epoch_initial = block_context.is_probably_epoch_initial();
+    let epoch_context = block_context.to_epoch_initial_context();
+    if is_epoch_initial {
+        chain_processing::process_epoch_initial(state, &epoch_context)?;
+    }
 
     // 2. Call process_block_tx_segment for every block as usual.
-    // TODO
+    let mut exec_context = SlotExecContext::new(block_context);
+    transaction_processing::process_block_tx_segment(
+        state,
+        block_exec_input.tx_segment(),
+        &mut exec_context,
+    )?;
 
     // 3. Check the state root.
     // - if it's a nonterminal, then check against the header state root
     // - if it *is* a terminal, then check against the preseal state root
-    // TODO
+    let pre_manifest_state_root = state.compute_state_root()?;
 
-    // 4. If it's the last block of an epoch, then call process_block_manifests, then really check
-    //    the header state root.
-    // TODO
+    let is_terminal = block_exec_input.manifest_container().is_some();
+    if is_terminal {
+        // For terminal blocks, check against the preseal state root
+        let expected_preseal = exp
+            .post_state_roots
+            .preseal_state_root()
+            .ok_or(ExecError::ChainIntegrity)?;
+        if &pre_manifest_state_root != expected_preseal {
+            return Err(ExecError::ChainIntegrity);
+        }
+    } else {
+        // For non-terminal blocks, check against the header state root
+        if &pre_manifest_state_root != exp.post_state_roots.header_state_root() {
+            return Err(ExecError::ChainIntegrity);
+        }
+    }
+
+    // 4. If it's the last block of an epoch, then call process_block_manifests,
+    // then really check the header state root.
+    //
+    // Then we get the exec output one way or another.
+    let output = if let Some(manifest_container) = block_exec_input.manifest_container() {
+        let mut terminal_context = exec_context.into_epoch_terminal_context();
+        manifest_processing::process_block_manifests(
+            state,
+            manifest_container,
+            &mut terminal_context,
+        )?;
+
+        // After processing manifests, check the actual final state root against the header.
+        let final_state_root = state.compute_state_root()?;
+        if &final_state_root != exp.post_state_roots.header_state_root() {
+            return Err(ExecError::ChainIntegrity);
+        }
+
+        terminal_context.into_output()
+    } else {
+        exec_context.into_output()
+    };
 
     // 5. Check the logs root.
-    // TODO
+    let computed_logs_root = compute_logs_root(output.logs());
+    if computed_logs_root != exp.logs_root {
+        return Err(ExecError::ChainIntegrity);
+    }
 
     Ok(())
+}
+
+/// Helper function to compute logs root.
+// TODO move this somewhere?
+fn compute_logs_root(logs: &[OLLog]) -> Buf32 {
+    if logs.is_empty() {
+        return Buf32::zero();
+    }
+
+    // Hash each log entry to create leaf nodes.
+    let mut leaf_hashes: Vec<[u8; 32]> = logs
+        .iter()
+        .map(|log| log.compute_hash_commitment().0)
+        .collect();
+
+    // BinaryMerkleTree requires power of two leaves.
+    let next_power_of_two = leaf_hashes.len().next_power_of_two();
+    while leaf_hashes.len() < next_power_of_two {
+        leaf_hashes.push([0u8; 32]);
+    }
+
+    let tree = BinaryMerkleTree::from_leaves::<Sha256Hasher>(leaf_hashes)
+        .expect("power of two leaves should always succeed");
+
+    Buf32(*tree.root())
 }
 
 /// Expectations we have about a epoch's processing.
@@ -146,18 +243,27 @@ pub struct EpochExecExpectations {
 /// implied in the checkpoint.
 pub fn verify_epoch_with_diff<S: StateAccessor, D: DaScheme<S>>(
     state: &mut S,
+    epoch_context: &EpochInitialContext,
     diff: D::Diff,
     manifests: &OLL1ManifestContainer,
     exp: &EpochExecExpectations,
 ) -> ExecResult<()> {
     // 1. Apply the initial processing by calling process_epoch_initial.
-    // TODO
+    chain_processing::process_epoch_initial(state, &epoch_context)?;
 
     // 2. Apply the DA diff.
-    // TODO
+    D::apply_to_state(diff, state).map_err(|_| ExecError::ChainIntegrity)?;
 
     // 3. As if it were the last block of an epoch, call process_block_manifests.
-    // TODO
+    let mut terminal_context =
+        EpochTerminalContext::new(epoch_context.epoch(), ExecOutputBuffer::new_empty());
+    manifest_processing::process_block_manifests(state, manifests, &mut terminal_context)?;
+
+    // 4. Verify the final state root.
+    let final_state_root = state.compute_state_root()?;
+    if final_state_root != exp.epoch_post_state_root {
+        return Err(ExecError::ChainIntegrity);
+    }
 
     Ok(())
 }
