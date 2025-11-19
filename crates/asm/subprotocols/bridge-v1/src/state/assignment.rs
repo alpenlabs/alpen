@@ -114,7 +114,7 @@ pub struct AssignmentEntry {
     /// Bitcoin block height deadline for withdrawal execution.
     ///
     /// The withdrawal fulfillment transaction must be executed before this block height for the
-    /// operator to be eligible for [`ClaimUnlock`](super::withdrawal::OperatorClaimUnlock).
+    /// operator to be eligible for [`ClaimUnlock`](super::fulfillment::OperatorClaimUnlock).
     fulfillment_deadline: BitcoinBlockHeight,
 }
 

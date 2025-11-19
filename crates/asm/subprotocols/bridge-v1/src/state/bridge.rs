@@ -13,8 +13,9 @@ use crate::{
         assignment::AssignmentTable,
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
+        fulfillment::OperatorClaimUnlock,
         operator::OperatorTable,
-        withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
+        withdrawal::{WithdrawOutput, WithdrawalCommand},
     },
 };
 

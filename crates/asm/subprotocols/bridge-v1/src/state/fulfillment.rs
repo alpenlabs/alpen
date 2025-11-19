@@ -1,17 +1,24 @@
 //! Withdrawal Fulfillment Tracking
 //!
-//! This module contains types and tables for tracking fulfilled withdrawal assignments.
-//! Once an operator successfully fulfills a withdrawal, a fulfillment entry is created
-//! to record which operator completed which deposit's withdrawal.
+//! This module contains types and tables for tracking fulfilled withdrawal assignments
+//! that are awaiting operator payout claims.
+//!
+//! This table serves as an intermediate state between fulfillment and payout, tracking
+//! which operators are eligible to claim payouts for their fulfilled withdrawals.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use moho_types::ExportEntry;
 use strata_bridge_types::OperatorIdx;
-use strata_primitives::sorted_vec::SortedVec;
+use strata_primitives::{l1::BitcoinTxid, sorted_vec::SortedVec};
 
-/// Entry recording a fulfilled withdrawal assignment.
+/// Entry recording a fulfilled withdrawal assignment awaiting payout claim.
 ///
 /// This represents a completed withdrawal where an operator has successfully
-/// fronted the withdrawal transaction for a specific deposit.
+/// fronted the withdrawal transaction for a specific deposit, but has not yet
+/// submitted a commit transaction to claim their payout.
+///
+/// Once the operator submits a commit transaction and the payout is processed,
+/// this entry should be removed from the fulfillment table.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct FulfillmentEntry {
     /// Index of the deposit that was fulfilled.
@@ -53,11 +60,18 @@ impl Ord for FulfillmentEntry {
     }
 }
 
-/// Table for managing fulfilled withdrawal assignments.
+/// Table for managing fulfilled withdrawal assignments awaiting payout claims.
 ///
-/// This table maintains records of all fulfilled withdrawals, providing
-/// efficient insertion, lookup, and removal operations. The table maintains
-/// sorted order by deposit index for binary search efficiency.
+/// This table maintains records of withdrawals that have been successfully fulfilled
+/// by operators but for which the operators have not yet submitted commit transactions
+/// to claim their payouts. The table provides efficient insertion, lookup, and removal
+/// operations, maintaining sorted order by deposit index for binary search efficiency.
+///
+/// # Fulfillment Workflow
+///
+/// - **Add**: When an operator successfully fronts a withdrawal transaction
+/// - **Query**: To check if an operator is eligible to claim a payout for a specific deposit
+/// - **Remove**: When an operator submits a commit transaction and receives their payout
 ///
 /// # Ordering Invariant
 ///
@@ -153,6 +167,44 @@ impl FulfillmentTable {
 impl Default for FulfillmentTable {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Represents an operator's claim to unlock a deposit UTXO after successful withdrawal processing.
+///
+/// This structure is created when an operator successfully processes a withdrawal by making
+/// the required front payment to the user within the specified deadline. It serves as proof
+/// that the operator has fulfilled their obligation and is now entitled to claim the
+/// corresponding locked deposit funds.
+///
+/// The claim contains all necessary information to:
+/// - Link the withdrawal transaction to the original deposit
+/// - Identify which operator performed the withdrawal
+/// - Enable the Bridge proof to verify the operator's right to withdraw locked funds
+///
+/// This data is stored in the MohoState and used by the Bridge proof system to validate
+/// that operators have correctly front-paid users before allowing them to withdraw the
+/// corresponding deposit UTXOs.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct OperatorClaimUnlock {
+    /// The transaction ID of the withdrawal fulfillment transaction, i.e. the transaction which
+    /// fronts funds to the user.
+    pub fulfillment_txid: BitcoinTxid,
+
+    /// The transaction ID of the deposit that was assigned.
+    pub deposit_txid: BitcoinTxid,
+
+    /// The transaction idx of the deposit that was assigned.
+    pub deposit_idx: u32,
+
+    /// The index of the operator who processed the withdrawal.
+    pub operator_idx: OperatorIdx,
+}
+
+impl OperatorClaimUnlock {
+    pub fn to_export_entry(&self) -> ExportEntry {
+        let payload = borsh::to_vec(&self).expect("Failed to serialize WithdrawalProcessedInfo");
+        ExportEntry::new(self.deposit_idx, payload)
     }
 }
 
