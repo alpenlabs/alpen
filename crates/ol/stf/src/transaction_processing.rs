@@ -1,7 +1,7 @@
 //! Block transactional processing.
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-use strata_ledger_types::{AccountTypeState, IAccountState, StateAccessor};
+use strata_ledger_types::{AccountTypeState, IAccountState, ISnarkAccountState, StateAccessor};
 use strata_ol_chain_types_new::{
     OLTransaction, OLTxSegment, TransactionAttachment, TransactionPayload,
 };
@@ -88,7 +88,23 @@ fn process_update_tx<S: StateAccessor>(
     update: &SnarkAccountUpdateContainer,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
-    // TODO snark account processing
+    // XXX This implementation is very limited because we don't want to support
+    // the full snark account functionality yet.  We don't check anything, we
+    // just update the fields as we're told to without authenticating anything.
+    //
+    // TODO make this the full implementation
+
+    // This just calls the function to update the state as we would if we
+    // actually were doing the real implementation.
+    let seqno = update.operation().seq_no();
+    let new_state = update.operation().new_state();
+    let extra_data = update.operation().extra_data();
+    sastate.update_inner_state(
+        new_state.inner_state(),
+        new_state.next_inbox_msg_idx(),
+        seqno.into(),
+        extra_data,
+    )?;
 
     Ok(())
 }

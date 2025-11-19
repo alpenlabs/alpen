@@ -6,7 +6,7 @@ use strata_snark_acct_types::{MessageEntry, Seqno};
 use crate::coin::Coin;
 
 /// Abstract account state.
-pub trait IAccountState: Sized {
+pub trait IAccountState: Clone + Sized {
     /// Type representing snark account state.
     type SnarkAccountState: ISnarkAccountState;
 
@@ -46,7 +46,7 @@ pub enum AccountTypeState<T: IAccountState> {
 }
 
 /// Abstract snark account state.
-pub trait ISnarkAccountState: Sized {
+pub trait ISnarkAccountState: Clone + Sized {
     // Proof state accessors
 
     /// Gets the update seqno.
@@ -64,7 +64,7 @@ pub trait ISnarkAccountState: Sized {
     /// This should also ensure that the seqno always increases.
     fn update_inner_state(
         &mut self,
-        state: Hash,
+        inner_state: Hash,
         next_read_idx: u64,
         seqno: Seqno,
         extra_data: &[u8],
