@@ -77,11 +77,15 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
+    use bitcoin::secp256k1::{Keypair, Secp256k1};
+    use rand::rngs::OsRng;
+    use strata_crypto::even_kp;
+
     use crate::{
         BRIDGE_V1_SUBPROTOCOL_ID,
         test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_commit_tx,
-            mutate_op_return_output, parse_tx,
+            TEST_MAGIC_BYTES, create_tagged_payload, create_test_commit_tx, mutate_op_return_output,
+            parse_tx,
         },
     };
 
@@ -100,8 +104,17 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let info: CommitInfo = arb.generate();
 
-        // Create the commit transaction with proper SPS-50 format
-        let tx = create_test_commit_tx(&info);
+        // Generate operator private keys for N/N multisig
+        let secp = Secp256k1::new();
+        let operators_privkeys: Vec<_> = (0..3)
+            .map(|_| {
+                let kp = Keypair::new(&secp, &mut OsRng);
+                even_kp((kp.secret_key(), kp.public_key())).0
+            })
+            .collect();
+
+        // Create the funding and commit transactions
+        let (_funding_tx, tx) = create_test_commit_tx(&info, &operators_privkeys);
 
         // Parse the transaction using the SPS-50 parser
         let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
@@ -120,7 +133,16 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let info: CommitInfo = arb.generate();
 
-        let mut tx = create_test_commit_tx(&info);
+        // Generate operator private keys for N/N multisig
+        let secp = Secp256k1::new();
+        let operators_privkeys: Vec<_> = (0..3)
+            .map(|_| {
+                let kp = Keypair::new(&secp, &mut OsRng);
+                even_kp((kp.secret_key(), kp.public_key())).0
+            })
+            .collect();
+
+        let (_funding_tx, mut tx) = create_test_commit_tx(&info, &operators_privkeys);
 
         // Mutate the OP_RETURN output to have wrong transaction type
         let aux_data = vec![0u8; 4]; // Some dummy aux data
@@ -140,7 +162,16 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let info: CommitInfo = arb.generate();
 
-        let mut tx = create_test_commit_tx(&info);
+        // Generate operator private keys for N/N multisig
+        let secp = Secp256k1::new();
+        let operators_privkeys: Vec<_> = (0..3)
+            .map(|_| {
+                let kp = Keypair::new(&secp, &mut OsRng);
+                even_kp((kp.secret_key(), kp.public_key())).0
+            })
+            .collect();
+
+        let (_funding_tx, mut tx) = create_test_commit_tx(&info, &operators_privkeys);
 
         // Mutate the OP_RETURN output to have shorter aux len
         let aux_data = vec![0u8; COMMIT_TX_AUX_DATA_LEN - 1];
