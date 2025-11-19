@@ -1,54 +1,46 @@
 //! Context types for tracking state across validation.
+//!
+//! These types are very carefully defined to only be able to expose information
+//! that we have available in the different *contexts* that we use them (ie.
+//! epoch initialization, transactional processing, epoch sealing, etc.).  If we
+//! only cared about regular classical block validation, we could get away with
+//! using a single type for everything, but being careful about this is key to
+//! ensuring that we don't box ourselves into a design corner where we can't do
+//! DA-based state reconstruction.
+
+use std::cell::RefCell;
 
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{Epoch, OLBlockHeader, OLLog, Slot};
 
-/// Block info context.
+use crate::output::{ExecOutputBuffer, OutputCtx};
+
+/// Simple information about a single block.
 ///
 /// This contains some information that would normally be in the header but that
 /// we can know in advance of executing the block.
-#[derive(Clone, Debug)]
-pub struct BlockContext {
+#[derive(Copy, Clone, Debug)]
+pub struct BlockInfo {
     timestamp: u64,
     slot: Slot,
     epoch: Epoch,
-    parent_header: Option<OLBlockHeader>,
 }
 
-impl BlockContext {
-    /// Constructs a new instance.
-    ///
-    /// # Panics
-    ///
-    /// If there is no parent block but the epoch/slot is nonzero, as that can
-    /// only be valid if we're the genesis block.
-    pub(crate) fn new(
-        timestamp: u64,
-        slot: Slot,
-        epoch: Epoch,
-        parent_header: Option<OLBlockHeader>,
-    ) -> Self {
-        // Sanity check.
-        if parent_header.is_none() && (slot != 0 || epoch != 0) {
-            panic!("stf/context: headers are all fucked up");
-        }
-
+impl BlockInfo {
+    fn new(timestamp: u64, slot: Slot, epoch: Epoch) -> Self {
         Self {
             timestamp,
             slot,
             epoch,
-            parent_header,
         }
     }
 
-    /// Constructs a context for regular blocks from their headers.
-    pub fn from_headers(bh: &OLBlockHeader, parent: OLBlockHeader) -> Self {
-        Self::new(bh.timestamp(), bh.slot(), bh.epoch(), Some(parent))
+    pub fn new_genesis(timestamp: u64) -> Self {
+        Self::new(timestamp, 0, 0)
     }
 
-    /// Constructs a context for the genesis block.
-    pub fn new_genesis(timestamp: u64) -> Self {
-        Self::new(timestamp, 0, 0, None)
+    pub fn from_header(bh: &OLBlockHeader) -> Self {
+        Self::new(bh.timestamp(), bh.slot(), bh.epoch())
     }
 
     pub fn timestamp(&self) -> u64 {
@@ -62,9 +54,89 @@ impl BlockContext {
     pub fn epoch(&self) -> u32 {
         self.epoch
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct EpochInfo {
+    terminal_info: BlockInfo,
+    prev_terminal: OLBlockCommitment,
+}
+
+impl EpochInfo {
+    pub fn new(terminal_info: BlockInfo, prev_terminal: OLBlockCommitment) -> Self {
+        Self {
+            terminal_info,
+            prev_terminal,
+        }
+    }
+
+    pub fn terminal_info(&self) -> BlockInfo {
+        self.terminal_info
+    }
+
+    pub fn prev_terminal(&self) -> OLBlockCommitment {
+        self.prev_terminal
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.terminal_info().epoch()
+    }
+}
+
+/// Block context relating a block with its header.
+#[derive(Clone, Debug)]
+pub struct BlockContext {
+    block_info: BlockInfo,
+    parent_header: Option<OLBlockHeader>,
+}
+
+impl BlockContext {
+    /// Constructs a new instance.
+    ///
+    /// # Panics
+    ///
+    /// If there is no parent block but the epoch/slot is nonzero, as that can
+    /// only be valid if we're the genesis block.
+    pub(crate) fn new(block_info: BlockInfo, parent_header: Option<OLBlockHeader>) -> Self {
+        // Sanity check.
+        if parent_header.is_none() && (block_info.slot != 0 || block_info.epoch != 0) {
+            panic!("stf/context: headers are all fucked up");
+        }
+
+        Self {
+            block_info,
+            parent_header,
+        }
+    }
+
+    /// Constructs a context for regular blocks from their headers.
+    pub fn from_headers(bh: &OLBlockHeader, parent: OLBlockHeader) -> Self {
+        Self::new(BlockInfo::from_header(bh), Some(parent))
+    }
+
+    /// Constructs a context for the genesis block.
+    pub fn new_genesis(timestamp: u64) -> Self {
+        Self::new(BlockInfo::new_genesis(timestamp), None)
+    }
+
+    pub fn block_info(&self) -> &BlockInfo {
+        &self.block_info
+    }
 
     pub fn parent_header(&self) -> Option<&OLBlockHeader> {
         self.parent_header.as_ref()
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        self.block_info().timestamp()
+    }
+
+    pub fn slot(&self) -> u64 {
+        self.block_info().slot()
+    }
+
+    pub fn epoch(&self) -> u32 {
+        self.block_info().epoch()
     }
 
     /// Computes the blkid of the parent block or returns the null blkid if this
@@ -99,7 +171,7 @@ impl BlockContext {
     /// consistent.
     pub fn is_probably_epoch_initial(&self) -> bool {
         self.parent_header()
-            .is_none_or(|ph| self.epoch > ph.epoch())
+            .is_none_or(|ph| self.epoch() > ph.epoch())
     }
 
     /// Constructs an epoch context, for use at an epoch initial.
@@ -114,34 +186,27 @@ impl BlockContext {
         );
         EpochInitialContext::new(self.epoch(), self.compute_parent_commitment())
     }
-
-    /*
-        /// Constructs an epoch terminal context.
-        ///
-        /// This only makes sense to be called if we're really at an epoch terminal.
-        pub fn to_epoch_terminal_context(&self) -> EpochTerminalContext {
-            EpochTerminalContext::new(self.epoch(), ExecOutputBuffer::new_empty())
-        }
-    */
 }
 
-/// Epoch-level context for use at the initial.
+/// Limited epoch-level context for use at the initial.
+///
+/// This can be known without knowing the block.
 #[derive(Clone, Debug)]
 pub struct EpochInitialContext {
-    epoch: Epoch,
+    cur_epoch: Epoch,
     prev_terminal: OLBlockCommitment,
 }
 
 impl EpochInitialContext {
-    pub(crate) fn new(epoch: Epoch, prev_terminal: OLBlockCommitment) -> Self {
+    pub(crate) fn new(cur_epoch: Epoch, prev_terminal: OLBlockCommitment) -> Self {
         Self {
-            epoch,
+            cur_epoch,
             prev_terminal,
         }
     }
 
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
+    pub fn cur_epoch(&self) -> Epoch {
+        self.cur_epoch
     }
 
     pub fn prev_terminal(&self) -> OLBlockCommitment {
@@ -149,104 +214,68 @@ impl EpochInitialContext {
     }
 }
 
-/// Epoch-level context for use at the terminal's sealing.
-#[derive(Clone, Debug)]
-pub struct EpochTerminalContext {
-    epoch: Epoch,
-    output_buffer: ExecOutputBuffer,
+/// Basic execution context which can be used for tracking outputs.
+#[derive(Debug)]
+pub struct BasicExecContext<'b> {
+    block_info: BlockInfo,
+    output_buffer: &'b ExecOutputBuffer,
 }
 
-impl EpochTerminalContext {
-    pub(crate) fn new(epoch: Epoch, output_buffer: ExecOutputBuffer) -> Self {
+impl<'b> BasicExecContext<'b> {
+    pub(crate) fn new(block_info: BlockInfo, output_buffer: &'b ExecOutputBuffer) -> Self {
         Self {
-            epoch,
+            block_info,
             output_buffer,
         }
     }
 
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
-    }
-
-    pub fn emit_log(&mut self, log: OLLog) {
-        self.emit_logs(std::iter::once(log));
-    }
-
-    pub fn emit_logs(&mut self, iter: impl IntoIterator<Item = OLLog>) {
-        self.output_buffer.emit_logs(iter);
-    }
-
-    pub fn into_output(self) -> ExecOutputBuffer {
+    pub fn output(self) -> &'b ExecOutputBuffer {
         self.output_buffer
     }
+
+    pub fn slot(&self) -> Slot {
+        self.block_info.slot()
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.block_info.epoch()
+    }
 }
 
-/// Collector for outputs that we can pass around between different contexts.
+impl<'b> OutputCtx for BasicExecContext<'b> {
+    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
+        self.output_buffer.emit_logs(logs);
+    }
+}
+
+/// Richer execution context which can be used outside of epoch sealing.
 #[derive(Clone, Debug)]
-pub struct ExecOutputBuffer {
-    // maybe we'll have stuff other than logs in the future
-    logs: Vec<OLLog>,
-}
-
-impl ExecOutputBuffer {
-    fn new(logs: Vec<OLLog>) -> Self {
-        Self { logs }
-    }
-
-    pub fn new_empty() -> Self {
-        Self::new(Vec::new())
-    }
-
-    pub fn logs(&self) -> &[OLLog] {
-        &self.logs
-    }
-
-    pub fn emit_logs(&mut self, iter: impl IntoIterator<Item = OLLog>) {
-        self.logs.extend(iter);
-    }
-
-    pub fn into_logs(self) -> Vec<OLLog> {
-        self.logs
-    }
-}
-
-/// Slot execution context.
-#[derive(Clone, Debug)]
-pub struct SlotExecContext {
+pub struct TxExecContext<'b> {
+    // FIXME there's a little bit of duplicated information here, should find a
+    // way to resolve
     block_context: BlockContext,
-    output_buffer: ExecOutputBuffer,
+    epoch_context: &'b BasicExecContext<'b>,
 }
 
-impl SlotExecContext {
-    pub(crate) fn new(block_context: BlockContext) -> Self {
+impl<'b> TxExecContext<'b> {
+    pub fn new(block_context: BlockContext, epoch_context: &'b BasicExecContext<'b>) -> Self {
         Self {
             block_context,
-            output_buffer: ExecOutputBuffer::new_empty(),
+            epoch_context,
         }
     }
 
-    /// Returns a ref to the block context structure.
     pub fn block_context(&self) -> &BlockContext {
         &self.block_context
     }
 
-    pub fn emit_log(&mut self, log: OLLog) {
-        self.emit_logs(std::iter::once(log));
+    pub fn basic_context(&self) -> &'b BasicExecContext<'b> {
+        self.epoch_context
     }
+}
 
-    pub fn emit_logs(&mut self, iter: impl IntoIterator<Item = OLLog>) {
-        self.output_buffer.emit_logs(iter);
-    }
-
-    /// Unwraps the context for just the output buffer.
-    pub fn into_output(self) -> ExecOutputBuffer {
-        self.output_buffer
-    }
-
-    /// Converts the slot context into an epoch terminal context, retaining the
-    /// output buffer so that we can collect logs and stuff.
-    pub fn into_epoch_terminal_context(self) -> EpochTerminalContext {
-        let epoch = self.block_context().epoch(); // weird copy
-        EpochTerminalContext::new(epoch, self.output_buffer)
+impl<'b> OutputCtx for TxExecContext<'b> {
+    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
+        self.epoch_context.emit_logs(logs);
     }
 }

@@ -11,7 +11,7 @@ use strata_ol_chain_types_new::{OLL1ManifestContainer, OLL1Update};
 use crate::{
     account_processing,
     constants::BRIDGE_GATEWAY_ACCT_ID,
-    context::EpochTerminalContext,
+    context::BasicExecContext,
     errors::{ExecError, ExecResult},
 };
 
@@ -22,7 +22,7 @@ use crate::{
 pub fn process_block_manifests<S: StateAccessor>(
     state: &mut S,
     mf_cont: &OLL1ManifestContainer,
-    context: &mut EpochTerminalContext,
+    context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     let orig_l1_height = state.l1_view().last_l1_height();
     let mut last = None;
@@ -45,7 +45,7 @@ fn process_asm_manifest<S: StateAccessor>(
     state: &mut S,
     real_height: L1Height,
     mf: &AsmManifest,
-    context: &mut EpochTerminalContext,
+    context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     let estate = state.l1_view();
 
@@ -64,7 +64,7 @@ fn process_asm_log<S: StateAccessor>(
     state: &mut S,
     log: &AsmLogEntry,
     real_height: L1Height,
-    context: &mut EpochTerminalContext,
+    context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Try to parse the log as an SPS-52 message.
     let Some(msg) = log.try_as_msg() else {
@@ -101,7 +101,7 @@ fn process_asm_log<S: StateAccessor>(
 fn process_deposit_intent_log<S: StateAccessor>(
     state: &mut S,
     data: &DepositIntentLogData,
-    context: &mut EpochTerminalContext,
+    context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Convert the account serial to account ID.
     let Some(dest_id) = state.find_account_id_by_serial(data.dest_acct_serial)? else {
@@ -120,13 +120,13 @@ fn process_deposit_intent_log<S: StateAccessor>(
 
     // Deliver the deposit message to the target account
     // TODO need to tweak this a bit to deal with the changes to epoch contexts
-    /*account_processing::process_message(
+    account_processing::process_message(
         state,
         BRIDGE_GATEWAY_ACCT_ID,
         dest_id,
         msg_payload,
         context,
-    )?;*/
+    )?;
 
     Ok(())
 }
@@ -134,7 +134,7 @@ fn process_deposit_intent_log<S: StateAccessor>(
 fn process_checkpoint_ack_log<S: StateAccessor>(
     state: &mut S,
     data: &CheckpointAckLogData,
-    context: &mut EpochTerminalContext,
+    context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Update the L1 view state with the acknowledged epoch
     // This records that a checkpoint has been observed on L1

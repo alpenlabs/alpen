@@ -10,7 +10,7 @@ use strata_snark_acct_types::SnarkAccountUpdateContainer;
 use crate::{
     account_processing,
     constants::SEQUENCER_ACCT_ID,
-    context::{BlockContext, SlotExecContext},
+    context::{BlockContext, TxExecContext},
     errors::{ExecError, ExecResult},
 };
 
@@ -20,7 +20,7 @@ use crate::{
 pub fn process_block_tx_segment<S: StateAccessor>(
     state: &mut S,
     tx_seg: &OLTxSegment,
-    context: &mut SlotExecContext,
+    context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     for tx in tx_seg.txs() {
         process_single_tx(state, tx, context)?;
@@ -37,7 +37,7 @@ pub fn process_block_tx_segment<S: StateAccessor>(
 pub fn process_single_tx<S: StateAccessor>(
     state: &mut S,
     tx: &OLTransaction,
-    context: &mut SlotExecContext,
+    context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Check the transaction's attachments.
     if !check_tx_attachments(tx.attachments(), context.block_context()) {
@@ -54,7 +54,7 @@ pub fn process_single_tx<S: StateAccessor>(
                 SEQUENCER_ACCT_ID,
                 *gam.target(),
                 mp,
-                context,
+                context.basic_context(),
             )?;
         }
 
@@ -86,7 +86,7 @@ fn process_update_tx<S: StateAccessor>(
     target: &AccountId,
     mut sastate: <S::AccountState as IAccountState>::SnarkAccountState,
     update: &SnarkAccountUpdateContainer,
-    context: &SlotExecContext,
+    context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // TODO snark account processing
 

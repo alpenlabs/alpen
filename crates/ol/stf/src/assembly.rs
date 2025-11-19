@@ -10,9 +10,11 @@ use strata_ol_chain_types_new::{
 
 use crate::{
     chain_processing,
-    context::{BlockContext, SlotExecContext},
+    context::{BasicExecContext, BlockContext, TxExecContext},
     errors::ExecResult,
-    manifest_processing, transaction_processing,
+    manifest_processing,
+    output::{ExecOutputBuffer, OutputCtx},
+    transaction_processing,
     verification::{BlockExecInput, BlockPostStateCommitments},
 };
 
@@ -87,19 +89,21 @@ pub fn execute_block_inputs<S: StateAccessor>(
 ) -> ExecResult<BlockExecOutputs> {
     // 0. Construct the block exec context for tracking verification state
     // across phases.
-    let mut exec_context = SlotExecContext::new(block_context.clone());
+    let output = ExecOutputBuffer::new_empty();
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
     if block_context.is_probably_epoch_initial() {
-        let initial_context = block_context.to_epoch_initial_context();
-        chain_processing::process_epoch_initial(state, &initial_context)?;
+        let init_ctx = block_context.to_epoch_initial_context();
+        chain_processing::process_epoch_initial(state, &init_ctx)?;
     }
 
     // 2. Call process_block_tx_segment for every block as usual.
+    let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);
+    let tx_ctx = TxExecContext::new(block_context.clone(), &basic_ctx);
     transaction_processing::process_block_tx_segment(
         state,
         block_exec_input.tx_segment(),
-        &mut exec_context,
+        &tx_ctx,
     )?;
 
     // 3. Compute the state root and remember it.
@@ -109,30 +113,21 @@ pub fn execute_block_inputs<S: StateAccessor>(
     // and compute the final state root and remember it.
     //
     // Then we use this to figure out what our state commitments should be.
-    let (output_buf, post_state_roots) = if let Some(manifest_container) =
-        block_exec_input.manifest_container()
-    {
+    let post_state_roots = if let Some(manifest_container) = block_exec_input.manifest_container() {
         // Terminal block, with manifests.
-        let mut terminal_context = exec_context.into_epoch_terminal_context();
-        manifest_processing::process_block_manifests(
-            state,
-            manifest_container,
-            &mut terminal_context,
-        )?;
+        let term_ctx = tx_ctx.basic_context();
+        manifest_processing::process_block_manifests(state, manifest_container, term_ctx)?;
 
         // Then finally extract the stuff.
-        let output_buf = terminal_context.into_output();
         let final_state_root = state.compute_state_root()?;
-        let psc = BlockPostStateCommitments::Terminal(pre_manifest_state_root, final_state_root);
-        (output_buf, psc)
+        BlockPostStateCommitments::Terminal(pre_manifest_state_root, final_state_root)
     } else {
         // Regular non-terminal block.
-        let psc = BlockPostStateCommitments::Common(pre_manifest_state_root);
-        (exec_context.into_output(), psc)
+        BlockPostStateCommitments::Common(pre_manifest_state_root)
     };
 
     // Extract logs from the execution context and construct the final output.
-    let logs = output_buf.into_logs();
+    let logs = output.into_logs();
     Ok(BlockExecOutputs::new(post_state_roots, logs))
 }
 

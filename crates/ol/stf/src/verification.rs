@@ -15,10 +15,12 @@ use strata_ol_da::DaScheme;
 use crate::{
     chain_processing,
     context::{
-        BlockContext, EpochInitialContext, EpochTerminalContext, ExecOutputBuffer, SlotExecContext,
+        BasicExecContext, BlockContext, BlockInfo, EpochInfo, EpochInitialContext, TxExecContext,
     },
     errors::{ExecError, ExecResult},
-    manifest_processing, transaction_processing,
+    manifest_processing,
+    output::ExecOutputBuffer,
+    transaction_processing,
 };
 
 /// Commitments that we are checking against a block.
@@ -128,12 +130,8 @@ pub fn verify_block_classically<S: StateAccessor>(
 ) -> ExecResult<()> {
     // 0. Construct the block exec context for tracking verification state
     // across phases.
-    let block_context = BlockContext::new(
-        header.timestamp(),
-        header.slot(),
-        header.epoch(),
-        parent_header,
-    );
+    let block_info = BlockInfo::from_header(header);
+    let block_context = BlockContext::new(block_info, parent_header);
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
     let is_epoch_initial = block_context.is_probably_epoch_initial();
@@ -143,11 +141,13 @@ pub fn verify_block_classically<S: StateAccessor>(
     }
 
     // 2. Call process_block_tx_segment for every block as usual.
-    let mut exec_context = SlotExecContext::new(block_context);
+    let output_buffer = ExecOutputBuffer::new_empty();
+    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
+    let tx_ctx = TxExecContext::new(block_context, &basic_ctx);
     transaction_processing::process_block_tx_segment(
         state,
         block_exec_input.tx_segment(),
-        &mut exec_context,
+        &tx_ctx,
     )?;
 
     // 3. Check the state root.
@@ -176,12 +176,11 @@ pub fn verify_block_classically<S: StateAccessor>(
     // then really check the header state root.
     //
     // Then we get the exec output one way or another.
-    let output = if let Some(manifest_container) = block_exec_input.manifest_container() {
-        let mut terminal_context = exec_context.into_epoch_terminal_context();
+    if let Some(manifest_container) = block_exec_input.manifest_container() {
         manifest_processing::process_block_manifests(
             state,
             manifest_container,
-            &mut terminal_context,
+            tx_ctx.basic_context(),
         )?;
 
         // After processing manifests, check the actual final state root against the header.
@@ -189,14 +188,10 @@ pub fn verify_block_classically<S: StateAccessor>(
         if &final_state_root != exp.post_state_roots.header_state_root() {
             return Err(ExecError::ChainIntegrity);
         }
-
-        terminal_context.into_output()
-    } else {
-        exec_context.into_output()
-    };
+    }
 
     // 5. Check the logs root.
-    let computed_logs_root = compute_logs_root(output.logs());
+    let computed_logs_root = compute_logs_root(&output_buffer.into_logs());
     if computed_logs_root != exp.logs_root {
         return Err(ExecError::ChainIntegrity);
     }
@@ -243,21 +238,22 @@ pub struct EpochExecExpectations {
 /// implied in the checkpoint.
 pub fn verify_epoch_with_diff<S: StateAccessor, D: DaScheme<S>>(
     state: &mut S,
-    epoch_context: &EpochInitialContext,
+    epoch_info: &EpochInfo,
     diff: D::Diff,
     manifests: &OLL1ManifestContainer,
     exp: &EpochExecExpectations,
 ) -> ExecResult<()> {
     // 1. Apply the initial processing by calling process_epoch_initial.
-    chain_processing::process_epoch_initial(state, &epoch_context)?;
+    let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+    chain_processing::process_epoch_initial(state, &init_ctx)?;
 
     // 2. Apply the DA diff.
     D::apply_to_state(diff, state).map_err(|_| ExecError::ChainIntegrity)?;
 
     // 3. As if it were the last block of an epoch, call process_block_manifests.
-    let mut terminal_context =
-        EpochTerminalContext::new(epoch_context.epoch(), ExecOutputBuffer::new_empty());
-    manifest_processing::process_block_manifests(state, manifests, &mut terminal_context)?;
+    let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
+    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+    manifest_processing::process_block_manifests(state, manifests, &term_ctx)?;
 
     // 4. Verify the final state root.
     let final_state_root = state.compute_state_root()?;

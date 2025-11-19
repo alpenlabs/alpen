@@ -23,7 +23,7 @@ pub fn process_epoch_initial<S: StateAccessor>(
     // 2. Update the epoch field and insert its commitment into the MMR.
     let state_cur_epoch = estate.cur_epoch();
     let state_next_epoch = state_cur_epoch + 1;
-    let block_cur_epoch = context.epoch() as u32;
+    let block_cur_epoch = context.cur_epoch() as u32;
     if block_cur_epoch != state_next_epoch {
         return Err(ExecError::ChainIntegrity);
     }
