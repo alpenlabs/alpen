@@ -1,6 +1,7 @@
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_bridge_v1::{
+    commit::CommitInfo,
     deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
     errors::Mismatch,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
@@ -8,12 +9,13 @@ use strata_asm_txs_bridge_v1::{
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
+    CommitValidationError,
     errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::AssignmentTable,
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
-        fulfillment::OperatorClaimUnlock,
+        fulfillment::{FulfillmentEntry, FulfillmentTable, OperatorClaimUnlock},
         operator::OperatorTable,
         withdrawal::{WithdrawOutput, WithdrawalCommand},
     },
@@ -33,6 +35,9 @@ pub struct BridgeV1State {
 
     /// Table of operator assignments for withdrawal processing.
     assignments: AssignmentTable,
+
+    /// Table of withdrawal fulfillments.
+    fulfillments: FulfillmentTable,
 
     /// The amount of bitcoin expected to be locked in the N/N multisig.
     denomination: BitcoinAmount,
@@ -62,6 +67,7 @@ impl BridgeV1State {
             operators,
             deposits: DepositsTable::new_empty(),
             assignments: AssignmentTable::new(config.assignment_duration),
+            fulfillments: FulfillmentTable::new_empty(),
             denomination: config.denomination,
             operator_fee: config.operator_fee,
         }
@@ -338,7 +344,7 @@ impl BridgeV1State {
     pub fn process_withdrawal_fulfillment_tx(
         &mut self,
         withdrawal_info: &WithdrawalFulfillmentInfo,
-    ) -> Result<OperatorClaimUnlock, WithdrawalValidationError> {
+    ) -> Result<(), WithdrawalValidationError> {
         self.validate_withdrawal_fulfillment(withdrawal_info)?;
 
         // Remove the assignment from the table to mark withdrawal as fulfilled
@@ -348,9 +354,28 @@ impl BridgeV1State {
             .remove_assignment(withdrawal_info.deposit_idx)
             .expect("Assignment must exist after successful validation");
 
+        let fulfillment = FulfillmentEntry::new(
+            removed_assignment.deposit_idx(),
+            removed_assignment.current_assignee(),
+        );
+        self.fulfillments.add(fulfillment);
+        Ok(())
+    }
+
+    pub fn validate_commit_tx(&self) -> Result<(), CommitValidationError> {
+        // TODO:PG
+        Ok(())
+    }
+
+    pub fn process_commit_tx(
+        &mut self,
+        commit_info: &CommitInfo,
+    ) -> Result<OperatorClaimUnlock, CommitValidationError> {
+        let fulfillment = self.fulfillments.get(commit_info.deposit_idx).unwrap();
+
         Ok(OperatorClaimUnlock {
-            deposit_idx: removed_assignment.deposit_idx(),
-            operator_idx: removed_assignment.current_assignee(),
+            deposit_idx: fulfillment.deposit_idx(),
+            operator_idx: fulfillment.operator_idx(),
         })
     }
 }

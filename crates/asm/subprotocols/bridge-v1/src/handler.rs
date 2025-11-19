@@ -39,14 +39,9 @@ pub(crate) fn handle_parsed_tx<'t>(
             state.process_deposit_tx(tx, &info)?;
             Ok(())
         }
-        ParsedTx::WithdrawalFulfillment(info) => {
-            let unlock = state.process_withdrawal_fulfillment_tx(&info)?;
-
-            let container_id = 0; // Replace with actual logic to determine container ID
-            let withdrawal_processed_log =
-                NewExportEntry::new(container_id, unlock.to_export_entry());
-            relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
-
+        ParsedTx::WithdrawalFulfillment(parsed_withdrawal_fulfillment) => {
+            let ParsedWithdrawalFulfillmentTx { tx, info } = parsed_withdrawal_fulfillment;
+            state.process_withdrawal_fulfillment_tx(tx, &info)?;
             Ok(())
         }
         ParsedTx::Commit(parsed_commit_tx) => {
@@ -61,6 +56,11 @@ pub(crate) fn handle_parsed_tx<'t>(
                     TapSighashType::Default,
                 )
                 .unwrap(); // FIXME:
+
+            // let container_id = 0; // Replace with actual logic to determine container ID
+            // let withdrawal_processed_log =
+            //     NewExportEntry::new(container_id, unlock.to_export_entry());
+            // relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
 
             Ok(())
         }

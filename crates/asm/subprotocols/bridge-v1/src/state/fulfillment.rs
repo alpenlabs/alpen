@@ -9,7 +9,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::ExportEntry;
 use strata_bridge_types::OperatorIdx;
-use strata_primitives::{l1::BitcoinTxid, sorted_vec::SortedVec};
+use strata_primitives::sorted_vec::SortedVec;
 
 /// Entry recording a fulfilled withdrawal assignment awaiting payout claim.
 ///
@@ -87,7 +87,7 @@ pub struct FulfillmentTable {
 
 impl FulfillmentTable {
     /// Creates a new empty fulfillment table.
-    pub fn new() -> Self {
+    pub fn new_empty() -> Self {
         Self {
             fulfillments: SortedVec::new_empty(),
         }
@@ -166,7 +166,7 @@ impl FulfillmentTable {
 
 impl Default for FulfillmentTable {
     fn default() -> Self {
-        Self::new()
+        Self::new_empty()
     }
 }
 
@@ -187,13 +187,6 @@ impl Default for FulfillmentTable {
 /// corresponding deposit UTXOs.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct OperatorClaimUnlock {
-    /// The transaction ID of the withdrawal fulfillment transaction, i.e. the transaction which
-    /// fronts funds to the user.
-    pub fulfillment_txid: BitcoinTxid,
-
-    /// The transaction ID of the deposit that was assigned.
-    pub deposit_txid: BitcoinTxid,
-
     /// The transaction idx of the deposit that was assigned.
     pub deposit_idx: u32,
 
@@ -221,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_fulfillment_table_basic_operations() {
-        let mut table = FulfillmentTable::new();
+        let mut table = FulfillmentTable::new_empty();
         assert!(table.is_empty());
         assert_eq!(table.len(), 0);
 
@@ -262,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_fulfillment_table_get_nonexistent() {
-        let table = FulfillmentTable::new();
+        let table = FulfillmentTable::new_empty();
         assert!(table.get(42).is_none());
     }
 }

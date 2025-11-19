@@ -79,6 +79,12 @@ pub enum WithdrawalValidationError {
     DestinationMismatch(Mismatch<ScriptBuf>),
 }
 
+#[derive(Debug, Error)]
+pub enum CommitValidationError {
+    #[error("todo: add types")]
+    Todo,
+}
+
 /// Errors that can occur when processing withdrawal commands.
 ///
 /// These errors indicate critical system issues that require investigation.
