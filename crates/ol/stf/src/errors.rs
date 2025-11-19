@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountId, AcctError};
+use strata_codec::CodecError;
 use thiserror::Error;
 
 /// Execution result error.
@@ -33,6 +34,10 @@ pub enum ExecError {
     /// Various account errors.
     #[error("acct: {0}")]
     Acct(#[from] AcctError),
+
+    /// Codec error.
+    #[error("codec: {0}")]
+    Codec(#[from] CodecError),
     // TODO more types
 }
 

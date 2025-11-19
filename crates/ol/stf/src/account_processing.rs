@@ -1,15 +1,20 @@
 //! Account-specific interaction handling, such as messages.
 
 use strata_acct_types::{AccountId, AcctError, MsgPayload};
+use strata_codec::encode_to_vec;
 use strata_ledger_types::{
     AccountTypeState, Coin, IAccountState, ISnarkAccountState, StateAccessor,
 };
+use strata_msg_fmt::{Msg, MsgRef};
+use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
+use strata_ol_msg_types::{OLMessageExt, WITHDRAWAL_MSG_TYPE_ID};
 use strata_snark_acct_types::MessageEntry;
 
 use crate::{
-    constants::BRIDGE_GATEWAY_ACCT_ID,
+    constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
     context::BasicExecContext,
     errors::{ExecError, ExecResult},
+    output::OutputCtx,
 };
 
 /// Processes a message by delivering it to its destination, which might involve
@@ -30,16 +35,17 @@ pub(crate) fn process_message<S: StateAccessor>(
             handle_bridge_gateway_message(state, sender, msg, context)?;
         }
 
-        // Any other address we assume is a ledger account, so we look it up.
+        // Any other address we assume is a ledger account, so we have to look it up.
         _ => {
             // TODO adapt the account state traits to make this all more
             // amendable to avoiding copies/clones
 
             // Make a copy of the account state.  I don't love this.
-            let mut acct_state = state
-                .get_account_state(target)?
-                .cloned()
-                .ok_or(AcctError::MissingExpectedAccount(target))?;
+            let Some(mut acct_state) = state.get_account_state(target)?.cloned() else {
+                // If we don't find it then we can just ignore it.
+                // TODO do something with the funds we're throwing away by doing this
+                return Ok(());
+            };
 
             // First, just increase the balance right now.
             let coin = Coin::new_unchecked(msg.value());
@@ -67,9 +73,6 @@ pub(crate) fn process_message<S: StateAccessor>(
         }
     }
 
-    //
-
-    // TODO
     Ok(())
 }
 
@@ -79,7 +82,44 @@ fn handle_bridge_gateway_message<S: StateAccessor>(
     payload: MsgPayload,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // TODO log the withdrawal intent
+    // Parse the message from the payload data.
+    let Ok(msg) = MsgRef::try_from(payload.data()) else {
+        // Invalid message format, just ignore.
+        return Ok(());
+    };
+
+    if msg.ty() != WITHDRAWAL_MSG_TYPE_ID {
+        // Some other message type, just ignore.
+        return Ok(());
+    }
+
+    let Some(withdrawal_data) = msg.try_as_withdrawal() else {
+        // Invalid withdrawal message, just ignore.
+        return Ok(());
+    };
+
+    // Check if the withdrawal amount is in allowed denominations
+    let withdrawal_amt = payload.value();
+
+    // TODO move to params struct
+    let withdrawal_denoms = &[100_000_000];
+
+    // Make that the amount is an appropriate denomination.
+    if !withdrawal_denoms.contains(&withdrawal_amt.into()) {
+        return Ok(());
+    }
+
+    // If it is, then we can emit a OL log with the amount and destination.
+    let log_data = SimpleWithdrawalIntentLogData {
+        amt: withdrawal_amt.into(),
+        dest: withdrawal_data.dest_desc.clone(),
+    };
+
+    // Encode the log data and then just emit it.
+    let encoded_log = encode_to_vec(&log_data)?;
+    let log = OLLog::new(BRIDGE_GATEWAY_ACCT_SERIAL, encoded_log);
+    context.emit_log(log);
+
     Ok(())
 }
 

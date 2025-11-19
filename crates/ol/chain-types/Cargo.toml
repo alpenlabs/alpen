@@ -8,6 +8,7 @@ edition = "2024"
 [dependencies]
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
+strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 

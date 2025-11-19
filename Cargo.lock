@@ -14411,6 +14411,7 @@ dependencies = [
  "int-enum",
  "strata-acct-types",
  "strata-asm-common",
+ "strata-codec",
  "strata-identifiers",
  "strata-snark-acct-types",
 ]
@@ -14449,6 +14450,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-msg-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-msg-fmt",
+]
+
+[[package]]
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
@@ -14465,12 +14476,14 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-manifest-types",
+ "strata-codec",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
  "strata-msg-fmt",
  "strata-ol-chain-types-new",
  "strata-ol-da",
+ "strata-ol-msg-types",
  "strata-snark-acct-types",
  "thiserror 2.0.16",
 ]
