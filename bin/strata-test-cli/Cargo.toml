@@ -12,17 +12,16 @@ path = "src/main.rs"
 
 [dependencies]
 shrex.workspace = true
-strata-asm-txs-bridge-v1.workspace = true
+strata-asm-common.workspace = true
+strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
 strata-cli-common.workspace = true
 strata-crypto.workspace = true
-strata-params.workspace = true
+strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
 bdk_bitcoind_rpc.workspace = true
 bdk_wallet.workspace = true
-make_buf.workspace = true
 musig2.workspace = true
-rand.workspace = true
 secp256k1.workspace = true
 
 # CLI dependencies
@@ -30,7 +29,6 @@ argh.workspace = true
 hex.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 
 [dev-dependencies]
 shrex_macros.workspace = true

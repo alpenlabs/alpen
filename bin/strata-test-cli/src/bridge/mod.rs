@@ -8,8 +8,6 @@
 //!
 //! All transactions support MuSig2 multi-signature operations for operator keys.
 
-pub(crate) mod deposit_request;
 pub(crate) mod dt;
-pub(crate) mod musig_signer;
 pub(crate) mod types;
 pub(crate) mod withdrawal;

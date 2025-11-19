@@ -1,0 +1,231 @@
+//! DRT parsing using SPS-50 format.
+//!
+//! SPS-50 structure:
+//! - OP_RETURN: [MAGIC (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][RECOVERY_PK (32)][EE_ADDRESS (variable)]
+
+use strata_asm_common::TxInputRef;
+use strata_primitives::l1::DepositRequestInfo;
+
+use crate::constants::DEPOSIT_REQUEST_TX_TYPE;
+
+const RECOVERY_PK_LEN: usize = 32;
+
+pub const MIN_DRT_AUX_DATA_LEN: usize = RECOVERY_PK_LEN;
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum DepositRequestParseError {
+    #[error("Invalid transaction type: {actual}, expected {expected}")]
+    InvalidTxType { actual: u8, expected: u8 },
+
+    #[error("Invalid auxiliary data length: {actual}, expected at least {expected}")]
+    InvalidAuxiliaryData { actual: usize, expected: usize },
+
+    #[error("Missing DRT output at index 0")]
+    MissingDRTOutput,
+}
+
+pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, DepositRequestParseError> {
+    if tx_input.tag().tx_type() != DEPOSIT_REQUEST_TX_TYPE {
+        return Err(DepositRequestParseError::InvalidTxType {
+            actual: tx_input.tag().tx_type(),
+            expected: DEPOSIT_REQUEST_TX_TYPE,
+        });
+    }
+
+    let aux_data = tx_input.tag().aux_data();
+
+    if aux_data.len() < MIN_DRT_AUX_DATA_LEN {
+        return Err(DepositRequestParseError::InvalidAuxiliaryData {
+            actual: aux_data.len(),
+            expected: MIN_DRT_AUX_DATA_LEN,
+        });
+    }
+
+    let (recovery_pk_bytes, ee_address) = aux_data.split_at(RECOVERY_PK_LEN);
+    let recovery_pk: [u8; 32] = recovery_pk_bytes
+        .try_into()
+        .expect("validated aux_data length");
+
+    let drt_output = tx_input
+        .tx()
+        .output
+        .iter()
+        .find(|out| !out.script_pubkey.is_op_return())
+        .ok_or(DepositRequestParseError::MissingDRTOutput)?;
+
+    let amt = drt_output.value.to_sat();
+
+    Ok(DepositRequestInfo {
+        amt,
+        take_back_leaf_hash: recovery_pk,
+        address: ee_address.to_vec(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{
+        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+        absolute::LockTime, transaction::Version,
+    };
+
+    use super::*;
+    use crate::{
+        constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE},
+        test_utils::{create_tagged_payload, mutate_op_return_output, parse_tx},
+    };
+
+    fn create_test_drt_tx(recovery_pk: [u8; 32], ee_address: &[u8], amount_sats: u64) -> Transaction {
+        // Build aux_data
+        let mut aux_data = Vec::new();
+        aux_data.extend_from_slice(&recovery_pk);
+        aux_data.extend_from_slice(ee_address);
+
+        // Create tagged payload using test utils helper
+        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
+
+        // Create base transaction
+        let mut tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![
+                // Output 0: Placeholder for OP_RETURN (will be mutated)
+                TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: ScriptBuf::new(),
+                },
+                // Output 1: P2TR with the deposited amount
+                TxOut {
+                    value: Amount::from_sat(amount_sats),
+                    script_pubkey: ScriptBuf::new(), // Simplified for test
+                },
+            ],
+        };
+
+        // Use test utils helper to set the OP_RETURN output
+        mutate_op_return_output(&mut tx, tagged_payload);
+        tx
+    }
+
+    #[test]
+    fn test_parse_drt_valid() {
+        let recovery_pk = [0x05; 32];
+        let ee_address = [0x06; 20];
+        let amount = 1_000_000_000;
+
+        let tx = create_test_drt_tx(recovery_pk, &ee_address, amount);
+        let tx_input = parse_tx(&tx);
+
+        let result = parse_drt(&tx_input);
+        assert!(result.is_ok());
+
+        let info = result.unwrap();
+        assert_eq!(info.take_back_leaf_hash, recovery_pk);
+        assert_eq!(info.address, ee_address.to_vec());
+        assert_eq!(info.amt, amount);
+    }
+
+    #[test]
+    fn test_parse_drt_invalid_tx_type() {
+        let recovery_pk = [0x05; 32];
+        let ee_address = [0x06; 20];
+
+        // Build aux_data
+        let mut aux_data = Vec::new();
+        aux_data.extend_from_slice(&recovery_pk);
+        aux_data.extend_from_slice(&ee_address);
+
+        // Create tagged payload with wrong tx_type (99 instead of DEPOSIT_REQUEST_TX_TYPE)
+        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
+
+        let mut tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![],
+            output: vec![
+                TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: ScriptBuf::new(),
+                },
+                TxOut {
+                    value: Amount::from_sat(1000),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            ],
+        };
+
+        mutate_op_return_output(&mut tx, tagged_payload);
+        let tx_input = parse_tx(&tx);
+
+        let result = parse_drt(&tx_input);
+        assert!(matches!(
+            result,
+            Err(DepositRequestParseError::InvalidTxType {
+                actual: 99,
+                expected: DEPOSIT_REQUEST_TX_TYPE
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_drt_insufficient_aux_data() {
+        // Create aux_data with only 10 bytes (need at least 32)
+        let aux_data = vec![0x05; 10];
+
+        // Create tagged payload with insufficient aux_data
+        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
+
+        let mut tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![],
+            output: vec![
+                TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: ScriptBuf::new(),
+                },
+                TxOut {
+                    value: Amount::from_sat(1000),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            ],
+        };
+
+        mutate_op_return_output(&mut tx, tagged_payload);
+        let tx_input = parse_tx(&tx);
+
+        let result = parse_drt(&tx_input);
+        assert!(matches!(
+            result,
+            Err(DepositRequestParseError::InvalidAuxiliaryData {
+                actual: 10,
+                expected: MIN_DRT_AUX_DATA_LEN
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_drt_variable_ee_address_lengths() {
+        let recovery_pk = [0x05; 32];
+
+        // Test with 20-byte EVM address
+        let ee_address_20 = [0x06; 20];
+        let tx_20 = create_test_drt_tx(recovery_pk, &ee_address_20, 1_000_000);
+        let tx_input_20 = parse_tx(&tx_20);
+        let result_20 = parse_drt(&tx_input_20).unwrap();
+        assert_eq!(result_20.address.len(), 20);
+
+        // Test with 32-byte address
+        let ee_address_32 = [0x07; 32];
+        let tx_32 = create_test_drt_tx(recovery_pk, &ee_address_32, 1_000_000);
+        let tx_input_32 = parse_tx(&tx_32);
+        let result_32 = parse_drt(&tx_input_32).unwrap();
+        assert_eq!(result_32.address.len(), 32);
+    }
+}

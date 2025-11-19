@@ -1,27 +1,26 @@
-//! Withdrawal fulfillment transaction functionality
+//! Withdrawal fulfillment transaction functionality using asm test_utils
 //!
-//! Handles the creation of withdrawal fulfillment transactions that allow operators
-//! to fulfill withdrawal requests by sending Bitcoin to users.
+//! Handles the creation of withdrawal fulfillment transactions using the asm test_utils
+//! for transaction building while keeping the wallet/UTXO management in the CLI.
 
 use std::str::FromStr;
 
 use bdk_wallet::{
-    bitcoin::{
-        consensus::serialize, script::PushBytesBuf, Amount, FeeRate, ScriptBuf, Transaction, Txid,
-    },
+    bitcoin::{consensus::serialize, script::PushBytesBuf, Amount, FeeRate, ScriptBuf, Txid},
     TxOrdering,
 };
+use strata_asm_txs_bridge_v1::test_utils::WithdrawalMetadata;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
-use super::types::WithdrawalMetadata;
+use super::types::BitcoinDConfig;
 use crate::{
-    bridge::types::BitcoinDConfig,
-    constants::MAGIC_BYTES,
-    error::Error,
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+    constants::MAGIC_BYTES, error::Error, taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
 /// Creates a withdrawal fulfillment transaction (CLI wrapper)
+///
+/// This function handles wallet operations (UTXO selection, signing) while using
+/// the test_utils for transaction structure creation.
 ///
 /// # Arguments
 /// * `recipient_bosd` - bosd specifying which address to send to
@@ -63,7 +62,7 @@ fn create_withdrawal_fulfillment_inner(
     deposit_idx: u32,
     deposit_txid: String,
     bitcoind_config: BitcoinDConfig,
-) -> Result<Transaction, Error> {
+) -> Result<bdk_wallet::bitcoin::Transaction, Error> {
     // Parse inputs
     let amount = Amount::from_sat(amount);
     let deposit_txid = parse_deposit_txid(&deposit_txid)?;
@@ -71,17 +70,7 @@ fn create_withdrawal_fulfillment_inner(
     // Create withdrawal metadata
     let metadata = WithdrawalMetadata::new(*MAGIC_BYTES, operator_idx, deposit_idx, deposit_txid);
 
-    // Create withdrawal fulfillment transaction
-    create_withdrawal_transaction(metadata, recipient_script, amount, bitcoind_config)
-}
-
-/// Creates the raw withdrawal transaction
-fn create_withdrawal_transaction(
-    metadata: WithdrawalMetadata,
-    recipient_script: ScriptBuf,
-    amount: Amount,
-    bitcoind_config: BitcoinDConfig,
-) -> Result<Transaction, Error> {
+    // Use wallet to select and fund inputs (CLI responsibility)
     let mut wallet = taproot_wallet()?;
     let client = new_bitcoind_client(
         &bitcoind_config.bitcoind_url,
@@ -94,12 +83,18 @@ fn create_withdrawal_transaction(
 
     let fee_rate = FeeRate::from_sat_per_vb_unchecked(2);
 
+    // Build PSBT using wallet for funding
     let mut psbt = {
         let mut builder = wallet.build_tx();
 
         builder.ordering(TxOrdering::Untouched);
-        builder.add_data(&PushBytesBuf::from(&metadata.op_return_data()));
-        builder.add_recipient(recipient_script, amount);
+        let op_return_data = metadata
+            .op_return_data()
+            .map_err(|e| Error::TxBuilder(format!("Failed to create OP_RETURN data: {e}")))?;
+        let push_bytes = PushBytesBuf::try_from(op_return_data)
+            .map_err(|_| Error::TxBuilder("OP_RETURN data too large".to_string()))?;
+        builder.add_data(&push_bytes);
+        builder.add_recipient(recipient_script.clone(), amount);
 
         builder.fee_rate(fee_rate);
         builder
@@ -107,6 +102,7 @@ fn create_withdrawal_transaction(
             .map_err(|e| Error::TxBuilder(format!("Invalid PSBT: {e}")))?
     };
 
+    // Sign the PSBT
     wallet
         .sign(&mut psbt, Default::default())
         .map_err(|e| Error::TxBuilder(format!("Signing failed: {e}")))?;
@@ -146,23 +142,5 @@ mod tests {
             Error::TxBuilder(msg) => assert_eq!(msg, "Invalid deposit transaction ID"),
             _ => panic!("expected Error::TxBuilder"),
         }
-    }
-
-    #[test]
-    fn create_withdrawal_fulfillment_inner_rejects_invalid_txid() {
-        let bitcoind_config = BitcoinDConfig {
-            bitcoind_url: "http://127.0.0.1:18443".to_string(),
-            bitcoind_user: "user".to_string(),
-            bitcoind_password: "pass".to_string(),
-        };
-        let result = create_withdrawal_fulfillment_inner(
-            ScriptBuf::new(),
-            1000,
-            1,
-            1,
-            "bad_txid".to_string(),
-            bitcoind_config,
-        );
-        assert!(result.is_err());
     }
 }
