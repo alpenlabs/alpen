@@ -5,7 +5,8 @@
 
 use bitcoin::absolute;
 use strata_asm_common::{
-    AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData,
     logging::{error, info},
 };
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
@@ -15,7 +16,7 @@ use strata_primitives::{
 };
 
 use crate::{
-    handler::handle_parsed_tx,
+    handler::{handle_parsed_tx, preprocess_parsed_tx},
     msgs::BridgeIncomingMsg,
     parser::parse_tx,
     state::{BridgeV1Config, BridgeV1State},
@@ -40,6 +41,29 @@ impl Subprotocol for BridgeV1Subproto {
 
     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
         Ok(BridgeV1State::new(params))
+    }
+
+    fn pre_process_txs(
+        state: &Self::State,
+        txs: &[TxInputRef<'_>],
+        collector: &mut AuxRequestCollector,
+        _anchor_pre: &AnchorState,
+        _params: &Self::Params,
+    ) {
+        // Pre-Process each transaction
+        for tx in txs {
+            // Parse transaction to extract structured data, then handle the preprocess transaction
+            // to get the auxilary requests
+            match parse_tx(tx) {
+                Ok(parsed_tx) => {
+                    preprocess_parsed_tx(state, parsed_tx, collector);
+                    info!(tx_id = %tx.tx().compute_txid(), "Successfully pre-processed tx");
+                }
+                Err(e) => {
+                    error!(tx_id = %tx.tx().compute_txid(), error = %e, "Failed to process tx")
+                }
+            }
+        }
     }
 
     /// Processes transactions for the Bridge V1 subprotocol and handles expired assignment

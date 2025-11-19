@@ -1,4 +1,4 @@
-use strata_asm_common::{AsmLogEntry, MsgRelayer};
+use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer};
 use strata_asm_logs::NewExportEntry;
 
 use crate::{
@@ -43,5 +43,16 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
+    }
+}
+
+pub(crate) fn preprocess_parsed_tx<'t>(
+    state: &BridgeV1State,
+    parsed_tx: ParsedTx<'t>,
+    collector: &mut AuxRequestCollector,
+) {
+    match parsed_tx {
+        ParsedTx::Deposit(_) => {}
+        ParsedTx::WithdrawalFulfillment(_) => {}
     }
 }
