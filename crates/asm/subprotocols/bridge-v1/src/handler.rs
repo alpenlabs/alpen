@@ -38,8 +38,7 @@ pub(crate) fn handle_parsed_tx<'t>(
             state.process_deposit_tx(tx, &info)?;
             Ok(())
         }
-        ParsedTx::WithdrawalFulfillment(parsed_withdrawal_fulfillment) => {
-            let ParsedWithdrawalFulfillmentTx { tx: _, info } = parsed_withdrawal_fulfillment;
+        ParsedTx::WithdrawalFulfillment(info) => {
             state.process_withdrawal_fulfillment_tx(&info)?;
             Ok(())
         }
