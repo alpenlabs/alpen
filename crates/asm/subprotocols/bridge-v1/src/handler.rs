@@ -46,22 +46,10 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
         ParsedTx::Commit(parsed_commit_tx) => {
-            let claim_tx = aux_data
-                .get_bitcoin_tx(parsed_commit_tx.info.claim_txid)
-                .expect("valid aux data"); //FIXME:
+            let output =
+                aux_data.get_bitcoin_txout(&parsed_commit_tx.tx.input[0].previous_output)?;
 
-            let sighash = SighashCache::new(parsed_commit_tx.tx)
-                .taproot_key_spend_signature_hash(
-                    0,
-                    &Prevouts::All(&claim_tx.output),
-                    TapSighashType::Default,
-                )
-                .unwrap(); // FIXME:
-
-            let unlock = state.process_commit_tx(
-                &parsed_commit_tx.info,
-                sighash.to_raw_hash().to_byte_array(),
-            )?;
+            let unlock = state.process_commit_tx(&parsed_commit_tx.info)?;
 
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log =

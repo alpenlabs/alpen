@@ -369,7 +369,6 @@ impl BridgeV1State {
     pub fn process_commit_tx(
         &mut self,
         commit_info: &CommitInfo,
-        sighash: [u8; 32],
     ) -> Result<OperatorClaimUnlock, CommitValidationError> {
         let fulfillment = self.fulfillments.get(commit_info.deposit_idx).unwrap();
 

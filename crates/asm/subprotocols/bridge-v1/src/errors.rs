@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
+use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{
     CommitParseError, DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch,
     WithdrawalParseError,
@@ -29,6 +30,9 @@ pub enum BridgeSubprotocolError {
 
     #[error("failed to process commit tx")]
     CommitTxProcess(#[from] CommitValidationError),
+
+    #[error("invalid aux data")]
+    InvalidAux(#[from] AuxError),
 
     #[error("unsupported tx type {0}")]
     UnsupportedTxType(TxType),
