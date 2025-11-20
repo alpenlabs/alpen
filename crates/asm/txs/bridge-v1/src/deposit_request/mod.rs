@@ -8,7 +8,7 @@ use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE};
 
 pub mod parse;
 
-pub use parse::{parse_drt, DepositRequestParseError};
+pub use parse::{parse_drt, parse_drt_from_tx, DepositRequestParseError};
 
 /// SPS-50 format: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][RECOVERY_PK (32)][EE_ADDRESS]
 #[derive(Debug, Clone)]

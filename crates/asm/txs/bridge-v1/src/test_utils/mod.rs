@@ -1,6 +1,5 @@
 mod commit;
 mod deposit;
-mod parsing;
 mod utils;
 mod withdrawal_fulfillment;
 
@@ -11,17 +10,11 @@ pub use deposit::create_test_deposit_tx;
 pub use utils::{mutate_aux_data, parse_tx};
 pub use withdrawal_fulfillment::create_test_withdrawal_fulfillment_tx;
 
-// Core transaction builders (no DRT parsing, no signing)
-pub use deposit::{DepositTxBuilderError, build_deposit_transaction, build_timelock_script};
+// Withdrawal transaction builders
 pub use withdrawal_fulfillment::{
     WithdrawalInput, WithdrawalMetadata, WithdrawalTxBuilderError,
     create_simple_withdrawal_fulfillment_tx, create_withdrawal_fulfillment_tx,
-};
-
-// Parsing utilities
-pub use parsing::{
-    ParsingError, generate_taproot_address, parse_drt, parse_operator_keys, parse_pk,
-    parse_transaction, parse_xonly_pk,
+    create_withdrawal_op_return,
 };
 
 // Utility functions

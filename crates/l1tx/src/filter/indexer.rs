@@ -72,9 +72,11 @@ fn index_tx<V: TxVisitor>(
                 visitor.visit_deposit(dp);
             }
 
-            if let Ok(wf) = parse_withdrawal_fulfillment_tx(&tx_input)
-                .map(convert_bridge_v1_withdrawal_to_protocol_withdrawal)
-            {
+            if let Ok(bridge_v1_withdrawal) = parse_withdrawal_fulfillment_tx(&tx_input) {
+                let wf = convert_bridge_v1_withdrawal_to_protocol_withdrawal(
+                    bridge_v1_withdrawal,
+                    tx.compute_txid(),
+                );
                 visitor.visit_withdrawal_fulfillment(wf);
             }
         }

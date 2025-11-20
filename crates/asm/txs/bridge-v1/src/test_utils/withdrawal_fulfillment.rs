@@ -4,9 +4,8 @@
 //! withdrawal fulfillment transactions.
 
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, Txid, TxIn, TxOut, Witness,
+    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
     absolute::LockTime,
-    consensus::serialize,
     script::PushBytesBuf,
     transaction::Version,
 };
@@ -34,60 +33,30 @@ pub enum WithdrawalTxBuilderError {
 
 /// Withdrawal fulfillment transaction metadata
 ///
-/// Contains all the information needed to create the OP_RETURN output for
+/// Contains the information needed to create the OP_RETURN output for
 /// a withdrawal fulfillment transaction following the SPS-50 specification.
+///
+/// The auxiliary data only contains deposit_idx (4 bytes).
 #[derive(Debug, Clone)]
 pub struct WithdrawalMetadata {
     /// The tag used to mark the withdrawal metadata transaction
     pub tag: [u8; 4],
-    /// The index of the operator
-    pub operator_idx: u32,
     /// The index of the deposit
     pub deposit_idx: u32,
-    /// The txid of the deposit UTXO
-    pub deposit_txid: Txid,
 }
 
 impl WithdrawalMetadata {
     /// Creates new withdrawal metadata
-    pub fn new(tag: [u8; 4], operator_idx: u32, deposit_idx: u32, deposit_txid: Txid) -> Self {
-        Self {
-            tag,
-            operator_idx,
-            deposit_idx,
-            deposit_txid,
-        }
+    pub fn new(tag: [u8; 4], deposit_idx: u32) -> Self {
+        Self { tag, deposit_idx }
     }
 
     /// Generates the auxiliary data for the withdrawal metadata (for SPS-50 format)
     ///
     /// This is everything after the magic bytes, subprotocol ID, and tx type.
-    /// Format: [OPERATOR_IDX (4)][DEPOSIT_IDX (4)][DEPOSIT_TXID (32)]
+    /// Format: [DEPOSIT_IDX (4)]
     pub fn aux_data(&self) -> Vec<u8> {
-        let deposit_txid_data = serialize(&self.deposit_txid);
-        let mut aux_data = Vec::new();
-        aux_data.extend_from_slice(&self.operator_idx.to_be_bytes()); // 4 bytes
-        aux_data.extend_from_slice(&self.deposit_idx.to_be_bytes());  // 4 bytes
-        aux_data.extend_from_slice(&deposit_txid_data);               // 32 bytes
-        aux_data
-    }
-
-    /// Generates the complete OP_RETURN data for the withdrawal metadata
-    ///
-    /// Returns the full SPS-50 tagged payload:
-    /// [MAGIC (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][AUX_DATA (40)]
-    pub fn op_return_data(&self) -> Result<Vec<u8>, WithdrawalTxBuilderError> {
-        let aux_data = self.aux_data();
-
-        let tag_data = TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, &aux_data)
-            .map_err(|e| WithdrawalTxBuilderError::TxFmt(e.to_string()))?;
-
-        let parse_config = ParseConfig::new(self.tag);
-        let data = parse_config
-            .encode_tag_buf(&tag_data)
-            .map_err(|e| WithdrawalTxBuilderError::TxFmt(e.to_string()))?;
-
-        Ok(data)
+        self.deposit_idx.to_be_bytes().to_vec()
     }
 }
 
@@ -254,10 +223,12 @@ pub fn create_test_withdrawal_fulfillment_tx(
 }
 
 /// Creates an OP_RETURN script with withdrawal metadata using SPS-50 format
-fn create_withdrawal_op_return(
+///
+/// This is the canonical function for creating withdrawal fulfillment OP_RETURN scripts.
+/// Both test utilities and production CLI should use this.
+pub fn create_withdrawal_op_return(
     metadata: &WithdrawalMetadata,
 ) -> Result<ScriptBuf, WithdrawalTxBuilderError> {
-    // Get auxiliary data (operator_idx + deposit_idx + deposit_txid)
     let aux_data = metadata.aux_data();
 
     // Create SPS-50 tagged data
@@ -276,34 +247,22 @@ fn create_withdrawal_op_return(
 mod tests {
     use std::str::FromStr;
 
+    use bitcoin::Txid;
+
     use super::*;
 
     #[test]
     fn test_withdrawal_metadata_creation() {
-        let txid = Txid::from_str(
-            "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c",
-        )
-        .unwrap();
+        let metadata = WithdrawalMetadata::new(*b"TEST", 42);
 
-        let metadata = WithdrawalMetadata::new(*b"TEST", 1, 2, txid);
+        assert_eq!(metadata.deposit_idx, 42);
 
-        assert_eq!(metadata.operator_idx, 1);
-        assert_eq!(metadata.deposit_idx, 2);
-        assert_eq!(metadata.deposit_txid, txid);
-
-        // Test auxiliary data (operator_idx + deposit_idx + deposit_txid)
+        // Test auxiliary data
         let aux_data = metadata.aux_data();
-        assert_eq!(aux_data.len(), 40); // 4 + 4 + 32 bytes
-
-        // Check operator index
-        assert_eq!(&aux_data[0..4], &1u32.to_be_bytes());
+        assert_eq!(aux_data.len(), 4);
 
         // Check deposit index
-        assert_eq!(&aux_data[4..8], &2u32.to_be_bytes());
-
-        // Check deposit txid
-        let deposit_txid_data = serialize(&txid);
-        assert_eq!(&aux_data[8..40], deposit_txid_data.as_slice());
+        assert_eq!(&aux_data[0..4], &42u32.to_be_bytes());
     }
 
     #[test]
@@ -313,7 +272,7 @@ mod tests {
         )
         .unwrap();
 
-        let metadata = WithdrawalMetadata::new(*b"TEST", 1, 2, txid);
+        let metadata = WithdrawalMetadata::new(*b"TEST", 2);
 
         let input = WithdrawalInput {
             previous_output: OutPoint::new(txid, 0),
@@ -353,7 +312,7 @@ mod tests {
         )
         .unwrap();
 
-        let metadata = WithdrawalMetadata::new(*b"TEST", 1, 2, txid);
+        let metadata = WithdrawalMetadata::new(*b"TEST", 2);
 
         let input = WithdrawalInput {
             previous_output: OutPoint::new(txid, 0),
@@ -393,12 +352,7 @@ mod tests {
 
     #[test]
     fn test_empty_inputs_error() {
-        let txid = Txid::from_str(
-            "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c",
-        )
-        .unwrap();
-
-        let metadata = WithdrawalMetadata::new(*b"TEST", 1, 2, txid);
+        let metadata = WithdrawalMetadata::new(*b"TEST", 2);
         let result = create_withdrawal_fulfillment_tx(
             metadata,
             ScriptBuf::new(),

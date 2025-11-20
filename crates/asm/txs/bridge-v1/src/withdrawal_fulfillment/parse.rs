@@ -33,6 +33,13 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
         .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
         .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
 
+    // Parse deposit_idx from aux_data
+    let mut deposit_idx_bytes = [0u8; DEPOSIT_IDX_SIZE];
+    deposit_idx_bytes.copy_from_slice(
+        &withdrawal_auxdata[DEPOSIT_IDX_OFFSET..DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE],
+    );
+    let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
+
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
@@ -77,6 +84,26 @@ mod tests {
             .expect("Should successfully extract withdrawal info");
 
         assert_eq!(extracted_info, info);
+    }
+
+    #[test]
+    fn test_parse_withdrawal_fulfillment_tx_invalid_type() {
+        let mut arb = ArbitraryGenerator::new();
+        let info: WithdrawalFulfillmentInfo = arb.generate();
+
+        let mut tx = create_test_withdrawal_fulfillment_tx(&info);
+
+        // Mutate the OP_RETURN output to have wrong transaction type
+        let aux_data = vec![0u8; 4];
+        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
+        mutate_op_return_output(&mut tx, tagged_payload);
+
+        let tx_input = parse_tx(&tx);
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, WithdrawalParseError::InvalidTxType { .. }));
+        if let WithdrawalParseError::InvalidTxType(tx_type) = err {
+            assert_eq!(tx_type, tx_input.tag().tx_type());
+        }
     }
 
     #[test]

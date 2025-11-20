@@ -1,12 +1,10 @@
-use bdk_wallet::bitcoin::{Network, PublicKey, Transaction, XOnlyPublicKey};
-use strata_asm_txs_bridge_v1::test_utils;
+use bdk_wallet::bitcoin::{bip32::Xpriv, Network, PublicKey, XOnlyPublicKey};
+use secp256k1::SECP256K1;
 use strata_crypto::EvenSecretKey;
-use strata_primitives::{
-    buf::Buf32,
-    l1::{BitcoinAddress, BitcoinAmount, DepositRequestInfo},
-};
+use strata_l1tx::utils::generate_taproot_address as generate_taproot_address_impl;
+use strata_primitives::{buf::Buf32, constants::STRATA_OP_WALLET_DERIVATION_PATH, l1::BitcoinAddress};
 
-use crate::{constants::MAGIC_BYTES, error::Error};
+use crate::error::Error;
 
 /// Parses operator EvenSecretKey from extended private key bytes
 ///
@@ -19,22 +17,18 @@ use crate::{constants::MAGIC_BYTES, error::Error};
 /// # Returns
 /// * `Result<Vec<EvenSecretKey>, Error>` - Vector of derived even secret keys
 pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<EvenSecretKey>, Error> {
-    test_utils::parse_operator_keys(operator_keys).map_err(Into::into)
-}
+    operator_keys
+        .iter()
+        .map(|bytes| {
+            let xpriv = Xpriv::decode(bytes).map_err(|_| Error::InvalidXpriv)?;
 
-pub(crate) fn parse_drt(
-    tx: &Transaction,
-    address: BitcoinAddress,
-    operators_pubkey: XOnlyPublicKey,
-) -> Result<DepositRequestInfo, Error> {
-    test_utils::parse_drt(
-        tx,
-        address,
-        operators_pubkey,
-        MAGIC_BYTES,
-        BitcoinAmount::ZERO, // This parameter is unused in the test_utils implementation
-    )
-    .map_err(Into::into)
+            let derived_xpriv = xpriv
+                .derive_priv(SECP256K1, &STRATA_OP_WALLET_DERIVATION_PATH)
+                .map_err(|_| Error::InvalidXpriv)?;
+
+            Ok(EvenSecretKey::from(derived_xpriv.private_key))
+        })
+        .collect::<Result<Vec<_>, Error>>()
 }
 
 /// Generates a taproot address from operator public keys
@@ -42,17 +36,20 @@ pub(crate) fn generate_taproot_address(
     operator_wallet_pks: &[Buf32],
     network: Network,
 ) -> Result<(BitcoinAddress, XOnlyPublicKey), Error> {
-    test_utils::generate_taproot_address(operator_wallet_pks, network).map_err(Into::into)
+    generate_taproot_address_impl(operator_wallet_pks, network)
+        .map_err(|e| Error::TxBuilder(e.to_string()))
 }
 
 /// Parses an [`XOnlyPublicKey`] from a hex string.
 pub(crate) fn parse_xonly_pk(x_only_pk: &str) -> Result<XOnlyPublicKey, Error> {
-    test_utils::parse_xonly_pk(x_only_pk).map_err(Into::into)
+    x_only_pk
+        .parse::<XOnlyPublicKey>()
+        .map_err(|_| Error::XOnlyPublicKey)
 }
 
 /// Parses a [`PublicKey`] from a hex string.
 pub(crate) fn parse_pk(pk: &str) -> Result<PublicKey, Error> {
-    test_utils::parse_pk(pk).map_err(Into::into)
+    pk.parse::<PublicKey>().map_err(|_| Error::PublicKey)
 }
 
 #[cfg(test)]

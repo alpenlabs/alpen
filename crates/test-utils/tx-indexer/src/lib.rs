@@ -295,7 +295,6 @@ where
                 *withdrawal_info,
                 WithdrawalFulfillmentInfo {
                     deposit_idx: 2,
-                    operator_idx: 1,
                     amt: (amt - OPERATOR_FEE).into(),
                     txid: txids[0].into()
                 }

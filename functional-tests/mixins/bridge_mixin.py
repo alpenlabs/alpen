@@ -264,9 +264,7 @@ class BridgeMixin(BaseMixin):
                 tx = create_withdrawal_fulfillment(
                     intent["destination"],
                     intent["amt"],
-                    intent["operator_idx"],
                     intent["deposit_idx"],
-                    intent["deposit_txid"],
                     btc_url,
                     btc_user,
                     btc_password,

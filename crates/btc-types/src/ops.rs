@@ -123,10 +123,6 @@ pub struct WithdrawalFulfillmentInfo {
     /// index of deposit this fulfillment is for
     pub deposit_idx: u32,
 
-    /// assigned operator
-    /// TODO: maybe this is not needed
-    pub operator_idx: u32,
-
     /// amount that was actually sent on bitcoin.
     /// should equal withdrawal_amount - operator fee
     pub amt: BitcoinAmount,
@@ -157,7 +153,6 @@ impl fmt::Debug for WithdrawalFulfillmentInfo {
 
         f.debug_struct("WithdrawalFulfillmentInfo")
             .field("deposit_idx", &self.deposit_idx)
-            .field("operator_idx", &self.operator_idx)
             .field("amt", &self.amt)
             .field("txid", &txid_le)
             .finish()
@@ -178,8 +173,8 @@ impl fmt::Display for WithdrawalFulfillmentInfo {
 
         write!(
             f,
-            "WithdrawalFulfillmentInfo {{ deposit_idx: {}, operator_idx: {}, amt: {:?}, txid: {} }}",
-            self.deposit_idx, self.operator_idx, self.amt, txid_le
+            "WithdrawalFulfillmentInfo {{ deposit_idx: {}, amt: {:?}, txid: {} }}",
+            self.deposit_idx, self.amt, txid_le
         )
     }
 }

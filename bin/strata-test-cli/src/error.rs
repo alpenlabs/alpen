@@ -54,19 +54,3 @@ impl From<secp256k1::Error> for Error {
         Error::PublicKey
     }
 }
-
-impl From<strata_asm_txs_bridge_v1::test_utils::ParsingError> for Error {
-    fn from(e: strata_asm_txs_bridge_v1::test_utils::ParsingError) -> Self {
-        use strata_asm_txs_bridge_v1::test_utils::ParsingError;
-        match e {
-            ParsingError::InvalidTransaction(msg) => Error::TxParser(msg),
-            ParsingError::InvalidXpriv => Error::InvalidXpriv,
-            ParsingError::InvalidXOnlyPublicKey => Error::XOnlyPublicKey,
-            ParsingError::InvalidPublicKey => Error::PublicKey,
-            ParsingError::InvalidDRT => Error::TxParser("Invalid DRT".to_string()),
-            ParsingError::KeyAggregation(msg) => Error::TxBuilder(msg),
-            ParsingError::TaprootFinalization => Error::TxBuilder("Taproot finalization failed".to_string()),
-            ParsingError::AddressParsing(msg) => Error::TxBuilder(msg),
-        }
-    }
-}

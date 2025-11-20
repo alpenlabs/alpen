@@ -1,23 +1,40 @@
 //! Deposit Transaction (DT) creation with DRT parsing and signing
+//!
+//! The CLI is responsible for signature aggregation and transaction signing only.
+//! All transaction structure and OP_RETURN construction is handled by asm/txs/bridge-v1.
 
 use bdk_wallet::bitcoin::{
-    Amount, Psbt, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
+    Amount, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
     consensus::deserialize,
     hashes::Hash,
+    opcodes::all::{OP_CHECKSIGVERIFY, OP_CSV},
+    script::Builder,
+    sighash::{Prevouts, SighashCache},
     taproot::LeafVersion,
 };
 use secp256k1::SECP256K1;
-use strata_asm_txs_bridge_v1::test_utils::{
-    build_deposit_transaction, build_timelock_script,
+use strata_asm_txs_bridge_v1::{
+    deposit_request::parse_drt_from_tx,
+    test_utils::{build_deposit_transaction, create_deposit_op_return},
 };
 use strata_crypto::{EvenSecretKey, test_utils::schnorr::create_musig2_signature};
-use strata_primitives::buf::Buf32;
+use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use crate::{
     constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES, NETWORK},
     error::Error,
-    parse::{generate_taproot_address, parse_drt, parse_operator_keys},
+    parse::{generate_taproot_address, parse_operator_keys},
 };
+
+/// Builds the timelock script for takeback functionality
+fn build_timelock_script(recovery_pubkey_bytes: &[u8; 32]) -> ScriptBuf {
+    Builder::new()
+        .push_slice(recovery_pubkey_bytes)
+        .push_opcode(OP_CHECKSIGVERIFY)
+        .push_int(RECOVER_DELAY as i64)
+        .push_opcode(OP_CSV)
+        .into_script()
+}
 
 pub(crate) fn create_deposit_transaction_cli(
     tx_bytes: Vec<u8>,
@@ -35,25 +52,31 @@ pub(crate) fn create_deposit_transaction_cli(
         .map(|kp| Buf32::from(kp.x_only_public_key(SECP256K1).0))
         .collect::<Vec<_>>();
 
-    let (address, agg_pubkey) = generate_taproot_address(&pubkeys, NETWORK)
+    let (_address, agg_pubkey) = generate_taproot_address(&pubkeys, NETWORK)
         .map_err(|e| Error::TxBuilder(e.to_string()))?;
 
-    let drt_data = parse_drt(&drt_tx, address, agg_pubkey)?;
+    let drt_data = parse_drt_from_tx(&drt_tx, MAGIC_BYTES)
+        .map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
 
-    let takeback_script = build_timelock_script(&drt_data.take_back_leaf_hash)
-        .map_err(|e| Error::TxBuilder(format!("Failed to build takeback script: {e}")))?;
+    let takeback_script = build_timelock_script(&drt_data.take_back_leaf_hash);
     let takeback_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
 
+    // Use canonical OP_RETURN construction from asm/txs/bridge-v1
+    let op_return_script = create_deposit_op_return(
+        *MAGIC_BYTES,
+        dt_index,
+        takeback_hash,
+        &drt_data.address,
+    )
+    .map_err(|e| Error::TxBuilder(e))?;
+
+    // Build deposit transaction using canonical builder
     let unsigned_tx = build_deposit_transaction(
         drt_tx.compute_txid(),
-        dt_index,
-        drt_data.address.to_vec(),
-        takeback_hash,
-        MAGIC_BYTES,
-        BRIDGE_OUT_AMOUNT,
+        op_return_script,
         agg_pubkey,
-    )
-    .map_err(|e| Error::TxBuilder(format!("Failed to build deposit transaction: {e}")))?;
+        BRIDGE_OUT_AMOUNT,
+    );
 
     // Find the P2TR output (the one that's not OP_RETURN)
     let deposit_request_output = drt_tx
@@ -78,8 +101,6 @@ fn sign_deposit_transaction(
     takeback_hash: TapNodeHash,
     signers: &[EvenSecretKey],
 ) -> Result<Transaction, Error> {
-    use bdk_wallet::bitcoin::sighash::{Prevouts, SighashCache};
-
     let mut psbt = Psbt::from_unsigned_tx(unsigned_tx.clone())
         .map_err(|e| Error::TxBuilder(format!("Failed to create PSBT: {}", e)))?;
 

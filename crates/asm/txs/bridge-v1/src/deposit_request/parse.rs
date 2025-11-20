@@ -3,7 +3,9 @@
 //! SPS-50 structure:
 //! - OP_RETURN: [MAGIC (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][RECOVERY_PK (32)][EE_ADDRESS (variable)]
 
+use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
+use strata_l1_txfmt::ParseConfig;
 use strata_primitives::l1::DepositRequestInfo;
 
 use crate::constants::DEPOSIT_REQUEST_TX_TYPE;
@@ -22,6 +24,12 @@ pub enum DepositRequestParseError {
 
     #[error("Missing DRT output at index 0")]
     MissingDRTOutput,
+
+    #[error("No OP_RETURN output found in DRT")]
+    NoOpReturnOutput,
+
+    #[error("Failed to parse SPS-50 transaction: {0}")]
+    Sps50ParseError(String),
 }
 
 pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, DepositRequestParseError> {
@@ -60,6 +68,46 @@ pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, Deposi
         take_back_leaf_hash: recovery_pk,
         address: ee_address.to_vec(),
     })
+}
+
+/// Parses a DRT from a raw transaction with magic bytes
+///
+/// This is the full parsing pipeline that handles the OP_RETURN workaround.
+/// ParseConfig expects OP_RETURN at index 0, so we temporarily swap outputs.
+///
+/// # Arguments
+/// * `tx` - The DRT transaction to parse
+/// * `magic_bytes` - The SPS-50 magic bytes for this network
+///
+/// # Returns
+/// The parsed deposit request information
+pub fn parse_drt_from_tx(
+    tx: &Transaction,
+    magic_bytes: &[u8; 4],
+) -> Result<DepositRequestInfo, DepositRequestParseError> {
+    let parse_config = ParseConfig::new(*magic_bytes);
+
+    // Find the OP_RETURN output
+    let _op_return_output = tx
+        .output
+        .iter()
+        .find(|out| out.script_pubkey.is_op_return())
+        .ok_or(DepositRequestParseError::NoOpReturnOutput)?;
+
+    // WORKAROUND: ParseConfig expects OP_RETURN at index 0
+    // Create temporary transaction with outputs swapped
+    let mut parse_tx = tx.clone();
+    if let Some(idx) = tx.output.iter().position(|out| out.script_pubkey.is_op_return()) {
+        parse_tx.output.swap(0, idx);
+    }
+
+    let tag_data = parse_config
+        .try_parse_tx(&parse_tx)
+        .map_err(|e| DepositRequestParseError::Sps50ParseError(e.to_string()))?;
+
+    // Use ORIGINAL transaction with parsed tag data
+    let tx_input = TxInputRef::new(tx, tag_data);
+    parse_drt(&tx_input)
 }
 
 #[cfg(test)]

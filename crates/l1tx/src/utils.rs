@@ -164,13 +164,16 @@ pub(crate) fn convert_bridge_v1_deposit_to_protocol_deposit(
     }
 }
 
+/// Converts parsed withdrawal info to protocol-level WithdrawalFulfillmentInfo.
+///
+/// The txid parameter is the transaction ID of the withdrawal fulfillment transaction.
 pub(crate) fn convert_bridge_v1_withdrawal_to_protocol_withdrawal(
     bridge_v1_withdrawal: BridgeV1WithdrawInfo,
+    withdrawal_txid: Txid,
 ) -> WithdrawalFulfillmentInfo {
     WithdrawalFulfillmentInfo {
         deposit_idx: bridge_v1_withdrawal.deposit_idx,
-        operator_idx: bridge_v1_withdrawal.operator_idx,
         amt: bridge_v1_withdrawal.withdrawal_amount,
-        txid: Buf32::from(Txid::from(bridge_v1_withdrawal.deposit_txid)),
+        txid: Buf32::from(withdrawal_txid),
     }
 }

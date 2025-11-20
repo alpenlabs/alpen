@@ -14895,6 +14895,7 @@ dependencies = [
  "strata-asm-txs-bridge-v1",
  "strata-cli-common",
  "strata-crypto",
+ "strata-l1tx",
  "strata-primitives",
  "thiserror 2.0.17",
 ]
