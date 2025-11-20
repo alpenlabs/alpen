@@ -267,9 +267,27 @@ strata-dbtool get-chainstate 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a
 ```
 
 ### `revert-chainstate`
-Reverts the chain state to a specific block ID. **Use with caution!**
+Reverts the chain state to a specific block ID.
 
-**By default, this command runs in dry run mode** and shows what would be deleted without making any changes. To actually execute the revert operation, you must explicitly use the `--force` flag.
+> [!WARNING]
+> 
+> **This command can cause irreversible data loss. Always run in dry-run mode first!**
+>
+> **Full Node:**
+> - Can revert up to the last block of the finalized epoch. The command will error if you try to revert to a block earlier than that.
+
+> [!NOTE]
+> 
+> **Default behavior:**
+> - By default, this command runs in **dry-run mode** and shows what would be deleted without making any changes.
+> - To actually execute the revert operation, you must explicitly use the `--force` or `-f` flag.
+
+> [!IMPORTANT]
+> 
+> **Sequencer - Critical Safety Requirements:**
+> - **DO NOT revert anything from the previous epoch or earlier.** You can only revert blocks from the current epoch.
+> - **DO NOT use the `-c` (--revert-checkpointed-blocks) flag on the sequencer.**
+> - The checkpoint for the previous epoch may already be confirmed on L1 or have a proof ready (L1 transactions may already be broadcasted or broadcasted soon). If you delete checkpoints and epoch summaries for the previous epoch and earlier, the sequencer may not be able to restart.
 
 ```bash
 strata-dbtool revert-chainstate <block_id> [OPTIONS]
