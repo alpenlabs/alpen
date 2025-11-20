@@ -8,7 +8,7 @@ use crate::{
     constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
     errors::WithdrawalParseError,
     withdrawal_fulfillment::{
-        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, aux::WithdrawalFulfillmentTxTagData,
+        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, aux::WithdrawalFulfillmentTxHeaderAux,
     },
 };
 
@@ -82,7 +82,7 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
     }
 
     let mut decoder = BufDecoder::new(tx.tag().aux_data());
-    let withdrawal_auxdata = WithdrawalFulfillmentTxTagData::decode(&mut decoder)?;
+    let withdrawal_auxdata = WithdrawalFulfillmentTxHeaderAux::decode(&mut decoder)?;
 
     let withdrawal_fulfillment_output = &tx
         .tx()

@@ -5,7 +5,7 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 /// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
 /// and tx_type fields in the OP_RETURN output at position 0.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CommitTxHeaderAux {
+pub(super) struct CommitTxHeaderAux {
     /// The index of the deposit that the operator is committing to.
     /// This must be validated against the operator's assigned deposits in the state's assignments
     /// table to ensure the operator is authorized to commit to this specific deposit.

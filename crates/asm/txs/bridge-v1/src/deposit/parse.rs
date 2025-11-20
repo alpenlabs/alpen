@@ -1,23 +1,22 @@
 use arbitrary::Arbitrary;
-use bitcoin::{OutPoint, taproot::TAPROOT_CONTROL_NODE_SIZE};
+use bitcoin::OutPoint;
 use strata_asm_common::TxInputRef;
+use strata_codec::{BufDecoder, Codec};
 use strata_primitives::{
     buf::Buf32,
     l1::{BitcoinAmount, BitcoinOutPoint},
 };
 
 use crate::{
-    constants::DEPOSIT_TX_TYPE, deposit::DEPOSIT_OUTPUT_INDEX, errors::DepositTxParseError,
+    constants::DEPOSIT_TX_TYPE,
+    deposit::{DEPOSIT_OUTPUT_INDEX, aux::DepositTxHeaderAux},
+    errors::DepositTxParseError,
 };
 
-/// Length of the deposit index field in the auxiliary data (4 bytes for u32)
-const DEPOSIT_IDX_LEN: usize = 4;
-
-/// Length of the tapscript root hash in the auxiliary data (32 bytes)
-const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
-
 /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
-pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
+/// - 4 bytes for deposit_idx (u32)
+/// - 32 bytes for drt_tapscript_merkle_root
+pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = 4 + 32;
 
 /// Information extracted from a Bitcoin deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
@@ -72,28 +71,10 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
 
     let aux_data = tx_input.tag().aux_data();
 
-    // Validate minimum auxiliary data length (must have at least the fixed fields)
-    if aux_data.len() < MIN_DEPOSIT_TX_AUX_DATA_LEN {
-        return Err(DepositTxParseError::InvalidAuxiliaryData(aux_data.len()));
-    }
-
-    // Parse deposit index (bytes 0-3)
-    let (deposit_idx_bytes, rest) = aux_data.split_at(DEPOSIT_IDX_LEN);
-    let deposit_idx = u32::from_be_bytes(
-        deposit_idx_bytes
-            .try_into()
-            .expect("deposit index is exactly 4 bytes because we validate aux_data length early"),
-    );
-
-    // Parse tapscript root hash (bytes 4-35)
-    let (tapscript_root_bytes, destination_address) = rest.split_at(TAPSCRIPT_ROOT_LEN);
-    let tapscript_root =
-        Buf32::new(tapscript_root_bytes.try_into().expect(
-            "tapscript root is exactly 32 bytes because we validate aux_data length early",
-        ));
-
-    // Destination address is remaining bytes (bytes 36+)
-    // Allow empty destination address (0 bytes is valid)
+    // Parse auxiliary data using DepositTxHeaderAux
+    let mut decoder = BufDecoder::new(aux_data);
+    let header_aux = DepositTxHeaderAux::decode(&mut decoder)
+        .map_err(|_| DepositTxParseError::InvalidAuxiliaryData(aux_data.len()))?;
 
     // Extract the deposit output (second output at index 1)
     let deposit_output = tx_input
@@ -110,11 +91,11 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
 
     // Construct the validated deposit information
     Ok(DepositInfo {
-        deposit_idx,
+        deposit_idx: header_aux.deposit_idx,
         amt: deposit_output.value.into(),
-        address: destination_address.to_vec(),
+        address: header_aux.address,
         outpoint: deposit_outpoint,
-        drt_tapscript_merkle_root: tapscript_root,
+        drt_tapscript_merkle_root: Buf32::new(header_aux.drt_tapscript_merkle_root),
     })
 }
 
