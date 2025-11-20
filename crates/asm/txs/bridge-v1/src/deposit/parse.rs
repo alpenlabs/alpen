@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use bitcoin::OutPoint;
 use strata_asm_common::TxInputRef;
-use strata_codec::{BufDecoder, Codec};
+use strata_codec::decode_buf_exact;
 use strata_primitives::{
     buf::Buf32,
     l1::{BitcoinAmount, BitcoinOutPoint},
@@ -70,14 +70,7 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
     }
 
     // Parse auxiliary data using DepositTxHeaderAux
-    let mut decoder = BufDecoder::new(tx_input.tag().aux_data());
-    let header_aux = DepositTxHeaderAux::decode(&mut decoder)
-        .map_err(|_| DepositTxParseError::InvalidAuxiliaryData)?;
-
-    // Ensure all auxiliary data was consumed
-    if decoder.remaining() != 0 {
-        return Err(DepositTxParseError::InvalidAuxiliaryData);
-    }
+    let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
 
     // Extract the deposit output (second output at index 1)
     let deposit_output = tx_input
@@ -213,7 +206,7 @@ mod tests {
 
         let tx_input = parse_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData));
+        assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData(_)));
     }
 
     #[test]

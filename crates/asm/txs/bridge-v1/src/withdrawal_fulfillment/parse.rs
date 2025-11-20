@@ -1,7 +1,7 @@
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
-use strata_codec::{BufDecoder, Codec};
+use strata_codec::decode_buf_exact;
 use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
@@ -81,14 +81,8 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
         return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
     }
 
-    let mut decoder = BufDecoder::new(tx.tag().aux_data());
-    let withdrawal_auxdata = WithdrawalFulfillmentTxHeaderAux::decode(&mut decoder)
-        .map_err(|_| WithdrawalParseError::InvalidAuxiliaryData)?;
-
-    // Ensure all auxiliary data was consumed
-    if decoder.remaining() != 0 {
-        return Err(WithdrawalParseError::InvalidAuxiliaryData);
-    }
+    let withdrawal_auxdata: WithdrawalFulfillmentTxHeaderAux =
+        decode_buf_exact(tx.tag().aux_data())?;
 
     let withdrawal_fulfillment_output = &tx
         .tx()
@@ -213,7 +207,7 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData));
+        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
 
         // Mutate the OP_RETURN output to have longer aux len - this should fail
         let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
@@ -226,6 +220,6 @@ mod tests {
 
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData));
+        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
     }
 }
