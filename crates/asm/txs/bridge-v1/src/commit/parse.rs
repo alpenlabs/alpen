@@ -1,7 +1,6 @@
 use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::Txid;
 use strata_asm_common::TxInputRef;
-use strata_primitives::Buf32;
+use strata_btc_types::BitcoinOutPoint;
 use strata_codec::decode_buf_exact;
 
 use crate::{commit::aux::CommitTxHeaderAux, constants::COMMIT_TX_TYPE, errors::CommitParseError};
@@ -21,16 +20,19 @@ pub struct CommitInfo {
 
     /// The index of the game being committed to.
     pub game_idx: u32,
-    pub claim_txid: Txid,
+
+    /// The previous outpoint that the this transaction spends from.
+    /// For a valid commit transaction, this should be the first output (vout=0) of the claim
+    /// transaction.
+    pub prev_outpoint: BitcoinOutPoint,
 }
 
 impl<'a> Arbitrary<'a> for CommitInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let claim_txid: Txid = Buf32::arbitrary(u)?.into();
         Ok(CommitInfo {
             deposit_idx: u32::arbitrary(u)?,
             game_idx: u32::arbitrary(u)?,
-            claim_txid,
+            prev_outpoint: BitcoinOutPoint::arbitrary(u)?,
         })
     }
 }
@@ -59,6 +61,7 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 ///
 /// This function will return an error if:
 /// - The transaction type doesn't match the expected commit transaction type
+/// - The transaction doesn't have exactly one input
 /// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
 /// - Any of the metadata fields cannot be parsed correctly
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
@@ -66,15 +69,21 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
         return Err(CommitParseError::InvalidTxType(tx.tag().tx_type()));
     }
 
+    // Validate that the transaction has exactly one input
+    if tx.tx().input.len() != 1 {
+        return Err(CommitParseError::InvalidInputCount(tx.tx().input.len()));
+    }
+
     // Parse auxiliary data using CommitTxHeaderAux
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
-    let claim_txid = tx.tx().input[0].previous_output.txid;
+    // Extract the previous outpoint from the first (and only) input
+    let prev_outpoint = tx.tx().input[0].previous_output.into();
 
     Ok(CommitInfo {
         deposit_idx: header_aux.deposit_idx,
         game_idx: header_aux.game_idx,
-        claim_txid,
+        prev_outpoint,
     })
 }
 
@@ -93,15 +102,7 @@ mod tests {
         },
     };
 
-    /// Tests that our hardcoded size constant matches the expected format.
-    /// This validates that the auxiliary data length (8 bytes) matches the sum of:
-    /// - deposit_idx (4 bytes, u32)
-    /// - game_idx (4 bytes, u32)
-    #[test]
-    fn test_valid_size() {
-        let expected_len = std::mem::size_of::<u32>() * 2; // deposit_idx + game_idx
-        assert_eq!(expected_len, COMMIT_TX_AUX_DATA_LEN);
-    }
+    const COMMIT_TX_AUX_DATA_LEN: usize = 4 + 4;
 
     #[test]
     fn test_parse_commit_tx_success() {
@@ -170,5 +171,36 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
         assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
+    }
+
+    #[test]
+    fn test_parse_commit_tx_invalid_input_count_zero() {
+        let mut arb = ArbitraryGenerator::new();
+        let info: CommitInfo = arb.generate();
+
+        let mut tx = create_test_commit_tx(&info);
+
+        // Remove all inputs to trigger the InvalidInputCount error
+        tx.input.clear();
+
+        let tx_input = parse_tx(&tx);
+        let err = parse_commit_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, CommitParseError::InvalidInputCount(0)));
+    }
+
+    #[test]
+    fn test_parse_commit_tx_invalid_input_count_multiple() {
+        let mut arb = ArbitraryGenerator::new();
+        let info: CommitInfo = arb.generate();
+
+        let mut tx = create_test_commit_tx(&info);
+
+        // Duplicate the input to have 2 inputs
+        let first_input = tx.input[0].clone();
+        tx.input.push(first_input);
+
+        let tx_input = parse_tx(&tx);
+        let err = parse_commit_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, CommitParseError::InvalidInputCount(2)));
     }
 }

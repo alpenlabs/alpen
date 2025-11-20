@@ -1,6 +1,6 @@
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
-    absolute::LockTime, script::PushBytesBuf, secp256k1::Secp256k1, transaction::Version,
+    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
+    script::PushBytesBuf, secp256k1::Secp256k1, transaction::Version,
 };
 use strata_asm_common::TxInputRef;
 use strata_crypto::{EvenSecretKey, test_utils::schnorr::create_agg_pubkey_from_privkeys};

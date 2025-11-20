@@ -104,6 +104,10 @@ pub enum CommitParseError {
     /// The transaction type byte in the tag does not match the expected commit transaction type.
     #[error("Invalid transaction type: expected type to be {COMMIT_TX_TYPE}, got {0}")]
     InvalidTxType(TxType),
+
+    /// The commit transaction does not have exactly one input.
+    #[error("Commit transaction must have exactly one input, got {0}")]
+    InvalidInputCount(usize),
 }
 
 /// Errors that can occur during commit transaction input/output validation.

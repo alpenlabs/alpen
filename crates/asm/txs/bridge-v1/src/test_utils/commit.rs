@@ -1,5 +1,5 @@
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
     hashes::Hash,
     secp256k1::{Keypair, Secp256k1},
     sighash::{Prevouts, SighashCache, TapSighashType},
@@ -41,11 +41,8 @@ pub fn setup_test_commit_tx(
     // Create N/N UTXO transaction with multisig output (using dummy amount)
     let n_of_n_utxo_tx = create_tx_with_n_of_n_multisig_output(operators_privkeys, Amount::ZERO);
 
-    // Reference the N/N UTXO tx output
-    let n_of_n_outpoint = OutPoint {
-        txid: n_of_n_utxo_tx.compute_txid(),
-        vout: 0,
-    };
+    // Use the prev_outpoint from commit_info (which points to the claim transaction)
+    let n_of_n_outpoint = *commit_info.prev_outpoint.outpoint();
 
     let prev_txout = n_of_n_utxo_tx.output[0].clone();
 
