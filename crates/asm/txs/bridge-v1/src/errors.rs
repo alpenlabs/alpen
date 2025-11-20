@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use strata_codec::CodecError;
 use strata_l1_txfmt::TxType;
 use thiserror::Error;
 
@@ -22,11 +23,11 @@ where
 ///
 /// When these parsing errors occur, they are logged and the transaction is skipped.
 /// No further processing is performed on transactions that fail to parse.
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error)]
 pub enum DepositTxParseError {
     /// The auxiliary data in the deposit transaction tag is invalid.
-    #[error("Invalid auxiliary data")]
-    InvalidAuxiliaryData,
+    #[error("Invalid auxiliary data: {0}")]
+    InvalidAuxiliaryData(#[from] CodecError),
 
     /// The transaction type byte in the tag does not match the expected deposit transaction type.
     #[error("Invalid transaction type: expected type to be {DEPOSIT_TX_TYPE}, got {0}")]
@@ -76,8 +77,8 @@ pub enum DepositOutputError {
 #[derive(Debug, Error)]
 pub enum WithdrawalParseError {
     /// The auxiliary data in the withdrawal fulfillment transaction is invalid
-    #[error("Invalid auxiliary data")]
-    InvalidAuxiliaryData,
+    #[error("Invalid auxiliary data: {0}")]
+    InvalidAuxiliaryData(#[from] CodecError),
 
     /// The transaction type byte in the tag does not match the expected withdrawal fulfillment
     /// transaction type.
@@ -97,8 +98,8 @@ pub enum WithdrawalParseError {
 #[derive(Debug, Error)]
 pub enum CommitParseError {
     /// The auxiliary data in the commit transaction is invalid.
-    #[error("Invalid auxiliary data")]
-    InvalidAuxiliaryData,
+    #[error("Invalid auxiliary data: {0}")]
+    InvalidAuxiliaryData(#[from] CodecError),
 
     /// The transaction type byte in the tag does not match the expected commit transaction type.
     #[error("Invalid transaction type: expected type to be {COMMIT_TX_TYPE}, got {0}")]

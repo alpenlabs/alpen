@@ -1,6 +1,6 @@
 use arbitrary::{Arbitrary, Unstructured};
 use strata_asm_common::TxInputRef;
-use strata_codec::{BufDecoder, Codec};
+use strata_codec::decode_buf_exact;
 
 use crate::{commit::aux::CommitTxHeaderAux, constants::COMMIT_TX_TYPE, errors::CommitParseError};
 
@@ -62,14 +62,7 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     }
 
     // Parse auxiliary data using CommitTxHeaderAux
-    let mut decoder = BufDecoder::new(tx.tag().aux_data());
-    let header_aux = CommitTxHeaderAux::decode(&mut decoder)
-        .map_err(|_| CommitParseError::InvalidAuxiliaryData)?;
-
-    // Ensure all auxiliary data was consumed
-    if decoder.remaining() != 0 {
-        return Err(CommitParseError::InvalidAuxiliaryData);
-    }
+    let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
     Ok(CommitInfo {
         deposit_idx: header_aux.deposit_idx,
@@ -158,7 +151,7 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(err, CommitParseError::InvalidAuxiliaryData));
+        assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
 
         // Mutate the OP_RETURN output to have longer aux len
         let aux_data = vec![0u8; COMMIT_TX_AUX_DATA_LEN + 1];
@@ -168,6 +161,6 @@ mod tests {
 
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, CommitParseError::InvalidAuxiliaryData));
+        assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
     }
 }
