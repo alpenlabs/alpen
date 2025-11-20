@@ -317,7 +317,8 @@ where
     // collect receipts from the executed transactions
     let receipts: Vec<Receipt> = execution_result.receipts;
     let txns: Vec<TransactionSigned> = block.body().transactions().cloned().collect();
-    let withdrawal_intents: Vec<WithdrawalIntent> = extract_withdrawal_intents(&txns, &receipts).collect();
+    let withdrawal_intents: Vec<WithdrawalIntent> =
+        extract_withdrawal_intents(&txns, &receipts).collect();
 
     let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
 

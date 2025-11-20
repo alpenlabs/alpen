@@ -12,11 +12,13 @@ use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{EnvResult, ExecPartialState};
 
 use super::Hash;
-use crate::codec_shims::{
-    decode_bytes_with_length, decode_rlp_with_length, encode_bytes_with_length,
-    encode_rlp_with_length,
+use crate::{
+    codec_shims::{
+        decode_bytes_with_length, decode_rlp_with_length, encode_bytes_with_length,
+        encode_rlp_with_length,
+    },
+    types::EvmWriteBatch,
 };
-use crate::types::EvmWriteBatch;
 
 /// Partial state for EVM block execution.
 ///

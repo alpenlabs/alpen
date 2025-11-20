@@ -54,7 +54,9 @@ pub(crate) fn encode_bytes_with_length(
 /// Decodes raw bytes with a varint length prefix.
 ///
 /// This reads a varint length prefix, then reads that many bytes and returns them as a Vec<u8>.
-pub(crate) fn decode_bytes_with_length(dec: &mut impl strata_codec::Decoder) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn decode_bytes_with_length(
+    dec: &mut impl strata_codec::Decoder,
+) -> Result<Vec<u8>, CodecError> {
     let len_varint = Varint::decode(dec)?;
     let len = len_varint.inner() as usize;
     let mut bytes = vec![0u8; len];
