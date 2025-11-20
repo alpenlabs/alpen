@@ -30,6 +30,7 @@
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod parse;
+mod tag;
 mod validation;
 
 pub use parse::{COMMIT_TX_AUX_DATA_LEN, CommitInfo, parse_commit_tx};
