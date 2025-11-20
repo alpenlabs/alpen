@@ -36,6 +36,9 @@ pub enum BridgeSubprotocolError {
 
     #[error("unsupported tx type {0}")]
     UnsupportedTxType(TxType),
+
+    #[error("invalid spent output lock: output is not locked to expected n-of-n multisig key")]
+    InvalidSpentOutputLock,
 }
 
 /// Errors that can occur when validating deposit transactions at the subprotocol level.

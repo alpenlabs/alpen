@@ -1,11 +1,9 @@
-use bitcoin::{
-    TapSighashType,
-    hashes::Hash,
-    hex::parse,
-    sighash::{Prevouts, SighashCache},
-};
+use bitcoin::{ScriptBuf, Transaction, XOnlyPublicKey};
+use secp256k1::SECP256K1;
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
+use strata_asm_txs_bridge_v1::commit::CLAIM_OUTPUT_INDEX;
+use strata_primitives::l1::BitcoinXOnlyPublicKey;
 
 use crate::{
     errors::BridgeSubprotocolError,
@@ -46,8 +44,12 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
         ParsedTx::Commit(parsed_commit_tx) => {
-            let output =
-                aux_data.get_bitcoin_txout(&parsed_commit_tx.tx.input[0].previous_output)?;
+            validate_nn_spend(
+                parsed_commit_tx.tx,
+                CLAIM_OUTPUT_INDEX,
+                state.operators().agg_key(),
+                aux_data,
+            )?;
 
             let unlock = state.process_commit_tx(&parsed_commit_tx.info)?;
 
@@ -59,6 +61,45 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
     }
+}
+
+/// Validates that a transaction spends from an n-of-n multisig output.
+///
+/// This function verifies that the output being spent by `tx.input[spending_input_idx]`
+/// is locked to the expected n-of-n aggregated operator key using P2TR key-spend only.
+///
+/// # Arguments
+///
+/// * `tx` - The transaction containing the input that spends the n-of-n output
+/// * `spending_input_idx` - Which input of `tx` spends from the n-of-n output
+/// * `nn_pubkey` - The expected n-of-n aggregated public key
+/// * `aux_data` - Auxiliary data to retrieve the previous output being spent
+///
+/// # Returns
+///
+/// * `Ok(())` if the previous output is locked to `nn_pubkey`
+/// * `Err(BridgeSubprotocolError)` if validation fails
+fn validate_nn_spend(
+    tx: &Transaction,
+    spending_input_idx: usize,
+    nn_pubkey: &BitcoinXOnlyPublicKey,
+    aux_data: &VerifiedAuxData,
+) -> Result<(), BridgeSubprotocolError> {
+    // Get the previous output that this input is spending
+    let prev_output = aux_data.get_bitcoin_txout(&tx.input[spending_input_idx].previous_output)?;
+
+    // Build the expected P2TR script locked to the n-of-n key
+    let secp = SECP256K1;
+    let nn_xonly = XOnlyPublicKey::from_slice(nn_pubkey.inner().as_bytes())
+        .map_err(|_| BridgeSubprotocolError::InvalidSpentOutputLock)?;
+    let expected_script = ScriptBuf::new_p2tr(secp, nn_xonly, None);
+
+    // Verify the previous output is locked to the expected n-of-n key
+    if prev_output.script_pubkey != expected_script {
+        return Err(BridgeSubprotocolError::InvalidSpentOutputLock);
+    }
+
+    Ok(())
 }
 
 pub(crate) fn preprocess_parsed_tx<'t>(
