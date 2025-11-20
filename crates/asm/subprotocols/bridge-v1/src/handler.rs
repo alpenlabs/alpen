@@ -3,7 +3,7 @@ use strata_asm_logs::NewExportEntry;
 
 use crate::{
     errors::BridgeSubprotocolError,
-    parser::{ParsedDepositTx, ParsedTx, ParsedWithdrawalFulfillmentTx},
+    parser::{ParsedDepositTx, ParsedTx},
     state::BridgeV1State,
 };
 
@@ -33,9 +33,8 @@ pub(crate) fn handle_parsed_tx<'t>(
             state.process_deposit_tx(tx, &info)?;
             Ok(())
         }
-        ParsedTx::WithdrawalFulfillment(parsed_withdrawal_fulfillment) => {
-            let ParsedWithdrawalFulfillmentTx { tx, info } = parsed_withdrawal_fulfillment;
-            let unlock = state.process_withdrawal_fulfillment_tx(tx, &info)?;
+        ParsedTx::WithdrawalFulfillment(info) => {
+            let unlock = state.process_withdrawal_fulfillment_tx(&info)?;
 
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log =

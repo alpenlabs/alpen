@@ -13,7 +13,7 @@ secp256k1.workspace = true
 thiserror.workspace = true
 
 strata-asm-common.workspace = true
-strata-bridge-types.workspace = true
+strata-codec.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
@@ -25,6 +25,7 @@ strata-test-utils.workspace = true
 strata-crypto = { workspace = true, features = ["test-utils"] }
 musig2.workspace = true
 rand.workspace = true
+proptest.workspace = true
 
 [features]
 test-utils = ["dep:strata-crypto", "strata-crypto/test-utils"]

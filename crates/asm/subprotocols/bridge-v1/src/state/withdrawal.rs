@@ -9,10 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::ExportEntry;
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
-use strata_primitives::{
-    bitcoin_bosd::Descriptor,
-    l1::{BitcoinAmount, BitcoinTxid},
-};
+use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
 /// Command specifying a Bitcoin output for a withdrawal operation.
 ///
@@ -108,40 +105,37 @@ impl WithdrawOutput {
     }
 }
 
-/// Represents an operator's claim to unlock a deposit UTXO after successful withdrawal processing.
+/// Represents an operator's claim to unlock a deposit UTXO after successful withdrawal fulfillment.
 ///
-/// This structure is created when an operator successfully processes a withdrawal by making
-/// the required front payment to the user within the specified deadline. It serves as proof
-/// that the operator has fulfilled their obligation and is now entitled to claim the
-/// corresponding locked deposit funds.
+/// This structure is created when a withdrawal fulfillment transaction is successfully validated.
+/// It serves as proof that a valid frontpayment was made matching the assignment specifications,
+/// and authorizes the assigned operator to claim the corresponding locked deposit funds through
+/// the Bridge proof system.
 ///
-/// The claim contains all necessary information to:
-/// - Link the withdrawal transaction to the original deposit
-/// - Identify which operator performed the withdrawal
-/// - Enable the Bridge proof to verify the operator's right to withdraw locked funds
+/// The claim contains:
+/// - The deposit index that identifies which locked UTXO can be claimed
+/// - The operator index of the assigned operator who is authorized to claim
 ///
-/// This data is stored in the MohoState and used by the Bridge proof system to validate
-/// that operators have correctly front-paid users before allowing them to withdraw the
-/// corresponding deposit UTXOs.
+/// # Important Notes
+///
+/// - The `operator_idx` always refers to the **assigned operator** from the assignment entry, not
+///   necessarily the party who made the actual frontpayment (since frontpayment identity is not
+///   validated during transaction processing).
+/// - This data is stored in the MohoState and emitted as an ASM log via `NewExportEntry`.
+/// - The Bridge proof system consumes these entries to verify operators have correctly fulfilled
+///   withdrawal obligations before allowing them to unlock deposit UTXOs.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct OperatorClaimUnlock {
-    /// The transaction ID of the withdrawal fulfillment transaction, i.e. the transaction which
-    /// fronts funds to the user.
-    pub fulfillment_txid: BitcoinTxid,
-
-    /// The transaction ID of the deposit that was assigned.
-    pub deposit_txid: BitcoinTxid,
-
-    /// The transaction idx of the deposit that was assigned.
+    /// The index of the deposit that was fulfilled.
     pub deposit_idx: u32,
 
-    /// The index of the operator who processed the withdrawal.
+    /// The index of the operator who was assigned to (and is authorized to claim) this withdrawal.
     pub operator_idx: OperatorIdx,
 }
 
 impl OperatorClaimUnlock {
     pub fn to_export_entry(&self) -> ExportEntry {
-        let payload = borsh::to_vec(&self).expect("Failed to serialize WithdrawalProcessedInfo");
+        let payload = borsh::to_vec(&self).expect("Failed to serialize OperatorClaimUnlock");
         ExportEntry::new(self.deposit_idx, payload)
     }
 }

@@ -1,12 +1,12 @@
 use std::fmt::Debug;
 
+use strata_codec::CodecError;
 use strata_l1_txfmt::TxType;
 use thiserror::Error;
 
 use crate::{
-    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE},
+    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
     deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
-    withdrawal_fulfillment::WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN,
 };
 
 /// A generic "expected vs got" error.
@@ -81,15 +81,15 @@ pub enum DepositOutputError {
 /// No further processing is performed on transactions that fail to parse.
 #[derive(Debug, Error)]
 pub enum WithdrawalParseError {
-    /// The auxiliary data in the withdrawal fulfillment transaction doesn't have correct length.
-    #[error(
-        "Invalid auxiliary data: expected {WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
-    )]
-    InvalidAuxiliaryData(usize),
+    /// The auxiliary data in the withdrawal fulfillment transaction is invalid
+    #[error("Invalid auxiliary data")]
+    InvalidAuxiliaryData(#[from] CodecError),
 
     /// The transaction type byte in the tag does not match the expected withdrawal fulfillment
     /// transaction type.
-    #[error("Invalid transaction type: expected type to be {WITHDRAWAL_TX_TYPE}, got {0}")]
+    #[error(
+        "Invalid transaction type: expected type to be {WITHDRAWAL_FULFILLMENT_TX_TYPE}, got {0}"
+    )]
     InvalidTxType(TxType),
 
     #[error("Transaction is missing output that fulfilled user withdrawal request")]
