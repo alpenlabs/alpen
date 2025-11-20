@@ -1,5 +1,6 @@
 mod commit;
 mod deposit;
+mod parsing;
 mod utils;
 mod withdrawal_fulfillment;
 
@@ -15,6 +16,12 @@ pub use deposit::{DepositTxBuilderError, build_deposit_transaction, build_timelo
 pub use withdrawal_fulfillment::{
     WithdrawalInput, WithdrawalMetadata, WithdrawalTxBuilderError,
     create_simple_withdrawal_fulfillment_tx, create_withdrawal_fulfillment_tx,
+};
+
+// Parsing utilities
+pub use parsing::{
+    ParsingError, generate_taproot_address, parse_drt, parse_operator_keys, parse_pk,
+    parse_transaction, parse_xonly_pk,
 };
 
 // Utility functions
