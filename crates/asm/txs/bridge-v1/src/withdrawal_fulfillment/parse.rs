@@ -8,7 +8,7 @@ use crate::{
     constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
     errors::WithdrawalParseError,
     withdrawal_fulfillment::{
-        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, tag::WithdrawalFulfillmentTxTagData,
+        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, aux::WithdrawalFulfillmentTxTagData,
     },
 };
 
