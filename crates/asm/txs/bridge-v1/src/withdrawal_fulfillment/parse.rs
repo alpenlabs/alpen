@@ -82,7 +82,13 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
     }
 
     let mut decoder = BufDecoder::new(tx.tag().aux_data());
-    let withdrawal_auxdata = WithdrawalFulfillmentTxHeaderAux::decode(&mut decoder)?;
+    let withdrawal_auxdata = WithdrawalFulfillmentTxHeaderAux::decode(&mut decoder)
+        .map_err(|_| WithdrawalParseError::InvalidAuxiliaryData)?;
+
+    // Ensure all auxiliary data was consumed
+    if decoder.remaining() != 0 {
+        return Err(WithdrawalParseError::InvalidAuxiliaryData);
+    }
 
     let withdrawal_fulfillment_output = &tx
         .tx()
@@ -207,12 +213,9 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(
-            err,
-            WithdrawalParseError::InvalidAuxiliaryData { .. }
-        ));
+        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData));
 
-        // Mutate the OP_RETURN output to have shorter aux len - this should fail
+        // Mutate the OP_RETURN output to have longer aux len - this should fail
         let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
         let tagged_payload = create_tagged_payload(
             BRIDGE_V1_SUBPROTOCOL_ID,
@@ -222,9 +225,7 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let res = parse_withdrawal_fulfillment_tx(&tx_input);
-        // REVIEW: right now it is still valid if the aux payload is larger
-        // verify if this is good
-        assert!(res.is_ok());
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData));
     }
 }

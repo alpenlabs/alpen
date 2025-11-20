@@ -1,13 +1,9 @@
 use std::fmt::Debug;
 
-use strata_codec::CodecError;
 use strata_l1_txfmt::TxType;
 use thiserror::Error;
 
-use crate::{
-    constants::{COMMIT_TX_TYPE, DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
-    deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
-};
+use crate::constants::{COMMIT_TX_TYPE, DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE};
 
 /// A generic "expected vs got" error.
 #[derive(Debug, Error, Clone)]
@@ -28,11 +24,9 @@ where
 /// No further processing is performed on transactions that fail to parse.
 #[derive(Debug, Error, Clone)]
 pub enum DepositTxParseError {
-    /// The auxiliary data in the deposit transaction tag has insufficient length.
-    #[error(
-        "Auxiliary data too short: expected at least {MIN_DEPOSIT_TX_AUX_DATA_LEN} bytes, got {0} bytes"
-    )]
-    InvalidAuxiliaryData(usize),
+    /// The auxiliary data in the deposit transaction tag is invalid.
+    #[error("Invalid auxiliary data")]
+    InvalidAuxiliaryData,
 
     /// The transaction type byte in the tag does not match the expected deposit transaction type.
     #[error("Invalid transaction type: expected type to be {DEPOSIT_TX_TYPE}, got {0}")]
@@ -83,7 +77,7 @@ pub enum DepositOutputError {
 pub enum WithdrawalParseError {
     /// The auxiliary data in the withdrawal fulfillment transaction is invalid
     #[error("Invalid auxiliary data")]
-    InvalidAuxiliaryData(#[from] CodecError),
+    InvalidAuxiliaryData,
 
     /// The transaction type byte in the tag does not match the expected withdrawal fulfillment
     /// transaction type.
@@ -102,9 +96,9 @@ pub enum WithdrawalParseError {
 /// No further processing is performed on transactions that fail to parse.
 #[derive(Debug, Error)]
 pub enum CommitParseError {
-    /// The auxiliary data in the commit transaction doesn't have correct length.
-    #[error("Invalid auxiliary data: expected 4 bytes, got {0} bytes")]
-    InvalidAuxiliaryData(usize),
+    /// The auxiliary data in the commit transaction is invalid.
+    #[error("Invalid auxiliary data")]
+    InvalidAuxiliaryData,
 
     /// The transaction type byte in the tag does not match the expected commit transaction type.
     #[error("Invalid transaction type: expected type to be {COMMIT_TX_TYPE}, got {0}")]

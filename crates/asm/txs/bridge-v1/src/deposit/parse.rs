@@ -69,12 +69,15 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
         return Err(DepositTxParseError::InvalidTxType(tx_input.tag().tx_type()));
     }
 
-    let aux_data = tx_input.tag().aux_data();
-
     // Parse auxiliary data using DepositTxHeaderAux
-    let mut decoder = BufDecoder::new(aux_data);
+    let mut decoder = BufDecoder::new(tx_input.tag().aux_data());
     let header_aux = DepositTxHeaderAux::decode(&mut decoder)
-        .map_err(|_| DepositTxParseError::InvalidAuxiliaryData(aux_data.len()))?;
+        .map_err(|_| DepositTxParseError::InvalidAuxiliaryData)?;
+
+    // Ensure all auxiliary data was consumed
+    if decoder.remaining() != 0 {
+        return Err(DepositTxParseError::InvalidAuxiliaryData);
+    }
 
     // Extract the deposit output (second output at index 1)
     let deposit_output = tx_input
@@ -210,10 +213,7 @@ mod tests {
 
         let tx_input = parse_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData(_)));
-        if let DepositTxParseError::InvalidAuxiliaryData(len) = err {
-            assert_eq!(len, MIN_DEPOSIT_TX_AUX_DATA_LEN - 1);
-        }
+        assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData));
     }
 
     #[test]
