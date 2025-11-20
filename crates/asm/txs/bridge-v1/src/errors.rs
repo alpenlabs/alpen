@@ -108,6 +108,10 @@ pub enum CommitParseError {
     /// The commit transaction does not have exactly one input.
     #[error("Commit transaction must have exactly one input, got {0}")]
     InvalidInputCount(usize),
+
+    /// The previous output index is not 0.
+    #[error("Commit transaction must spend from vout 0, got vout {0}")]
+    InvalidPrevVout(u32),
 }
 
 /// Errors that can occur during commit transaction input/output validation.

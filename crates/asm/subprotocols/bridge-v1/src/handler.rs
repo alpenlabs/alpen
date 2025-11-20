@@ -1,8 +1,7 @@
-use bitcoin::{ScriptBuf, Transaction, XOnlyPublicKey};
+use bitcoin::{OutPoint, ScriptBuf, XOnlyPublicKey};
 use secp256k1::SECP256K1;
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
-use strata_asm_txs_bridge_v1::commit::CLAIM_OUTPUT_INDEX;
 use strata_primitives::l1::BitcoinXOnlyPublicKey;
 
 use crate::{
@@ -44,13 +43,12 @@ pub(crate) fn handle_parsed_tx<'t>(
         }
         ParsedTx::Commit(parsed_commit_tx) => {
             validate_nn_spend(
-                parsed_commit_tx.tx,
-                CLAIM_OUTPUT_INDEX,
+                &parsed_commit_tx.prev_outpoint.0,
                 state.operators().agg_key(),
                 aux_data,
             )?;
 
-            let unlock = state.process_commit_tx(&parsed_commit_tx.info)?;
+            let unlock = state.process_commit_tx(&parsed_commit_tx)?;
 
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log =
@@ -79,13 +77,12 @@ pub(crate) fn handle_parsed_tx<'t>(
 /// * `Ok(())` if the previous output is locked to `nn_pubkey`
 /// * `Err(BridgeSubprotocolError)` if validation fails
 fn validate_nn_spend(
-    tx: &Transaction,
-    spending_input_idx: usize,
+    prev_outpoint: &OutPoint,
     nn_pubkey: &BitcoinXOnlyPublicKey,
     aux_data: &VerifiedAuxData,
 ) -> Result<(), BridgeSubprotocolError> {
     // Get the previous output that this input is spending
-    let prev_output = aux_data.get_bitcoin_txout(&tx.input[spending_input_idx].previous_output)?;
+    let prev_txout = aux_data.get_bitcoin_txout(prev_outpoint)?;
 
     // Build the expected P2TR script locked to the n-of-n key
     let secp = SECP256K1;
@@ -94,7 +91,7 @@ fn validate_nn_spend(
     let expected_script = ScriptBuf::new_p2tr(secp, nn_xonly, None);
 
     // Verify the previous output is locked to the expected n-of-n key
-    if prev_output.script_pubkey != expected_script {
+    if prev_txout.script_pubkey != expected_script {
         return Err(BridgeSubprotocolError::InvalidSpentOutputLock);
     }
 

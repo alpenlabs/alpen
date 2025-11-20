@@ -29,10 +29,17 @@ pub struct CommitInfo {
 
 impl<'a> Arbitrary<'a> for CommitInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        use bitcoin::{OutPoint, Txid};
+        use strata_primitives::Buf32;
+
+        // Generate arbitrary txid but ensure vout is always 0
+        let txid: Txid = Buf32::arbitrary(u)?.into();
+        let prev_outpoint = BitcoinOutPoint::from(OutPoint { txid, vout: 0 });
+
         Ok(CommitInfo {
             deposit_idx: u32::arbitrary(u)?,
             game_idx: u32::arbitrary(u)?,
-            prev_outpoint: BitcoinOutPoint::arbitrary(u)?,
+            prev_outpoint,
         })
     }
 }
@@ -62,6 +69,7 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 /// This function will return an error if:
 /// - The transaction type doesn't match the expected commit transaction type
 /// - The transaction doesn't have exactly one input
+/// - The previous output index (vout) is not 0
 /// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
 /// - Any of the metadata fields cannot be parsed correctly
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
@@ -78,7 +86,14 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
     // Extract the previous outpoint from the first (and only) input
-    let prev_outpoint = tx.tx().input[0].previous_output.into();
+    let prev_outpoint = tx.tx().input[0].previous_output;
+
+    // Validate that the previous output index is 0 (first output of claim transaction)
+    if prev_outpoint.vout != 0 {
+        return Err(CommitParseError::InvalidPrevVout(prev_outpoint.vout));
+    }
+
+    let prev_outpoint = prev_outpoint.into();
 
     Ok(CommitInfo {
         deposit_idx: header_aux.deposit_idx,
@@ -202,5 +217,20 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
         assert!(matches!(err, CommitParseError::InvalidInputCount(2)));
+    }
+
+    #[test]
+    fn test_parse_commit_tx_invalid_prev_vout() {
+        let mut arb = ArbitraryGenerator::new();
+        let info: CommitInfo = arb.generate();
+
+        let mut tx = create_test_commit_tx(&info);
+
+        // Change the vout to something other than 0
+        tx.input[0].previous_output.vout = 1;
+
+        let tx_input = parse_tx(&tx);
+        let err = parse_commit_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, CommitParseError::InvalidPrevVout(1)));
     }
 }

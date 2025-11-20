@@ -16,12 +16,6 @@ pub(crate) struct ParsedDepositTx<'t> {
     pub info: DepositInfo,
 }
 
-#[derive(Debug)]
-pub(crate) struct ParsedCommitTx<'t> {
-    pub tx: &'t Transaction,
-    pub info: CommitInfo,
-}
-
 /// Represents a parsed transaction that can be either a deposit or withdrawal fulfillment.
 #[derive(Debug)]
 pub(crate) enum ParsedTx<'t> {
@@ -30,7 +24,7 @@ pub(crate) enum ParsedTx<'t> {
     /// A withdrawal fulfillment transaction that releases Bitcoin funds from the bridge
     WithdrawalFulfillment(WithdrawalFulfillmentInfo),
     /// Commit tx
-    Commit(ParsedCommitTx<'t>),
+    Commit(CommitInfo),
 }
 
 /// Parses a transaction into a structured format based on its type.
@@ -67,8 +61,7 @@ pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, Bridg
         }
         COMMIT_TX_TYPE => {
             let info = parse_commit_tx(tx)?;
-            let parsed_tx = ParsedCommitTx { tx: tx.tx(), info };
-            Ok(ParsedTx::Commit(parsed_tx))
+            Ok(ParsedTx::Commit(info))
         }
         unsupported_type => Err(BridgeSubprotocolError::UnsupportedTxType(unsupported_type)),
     }
