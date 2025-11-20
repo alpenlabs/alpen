@@ -31,16 +31,15 @@ use crate::{
 pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
-    // Create SPS-50 tagged payload: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
-    let mut tagged_payload = Vec::new();
-    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
-    tagged_payload.push(BRIDGE_V1_SUBPROTOCOL_ID); // 1 byte subprotocol ID
-    tagged_payload.push(WITHDRAWAL_FULFILLMENT_TX_TYPE); // 1 byte transaction type
-
     // Auxiliary data: [DEPOSIT_IDX]
-    tagged_payload.extend_from_slice(&withdrawal_info.deposit_idx.to_be_bytes()); // 4 bytes
+    let aux_data = withdrawal_info.deposit_idx.to_be_bytes().to_vec(); // 4 bytes
 
-    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, aux_data).unwrap();
+    let td = TagData::new(
+        BRIDGE_V1_SUBPROTOCOL_ID,
+        WITHDRAWAL_FULFILLMENT_TX_TYPE,
+        aux_data,
+    )
+    .unwrap();
     let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();
