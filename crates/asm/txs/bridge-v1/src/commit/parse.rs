@@ -1,16 +1,13 @@
 use arbitrary::{Arbitrary, Unstructured};
 use strata_asm_common::TxInputRef;
+use strata_codec::{BufDecoder, Codec};
 
-use crate::{constants::COMMIT_TX_TYPE, errors::CommitParseError};
-
-const DEPOSIT_IDX_SIZE: usize = 4;
-const GAME_IDX_SIZE: usize = 4;
-
-const DEPOSIT_IDX_OFFSET: usize = 0;
-const GAME_IDX_OFFSET: usize = DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE;
+use crate::{commit::aux::CommitTxHeaderAux, constants::COMMIT_TX_TYPE, errors::CommitParseError};
 
 /// Length of auxiliary data for commit transactions.
-pub const COMMIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE + GAME_IDX_SIZE;
+/// - 4 bytes for deposit_idx (u32)
+/// - 4 bytes for game_idx (u32)
+pub const COMMIT_TX_AUX_DATA_LEN: usize = 4 + 4;
 
 /// Information extracted from a Bitcoin commit transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,20 +67,14 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
         return Err(CommitParseError::InvalidAuxiliaryData(commit_auxdata.len()));
     }
 
-    let mut deposit_idx_bytes = [0u8; DEPOSIT_IDX_SIZE];
-    deposit_idx_bytes.copy_from_slice(
-        &commit_auxdata[DEPOSIT_IDX_OFFSET..DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE],
-    );
-    let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
-
-    let mut game_idx_bytes = [0u8; GAME_IDX_SIZE];
-    game_idx_bytes
-        .copy_from_slice(&commit_auxdata[GAME_IDX_OFFSET..GAME_IDX_OFFSET + GAME_IDX_SIZE]);
-    let game_idx = u32::from_be_bytes(game_idx_bytes);
+    // Parse auxiliary data using CommitTxHeaderAux
+    let mut decoder = BufDecoder::new(commit_auxdata);
+    let header_aux = CommitTxHeaderAux::decode(&mut decoder)
+        .map_err(|_| CommitParseError::InvalidAuxiliaryData(commit_auxdata.len()))?;
 
     Ok(CommitInfo {
-        deposit_idx,
-        game_idx,
+        deposit_idx: header_aux.deposit_idx,
+        game_idx: header_aux.game_idx,
     })
 }
 
@@ -102,16 +93,14 @@ mod tests {
         },
     };
 
-    /// Tests that our hardcoded size constants match the actual type sizes.
-    /// This is necessary to catch if the underlying types change size in the future,
-    /// which would break the wire format compatibility for auxiliary data parsing.
+    /// Tests that our hardcoded size constant matches the expected format.
+    /// This validates that the auxiliary data length (8 bytes) matches the sum of:
+    /// - deposit_idx (4 bytes, u32)
+    /// - game_idx (4 bytes, u32)
     #[test]
     fn test_valid_size() {
-        let deposit_idx_size: usize = std::mem::size_of::<u32>();
-        assert_eq!(deposit_idx_size, DEPOSIT_IDX_SIZE);
-
-        let game_idx_size: usize = std::mem::size_of::<u32>();
-        assert_eq!(game_idx_size, GAME_IDX_SIZE);
+        let expected_len = std::mem::size_of::<u32>() * 2; // deposit_idx + game_idx
+        assert_eq!(expected_len, COMMIT_TX_AUX_DATA_LEN);
     }
 
     #[test]
