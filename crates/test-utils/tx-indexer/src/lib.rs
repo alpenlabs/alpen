@@ -253,7 +253,7 @@ where
 {
     let amt = Amount::from_int_btc(10);
     let params = gen_params();
-    let (addresses, txids, deposit_entries) = generate_withdrawal_fulfillment_data(amt.into());
+    let (addresses, _txids, deposit_entries) = generate_withdrawal_fulfillment_data(amt.into());
     let filter_config = get_filter_config_from_deposit_entries(params, &deposit_entries);
 
     let tx = Transaction {
@@ -261,9 +261,9 @@ where
         lock_time: LockTime::from_height(0).unwrap(),
         input: vec![], // dont care
         output: vec![
-            // metadata with operator index (MUST be at index 0 for SPS-50 format)
+            // metadata with deposit index (MUST be at index 0 for SPS-50 format)
             TxOut {
-                script_pubkey: create_opreturn_metadata(*b"ALPN", 1, 2, &txids[0]),
+                script_pubkey: create_opreturn_metadata(*b"ALPN", 2),
                 value: Amount::from_sat(0),
             },
             // front payment
@@ -296,7 +296,7 @@ where
                 WithdrawalFulfillmentInfo {
                     deposit_idx: 2,
                     amt: (amt - OPERATOR_FEE).into(),
-                    txid: txids[0].into()
+                    txid: tx.compute_txid().into()
                 }
             );
         }

@@ -286,19 +286,11 @@ pub fn generate_withdrawal_fulfillment_data(
 
 /// Creates an OP_RETURN metadata script for withdrawal fulfillment transactions.
 ///
-/// Format: [MAGIC_BYTES (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][OPERATOR_IDX (4)][DEPOSIT_IDX
-/// (4)][DEPOSIT_TXID (32)]
-pub fn create_opreturn_metadata(
-    magic: [u8; 4],
-    operator_idx: u32,
-    deposit_idx: u32,
-    deposit_txid: &[u8; 32],
-) -> ScriptBuf {
-    // Create auxiliary data: [operator_idx][deposit_idx][deposit_txid]
+/// Format: [MAGIC_BYTES (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][DEPOSIT_IDX (4)]
+pub fn create_opreturn_metadata(magic: [u8; 4], deposit_idx: u32) -> ScriptBuf {
+    // Create auxiliary data: [deposit_idx]
     let mut aux_data: Vec<u8> = Vec::new();
-    aux_data.extend(&operator_idx.to_be_bytes());
     aux_data.extend(&deposit_idx.to_be_bytes());
-    aux_data.extend(deposit_txid);
 
     // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
     let mut data = magic.to_vec();
