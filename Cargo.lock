@@ -13909,6 +13909,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-codec-utils"
+version = "0.1.0"
+dependencies = [
+ "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "strata-codec",
+]
+
+[[package]]
 name = "strata-common"
 version = "0.3.0-alpha.1"
 dependencies = [

@@ -33,6 +33,7 @@ members = [
   "crates/chain-worker",
   "crates/checkpoint-types",
   "crates/cli-common",
+  "crates/codec-utils",
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
@@ -57,6 +58,7 @@ members = [
   "crates/ol/chain-types",
   "crates/ol/da",
   "crates/ol/mempool",
+  "crates/ol/msg-types",
   "crates/ol/state-types",
   "crates/ol/stf",
   "crates/ol-chainstate-types",
@@ -108,7 +110,7 @@ members = [
   "bin/strata-test-cli",
 
   # benchmarks
-  "benches", "crates/ol/msg-types",
+  "benches",
 ]
 
 default-members = [
@@ -175,6 +177,7 @@ strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
 strata-cli-common = { path = "crates/cli-common" }
+strata-codec-utils = { path = "crates/codec-utils" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
