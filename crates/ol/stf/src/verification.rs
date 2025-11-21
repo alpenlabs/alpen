@@ -139,12 +139,14 @@ pub fn verify_block_classically<S: StateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
-    block_exec_input: BlockExecInput<'_>,
+    body: &OLBlockBody,
     exp: &BlockExecExpectations,
 ) -> ExecResult<()> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header.as_ref())?;
     // TODO verify_block_structure(...)?;
+    // TODO make sure that we properly increment the epoch when the parent was a
+    // terminal!
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
     let block_info = BlockInfo::from_header(header);
@@ -161,18 +163,14 @@ pub fn verify_block_classically<S: StateAccessor>(
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header.as_ref());
-    transaction_processing::process_block_tx_segment(
-        state,
-        block_exec_input.tx_segment(),
-        &tx_ctx,
-    )?;
+    transaction_processing::process_block_tx_segment(state, body.tx_segment(), &tx_ctx)?;
 
     // 4. Check the state root.
     // - if it's a nonterminal, then check against the header state root
     // - if it *is* a terminal, then check against the preseal state root
     let pre_manifest_state_root = state.compute_state_root()?;
 
-    if block_exec_input.is_body_terminal() {
+    if body.is_probably_terminal() {
         // For terminal blocks, check against the preseal state root
         let expected_preseal = exp
             .post_state_roots
@@ -192,7 +190,7 @@ pub fn verify_block_classically<S: StateAccessor>(
     // then really check the header state root.
     //
     // Then we get the exec output one way or another.
-    if let Some(manifest_container) = block_exec_input.manifest_container() {
+    if let Some(manifest_container) = body.l1_update().map(|u| u.manifest_cont()) {
         manifest_processing::process_block_manifests(
             state,
             manifest_container,
@@ -216,7 +214,7 @@ pub fn verify_block_classically<S: StateAccessor>(
 }
 
 /// Checks that headers are properly continuous.
-fn verify_header_continuity(
+pub fn verify_header_continuity(
     header: &OLBlockHeader,
     parent: Option<&OLBlockHeader>,
 ) -> ExecResult<()> {
@@ -257,7 +255,7 @@ fn verify_header_continuity(
 }
 
 /// Checks that the block's structure is internally consistent.
-fn verify_block_structure(header: &OLBlockHeader, body: &OLBlockBody) -> ExecResult<()> {
+pub fn verify_block_structure(header: &OLBlockHeader, body: &OLBlockBody) -> ExecResult<()> {
     let body_root = body.compute_hash_commitment();
     if body_root != *header.body_root() {
         return Err(ExecError::BlockStructureMismatch);
@@ -329,4 +327,184 @@ pub fn verify_epoch_with_diff<S: StateAccessor, D: DaScheme<S>>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_ol_chain_types_new::{OLBlockId, OLL1ManifestContainer, OLL1Update, OLTxSegment};
+
+    use super::*;
+
+    #[test]
+    fn test_verify_header_continuity_happy_path() {
+        // Test valid genesis
+        let genesis = OLBlockHeader::new(
+            1000000,
+            0,
+            0,
+            OLBlockId::null(),
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        assert!(verify_header_continuity(&genesis, None).is_ok());
+
+        // Test valid parent-child relationship
+        let parent = OLBlockHeader::new(
+            1000000,
+            5,
+            1,
+            OLBlockId::from(Buf32::from([1u8; 32])),
+            Buf32::from([2u8; 32]),
+            Buf32::from([3u8; 32]),
+            Buf32::from([4u8; 32]),
+        );
+        let child = OLBlockHeader::new(
+            1001000,
+            6,
+            1,
+            parent.compute_blkid(),
+            Buf32::from([5u8; 32]),
+            Buf32::from([6u8; 32]),
+            Buf32::from([7u8; 32]),
+        );
+        assert!(verify_header_continuity(&child, Some(&parent)).is_ok());
+    }
+
+    #[test]
+    fn test_verify_header_continuity_failures() {
+        // Test wrong parent block ID
+        let parent = OLBlockHeader::new(
+            1000000,
+            5,
+            1,
+            OLBlockId::from(Buf32::from([1u8; 32])),
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        let bad_child = OLBlockHeader::new(
+            1001000,
+            6,
+            1,
+            OLBlockId::from(Buf32::from([99u8; 32])), // wrong parent
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        assert!(matches!(
+            verify_header_continuity(&bad_child, Some(&parent)).unwrap_err(),
+            ExecError::BlockParentMismatch
+        ));
+
+        // Test epoch skip
+        let child_epoch_skip = OLBlockHeader::new(
+            1001000,
+            6,
+            3, // epoch jumps from 1 to 3
+            parent.compute_blkid(),
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        assert!(matches!(
+            verify_header_continuity(&child_epoch_skip, Some(&parent)).unwrap_err(),
+            ExecError::SkipEpochs(1, 3)
+        ));
+
+        // Test slot skip
+        let child_slot_skip = OLBlockHeader::new(
+            1001000,
+            8,
+            1, // slot jumps from 5 to 8
+            parent.compute_blkid(),
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        assert!(matches!(
+            verify_header_continuity(&child_slot_skip, Some(&parent)).unwrap_err(),
+            ExecError::SkipTooManySlots(5, 8)
+        ));
+
+        // Test non-genesis without parent
+        let non_genesis = OLBlockHeader::new(
+            1000000,
+            1,
+            0,
+            OLBlockId::null(),
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        assert!(matches!(
+            verify_header_continuity(&non_genesis, None).unwrap_err(),
+            ExecError::NongenesisHeaderMissingParent
+        ));
+
+        // Test genesis with non-null parent
+        let bad_genesis = OLBlockHeader::new(
+            1000000,
+            0,
+            0,
+            OLBlockId::from(Buf32::from([1u8; 32])),
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        assert!(matches!(
+            verify_header_continuity(&bad_genesis, None).unwrap_err(),
+            ExecError::GenesisParentNonnull
+        ));
+    }
+
+    #[test]
+    fn test_verify_block_structure_happy_path() {
+        // Create a body and compute its root
+        let tx_segment = OLTxSegment::new(vec![]);
+        let body = OLBlockBody::new(tx_segment, None);
+        let body_root = body.compute_hash_commitment();
+
+        // Create header with matching body root
+        let header = OLBlockHeader::new(
+            1000000,
+            0,
+            0,
+            OLBlockId::null(),
+            body_root,
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        assert!(verify_block_structure(&header, &body).is_ok());
+    }
+
+    #[test]
+    fn test_verify_block_structure_mismatch() {
+        // Create a body
+        let tx_segment = OLTxSegment::new(vec![]);
+        let body = OLBlockBody::new(tx_segment, None);
+
+        // Create header with wrong body root
+        let header = OLBlockHeader::new(
+            1000000,
+            0,
+            0,
+            OLBlockId::null(),
+            Buf32::from([99u8; 32]), // wrong body root
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        assert!(matches!(
+            verify_block_structure(&header, &body).unwrap_err(),
+            ExecError::BlockStructureMismatch
+        ));
+    }
+
+
+
+
+
+
 }

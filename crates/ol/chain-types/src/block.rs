@@ -151,7 +151,7 @@ pub struct OLBlockBody {
 }
 
 impl OLBlockBody {
-    pub(crate) fn new(tx_segment: OLTxSegment, l1_update: Option<OLL1Update>) -> Self {
+    pub fn new(tx_segment: OLTxSegment, l1_update: Option<OLL1Update>) -> Self {
         Self {
             tx_segment,
             l1_update,
@@ -181,6 +181,11 @@ impl OLBlockBody {
         let encoded = encode_to_vec(self).expect("block body encoding should succeed");
         let hash = raw(&encoded);
         hash
+    }
+
+    /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update is present.
+    pub fn is_probably_terminal(&self) -> bool {
+        self.l1_update().is_some()
     }
 }
 
