@@ -13,7 +13,6 @@ pub use parse::{parse_drt, parse_drt_from_tx, DepositRequestParseError};
 /// SPS-50 format: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][RECOVERY_PK (32)][EE_ADDRESS]
 #[derive(Debug, Clone)]
 pub struct DepositRequestMetadata {
-    magic_bytes: [u8; 4],
     recovery_pk: [u8; 32],
     ee_address: Vec<u8>,
 }
@@ -25,15 +24,14 @@ pub enum DepositRequestBuildError {
 }
 
 impl DepositRequestMetadata {
-    pub fn new(magic_bytes: [u8; 4], recovery_pk: XOnlyPublicKey, ee_address: Vec<u8>) -> Self {
+    pub fn new(recovery_pk: XOnlyPublicKey, ee_address: Vec<u8>) -> Self {
         Self {
-            magic_bytes,
             recovery_pk: recovery_pk.serialize(),
             ee_address,
         }
     }
 
-    pub fn op_return_data(&self) -> Result<Vec<u8>, DepositRequestBuildError> {
+    pub fn op_return_data(&self, magic_bytes: [u8; 4]) -> Result<Vec<u8>, DepositRequestBuildError> {
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&self.recovery_pk);
         aux_data.extend_from_slice(&self.ee_address);
@@ -41,16 +39,12 @@ impl DepositRequestMetadata {
         let tag_data = TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, &aux_data)
             .map_err(|e| DepositRequestBuildError::TxFmt(e.to_string()))?;
 
-        let parse_config = ParseConfig::new(self.magic_bytes);
+        let parse_config = ParseConfig::new(magic_bytes);
         let data = parse_config
             .encode_tag_buf(&tag_data)
             .map_err(|e| DepositRequestBuildError::TxFmt(e.to_string()))?;
 
         Ok(data)
-    }
-
-    pub fn magic_bytes(&self) -> &[u8; 4] {
-        &self.magic_bytes
     }
 
     pub fn recovery_pk(&self) -> &[u8; 32] {
@@ -82,14 +76,12 @@ mod tests {
 
     #[test]
     fn test_deposit_request_metadata_creation() {
-        let magic = [0x01, 0x02, 0x03, 0x04];
         let recovery_pk = generate_test_xonly_pk();
         let recovery_pk_bytes = recovery_pk.serialize();
         let ee_address = vec![0x06; 20];
 
-        let metadata = DepositRequestMetadata::new(magic, recovery_pk, ee_address.clone());
+        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address.clone());
 
-        assert_eq!(metadata.magic_bytes(), &magic);
         assert_eq!(metadata.recovery_pk(), &recovery_pk_bytes);
         assert_eq!(metadata.ee_address(), &ee_address);
     }
@@ -101,8 +93,8 @@ mod tests {
         let recovery_pk_bytes = recovery_pk.serialize();
         let ee_address = vec![0x22; 20];
 
-        let metadata = DepositRequestMetadata::new(magic, recovery_pk, ee_address);
-        let op_return_data = metadata.op_return_data().unwrap();
+        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address);
+        let op_return_data = metadata.op_return_data(magic).unwrap();
 
         // Verify total length: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) + address(20)
         assert_eq!(op_return_data.len(), 4 + 1 + 1 + 32 + 20);
@@ -131,13 +123,13 @@ mod tests {
         // Test with 20-byte address (EVM standard)
         // SPS-50: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) + address(20)
         let ee_address_20 = vec![0x06; 20];
-        let metadata = DepositRequestMetadata::new(magic, recovery_pk, ee_address_20);
-        assert_eq!(metadata.op_return_data().unwrap().len(), 4 + 1 + 1 + 32 + 20);
+        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address_20);
+        assert_eq!(metadata.op_return_data(magic).unwrap().len(), 4 + 1 + 1 + 32 + 20);
 
         // Test with 32-byte address (different EE)
         // SPS-50: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) + address(32)
         let ee_address_32 = vec![0x07; 32];
-        let metadata = DepositRequestMetadata::new(magic, recovery_pk, ee_address_32);
-        assert_eq!(metadata.op_return_data().unwrap().len(), 4 + 1 + 1 + 32 + 32);
+        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address_32);
+        assert_eq!(metadata.op_return_data(magic).unwrap().len(), 4 + 1 + 1 + 32 + 32);
     }
 }

@@ -125,20 +125,19 @@ pub async fn deposit(
     log_fee_rate(&fee_rate);
 
     // Construct the DRT metadata using the canonical builder
-    let magic_bytes: [u8; 4] = settings
-        .magic_bytes
-        .as_bytes()
-        .try_into()
-        .expect("magic_bytes validated to be 4 bytes");
     let drt_metadata = DepositRequestMetadata::new(
-        magic_bytes,
         recovery_public_key,
         alpen_address.as_slice().to_vec(),
     );
 
     // Convert to PushBytes (ensures length ≤ 80 bytes)
+    let magic_bytes: [u8; 4] = settings
+        .magic_bytes
+        .as_bytes()
+        .try_into()
+        .expect("magic_bytes validated to be 4 bytes");
     let op_return_data = drt_metadata
-        .op_return_data()
+        .op_return_data(magic_bytes)
         .internal_error("Failed to generate DRT metadata")?;
     let push_bytes = PushBytesBuf::try_from(op_return_data)
         .expect("conversion should succeed after length check");
