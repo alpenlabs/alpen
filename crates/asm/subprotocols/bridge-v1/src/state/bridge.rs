@@ -366,11 +366,6 @@ impl BridgeV1State {
         Ok(())
     }
 
-    pub fn validate_commit_tx(&self) -> Result<(), CommitValidationError> {
-        // TODO:PG
-        Ok(())
-    }
-
     pub fn process_commit_tx(
         &mut self,
         commit_info: &CommitInfo,

@@ -1,5 +1,4 @@
-use bitcoin::{OutPoint, ScriptBuf, TxOut, XOnlyPublicKey};
-use secp256k1::SECP256K1;
+use bitcoin::ScriptBuf;
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
 
@@ -29,6 +28,7 @@ pub(crate) fn handle_parsed_tx<'t>(
     parsed_tx: ParsedTx<'t>,
     relayer: &mut impl MsgRelayer,
     aux_data: &VerifiedAuxData,
+    nn_script: &ScriptBuf,
 ) -> Result<(), BridgeSubprotocolError> {
     match parsed_tx {
         ParsedTx::Deposit(parsed_deposit_tx) => {
@@ -40,19 +40,17 @@ pub(crate) fn handle_parsed_tx<'t>(
             state.process_withdrawal_fulfillment_tx(&info)?;
             Ok(())
         }
-        ParsedTx::Commit(commit) => {
-            let prev_txout = aux_data.get_bitcoin_txout(&commit.first_input_outpoint)?;
-            if !is_nn_lock(prev_txout, state.operators().agg_xonly()) {
-                todo!()
+        ParsedTx::Commit(info) => {
+            let prev_txout = aux_data.get_bitcoin_txout(&info.first_input_outpoint)?;
+            if &prev_txout.script_pubkey != nn_script {
+                return Err(BridgeSubprotocolError::InvalidSpentOutputLock);
             }
 
-            validate_nn_spend(
-                &commit.first_input_outpoint,
-                state.operators().agg_xonly(),
-                aux_data,
-            )?;
+            if &info.second_output_script != nn_script {
+                return Err(BridgeSubprotocolError::InvalidSpentOutputLock);
+            }
 
-            let unlock = state.process_commit_tx(&commit)?;
+            let unlock = state.process_commit_tx(&info)?;
 
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log =
@@ -62,44 +60,6 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
     }
-}
-
-/// Validates that an outpoint is locked to an N-of-N multisig.
-///
-/// Verifies that the output referenced by `prev_outpoint` is locked to the expected
-/// N-of-N aggregated operator key using P2TR key-spend only (no merkle root).
-///
-/// # Arguments
-///
-/// * `prev_outpoint` - The outpoint referencing the output to validate
-/// * `nn_pubkey` - The expected N-of-N aggregated public key
-/// * `aux_data` - Auxiliary data to retrieve the output
-///
-/// # Returns
-///
-/// * `Ok(())` if the output is locked to `nn_pubkey`
-/// * `Err(BridgeSubprotocolError)` if validation fails
-fn validate_nn_spend(
-    prev_outpoint: &OutPoint,
-    nn_pubkey: XOnlyPublicKey,
-    aux_data: &VerifiedAuxData,
-) -> Result<(), BridgeSubprotocolError> {
-    // Retrieve the output being validated
-    let prev_txout = aux_data.get_bitcoin_txout(prev_outpoint)?;
-    if is_nn_lock(prev_txout, nn_pubkey) {
-        Ok(())
-    } else {
-        Err(BridgeSubprotocolError::InvalidSpentOutputLock)
-    } // FIXME:
-}
-
-fn is_nn_lock(txout: &TxOut, xonly_pk: XOnlyPublicKey) -> bool {
-    // Build the expected P2TR script locked to the N-of-N key
-    let secp = SECP256K1;
-    let expected_script = ScriptBuf::new_p2tr(secp, xonly_pk, None);
-
-    // Check the output is locked to the expected N-of-N key
-    txout.script_pubkey == expected_script
 }
 
 pub(crate) fn preprocess_parsed_tx<'t>(
