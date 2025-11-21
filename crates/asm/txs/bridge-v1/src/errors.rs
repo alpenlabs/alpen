@@ -109,35 +109,7 @@ pub enum CommitParseError {
     #[error("Commit transaction must have exactly one input, got {0}")]
     InvalidInputCount(usize),
 
-    /// The previous output index is not 0.
-    #[error("Commit transaction must spend from vout 0, got vout {0}")]
-    InvalidPrevVout(u32),
-
     /// Missing N/N output at index 1.
     #[error("Missing N/N output at index 1")]
     MissingNnOutput,
-}
-
-/// Errors that can occur during commit transaction input/output validation.
-#[derive(Debug, Error, Clone)]
-pub enum CommitInputError {
-    /// The operator public key is malformed or invalid.
-    #[error("Invalid operator public key")]
-    InvalidOperatorKey,
-
-    /// The commit transaction has no inputs.
-    #[error("Commit transaction has no inputs")]
-    MissingInput,
-
-    /// The first input's previous output script is not locked to the N/N aggregated operator key.
-    #[error("First input is not locked to the N/N aggregated operator key")]
-    WrongInputLock,
-
-    /// Missing the second output at index 1.
-    #[error("Missing second output (N/N output) at index 1")]
-    MissingSecondOutput,
-
-    /// The second output is not locked to the N/N aggregated operator key.
-    #[error("Second output is not locked to the N/N aggregated operator key")]
-    WrongSecondOutputLock,
 }
