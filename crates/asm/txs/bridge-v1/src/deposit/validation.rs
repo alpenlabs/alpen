@@ -6,7 +6,7 @@ use bitcoin::{
     taproot::{self},
 };
 use secp256k1::Message;
-use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey};
+use strata_primitives::buf::Buf32;
 
 use crate::{
     deposit::DEPOSIT_OUTPUT_INDEX,
@@ -51,7 +51,7 @@ use crate::{
 pub fn validate_drt_spending_signature(
     tx: &Transaction,
     drt_tapnode_hash: Buf32,
-    operators_pubkey: &BitcoinXOnlyPublicKey,
+    operators_agg_key: XOnlyPublicKey,
     deposit_amount: Amount,
 ) -> Result<(), DrtSignatureError> {
     // Initialize necessary variables and dependencies
@@ -80,11 +80,10 @@ pub fn validate_drt_spending_signature(
     // Parse the internal pubkey and merkle root
     let merkle_root: TapNodeHash = TapNodeHash::from_byte_array(drt_tapnode_hash.0);
 
-    let internal_pubkey = XOnlyPublicKey::from_slice(operators_pubkey.inner().as_bytes()).unwrap();
-    let (tweaked_key, _) = internal_pubkey.tap_tweak(secp, Some(merkle_root));
+    let (tweaked_key, _) = operators_agg_key.tap_tweak(secp, Some(merkle_root));
 
     // Build the scriptPubKey for the UTXO
-    let script_pubkey = ScriptBuf::new_p2tr(secp, internal_pubkey, Some(merkle_root));
+    let script_pubkey = ScriptBuf::new_p2tr(secp, operators_agg_key, Some(merkle_root));
 
     let utxos = [TxOut {
         value: deposit_amount,
@@ -126,7 +125,7 @@ pub fn validate_drt_spending_signature(
 /// - `Err(DepositOutputError)` - If the output is missing, has wrong script type, or wrong key
 pub fn validate_deposit_output_lock(
     tx: &Transaction,
-    operators_agg_pubkey: &BitcoinXOnlyPublicKey,
+    operators_agg_pubkey: XOnlyPublicKey,
 ) -> Result<(), DepositOutputError> {
     // Get the deposit output at the expected index.
     let deposit_output =
@@ -138,11 +137,9 @@ pub fn validate_deposit_output_lock(
 
     // Extract the internal key from the P2TR script
     let secp = secp256k1::SECP256K1;
-    let operators_pubkey = XOnlyPublicKey::from_slice(operators_agg_pubkey.inner().as_bytes())
-        .map_err(|_| DepositOutputError::InvalidOperatorKey)?;
 
     // Create expected P2TR script with no merkle root (key-spend only)
-    let expected_script = ScriptBuf::new_p2tr(secp, operators_pubkey, None);
+    let expected_script = ScriptBuf::new_p2tr(secp, operators_agg_pubkey, None);
 
     // Verify the deposit output script matches the expected P2TR script
     if deposit_output.script_pubkey != expected_script {
@@ -161,14 +158,13 @@ mod tests {
     use musig2::KeyAggContext;
     use rand::Rng;
     use strata_crypto::EvenSecretKey;
-    use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::{deposit::parse::DepositInfo, test_utils::create_test_deposit_tx};
 
     // Helper function to create test operator keys with proper MuSig2 aggregation
-    fn create_test_operators() -> (BitcoinXOnlyPublicKey, Vec<EvenSecretKey>) {
+    fn create_test_operators() -> (XOnlyPublicKey, Vec<EvenSecretKey>) {
         let secp = Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
         let num_operators = rng.gen_range(2..=5);
@@ -182,23 +178,18 @@ mod tests {
         let pubkeys: Vec<PublicKey> = operators_privkeys
             .iter()
             .map(|sk| PublicKey::from_secret_key(&secp, sk))
-            .map(|pk| {
-                PublicKey::from_x_only_public_key(pk.x_only_public_key().0, secp256k1::Parity::Even)
-            })
             .collect();
 
         let key_agg_ctx = KeyAggContext::new(pubkeys).expect("Failed to create KeyAggContext");
 
         // Use MuSig2 aggregated key to ensure consistency with create_test_deposit_tx
-        let aggregated_xonly: bitcoin::secp256k1::XOnlyPublicKey = key_agg_ctx.aggregated_pubkey();
-        let operators_pubkey = BitcoinXOnlyPublicKey::new(Buf32::new(aggregated_xonly.serialize()))
-            .expect("Valid aggregated public key");
+        let aggregated: XOnlyPublicKey = key_agg_ctx.aggregated_pubkey();
 
-        (operators_pubkey, operators_privkeys)
+        (aggregated, operators_privkeys)
     }
 
     // Helper function to create a test transaction and return both tx and aggregated pubkey
-    fn create_test_tx_with_agg_pubkey() -> (Transaction, BitcoinXOnlyPublicKey) {
+    fn create_test_tx_with_agg_pubkey() -> (Transaction, XOnlyPublicKey) {
         let (operators_pubkey, operators_privkeys) = create_test_operators();
         let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
         let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
@@ -210,7 +201,7 @@ mod tests {
         let (tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
 
         // This should succeed
-        let result = validate_deposit_output_lock(&tx, &operators_pubkey);
+        let result = validate_deposit_output_lock(&tx, operators_pubkey);
         assert!(
             result.is_ok(),
             "Valid deposit output lock should pass validation"
@@ -225,7 +216,7 @@ mod tests {
         tx.output.truncate(1);
 
         // This should return MissingDepositOutput error since we removed the deposit output
-        let err = validate_deposit_output_lock(&tx, &operators_pubkey).unwrap_err();
+        let err = validate_deposit_output_lock(&tx, operators_pubkey).unwrap_err();
         assert!(matches!(
             err,
             DepositOutputError::MissingDepositOutput(DEPOSIT_OUTPUT_INDEX)
@@ -241,7 +232,7 @@ mod tests {
         // Mutate the deposit output to have wrong script (empty script instead of P2TR)
         tx.output[1].script_pubkey = ScriptBuf::new();
 
-        let err = validate_deposit_output_lock(&tx, &operators_pubkey).unwrap_err();
+        let err = validate_deposit_output_lock(&tx, operators_pubkey).unwrap_err();
         assert!(matches!(err, DepositOutputError::WrongOutputLock));
     }
 
@@ -259,7 +250,7 @@ mod tests {
         let err = validate_drt_spending_signature(
             &tx,
             deposit_info.drt_tapscript_merkle_root,
-            &operators_pubkey,
+            operators_pubkey,
             deposit_info.amt.into(),
         )
         .unwrap_err();
@@ -281,7 +272,7 @@ mod tests {
         let err = validate_drt_spending_signature(
             &tx,
             deposit_info.drt_tapscript_merkle_root,
-            &operators_pubkey,
+            operators_pubkey,
             deposit_info.amt.into(),
         )
         .unwrap_err();
@@ -294,7 +285,7 @@ mod tests {
         let err = validate_drt_spending_signature(
             &tx,
             deposit_info.drt_tapscript_merkle_root,
-            &operators_pubkey,
+            operators_pubkey,
             deposit_info.amt.into(),
         )
         .unwrap_err();
@@ -316,7 +307,7 @@ mod tests {
         let err = validate_drt_spending_signature(
             &tx,
             deposit_info.drt_tapscript_merkle_root,
-            &operators_pubkey,
+            operators_pubkey,
             deposit_info.amt.into(),
         )
         .unwrap_err();
@@ -338,7 +329,7 @@ mod tests {
         let result = validate_drt_spending_signature(
             &tx,
             deposit_info.drt_tapscript_merkle_root,
-            &operators_pubkey,
+            operators_pubkey,
             deposit_info.amt.into(),
         );
 
@@ -347,11 +338,9 @@ mod tests {
 
     #[test]
     fn test_create_valid_p2tr_script() {
-        let (operators_pubkey, _) = create_test_operators();
+        let (operators_xonly, _) = create_test_operators();
         let secp = Secp256k1::new();
 
-        let operators_xonly =
-            XOnlyPublicKey::from_slice(operators_pubkey.inner().as_bytes()).unwrap();
         let script = ScriptBuf::new_p2tr(&secp, operators_xonly, None);
 
         // Verify it's a P2TR script

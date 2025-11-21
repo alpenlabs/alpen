@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 arbitrary.workspace = true
 bitcoin.workspace = true
+rand = { workspace = true, optional = true }
 secp256k1.workspace = true
 thiserror.workspace = true
 
@@ -28,4 +29,4 @@ rand.workspace = true
 proptest.workspace = true
 
 [features]
-test-utils = ["dep:strata-crypto", "strata-crypto/test-utils"]
+test-utils = ["dep:strata-crypto", "dep:rand", "strata-crypto/test-utils"]

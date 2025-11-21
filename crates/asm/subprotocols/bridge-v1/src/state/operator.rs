@@ -2,11 +2,12 @@
 //!
 //! This module contains types and tables for managing bridge operators
 
+use bitcoin::XOnlyPublicKey;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
 use strata_crypto::{multisig::aggregate_schnorr_keys, schnorr::EvenPublicKey};
-use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
+use strata_primitives::{buf::Buf32, sorted_vec::SortedVec};
 
 use super::bitmap::OperatorBitmap;
 
@@ -123,7 +124,7 @@ pub struct OperatorTable {
     ///
     /// The key is automatically computed when the operator table is created or
     /// updated, ensuring it always reflects the current active multisig participants.
-    agg_key: BitcoinXOnlyPublicKey,
+    agg_key: EvenPublicKey,
 }
 
 impl OperatorTable {
@@ -195,8 +196,8 @@ impl OperatorTable {
     /// Returns the aggregated public key of the current active operators.
     ///
     /// This key is computed by aggregating the MuSig2 public keys of all active operators.
-    pub fn agg_key(&self) -> &BitcoinXOnlyPublicKey {
-        &self.agg_key
+    pub fn agg_xonly(&self) -> XOnlyPublicKey {
+        self.agg_key.x_only_public_key().0
     }
 
     /// Retrieves an operator entry by its unique index.

@@ -1,8 +1,10 @@
 use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
+use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
+    CommitParseError, DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch,
+    WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
@@ -14,17 +16,29 @@ pub enum BridgeSubprotocolError {
     #[error("failed to parse deposit tx")]
     DepositTxParse(#[from] DepositTxParseError),
 
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxParse(#[from] WithdrawalParseError),
+
+    #[error("failed to parse commit tx")]
+    CommitTxParse(#[from] CommitParseError),
+
     #[error("failed to process deposit tx")]
     DepositTxProcess(#[from] DepositValidationError),
 
     #[error("failed to parse withdrawal fulfillment tx")]
-    WithdrawalTxParse(#[from] WithdrawalParseError),
-
-    #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxProcess(#[from] WithdrawalValidationError),
+
+    #[error("failed to process commit tx")]
+    CommitTxProcess(#[from] CommitValidationError),
+
+    #[error("invalid aux data")]
+    InvalidAux(#[from] AuxError),
 
     #[error("unsupported tx type {0}")]
     UnsupportedTxType(TxType),
+
+    #[error("invalid spent output lock: output is not locked to expected n-of-n multisig key")]
+    InvalidSpentOutputLock,
 }
 
 /// Errors that can occur when validating deposit transactions at the subprotocol level.
@@ -73,6 +87,12 @@ pub enum WithdrawalValidationError {
     /// Withdrawal destination doesn't match assignment destination
     #[error("Withdrawal destination mismatch {0}")]
     DestinationMismatch(Mismatch<ScriptBuf>),
+}
+
+#[derive(Debug, Error)]
+pub enum CommitValidationError {
+    #[error("todo: add types")]
+    Todo,
 }
 
 /// Errors that can occur when processing withdrawal commands.

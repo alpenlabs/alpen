@@ -3,9 +3,11 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
-use bitcoin::absolute;
+use bitcoin::{ScriptBuf, absolute};
+use secp256k1::SECP256K1;
 use strata_asm_common::{
-    AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData,
     logging::{error, info},
 };
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
@@ -15,7 +17,7 @@ use strata_primitives::{
 };
 
 use crate::{
-    handler::handle_parsed_tx,
+    handler::{handle_parsed_tx, preprocess_parsed_tx},
     msgs::BridgeIncomingMsg,
     parser::parse_tx,
     state::{BridgeV1Config, BridgeV1State},
@@ -40,6 +42,29 @@ impl Subprotocol for BridgeV1Subproto {
 
     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
         Ok(BridgeV1State::new(params))
+    }
+
+    fn pre_process_txs(
+        state: &Self::State,
+        txs: &[TxInputRef<'_>],
+        collector: &mut AuxRequestCollector,
+        _anchor_pre: &AnchorState,
+        _params: &Self::Params,
+    ) {
+        // Pre-Process each transaction
+        for tx in txs {
+            // Parse transaction to extract structured data, then handle the preprocess transaction
+            // to get the auxilary requests
+            match parse_tx(tx) {
+                Ok(parsed_tx) => {
+                    preprocess_parsed_tx(parsed_tx, state, collector);
+                    info!(tx_id = %tx.tx().compute_txid(), "Successfully pre-processed tx");
+                }
+                Err(e) => {
+                    error!(tx_id = %tx.tx().compute_txid(), error = %e, "Failed to process tx")
+                }
+            }
+        }
     }
 
     /// Processes transactions for the Bridge V1 subprotocol and handles expired assignment
@@ -86,15 +111,20 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _verified_aux_data: &VerifiedAuxData,
+        aux: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
+        // Compute the expected N/N locking script once to avoid multiple calculations
+        let nn_script = ScriptBuf::new_p2tr(SECP256K1, state.operators().agg_xonly(), None);
+
         // Process each transaction
         for tx in txs {
             // Parse transaction to extract structured data (deposit/withdrawal info)
             // then handle the parsed transaction to update state and emit events
-            match parse_tx(tx).and_then(|parsed_tx| handle_parsed_tx(state, parsed_tx, relayer)) {
+            match parse_tx(tx)
+                .and_then(|parsed_tx| handle_parsed_tx(state, parsed_tx, relayer, aux, &nn_script))
+            {
                 // `tx_id` is computed inside macro, because logging is compiled to noop in ZkVM
                 Ok(()) => info!(tx_id = %tx.tx().compute_txid(), "Successfully processed tx"),
                 Err(e) => {
