@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use const_hex as hex;
+use ssz_derive::{Decode, Encode};
 use zeroize::Zeroize;
 
 use crate::macros::internal;
@@ -58,10 +59,13 @@ impl Zeroize for Buf20 {
 ///
 /// assert_eq!(buf, Buf32::from([0; 32]));
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[ssz(struct_behaviour = "transparent")]
 pub struct Buf32(pub [u8; 32]);
 internal::impl_buf_common!(Buf32, 32);
 internal::impl_buf_serde!(Buf32, 32);
+
+crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
 
 impl FromStr for Buf32 {
     type Err = hex::FromHexError;
