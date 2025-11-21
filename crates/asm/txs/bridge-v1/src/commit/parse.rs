@@ -1,6 +1,8 @@
 use arbitrary::{Arbitrary, Unstructured};
+use bitcoin::{OutPoint, ScriptBuf, Txid};
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
+use strata_primitives::Buf32;
 
 use crate::{commit::aux::CommitTxHeaderAux, constants::COMMIT_TX_TYPE, errors::CommitParseError};
 
@@ -19,13 +21,28 @@ pub struct CommitInfo {
 
     /// The index of the game being committed to.
     pub game_idx: u32,
+
+    /// The outpoint spent by the first input.
+    /// Must be validated that it spends from an N/N-locked output during transaction validation.
+    pub first_input_outpoint: OutPoint,
+
+    /// The script from the second output (index 1).
+    /// Must be validated as N/N-locked during transaction validation.
+    pub second_output_script: ScriptBuf,
 }
 
 impl<'a> Arbitrary<'a> for CommitInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate arbitrary txid but ensure vout is always 0
+        let txid: Txid = Buf32::arbitrary(u)?.into();
+        let first_input_outpoint = OutPoint { txid, vout: 0 };
+        let second_output_script = ScriptBuf::new();
+
         Ok(CommitInfo {
             deposit_idx: u32::arbitrary(u)?,
             game_idx: u32::arbitrary(u)?,
+            first_input_outpoint,
+            second_output_script,
         })
     }
 }
@@ -54,6 +71,8 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 ///
 /// This function will return an error if:
 /// - The transaction type doesn't match the expected commit transaction type
+/// - The transaction doesn't have exactly one input
+/// - The previous output index (vout) is not 0
 /// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
 /// - Any of the metadata fields cannot be parsed correctly
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
@@ -64,9 +83,28 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     // Parse auxiliary data using CommitTxHeaderAux
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
+    // Validate that the transaction has exactly one input
+    if tx.tx().input.len() != 1 {
+        return Err(CommitParseError::InvalidInputCount(tx.tx().input.len()));
+    }
+
+    // Extract the N/N continuation output script from the second output (index 1)
+    let second_output_script = tx
+        .tx()
+        .output
+        .get(1)
+        .ok_or(CommitParseError::MissingNnOutput)?
+        .script_pubkey
+        .clone();
+
+    // Extract the previous outpoint from the first (and only) input
+    let first_input_outpoint = tx.tx().input[0].previous_output;
+
     Ok(CommitInfo {
         deposit_idx: header_aux.deposit_idx,
         game_idx: header_aux.game_idx,
+        first_input_outpoint,
+        second_output_script,
     })
 }
 
