@@ -42,7 +42,7 @@ pub fn setup_test_commit_tx(
     let n_of_n_utxo_tx = create_tx_with_n_of_n_multisig_output(operators_privkeys, Amount::ZERO);
 
     // Use the prev_outpoint from commit_info (which points to the claim transaction)
-    let n_of_n_outpoint = *commit_info.prev_outpoint.outpoint();
+    let n_of_n_outpoint = commit_info.first_input_outpoint;
 
     let prev_txout = n_of_n_utxo_tx.output[0].clone();
 

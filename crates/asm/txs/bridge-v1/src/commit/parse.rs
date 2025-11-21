@@ -1,6 +1,6 @@
 use arbitrary::{Arbitrary, Unstructured};
+use bitcoin::{OutPoint, ScriptBuf};
 use strata_asm_common::TxInputRef;
-use strata_btc_types::BitcoinOutPoint;
 use strata_codec::decode_buf_exact;
 
 use crate::{commit::aux::CommitTxHeaderAux, constants::COMMIT_TX_TYPE, errors::CommitParseError};
@@ -21,10 +21,13 @@ pub struct CommitInfo {
     /// The index of the game being committed to.
     pub game_idx: u32,
 
-    /// The previous outpoint that the this transaction spends from.
-    /// For a valid commit transaction, this should be the first output (vout=0) of the claim
-    /// transaction.
-    pub prev_outpoint: BitcoinOutPoint,
+    /// The outpoint spent by the first input.
+    /// Must be validated that it spends from an N/N-locked output during transaction validation.
+    pub first_input_outpoint: OutPoint,
+
+    /// The script from the second output (index 1).
+    /// Must be validated as N/N-locked during transaction validation.
+    pub second_output_script: ScriptBuf,
 }
 
 impl<'a> Arbitrary<'a> for CommitInfo {
@@ -34,12 +37,14 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 
         // Generate arbitrary txid but ensure vout is always 0
         let txid: Txid = Buf32::arbitrary(u)?.into();
-        let prev_outpoint = BitcoinOutPoint::from(OutPoint { txid, vout: 0 });
+        let first_input_outpoint = OutPoint { txid, vout: 0 };
+        let second_output_script = ScriptBuf::new();
 
         Ok(CommitInfo {
             deposit_idx: u32::arbitrary(u)?,
             game_idx: u32::arbitrary(u)?,
-            prev_outpoint,
+            first_input_outpoint,
+            second_output_script,
         })
     }
 }
@@ -77,28 +82,31 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
         return Err(CommitParseError::InvalidTxType(tx.tag().tx_type()));
     }
 
+    // Parse auxiliary data using CommitTxHeaderAux
+    let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
+
     // Validate that the transaction has exactly one input
     if tx.tx().input.len() != 1 {
         return Err(CommitParseError::InvalidInputCount(tx.tx().input.len()));
     }
 
-    // Parse auxiliary data using CommitTxHeaderAux
-    let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
+    // Extract the N/N continuation output script from the second output (index 1)
+    let second_output_script = tx
+        .tx()
+        .output
+        .get(1)
+        .ok_or(CommitParseError::MissingNnOutput)?
+        .script_pubkey
+        .clone();
 
     // Extract the previous outpoint from the first (and only) input
-    let prev_outpoint = tx.tx().input[0].previous_output;
-
-    // Validate that the previous output index is 0 (first output of claim transaction)
-    if prev_outpoint.vout != 0 {
-        return Err(CommitParseError::InvalidPrevVout(prev_outpoint.vout));
-    }
-
-    let prev_outpoint = prev_outpoint.into();
+    let first_input_outpoint = tx.tx().input[0].previous_output;
 
     Ok(CommitInfo {
         deposit_idx: header_aux.deposit_idx,
         game_idx: header_aux.game_idx,
-        prev_outpoint,
+        first_input_outpoint,
+        second_output_script,
     })
 }
 

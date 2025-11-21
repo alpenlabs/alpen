@@ -112,6 +112,10 @@ pub enum CommitParseError {
     /// The previous output index is not 0.
     #[error("Commit transaction must spend from vout 0, got vout {0}")]
     InvalidPrevVout(u32),
+
+    /// Missing N/N continuation output at index 1.
+    #[error("Missing N/N continuation output at index 1")]
+    MissingNnOutput,
 }
 
 /// Errors that can occur during commit transaction input/output validation.

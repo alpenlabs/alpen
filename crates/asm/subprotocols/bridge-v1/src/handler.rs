@@ -40,19 +40,19 @@ pub(crate) fn handle_parsed_tx<'t>(
             state.process_withdrawal_fulfillment_tx(&info)?;
             Ok(())
         }
-        ParsedTx::Commit(info) => {
-            let prev_txout = aux_data.get_bitcoin_txout(&info.prev_outpoint.0)?;
+        ParsedTx::Commit(commit) => {
+            let prev_txout = aux_data.get_bitcoin_txout(&commit.first_input_outpoint)?;
             if !is_nn_lock(prev_txout, state.operators().agg_xonly()) {
                 todo!()
             }
 
             validate_nn_spend(
-                &info.prev_outpoint.0,
+                &commit.first_input_outpoint,
                 state.operators().agg_xonly(),
                 aux_data,
             )?;
 
-            let unlock = state.process_commit_tx(&info)?;
+            let unlock = state.process_commit_tx(&commit)?;
 
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log =
@@ -111,7 +111,7 @@ pub(crate) fn preprocess_parsed_tx<'t>(
         ParsedTx::Deposit(_) => {}
         ParsedTx::WithdrawalFulfillment(_) => {}
         ParsedTx::Commit(info) => {
-            collector.request_bitcoin_tx(info.prev_outpoint.0.txid);
+            collector.request_bitcoin_tx(info.first_input_outpoint.txid);
         }
     }
 }

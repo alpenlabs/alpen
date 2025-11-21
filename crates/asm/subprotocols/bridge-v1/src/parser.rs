@@ -52,16 +52,16 @@ pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, Bridg
     match tx.tag().tx_type() {
         DEPOSIT_TX_TYPE => {
             let info = parse_deposit_tx(tx)?;
-            let parsed_tx = ParsedDepositTx { tx: tx.tx(), info };
-            Ok(ParsedTx::Deposit(parsed_tx))
+            let deposit = ParsedDepositTx { tx: tx.tx(), info };
+            Ok(ParsedTx::Deposit(deposit))
         }
         WITHDRAWAL_FULFILLMENT_TX_TYPE => {
-            let info = parse_withdrawal_fulfillment_tx(tx)?;
-            Ok(ParsedTx::WithdrawalFulfillment(info))
+            let fulfillment = parse_withdrawal_fulfillment_tx(tx)?;
+            Ok(ParsedTx::WithdrawalFulfillment(fulfillment))
         }
         COMMIT_TX_TYPE => {
-            let info = parse_commit_tx(tx)?;
-            Ok(ParsedTx::Commit(info))
+            let commit = parse_commit_tx(tx)?;
+            Ok(ParsedTx::Commit(commit))
         }
         unsupported_type => Err(BridgeSubprotocolError::UnsupportedTxType(unsupported_type)),
     }

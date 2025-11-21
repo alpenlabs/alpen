@@ -13471,7 +13471,6 @@ dependencies = [
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "strata-asm-common",
- "strata-btc-types",
  "strata-codec",
  "strata-crypto",
  "strata-l1-txfmt",
