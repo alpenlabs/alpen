@@ -31,7 +31,5 @@
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod aux;
 mod parse;
-mod validation;
 
 pub use parse::{COMMIT_TX_AUX_DATA_LEN, CommitInfo, parse_commit_tx};
-pub use validation::{CLAIM_OUTPUT_INDEX, COMMIT_NN_OUTPUT_INDEX, validate_commit_nn_output};
