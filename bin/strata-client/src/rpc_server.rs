@@ -17,7 +17,9 @@ use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
 use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
-use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
+use strata_consensus_logic::{
+    checkpoint_verification::verify_proof_receipt_against_checkpoint, sync_manager::SyncManager,
+};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Payload, PayloadDest, PayloadIntent};
 use strata_db::types::{CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus};
 use strata_l1_txfmt::TagData;
@@ -800,7 +802,12 @@ impl StrataSequencerApiServer for SequencerServerImpl {
             }
 
             let checkpoint = entry.clone().into_batch_checkpoint();
-            verify_proof(&checkpoint, &proof_receipt, self.params.rollup()).map_err(|e| {
+            verify_proof_receipt_against_checkpoint(
+                &checkpoint,
+                &proof_receipt,
+                self.params.rollup(),
+            )
+            .map_err(|e| {
                 warn!("proof is invalid");
                 Error::InvalidProof(ckpt, e.to_string())
             })?;

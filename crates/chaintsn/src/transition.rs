@@ -17,7 +17,7 @@ use strata_primitives::{
 };
 use strata_state::exec_update::{self, Op};
 use tracing::warn;
-use zkaleido::ZkVmResult;
+use zkaleido::{ProofReceipt, ZkVmResult};
 
 use crate::{
     checkin::{process_l1_view_update, SegmentAuxData},
@@ -170,7 +170,8 @@ fn process_l1_checkpoint(
     if ckpt_epoch != ckpt.batch_info().epoch() {
         return Err(OpError::MalformedCheckpoint);
     }
-    verify_checkpoint_proof(ckpt, params).map_err(|_| OpError::InvalidProof)?;
+    let proof_receipt = ckpt.construct_receipt();
+    verify_checkpoint_proof(ckpt, &proof_receipt, params).map_err(|_| OpError::InvalidProof)?;
 
     // Copy the epoch commitment and make it finalized.
     let _old_fin_epoch = state.state().finalized_epoch();
@@ -192,10 +193,10 @@ fn process_l1_checkpoint(
 // FIXME this does not belong here, it should be in a more general module probably
 pub fn verify_checkpoint_proof(
     checkpoint: &Checkpoint,
+    proof_receipt: &ProofReceipt,
     rollup_params: &RollupParams,
 ) -> ZkVmResult<()> {
     let checkpoint_idx = checkpoint.batch_info().epoch();
-    let proof_receipt = checkpoint.construct_receipt();
 
     // FIXME: we are accepting empty proofs for now (devnet) to reduce dependency on the prover
     // infra.
@@ -207,7 +208,7 @@ pub fn verify_checkpoint_proof(
         return Ok(());
     }
 
-    verify_rollup_groth16_proof_receipt(&proof_receipt, rollup_params.rollup_vk())
+    verify_rollup_groth16_proof_receipt(proof_receipt, rollup_params.rollup_vk())
 }
 
 /// Checks if the given checkpoint is null based on previous finalized epoch. A checkpoint is
