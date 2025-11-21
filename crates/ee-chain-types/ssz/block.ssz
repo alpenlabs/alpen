@@ -8,6 +8,7 @@ MAX_OUTPUT_MESSAGES = 1 << 16
 class ExecBlockCommitment(Container):
     ### Block ID as interpreted by the execution environment (e.g., EVM block hash)
     exec_blkid: Bytes32
+
     ### Hash of the encoded block bytes for verification without parsing
     raw_block_encoded_hash: Bytes32
 
@@ -15,6 +16,7 @@ class ExecBlockCommitment(Container):
 class SubjectDepositData(Container):
     ### Destination subject ID within the execution environment
     dest: strata_acct_types.SubjectId
+
     ### Native asset value deposited (satoshis)
     value: strata_acct_types.BitcoinAmount
 
@@ -27,6 +29,7 @@ class BlockInputs(Container):
 class OutputTransfer(Container):
     ### Destination orchestration layer account ID
     dest: strata_acct_types.AccountId
+
     ### Native asset value transferred (satoshis)
     value: strata_acct_types.BitcoinAmount
 
@@ -34,14 +37,18 @@ class OutputTransfer(Container):
 class BlockOutputs(Container):
     ### Native asset transfers to OL accounts
     output_transfers: List[OutputTransfer, MAX_OUTPUT_TRANSFERS]
+
     ### Messages sent to OL accounts (with data payload)
+    #~# external_kind: container
     output_messages: List[strata_acct_types.SentMessage, MAX_OUTPUT_MESSAGES]
 
 ### Container for an execution block with its commitment, inputs, and outputs.
 class ExecBlockPackage(Container):
     ### Commitment to the block itself (exec_blkid + raw hash)
     commitment: ExecBlockCommitment
+
     ### Inputs processed in this block (deposits, etc.)
     inputs: BlockInputs
+
     ### Outputs produced in this block (transfers, messages)
     outputs: BlockOutputs

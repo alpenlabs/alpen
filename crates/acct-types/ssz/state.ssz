@@ -7,8 +7,10 @@ MAX_ENCODED_ACCOUNT_INNER_STATE_BYTES = 1 << 16
 class AccountIntrinsicState(Container):
     ### Account type, which determines how we interact with it.
     raw_ty: uint16
+
     ### Account serial number.
     serial: strata_identifiers.AccountSerial
+
     ### Native asset (satoshi) balance.
     balance: strata_btc_types.BitcoinAmount
 

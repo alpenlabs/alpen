@@ -12,6 +12,7 @@ class MsgPayload(Container):
 class SentMessage(Container):
     ### Destination orchestration layer account ID.
     dest: strata_identifiers.AccountId
+
     ### Message payload.
     payload: MsgPayload
 
