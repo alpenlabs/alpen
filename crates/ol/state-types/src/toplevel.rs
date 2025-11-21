@@ -2,7 +2,7 @@
 
 use bitcoin::absolute;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
-use strata_codec::{Codec, encode_to_vec};
+use strata_codec::encode_to_vec;
 use strata_codec_derive::Codec;
 use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, OLBlockId, hash::raw};
 use strata_ledger_types::{AccountTypeState, EpochCommitment, StateAccessor};
@@ -120,9 +120,9 @@ impl StateAccessor for OLState {
     fn compute_state_root(&self) -> AcctResult<Buf32> {
         // Compute the state root by hashing the Codec encoding of the state
         // For now, we'll panic on encoding errors as they shouldn't happen in practice
-        let encoded = encode_to_vec(self).expect("state encoding should always succeed");
+        // TODO change this to use SSZ
+        let encoded = encode_to_vec(self).expect("ol/state: encode");
         let hash = raw(&encoded);
         Ok(hash)
     }
 }
-

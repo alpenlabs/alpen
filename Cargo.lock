@@ -14433,6 +14433,7 @@ dependencies = [
  "strata-asm-common",
  "strata-codec",
  "strata-codec-derive",
+ "strata-codec-utils",
  "strata-identifiers",
  "strata-snark-acct-types",
 ]
@@ -14485,13 +14486,16 @@ name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "strata-acct-types",
  "strata-codec",
  "strata-codec-derive",
+ "strata-codec-utils",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
  "strata-snark-acct-types",
+ "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
 ]
 
 [[package]]

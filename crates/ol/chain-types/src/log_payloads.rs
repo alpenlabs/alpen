@@ -1,7 +1,6 @@
 //! Log payload types for orchestration layer logs.
 
 use strata_acct_types::VarVec;
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_derive::Codec;
 
 /// Payload for a simple withdrawal intent log.
@@ -10,9 +9,10 @@ use strata_codec_derive::Codec;
 /// It contains the withdrawal amount and destination information.
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct SimpleWithdrawalIntentLogData {
-    /// Amount to withdraw (in satoshis).
+    /// Amount being withdrawn (sats).
     pub amt: u64,
-    /// Destination address or script (BOSD - Bitcoin Output Script Descriptor).
+
+    /// Destination BOSD.
     pub dest: VarVec<u8>,
 }
 
@@ -34,7 +34,6 @@ impl SimpleWithdrawalIntentLogData {
     }
 }
 
-
 /// Payload for a snark account update log.
 ///
 /// This log is emitted when a snark account is updated through a transaction.
@@ -44,6 +43,7 @@ impl SimpleWithdrawalIntentLogData {
 pub struct SnarkAccountUpdateLogData {
     /// The new message index (sequence number) after the update.
     pub new_msg_idx: u64,
+
     /// Extra data from the update operation.
     pub extra_data: VarVec<u8>,
 }
@@ -69,11 +69,11 @@ impl SnarkAccountUpdateLogData {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use strata_codec::{decode_buf_exact, encode_to_vec};
+
+    use super::*;
 
     #[test]
     fn test_simple_withdrawal_intent_log_data_codec() {

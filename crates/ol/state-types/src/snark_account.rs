@@ -1,10 +1,11 @@
 use strata_acct_types::{AcctResult, Hash, Mmr64};
-use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_derive::Codec;
-use strata_identifiers::hash::raw;
+use strata_codec_utils::CodecSsz;
 use strata_ledger_types::ISnarkAccountState;
-use strata_merkle::CompactMmr64;
+use strata_merkle::CompactMmr64B32;
 use strata_snark_acct_types::{MessageEntry, Seqno};
+use tree_hash::TreeHash;
 
 #[derive(Clone, Debug)]
 pub struct NativeSnarkAccountState {
@@ -62,12 +63,11 @@ impl ISnarkAccountState for NativeSnarkAccountState {
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
-        // Encode the entry and hash it
-        let encoded = encode_to_vec(&entry).expect("message entry encoding should succeed");
-        let hash = raw(&encoded);
-
-        // Add the hash to the MMR
-        self.inbox_mmr.add_leaf(hash.into()).expect("MMR add_leaf should succeed");
+        // TODO maybe document this a little better?
+        let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
+        self.inbox_mmr
+            .add_leaf(hash.into_inner())
+            .expect("ol/state: mmr add_leaf");
         Ok(())
     }
 }
@@ -101,10 +101,10 @@ impl Codec for NativeSnarkAccountState {
         self.seqno.encode(enc)?;
         self.proof_state.encode(enc)?;
 
-        // Convert the MMR to its compact form and encode it
-        // The compact form contains number of entries and peak hashes
-        let compact: CompactMmr64<[u8; 32]> = self.inbox_mmr.clone().into();
-        compact.encode(enc)?;
+        // Convert Mmr64 to CompactMmr64B32 and encode it using CodecSsz wrapper
+        let compact_mmr = self.inbox_mmr.to_compact();
+        let wrapped_mmr = CodecSsz::new(compact_mmr);
+        wrapped_mmr.encode(enc)?;
 
         Ok(())
     }
@@ -113,9 +113,10 @@ impl Codec for NativeSnarkAccountState {
         let seqno = Seqno::decode(dec)?;
         let proof_state = ProofState::decode(dec)?;
 
-        // Decode the compact MMR and convert it back to full MMR
-        let compact = CompactMmr64::<[u8; 32]>::decode(dec)?;
-        let inbox_mmr: Mmr64 = compact.into();
+        // Decode the CompactMmr64B32 using CodecSsz wrapper and convert back to Mmr64
+        let wrapped_mmr: CodecSsz<CompactMmr64B32> = CodecSsz::decode(dec)?;
+        let compact_mmr = wrapped_mmr.inner();
+        let inbox_mmr = Mmr64::from_compact(compact_mmr);
 
         Ok(Self {
             seqno,

@@ -1,6 +1,5 @@
 //! Global state variables that are always accessible.
 
-use strata_codec::Codec;
 use strata_codec_derive::Codec;
 use strata_ledger_types::IGlobalState;
 
@@ -30,4 +29,3 @@ impl IGlobalState for GlobalState {
         self.cur_slot = slot;
     }
 }
-

@@ -4,6 +4,7 @@ use int_enum::IntEnum;
 use strata_acct_types::{AccountId, VarVec};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_derive::Codec;
+use strata_codec_utils::CodecSsz;
 use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 use crate::Slot;
@@ -131,6 +132,7 @@ impl Codec for TransactionAttachment {
                 false.encode(enc)?;
             }
         }
+
         match self.max_slot {
             Some(slot) => {
                 true.encode(enc)?;
@@ -140,6 +142,7 @@ impl Codec for TransactionAttachment {
                 false.encode(enc)?;
             }
         }
+
         Ok(())
     }
 
@@ -204,14 +207,14 @@ impl GamTxPayload {
 #[derive(Clone, Debug, Codec)]
 pub struct SnarkAccountUpdateTxPayload {
     target: AccountId,
-    update_container: SnarkAccountUpdateContainer,
+    update_container: CodecSsz<SnarkAccountUpdateContainer>,
 }
 
 impl SnarkAccountUpdateTxPayload {
     pub fn new(target: AccountId, update_container: SnarkAccountUpdateContainer) -> Self {
         Self {
             target,
-            update_container,
+            update_container: CodecSsz::new(update_container),
         }
     }
 
@@ -220,6 +223,6 @@ impl SnarkAccountUpdateTxPayload {
     }
 
     pub fn update_container(&self) -> &SnarkAccountUpdateContainer {
-        &self.update_container
+        self.update_container.inner()
     }
 }

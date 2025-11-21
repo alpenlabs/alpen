@@ -1,7 +1,5 @@
 //! Update message types.
 
-use strata_acct_types::VarVec;
-
 use crate::ssz_generated::ssz::{
     accumulators::*, messages::*, outputs::UpdateOutputs, state::ProofState, update::*,
 };
