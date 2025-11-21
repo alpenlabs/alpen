@@ -88,6 +88,11 @@ impl BridgeV1State {
         &self.assignments
     }
 
+    /// Returns a reference to the fulfillments table.
+    pub fn fulfillments(&self) -> &FulfillmentTable {
+        &self.fulfillments
+    }
+
     /// Validates a deposit transaction and info against bridge state requirements.
     ///
     /// This function performs comprehensive validation of a deposit by verifying:

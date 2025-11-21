@@ -6,9 +6,7 @@
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use moho_types::ExportEntry;
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::OperatorIdx;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
 /// Command specifying a Bitcoin output for a withdrawal operation.
