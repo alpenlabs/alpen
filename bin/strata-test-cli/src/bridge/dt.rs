@@ -4,20 +4,20 @@
 //! All transaction structure and OP_RETURN construction is handled by asm/txs/bridge-v1.
 
 use bdk_wallet::bitcoin::{
-    Amount, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
     consensus::deserialize,
     hashes::Hash,
     opcodes::all::{OP_CHECKSIGVERIFY, OP_CSV},
     script::Builder,
     sighash::{Prevouts, SighashCache},
     taproot::LeafVersion,
+    Amount, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
 };
 use secp256k1::SECP256K1;
 use strata_asm_txs_bridge_v1::{
     deposit_request::parse_drt_from_tx,
     test_utils::{build_deposit_transaction, create_deposit_op_return},
 };
-use strata_crypto::{EvenSecretKey, test_utils::schnorr::create_musig2_signature};
+use strata_crypto::{test_utils::schnorr::create_musig2_signature, EvenSecretKey};
 use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use crate::{
@@ -50,8 +50,8 @@ pub(crate) fn create_deposit_transaction_cli(
     operator_keys: Vec<[u8; 78]>,
     dt_index: u32,
 ) -> Result<Vec<u8>, Error> {
-    let drt_tx = deserialize(&tx_bytes)
-        .map_err(|e| Error::TxParser(format!("Failed to parse DRT: {e}")))?;
+    let drt_tx =
+        deserialize(&tx_bytes).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {e}")))?;
 
     let signers = parse_operator_keys(&operator_keys)
         .map_err(|e| Error::TxBuilder(format!("Failed to parse operator keys: {e}")))?;
@@ -61,8 +61,8 @@ pub(crate) fn create_deposit_transaction_cli(
         .map(|kp| Buf32::from(kp.x_only_public_key(SECP256K1).0))
         .collect::<Vec<_>>();
 
-    let (_address, agg_pubkey) = generate_taproot_address(&pubkeys, NETWORK)
-        .map_err(|e| Error::TxBuilder(e.to_string()))?;
+    let (_address, agg_pubkey) =
+        generate_taproot_address(&pubkeys, NETWORK).map_err(|e| Error::TxBuilder(e.to_string()))?;
 
     let drt_data = parse_drt_from_tx(&drt_tx, MAGIC_BYTES)
         .map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
@@ -71,13 +71,9 @@ pub(crate) fn create_deposit_transaction_cli(
     let takeback_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
 
     // Use canonical OP_RETURN construction from asm/txs/bridge-v1
-    let op_return_script = create_deposit_op_return(
-        *MAGIC_BYTES,
-        dt_index,
-        takeback_hash,
-        &drt_data.address,
-    )
-    .map_err(|e| Error::TxBuilder(e))?;
+    let op_return_script =
+        create_deposit_op_return(*MAGIC_BYTES, dt_index, takeback_hash, &drt_data.address)
+            .map_err(Error::TxBuilder)?;
 
     // Build deposit transaction using canonical builder
     let unsigned_tx = build_deposit_transaction(

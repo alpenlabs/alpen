@@ -23,14 +23,9 @@
 //!
 //! 2. **P2TR Deposit Request Output (Index 1)** (required): The deposit being locked:
 //!    - Pay-to-Taproot script with aggregated N-of-N operator key as internal key
-//!    - Taproot merkle root commits to single takeback tapscript:
-//!      ```text
-//!      <depositor's xonly public key>
-//!      OP_CHECKSIGVERIFY
-//!      <D>
-//!      OP_CSV
-//!      ```
-//!      where D is the number of blocks before depositor can reclaim funds
+//!    - Taproot merkle root commits to single takeback tapscript: ```text <depositor's xonly public
+//!      key> OP_CHECKSIGVERIFY <D> OP_CSV ``` where D is the number of blocks before depositor can
+//!      reclaim funds
 //!    - Contains `d + dep_fee` sats (deposit amount + mining fee for deposit transaction)
 //!
 //! 3. **Change Output** (optional): Returns excess funds to user-controlled address
@@ -45,6 +40,6 @@ pub mod build;
 pub mod parse;
 
 pub use build::DepositRequestMetadata;
-pub use parse::{parse_drt, parse_drt_from_tx, MIN_DRT_AUX_DATA_LEN};
+pub use parse::{MIN_DRT_AUX_DATA_LEN, parse_drt, parse_drt_from_tx};
 
 pub use crate::errors::{DepositRequestBuildError, DepositRequestParseError};

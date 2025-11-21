@@ -1,7 +1,8 @@
 //! DRT parsing using SPS-50 format.
 //!
 //! SPS-50 structure:
-//! - OP_RETURN: [MAGIC (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][RECOVERY_PK (32)][EE_ADDRESS (variable)]
+//! - OP_RETURN: [MAGIC (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][RECOVERY_PK (32)][EE_ADDRESS
+//!   (variable)]
 
 use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
@@ -15,7 +16,9 @@ const RECOVERY_PK_LEN: usize = 32;
 /// Minimum length of auxiliary data for deposit request transactions
 pub const MIN_DRT_AUX_DATA_LEN: usize = RECOVERY_PK_LEN;
 
-pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, DepositRequestParseError> {
+pub fn parse_drt(
+    tx_input: &TxInputRef<'_>,
+) -> Result<DepositRequestInfo, DepositRequestParseError> {
     if tx_input.tag().tx_type() != DEPOSIT_REQUEST_TX_TYPE {
         return Err(DepositRequestParseError::InvalidTxType {
             actual: tx_input.tag().tx_type(),
@@ -26,7 +29,9 @@ pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, Deposi
     let aux_data = tx_input.tag().aux_data();
 
     if aux_data.len() < MIN_DRT_AUX_DATA_LEN {
-        return Err(DepositRequestParseError::InvalidAuxiliaryData(aux_data.len()));
+        return Err(DepositRequestParseError::InvalidAuxiliaryData(
+            aux_data.len(),
+        ));
     }
 
     let (recovery_pk_bytes, ee_address) = aux_data.split_at(RECOVERY_PK_LEN);
@@ -93,14 +98,19 @@ mod tests {
         test_utils::{create_tagged_payload, mutate_op_return_output, parse_tx},
     };
 
-    fn create_test_drt_tx(recovery_pk: [u8; 32], ee_address: &[u8], amount_sats: u64) -> Transaction {
+    fn create_test_drt_tx(
+        recovery_pk: [u8; 32],
+        ee_address: &[u8],
+        amount_sats: u64,
+    ) -> Transaction {
         // Build aux_data
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&recovery_pk);
         aux_data.extend_from_slice(ee_address);
 
         // Create tagged payload using test utils helper
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
+        let tagged_payload =
+            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
 
         // Create base transaction
         let mut tx = Transaction {
@@ -197,7 +207,8 @@ mod tests {
         let aux_data = vec![0x05; 10];
 
         // Create tagged payload with insufficient aux_data
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
+        let tagged_payload =
+            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
 
         let mut tx = Transaction {
             version: Version::TWO,

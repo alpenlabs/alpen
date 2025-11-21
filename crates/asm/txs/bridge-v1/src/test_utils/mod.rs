@@ -9,13 +9,9 @@ pub use commit::create_test_commit_tx;
 pub use deposit::create_test_deposit_tx;
 pub use utils::{mutate_aux_data, parse_tx};
 pub use withdrawal_fulfillment::create_test_withdrawal_fulfillment_tx;
-
 // Withdrawal transaction builders
 pub use withdrawal_fulfillment::{
     WithdrawalInput, WithdrawalMetadata, WithdrawalTxBuilderError,
     create_simple_withdrawal_fulfillment_tx, create_withdrawal_fulfillment_tx,
     create_withdrawal_op_return,
 };
-
-// Utility functions
-pub use utils::{create_tagged_payload, mutate_op_return_output, parse_tx};

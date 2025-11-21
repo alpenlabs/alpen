@@ -151,9 +151,7 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
         };
 
         deposit_ent.set_state(DepositState::Fulfilled(FulfilledState::new(
-            oidx,
-            winfo.amt,
-            winfo.txid,
+            oidx, winfo.amt, winfo.txid,
         )));
     }
 

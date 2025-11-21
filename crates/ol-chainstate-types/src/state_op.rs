@@ -294,9 +294,7 @@ impl StateCache {
         };
 
         deposit_ent.set_state(DepositState::Fulfilled(FulfilledState::new(
-            oidx,
-            winfo.amt,
-            winfo.txid,
+            oidx, winfo.amt, winfo.txid,
         )));
     }
 

@@ -4,10 +4,8 @@
 //! withdrawal fulfillment transactions.
 
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
-    absolute::LockTime,
-    script::PushBytesBuf,
-    transaction::Version,
+    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
+    script::PushBytesBuf, transaction::Version,
 };
 use strata_codec::encode_to_vec;
 use strata_l1_txfmt::{ParseConfig, TagData};
@@ -165,7 +163,13 @@ pub fn create_simple_withdrawal_fulfillment_tx(
     withdrawal_amount: Amount,
     input: WithdrawalInput,
 ) -> Result<Transaction, WithdrawalTxBuilderError> {
-    create_withdrawal_fulfillment_tx(metadata, recipient_script, withdrawal_amount, vec![input], None)
+    create_withdrawal_fulfillment_tx(
+        metadata,
+        recipient_script,
+        withdrawal_amount,
+        vec![input],
+        None,
+    )
 }
 
 /// Creates a withdrawal fulfillment transaction for testing purposes
@@ -179,8 +183,8 @@ pub fn create_simple_withdrawal_fulfillment_tx(
 /// The transaction is fully compatible with the SPS-50 parser and can be parsed by `ParseConfig`.
 ///
 /// # Arguments
-/// * `withdrawal_info` - The withdrawal information specifying operator, deposit details,
-///   recipient address, and withdrawal amount
+/// * `withdrawal_info` - The withdrawal information specifying operator, deposit details, recipient
+///   address, and withdrawal amount
 ///
 /// # Returns
 /// A `Transaction` that follows the SPS-50 specification, ready for use in tests
@@ -232,8 +236,12 @@ pub fn create_withdrawal_op_return(
     let aux_data = metadata.aux_data();
 
     // Create SPS-50 tagged data
-    let tag_data = TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_FULFILLMENT_TX_TYPE, &aux_data)
-        .map_err(|e| WithdrawalTxBuilderError::TxFmt(e.to_string()))?;
+    let tag_data = TagDataRef::new(
+        BRIDGE_V1_SUBPROTOCOL_ID,
+        WITHDRAWAL_FULFILLMENT_TX_TYPE,
+        &aux_data,
+    )
+    .map_err(|e| WithdrawalTxBuilderError::TxFmt(e.to_string()))?;
 
     // Encode to OP_RETURN script using ParseConfig
     let op_return_script = ParseConfig::new(metadata.tag)
@@ -267,10 +275,9 @@ mod tests {
 
     #[test]
     fn test_create_simple_withdrawal_tx() {
-        let txid = Txid::from_str(
-            "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c",
-        )
-        .unwrap();
+        let txid =
+            Txid::from_str("ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c")
+                .unwrap();
 
         let metadata = WithdrawalMetadata::new(*b"TEST", 2);
 
@@ -307,10 +314,9 @@ mod tests {
 
     #[test]
     fn test_create_withdrawal_tx_with_change() {
-        let txid = Txid::from_str(
-            "ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c",
-        )
-        .unwrap();
+        let txid =
+            Txid::from_str("ae86b8c8912594427bf148eb7660a86378f2fb4ac9c8d2ea7d3cb7f3fcfd7c1c")
+                .unwrap();
 
         let metadata = WithdrawalMetadata::new(*b"TEST", 2);
 

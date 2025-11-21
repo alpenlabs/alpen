@@ -37,7 +37,9 @@ pub enum DepositRequestParseError {
     InvalidTxType { actual: u8, expected: u8 },
 
     /// The auxiliary data in the deposit request transaction tag has insufficient length.
-    #[error("Invalid auxiliary data length: expected at least {MIN_DRT_AUX_DATA_LEN} bytes, got {0} bytes")]
+    #[error(
+        "Invalid auxiliary data length: expected at least {MIN_DRT_AUX_DATA_LEN} bytes, got {0} bytes"
+    )]
     InvalidAuxiliaryData(usize),
 
     /// Transaction is missing the required P2TR deposit request output at index 1.

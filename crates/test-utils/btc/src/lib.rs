@@ -15,7 +15,7 @@ use bitcoin::{
     Transaction, TxIn, TxOut, Witness,
 };
 use strata_asm_txs_bridge_v1::constants::{
-    BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_TX_TYPE,
+    BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE,
 };
 use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
@@ -65,8 +65,8 @@ pub fn get_btc_mainnet_block() -> Block {
 ///
 /// Generates a dummy input referencing a random previous output, and constructs a
 /// transaction with two outputs:
-/// - Output[0]: An OP_RETURN output using `opreturn_script` with zero value (metadata).
-/// - Output[1]: A payment to `out_script_pubkey` with the specified amount (deposit).
+/// - Output\[0\]: An OP_RETURN output using `opreturn_script` with zero value (metadata).
+/// - Output\[1\]: A payment to `out_script_pubkey` with the specified amount (deposit).
 ///
 /// The input is signed using Taproot key spend with `SIGHASH_DEFAULT`, and the address
 /// is derived from the provided `keypair` and `tapnode_hash`.
@@ -303,7 +303,7 @@ pub fn create_opreturn_metadata(
     // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
     let mut data = magic.to_vec();
     data.push(BRIDGE_V1_SUBPROTOCOL_ID);
-    data.push(WITHDRAWAL_TX_TYPE);
+    data.push(WITHDRAWAL_FULFILLMENT_TX_TYPE);
     data.extend(aux_data);
 
     Descriptor::new_op_return(&data).unwrap().to_script()

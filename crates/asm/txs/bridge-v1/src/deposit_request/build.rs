@@ -14,7 +14,7 @@ use crate::{
 /// Contains the information needed to create the OP_RETURN output for
 /// a deposit request transaction following the SPS-50 specification.
 ///
-/// SPS-50 format: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][RECOVERY_PK (32)][EE_ADDRESS]
+/// SPS-50 format: \[MAGIC\]\[SUBPROTOCOL_ID\]\[TX_TYPE\]\[RECOVERY_PK (32)\]\[EE_ADDRESS\]
 #[derive(Debug, Clone)]
 pub struct DepositRequestMetadata {
     recovery_pk: [u8; 32],
@@ -26,7 +26,9 @@ impl<'a> Arbitrary<'a> for DepositRequestMetadata {
         let recovery_pk = <[u8; 32]>::arbitrary(u)?;
         // Generate address between 20 and 64 bytes (reasonable range for EE addresses)
         let addr_len = u.int_in_range(20..=64)?;
-        let ee_address = (0..addr_len).map(|_| u8::arbitrary(u)).collect::<Result<Vec<_>, _>>()?;
+        let ee_address = (0..addr_len)
+            .map(|_| u8::arbitrary(u))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(DepositRequestMetadata {
             recovery_pk,
@@ -51,13 +53,17 @@ impl DepositRequestMetadata {
     ///
     /// # Returns
     /// Complete OP_RETURN payload including magic bytes, protocol markers, and auxiliary data
-    pub fn op_return_data(&self, magic_bytes: [u8; 4]) -> Result<Vec<u8>, DepositRequestBuildError> {
+    pub fn op_return_data(
+        &self,
+        magic_bytes: [u8; 4],
+    ) -> Result<Vec<u8>, DepositRequestBuildError> {
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&self.recovery_pk);
         aux_data.extend_from_slice(&self.ee_address);
 
-        let tag_data = TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, &aux_data)
-            .map_err(|e| DepositRequestBuildError::TxFmt(e.to_string()))?;
+        let tag_data =
+            TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, &aux_data)
+                .map_err(|e| DepositRequestBuildError::TxFmt(e.to_string()))?;
 
         let parse_config = ParseConfig::new(magic_bytes);
         let data = parse_config
@@ -102,7 +108,8 @@ mod tests {
 
         let op_return_data = metadata.op_return_data(magic).unwrap();
 
-        // Verify total length: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) + address
+        // Verify total length: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) +
+        // address
         let expected_len = 4 + 1 + 1 + 32 + metadata.ee_address().len();
         assert_eq!(op_return_data.len(), expected_len);
 

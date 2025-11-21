@@ -7,12 +7,14 @@ use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
 };
-use strata_asm_txs_bridge_v1::test_utils::{WithdrawalMetadata, create_withdrawal_op_return};
+use strata_asm_txs_bridge_v1::test_utils::{create_withdrawal_op_return, WithdrawalMetadata};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use super::types::BitcoinDConfig;
 use crate::{
-    constants::MAGIC_BYTES, error::Error, taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+    constants::MAGIC_BYTES,
+    error::Error,
+    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
 /// Creates a withdrawal fulfillment transaction (CLI wrapper)

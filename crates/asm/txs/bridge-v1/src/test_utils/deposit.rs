@@ -1,8 +1,8 @@
 //! Minimal deposit transaction builders for testing
 
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType, Transaction, Txid, TxIn,
-    TxOut, Witness, XOnlyPublicKey,
+    Amount, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType, Transaction, TxIn, TxOut,
+    Txid, Witness, XOnlyPublicKey,
     absolute::LockTime,
     hashes::Hash,
     script::PushBytesBuf,
@@ -16,6 +16,7 @@ use strata_crypto::{
     EvenSecretKey,
     test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
+use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE},
@@ -81,7 +82,8 @@ pub fn create_test_deposit_tx(
         .unwrap();
 
     let msg = sighash.to_byte_array();
-    let signature = create_musig2_signature(operators_privkeys, &msg, Some(merkle_root.to_byte_array()));
+    let signature =
+        create_musig2_signature(operators_privkeys, &msg, Some(merkle_root.to_byte_array()));
 
     Transaction {
         version: unsigned_tx.version,
@@ -131,7 +133,8 @@ pub fn build_deposit_transaction(
         .finalize(&secp, agg_pubkey)
         .expect("Taproot finalization cannot fail with no scripts");
     let merkle_root = spend_info.merkle_root();
-    let bridge_address = bitcoin::Address::p2tr(&secp, agg_pubkey, merkle_root, bitcoin::Network::Regtest);
+    let bridge_address =
+        bitcoin::Address::p2tr(&secp, agg_pubkey, merkle_root, bitcoin::Network::Regtest);
 
     let tx_outs = vec![
         TxOut {
@@ -212,4 +215,3 @@ pub fn create_deposit_op_return(
 
     Ok(op_return_script)
 }
-

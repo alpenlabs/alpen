@@ -2,7 +2,9 @@ use bdk_wallet::bitcoin::{bip32::Xpriv, Network, PublicKey, XOnlyPublicKey};
 use secp256k1::SECP256K1;
 use strata_crypto::EvenSecretKey;
 use strata_l1tx::utils::generate_taproot_address as generate_taproot_address_impl;
-use strata_primitives::{buf::Buf32, constants::STRATA_OP_WALLET_DERIVATION_PATH, l1::BitcoinAddress};
+use strata_primitives::{
+    buf::Buf32, constants::STRATA_OP_WALLET_DERIVATION_PATH, l1::BitcoinAddress,
+};
 
 use crate::error::Error;
 

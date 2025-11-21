@@ -7,8 +7,8 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-asm-types.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
+strata-asm-types.workspace = true
 strata-bridge-types = { workspace = true, features = ["test_utils"] }
 strata-btcio.workspace = true
 strata-params.workspace = true
