@@ -1,0 +1,82 @@
+import strata_acct_types
+import accumulators
+import messages
+import outputs
+import state
+
+MAX_PROCESSED_MESSAGES = 2 << 15
+MAX_LEDGER_REFS = 2 << 15
+
+### 2 MB limit for update proof
+MAX_UPDATE_PROOF_BYTES = 2 << 20
+
+### Max extra data bytes
+MAX_EXTRA_DATA_BYTES = 2 << 20
+
+### Describes references to entries in accumulators available in the ledger.
+### Generated from LedgerRefProofs.
+class LedgerRefs(Container):
+    l1_header_refs: List[accumulators.AccumulatorClaim, MAX_LEDGER_REFS]
+
+### Container for references to ledger accumulators with proofs.
+class LedgerRefProofs(Container):
+    l1_headers_proofs: List[accumulators.MmrEntryProof, MAX_LEDGER_REFS]
+
+### Represents the state update that will eventually go into DA on OL.
+class UpdateStateData(Container):
+    ### The new state we're claiming.
+    proof_state: state.ProofState
+
+    ### Arbitrary data we persist in DA.  This is formatted according to the
+    ### needs of the snark account's application.
+    extra_data: List[uint8, MAX_EXTRA_DATA_BYTES]
+
+### Represents the input sufficient to perform a state update.
+class UpdateInputData(Container):
+    ### Sequence number to prevent replays, since we can't just rely on message
+    ### index.
+    seq_no: uint64
+
+    ### Messages we processed from the inbox.
+    messages: List[messages.MessageEntry, MAX_PROCESSED_MESSAGES]
+
+    ### State update.
+    update_state: UpdateStateData
+
+### Description of the operation of what we're updating.
+class UpdateOperationData(Container):
+    ### State update inputs.
+    input: UpdateInputData
+
+    ### Ledger references we're making.
+    ledger_refs: LedgerRefs
+
+    ### Outputs we're emitting to update the ledger.
+    outputs: outputs.UpdateOutputs
+
+### Snark account update with ZK proof of correctness.
+class SnarkAccountUpdate(Container):
+    ### The update operation data.
+    operation: UpdateOperationData
+
+    ### ZK proof of the state transition.
+    update_proof: List[uint8, MAX_UPDATE_PROOF_BYTES]
+
+### Merkle proofs for update accumulators.
+class UpdateAccumulatorProofs(Container):
+    ### Proofs for inbox messages.
+    inbox_proofs: List[messages.MessageEntryProof, MAX_PROCESSED_MESSAGES]
+
+    ### Proofs for ledger references.
+    ledger_ref_proofs: LedgerRefProofs
+
+### Container for a snark account update with the contextual relevant proofs.
+### This is what is contained in the OL block.
+class SnarkAccountUpdateContainer(Container):
+    ### The base update data with proof which can be checked independently.
+    base_update: SnarkAccountUpdate
+
+    ### Proofs for the "context" around the ledger that we're operating on,
+    ### which may need to be updated according to the recent state if it was
+    ### provided for an older one.
+    accumulator_proofs: UpdateAccumulatorProofs

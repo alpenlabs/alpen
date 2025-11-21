@@ -1,8 +1,6 @@
 //! Proof interface types.
 
-use crate::{
-    messages::MessageEntry, outputs::UpdateOutputs, state::ProofState, update::LedgerRefs,
-};
+use crate::{LedgerRefs, MessageEntry, ProofState, UpdateOutputs};
 
 /// Public params that we provide as the claim the proof must prove the relate
 /// to each other correctly.
@@ -31,11 +29,11 @@ pub struct UpdateProofPubParams {
 
 impl UpdateProofPubParams {
     pub fn cur_state(&self) -> ProofState {
-        self.cur_state
+        self.cur_state.clone()
     }
 
     pub fn new_state(&self) -> ProofState {
-        self.new_state
+        self.new_state.clone()
     }
 
     pub fn message_inputs(&self) -> &[MessageEntry] {

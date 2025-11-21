@@ -1,0 +1,18 @@
+import strata_acct_types
+
+### Claim that an entry exists in a linear accumulator at some index
+class AccumulatorClaim(Container):
+    ### Index in the accumulator
+    idx: uint64
+
+    ### Hash of the entry
+    entry_hash: Bytes32
+
+### Claim with proof for an entry in an MMR
+class MmrEntryProof(Container):
+    ### Hash of the entry being proven
+    entry_hash: Bytes32
+
+    ### Merkle proof for the entry
+    #~# external_kind: container
+    proof: strata_acct_types.MerkleProof

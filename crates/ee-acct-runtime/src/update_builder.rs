@@ -99,20 +99,24 @@ impl UpdateBuilder {
             total_inputs_consumed += block_inputs.total_inputs();
 
             // Add transfers
-            self.accumulated_outputs.transfers_mut().extend(
-                block_outputs
-                    .output_transfers()
-                    .iter()
-                    .map(|t| OutputTransfer::new(t.dest(), t.value())),
-            );
+            self.accumulated_outputs
+                .try_extend_transfers(
+                    block_outputs
+                        .output_transfers()
+                        .iter()
+                        .map(|t| OutputTransfer::new(t.dest(), t.value())),
+                )
+                .expect("transfers capacity exceeded in test builder");
 
             // Add messages (converting payload types)
-            self.accumulated_outputs.messages_mut().extend(
-                block_outputs
-                    .output_messages()
-                    .iter()
-                    .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
-            );
+            self.accumulated_outputs
+                .try_extend_messages(
+                    block_outputs
+                        .output_messages()
+                        .iter()
+                        .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
+                )
+                .expect("messages capacity exceeded in test builder");
         }
 
         // Remove consumed inputs from the current state

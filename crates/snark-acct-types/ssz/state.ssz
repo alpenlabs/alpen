@@ -1,0 +1,27 @@
+import strata_acct_types
+
+### 1 MB limit for verification key
+MAX_VK_BYTES = 2 << 19
+
+### Snark account's proof state
+class ProofState(Container):
+    ### Commitment to the internal state of the account
+    inner_state: Bytes32
+
+    ### The index of the next message a proof is expected to process
+    next_inbox_msg_idx: uint64
+
+### Snark account state
+class SnarkAccountState(Container):
+    ### Vk used to verify updates
+    update_vk: List[uint8, MAX_VK_BYTES]
+
+    ### The proof state that gets updated by updates
+    proof_state: ProofState
+
+    ### Sequence number for updates
+    seq_no: uint64
+
+    ### Inbox message MMR
+    #~# external_kind: container
+    inbox_mmr: strata_acct_types.Mmr64

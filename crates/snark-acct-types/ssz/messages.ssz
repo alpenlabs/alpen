@@ -1,0 +1,22 @@
+import strata_acct_types
+
+### Entry in a message inbox MMR
+class MessageEntry(Container):
+    ### Source account ID of the message
+    source: strata_acct_types.AccountId
+
+    ### The epoch that the message was included
+    incl_epoch: uint32
+
+    ### Message payload
+    #~# external_kind: container
+    payload: strata_acct_types.MsgPayload
+
+### Message entry with its Merkle proof
+class MessageEntryProof(Container):
+    ### The message entry
+    entry: MessageEntry
+
+    ### Raw Merkle proof
+    #~# external_kind: container
+    raw_proof: strata_acct_types.RawMerkleProof

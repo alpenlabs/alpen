@@ -44,8 +44,8 @@ impl ExecBlockPackage {
 impl ExecBlockCommitment {
     pub fn new(exec_blkid: Hash, raw_block_encoded_hash: Hash) -> Self {
         Self {
-            exec_blkid: exec_blkid.to_vec().into(),
-            raw_block_encoded_hash: raw_block_encoded_hash.to_vec().into(),
+            exec_blkid: exec_blkid.into(),
+            raw_block_encoded_hash: raw_block_encoded_hash.into(),
         }
     }
 
@@ -168,8 +168,8 @@ mod tests {
             ExecBlockCommitment,
             (any::<[u8; 32]>(), any::<[u8; 32]>()).prop_map(|(blkid, hash)| {
                 ExecBlockCommitment {
-                    exec_blkid: blkid.to_vec().into(),
-                    raw_block_encoded_hash: hash.to_vec().into(),
+                    exec_blkid: blkid.into(),
+                    raw_block_encoded_hash: hash.into(),
                 }
             })
         );

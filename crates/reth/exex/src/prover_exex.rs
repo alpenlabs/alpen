@@ -3,10 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use alloy_consensus::{BlockHeader, Header};
 use alloy_primitives::{
     keccak256,
-    map::{
-        foldhash::{HashMap, HashMapExt},
-        B256Set,
-    },
+    map::{B256Set, DefaultHashBuilder, HashMap},
 };
 use alloy_rpc_types::BlockNumHash;
 use alpen_reth_db::WitnessStore;
@@ -190,8 +187,10 @@ where
 
     // Iterate through accessed accounts and put account proofs for each of them.
     let num_accs = touched_accounts.len();
-    let mut before_proofs = HashMap::with_capacity(num_accs);
-    let mut after_proofs = HashMap::with_capacity(num_accs);
+    let mut before_proofs =
+        HashMap::with_capacity_and_hasher(num_accs, DefaultHashBuilder::default());
+    let mut after_proofs =
+        HashMap::with_capacity_and_hasher(num_accs, DefaultHashBuilder::default());
     for (address, keys) in touched_accounts.iter() {
         // Store proofs in the maps
         before_proofs.insert(*address, multi_proof_before.account_proof(*address, keys)?);

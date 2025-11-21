@@ -209,7 +209,7 @@ mod tests {
                             serial: AccountSerial::new(serial),
                             balance: BitcoinAmount::from_sat(sats),
                         },
-                        typed_state_root: root.to_vec().into(),
+                        typed_state_root: root.into(),
                     }
                 }
             )
@@ -219,7 +219,7 @@ mod tests {
         fn test_zero_ssz() {
             let state = AcctStateSummary {
                 intrinsics: AccountIntrinsicState::new_empty(AccountSerial::new(0)),
-                typed_state_root: [0u8; 32].to_vec().into(),
+                typed_state_root: [0u8; 32].into(),
             };
             let encoded = state.as_ssz_bytes();
             let decoded = AcctStateSummary::from_ssz_bytes(&encoded).unwrap();

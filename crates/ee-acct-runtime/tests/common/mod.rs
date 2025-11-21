@@ -40,9 +40,10 @@ pub fn assert_update_paths_match(
 
     // Apply unconditionally
     let mut unconditional_state = initial_state.clone();
+    let input_data: strata_snark_acct_types::UpdateInputData = operation.clone().into();
     strata_ee_acct_runtime::apply_update_operation_unconditionally(
         &mut unconditional_state,
-        operation.as_input_data(),
+        &input_data,
     )
     .expect("apply_unconditionally should succeed");
 

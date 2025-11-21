@@ -1,33 +1,26 @@
 //! Update message types.
 
-use crate::{
+use crate::ssz_generated::ssz::{
     accumulators::{AccumulatorClaim, MmrEntryProof},
     messages::{MessageEntry, MessageEntryProof},
     outputs::UpdateOutputs,
     state::ProofState,
+    update::{
+        LedgerRefProofs, LedgerRefs, SnarkAccountUpdate, SnarkAccountUpdateContainer,
+        UpdateAccumulatorProofs, UpdateInputData, UpdateOperationData, UpdateStateData,
+    },
 };
-
-/// Represents the state update that will eventually go into DA on OL.
-#[derive(Clone, Debug)]
-pub struct UpdateStateData {
-    /// The new state we're claiming.
-    proof_state: ProofState,
-
-    /// Arbitrary data we persist in DA.  This is formatted according to the
-    /// needs of the snark account's application.
-    extra_data: Vec<u8>,
-}
 
 impl UpdateStateData {
     pub fn new(proof_state: ProofState, extra_data: Vec<u8>) -> Self {
         Self {
             proof_state,
-            extra_data,
+            extra_data: extra_data.into(),
         }
     }
 
     pub fn proof_state(&self) -> ProofState {
-        self.proof_state
+        self.proof_state.clone()
     }
 
     pub fn extra_data(&self) -> &[u8] {
@@ -35,23 +28,11 @@ impl UpdateStateData {
     }
 }
 
-/// Represents the input sufficient to perform a state update.
-#[derive(Clone, Debug)]
-pub struct UpdateInputData {
-    /// Sequence number to prevent replays, since we can't just rely on message
-    /// index.
-    seq_no: u64,
-    /// Messages we processed from the inbox.
-    messages: Vec<MessageEntry>,
-    /// State update.
-    update_state: UpdateStateData,
-}
-
 impl UpdateInputData {
     pub fn new(seq_no: u64, messages: Vec<MessageEntry>, update_state: UpdateStateData) -> Self {
         Self {
             seq_no,
-            messages,
+            messages: messages.into(),
             update_state,
         }
     }
@@ -73,19 +54,6 @@ impl UpdateInputData {
     }
 }
 
-/// Description of the operation of what we're updating.
-#[derive(Clone, Debug)]
-pub struct UpdateOperationData {
-    /// State update inputs.
-    input: UpdateInputData,
-
-    /// Ledger references we're making.
-    ledger_refs: LedgerRefs,
-
-    /// Outputs we're emitting to update the ledger.
-    outputs: UpdateOutputs,
-}
-
 impl UpdateOperationData {
     pub fn new(
         seq_no: u64,
@@ -98,10 +66,10 @@ impl UpdateOperationData {
         Self {
             input: UpdateInputData {
                 seq_no,
-                messages,
+                messages: messages.into(),
                 update_state: UpdateStateData {
                     proof_state,
-                    extra_data,
+                    extra_data: extra_data.into(),
                 },
             },
             ledger_refs,
@@ -144,17 +112,11 @@ impl From<UpdateOperationData> for UpdateInputData {
     }
 }
 
-/// Describes references to entries in accumulators available in the ledger.
-///
-/// These is generated from a [`LedgerRefProofs`].
-#[derive(Clone, Debug)]
-pub struct LedgerRefs {
-    l1_header_refs: Vec<AccumulatorClaim>,
-}
-
 impl LedgerRefs {
     pub fn new(l1_header_refs: Vec<AccumulatorClaim>) -> Self {
-        Self { l1_header_refs }
+        Self {
+            l1_header_refs: l1_header_refs.into(),
+        }
     }
 
     pub fn new_empty() -> Self {
@@ -166,15 +128,11 @@ impl LedgerRefs {
     }
 }
 
-/// Container for references to ledger accumulators with proofs.
-#[derive(Clone, Debug)]
-pub struct LedgerRefProofs {
-    l1_headers_proofs: Vec<MmrEntryProof>,
-}
-
 impl LedgerRefProofs {
     pub fn new(l1_headers_proofs: Vec<MmrEntryProof>) -> Self {
-        Self { l1_headers_proofs }
+        Self {
+            l1_headers_proofs: l1_headers_proofs.into(),
+        }
     }
 
     pub fn l1_headers_proofs(&self) -> &[MmrEntryProof] {
@@ -190,33 +148,17 @@ impl LedgerRefProofs {
                 .l1_headers_proofs
                 .iter()
                 .map(|e| e.to_claim())
-                .collect::<Vec<_>>(),
+                .collect::<Vec<_>>()
+                .into(),
         }
     }
-}
-
-/// Container for a snark account update but with only the update proof itself,
-/// ignoring the accumulator proofs that anyone can theoretically generate.
-///
-/// This is enough to verify that an update is safe to potentially apply to some
-/// current state, but not that its claimed dependencies on the ledger are
-/// actually correct.
-#[derive(Clone, Debug)]
-pub struct SnarkAccountUpdate {
-    /// The state change/requirements operation data itself.
-    operation: UpdateOperationData,
-
-    /// Proof for the update itself, attesting to relationships between the
-    /// various fields.
-    // TODO use predicate spec
-    update_proof: Vec<u8>,
 }
 
 impl SnarkAccountUpdate {
     pub fn new(operation: UpdateOperationData, update_proof: Vec<u8>) -> Self {
         Self {
             operation,
-            update_proof,
+            update_proof: update_proof.into(),
         }
     }
 
@@ -241,28 +183,10 @@ impl SnarkAccountUpdate {
     }
 }
 
-/// The proofs for the inputs and ledger references that we accessing in the
-/// ledger.
-///
-/// Note that this container does not specify *which block* these proofs are for
-/// as that must be supplied from some additional context.
-#[derive(Clone, Debug)]
-pub struct UpdateAccumulatorProofs {
-    /// MMR proofs for each of the inbox messages we processed.
-    ///
-    /// These may be updated by the sequencer.
-    inbox_proofs: Vec<MessageEntryProof>,
-
-    /// MMR proofs for each piece of ledger data we referenced.
-    ///
-    /// These may be updated by the sequencer.
-    ledger_ref_proofs: LedgerRefProofs,
-}
-
 impl UpdateAccumulatorProofs {
-    fn new(inbox_proofs: Vec<MessageEntryProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
+    pub fn new(inbox_proofs: Vec<MessageEntryProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
         Self {
-            inbox_proofs,
+            inbox_proofs: inbox_proofs.into(),
             ledger_ref_proofs,
         }
     }
@@ -274,20 +198,6 @@ impl UpdateAccumulatorProofs {
     pub fn ledger_ref_proofs(&self) -> &LedgerRefProofs {
         &self.ledger_ref_proofs
     }
-}
-
-/// Container for a snark account update with the contextual relevant proofs.
-///
-/// This is what is contained in the OL block.
-#[derive(Clone, Debug)]
-pub struct SnarkAccountUpdateContainer {
-    /// The base update data with proof which can be checked independently.
-    base_update: SnarkAccountUpdate,
-
-    /// Proofs for the "context" around the ledger that we're operating on,
-    /// which may need to be updated according to the recent state if it was
-    /// provided for an older one.
-    accumulator_proofs: UpdateAccumulatorProofs,
 }
 
 impl SnarkAccountUpdateContainer {
