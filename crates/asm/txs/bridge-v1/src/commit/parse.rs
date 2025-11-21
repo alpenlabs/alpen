@@ -52,9 +52,10 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 /// Parses a commit transaction following the SPS-50 specification and extracts
 /// the commit information including the deposit index that the operator is committing to.
 ///
-/// The function validates the transaction structure and parses the auxiliary data containing:
-/// - Deposit index (4 bytes, big-endian u32)
-/// - Game index (4 bytes, big-endian u32)
+/// The function validates the transaction structure and parses the auxiliary data (encoded using
+/// [`strata_codec::Codec`] with big-endian for integers) containing:
+/// - Deposit index (4 bytes, u32)
+/// - Game index (4 bytes, u32)
 ///
 /// # Parameters
 ///
@@ -72,9 +73,9 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 /// This function will return an error if:
 /// - The transaction type doesn't match the expected commit transaction type
 /// - The transaction doesn't have exactly one input
-/// - The previous output index (vout) is not 0
 /// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
 /// - Any of the metadata fields cannot be parsed correctly
+/// - The second output (N/N output at index 1) is missing
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
     if tx.tag().tx_type() != COMMIT_TX_TYPE {
         return Err(CommitParseError::InvalidTxType(tx.tag().tx_type()));
@@ -88,7 +89,7 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
         return Err(CommitParseError::InvalidInputCount(tx.tx().input.len()));
     }
 
-    // Extract the N/N continuation output script from the second output (index 1)
+    // Extract the N/N output script from the second output (index 1)
     let second_output_script = tx
         .tx()
         .output

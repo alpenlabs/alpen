@@ -20,13 +20,14 @@
 //!    - Magic number (4 bytes): Protocol instance identifier
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier
 //!    - Transaction type (1 byte): Commit transaction type
-//!    - Auxiliary data (4 bytes):
-//!      - Deposit index (4 bytes, big-endian u32): Index of the deposit being committed to
+//!    - Auxiliary data (8 bytes, encoded using [`strata_codec::Codec`] which uses big-endian for integers):
+//!      - Deposit index (4 bytes, u32): Index of the deposit being committed to
+//!      - Game index (4 bytes, u32): Index of the game being committed to
 //!
 //! 2. **N/N Output (Index 1)** (required): Must be locked to the N/N aggregated operator key
 //!    - Pay-to-Taproot script with aggregated operator key as internal key
 //!    - No merkle root (key-spend only)
-//!    - This output continues to the payout transaction
+//!    - This output will be spent by the payout transaction
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod aux;

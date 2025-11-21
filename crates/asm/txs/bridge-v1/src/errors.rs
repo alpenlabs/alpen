@@ -113,8 +113,8 @@ pub enum CommitParseError {
     #[error("Commit transaction must spend from vout 0, got vout {0}")]
     InvalidPrevVout(u32),
 
-    /// Missing N/N continuation output at index 1.
-    #[error("Missing N/N continuation output at index 1")]
+    /// Missing N/N output at index 1.
+    #[error("Missing N/N output at index 1")]
     MissingNnOutput,
 }
 
@@ -134,7 +134,7 @@ pub enum CommitInputError {
     WrongInputLock,
 
     /// Missing the second output at index 1.
-    #[error("Missing second output (N/N continuation output) at index 1")]
+    #[error("Missing second output (N/N output) at index 1")]
     MissingSecondOutput,
 
     /// The second output is not locked to the N/N aggregated operator key.
