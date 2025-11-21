@@ -56,7 +56,7 @@ impl Subprotocol for BridgeV1Subproto {
             // to get the auxilary requests
             match parse_tx(tx) {
                 Ok(parsed_tx) => {
-                    preprocess_parsed_tx(state, parsed_tx, collector);
+                    preprocess_parsed_tx(parsed_tx, state, collector);
                     info!(tx_id = %tx.tx().compute_txid(), "Successfully pre-processed tx");
                 }
                 Err(e) => {

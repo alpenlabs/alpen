@@ -98,13 +98,15 @@ fn validate_nn_spend(
 }
 
 pub(crate) fn preprocess_parsed_tx<'t>(
-    state: &BridgeV1State,
     parsed_tx: ParsedTx<'t>,
+    _state: &BridgeV1State,
     collector: &mut AuxRequestCollector,
 ) {
     match parsed_tx {
         ParsedTx::Deposit(_) => {}
         ParsedTx::WithdrawalFulfillment(_) => {}
-        ParsedTx::Commit(_) => {}
+        ParsedTx::Commit(info) => {
+            collector.request_bitcoin_tx(info.prev_outpoint.0.txid);
+        }
     }
 }
