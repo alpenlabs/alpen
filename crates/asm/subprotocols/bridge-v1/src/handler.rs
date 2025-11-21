@@ -1,4 +1,4 @@
-use bitcoin::{OutPoint, ScriptBuf, XOnlyPublicKey};
+use bitcoin::{OutPoint, ScriptBuf, TxOut, XOnlyPublicKey};
 use secp256k1::SECP256K1;
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
@@ -95,6 +95,15 @@ fn validate_nn_spend(
     }
 
     Ok(())
+}
+
+fn is_nn_lock(txout: &TxOut, nn_pubkey: XOnlyPublicKey) -> bool {
+    // Build the expected P2TR script locked to the N-of-N key
+    let secp = SECP256K1;
+    let expected_script = ScriptBuf::new_p2tr(secp, nn_pubkey, None);
+
+    // Check the output is locked to the expected N-of-N key
+    txout.script_pubkey == expected_script
 }
 
 pub(crate) fn preprocess_parsed_tx<'t>(
