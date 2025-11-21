@@ -145,9 +145,10 @@ pub async fn deposit(
     let mut psbt = {
         let mut builder = l1w.build_tx();
         // Important: the deposit won't be found by the sequencer if the order isn't correct.
+        // Per SPS-50 spec: OP_RETURN must be at index 0, P2TR at index 1
         builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
         builder.add_data(&push_bytes);
+        builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
         builder.fee_rate(fee_rate);
         match builder.finish() {
             Ok(psbt) => psbt,

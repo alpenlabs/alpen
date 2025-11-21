@@ -87,12 +87,11 @@ pub(crate) fn create_deposit_transaction_cli(
         BRIDGE_OUT_AMOUNT,
     );
 
-    // Find the P2TR output (the one that's not OP_RETURN)
+    // Per spec: P2TR deposit request output is at index 1
     let deposit_request_output = drt_tx
         .output
-        .iter()
-        .find(|out| !out.script_pubkey.is_op_return())
-        .ok_or_else(|| Error::TxParser("DRT has no P2TR output".to_string()))?;
+        .get(1)
+        .ok_or_else(|| Error::TxParser("DRT missing P2TR output at index 1".to_string()))?;
 
     let prevout = TxOut {
         script_pubkey: deposit_request_output.script_pubkey.clone(),

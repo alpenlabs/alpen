@@ -1,135 +1,50 @@
-//! DRT building and parsing. This is present because we are treating asm/txs as a canonical for
-//! building and parsing transactions
+//! Deposit Request Transaction (DRT) Building and Parsing
+//!
+//! This module provides functionality for building and parsing Bitcoin deposit request
+//! transactions that follow the SPS-50 specification for the Strata bridge protocol.
+//!
+//! ## Deposit Request Transaction Structure
+//!
+//! A deposit request transaction (DRT) is created by users who want to deposit Bitcoin
+//! into the Strata bridge. The operators then spend this DRT to create a Deposit Transaction.
+//!
+//! ### Inputs
+//! - Any valid Bitcoin inputs funding the transaction (user's choice)
+//! - No specific structure required - flexible to user wallet setup
+//!
+//! ### Outputs
+//! 1. **OP_RETURN Output (Index 0)** (required): Contains SPS-50 tagged data with:
+//!    - Magic number (4 bytes): Protocol instance identifier (e.g., `b"alpn"`)
+//!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier (value: 2)
+//!    - Transaction type (1 byte): Deposit request transaction type (value: 0)
+//!    - Auxiliary data (>32 bytes):
+//!      - Recovery public key (32 bytes, x-only): For takeback script after timeout
+//!      - Destination address (variable length): Where sBTC will be minted on the execution layer
+//!
+//! 2. **P2TR Deposit Request Output (Index 1)** (required): The deposit being locked:
+//!    - Pay-to-Taproot script with aggregated N-of-N operator key as internal key
+//!    - Taproot merkle root commits to single takeback tapscript:
+//!      ```text
+//!      <depositor's xonly public key>
+//!      OP_CHECKSIGVERIFY
+//!      <D>
+//!      OP_CSV
+//!      ```
+//!      where D is the number of blocks before depositor can reclaim funds
+//!    - Contains `d + dep_fee` sats (deposit amount + mining fee for deposit transaction)
+//!
+//! 3. **Change Output** (optional): Returns excess funds to user-controlled address
+//!
+//! ## Security Model
+//!
+//! The recovery public key in the OP_RETURN data is critical for user fund safety. It allows
+//! users to reclaim their Bitcoin if operators fail to process the deposit within the timeout
+//! period, maintaining the non-custodial property of the bridge.
 
-use bitcoin::XOnlyPublicKey;
-use strata_l1_txfmt::{ParseConfig, TagDataRef};
-
-use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE};
-
+pub mod build;
 pub mod parse;
 
-pub use parse::{parse_drt, parse_drt_from_tx, DepositRequestParseError};
+pub use build::DepositRequestMetadata;
+pub use parse::{parse_drt, parse_drt_from_tx, MIN_DRT_AUX_DATA_LEN};
 
-/// SPS-50 format: [MAGIC][SUBPROTOCOL_ID][TX_TYPE][RECOVERY_PK (32)][EE_ADDRESS]
-#[derive(Debug, Clone)]
-pub struct DepositRequestMetadata {
-    recovery_pk: [u8; 32],
-    ee_address: Vec<u8>,
-}
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum DepositRequestBuildError {
-    #[error("SPS-50 format error: {0}")]
-    TxFmt(String),
-}
-
-impl DepositRequestMetadata {
-    pub fn new(recovery_pk: XOnlyPublicKey, ee_address: Vec<u8>) -> Self {
-        Self {
-            recovery_pk: recovery_pk.serialize(),
-            ee_address,
-        }
-    }
-
-    pub fn op_return_data(&self, magic_bytes: [u8; 4]) -> Result<Vec<u8>, DepositRequestBuildError> {
-        let mut aux_data = Vec::new();
-        aux_data.extend_from_slice(&self.recovery_pk);
-        aux_data.extend_from_slice(&self.ee_address);
-
-        let tag_data = TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, &aux_data)
-            .map_err(|e| DepositRequestBuildError::TxFmt(e.to_string()))?;
-
-        let parse_config = ParseConfig::new(magic_bytes);
-        let data = parse_config
-            .encode_tag_buf(&tag_data)
-            .map_err(|e| DepositRequestBuildError::TxFmt(e.to_string()))?;
-
-        Ok(data)
-    }
-
-    pub fn recovery_pk(&self) -> &[u8; 32] {
-        &self.recovery_pk
-    }
-
-    pub fn ee_address(&self) -> &[u8] {
-        &self.ee_address
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bitcoin::secp256k1::{Keypair, Secp256k1, SecretKey};
-
-    use super::*;
-
-    fn generate_test_xonly_pk() -> XOnlyPublicKey {
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&[
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01,
-        ])
-        .unwrap();
-        let keypair = Keypair::from_secret_key(&secp, &secret_key);
-        XOnlyPublicKey::from(keypair.public_key())
-    }
-
-    #[test]
-    fn test_deposit_request_metadata_creation() {
-        let recovery_pk = generate_test_xonly_pk();
-        let recovery_pk_bytes = recovery_pk.serialize();
-        let ee_address = vec![0x06; 20];
-
-        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address.clone());
-
-        assert_eq!(metadata.recovery_pk(), &recovery_pk_bytes);
-        assert_eq!(metadata.ee_address(), &ee_address);
-    }
-
-    #[test]
-    fn test_op_return_data_format() {
-        let magic = [0xAA, 0xBB, 0xCC, 0xDD];
-        let recovery_pk = generate_test_xonly_pk();
-        let recovery_pk_bytes = recovery_pk.serialize();
-        let ee_address = vec![0x22; 20];
-
-        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address);
-        let op_return_data = metadata.op_return_data(magic).unwrap();
-
-        // Verify total length: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) + address(20)
-        assert_eq!(op_return_data.len(), 4 + 1 + 1 + 32 + 20);
-
-        // Verify magic bytes at start
-        assert_eq!(&op_return_data[0..4], &[0xAA, 0xBB, 0xCC, 0xDD]);
-
-        // Verify subprotocol_id
-        assert_eq!(op_return_data[4], BRIDGE_V1_SUBPROTOCOL_ID);
-
-        // Verify tx_type
-        assert_eq!(op_return_data[5], DEPOSIT_REQUEST_TX_TYPE);
-
-        // Verify recovery pk follows (starts at offset 6)
-        assert_eq!(&op_return_data[6..38], &recovery_pk_bytes);
-
-        // Verify ee address at end (starts at offset 38)
-        assert_eq!(&op_return_data[38..58], &[0x22; 20]);
-    }
-
-    #[test]
-    fn test_op_return_data_different_address_lengths() {
-        let magic = [0x01, 0x02, 0x03, 0x04];
-        let recovery_pk = generate_test_xonly_pk();
-
-        // Test with 20-byte address (EVM standard)
-        // SPS-50: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) + address(20)
-        let ee_address_20 = vec![0x06; 20];
-        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address_20);
-        assert_eq!(metadata.op_return_data(magic).unwrap().len(), 4 + 1 + 1 + 32 + 20);
-
-        // Test with 32-byte address (different EE)
-        // SPS-50: magic(4) + subprotocol_id(1) + tx_type(1) + recovery_pk(32) + address(32)
-        let ee_address_32 = vec![0x07; 32];
-        let metadata = DepositRequestMetadata::new(recovery_pk, ee_address_32);
-        assert_eq!(metadata.op_return_data(magic).unwrap().len(), 4 + 1 + 1 + 32 + 32);
-    }
-}
+pub use crate::errors::{DepositRequestBuildError, DepositRequestParseError};

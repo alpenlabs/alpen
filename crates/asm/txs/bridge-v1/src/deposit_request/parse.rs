@@ -8,29 +8,12 @@ use strata_asm_common::TxInputRef;
 use strata_l1_txfmt::ParseConfig;
 use strata_primitives::l1::DepositRequestInfo;
 
-use crate::constants::DEPOSIT_REQUEST_TX_TYPE;
+use crate::{constants::DEPOSIT_REQUEST_TX_TYPE, errors::DepositRequestParseError};
 
 const RECOVERY_PK_LEN: usize = 32;
 
+/// Minimum length of auxiliary data for deposit request transactions
 pub const MIN_DRT_AUX_DATA_LEN: usize = RECOVERY_PK_LEN;
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum DepositRequestParseError {
-    #[error("Invalid transaction type: {actual}, expected {expected}")]
-    InvalidTxType { actual: u8, expected: u8 },
-
-    #[error("Invalid auxiliary data length: {actual}, expected at least {expected}")]
-    InvalidAuxiliaryData { actual: usize, expected: usize },
-
-    #[error("Missing DRT output at index 0")]
-    MissingDRTOutput,
-
-    #[error("No OP_RETURN output found in DRT")]
-    NoOpReturnOutput,
-
-    #[error("Failed to parse SPS-50 transaction: {0}")]
-    Sps50ParseError(String),
-}
 
 pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, DepositRequestParseError> {
     if tx_input.tag().tx_type() != DEPOSIT_REQUEST_TX_TYPE {
@@ -43,10 +26,7 @@ pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, Deposi
     let aux_data = tx_input.tag().aux_data();
 
     if aux_data.len() < MIN_DRT_AUX_DATA_LEN {
-        return Err(DepositRequestParseError::InvalidAuxiliaryData {
-            actual: aux_data.len(),
-            expected: MIN_DRT_AUX_DATA_LEN,
-        });
+        return Err(DepositRequestParseError::InvalidAuxiliaryData(aux_data.len()));
     }
 
     let (recovery_pk_bytes, ee_address) = aux_data.split_at(RECOVERY_PK_LEN);
@@ -54,11 +34,11 @@ pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, Deposi
         .try_into()
         .expect("validated aux_data length");
 
+    // Per spec: Output 1 must be the P2TR deposit request output
     let drt_output = tx_input
         .tx()
         .output
-        .iter()
-        .find(|out| !out.script_pubkey.is_op_return())
+        .get(1)
         .ok_or(DepositRequestParseError::MissingDRTOutput)?;
 
     let amt = drt_output.value.to_sat();
@@ -72,8 +52,9 @@ pub fn parse_drt(tx_input: &TxInputRef<'_>) -> Result<DepositRequestInfo, Deposi
 
 /// Parses a DRT from a raw transaction with magic bytes
 ///
-/// This is the full parsing pipeline that handles the OP_RETURN workaround.
-/// ParseConfig expects OP_RETURN at index 0, so we temporarily swap outputs.
+/// Validates that the transaction follows the SPS-50 DRT specification:
+/// - Output 0 must be OP_RETURN with tagged data
+/// - Output 1 must be the P2TR deposit output
 ///
 /// # Arguments
 /// * `tx` - The DRT transaction to parse
@@ -85,27 +66,16 @@ pub fn parse_drt_from_tx(
     tx: &Transaction,
     magic_bytes: &[u8; 4],
 ) -> Result<DepositRequestInfo, DepositRequestParseError> {
-    let parse_config = ParseConfig::new(*magic_bytes);
-
-    // Find the OP_RETURN output
-    let _op_return_output = tx
-        .output
-        .iter()
-        .find(|out| out.script_pubkey.is_op_return())
-        .ok_or(DepositRequestParseError::NoOpReturnOutput)?;
-
-    // WORKAROUND: ParseConfig expects OP_RETURN at index 0
-    // Create temporary transaction with outputs swapped
-    let mut parse_tx = tx.clone();
-    if let Some(idx) = tx.output.iter().position(|out| out.script_pubkey.is_op_return()) {
-        parse_tx.output.swap(0, idx);
+    // Validate OP_RETURN is at index 0 per spec
+    if tx.output.is_empty() || !tx.output[0].script_pubkey.is_op_return() {
+        return Err(DepositRequestParseError::NoOpReturnOutput);
     }
 
+    let parse_config = ParseConfig::new(*magic_bytes);
     let tag_data = parse_config
-        .try_parse_tx(&parse_tx)
+        .try_parse_tx(tx)
         .map_err(|e| DepositRequestParseError::Sps50ParseError(e.to_string()))?;
 
-    // Use ORIGINAL transaction with parsed tag data
     let tx_input = TxInputRef::new(tx, tag_data);
     parse_drt(&tx_input)
 }
@@ -251,10 +221,7 @@ mod tests {
         let result = parse_drt(&tx_input);
         assert!(matches!(
             result,
-            Err(DepositRequestParseError::InvalidAuxiliaryData {
-                actual: 10,
-                expected: MIN_DRT_AUX_DATA_LEN
-            })
+            Err(DepositRequestParseError::InvalidAuxiliaryData(10))
         ));
     }
 

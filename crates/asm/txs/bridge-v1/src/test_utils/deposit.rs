@@ -116,8 +116,9 @@ pub fn build_deposit_transaction(
     agg_pubkey: XOnlyPublicKey,
     bridge_out_amount: Amount,
 ) -> Transaction {
+    // Per spec: DRT output 1 is the P2TR deposit request output that we spend
     let tx_ins = vec![TxIn {
-        previous_output: OutPoint::new(drt_txid, 0),
+        previous_output: OutPoint::new(drt_txid, 1),
         script_sig: ScriptBuf::default(),
         sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
         witness: Witness::new(),

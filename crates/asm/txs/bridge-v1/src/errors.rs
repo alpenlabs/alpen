@@ -3,6 +3,12 @@ use std::fmt::Debug;
 use strata_codec::CodecError;
 use thiserror::Error;
 
+use crate::{
+    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
+    deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
+    deposit_request::MIN_DRT_AUX_DATA_LEN,
+};
+
 /// A generic "expected vs got" error.
 #[derive(Debug, Error, Clone)]
 #[error("(expected {expected:?}, got {got:?})")]
@@ -14,6 +20,37 @@ where
     pub expected: T,
     /// The value that was actually encountered.
     pub got: T,
+}
+
+/// Errors that can occur when building deposit request transactions (DRT).
+#[derive(Debug, Error, Clone)]
+pub enum DepositRequestBuildError {
+    #[error("SPS-50 format error: {0}")]
+    TxFmt(String),
+}
+
+/// Errors that can occur when parsing deposit request transactions (DRT).
+#[derive(Debug, Error, Clone)]
+pub enum DepositRequestParseError {
+    /// The transaction type byte in the tag does not match the expected deposit request type.
+    #[error("Invalid transaction type: expected {expected}, got {actual}")]
+    InvalidTxType { actual: u8, expected: u8 },
+
+    /// The auxiliary data in the deposit request transaction tag has insufficient length.
+    #[error("Invalid auxiliary data length: expected at least {MIN_DRT_AUX_DATA_LEN} bytes, got {0} bytes")]
+    InvalidAuxiliaryData(usize),
+
+    /// Transaction is missing the required P2TR deposit request output at index 1.
+    #[error("Missing P2TR deposit request output at index 1")]
+    MissingDRTOutput,
+
+    /// OP_RETURN output missing or not at index 0 as required by spec.
+    #[error("OP_RETURN output must be at index 0")]
+    NoOpReturnOutput,
+
+    /// Failed to parse the SPS-50 transaction format.
+    #[error("Failed to parse SPS-50 transaction: {0}")]
+    Sps50ParseError(String),
 }
 
 /// Errors that can occur when parsing deposit transactions.
