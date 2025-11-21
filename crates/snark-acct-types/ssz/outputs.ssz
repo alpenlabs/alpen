@@ -1,0 +1,29 @@
+import strata_acct_types
+
+MAX_TRANSFERS = 2 << 15
+MAX_MESSAGES = 2 << 15
+
+### Transfer of native asset to an OL account
+class OutputTransfer(Container):
+    ### Destination account ID
+    dest: strata_acct_types.AccountId
+
+    ### Amount in satoshis
+    value: strata_acct_types.BitcoinAmount
+
+### Message sent to an OL account with data payload
+class OutputMessage(Container):
+    ### Destination account ID
+    dest: strata_acct_types.AccountId
+
+    ### Message payload
+    #~# external_kind: container
+    payload: strata_acct_types.MsgPayload
+
+### Collection of outputs from an update
+class UpdateOutputs(Container):
+    ### Native asset transfers
+    transfers: List[OutputTransfer, MAX_TRANSFERS]
+
+    ### Messages with data payloads
+    messages: List[OutputMessage, MAX_MESSAGES]

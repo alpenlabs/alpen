@@ -3,7 +3,9 @@
 use strata_acct_types::BitcoinAmount;
 use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult};
 use strata_ee_chain_types::BlockOutputs;
-use strata_snark_acct_types::{OutputMessage, OutputTransfer, UpdateOutputs};
+use strata_snark_acct_types::{
+    MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
+};
 
 type Hash = [u8; 32];
 
@@ -82,19 +84,43 @@ impl UpdateVerificationState {
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
         // confusion because they do refer to different concepts.
-        self.accumulated_outputs.transfers_mut().extend(
+        if let Err(e) = self.accumulated_outputs.try_extend_transfers(
             outputs
                 .output_transfers()
                 .iter()
                 .map(|e| OutputTransfer::new(e.dest(), e.value())),
-        );
+        ) {
+            // This should never happen: capacity limit is [`MAX_TRANSFERS`]. If hit, it
+            // indicates either a malicious block or a bug. We panic to fail fast
+            // rather than continue with inconsistent state.
+            eprintln!(
+                "ERROR: Failed to extend transfers: {}. Current: {}, Adding: {}, Max: {}",
+                e,
+                self.accumulated_outputs.transfers().len(),
+                outputs.output_transfers().len(),
+                MAX_TRANSFERS
+            );
+            panic!("output transfers capacity exceeded");
+        }
 
-        self.accumulated_outputs.messages_mut().extend(
+        if let Err(e) = self.accumulated_outputs.try_extend_messages(
             outputs
                 .output_messages()
                 .iter()
                 .map(|e| OutputMessage::new(e.dest(), e.payload().clone())),
-        );
+        ) {
+            // This should never happen: capacity limit is [`MAX_MESSAGES`]. If hit, it
+            // indicates either a malicious block or a bug. We panic to fail fast
+            // rather than continue with inconsistent state.
+            eprintln!(
+                "ERROR: Failed to extend messages: {}. Current: {}, Adding: {}, Max: {}",
+                e,
+                self.accumulated_outputs.messages().len(),
+                outputs.output_messages().len(),
+                MAX_MESSAGES
+            );
+            panic!("output messages capacity exceeded");
+        }
 
         // Annoying thing to do checked summation.
         let sent_amts_iter = [self.total_val_sent]

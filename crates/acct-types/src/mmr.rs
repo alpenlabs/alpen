@@ -1,6 +1,9 @@
 //! Concrete orchestration layer MMR types.
 
-use strata_merkle::{MerkleMr64, Sha256Hasher};
+use strata_merkle::{
+    CompactMmr64B32, CompactMmr64B32Ref, MerkleMr64B32, MerkleMr64B32Ref, MerkleProofB32,
+    MerkleProofB32Ref, RawMerkleProofB32, RawMerkleProofB32Ref, Sha256Hasher,
+};
 
 /// The basic hasher we use for all the MMR stuff.
 ///
@@ -12,13 +15,25 @@ pub type StrataHasher = Sha256Hasher;
 pub type Hash = [u8; 32];
 
 /// Compact 64 bit merkle mountain range.
-pub type CompactMmr64 = strata_merkle::CompactMmr64<StrataHasher>;
+pub type CompactMmr64 = CompactMmr64B32;
+
+/// Compact 64 bit merkle mountain range reference.
+pub type CompactMmr64Ref<'a> = CompactMmr64B32Ref<'a>;
 
 /// 64 bit merkle mountain range.
-pub type Mmr64 = MerkleMr64<StrataHasher>;
+pub type Mmr64 = MerkleMr64B32;
+
+/// 64 bit merkle mountain range reference.
+pub type Mmr64Ref<'a> = MerkleMr64B32Ref<'a>;
 
 /// Universal MMR merkle proof.
-pub type MerkleProof = strata_merkle::MerkleProof<Hash>;
+pub type MerkleProof = MerkleProofB32;
+
+/// Universal MMR merkle proof reference.
+pub type MerkleProofRef<'a> = MerkleProofB32Ref<'a>;
 
 /// Raw MMR merkle proof that doesn't have an embedded index.
-pub type RawMerkleProof = strata_merkle::RawMerkleProof<Hash>;
+pub type RawMerkleProof = RawMerkleProofB32;
+
+/// Raw MMR merkle proof reference that doesn't have an embedded index.
+pub type RawMerkleProofRef<'a> = RawMerkleProofB32Ref<'a>;

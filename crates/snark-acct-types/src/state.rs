@@ -2,6 +2,8 @@
 
 use strata_acct_types::{AccountTypeId, AccountTypeState, Hash, Mmr64, impl_opaque_thin_wrapper};
 
+use crate::ssz_generated::ssz::state::{ProofState, SnarkAccountState};
+
 /// State root type.
 type Root = Hash;
 
@@ -26,22 +28,26 @@ impl Seqno {
     }
 }
 
-/// Snark account state.  This is contained immediately within the basic
-/// account state entry.
-// TODO SSZ
-#[derive(Clone, Debug)]
-pub struct SnarkAccountState {
-    /// Vk used to verify updates.
-    update_vk: Vec<u8>, // TODO use predicate fmt
+impl ProofState {
+    /// Creates a new proof state.
+    pub fn new(inner_state: Root, next_inbox_msg_idx: u64) -> Self {
+        Self {
+            inner_state: inner_state.into(),
+            next_inbox_msg_idx,
+        }
+    }
 
-    /// The proof state that gets updated by updates.
-    proof_state: ProofState,
+    /// Gets the inner state commitment.
+    pub fn inner_state(&self) -> [u8; 32] {
+        self.inner_state
+            .as_ref()
+            .try_into()
+            .expect("FixedBytes<32> is always 32 bytes")
+    }
 
-    /// Sequence number for updates.
-    seq_no: Seqno,
-
-    /// Inbox message MMR.
-    inbox_mmr: Mmr64,
+    pub fn next_inbox_msg_idx(&self) -> u64 {
+        self.next_inbox_msg_idx
+    }
 }
 
 impl SnarkAccountState {
@@ -50,11 +56,11 @@ impl SnarkAccountState {
     }
 
     pub fn proof_state(&self) -> ProofState {
-        self.proof_state
+        self.proof_state.clone()
     }
 
     pub fn seq_no(&self) -> Seqno {
-        self.seq_no
+        Seqno::new(self.seq_no)
     }
 
     pub fn inbox_mmr(&self) -> &Mmr64 {
@@ -64,33 +70,4 @@ impl SnarkAccountState {
 
 impl AccountTypeState for SnarkAccountState {
     const ID: AccountTypeId = AccountTypeId::Snark;
-}
-
-/// Snark account's proof state, updated on a proof.
-// TODO SSZ
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ProofState {
-    /// Commitment to the internal state of the account, as defined by the
-    /// proofs.
-    inner_state: Root,
-
-    /// The index of the next message a proof is expected to process.
-    next_inbox_msg_idx: u64,
-}
-
-impl ProofState {
-    pub fn new(inner_state: Root, next_inbox_msg_idx: u64) -> Self {
-        Self {
-            inner_state,
-            next_inbox_msg_idx,
-        }
-    }
-
-    pub fn inner_state(&self) -> [u8; 32] {
-        self.inner_state
-    }
-
-    pub fn next_inbox_msg_idx(&self) -> u64 {
-        self.next_inbox_msg_idx
-    }
 }
