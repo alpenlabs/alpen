@@ -1,10 +1,7 @@
 use std::fmt::Debug;
 
 use strata_codec::CodecError;
-use strata_l1_txfmt::TxType;
 use thiserror::Error;
-
-use crate::constants::{COMMIT_TX_TYPE, DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE};
 
 /// A generic "expected vs got" error.
 #[derive(Debug, Error, Clone)]
@@ -28,10 +25,6 @@ pub enum DepositTxParseError {
     /// The auxiliary data in the deposit transaction tag is invalid.
     #[error("Invalid auxiliary data: {0}")]
     InvalidAuxiliaryData(#[from] CodecError),
-
-    /// The transaction type byte in the tag does not match the expected deposit transaction type.
-    #[error("Invalid transaction type: expected type to be {DEPOSIT_TX_TYPE}, got {0}")]
-    InvalidTxType(TxType),
 
     /// Transaction is missing the required P2TR deposit output at index 1.
     #[error("Missing P2TR deposit output")]
@@ -76,17 +69,11 @@ pub enum DepositOutputError {
 /// No further processing is performed on transactions that fail to parse.
 #[derive(Debug, Error)]
 pub enum WithdrawalParseError {
-    /// The auxiliary data in the withdrawal fulfillment transaction is invalid
+    /// The auxiliary data in the withdrawal fulfillment transaction is invalid.
     #[error("Invalid auxiliary data: {0}")]
     InvalidAuxiliaryData(#[from] CodecError),
 
-    /// The transaction type byte in the tag does not match the expected withdrawal fulfillment
-    /// transaction type.
-    #[error(
-        "Invalid transaction type: expected type to be {WITHDRAWAL_FULFILLMENT_TX_TYPE}, got {0}"
-    )]
-    InvalidTxType(TxType),
-
+    /// Transaction is missing output that fulfilled user withdrawal request.
     #[error("Transaction is missing output that fulfilled user withdrawal request")]
     MissingUserFulfillmentOutput,
 }
@@ -100,10 +87,6 @@ pub enum CommitParseError {
     /// The auxiliary data in the commit transaction is invalid.
     #[error("Invalid auxiliary data: {0}")]
     InvalidAuxiliaryData(#[from] CodecError),
-
-    /// The transaction type byte in the tag does not match the expected commit transaction type.
-    #[error("Invalid transaction type: expected type to be {COMMIT_TX_TYPE}, got {0}")]
-    InvalidTxType(TxType),
 
     /// The commit transaction does not have exactly one input.
     #[error("Commit transaction must have exactly one input, got {0}")]

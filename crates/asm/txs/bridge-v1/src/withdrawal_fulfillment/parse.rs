@@ -77,10 +77,6 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
-    if tx.tag().tx_type() != WITHDRAWAL_FULFILLMENT_TX_TYPE {
-        return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
-    }
-
     let withdrawal_auxdata: WithdrawalFulfillmentTxHeaderAux =
         decode_buf_exact(tx.tag().aux_data())?;
 
@@ -143,26 +139,6 @@ mod tests {
             .expect("Should successfully extract withdrawal info");
 
         assert_eq!(extracted_info, info);
-    }
-
-    #[test]
-    fn test_parse_withdrawal_fulfillment_tx_invalid_type() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: WithdrawalFulfillmentInfo = arb.generate();
-
-        let mut tx = create_test_withdrawal_fulfillment_tx(&info);
-
-        // Mutate the OP_RETURN output to have wrong transaction type
-        let aux_data = vec![0u8; 40]; // Some dummy aux data
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, WithdrawalParseError::InvalidTxType { .. }));
-        if let WithdrawalParseError::InvalidTxType(tx_type) = err {
-            assert_eq!(tx_type, tx_input.tag().tx_type());
-        }
     }
 
     #[test]

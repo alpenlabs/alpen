@@ -71,16 +71,11 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 /// # Errors
 ///
 /// This function will return an error if:
-/// - The transaction type doesn't match the expected commit transaction type
 /// - The transaction doesn't have exactly one input
 /// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
 /// - Any of the metadata fields cannot be parsed correctly
 /// - The second output (N/N output at index 1) is missing
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
-    if tx.tag().tx_type() != COMMIT_TX_TYPE {
-        return Err(CommitParseError::InvalidTxType(tx.tag().tx_type()));
-    }
-
     // Parse auxiliary data using CommitTxHeaderAux
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
@@ -152,26 +147,6 @@ mod tests {
             parse_commit_tx(&tx_input_ref).expect("Should successfully extract commit info");
 
         assert_eq!(extracted_info, info);
-    }
-
-    #[test]
-    fn test_parse_commit_tx_invalid_type() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: CommitInfo = arb.generate();
-
-        let mut tx = create_test_commit_tx(&info);
-
-        // Mutate the OP_RETURN output to have wrong transaction type
-        let aux_data = vec![0u8; 4]; // Some dummy aux data
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_commit_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, CommitParseError::InvalidTxType { .. }));
-        if let CommitParseError::InvalidTxType(tx_type) = err {
-            assert_eq!(tx_type, tx_input.tag().tx_type());
-        }
     }
 
     #[test]

@@ -8,7 +8,6 @@ use strata_primitives::{
 };
 
 use crate::{
-    constants::DEPOSIT_TX_TYPE,
     deposit::{DEPOSIT_OUTPUT_INDEX, aux::DepositTxHeaderAux},
     errors::DepositTxParseError,
 };
@@ -65,10 +64,6 @@ pub struct DepositInfo {
 /// - `Err(DepositError)` - If the transaction structure is invalid, signature verification fails,
 ///   or any parsing step encounters malformed data
 pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
-    if tx_input.tag().tx_type() != DEPOSIT_TX_TYPE {
-        return Err(DepositTxParseError::InvalidTxType(tx_input.tag().tx_type()));
-    }
-
     // Parse auxiliary data using DepositTxHeaderAux
     let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
 
@@ -111,12 +106,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        constants::BRIDGE_V1_SUBPROTOCOL_ID,
-        test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_deposit_tx,
-            mutate_op_return_output, parse_tx,
-        },
+    use crate::test_utils::{
+        TEST_MAGIC_BYTES, create_tagged_payload, create_test_deposit_tx, mutate_op_return_output,
+        parse_tx,
     };
 
     // Helper function to create a test operator keypair
@@ -166,27 +158,6 @@ mod tests {
             vout: DEPOSIT_OUTPUT_INDEX as u32,
         });
         assert_eq!(expected_outpoint, deposit_info.outpoint);
-    }
-
-    #[test]
-    fn test_parse_deposit_invalid_tx_type() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: DepositInfo = arb.generate();
-
-        let mut tx = create_test_tx(&info);
-
-        // Mutate the OP_RETURN output to have wrong transaction type
-        let aux_data = vec![0u8; 40]; // Some dummy aux data
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_deposit_tx(&tx_input).unwrap_err();
-
-        assert!(matches!(err, DepositTxParseError::InvalidTxType(..)));
-        if let DepositTxParseError::InvalidTxType(tx_type) = err {
-            assert_eq!(tx_type, tx_input.tag().tx_type());
-        }
     }
 
     #[test]

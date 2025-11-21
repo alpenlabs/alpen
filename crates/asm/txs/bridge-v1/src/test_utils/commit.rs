@@ -40,7 +40,7 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
-            previous_output: OutPoint::null(), // Dummy input
+            previous_output: commit_info.first_input_outpoint,
             script_sig: ScriptBuf::new(),
             sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
             witness: Witness::from_slice(&[vec![0u8; 64]]), // Dummy witness
@@ -50,6 +50,11 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
             TxOut {
                 value: Amount::from_sat(0),
                 script_pubkey: op_return_script,
+            },
+            // Second output (N/N output at index 1)
+            TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: commit_info.second_output_script.clone(),
             },
         ],
     }
