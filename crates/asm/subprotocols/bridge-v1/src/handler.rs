@@ -60,37 +60,36 @@ pub(crate) fn handle_parsed_tx<'t>(
     }
 }
 
-/// Validates that a transaction spends from an n-of-n multisig output.
+/// Validates that an outpoint is locked to an N-of-N multisig.
 ///
-/// This function verifies that the output being spent by `tx.input[spending_input_idx]`
-/// is locked to the expected n-of-n aggregated operator key using P2TR key-spend only.
+/// Verifies that the output referenced by `prev_outpoint` is locked to the expected
+/// N-of-N aggregated operator key using P2TR key-spend only (no merkle root).
 ///
 /// # Arguments
 ///
-/// * `tx` - The transaction containing the input that spends the n-of-n output
-/// * `spending_input_idx` - Which input of `tx` spends from the n-of-n output
-/// * `nn_pubkey` - The expected n-of-n aggregated public key
-/// * `aux_data` - Auxiliary data to retrieve the previous output being spent
+/// * `prev_outpoint` - The outpoint referencing the output to validate
+/// * `nn_pubkey` - The expected N-of-N aggregated public key
+/// * `aux_data` - Auxiliary data to retrieve the output
 ///
 /// # Returns
 ///
-/// * `Ok(())` if the previous output is locked to `nn_pubkey`
+/// * `Ok(())` if the output is locked to `nn_pubkey`
 /// * `Err(BridgeSubprotocolError)` if validation fails
 fn validate_nn_spend(
     prev_outpoint: &OutPoint,
     nn_pubkey: &BitcoinXOnlyPublicKey,
     aux_data: &VerifiedAuxData,
 ) -> Result<(), BridgeSubprotocolError> {
-    // Get the previous output that this input is spending
+    // Retrieve the output being validated
     let prev_txout = aux_data.get_bitcoin_txout(prev_outpoint)?;
 
-    // Build the expected P2TR script locked to the n-of-n key
+    // Build the expected P2TR script locked to the N-of-N key
     let secp = SECP256K1;
     let nn_xonly = XOnlyPublicKey::from_slice(nn_pubkey.inner().as_bytes())
         .map_err(|_| BridgeSubprotocolError::InvalidSpentOutputLock)?;
     let expected_script = ScriptBuf::new_p2tr(secp, nn_xonly, None);
 
-    // Verify the previous output is locked to the expected n-of-n key
+    // Verify the output is locked to the expected N-of-N key
     if prev_txout.script_pubkey != expected_script {
         return Err(BridgeSubprotocolError::InvalidSpentOutputLock);
     }
