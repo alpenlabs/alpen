@@ -2,7 +2,6 @@ use bitcoin::{OutPoint, ScriptBuf, TxOut, XOnlyPublicKey};
 use secp256k1::SECP256K1;
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
-use strata_primitives::l1::BitcoinXOnlyPublicKey;
 
 use crate::{
     errors::BridgeSubprotocolError,
@@ -41,14 +40,19 @@ pub(crate) fn handle_parsed_tx<'t>(
             state.process_withdrawal_fulfillment_tx(&info)?;
             Ok(())
         }
-        ParsedTx::Commit(parsed_commit_tx) => {
+        ParsedTx::Commit(info) => {
+            let prev_txout = aux_data.get_bitcoin_txout(&info.prev_outpoint.0)?;
+            if !is_nn_lock(prev_txout, state.operators().agg_xonly()) {
+                todo!()
+            }
+
             validate_nn_spend(
-                &parsed_commit_tx.prev_outpoint.0,
-                state.operators().agg_key(),
+                &info.prev_outpoint.0,
+                state.operators().agg_xonly(),
                 aux_data,
             )?;
 
-            let unlock = state.process_commit_tx(&parsed_commit_tx)?;
+            let unlock = state.process_commit_tx(&info)?;
 
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log =
@@ -77,30 +81,22 @@ pub(crate) fn handle_parsed_tx<'t>(
 /// * `Err(BridgeSubprotocolError)` if validation fails
 fn validate_nn_spend(
     prev_outpoint: &OutPoint,
-    nn_pubkey: &BitcoinXOnlyPublicKey,
+    nn_pubkey: XOnlyPublicKey,
     aux_data: &VerifiedAuxData,
 ) -> Result<(), BridgeSubprotocolError> {
     // Retrieve the output being validated
     let prev_txout = aux_data.get_bitcoin_txout(prev_outpoint)?;
-
-    // Build the expected P2TR script locked to the N-of-N key
-    let secp = SECP256K1;
-    let nn_xonly = XOnlyPublicKey::from_slice(nn_pubkey.inner().as_bytes())
-        .map_err(|_| BridgeSubprotocolError::InvalidSpentOutputLock)?;
-    let expected_script = ScriptBuf::new_p2tr(secp, nn_xonly, None);
-
-    // Verify the output is locked to the expected N-of-N key
-    if prev_txout.script_pubkey != expected_script {
-        return Err(BridgeSubprotocolError::InvalidSpentOutputLock);
-    }
-
-    Ok(())
+    if is_nn_lock(prev_txout, nn_pubkey) {
+        Ok(())
+    } else {
+        Err(BridgeSubprotocolError::InvalidSpentOutputLock)
+    } // FIXME:
 }
 
-fn is_nn_lock(txout: &TxOut, nn_pubkey: XOnlyPublicKey) -> bool {
+fn is_nn_lock(txout: &TxOut, xonly_pk: XOnlyPublicKey) -> bool {
     // Build the expected P2TR script locked to the N-of-N key
     let secp = SECP256K1;
-    let expected_script = ScriptBuf::new_p2tr(secp, nn_pubkey, None);
+    let expected_script = ScriptBuf::new_p2tr(secp, xonly_pk, None);
 
     // Check the output is locked to the expected N-of-N key
     txout.script_pubkey == expected_script

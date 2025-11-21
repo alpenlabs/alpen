@@ -135,12 +135,12 @@ impl BridgeV1State {
         validate_drt_spending_signature(
             tx,
             info.drt_tapscript_merkle_root,
-            self.operators().agg_key(),
+            self.operators().agg_xonly(),
             info.amt.into(),
         )?;
 
         // Ensure the deposit output is properly locked to the aggregated operator key
-        validate_deposit_output_lock(tx, self.operators().agg_key())?;
+        validate_deposit_output_lock(tx, self.operators().agg_xonly())?;
 
         // Verify this deposit index hasn't been used before
         if self.deposits().get_deposit(info.deposit_idx).is_some() {
