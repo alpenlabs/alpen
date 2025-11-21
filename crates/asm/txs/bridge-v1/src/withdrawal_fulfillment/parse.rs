@@ -33,13 +33,6 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
         .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
         .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
 
-    // Parse deposit_idx from aux_data
-    let mut deposit_idx_bytes = [0u8; DEPOSIT_IDX_SIZE];
-    deposit_idx_bytes.copy_from_slice(
-        &withdrawal_auxdata[DEPOSIT_IDX_OFFSET..DEPOSIT_IDX_OFFSET + DEPOSIT_IDX_SIZE],
-    );
-    let deposit_idx = u32::from_be_bytes(deposit_idx_bytes);
-
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 

@@ -232,7 +232,7 @@ pub fn create_withdrawal_op_return(
     let aux_data = metadata.aux_data();
 
     // Create SPS-50 tagged data
-    let tag_data = TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_TX_TYPE, &aux_data)
+    let tag_data = TagDataRef::new(BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_FULFILLMENT_TX_TYPE, &aux_data)
         .map_err(|e| WithdrawalTxBuilderError::TxFmt(e.to_string()))?;
 
     // Encode to OP_RETURN script using ParseConfig

@@ -4,7 +4,7 @@
 //! All transaction structure and OP_RETURN construction is handled by asm/txs/bridge-v1.
 
 use bdk_wallet::{
-    bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf},
+    bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
 };
 use strata_asm_txs_bridge_v1::test_utils::{WithdrawalMetadata, create_withdrawal_op_return};
@@ -52,7 +52,7 @@ fn create_withdrawal_fulfillment_inner(
     amount: u64,
     deposit_idx: u32,
     bitcoind_config: BitcoinDConfig,
-) -> Result<bdk_wallet::bitcoin::Transaction, Error> {
+) -> Result<Transaction, Error> {
     // Parse inputs
     let amount = Amount::from_sat(amount);
 

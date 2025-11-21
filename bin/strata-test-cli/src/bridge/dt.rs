@@ -1,6 +1,6 @@
-//! Deposit Transaction (DT) creation with DRT parsing and signing
+//! Handles Deposit Transaction (DT) creation.
 //!
-//! The CLI is responsible for signature aggregation and transaction signing only.
+//! The CLI is responsible for signature aggregation and transaction signing.
 //! All transaction structure and OP_RETURN construction is handled by asm/txs/bridge-v1.
 
 use bdk_wallet::bitcoin::{
@@ -36,6 +36,15 @@ fn build_timelock_script(recovery_pubkey_bytes: &[u8; 32]) -> ScriptBuf {
         .into_script()
 }
 
+/// Creates a deposit transaction (DT)
+///
+/// # Arguments
+/// * `tx_bytes` - Raw DRT transaction bytes
+/// * `operator_keys` - Vector of operator secret keys as bytes (78 bytes each)
+/// * `dt_index` - Deposit transaction index for metadata
+///
+/// # Returns
+/// * `Result<Vec<u8>, Error>` - The signed and serialized deposit transaction
 pub(crate) fn create_deposit_transaction_cli(
     tx_bytes: Vec<u8>,
     operator_keys: Vec<[u8; 78]>,
@@ -95,6 +104,21 @@ pub(crate) fn create_deposit_transaction_cli(
     Ok(bdk_wallet::bitcoin::consensus::serialize(&signed_tx))
 }
 
+/// Signs a deposit transaction using MuSig2 aggregated signature.
+///
+/// Creates a PSBT from the unsigned transaction, computes the taproot key-spend
+/// sighash, and generates a MuSig2 aggregated Schnorr signature from multiple
+/// operator private keys. The signature is tweaked with the takeback script hash
+/// to commit to the script path spend option.
+///
+/// # Arguments
+/// * `unsigned_tx` - The unsigned deposit transaction to sign
+/// * `prevout` - The DRT output being spent (contains script and amount)
+/// * `takeback_hash` - Taproot hash of the takeback script for tweaking the signature
+/// * `signers` - Array of operator private keys for MuSig2 aggregation
+///
+/// # Returns
+/// Fully signed transaction ready for broadcast
 fn sign_deposit_transaction(
     unsigned_tx: Transaction,
     prevout: &TxOut,
@@ -132,6 +156,17 @@ fn sign_deposit_transaction(
     finalize_and_extract_tx(psbt)
 }
 
+/// Finalizes a PSBT by converting signatures to witness data and extracts the transaction.
+///
+/// Takes a PSBT with taproot key-spend signatures and converts them into the
+/// final witness format required for broadcast. The witness for a taproot key-spend
+/// contains only the signature (no script or other data).
+///
+/// # Arguments
+/// * `psbt` - PSBT with `tap_key_sig` populated for each input
+///
+/// # Returns
+/// Finalized transaction ready for broadcast
 fn finalize_and_extract_tx(mut psbt: Psbt) -> Result<Transaction, Error> {
     for input in &mut psbt.inputs {
         if input.tap_key_sig.is_some() {
