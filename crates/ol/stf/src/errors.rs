@@ -1,5 +1,6 @@
 use strata_acct_types::{AccountId, AcctError};
 use strata_codec::CodecError;
+use strata_ol_chain_types_new::{Epoch, Slot};
 use thiserror::Error;
 
 /// Execution result error.
@@ -30,6 +31,27 @@ pub enum ExecError {
     /// account.
     #[error("tx target invalid for tx type")]
     IncorrectTxTargetType,
+
+    /// Used when the block's body doesn't match its header.
+    #[error("internal block structure mismatches")]
+    BlockStructureMismatch,
+
+    /// The parent blkid field doesn't match the header we're using to verify
+    /// the block.
+    #[error("parent blkid mismatch")]
+    BlockParentMismatch,
+
+    #[error("verifying nongenesis header without a parent")]
+    NongenesisHeaderMissingParent,
+
+    #[error("verifying genesis header with nonnull parent field")]
+    GenesisParentNonnull,
+
+    #[error("tried to skip epoch (parent {0}, current {1})")]
+    SkipEpochs(Epoch, Epoch),
+
+    #[error("tried to skip too many slots (parent {0}, current {1})")]
+    SkipTooManySlots(Slot, Slot),
 
     /// Various account errors.
     #[error("acct: {0}")]

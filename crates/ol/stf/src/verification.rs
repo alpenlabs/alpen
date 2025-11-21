@@ -142,11 +142,12 @@ pub fn verify_block_classically<S: StateAccessor>(
     block_exec_input: BlockExecInput<'_>,
     exp: &BlockExecExpectations,
 ) -> ExecResult<()> {
-    // 0. Construct the block exec context for tracking verification state
-    // across phases.
-    let block_info = BlockInfo::from_header(header);
+    // 0. Do preliminary sanity checks.
+    verify_header_continuity(header, parent_header.as_ref())?;
+    // TODO verify_block_structure(...)?;
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
+    let block_info = BlockInfo::from_header(header);
     let block_context = BlockContext::new(&block_info, parent_header.as_ref());
     if block_context.is_probably_epoch_initial() {
         let epoch_context = block_context.to_epoch_initial_context();
@@ -209,6 +210,57 @@ pub fn verify_block_classically<S: StateAccessor>(
     let computed_logs_root = compute_logs_root(&output_buffer.into_logs());
     if computed_logs_root != exp.logs_root {
         return Err(ExecError::ChainIntegrity);
+    }
+
+    Ok(())
+}
+
+/// Checks that headers are properly continuous.
+fn verify_header_continuity(
+    header: &OLBlockHeader,
+    parent: Option<&OLBlockHeader>,
+) -> ExecResult<()> {
+    // Check parent linkages.
+    if let Some(ph) = parent {
+        // Simply check that the parent block makes sense.
+        let pblkid = ph.compute_blkid();
+        if *header.parent_blkid() != pblkid {
+            return Err(ExecError::BlockParentMismatch);
+        }
+
+        // Check epochs don't skip.
+        if !((header.epoch() == ph.epoch()) || (header.epoch() == ph.epoch() + 1)) {
+            return Err(ExecError::SkipEpochs(ph.epoch(), header.epoch()));
+        }
+
+        // Check slots go in order.
+        //
+        // We're writing this in a weird way to make it easier to handle
+        // nonmonotonic slots in future consensus algos.
+        let slot_diff = header.slot() as i64 - ph.slot() as i64;
+        if slot_diff != 1 {
+            return Err(ExecError::SkipTooManySlots(ph.slot(), header.slot()));
+        }
+    } else {
+        // If we don't have a parent, we must be the genesis block.
+        if header.slot() != 0 || header.epoch() != 0 {
+            return Err(ExecError::NongenesisHeaderMissingParent);
+        }
+
+        // Do we need this check?
+        if !header.parent_blkid().is_null() {
+            return Err(ExecError::GenesisParentNonnull);
+        }
+    }
+
+    Ok(())
+}
+
+/// Checks that the block's structure is internally consistent.
+fn verify_block_structure(header: &OLBlockHeader, body: &OLBlockBody) -> ExecResult<()> {
+    let body_root = body.compute_hash_commitment();
+    if body_root != *header.body_root() {
+        return Err(ExecError::BlockStructureMismatch);
     }
 
     Ok(())
