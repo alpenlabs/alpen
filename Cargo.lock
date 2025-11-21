@@ -13437,6 +13437,9 @@ dependencies = [
  "moho-types",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-codec",
+ "strata-codec-derive",
+ "strata-codec-utils",
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
@@ -13912,6 +13915,7 @@ dependencies = [
 name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "strata-codec",

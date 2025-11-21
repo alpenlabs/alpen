@@ -1,18 +1,19 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
+use strata_codec::VarVec;
+use strata_codec_derive::Codec;
 use strata_msg_fmt::TypeId;
 
 use crate::constants::DEPOSIT_LOG_TYPE_ID;
 
 /// Details for a deposit operation.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Codec)]
 pub struct DepositLog {
     /// Identifier of the target execution environment.
     pub ee_id: u64,
     /// Amount in satoshis.
     pub amount: u64,
     /// Serialized address for the operation.
-    pub addr: Vec<u8>,
+    pub addr: VarVec<u8>,
 }
 
 impl DepositLog {
@@ -21,7 +22,7 @@ impl DepositLog {
         Self {
             ee_id,
             amount,
-            addr,
+            addr: VarVec::from_vec(addr).expect("address too large for VarVec"),
         }
     }
 }
