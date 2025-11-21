@@ -1,11 +1,13 @@
 //! Block assembly flows.
 // TODO should this be in another crate?
 
+use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;
 use strata_ledger_types::StateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog, OLTxSegment,
+    OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog, OLTransaction,
+    OLTxSegment, TransactionAttachment, TransactionPayload,
 };
 
 use crate::{
@@ -97,7 +99,10 @@ pub fn execute_block_inputs<S: StateAccessor>(
         chain_processing::process_epoch_initial(state, &init_ctx)?;
     }
 
-    // 2. Call process_block_tx_segment for every block as usual.
+    // 2. Process the slot start for every block.
+    chain_processing::process_slot_start(state, &block_context)?;
+
+    // 3. Call process_block_tx_segment for every block as usual.
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     transaction_processing::process_block_tx_segment(
@@ -106,10 +111,10 @@ pub fn execute_block_inputs<S: StateAccessor>(
         &tx_ctx,
     )?;
 
-    // 3. Compute the state root and remember it.
+    // 4. Compute the state root and remember it.
     let pre_manifest_state_root = state.compute_state_root()?;
 
-    // 4. If it's the last block of an epoch, then call process_block_manifests,
+    // 5. If it's the last block of an epoch, then call process_block_manifests,
     // and compute the final state root and remember it.
     //
     // Then we use this to figure out what our state commitments should be.
@@ -139,10 +144,38 @@ pub struct BlockComponents {
 }
 
 impl BlockComponents {
-    fn new(tx_segment: OLTxSegment, manifest_container: Option<OLL1ManifestContainer>) -> Self {
+    pub fn new(tx_segment: OLTxSegment, manifest_container: Option<OLL1ManifestContainer>) -> Self {
         Self {
             tx_segment,
             manifest_container,
+        }
+    }
+
+    /// Create new empty block components.
+    pub fn new_empty() -> Self {
+        Self {
+            tx_segment: OLTxSegment::new(Vec::new()),
+            manifest_container: None,
+        }
+    }
+
+    /// Create block components with the given transaction payloads.
+    pub fn new_txs(payloads: Vec<TransactionPayload>) -> Self {
+        let txs = payloads
+            .into_iter()
+            .map(|p| OLTransaction::new(TransactionAttachment::default(), p))
+            .collect();
+        Self {
+            tx_segment: OLTxSegment::new(txs),
+            manifest_container: None,
+        }
+    }
+
+    /// Create terminal block components from manifests.
+    pub fn new_manifests(manifests: Vec<AsmManifest>) -> Self {
+        Self {
+            tx_segment: OLTxSegment::new(Vec::new()),
+            manifest_container: Some(OLL1ManifestContainer::new(manifests)),
         }
     }
 

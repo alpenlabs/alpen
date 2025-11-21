@@ -1,7 +1,11 @@
 //! Toplevel state.
 
+use bitcoin::absolute;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
-use strata_ledger_types::{AccountTypeState, StateAccessor};
+use strata_codec::{Codec, encode_to_vec};
+use strata_codec_derive::Codec;
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, OLBlockId, hash::raw};
+use strata_ledger_types::{AccountTypeState, EpochCommitment, StateAccessor};
 
 use crate::{
     account::{AccountState, NativeAccountTypeState},
@@ -10,11 +14,47 @@ use crate::{
     ledger::TsnlLedgerAccountsTable,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 pub struct OLState {
     epoch: EpochalState,
     global: GlobalState,
     ledger: TsnlLedgerAccountsTable,
+}
+
+impl OLState {
+    /// Create a new genesis state for testing.
+    pub fn new_genesis() -> Self {
+        Self {
+            epoch: EpochalState::new(
+                BitcoinAmount::from(0),
+                0,
+                L1BlockCommitment::new(
+                    absolute::Height::from_consensus(0).unwrap(),
+                    L1BlockId::from(Buf32::zero()),
+                ),
+                EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
+            ),
+            global: GlobalState::new(0),
+            ledger: TsnlLedgerAccountsTable::new_empty(),
+        }
+    }
+
+    /// Create a state with specified epoch and slot for testing.
+    pub fn new_at(epoch: u64, slot: u64) -> Self {
+        Self {
+            epoch: EpochalState::new(
+                BitcoinAmount::from(0),
+                epoch as u32,
+                L1BlockCommitment::new(
+                    absolute::Height::from_consensus(0).unwrap(),
+                    L1BlockId::from(Buf32::zero()),
+                ),
+                EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
+            ),
+            global: GlobalState::new(slot),
+            ledger: TsnlLedgerAccountsTable::new_empty(),
+        }
+    }
 }
 
 impl StateAccessor for OLState {
@@ -78,7 +118,11 @@ impl StateAccessor for OLState {
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // We can do something "stupid simple" and replace with SSZ later.
-        todo!()
+        // Compute the state root by hashing the Codec encoding of the state
+        // For now, we'll panic on encoding errors as they shouldn't happen in practice
+        let encoded = encode_to_vec(self).expect("state encoding should always succeed");
+        let hash = raw(&encoded);
+        Ok(hash)
     }
 }
+

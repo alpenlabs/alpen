@@ -9,9 +9,11 @@ edition = "2024"
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-codec.workspace = true
+strata-codec-derive.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
+borsh.workspace = true
 int-enum.workspace = true
 
 [lints]

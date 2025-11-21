@@ -5,6 +5,9 @@ use strata_l1_txfmt::SubprotocolId;
 use strata_merkle::error::MerkleError;
 use thiserror::Error;
 
+/// Convenience result wrapper.
+pub type AsmResult<T> = Result<T, AsmError>;
+
 /// Errors that can occur while working with ASM subprotocols.
 #[derive(Debug, Error)]
 pub enum AsmError {

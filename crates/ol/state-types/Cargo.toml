@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitcoin.workspace = true
 strata-acct-types.workspace = true
+strata-codec.workspace = true
+strata-codec-derive.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
+strata-merkle.workspace = true
 strata-snark-acct-types.workspace = true
 
 [lints]

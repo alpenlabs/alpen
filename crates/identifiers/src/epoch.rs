@@ -100,17 +100,14 @@ impl Codec for EpochCommitment {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.epoch.encode(enc)?;
         self.last_slot.encode(enc)?;
-        // OLBlockId wraps Buf32 which is [u8; 32]
-        let blkid_bytes: &[u8; 32] = self.last_blkid.as_ref();
-        blkid_bytes.encode(enc)?;
+        self.last_blkid.encode(enc)?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let epoch = u64::decode(dec)?;
         let last_slot = u64::decode(dec)?;
-        let blkid_bytes = <[u8; 32]>::decode(dec)?;
-        let last_blkid = OLBlockId::from(Buf32::from(blkid_bytes));
+        let last_blkid = OLBlockId::decode(dec)?;
         Ok(Self {
             epoch,
             last_slot,

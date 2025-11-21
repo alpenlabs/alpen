@@ -8,6 +8,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 use crate::{buf::Buf32, hash::sha256d};
 
@@ -53,6 +54,17 @@ impl From<Buf32> for L1BlockId {
 impl From<L1BlockId> for Buf32 {
     fn from(value: L1BlockId) -> Self {
         value.0
+    }
+}
+
+impl Codec for L1BlockId {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.0.encode(enc)
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let buf = Buf32::decode(dec)?;
+        Ok(Self(buf))
     }
 }
 
@@ -142,6 +154,33 @@ impl BorshDeserialize for L1BlockCommitment {
         let height = height_u64;
 
         let blkid = L1BlockId::deserialize_reader(reader)?;
+        Ok(Self { height, blkid })
+    }
+}
+
+impl Codec for L1BlockCommitment {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode height as u64 for consistency
+        #[cfg(feature = "bitcoin")]
+        let height_u64 = self.height.to_consensus_u32() as u64;
+        #[cfg(not(feature = "bitcoin"))]
+        let height_u64 = self.height;
+
+        height_u64.encode(enc)?;
+        self.blkid.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let height_u64 = u64::decode(dec)?;
+
+        #[cfg(feature = "bitcoin")]
+        let height = absolute::Height::from_consensus(height_u64 as u32)
+            .map_err(|_| CodecError::MalformedField("L1BlockCommitment.height"))?;
+        #[cfg(not(feature = "bitcoin"))]
+        let height = height_u64;
+
+        let blkid = L1BlockId::decode(dec)?;
         Ok(Self { height, blkid })
     }
 }

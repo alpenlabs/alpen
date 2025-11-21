@@ -32,6 +32,15 @@ pub struct BlockExecExpectations {
     logs_root: Buf32,
 }
 
+impl BlockExecExpectations {
+    pub(crate) fn new(post_state_roots: BlockPostStateCommitments, logs_root: Buf32) -> Self {
+        Self {
+            post_state_roots,
+            logs_root,
+        }
+    }
+}
+
 /// Describes the state roots we might compute in the different phases.
 #[derive(Copy, Clone, Debug)]
 pub enum BlockPostStateCommitments {
@@ -144,7 +153,10 @@ pub fn verify_block_classically<S: StateAccessor>(
         chain_processing::process_epoch_initial(state, &epoch_context)?;
     }
 
-    // 2. Call process_block_tx_segment for every block as usual.
+    // 2. Process the slot start for every block.
+    chain_processing::process_slot_start(state, &block_context)?;
+
+    // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header.as_ref());
@@ -154,7 +166,7 @@ pub fn verify_block_classically<S: StateAccessor>(
         &tx_ctx,
     )?;
 
-    // 3. Check the state root.
+    // 4. Check the state root.
     // - if it's a nonterminal, then check against the header state root
     // - if it *is* a terminal, then check against the preseal state root
     let pre_manifest_state_root = state.compute_state_root()?;
@@ -175,7 +187,7 @@ pub fn verify_block_classically<S: StateAccessor>(
         }
     }
 
-    // 4. If it's the last block of an epoch, then call process_block_manifests,
+    // 5. If it's the last block of an epoch, then call process_block_manifests,
     // then really check the header state root.
     //
     // Then we get the exec output one way or another.
@@ -193,7 +205,7 @@ pub fn verify_block_classically<S: StateAccessor>(
         }
     }
 
-    // 5. Check the logs root.
+    // 6. Check the logs root.
     let computed_logs_root = compute_logs_root(&output_buffer.into_logs());
     if computed_logs_root != exp.logs_root {
         return Err(ExecError::ChainIntegrity);

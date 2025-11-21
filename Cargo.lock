@@ -13451,7 +13451,7 @@ dependencies = [
  "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -13707,6 +13707,7 @@ dependencies = [
  "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "strata-checkpoint-types",
+ "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-test-utils",
@@ -13896,6 +13897,15 @@ version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "strata-codec-derive"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
+dependencies = [
+ "quote",
+ "syn 2.0.110",
 ]
 
 [[package]]
@@ -14408,10 +14418,12 @@ dependencies = [
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "int-enum",
  "strata-acct-types",
  "strata-asm-common",
  "strata-codec",
+ "strata-codec-derive",
  "strata-identifiers",
  "strata-snark-acct-types",
 ]
@@ -14438,7 +14450,7 @@ dependencies = [
  "strata-codec",
  "strata-identifiers",
  "strata-ledger-types",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -14463,9 +14475,13 @@ dependencies = [
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "strata-acct-types",
+ "strata-codec",
+ "strata-codec-derive",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-merkle",
  "strata-snark-acct-types",
 ]
 
@@ -14484,8 +14500,9 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-msg-types",
+ "strata-ol-state-types",
  "strata-snark-acct-types",
- "thiserror 2.0.16",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

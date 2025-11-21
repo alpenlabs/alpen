@@ -27,7 +27,7 @@ pub struct BlockInfo {
 }
 
 impl BlockInfo {
-    fn new(timestamp: u64, slot: Slot, epoch: Epoch) -> Self {
+    pub(crate) fn new(timestamp: u64, slot: Slot, epoch: Epoch) -> Self {
         Self {
             timestamp,
             slot,
@@ -132,12 +132,12 @@ impl<'b> BlockContext<'b> {
     /// Computes the blkid of the parent block or returns the null blkid if this
     /// is the genesis block.
     pub fn compute_parent_blkid(&self) -> OLBlockId {
-        let Some(_ph) = self.parent_header() else {
+        let Some(ph) = self.parent_header() else {
             return OLBlockId::null();
         };
 
-        // TODO where did this function go?
-        todo!();
+        // Use the parent header's compute_blkid method
+        ph.compute_blkid()
     }
 
     /// Computes the block commitment for the parent block.

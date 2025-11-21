@@ -4,6 +4,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 use crate::buf::Buf32;
 
@@ -106,6 +107,20 @@ impl fmt::Display for OLBlockCommitment {
             std::str::from_utf8(&last_hex)
                 .expect("Failed to convert last hex bytes to UTF-8 string")
         )
+    }
+}
+
+impl Codec for OLBlockCommitment {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.slot.encode(enc)?;
+        self.blkid.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let slot = u64::decode(dec)?;
+        let blkid = OLBlockId::decode(dec)?;
+        Ok(Self { slot, blkid })
     }
 }
 

@@ -3,6 +3,8 @@
 //! This uses the "transitional" types described in the OL STF spec.
 
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, SYSTEM_RESERVED_ACCTS};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec_derive::Codec;
 
 use crate::account::AccountState;
 
@@ -86,7 +88,7 @@ impl TsnlLedgerAccountsTable {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 struct TsnlAccountEntry {
     id: AccountId,
     state: AccountState,
@@ -95,5 +97,44 @@ struct TsnlAccountEntry {
 impl TsnlAccountEntry {
     fn new(id: AccountId, state: AccountState) -> Self {
         Self { id, state }
+    }
+}
+
+// Codec implementation for TsnlLedgerAccountsTable
+impl Codec for TsnlLedgerAccountsTable {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode the accounts vector - length first, then each element
+        (self.accounts.len() as u64).encode(enc)?;
+        for account in &self.accounts {
+            account.encode(enc)?;
+        }
+
+        // Encode the serials vector - length first, then each element
+        (self.serials.len() as u64).encode(enc)?;
+        for serial in &self.serials {
+            serial.encode(enc)?;
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        // Decode the accounts vector
+        let accounts_len = u64::decode(dec)? as usize;
+        let mut accounts = Vec::with_capacity(accounts_len);
+        for _ in 0..accounts_len {
+            accounts.push(TsnlAccountEntry::decode(dec)?);
+        }
+
+        // Decode the serials vector
+        let serials_len = u64::decode(dec)? as usize;
+        let mut serials = Vec::with_capacity(serials_len);
+        for _ in 0..serials_len {
+            serials.push(AccountId::decode(dec)?);
+        }
+
+        Ok(Self {
+            accounts,
+            serials,
+        })
     }
 }

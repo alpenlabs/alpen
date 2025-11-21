@@ -3,6 +3,7 @@
 //! This can be completely omitted from DA.
 
 use strata_acct_types::BitcoinAmount;
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::L1BlockCommitment;
 use strata_ledger_types::*;
 
@@ -12,6 +13,23 @@ pub struct EpochalState {
     cur_epoch: u32,
     last_l1_block: L1BlockCommitment,
     checkpointed_epoch: EpochCommitment,
+}
+
+impl EpochalState {
+    /// Create a new epochal state for testing.
+    pub fn new(
+        total_ledger_funds: BitcoinAmount,
+        cur_epoch: u32,
+        last_l1_block: L1BlockCommitment,
+        checkpointed_epoch: EpochCommitment,
+    ) -> Self {
+        Self {
+            total_ledger_funds,
+            cur_epoch,
+            last_l1_block,
+            checkpointed_epoch,
+        }
+    }
 }
 
 impl IL1ViewState for EpochalState {
@@ -53,5 +71,29 @@ impl IL1ViewState for EpochalState {
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.total_ledger_funds = amt;
+    }
+}
+
+// Codec implementation for EpochalState
+impl Codec for EpochalState {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.total_ledger_funds.to_sat().encode(enc)?;
+        self.cur_epoch.encode(enc)?;
+        self.last_l1_block.encode(enc)?;
+        self.checkpointed_epoch.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let total_ledger_funds = BitcoinAmount::from_sat(u64::decode(dec)?);
+        let cur_epoch = u32::decode(dec)?;
+        let last_l1_block = L1BlockCommitment::decode(dec)?;
+        let checkpointed_epoch = EpochCommitment::decode(dec)?;
+        Ok(Self {
+            total_ledger_funds,
+            cur_epoch,
+            last_l1_block,
+            checkpointed_epoch,
+        })
     }
 }

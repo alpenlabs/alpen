@@ -1,13 +1,15 @@
 use std::fmt;
 
 use int_enum::IntEnum;
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, VarVec};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec_derive::Codec;
 use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 use crate::Slot;
 
 /// Represents a single transaction within a block.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 pub struct OLTransaction {
     /// Any extra data associated with the transaction.
     extra: TransactionAttachment,
@@ -18,7 +20,7 @@ pub struct OLTransaction {
 
 impl OLTransaction {
     // TODO use a builder
-    pub(crate) fn new(extra: TransactionAttachment, payload: TransactionPayload) -> Self {
+    pub fn new(extra: TransactionAttachment, payload: TransactionPayload) -> Self {
         Self { payload, extra }
     }
 
@@ -48,6 +50,37 @@ impl TransactionPayload {
         match self {
             TransactionPayload::GenericAccountMessage { .. } => TxTypeId::GenericAccountMessage,
             TransactionPayload::SnarkAccountUpdate { .. } => TxTypeId::SnarkAccountUpdate,
+        }
+    }
+}
+
+impl Codec for TransactionPayload {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        match self {
+            TransactionPayload::GenericAccountMessage(payload) => {
+                1u8.encode(enc)?;
+                payload.encode(enc)?;
+            }
+            TransactionPayload::SnarkAccountUpdate(payload) => {
+                2u8.encode(enc)?;
+                payload.encode(enc)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let variant = u8::decode(dec)?;
+        match variant {
+            1 => {
+                let payload = GamTxPayload::decode(dec)?;
+                Ok(TransactionPayload::GenericAccountMessage(payload))
+            }
+            2 => {
+                let payload = SnarkAccountUpdateTxPayload::decode(dec)?;
+                Ok(TransactionPayload::SnarkAccountUpdate(payload))
+            }
+            _ => Err(CodecError::InvalidVariant("TransactionPayload")),
         }
     }
 }
@@ -86,6 +119,45 @@ impl TransactionAttachment {
     }
 }
 
+impl Codec for TransactionAttachment {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode Option fields as bool (is_some) followed by value if present
+        match self.min_slot {
+            Some(slot) => {
+                true.encode(enc)?;
+                slot.encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+        match self.max_slot {
+            Some(slot) => {
+                true.encode(enc)?;
+                slot.encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let min_slot = if bool::decode(dec)? {
+            Some(Slot::decode(dec)?)
+        } else {
+            None
+        };
+        let max_slot = if bool::decode(dec)? {
+            Some(Slot::decode(dec)?)
+        } else {
+            None
+        };
+        Ok(Self { min_slot, max_slot })
+    }
+}
+
 /// Type ID to indicate transaction types.
 #[repr(u16)]
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, IntEnum)]
@@ -108,14 +180,14 @@ impl fmt::Display for TxTypeId {
 }
 
 /// "Generic Account Message" tx payload.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 pub struct GamTxPayload {
     target: AccountId,
-    payload: Vec<u8>,
+    payload: VarVec<u8>,
 }
 
 impl GamTxPayload {
-    pub fn new(target: AccountId, payload: Vec<u8>) -> Self {
+    pub fn new(target: AccountId, payload: VarVec<u8>) -> Self {
         Self { target, payload }
     }
 
@@ -124,12 +196,12 @@ impl GamTxPayload {
     }
 
     pub fn payload(&self) -> &[u8] {
-        &self.payload
+        self.payload.as_ref()
     }
 }
 
 /// Snark account update payload.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 pub struct SnarkAccountUpdateTxPayload {
     target: AccountId,
     update_container: SnarkAccountUpdateContainer,

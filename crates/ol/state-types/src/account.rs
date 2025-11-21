@@ -1,6 +1,7 @@
 use strata_acct_types::{
     AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, RawAccountTypeId,
 };
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_ledger_types::{AccountTypeState, Coin, IAccountState};
 
 use crate::snark_account::NativeSnarkAccountState;
@@ -76,6 +77,27 @@ impl IAccountState for AccountState {
     }
 }
 
+// Codec implementation for AccountState
+impl Codec for AccountState {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.serial.encode(enc)?;
+        self.balance.to_sat().encode(enc)?;
+        self.state.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let serial = AccountSerial::decode(dec)?;
+        let balance = BitcoinAmount::from_sat(u64::decode(dec)?);
+        let state = NativeAccountTypeState::decode(dec)?;
+        Ok(Self {
+            serial,
+            balance,
+            state,
+        })
+    }
+}
+
 /// Internal impl of account state types.
 #[derive(Clone, Debug)]
 pub(crate) enum NativeAccountTypeState {
@@ -104,6 +126,35 @@ impl NativeAccountTypeState {
         match self {
             NativeAccountTypeState::Empty => AccountTypeState::Empty,
             NativeAccountTypeState::Snark(s) => AccountTypeState::Snark(s),
+        }
+    }
+}
+
+// Codec implementation for NativeAccountTypeState
+impl Codec for NativeAccountTypeState {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode the variant discriminant
+        match self {
+            Self::Empty => {
+                0u8.encode(enc)?;
+            }
+            Self::Snark(state) => {
+                1u8.encode(enc)?;
+                state.encode(enc)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let variant = u8::decode(dec)?;
+        match variant {
+            0 => Ok(Self::Empty),
+            1 => {
+                let state = NativeSnarkAccountState::decode(dec)?;
+                Ok(Self::Snark(state))
+            }
+            _ => Err(CodecError::InvalidVariant("NativeAccountTypeState")),
         }
     }
 }

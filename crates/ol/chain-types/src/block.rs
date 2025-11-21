@@ -1,5 +1,7 @@
 use strata_asm_common::AsmManifest;
-use strata_identifiers::{Buf32, Buf64};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
+use strata_codec_derive::Codec;
+use strata_identifiers::{Buf32, Buf64, L1BlockId, hash::raw};
 
 use crate::{Epoch, OLBlockId, OLTransaction, Slot};
 
@@ -57,7 +59,7 @@ impl SignedOLBlockHeader {
 /// OL header.
 ///
 /// This should not be directly used itself during execution.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 pub struct OLBlockHeader {
     /// The timestamp the block was created at.
     timestamp: u64,
@@ -129,6 +131,13 @@ impl OLBlockHeader {
     pub fn logs_root(&self) -> &Buf32 {
         &self.logs_root
     }
+
+    /// Computes the block ID by hashing the header's Codec encoding.
+    pub fn compute_blkid(&self) -> OLBlockId {
+        let encoded = encode_to_vec(self).expect("header encoding should succeed");
+        let hash = raw(&encoded);
+        OLBlockId::from(hash)
+    }
 }
 
 /// OL block body containing transactions and l1 updates
@@ -167,10 +176,41 @@ impl OLBlockBody {
     }
 
     /// Computes the hash commitment of this block body.
-    /// TODO: This will use SSZ merkle hashing when ready.
     pub fn compute_hash_commitment(&self) -> Buf32 {
-        // Stub implementation - will be replaced with SSZ merkle hashing
-        Buf32::zero()
+        // Encode the block body and hash it
+        let encoded = encode_to_vec(self).expect("block body encoding should succeed");
+        let hash = raw(&encoded);
+        hash
+    }
+}
+
+impl Codec for OLBlockBody {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.tx_segment.encode(enc)?;
+        // Encode Option as bool (is_some) followed by value if present
+        match &self.l1_update {
+            Some(update) => {
+                true.encode(enc)?;
+                update.encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let tx_segment = OLTxSegment::decode(dec)?;
+        let l1_update = if bool::decode(dec)? {
+            Some(OLL1Update::decode(dec)?)
+        } else {
+            None
+        };
+        Ok(Self {
+            tx_segment,
+            l1_update,
+        })
     }
 }
 
@@ -191,8 +231,28 @@ impl OLTxSegment {
     }
 }
 
+impl Codec for OLTxSegment {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode Vec as length followed by elements
+        (self.txs.len() as u64).encode(enc)?;
+        for tx in &self.txs {
+            tx.encode(enc)?;
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let len = u64::decode(dec)? as usize;
+        let mut txs = Vec::with_capacity(len);
+        for _ in 0..len {
+            txs.push(OLTransaction::decode(dec)?);
+        }
+        Ok(Self { txs })
+    }
+}
+
 /// Represents an update from L1.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 pub struct OLL1Update {
     /// The state root before applying updates from L1.
     preseal_state_root: Buf32,
@@ -231,5 +291,55 @@ impl OLL1ManifestContainer {
 
     pub fn manifests(&self) -> &[AsmManifest] {
         &self.manifests
+    }
+}
+
+impl Codec for OLL1ManifestContainer {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode Vec as length followed by elements
+        (self.manifests.len() as u64).encode(enc)?;
+        for manifest in &self.manifests {
+            // Encode each manifest field directly
+            manifest.blkid.encode(enc)?;
+            manifest.wtxids_root.encode(enc)?;
+            // Encode logs as length + elements
+            (manifest.logs.len() as u64).encode(enc)?;
+            for log in &manifest.logs {
+                // We need to encode AsmLogEntry - let's encode it as bytes for now
+                let bytes = borsh::to_vec(log)
+                    .map_err(|_| CodecError::InvalidVariant("Failed to serialize AsmLogEntry"))?;
+                (bytes.len() as u64).encode(enc)?;
+                for byte in bytes {
+                    byte.encode(enc)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let len = u64::decode(dec)? as usize;
+        let mut manifests = Vec::with_capacity(len);
+        for _ in 0..len {
+            // Decode each manifest field
+            let blkid = L1BlockId::decode(dec)?;
+            let wtxids_root = Buf32::decode(dec)?;
+            // Decode logs
+            let logs_len = u64::decode(dec)? as usize;
+            let mut logs = Vec::with_capacity(logs_len);
+            for _ in 0..logs_len {
+                // Decode AsmLogEntry from bytes
+                let byte_len = u64::decode(dec)? as usize;
+                let mut bytes = Vec::with_capacity(byte_len);
+                for _ in 0..byte_len {
+                    bytes.push(u8::decode(dec)?);
+                }
+                let log = borsh::from_slice(&bytes)
+                    .map_err(|_| CodecError::InvalidVariant("Failed to deserialize AsmLogEntry"))?;
+                logs.push(log);
+            }
+            manifests.push(AsmManifest::new(blkid, wtxids_root, logs));
+        }
+        Ok(Self { manifests })
     }
 }

@@ -1,5 +1,7 @@
 //! Update message types.
 
+use strata_acct_types::VarVec;
+
 use crate::ssz_generated::ssz::{
     accumulators::*, messages::*, outputs::UpdateOutputs, state::ProofState, update::*,
 };
@@ -8,6 +10,7 @@ impl UpdateStateData {
     pub fn new(proof_state: ProofState, extra_data: Vec<u8>) -> Self {
         Self {
             proof_state,
+            // FIXME does this panic?
             extra_data: extra_data.into(),
         }
     }
@@ -17,7 +20,7 @@ impl UpdateStateData {
     }
 
     pub fn extra_data(&self) -> &[u8] {
-        &self.extra_data
+        self.extra_data.as_ref()
     }
 }
 
@@ -25,6 +28,7 @@ impl UpdateInputData {
     pub fn new(seq_no: u64, messages: Vec<MessageEntry>, update_state: UpdateStateData) -> Self {
         Self {
             seq_no,
+            // FIXME does this panic?
             messages: messages.into(),
             update_state,
         }
@@ -39,7 +43,7 @@ impl UpdateInputData {
     }
 
     pub fn processed_messages(&self) -> &[MessageEntry] {
-        &self.messages
+        self.messages.as_ref()
     }
 
     pub fn extra_data(&self) -> &[u8] {
@@ -57,14 +61,12 @@ impl UpdateOperationData {
         extra_data: Vec<u8>,
     ) -> Self {
         Self {
-            input: UpdateInputData {
+            input: UpdateInputData::new(
                 seq_no,
-                messages: messages.into(),
-                update_state: UpdateStateData {
-                    proof_state,
-                    extra_data: extra_data.into(),
-                },
-            },
+                // FIXME does this panic?
+                messages.into(),
+                UpdateStateData::new(proof_state, extra_data),
+            ),
             ledger_refs,
             outputs,
         }
@@ -108,6 +110,7 @@ impl From<UpdateOperationData> for UpdateInputData {
 impl LedgerRefs {
     pub fn new(l1_header_refs: Vec<AccumulatorClaim>) -> Self {
         Self {
+            // FIXME does this panic?
             l1_header_refs: l1_header_refs.into(),
         }
     }
@@ -117,33 +120,34 @@ impl LedgerRefs {
     }
 
     pub fn l1_header_refs(&self) -> &[AccumulatorClaim] {
-        &self.l1_header_refs
+        self.l1_header_refs.as_ref()
     }
 }
 
 impl LedgerRefProofs {
     pub fn new(l1_headers_proofs: Vec<MmrEntryProof>) -> Self {
         Self {
+            // FIXME does this panic?
             l1_headers_proofs: l1_headers_proofs.into(),
         }
     }
 
     pub fn l1_headers_proofs(&self) -> &[MmrEntryProof] {
-        &self.l1_headers_proofs
+        self.l1_headers_proofs.as_ref()
     }
 
     /// Converts the proof structure to the entries claimed.  This should only
     /// happen after we've verified all of proofs against the accumulators that
     /// are being checked.
     pub fn to_ref_claims(&self) -> LedgerRefs {
-        LedgerRefs {
-            l1_header_refs: self
-                .l1_headers_proofs
+        LedgerRefs::new(
+            self.l1_headers_proofs
+                .as_ref()
                 .iter()
                 .map(|e| e.to_claim())
                 .collect::<Vec<_>>()
-                .into(),
-        }
+                .into(), // FIXME does this panic
+        )
     }
 }
 
@@ -151,6 +155,7 @@ impl SnarkAccountUpdate {
     pub fn new(operation: UpdateOperationData, update_proof: Vec<u8>) -> Self {
         Self {
             operation,
+            // FIXME does this panic?
             update_proof: update_proof.into(),
         }
     }
@@ -160,7 +165,7 @@ impl SnarkAccountUpdate {
     }
 
     pub fn update_proof(&self) -> &[u8] {
-        &self.update_proof
+        self.update_proof.as_ref()
     }
 
     /// Converts the base snark account update and converts it into the full
@@ -179,13 +184,14 @@ impl SnarkAccountUpdate {
 impl UpdateAccumulatorProofs {
     pub fn new(inbox_proofs: Vec<MessageEntryProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
         Self {
+            // FIXME does this panic?
             inbox_proofs: inbox_proofs.into(),
             ledger_ref_proofs,
         }
     }
 
     pub fn inbox_proofs(&self) -> &[MessageEntryProof] {
-        &self.inbox_proofs
+        self.inbox_proofs.as_ref()
     }
 
     pub fn ledger_ref_proofs(&self) -> &LedgerRefProofs {

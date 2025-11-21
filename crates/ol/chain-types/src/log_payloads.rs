@@ -2,12 +2,13 @@
 
 use strata_acct_types::VarVec;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec_derive::Codec;
 
 /// Payload for a simple withdrawal intent log.
 ///
 /// This log is emitted when a withdrawal intent is created through the bridge.
 /// It contains the withdrawal amount and destination information.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct SimpleWithdrawalIntentLogData {
     /// Amount to withdraw (in satoshis).
     pub amt: u64,
@@ -33,27 +34,13 @@ impl SimpleWithdrawalIntentLogData {
     }
 }
 
-// Codec implementation for SimpleWithdrawalIntentLogData
-impl Codec for SimpleWithdrawalIntentLogData {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.amt.encode(enc)?;
-        self.dest.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let amt = u64::decode(dec)?;
-        let dest = VarVec::<u8>::decode(dec)?;
-        Ok(Self { amt, dest })
-    }
-}
 
 /// Payload for a snark account update log.
 ///
 /// This log is emitted when a snark account is updated through a transaction.
 /// It contains the new message index (sequence number) and any extra data
 /// from the update operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct SnarkAccountUpdateLogData {
     /// The new message index (sequence number) after the update.
     pub new_msg_idx: u64,
@@ -82,23 +69,6 @@ impl SnarkAccountUpdateLogData {
     }
 }
 
-// Codec implementation for SnarkAccountUpdateLogData
-impl Codec for SnarkAccountUpdateLogData {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.new_msg_idx.encode(enc)?;
-        self.extra_data.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let new_msg_idx = u64::decode(dec)?;
-        let extra_data = VarVec::<u8>::decode(dec)?;
-        Ok(Self {
-            new_msg_idx,
-            extra_data,
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {
