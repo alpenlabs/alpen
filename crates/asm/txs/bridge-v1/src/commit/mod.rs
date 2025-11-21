@@ -20,7 +20,8 @@
 //!    - Magic number (4 bytes): Protocol instance identifier
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier
 //!    - Transaction type (1 byte): Commit transaction type
-//!    - Auxiliary data (8 bytes, encoded using [`strata_codec::Codec`] which uses big-endian for integers):
+//!    - Auxiliary data (8 bytes, encoded using [`strata_codec::Codec`] which uses big-endian for
+//!      integers):
 //!      - Deposit index (4 bytes, u32): Index of the deposit being committed to
 //!      - Game index (4 bytes, u32): Index of the game being committed to
 //!

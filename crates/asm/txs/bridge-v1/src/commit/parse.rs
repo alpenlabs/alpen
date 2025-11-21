@@ -4,7 +4,7 @@ use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 use strata_primitives::Buf32;
 
-use crate::{commit::aux::CommitTxHeaderAux, constants::COMMIT_TX_TYPE, errors::CommitParseError};
+use crate::{commit::aux::CommitTxHeaderAux, errors::CommitParseError};
 
 /// Length of auxiliary data for commit transactions.
 /// - 4 bytes for deposit_idx (u32)
@@ -113,6 +113,7 @@ mod tests {
     use super::*;
     use crate::{
         BRIDGE_V1_SUBPROTOCOL_ID,
+        constants::COMMIT_TX_TYPE,
         test_utils::{
             TEST_MAGIC_BYTES, create_tagged_payload, create_test_commit_tx,
             mutate_op_return_output, parse_tx,

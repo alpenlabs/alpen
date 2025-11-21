@@ -5,7 +5,6 @@ use strata_codec::decode_buf_exact;
 use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
-    constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
     errors::WithdrawalParseError,
     withdrawal_fulfillment::{
         USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, aux::WithdrawalFulfillmentTxHeaderAux,
@@ -106,6 +105,7 @@ mod tests {
     use super::*;
     use crate::{
         BRIDGE_V1_SUBPROTOCOL_ID,
+        constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
         test_utils::{
             TEST_MAGIC_BYTES, create_tagged_payload, create_test_withdrawal_fulfillment_tx,
             mutate_op_return_output, parse_tx,

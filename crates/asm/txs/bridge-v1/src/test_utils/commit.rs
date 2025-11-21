@@ -1,5 +1,5 @@
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
+    Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
     transaction::Version,
 };
 use strata_l1_txfmt::{ParseConfig, TagData};
