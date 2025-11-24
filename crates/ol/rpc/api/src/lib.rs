@@ -7,10 +7,10 @@ use strata_ol_rpc_types::*;
 /// Core OL RPC methods for querying chain state.
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
-pub trait OlApi {
+pub trait OLApi {
     /// Get current chain status (latest, confirmed, finalized).
     #[method(name = "chainStatus")]
-    async fn chain_status(&self) -> RpcResult<RpcOlChainStatus>;
+    async fn chain_status(&self) -> RpcResult<RpcOLChainStatus>;
 
     /// Get block commitments for slot range [start_slot, end_slot].
     #[method(name = "getBlockCommitmentsInRange")]
@@ -21,18 +21,9 @@ pub trait OlApi {
     ) -> RpcResult<Vec<OLBlockCommitment>>;
 }
 
-/// OL sequencer-specific RPC methods.
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
-pub trait OlSequencerApi {
-    /// Get message payloads for a range of blocks.
-    #[method(name = "getInputsForBlockRange")]
-    async fn get_inputs_for_block_range(
-        &self,
-        account_id: RpcAccountId,
-        block_ids: Vec<OLBlockId>,
-    ) -> RpcResult<Vec<BlockMessages>>;
-
+pub trait OLSequencerApi {
     /// Get update inputs for specified blocks and account.
     #[method(name = "getUpdateInputsForBlocks")]
     async fn get_update_inputs_for_blocks(
@@ -51,5 +42,5 @@ pub trait OlSequencerApi {
 
     /// Submit transaction to mempool. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]
-    async fn submit_transaction(&self, tx: RpcOlTransaction) -> RpcResult<OLTxId>;
+    async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId>;
 }

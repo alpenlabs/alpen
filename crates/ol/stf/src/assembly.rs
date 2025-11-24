@@ -162,7 +162,7 @@ impl BlockComponents {
     pub fn new_txs(payloads: Vec<TransactionPayload>) -> Self {
         let txs = payloads
             .into_iter()
-            .map(|p| OLTransaction::new(TransactionAttachment::default(), p))
+            .map(|p| OLTransaction::new(p, TransactionAttachment::default()))
             .collect();
         Self {
             tx_segment: OLTxSegment::new(txs),

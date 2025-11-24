@@ -139,8 +139,8 @@ fn test_genesis_with_initial_transactions() {
     );
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![OLTransaction::new(
-            TransactionAttachment::default(),
             tx.clone(),
+            TransactionAttachment::default(),
         )]),
         Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
     );
@@ -641,8 +641,8 @@ fn test_verify_block_with_transactions() {
     );
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![OLTransaction::new(
-            TransactionAttachment::default(),
             tx,
+            TransactionAttachment::default(),
         )]),
         Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
     );
@@ -952,8 +952,8 @@ fn test_verify_rejects_mismatched_logs_root() {
     );
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![OLTransaction::new(
-            TransactionAttachment::default(),
             tx,
+            TransactionAttachment::default(),
         )]),
         Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
     );

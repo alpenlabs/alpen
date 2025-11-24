@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::TransactionExtra;
+use strata_ol_chain_types_new::TransactionAttachment;
 use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
 
 /// Account ID as 32-byte hex string.
@@ -24,7 +24,7 @@ impl From<RpcAccountId> for AccountId {
 
 /// OL chain status with latest, confirmed, and finalized blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcOlChainStatus {
+pub struct RpcOLChainStatus {
     pub latest: OLBlockCommitment,
     pub confirmed: OLBlockCommitment,
     pub finalized: OLBlockCommitment,
@@ -97,37 +97,45 @@ pub struct RpcUpdateInputData {
     pub update_state: RpcUpdateStateData,
 }
 
+/// Generic account message payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcGenericAccountMessage {
+    #[serde(with = "hex::serde")]
+    pub target: [u8; 32],
+    #[serde(with = "hex::serde")]
+    pub payload: Vec<u8>,
+}
+
+/// Snark account update payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcSnarkAccountUpdate {
+    #[serde(with = "hex::serde")]
+    pub target: [u8; 32],
+    pub update: RpcUpdateInputData,
+    #[serde(with = "hex::serde")]
+    pub update_proof: Vec<u8>,
+}
+
 /// Transaction payload: generic message or snark account update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RpcTransactionPayload {
-    GenericAccountMessage {
-        #[serde(with = "hex::serde")]
-        target: [u8; 32],
-        #[serde(with = "hex::serde")]
-        payload: Vec<u8>,
-    },
-    SnarkAccountUpdate {
-        #[serde(with = "hex::serde")]
-        target: [u8; 32],
-        update: RpcUpdateInputData,
-        #[serde(with = "hex::serde")]
-        update_proof: Vec<u8>,
-    },
+    GenericAccountMessage(RpcGenericAccountMessage),
+    SnarkAccountUpdate(RpcSnarkAccountUpdate),
 }
 
 /// Transaction extra: slot constraints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcTransactionExtra {
+pub struct RpcTransactionAttachment {
     pub min_slot: Option<u64>,
     pub max_slot: Option<u64>,
 }
 
 /// OL transaction for submission (excludes accumulator proofs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcOlTransaction {
+pub struct RpcOLTransaction {
     pub payload: RpcTransactionPayload,
-    pub extra: RpcTransactionExtra,
+    pub attachments: RpcTransactionAttachment,
 }
 
 /// Block messages: block ID and its message payloads.
@@ -214,8 +222,8 @@ impl From<RpcUpdateInputData> for UpdateInputData {
     }
 }
 
-impl From<TransactionExtra> for RpcTransactionExtra {
-    fn from(extra: TransactionExtra) -> Self {
+impl From<TransactionAttachment> for RpcTransactionAttachment {
+    fn from(extra: TransactionAttachment) -> Self {
         Self {
             min_slot: extra.min_slot(),
             max_slot: extra.max_slot(),
@@ -223,8 +231,8 @@ impl From<TransactionExtra> for RpcTransactionExtra {
     }
 }
 
-impl From<RpcTransactionExtra> for TransactionExtra {
-    fn from(rpc: RpcTransactionExtra) -> Self {
-        TransactionExtra::new(rpc.min_slot, rpc.max_slot)
+impl From<RpcTransactionAttachment> for TransactionAttachment {
+    fn from(rpc: RpcTransactionAttachment) -> Self {
+        TransactionAttachment::new(rpc.min_slot, rpc.max_slot)
     }
 }
