@@ -1,6 +1,8 @@
 use std::{fmt, io, str};
 
-use arbitrary::{Arbitrary, Error as ArbitraryError, Result as ArbitraryResult, Unstructured};
+#[cfg(feature = "bitcoin")]
+use arbitrary::Error as ArbitraryError;
+use arbitrary::{Arbitrary, Result as ArbitraryResult, Unstructured};
 // Re-export bitcoin types for internal use
 #[cfg(feature = "bitcoin")]
 pub(crate) use bitcoin::{BlockHash, absolute};

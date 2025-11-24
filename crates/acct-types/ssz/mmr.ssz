@@ -1,6 +1,0 @@
-import strata_merkle
-
-### Re-export CompactMmr64B32 for use in other schemas
-class CompactMmr64Wrapper(Container):
-    #~# external_kind: container
-    mmr: strata_merkle.CompactMmr64B32

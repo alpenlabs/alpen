@@ -84,43 +84,43 @@ impl UpdateVerificationState {
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
         // confusion because they do refer to different concepts.
-        if let Err(e) = self.accumulated_outputs.try_extend_transfers(
-            outputs
-                .output_transfers()
-                .iter()
-                .map(|e| OutputTransfer::new(e.dest(), e.value())),
-        ) {
-            // This should never happen: capacity limit is [`MAX_TRANSFERS`]. If hit, it
-            // indicates either a malicious block or a bug. We panic to fail fast
-            // rather than continue with inconsistent state.
-            eprintln!(
-                "ERROR: Failed to extend transfers: {}. Current: {}, Adding: {}, Max: {}",
-                e,
-                self.accumulated_outputs.transfers().len(),
-                outputs.output_transfers().len(),
-                MAX_TRANSFERS
-            );
-            panic!("output transfers capacity exceeded");
-        }
+        // This should never happen: capacity limit is [`MAX_TRANSFERS`]. If hit, it
+        // indicates either a malicious block or a bug. We panic to fail fast
+        // rather than continue with inconsistent state.
+        self.accumulated_outputs
+            .try_extend_transfers(
+                outputs
+                    .output_transfers()
+                    .iter()
+                    .map(|e| OutputTransfer::new(e.dest(), e.value())),
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "output transfers capacity exceeded: {e}. Current: {}, Adding: {}, Max: {}",
+                    self.accumulated_outputs.transfers().len(),
+                    outputs.output_transfers().len(),
+                    MAX_TRANSFERS
+                )
+            });
 
-        if let Err(e) = self.accumulated_outputs.try_extend_messages(
-            outputs
-                .output_messages()
-                .iter()
-                .map(|e| OutputMessage::new(e.dest(), e.payload().clone())),
-        ) {
-            // This should never happen: capacity limit is [`MAX_MESSAGES`]. If hit, it
-            // indicates either a malicious block or a bug. We panic to fail fast
-            // rather than continue with inconsistent state.
-            eprintln!(
-                "ERROR: Failed to extend messages: {}. Current: {}, Adding: {}, Max: {}",
-                e,
-                self.accumulated_outputs.messages().len(),
-                outputs.output_messages().len(),
-                MAX_MESSAGES
-            );
-            panic!("output messages capacity exceeded");
-        }
+        // This should never happen: capacity limit is [`MAX_MESSAGES`]. If hit, it
+        // indicates either a malicious block or a bug. We panic to fail fast
+        // rather than continue with inconsistent state.
+        self.accumulated_outputs
+            .try_extend_messages(
+                outputs
+                    .output_messages()
+                    .iter()
+                    .map(|e| OutputMessage::new(e.dest(), e.payload().clone())),
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "output messages capacity exceeded: {e}. Current: {}, Adding: {}, Max: {}",
+                    self.accumulated_outputs.messages().len(),
+                    outputs.output_messages().len(),
+                    MAX_MESSAGES
+                )
+            });
 
         // Annoying thing to do checked summation.
         let sent_amts_iter = [self.total_val_sent]

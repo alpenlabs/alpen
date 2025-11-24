@@ -1,6 +1,7 @@
 //! Types relating to snark accounts and the snark account proof interface.
 
 mod accumulators;
+mod error;
 mod messages;
 mod outputs;
 mod proof_interface;
@@ -18,6 +19,7 @@ mod ssz_generated {
     include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 }
 
+pub use error::OutputsError;
 pub use proof_interface::UpdateProofPubParams;
 pub use ssz_generated::ssz::{accumulators::*, messages::*, outputs::*, state::*, update::*};
 pub use state::Seqno;

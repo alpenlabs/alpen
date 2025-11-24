@@ -3,8 +3,11 @@
 use ssz_types::VariableList;
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 
-use crate::ssz_generated::ssz::outputs::{
-    MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
+use crate::{
+    error::OutputsError,
+    ssz_generated::ssz::outputs::{
+        MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
+    },
 };
 
 impl UpdateOutputs {
@@ -48,18 +51,19 @@ impl UpdateOutputs {
     ///
     /// Returns an error if adding all items would exceed capacity.
     /// Does not modify the list if capacity would be exceeded.
-    pub fn try_extend_transfers<I>(&mut self, iter: I) -> Result<(), &'static str>
+    pub fn try_extend_transfers<I>(&mut self, iter: I) -> Result<(), OutputsError>
     where
         I: IntoIterator<Item = OutputTransfer>,
+        I::IntoIter: ExactSizeIterator,
     {
-        let items: Vec<_> = iter.into_iter().collect();
-        let needed = self.transfers.len() + items.len();
+        let iter = iter.into_iter();
+        let needed = self.transfers.len() + iter.len();
 
         if needed > MAX_TRANSFERS as usize {
-            return Err("transfers capacity would be exceeded");
+            return Err(OutputsError::TransfersCapacityExceeded);
         }
 
-        for item in items {
+        for item in iter {
             self.transfers.push(item).expect("capacity already checked");
         }
 
@@ -70,18 +74,19 @@ impl UpdateOutputs {
     ///
     /// Returns an error if adding all items would exceed capacity.
     /// Does not modify the list if capacity would be exceeded.
-    pub fn try_extend_messages<I>(&mut self, iter: I) -> Result<(), &'static str>
+    pub fn try_extend_messages<I>(&mut self, iter: I) -> Result<(), OutputsError>
     where
         I: IntoIterator<Item = OutputMessage>,
+        I::IntoIter: ExactSizeIterator,
     {
-        let items: Vec<_> = iter.into_iter().collect();
-        let needed = self.messages.len() + items.len();
+        let iter = iter.into_iter();
+        let needed = self.messages.len() + iter.len();
 
         if needed > MAX_MESSAGES as usize {
-            return Err("messages capacity would be exceeded");
+            return Err(OutputsError::MessagesCapacityExceeded);
         }
 
-        for item in items {
+        for item in iter {
             self.messages.push(item).expect("capacity already checked");
         }
 
