@@ -18,10 +18,9 @@ pub use block::EvmBlock;
 pub use block_body::EvmBlockBody;
 pub use header::EvmHeader;
 pub use partial_state::EvmPartialState;
-pub use write_batch::EvmWriteBatch;
-
 // Internal types
 pub(crate) use witness_db::WitnessDB;
+pub use write_batch::EvmWriteBatch;
 
 // Keep tests module
 #[cfg(test)]

@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use alloy_consensus::Header;
-use alpen_reth_evm::{accumulate_logs_bloom, extract_withdrawal_intents, evm::AlpenEvmFactory};
+use alpen_reth_evm::{accumulate_logs_bloom, evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
 use reth_evm::execute::{BasicBlockExecutor, Executor};
 use reth_evm_ethereum::EthEvmConfig;
@@ -15,13 +15,14 @@ use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
 use strata_ee_acct_types::{
-    EnvError, EnvResult, ExecBlockOutput, ExecHeader, ExecPayload, ExecutionEnvironment,
+    BlockAssembler, EnvError, EnvResult, ExecBlockOutput, ExecHeader, ExecPayload,
+    ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
-    utils::{ build_and_recover_block, compute_hashed_post_state}
+    utils::{build_and_recover_block, compute_hashed_post_state},
 };
 
 //FIXME: should be set with real bridge gateway account
@@ -86,7 +87,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 2: Validate header early (cheap structural consistency check)
         // This validates header fields follow consensus rules (difficulty, nonce, gas limits, etc.)
-        // Cheaper checks should go before more expensive ones if they're independent
         EthPrimitives::validate_header(
             block.sealed_block().sealed_header(),
             self.evm_config.chain_spec().clone(),
@@ -126,8 +126,8 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 8: Collect withdrawal intents
         let transactions = block.into_transactions();
-        let withdrawal_intents = extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
-
+        let withdrawal_intents =
+            extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
 
         // Step 9: Convert execution outcome to HashedPostState
         let block_number = exec_payload.header_intrinsics().number;
@@ -144,49 +144,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
         Ok(ExecBlockOutput::new(write_batch, outputs))
-    }
-
-    fn complete_header(
-        &self,
-        exec_payload: &ExecPayload<'_, Self::Block>,
-        output: &ExecBlockOutput<Self>,
-    ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
-        // Complete the header using execution outputs
-        // The exec_payload contains header intrinsics (non-commitment fields)
-
-        // Get the intrinsics from the payload
-        let intrinsics = exec_payload.header_intrinsics();
-
-        // Get computed commitments from the write batch
-        let state_root = output.write_batch().state_root();
-        let logs_bloom = output.write_batch().logs_bloom();
-
-        // Build the complete header with both intrinsics and computed commitments
-        let header = Header {
-            parent_hash: intrinsics.parent_hash,
-            ommers_hash: intrinsics.ommers_hash,
-            beneficiary: intrinsics.beneficiary,
-            state_root: state_root.into(),
-            transactions_root: intrinsics.transactions_root,
-            receipts_root: intrinsics.receipts_root,
-            logs_bloom,
-            difficulty: intrinsics.difficulty,
-            number: intrinsics.number,
-            gas_limit: intrinsics.gas_limit,
-            gas_used: intrinsics.gas_used,
-            timestamp: intrinsics.timestamp,
-            extra_data: intrinsics.extra_data.clone(),
-            mix_hash: intrinsics.mix_hash,
-            nonce: intrinsics.nonce,
-            base_fee_per_gas: intrinsics.base_fee_per_gas,
-            withdrawals_root: intrinsics.withdrawals_root,
-            blob_gas_used: intrinsics.blob_gas_used,
-            excess_blob_gas: intrinsics.excess_blob_gas,
-            parent_beacon_block_root: intrinsics.parent_beacon_block_root,
-            requests_hash: intrinsics.requests_hash,
-        };
-
-        Ok(EvmHeader::new(header))
     }
 
     fn verify_outputs_against_header(
@@ -222,6 +179,44 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
     }
 }
 
+impl BlockAssembler for EvmExecutionEnvironment {
+    fn complete_header(
+        &self,
+        exec_payload: &ExecPayload<'_, Self::Block>,
+        output: &ExecBlockOutput<Self>,
+    ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
+        let intrinsics = exec_payload.header_intrinsics();
+        let state_root = output.write_batch().state_root();
+        let logs_bloom = output.write_batch().logs_bloom();
+
+        let header = Header {
+            parent_hash: intrinsics.parent_hash,
+            ommers_hash: intrinsics.ommers_hash,
+            beneficiary: intrinsics.beneficiary,
+            state_root: state_root.into(),
+            transactions_root: intrinsics.transactions_root,
+            receipts_root: intrinsics.receipts_root,
+            logs_bloom,
+            difficulty: intrinsics.difficulty,
+            number: intrinsics.number,
+            gas_limit: intrinsics.gas_limit,
+            gas_used: intrinsics.gas_used,
+            timestamp: intrinsics.timestamp,
+            extra_data: intrinsics.extra_data.clone(),
+            mix_hash: intrinsics.mix_hash,
+            nonce: intrinsics.nonce,
+            base_fee_per_gas: intrinsics.base_fee_per_gas,
+            withdrawals_root: intrinsics.withdrawals_root,
+            blob_gas_used: intrinsics.blob_gas_used,
+            excess_blob_gas: intrinsics.excess_blob_gas,
+            parent_beacon_block_root: intrinsics.parent_beacon_block_root,
+            requests_hash: intrinsics.requests_hash,
+        };
+
+        Ok(EvmHeader::new(header))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use strata_ee_acct_types::ExecBlock;
@@ -235,7 +230,7 @@ mod tests {
         use rsp_client_executor::io::EthClientExecutorInput;
         use serde::Deserialize;
 
-        #[derive(Deserialize,Debug)]
+        #[derive(Deserialize, Debug)]
         struct TestData {
             witness: EthClientExecutorInput,
         }
@@ -291,18 +286,13 @@ mod tests {
         );
 
         if let Ok(output) = result {
-            // Test that we can complete the header
-            let completed_header = env.complete_header(&exec_payload, &output);
-            assert!(completed_header.is_ok(), "Header completion should succeed");
-
-            // Test that verification works
-            if let Ok(header) = completed_header {
-                let verify_result = env.verify_outputs_against_header(&header, &output);
-                assert!(
-                    verify_result.is_ok(),
-                    "Verification should succeed with real data"
-                );
-            }
+            // Test that verification works against the original witness header
+            // This validates our computed outputs match the expected results from the witness data
+            let verify_result = env.verify_outputs_against_header(block.get_header(), &output);
+            assert!(
+                verify_result.is_ok(),
+                "Verification should succeed: our computed state_root should match witness header"
+            );
         }
     }
 }

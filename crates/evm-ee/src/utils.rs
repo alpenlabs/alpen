@@ -31,7 +31,6 @@ pub(crate) fn build_and_recover_block(
         .map_err(|_| EnvError::InvalidBlock)
 }
 
-
 /// Converts execution output to HashedPostState for state updates.
 pub(crate) fn compute_hashed_post_state(
     execution_output: BlockExecutionOutput<EthereumReceipt>,

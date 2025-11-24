@@ -147,7 +147,6 @@ impl EvmPartialState {
     ///
     /// This is called after executing a block in a batch to make its hash
     /// available for BLOCKHASH opcode in subsequent blocks.
-
     // NOTE: not sure we we should be adding this in proof generation flow. Looks like we can
     // prepare all of this for whole batch while generating witness.
     pub fn add_executed_block(&mut self, header: Header) {

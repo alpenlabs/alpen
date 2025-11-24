@@ -3,14 +3,15 @@
 //! This module provides a custom DatabaseRef implementation that avoids unnecessary
 //! clones by holding only references to pre-computed data in EvmPartialState.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::{cell::RefCell, collections::BTreeMap};
 
 use reth_errors::ProviderError;
 use reth_trie::TrieAccount;
-use revm::primitives::{keccak256, Address, B256, U256};
-use revm::state::{AccountInfo, Bytecode};
-use revm::DatabaseRef;
+use revm::{
+    DatabaseRef,
+    primitives::{Address, B256, U256, keccak256},
+    state::{AccountInfo, Bytecode},
+};
 use revm_primitives::map::HashMap;
 use rsp_mpt::EthereumState;
 
@@ -38,8 +39,14 @@ impl<'a> std::fmt::Debug for WitnessDB<'a> {
             .field("ethereum_state", &self.ethereum_state)
             .field("block_hashes", &self.block_hashes)
             .field("bytecodes_count", &self.bytecodes.len())
-            .field("address_cache_size", &self.address_hash_cache.borrow().len())
-            .field("storage_key_cache_size", &self.storage_key_cache.borrow().len())
+            .field(
+                "address_cache_size",
+                &self.address_hash_cache.borrow().len(),
+            )
+            .field(
+                "storage_key_cache_size",
+                &self.storage_key_cache.borrow().len(),
+            )
             .finish()
     }
 }

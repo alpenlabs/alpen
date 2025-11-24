@@ -1,7 +1,8 @@
 //! Simple execution environment implementation.
 
 use strata_ee_acct_types::{
-    EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload, ExecutionEnvironment,
+    BlockAssembler, EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload,
+    ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
@@ -47,24 +48,6 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
         Ok(ExecBlockOutput::new(write_batch, outputs))
     }
 
-    fn complete_header(
-        &self,
-        exec_payload: &ExecPayload<'_, Self::Block>,
-        output: &ExecBlockOutput<Self>,
-    ) -> EnvResult<<Self::Block as ExecBlock>::Header> {
-        let intrinsics = exec_payload.header_intrinsics();
-
-        // Compute state root by applying the write batch
-        let post_state = SimplePartialState::new(output.write_batch().accounts().clone());
-        let state_root = post_state.compute_state_root()?;
-
-        Ok(SimpleHeader::new(
-            intrinsics.parent_blkid,
-            state_root,
-            intrinsics.index,
-        ))
-    }
-
     fn verify_outputs_against_header(
         &self,
         _header: &<Self::Block as ExecBlock>::Header,
@@ -84,16 +67,36 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
     }
 }
 
+impl BlockAssembler for SimpleExecutionEnvironment {
+    fn complete_header(
+        &self,
+        exec_payload: &ExecPayload<'_, Self::Block>,
+        output: &ExecBlockOutput<Self>,
+    ) -> EnvResult<<Self::Block as ExecBlock>::Header> {
+        let intrinsics = exec_payload.header_intrinsics();
+
+        // Compute state root by applying the write batch
+        let post_state = SimplePartialState::new(output.write_batch().accounts().clone());
+        let state_root = post_state.compute_state_root()?;
+
+        Ok(SimpleHeader::new(
+            intrinsics.parent_blkid,
+            state_root,
+            intrinsics.index,
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
-    use strata_ee_acct_types::{EnvError, EnvResult, ExecHeader, ExecPayload};
+    use strata_ee_acct_types::{EnvError, EnvResult, ExecHeader, ExecPartialState, ExecPayload};
     use strata_ee_chain_types::BlockInputs;
 
     use super::*;
-    use crate::types::{SimpleBlockBody, SimpleHeaderIntrinsics, SimpleTransaction};
+    use crate::types::{SimpleBlockBody, SimpleHeader, SimpleHeaderIntrinsics, SimpleTransaction};
 
     fn alice() -> SubjectId {
         SubjectId::from([1u8; 32])
@@ -126,6 +129,19 @@ mod tests {
         ee.merge_write_into_state(&mut post_state, output.write_batch())?;
 
         Ok(post_state)
+    }
+
+    /// Helper to complete a header from execution output (for testing only)
+    /// This replicates the logic that was in the removed complete_header method
+    fn complete_header_for_test(
+        intrinsics: &SimpleHeaderIntrinsics,
+        output: &ExecBlockOutput<SimpleExecutionEnvironment>,
+    ) -> SimpleHeader {
+        // Compute state root by applying the write batch
+        let post_state = SimplePartialState::new(output.write_batch().accounts().clone());
+        let state_root = post_state.compute_state_root().unwrap();
+
+        SimpleHeader::new(intrinsics.parent_blkid, state_root, intrinsics.index)
     }
 
     #[test]
@@ -424,7 +440,7 @@ mod tests {
             let output = ee
                 .execute_block_body(&state, &payload, &empty_inputs)
                 .unwrap();
-            let header = ee.complete_header(&payload, &output).unwrap();
+            let header = complete_header_for_test(&intrinsics, &output);
             parent_blkid = header.compute_block_id();
         }
 
@@ -467,7 +483,7 @@ mod tests {
             let output = ee
                 .execute_block_body(&state, &payload, &empty_inputs)
                 .unwrap();
-            let header = ee.complete_header(&payload, &output).unwrap();
+            let header = complete_header_for_test(&intrinsics, &output);
             parent_blkid = header.compute_block_id();
         }
 
@@ -522,7 +538,7 @@ mod tests {
                 BitcoinAmount::from(600u64)
             );
 
-            let header = ee.complete_header(&payload, &output).unwrap();
+            let header = complete_header_for_test(&intrinsics, &output);
             parent_blkid = header.compute_block_id();
         }
 
