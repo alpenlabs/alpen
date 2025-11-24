@@ -14169,6 +14169,7 @@ name = "strata-evm-ee"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "alloy-eips",
  "alloy-rlp",
  "alpen-reth-evm",
  "alpen-reth-primitives",

@@ -22,7 +22,7 @@ use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
-    utils::{build_and_recover_block, compute_hashed_post_state},
+    utils::{build_and_recover_block, compute_hashed_post_state, validate_deposits_against_block},
 };
 
 //FIXME: should be set with real bridge gateway account
@@ -80,7 +80,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         &self,
         pre_state: &Self::PartialState,
         exec_payload: &ExecPayload<'_, Self::Block>,
-        _inputs: &BlockInputs,
+        inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
         // Step 1: Build block from exec_payload and recover senders
         let block = build_and_recover_block(exec_payload)?;
@@ -96,8 +96,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // Step 2a: Validate deposits from BlockInputs against block withdrawals
         // The withdrawals header field is hijacked to represent deposits from the OL.
         // We need to ensure the authenticated deposits from BlockInputs match what's in the block.
-        // TODO:
-        //validate_deposits_against_block(&block, inputs)?;
+        validate_deposits_against_block(&block, inputs)?;
 
         // Step 3: Prepare witness database from partial state
         let db = {
