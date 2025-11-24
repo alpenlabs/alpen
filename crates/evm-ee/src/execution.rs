@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use alloy_consensus::Header;
-use alpen_reth_evm::{accumulate_logs_bloom, evm::AlpenEvmFactory};
+use alpen_reth_evm::{accumulate_logs_bloom, extract_withdrawal_intents, evm::AlpenEvmFactory};
 use reth_chainspec::ChainSpec;
 use reth_evm::execute::{BasicBlockExecutor, Executor};
 use reth_evm_ethereum::EthEvmConfig;
@@ -21,10 +21,7 @@ use strata_ee_chain_types::{BlockInputs, BlockOutputs};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
-    utils::{
-        build_and_recover_block, collect_withdrawal_intents_from_execution,
-        compute_hashed_post_state,
-    },
+    utils::{ build_and_recover_block, compute_hashed_post_state}
 };
 
 //FIXME: should be set with real bridge gateway account
@@ -102,10 +99,10 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // TODO:
         //validate_deposits_against_block(&block, inputs)?;
 
-        // Step 3: Prepare witness database from partial state (expensive operation)
+        // Step 3: Prepare witness database from partial state
         let db = {
-            let trie_db = pre_state.prepare_witness_db(exec_payload.header_intrinsics());
-            WrapDatabaseRef(trie_db)
+            let wit_db = pre_state.create_witness_db();
+            WrapDatabaseRef(wit_db)
         };
 
         // Step 4: Create block executor
@@ -117,9 +114,6 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             .map_err(|_| EnvError::InvalidBlock)?;
 
         // Step 6: Validate block post-execution
-        // Note: This validates execution-dependent fields (receipts root, gas used, requests)
-        // and cannot be moved to verify_outputs_against_header as it requires the full block
-        // and execution_output which are not available in that context
         EthPrimitives::validate_block_post_execution(
             &block,
             self.evm_config.chain_spec().clone(),
@@ -132,8 +126,8 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 8: Collect withdrawal intents
         let transactions = block.into_transactions();
-        let withdrawal_intents =
-            collect_withdrawal_intents_from_execution(transactions, &execution_output.receipts);
+        let withdrawal_intents = extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
+
 
         // Step 9: Convert execution outcome to HashedPostState
         let block_number = exec_payload.header_intrinsics().number;
@@ -241,7 +235,7 @@ mod tests {
         use rsp_client_executor::io::EthClientExecutorInput;
         use serde::Deserialize;
 
-        #[derive(Deserialize)]
+        #[derive(Deserialize,Debug)]
         struct TestData {
             witness: EthClientExecutorInput,
         }

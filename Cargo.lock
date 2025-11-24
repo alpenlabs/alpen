@@ -14175,6 +14175,7 @@ dependencies = [
  "bincode",
  "itertools 0.14.0",
  "reth-chainspec",
+ "reth-errors",
  "reth-evm",
  "reth-evm-ethereum",
  "reth-primitives",
