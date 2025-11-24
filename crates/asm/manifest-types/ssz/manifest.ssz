@@ -1,0 +1,22 @@
+import strata_identifiers
+import log
+
+MAX_LOGS_PER_MANIFEST = 1 << 10
+
+### The manifest output produced after processing an L1 block.
+###
+### This structure represents the result of parsing and validating an L1 (Bitcoin) block,
+### containing the essential commitments and execution logs needed.
+#~# derive: Serialize, Deserialize
+class AsmManifest(Container):
+    ### The L1 block identifier, essentially a bitcoin::BlockHash
+    blkid: strata_identifiers.L1BlockId
+
+    ### The witness transaction ID merkle root, essentially a bitcoin::WitnessMerkleNode.
+    ###
+    ### Used instead of bitcoin::TxMerkleNode to include witness data for complete transaction
+    ### verification and malleability protection.
+    wtxids_root: strata_identifiers.WtxidsRoot
+
+    ### Ordered list of log entries emitted by different subprotocols during L1 block processing
+    logs: List[log.AsmLogEntry, MAX_LOGS_PER_MANIFEST]

@@ -3,7 +3,7 @@
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, Mmr64, MsgPayload, VarVec};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_manifest_types::DepositIntentLogData;
-use strata_identifiers::{AccountSerial, Buf32, L1BlockId, SubjectId};
+use strata_identifiers::{AccountSerial, Buf32, L1BlockId, SubjectId, WtxidsRoot};
 use strata_ledger_types::{
     AccountTypeState, IAccountState, IGlobalState, IL1ViewState, ISnarkAccountState, StateAccessor,
 };
@@ -65,7 +65,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     // Create manifest with the deposit log
     let genesis_manifest = AsmManifest::new(
         test_l1_block_id(1),
-        Buf32::from([0u8; 32]),
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![deposit_log],
     );
 

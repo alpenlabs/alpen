@@ -10,8 +10,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AuxRequestCollector, SectionState, TxInputRef, VerifiedAuxData,
-    log::AsmLogEntry, msg::InterprotoMsg,
+    AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef,
+    VerifiedAuxData, msg::InterprotoMsg,
 };
 
 /// Trait for defining subprotocol behavior within the ASM framework.

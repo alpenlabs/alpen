@@ -20,7 +20,7 @@ impl AsmState {
     pub fn from_output(output: AsmStfOutput) -> Self {
         Self {
             state: output.state,
-            logs: output.manifest.logs,
+            logs: output.manifest.logs.to_vec(),
         }
     }
 

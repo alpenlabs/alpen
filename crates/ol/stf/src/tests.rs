@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountId, VarVec};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_identifiers::{Buf32, L1BlockId};
+use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
 use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::{
     GamTxPayload, OLL1ManifestContainer, OLTransaction, OLTxSegment, TransactionAttachment,
@@ -19,7 +19,7 @@ use crate::{
 fn genesis_block_components() -> BlockComponents {
     let dummy_manifest = AsmManifest::new(
         L1BlockId::from(Buf32::from([0u8; 32])),
-        Buf32::from([0u8; 32]),
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
     );
     BlockComponents::new_manifests(vec![dummy_manifest])
@@ -134,7 +134,7 @@ fn test_genesis_with_initial_transactions() {
     // Create genesis components with both transactions and manifest (to make it terminal)
     let dummy_manifest = AsmManifest::new(
         L1BlockId::from(Buf32::from([0u8; 32])),
-        Buf32::from([0u8; 32]),
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
     );
     let genesis_components = BlockComponents::new(
@@ -321,7 +321,7 @@ fn test_process_chain_with_multiple_epochs() {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
                 L1BlockId::from(Buf32::from([0u8; 32])),
-                Buf32::from([0u8; 32]),
+                WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
             );
             BlockComponents::new_manifests(vec![dummy_manifest])
@@ -583,7 +583,7 @@ fn test_multi_block_chain_verification() {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
                 L1BlockId::from(Buf32::from([0u8; 32])),
-                Buf32::from([0u8; 32]),
+                WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
             );
             BlockComponents::new_manifests(vec![dummy_manifest])
@@ -636,7 +636,7 @@ fn test_verify_block_with_transactions() {
     // Assemble genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
         L1BlockId::from(Buf32::from([0u8; 32])),
-        Buf32::from([0u8; 32]),
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
     );
     let genesis_components = BlockComponents::new(
@@ -947,7 +947,7 @@ fn test_verify_rejects_mismatched_logs_root() {
     // Create genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
         L1BlockId::from(Buf32::from([0u8; 32])),
-        Buf32::from([0u8; 32]),
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
     );
     let genesis_components = BlockComponents::new(

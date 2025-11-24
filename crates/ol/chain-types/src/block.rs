@@ -364,7 +364,7 @@ impl Codec for OLL1ManifestContainer {
                     .map_err(|_| CodecError::InvalidVariant("Failed to deserialize AsmLogEntry"))?;
                 logs.push(log);
             }
-            manifests.push(AsmManifest::new(blkid, wtxids_root, logs));
+            manifests.push(AsmManifest::new(blkid, wtxids_root.into(), logs));
         }
         Ok(Self { manifests })
     }
