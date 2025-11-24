@@ -157,7 +157,6 @@ fn process_l1_checkpoint(
     let ckpt = signed_ckpt.checkpoint(); // inner data
     let ckpt_epoch = ckpt.batch_transition().epoch;
 
-    let _receipt = ckpt.construct_receipt();
     let fin_epoch = state.state().finalized_epoch();
 
     // Note: This is error because this is done by the sequencer
