@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_ol_chain_types_new::TransactionExtra;
+use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
 
 /// Account ID as 32-byte hex string.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -143,17 +145,6 @@ pub struct BlockUpdateInputs {
 }
 
 // Type conversions
-use strata_ol_chain_types_new::TransactionExtra;
-use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
-impl From<&MessageEntry> for RpcMessageEntry {
-    fn from(entry: &MessageEntry) -> Self {
-        Self {
-            source: *entry.source().inner(),
-            incl_epoch: entry.incl_epoch(),
-            payload: entry.payload().into(),
-        }
-    }
-}
 
 impl From<MessageEntry> for RpcMessageEntry {
     fn from(entry: MessageEntry) -> Self {
@@ -190,41 +181,26 @@ impl From<RpcProofState> for ProofState {
     }
 }
 
-impl From<&UpdateStateData> for RpcUpdateStateData {
-    fn from(data: &UpdateStateData) -> Self {
-        Self {
-            proof_state: data.proof_state().into(),
-            extra_data: data.extra_data().to_vec(),
-        }
-    }
-}
-
 impl From<RpcUpdateStateData> for UpdateStateData {
     fn from(rpc: RpcUpdateStateData) -> Self {
         UpdateStateData::new(rpc.proof_state.into(), rpc.extra_data)
     }
 }
 
-impl From<&UpdateInputData> for RpcUpdateInputData {
-    fn from(input: &UpdateInputData) -> Self {
+impl From<UpdateInputData> for RpcUpdateInputData {
+    fn from(input: UpdateInputData) -> Self {
         Self {
             seq_no: input.seq_no(),
             messages: input
                 .processed_messages()
                 .iter()
-                .map(|m| m.into())
+                .map(|m| m.clone().into())
                 .collect(),
             update_state: RpcUpdateStateData {
                 proof_state: input.new_state().into(),
                 extra_data: input.extra_data().to_vec(),
             },
         }
-    }
-}
-
-impl From<UpdateInputData> for RpcUpdateInputData {
-    fn from(input: UpdateInputData) -> Self {
-        (&input).into()
     }
 }
 
@@ -238,18 +214,12 @@ impl From<RpcUpdateInputData> for UpdateInputData {
     }
 }
 
-impl From<&TransactionExtra> for RpcTransactionExtra {
-    fn from(extra: &TransactionExtra) -> Self {
+impl From<TransactionExtra> for RpcTransactionExtra {
+    fn from(extra: TransactionExtra) -> Self {
         Self {
             min_slot: extra.min_slot(),
             max_slot: extra.max_slot(),
         }
-    }
-}
-
-impl From<TransactionExtra> for RpcTransactionExtra {
-    fn from(extra: TransactionExtra) -> Self {
-        (&extra).into()
     }
 }
 
