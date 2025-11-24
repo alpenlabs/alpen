@@ -2,11 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use alloy_consensus::{BlockHeader, Header, Sealable};
+use alloy_consensus::{BlockHeader, Header, Sealable, Sealed};
 use itertools::Itertools;
 use revm::state::Bytecode;
 use revm_primitives::{B256, map::HashMap};
-use rsp_client_executor::io::TrieDB;
 use rsp_mpt::EthereumState;
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{EnvResult, ExecPartialState};
@@ -17,13 +16,16 @@ use crate::{
         decode_bytes_with_length, decode_rlp_with_length, encode_bytes_with_length,
         encode_rlp_with_length,
     },
-    types::EvmWriteBatch,
+    types::{EvmWriteBatch, WitnessDB},
 };
 
 /// Partial state for EVM block execution.
 ///
 /// Contains the witness data needed to execute a block: the sparse Merkle Patricia Trie
 /// state, contract bytecodes, and ancestor block headers for BLOCKHASH opcode support.
+///
+/// This struct pre-computes expensive operations (header hashing, block hash map) during
+/// construction to avoid repeated work when preparing witness databases.
 #[derive(Clone, Debug)]
 pub struct EvmPartialState {
     /// The sparse Merkle Patricia Trie state from RSP
@@ -31,15 +33,28 @@ pub struct EvmPartialState {
     /// Contract bytecodes indexed by their hash for direct lookup during execution.
     /// BTreeMap is used (instead of HashMap) to ensure deterministic serialization order in Codec.
     bytecodes: BTreeMap<B256, Bytecode>,
-    /// Ancestor block headers indexed by block number for BLOCKHASH opcode support
-    ancestor_headers: BTreeMap<u64, Header>,
+    /// Ancestor block headers with pre-computed hashes, indexed by block number.
+    /// Headers are sealed once during construction to avoid repeated hash computations.
+    ancestor_headers: BTreeMap<u64, Sealed<Header>>,
+    /// Pre-computed block hash lookup map for BLOCKHASH opcode.
+    /// Built once during construction from sealed ancestor headers.
+    block_hashes: HashMap<u64, B256>,
 }
 
 impl EvmPartialState {
     /// Creates a new EvmPartialState from an EthereumState with witness data.
     ///
-    /// The bytecodes and ancestor_headers are converted from vectors to BTrees
-    /// for efficient lookup during block execution.
+    /// This performs expensive one-time operations optimized for zkVM execution:
+    /// - Hashes all bytecodes once
+    /// - Seals all ancestor headers (computes their hashes once)
+    /// - Validates header chain integrity
+    /// - Builds block_hashes lookup map once
+    ///
+    /// These operations are done once at construction to avoid repeated work
+    /// during sequential block execution in zkVM.
+    ///
+    /// # Panics
+    /// Panics if the header chain is invalid (block numbers or parent hashes don't match).
     pub fn new(
         ethereum_state: EthereumState,
         bytecodes: Vec<Bytecode>,
@@ -51,16 +66,46 @@ impl EvmPartialState {
             .map(|code| (code.hash_slow(), code))
             .collect();
 
-        // Index ancestor headers by block number for O(log n) lookup by BLOCKHASH opcode
-        let ancestor_headers = ancestor_headers
+        // Seal ancestor headers once (compute hashes) and index by block number
+        let ancestor_headers: BTreeMap<u64, Sealed<Header>> = ancestor_headers
             .into_iter()
-            .map(|header| (header.number, header))
+            .map(|header| {
+                let block_num = header.number;
+                (block_num, header.seal_slow())
+            })
             .collect();
+
+        // Validate header chain and build block_hashes map once
+        let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
+        for (child_sealed, parent_sealed) in ancestor_headers.values().tuple_windows() {
+            // Validate block number continuity
+            assert_eq!(
+                parent_sealed.number() + 1,
+                child_sealed.number(),
+                "Invalid header block number: expected {}, got {}",
+                parent_sealed.number() + 1,
+                child_sealed.number()
+            );
+
+            // Validate parent hash matches
+            let parent_hash = parent_sealed.hash();
+            assert_eq!(
+                parent_hash,
+                child_sealed.parent_hash(),
+                "Invalid header parent hash: expected {}, got {}",
+                parent_hash,
+                child_sealed.parent_hash()
+            );
+
+            // Insert parent's hash into block_hashes map
+            block_hashes.insert(parent_sealed.number(), child_sealed.parent_hash());
+        }
 
         Self {
             ethereum_state,
             bytecodes,
             ancestor_headers,
+            block_hashes,
         }
     }
 
@@ -79,62 +124,48 @@ impl EvmPartialState {
         &self.bytecodes
     }
 
-    /// Gets a reference to the ancestor headers map.
-    pub fn ancestor_headers(&self) -> &BTreeMap<u64, Header> {
+    /// Gets a reference to the ancestor headers map (with pre-computed hashes).
+    pub fn ancestor_headers(&self) -> &BTreeMap<u64, Sealed<Header>> {
         &self.ancestor_headers
+    }
+
+    /// Gets a reference to the pre-computed block hashes map.
+    pub fn block_hashes(&self) -> &HashMap<u64, B256> {
+        &self.block_hashes
+    }
+
+    // NOTE: same comment as `add_executed_block`
+    pub fn add_bytecodes(&mut self, new_bytecodes: Vec<Bytecode>) {
+        for bytecode in new_bytecodes {
+            let hash = bytecode.hash_slow(); // Hash once
+            // BTreeMap insert only adds if key doesn't exist
+            self.bytecodes.entry(hash).or_insert(bytecode);
+        }
+    }
+
+    /// Adds a newly executed block's header to the witness state.
+    ///
+    /// This is called after executing a block in a batch to make its hash
+    /// available for BLOCKHASH opcode in subsequent blocks.
+
+    // NOTE: not sure we we should be adding this in proof generation flow. Looks like we can
+    // prepare all of this for whole batch while generating witness.
+    pub fn add_executed_block(&mut self, header: Header) {
+        let sealed = header.seal_slow(); // Hash once
+        let block_num = sealed.number();
+        let block_hash = sealed.hash();
+
+        // Add to both maps for subsequent block execution
+        self.ancestor_headers.insert(block_num, sealed);
+        self.block_hashes.insert(block_num, block_hash);
     }
 
     /// Prepares witness database for block execution.
     ///
-    /// This builds the necessary maps (block_hashes, bytecode_by_hash) from the witness data
-    /// and creates a TrieDB ready for EVM execution.
-    ///
-    /// # Panics
-    /// Panics if the header chain is invalid (block numbers or parent hashes don't match).
-    pub fn prepare_witness_db<'a>(&'a self, current_header: &Header) -> TrieDB<'a> {
-        // Seal the current block header and ancestor headers by reference (no clones)
-        let current_sealed = current_header.seal_ref_slow();
-        let sealed_headers = std::iter::once(current_sealed)
-            .chain(self.ancestor_headers.values().map(|h| h.seal_ref_slow()))
-            .collect::<Vec<_>>();
-
-        // Verify and build block_hashes from sealed headers for BLOCKHASH opcode support
-        // This validates the header chain integrity by checking that each parent's computed hash
-        // matches the child's parent_hash field
-        let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
-        for (child_header, parent_header) in sealed_headers.iter().tuple_windows() {
-            // Validate block number continuity
-            assert_eq!(
-                parent_header.number() + 1,
-                child_header.number(),
-                "Invalid header block number: expected {}, got {}",
-                parent_header.number() + 1,
-                child_header.number()
-            );
-
-            // Validate parent hash matches
-            let parent_header_hash = parent_header.hash();
-            assert_eq!(
-                parent_header_hash,
-                child_header.parent_hash(),
-                "Invalid header parent hash: expected {}, got {}",
-                parent_header_hash,
-                child_header.parent_hash()
-            );
-
-            block_hashes.insert(parent_header.number(), child_header.parent_hash());
-        }
-
-        // Build bytecode_by_hash from bytecodes for contract execution
-        // Since bytecodes are already indexed by hash in the BTreeMap, we can iterate directly
-        let bytecode_by_hash: HashMap<B256, &revm::state::Bytecode> = self
-            .bytecodes
-            .iter()
-            .map(|(hash, code)| (*hash, code))
-            .collect();
-
-        // Create and return TrieDB
-        TrieDB::new(&self.ethereum_state, block_hashes, bytecode_by_hash)
+    /// Note: Current header validation should be done externally before calling this method.
+    pub fn create_witness_db<'a>(&'a self) -> WitnessDB<'a> {
+        // Simply create a view with references to pre-computed data
+        WitnessDB::new(&self.ethereum_state, &self.block_hashes, &self.bytecodes)
     }
 
     /// Computes the new state root by merging hashed post state changes into this state.
@@ -174,16 +205,18 @@ impl Codec for EvmPartialState {
 
         // Encode bytecodes count
         (self.bytecodes.len() as u32).encode(enc)?;
-        // Encode each bytecode as raw bytes (iterate over BTreeMap values)
-        for bytecode in self.bytecodes.values() {
+        // Encode each bytecode: BOTH the bytes AND its pre-computed hash
+        for (hash, bytecode) in &self.bytecodes {
             encode_bytes_with_length(&bytecode.original_bytes(), enc)?;
+            enc.write_buf(hash.as_slice())?;
         }
 
         // Encode ancestor headers count
         (self.ancestor_headers.len() as u32).encode(enc)?;
-        // Encode each header using RLP helper (iterate over BTreeMap values)
-        for header in self.ancestor_headers.values() {
-            encode_rlp_with_length(header, enc)?;
+        // Encode each sealed header: BOTH the header (RLP) AND its pre-computed hash
+        for sealed_header in self.ancestor_headers.values() {
+            encode_rlp_with_length(sealed_header.inner(), enc)?;
+            enc.write_buf(sealed_header.hash().as_slice())?;
         }
 
         Ok(())
@@ -195,24 +228,74 @@ impl Codec for EvmPartialState {
         let ethereum_state = bincode::deserialize(&ethereum_state_bytes)
             .map_err(|_| CodecError::MalformedField("EthereumState deserialize failed"))?;
 
-        // Decode bytecodes
+        // Decode bytecodes with their pre-computed hashes
         let bytecodes_count = u32::decode(dec)? as usize;
-        let mut bytecodes = Vec::with_capacity(bytecodes_count);
+        let mut bytecodes = BTreeMap::new();
         for _ in 0..bytecodes_count {
+            // Decode the bytecode bytes
             let bytes = decode_bytes_with_length(dec)?;
             let bytecode = Bytecode::new_raw_checked(bytes.into())
                 .map_err(|_| CodecError::MalformedField("Bytecode decode failed"))?;
-            bytecodes.push(bytecode);
+
+            // Decode the pre-computed hash (32 bytes, no length prefix needed)
+            let mut hash_bytes = [0u8; 32];
+            dec.read_buf(&mut hash_bytes)?;
+            let hash = B256::from(hash_bytes);
+
+            bytecodes.insert(hash, bytecode);
         }
 
-        // Decode ancestor headers
+        // Decode ancestor headers with their pre-computed hashes
         let headers_count = u32::decode(dec)? as usize;
-        let mut ancestor_headers = Vec::with_capacity(headers_count);
+        let mut ancestor_headers_sealed = Vec::with_capacity(headers_count);
         for _ in 0..headers_count {
-            ancestor_headers.push(decode_rlp_with_length(dec)?);
+            // Decode the header
+            let header: Header = decode_rlp_with_length(dec)?;
+            // Decode the pre-computed hash (32 bytes, no length prefix needed)
+            let mut hash_bytes = [0u8; 32];
+            dec.read_buf(&mut hash_bytes)?;
+            let hash = B256::from(hash_bytes);
+            // Reconstruct Sealed<Header> without hashing (zero cost!)
+            ancestor_headers_sealed.push(Sealed::new_unchecked(header, hash));
         }
 
-        // Use the constructor which will convert Vecs to BTrees
-        Ok(Self::new(ethereum_state, bytecodes, ancestor_headers))
+        // Build ancestor_headers BTreeMap directly from sealed headers
+        let ancestor_headers: BTreeMap<u64, Sealed<Header>> = ancestor_headers_sealed
+            .into_iter()
+            .map(|sealed| (sealed.number(), sealed))
+            .collect();
+
+        // Validate header chain and build block_hashes map
+        let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
+        for (child_sealed, parent_sealed) in ancestor_headers.values().tuple_windows() {
+            // Validate block number continuity
+            assert_eq!(
+                parent_sealed.number() + 1,
+                child_sealed.number(),
+                "Invalid header block number: expected {}, got {}",
+                parent_sealed.number() + 1,
+                child_sealed.number()
+            );
+
+            // Validate parent hash matches
+            let parent_hash = parent_sealed.hash();
+            assert_eq!(
+                parent_hash,
+                child_sealed.parent_hash(),
+                "Invalid header parent hash: expected {}, got {}",
+                parent_hash,
+                child_sealed.parent_hash()
+            );
+
+            // Insert parent's hash into block_hashes map
+            block_hashes.insert(parent_sealed.number(), child_sealed.parent_hash());
+        }
+
+        Ok(Self {
+            ethereum_state,
+            bytecodes,
+            ancestor_headers,
+            block_hashes,
+        })
     }
 }
