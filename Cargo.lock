@@ -13388,11 +13388,19 @@ name = "strata-asm-manifest-types"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "proptest",
  "serde",
+ "ssz 0.8.1",
+ "ssz_codegen 0.8.1",
+ "ssz_derive 0.8.1",
+ "ssz_types 0.8.1",
  "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",
+ "strata-test-utils-ssz",
  "thiserror 2.0.17",
+ "tree_hash 0.8.1",
+ "tree_hash_derive 0.8.1",
 ]
 
 [[package]]
