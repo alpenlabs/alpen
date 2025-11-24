@@ -6,8 +6,8 @@ use strata_identifiers::Buf32;
 use strata_ledger_types::StateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog, OLTransaction,
-    OLTxSegment, TransactionAttachment, TransactionPayload,
+    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog,
+    OLTransaction, OLTxSegment, TransactionAttachment, TransactionPayload,
 };
 
 use crate::{
@@ -94,7 +94,7 @@ pub fn execute_block_inputs<S: StateAccessor>(
     let output = ExecOutputBuffer::new_empty();
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
-    if block_context.is_probably_epoch_initial() {
+    if block_context.is_epoch_initial() {
         let init_ctx = block_context.to_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &init_ctx)?;
     }
@@ -250,10 +250,13 @@ pub fn execute_and_complete_block<S: StateAccessor>(
 
     // Compute the body root using the hash commitment method.
     let body_root = body.compute_hash_commitment();
+    let mut flags = BlockFlags::zero();
+    flags.set_is_terminal(body.is_probably_terminal());
 
     // 3. Assemble the final completed block.
     let header = OLBlockHeader::new(
         block_context.timestamp(),
+        flags,
         block_context.slot(),
         block_context.epoch(),
         parent_blkid,

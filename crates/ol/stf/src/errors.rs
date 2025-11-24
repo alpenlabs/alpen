@@ -9,6 +9,9 @@ pub type ExecResult<T> = Result<T, ExecError>;
 /// Error from executing/validating the block.
 #[derive(Debug, Error)]
 pub enum ExecError {
+    #[error("header epoch does not match state epoch (header {0}, state {1})")]
+    EpochMismatch(Epoch, Epoch),
+
     /// Signature is invalid, for some purpose.
     #[error("signature for {0} is invalid")]
     SignatureInvalid(&'static str),
@@ -41,17 +44,26 @@ pub enum ExecError {
     #[error("parent blkid mismatch")]
     BlockParentMismatch,
 
-    #[error("verifying nongenesis header without a parent")]
-    NongenesisHeaderMissingParent,
-
     #[error("verifying genesis header with nonnull parent field")]
     GenesisParentNonnull,
+
+    #[error("genesis-looking block has non-zero slot or epoch field")]
+    GenesisCoordsNonzero,
 
     #[error("tried to skip epoch (parent {0}, current {1})")]
     SkipEpochs(Epoch, Epoch),
 
     #[error("tried to skip too many slots (parent {0}, current {1})")]
     SkipTooManySlots(Slot, Slot),
+
+    #[error("incorrect epoch sequencing (parent {0}, parent terminal {2}, self {1})")]
+    IncorrectEpoch(Epoch, Epoch, bool),
+
+    #[error("body inconsistent with header terminal flag")]
+    InconsistentBodyTerminality,
+
+    #[error("genesis block was not a terminal")]
+    GenesisNonterminal,
 
     /// Various account errors.
     #[error("acct: {0}")]

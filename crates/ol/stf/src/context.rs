@@ -98,9 +98,9 @@ impl<'b> BlockContext<'b> {
     /// If there is no parent block but the epoch/slot is nonzero, as that can
     /// only be valid if we're the genesis block.
     pub(crate) fn new(block_info: &'b BlockInfo, parent_header: Option<&'b OLBlockHeader>) -> Self {
-        // Sanity check.
+        // Sanity check genesis context.
         if parent_header.is_none() && (block_info.slot != 0 || block_info.epoch != 0) {
-            panic!("stf/context: headers are all fucked up");
+            panic!("stf/context: tried to verify non-genesis with genesis-like context");
         }
 
         Self {
@@ -152,16 +152,9 @@ impl<'b> BlockContext<'b> {
         OLBlockCommitment::new(ph.slot(), blkid)
     }
 
-    /// Checks if we're probably at the first block of an epoch.
-    ///
-    /// This checks if the epoch is greater than the previous header's epoch, or if we have no
-    /// parent block (meaning we're probably the genesis block).
-    ///
-    /// This doesn't behave correctly if the headers are not actually
-    /// consistent.
-    pub fn is_probably_epoch_initial(&self) -> bool {
-        self.parent_header()
-            .is_none_or(|ph| self.epoch() > ph.epoch())
+    /// Checks if we're the first block of an epoch based on the header flags.
+    pub fn is_epoch_initial(&self) -> bool {
+        self.parent_header().is_none_or(|ph| ph.is_terminal())
     }
 
     /// Constructs an epoch context, for use at an epoch initial.
@@ -170,10 +163,7 @@ impl<'b> BlockContext<'b> {
     ///
     /// If we're "probably not" an epoch initial.
     pub fn to_epoch_initial_context(&self) -> EpochInitialContext {
-        assert!(
-            self.is_probably_epoch_initial(),
-            "stf/context: not epoch initial"
-        );
+        assert!(self.is_epoch_initial(), "stf/context: not epoch initial");
         EpochInitialContext::new(self.epoch(), self.compute_parent_commitment())
     }
 }
@@ -251,11 +241,11 @@ pub struct TxExecContext<'b> {
 
 impl<'b> TxExecContext<'b> {
     pub fn new(
-        epoch_context: &'b BasicExecContext<'b>,
+        basic_context: &'b BasicExecContext<'b>,
         parent_header: Option<&'b OLBlockHeader>,
     ) -> Self {
         Self {
-            basic_context: epoch_context,
+            basic_context,
             parent_header,
         }
     }

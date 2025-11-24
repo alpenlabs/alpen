@@ -1,15 +1,29 @@
 //! Unit tests for the OL STF implementation.
 
 use strata_acct_types::{AccountId, VarVec};
-use strata_identifiers::Buf32;
+use strata_asm_common::{AsmLogEntry, AsmManifest};
+use strata_identifiers::{Buf32, L1BlockId};
 use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
-use strata_ol_chain_types_new::{GamTxPayload, TransactionPayload, *};
+use strata_ol_chain_types_new::{
+    GamTxPayload, OLL1ManifestContainer, OLTransaction, OLTxSegment, TransactionAttachment,
+    TransactionPayload, *,
+};
 use strata_ol_state_types::OLState;
 
 use crate::{
     assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*,
     verification::*,
 };
+
+// Helper function to create genesis block components with a manifest (making it terminal)
+fn genesis_block_components() -> BlockComponents {
+    let dummy_manifest = AsmManifest::new(
+        L1BlockId::from(Buf32::from([0u8; 32])),
+        Buf32::from([0u8; 32]),
+        vec![],
+    );
+    BlockComponents::new_manifests(vec![dummy_manifest])
+}
 
 #[test]
 fn test_genesis_block_processing() {
@@ -20,22 +34,17 @@ fn test_genesis_block_processing() {
     assert_eq!(state.l1_view().cur_epoch(), 0);
     assert_eq!(state.global_mut().cur_slot(), 0);
 
-    // Process empty genesis block
+    // Process genesis block (with manifest to make it terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis_block = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        BlockComponents::new_empty(),
-    )
-    .expect("Genesis block execution should succeed");
+    let genesis_block = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis block execution should succeed");
 
     // Verify genesis block header
     assert_block_position(genesis_block.header(), 0, 0);
     assert_eq!(genesis_block.header().timestamp(), 1000000);
 
-    // State should still be at epoch 0, slot 0 after processing genesis
-    assert_state_updated(&mut state, 0, 0);
+    // State should be at epoch 1, slot 0 after processing terminal genesis
+    assert_state_updated(&mut state, 1, 0);
 
     // Verify state root was computed
     let state_root = state
@@ -59,18 +68,18 @@ fn test_genesis_block_processing() {
 fn test_post_genesis_blocks() {
     let mut state = OLState::new_genesis();
 
-    // Process genesis block
+    // Process genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis block should execute");
 
-    // Process block at slot 1
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    // Process block at slot 1 (epoch 1 since genesis was terminal)
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -79,11 +88,11 @@ fn test_post_genesis_blocks() {
     )
     .expect("Block 1 should execute");
 
-    assert_block_position(block1.header(), 0, 1);
-    assert_state_updated(&mut state, 0, 1);
+    assert_block_position(block1.header(), 1, 1);
+    assert_state_updated(&mut state, 1, 1);
 
-    // Process block at slot 2
-    let block2_info = BlockInfo::new(1002000, 2, 0);
+    // Process block at slot 2 (still epoch 1)
+    let block2_info = BlockInfo::new(1002000, 2, 1);
     let block2 = execute_block(
         &mut state,
         &block2_info,
@@ -92,8 +101,8 @@ fn test_post_genesis_blocks() {
     )
     .expect("Block 2 should execute");
 
-    assert_block_position(block2.header(), 0, 2);
-    assert_state_updated(&mut state, 0, 2);
+    assert_block_position(block2.header(), 1, 2);
+    assert_state_updated(&mut state, 1, 2);
 
     // ADDITIONAL VERIFICATION: Verify all blocks in the chain
     let mut verify_state = OLState::new_genesis();
@@ -140,12 +149,26 @@ fn test_genesis_with_initial_transactions() {
 
     let tx = TransactionPayload::GenericAccountMessage(GamTxPayload::new(target, msg_varvec));
 
+    // Create genesis components with both transactions and manifest (to make it terminal)
+    let dummy_manifest = AsmManifest::new(
+        L1BlockId::from(Buf32::from([0u8; 32])),
+        Buf32::from([0u8; 32]),
+        vec![],
+    );
+    let genesis_components = BlockComponents::new(
+        OLTxSegment::new(vec![OLTransaction::new(
+            TransactionAttachment::default(),
+            tx.clone(),
+        )]),
+        Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
+    );
+
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_txs(vec![tx.clone()]),
+        genesis_components,
     )
     .expect("Genesis with transactions should execute");
 
@@ -179,20 +202,27 @@ fn test_epoch_transition_from_genesis() {
     // Verify we have the expected number of blocks
     assert_eq!(headers.len(), 12);
 
-    // Check genesis block
+    // Check genesis block (should be terminal)
     assert_block_position(&headers[0], 0, 0);
+    assert!(headers[0].is_terminal(), "Genesis should be terminal");
 
-    // Check last block of epoch 0
-    assert_block_position(&headers[9], 0, 9);
+    // Check first block of epoch 1 (should not be terminal)
+    assert_block_position(&headers[1], 1, 1);
+    assert!(!headers[1].is_terminal(), "Block 1 should not be terminal");
 
-    // Check first block of epoch 1
+    // Check last block of epoch 1 (should be terminal)
     assert_block_position(&headers[10], 1, 10);
+    assert!(headers[10].is_terminal(), "Block 10 should be terminal");
 
-    // Check another block in epoch 1
-    assert_block_position(&headers[11], 1, 11);
+    // Check first block of epoch 2
+    assert_block_position(&headers[11], 2, 11);
+    assert!(
+        !headers[11].is_terminal(),
+        "Block 11 should not be terminal"
+    );
 
-    // Verify final state
-    assert_state_updated(&mut state, 1, 11);
+    // Verify final state (block 11 is in epoch 2)
+    assert_state_updated(&mut state, 2, 11);
 }
 
 #[test]
@@ -208,24 +238,29 @@ fn test_empty_chain_building() {
     // Verify slots increment properly
     for (i, header) in headers.iter().enumerate() {
         assert_eq!(header.slot(), i as u64);
-        assert_eq!(header.epoch(), 0); // All in epoch 0 since slots_per_epoch=100
+        // With genesis as terminal:
+        // Slot 0 (genesis) is epoch 0
+        // Slots 1-4 are epoch 1 (since slots_per_epoch=100)
+        let expected_epoch = if i == 0 { 0 } else { 1 };
+        assert_eq!(header.epoch(), expected_epoch);
     }
 
     // Verify final state
-    assert_state_updated(&mut state, 0, 4);
+    // Genesis (terminal) increments epoch to 1, so state should be at epoch 1
+    assert_state_updated(&mut state, 1, 4);
 }
 
 #[test]
 fn test_state_persistence_across_blocks() {
     let mut state = OLState::new_genesis();
 
-    // Process genesis
+    // Process genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis should execute");
 
@@ -234,8 +269,8 @@ fn test_state_persistence_across_blocks() {
         .compute_state_root()
         .expect("State root should compute");
 
-    // Process another empty block
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    // Process another empty block (epoch 1 since genesis was terminal)
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -297,7 +332,12 @@ fn test_process_chain_with_multiple_epochs() {
     // Build the entire chain
     for block_num in 0..TOTAL_BLOCKS {
         let slot = block_num as u64;
-        let epoch = (slot / BLOCKS_PER_EPOCH) as u32;
+        // With genesis as terminal: epoch 0 is just slot 0, then epochs are 3 slots each
+        let epoch = if block_num == 0 {
+            0 // Genesis is epoch 0
+        } else {
+            ((slot - 1) / BLOCKS_PER_EPOCH + 1) as u32 // Slots 1-3 are epoch 1, 4-6 are epoch 2, etc.
+        };
         let timestamp = 1000000 + (block_num as u64 * 1000);
 
         let block_info = if block_num == 0 {
@@ -312,48 +352,77 @@ fn test_process_chain_with_multiple_epochs() {
             Some(&headers[block_num - 1])
         };
 
-        let block = execute_block(
-            &mut state,
-            &block_info,
-            parent_header,
-            BlockComponents::new_empty(),
-        )
-        .expect(&format!(
-            "Block {} (epoch {}, slot {}) should execute",
-            block_num, epoch, slot
-        ));
+        // Determine if this is a terminal block
+        // With genesis as terminal: slot 0 (genesis), 3, 6, 9 are terminal
+        // This means epoch 0 has 1 block, then each epoch has 3 blocks
+        let is_terminal = if block_num == 0 {
+            true // Genesis is always terminal
+        } else {
+            slot % BLOCKS_PER_EPOCH == 0 // Slots 3, 6, 9, etc. are terminal
+        };
+
+        let components = if is_terminal {
+            // Create a terminal block with a dummy manifest
+            let dummy_manifest = AsmManifest::new(
+                L1BlockId::from(Buf32::from([0u8; 32])),
+                Buf32::from([0u8; 32]),
+                vec![],
+            );
+            BlockComponents::new_manifests(vec![dummy_manifest])
+        } else {
+            BlockComponents::new_empty()
+        };
+
+        let block =
+            execute_block(&mut state, &block_info, parent_header, components).expect(&format!(
+                "Block {} (epoch {}, slot {}) should execute",
+                block_num, epoch, slot
+            ));
 
         // Verify block position
         assert_block_position(block.header(), epoch as u64, slot);
+
+        // Verify terminal flag is set correctly
+        assert_eq!(
+            block.header().is_terminal(),
+            is_terminal,
+            "Block {} terminal flag mismatch (expected: {}, actual: {})",
+            block_num,
+            is_terminal,
+            block.header().is_terminal()
+        );
 
         headers.push(block.header().clone());
         blocks.push(block);
     }
 
-    // Verify we reached epoch 3
-    assert_eq!(headers.last().unwrap().epoch(), TARGET_EPOCH);
-    assert_state_updated(&mut state, TARGET_EPOCH as u64, (TOTAL_BLOCKS - 1) as u64);
+    // Verify we reached epoch 4 (slots 10-11 are in epoch 4)
+    assert_eq!(headers.last().unwrap().epoch(), 4);
+    // Block 11 is not terminal, so state epoch should be 4
+    assert_state_updated(&mut state, 4, (TOTAL_BLOCKS - 1) as u64);
 
     // Verify epoch boundaries are correct
-    // Epoch 0: slots 0-2
+    // Epoch 0: slot 0 only (genesis)
     assert_eq!(headers[0].epoch(), 0);
-    assert_eq!(headers[1].epoch(), 0);
-    assert_eq!(headers[2].epoch(), 0);
 
-    // Epoch 1: slots 3-5
+    // Epoch 1: slots 1-3
+    assert_eq!(headers[1].epoch(), 1);
+    assert_eq!(headers[2].epoch(), 1);
     assert_eq!(headers[3].epoch(), 1);
-    assert_eq!(headers[4].epoch(), 1);
-    assert_eq!(headers[5].epoch(), 1);
 
-    // Epoch 2: slots 6-8
+    // Epoch 2: slots 4-6
+    assert_eq!(headers[4].epoch(), 2);
+    assert_eq!(headers[5].epoch(), 2);
     assert_eq!(headers[6].epoch(), 2);
-    assert_eq!(headers[7].epoch(), 2);
-    assert_eq!(headers[8].epoch(), 2);
 
-    // Epoch 3: slots 9-11
+    // Epoch 3: slots 7-9
+    assert_eq!(headers[7].epoch(), 3);
+    assert_eq!(headers[8].epoch(), 3);
     assert_eq!(headers[9].epoch(), 3);
-    assert_eq!(headers[10].epoch(), 3);
-    assert_eq!(headers[11].epoch(), 3);
+
+    // Epoch 4: slots 10-11
+    assert_eq!(headers[10].epoch(), 4);
+    assert_eq!(headers[11].epoch(), 4);
 
     // Now verify the entire chain sequentially
     let mut verify_state = OLState::new_genesis();
@@ -378,24 +447,49 @@ fn test_process_chain_with_multiple_epochs() {
 
         // Verify state is updated correctly after each block
         let expected_slot = i as u64;
-        let expected_epoch = (expected_slot / BLOCKS_PER_EPOCH) as u64;
-        assert_state_updated(&mut verify_state, expected_epoch, expected_slot);
+        // Calculate expected state epoch based on new structure
+        let block_epoch = if i == 0 {
+            0 // Genesis is epoch 0
+        } else {
+            ((expected_slot - 1) / BLOCKS_PER_EPOCH + 1) as u64
+        };
+
+        // Check if this block is terminal
+        let is_terminal = if i == 0 {
+            true // Genesis is terminal
+        } else {
+            expected_slot % BLOCKS_PER_EPOCH == 0 // Slots 3, 6, 9 are terminal
+        };
+
+        let expected_state_epoch = if is_terminal {
+            block_epoch + 1 // After terminal block, state epoch is incremented
+        } else {
+            block_epoch
+        };
+        assert_state_updated(&mut verify_state, expected_state_epoch, expected_slot);
 
         // Special checks for epoch transitions
         if i > 0 && headers[i].epoch() != headers[i - 1].epoch() {
-            // This is an epoch initial block
+            // This is an epoch initial block (follows a terminal block)
             assert_eq!(
                 headers[i].epoch(),
                 headers[i - 1].epoch() + 1,
                 "Epoch should increment by exactly 1 at transition"
             );
 
-            // The epoch initial processing should have been triggered
-            // We can verify this by checking that the L1 view state was updated
+            // The previous block should have been terminal
+            assert!(
+                headers[i - 1].is_terminal(),
+                "Block {} should be terminal (last block of epoch {})",
+                i - 1,
+                headers[i - 1].epoch()
+            );
+
+            // The L1 view state's epoch equals the block's epoch at this point
             assert_eq!(
-                verify_state.l1_view().cur_epoch() as u64,
-                expected_epoch,
-                "L1 view state should be updated at epoch boundary"
+                verify_state.l1_view().cur_epoch(),
+                headers[i].epoch(),
+                "L1 view state should match block epoch after epoch transition"
             );
         }
     }
@@ -433,13 +527,13 @@ fn test_verify_valid_block_succeeds() {
     // This test verifies that a properly assembled block passes verification
     let mut state = OLState::new_genesis();
 
-    // Assemble genesis block
+    // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis block assembly should succeed");
 
@@ -464,18 +558,18 @@ fn test_assemble_then_verify_roundtrip() {
     // This test verifies the full round-trip: assemble blocks then verify them
     let mut state = OLState::new_genesis();
 
-    // Assemble genesis block
+    // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis block assembly should succeed");
 
-    // Assemble block 1
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    // Assemble block 1 (epoch 1 since genesis was terminal)
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -484,8 +578,8 @@ fn test_assemble_then_verify_roundtrip() {
     )
     .expect("Block 1 assembly should succeed");
 
-    // Assemble block 2
-    let block2_info = BlockInfo::new(1002000, 2, 0);
+    // Assemble block 2 (still epoch 1)
+    let block2_info = BlockInfo::new(1002000, 2, 1);
     let block2 = execute_block(
         &mut state,
         &block2_info,
@@ -538,26 +632,46 @@ fn test_multi_block_chain_verification() {
     let mut blocks = Vec::new();
     let mut headers = Vec::new();
 
-    // Build 15 blocks (crossing into epoch 1)
+    // Build 15 blocks (crossing multiple epochs)
     for i in 0..15 {
         let slot = i as u64;
-        let epoch = slot / SLOTS_PER_EPOCH;
+        // With genesis as terminal: epoch 0 is just slot 0, then epochs are 10 slots each
+        let epoch = if i == 0 {
+            0 // Genesis is epoch 0
+        } else {
+            ((slot - 1) / SLOTS_PER_EPOCH + 1) as u32 // Slots 1-10 are epoch 1, 11-20 are epoch 2, etc.
+        };
         let timestamp = 1000000 + (i as u64 * 1000);
         let block_info = if i == 0 {
             BlockInfo::new_genesis(timestamp)
         } else {
-            BlockInfo::new(timestamp, slot, epoch as u32)
+            BlockInfo::new(timestamp, slot, epoch)
         };
 
         let parent_header = if i == 0 { None } else { Some(&headers[i - 1]) };
 
-        let block = execute_block(
-            &mut state,
-            &block_info,
-            parent_header,
-            BlockComponents::new_empty(),
-        )
-        .expect(&format!("Block {} assembly should succeed", i));
+        // Check if this should be a terminal block
+        // Genesis (slot 0) is terminal, then slots 10, 20, etc.
+        let is_terminal = if i == 0 {
+            true // Genesis is always terminal
+        } else {
+            slot % SLOTS_PER_EPOCH == 0 // Slots 10, 20, etc. are terminal
+        };
+
+        let components = if is_terminal {
+            // Create a terminal block with a dummy manifest
+            let dummy_manifest = AsmManifest::new(
+                L1BlockId::from(Buf32::from([0u8; 32])),
+                Buf32::from([0u8; 32]),
+                vec![],
+            );
+            BlockComponents::new_manifests(vec![dummy_manifest])
+        } else {
+            BlockComponents::new_empty()
+        };
+
+        let block = execute_block(&mut state, &block_info, parent_header, components)
+            .expect(&format!("Block {} assembly should succeed", i));
 
         headers.push(block.header().clone());
         blocks.push(block);
@@ -584,7 +698,8 @@ fn test_multi_block_chain_verification() {
     }
 
     // Verify final state matches
-    assert_state_updated(&mut verify_state, 1, 14);
+    // With genesis as terminal: slot 14 is in epoch 2
+    assert_state_updated(&mut verify_state, 2, 14);
 }
 
 #[test]
@@ -598,13 +713,26 @@ fn test_verify_block_with_transactions() {
     let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
     let tx = TransactionPayload::GenericAccountMessage(GamTxPayload::new(target, msg_varvec));
 
-    // Assemble genesis with transaction
+    // Assemble genesis with transaction and manifest (terminal)
+    let dummy_manifest = AsmManifest::new(
+        L1BlockId::from(Buf32::from([0u8; 32])),
+        Buf32::from([0u8; 32]),
+        vec![],
+    );
+    let genesis_components = BlockComponents::new(
+        OLTxSegment::new(vec![OLTransaction::new(
+            TransactionAttachment::default(),
+            tx,
+        )]),
+        Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
+    );
+
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_txs(vec![tx]),
+        genesis_components,
     )
     .expect("Genesis with tx should assemble");
 
@@ -637,11 +765,11 @@ fn test_verify_rejects_wrong_parent_blkid() {
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis assembly should succeed");
 
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -684,18 +812,18 @@ fn test_verify_rejects_epoch_skip() {
     // Test that verification fails when epoch increases by more than 1
     let mut state = OLState::new_genesis();
 
-    // Assemble genesis
+    // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis assembly should succeed");
 
-    // Assemble block 1 normally
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    // Assemble block 1 normally (epoch 1 since genesis was terminal)
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -737,18 +865,18 @@ fn test_verify_rejects_slot_skip() {
     // Test that verification fails when slot doesn't increment by exactly 1
     let mut state = OLState::new_genesis();
 
-    // Assemble genesis
+    // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis assembly should succeed");
 
-    // Create block 1 but with slot 3 (skipping slots 1 and 2)
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    // Create block 1 (epoch 1 since genesis was terminal)
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -796,11 +924,11 @@ fn test_verify_rejects_slot_backwards() {
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis assembly should succeed");
 
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -810,7 +938,7 @@ fn test_verify_rejects_slot_backwards() {
     .expect("Block 1 assembly should succeed");
 
     // Assemble block 2 normally
-    let block2_info = BlockInfo::new(1002000, 2, 0);
+    let block2_info = BlockInfo::new(1002000, 2, 1);
     let block2 = execute_block(
         &mut state,
         &block2_info,
@@ -819,8 +947,8 @@ fn test_verify_rejects_slot_backwards() {
     )
     .expect("Block 2 assembly should succeed");
 
-    // Tamper with block 2 to have slot 0 (going backwards)
-    let tampered_header = tamper_slot(block2.header(), 0);
+    // Tamper with block 2 to have slot 1 (going backwards from 2 to 1, same as block1)
+    let tampered_header = tamper_slot(block2.header(), 1);
 
     // Verification should fail
     let mut verify_state = OLState::new_genesis();
@@ -894,7 +1022,7 @@ fn test_verify_rejects_nongenesis_without_parent() {
         None, // No parent provided for non-genesis block
         block1.body(),
         &block1_exp,
-        |e| matches!(e, ExecError::NongenesisHeaderMissingParent),
+        |e| matches!(e, ExecError::GenesisCoordsNonzero),
     );
 }
 
@@ -939,13 +1067,13 @@ fn test_verify_rejects_mismatched_state_root() {
     // Test that verification fails when state root doesn't match expected
     let mut state = OLState::new_genesis();
 
-    // Assemble a normal genesis block
+    // Assemble a normal genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis assembly should succeed");
 
@@ -984,12 +1112,26 @@ fn test_verify_rejects_mismatched_logs_root() {
     let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
     let tx = TransactionPayload::GenericAccountMessage(GamTxPayload::new(target, msg_varvec));
 
+    // Create genesis with transaction and manifest (terminal)
+    let dummy_manifest = AsmManifest::new(
+        L1BlockId::from(Buf32::from([0u8; 32])),
+        Buf32::from([0u8; 32]),
+        vec![],
+    );
+    let genesis_components = BlockComponents::new(
+        OLTxSegment::new(vec![OLTransaction::new(
+            TransactionAttachment::default(),
+            tx,
+        )]),
+        Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
+    );
+
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_txs(vec![tx]),
+        genesis_components,
     )
     .expect("Genesis assembly should succeed");
 
@@ -1024,13 +1166,13 @@ fn test_verify_empty_block_logs_root() {
     // Test that empty blocks should have zero logs root
     let mut state = OLState::new_genesis();
 
-    // Assemble an empty genesis block
+    // Assemble genesis block (terminal but with no transactions)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis assembly should succeed");
 
@@ -1097,18 +1239,18 @@ fn test_verify_state_root_changes_with_state() {
     // Test that state root properly reflects state changes
     let mut state = OLState::new_genesis();
 
-    // Execute genesis
+    // Execute genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis should execute");
 
-    // Execute block 1 (will change slot in state)
-    let block1_info = BlockInfo::new(1001000, 1, 0);
+    // Execute block 1 (will change slot in state, epoch 1)
+    let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
         &mut state,
         &block1_info,
@@ -1153,13 +1295,13 @@ fn test_verify_wrong_state_root_expectation_fails() {
     // Test that providing wrong expectations causes verification to fail
     let mut state = OLState::new_genesis();
 
-    // Assemble genesis
+    // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_empty(),
+        genesis_block_components(),
     )
     .expect("Genesis assembly should succeed");
 

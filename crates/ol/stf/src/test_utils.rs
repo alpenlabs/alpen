@@ -3,6 +3,7 @@
 #![allow(unreachable_pub, reason = "test util module")]
 
 use strata_acct_types::AccountId;
+use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId};
 use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::OLBlockHeader;
@@ -41,24 +42,47 @@ pub fn build_empty_chain(
         return Ok(headers);
     }
 
-    // Execute genesis block
+    // Execute genesis block (always terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(state, &genesis_info, None, BlockComponents::new_empty())?;
+    let genesis_manifest = AsmManifest::new(
+        L1BlockId::from(Buf32::from([0u8; 32])),
+        Buf32::from([0u8; 32]),
+        vec![],
+    );
+    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
+    let genesis = execute_block(state, &genesis_info, None, genesis_components)?;
     headers.push(genesis.header().clone());
 
     // Execute subsequent blocks
     for i in 1..num_blocks {
         let slot = i as u64;
-        let epoch = slot / slots_per_epoch;
+        // With genesis as terminal: epoch 0 is just genesis, then normal epochs
+        let epoch = ((slot - 1) / slots_per_epoch + 1) as u32;
         let parent = &headers[i - 1];
         let timestamp = 1000000 + (i as u64 * 1000);
-        let block_info = BlockInfo::new(timestamp, slot, epoch as u32);
+        let block_info = BlockInfo::new(timestamp, slot, epoch);
+
+        // Check if this should be a terminal block
+        // After genesis, terminal blocks are at slots that are multiples of slots_per_epoch
+        let is_terminal = slot % slots_per_epoch == 0;
+
+        let components = if is_terminal {
+            // Create a terminal block with a dummy manifest
+            let dummy_manifest = AsmManifest::new(
+                L1BlockId::from(Buf32::from([0u8; 32])),
+                Buf32::from([0u8; 32]),
+                vec![],
+            );
+            BlockComponents::new_manifests(vec![dummy_manifest])
+        } else {
+            BlockComponents::new_empty()
+        };
 
         let block = execute_block(
             state,
             &block_info,
             Some(parent),
-            BlockComponents::new_empty(),
+            components,
         )?;
         headers.push(block.header().clone());
     }
@@ -103,12 +127,12 @@ pub fn assert_state_updated(state: &mut OLState, expected_epoch: u64, expected_s
     assert_eq!(
         state.l1_view().cur_epoch() as u64,
         expected_epoch,
-        "State epoch mismatch"
+        "test: state epoch mismatch"
     );
     assert_eq!(
         state.global_mut().cur_slot(),
         expected_slot,
-        "State slot mismatch"
+        "test: state slot mismatch"
     );
 }
 
@@ -182,16 +206,16 @@ pub fn tamper_parent_blkid(
     header: &OLBlockHeader,
     new_parent: strata_ol_chain_types_new::OLBlockId,
 ) -> OLBlockHeader {
-    let mut tampered = header.clone();
     // We need to create a new header with the modified parent
     OLBlockHeader::new(
-        tampered.timestamp(),
-        tampered.slot(),
-        tampered.epoch(),
+        header.timestamp(),
+        header.flags(),
+        header.slot(),
+        header.epoch(),
         new_parent,
-        tampered.body_root().clone(),
-        tampered.state_root().clone(),
-        tampered.logs_root().clone(),
+        *header.body_root(),
+        *header.state_root(),
+        *header.logs_root(),
     )
 }
 
@@ -199,6 +223,7 @@ pub fn tamper_parent_blkid(
 pub fn tamper_state_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeader {
     OLBlockHeader::new(
         header.timestamp(),
+        header.flags(),
         header.slot(),
         header.epoch(),
         header.parent_blkid().clone(),
@@ -212,6 +237,7 @@ pub fn tamper_state_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHead
 pub fn tamper_logs_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeader {
     OLBlockHeader::new(
         header.timestamp(),
+        header.flags(),
         header.slot(),
         header.epoch(),
         header.parent_blkid().clone(),
@@ -225,6 +251,7 @@ pub fn tamper_logs_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeade
 pub fn tamper_body_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeader {
     OLBlockHeader::new(
         header.timestamp(),
+        header.flags(),
         header.slot(),
         header.epoch(),
         header.parent_blkid().clone(),
@@ -238,6 +265,7 @@ pub fn tamper_body_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeade
 pub fn tamper_slot(header: &OLBlockHeader, new_slot: u64) -> OLBlockHeader {
     OLBlockHeader::new(
         header.timestamp(),
+        header.flags(),
         new_slot,
         header.epoch(),
         header.parent_blkid().clone(),
@@ -251,6 +279,7 @@ pub fn tamper_slot(header: &OLBlockHeader, new_slot: u64) -> OLBlockHeader {
 pub fn tamper_epoch(header: &OLBlockHeader, new_epoch: u32) -> OLBlockHeader {
     OLBlockHeader::new(
         header.timestamp(),
+        header.flags(),
         header.slot(),
         new_epoch,
         header.parent_blkid().clone(),

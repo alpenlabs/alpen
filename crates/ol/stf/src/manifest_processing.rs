@@ -24,6 +24,10 @@ pub fn process_block_manifests<S: StateAccessor>(
     mf_cont: &OLL1ManifestContainer,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
+    let terminating_epoch = state.l1_view().cur_epoch();
+    eprintln!("epoch that's terminating {terminating_epoch}");
+
+    // 1. Process all the manifests.
     let orig_l1_height = state.l1_view().last_l1_height();
     let mut last = None;
 
@@ -37,6 +41,9 @@ pub fn process_block_manifests<S: StateAccessor>(
         // TODO this is where we would update the header, if we want to keep
         // that as defined in the spec
     }
+
+    // 2. Finally, we can update the epoch to get it ready for the next epoch.
+    state.l1_view_mut().set_cur_epoch(terminating_epoch + 1);
 
     Ok(())
 }

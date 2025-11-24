@@ -1,9 +1,13 @@
 use strata_asm_common::AsmManifest;
 use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
 use strata_codec_derive::Codec;
-use strata_identifiers::{Buf32, Buf64, L1BlockId, hash::raw};
+use strata_identifiers::{Buf32, Buf64, L1BlockId, OLBlockId, hash::raw};
 
-use crate::{Epoch, OLBlockId, OLTransaction, Slot};
+use crate::{
+    block_flags::BlockFlags,
+    common::{Epoch, Slot},
+    transaction::OLTransaction,
+};
 
 /// Signed full orchestration layer block.
 #[derive(Clone, Debug)]
@@ -64,6 +68,15 @@ pub struct OLBlockHeader {
     /// The timestamp the block was created at.
     timestamp: u64,
 
+    /// Flags used for better signalling.
+    ///
+    /// This was added so that we can look at a header and know if it a terminal
+    /// without having to examine the body to see if the body had an L1 update
+    /// or not.  I suggested this a while ago but we dismissed it as probably
+    /// unnecessary, but it really does help simplifying a lot of checks, so I'm
+    /// adding it now.
+    flags: BlockFlags,
+
     /// Slot the block was created for.
     slot: Slot,
 
@@ -86,6 +99,7 @@ pub struct OLBlockHeader {
 impl OLBlockHeader {
     pub fn new(
         timestamp: u64,
+        flags: BlockFlags,
         slot: Slot,
         epoch: Epoch,
         parent_blkid: OLBlockId,
@@ -95,6 +109,7 @@ impl OLBlockHeader {
     ) -> Self {
         Self {
             timestamp,
+            flags,
             slot,
             epoch,
             parent_blkid,
@@ -106,6 +121,14 @@ impl OLBlockHeader {
 
     pub fn timestamp(&self) -> u64 {
         self.timestamp
+    }
+
+    pub fn flags(&self) -> BlockFlags {
+        self.flags
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.flags.is_terminal()
     }
 
     pub fn slot(&self) -> u64 {
@@ -183,7 +206,8 @@ impl OLBlockBody {
         hash
     }
 
-    /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update is present.
+    /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update
+    /// is present.  This has to match the `IS_TERMINAL` flag in the header.
     pub fn is_probably_terminal(&self) -> bool {
         self.l1_update().is_some()
     }
