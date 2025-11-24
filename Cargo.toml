@@ -60,6 +60,7 @@ members = [
   "crates/ol/mempool",
   "crates/ol/msg-types",
   "crates/ol/rpc/api",
+  "crates/ol/rpc/types",
   "crates/ol/state-types",
   "crates/ol/stf",
   "crates/ol-chainstate-types",
@@ -207,6 +208,7 @@ strata-ol-da = { path = "crates/ol/da" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-msg-types = { path = "crates/ol/msg-types" }
 strata-ol-rpc-api = { path = "crates/ol/rpc/api" }
+strata-ol-rpc-types = { path = "crates/ol/rpc/types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-stf = { path = "crates/ol/stf" }
 strata-params = { path = "crates/params" }

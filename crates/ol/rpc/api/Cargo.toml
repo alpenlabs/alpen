@@ -7,14 +7,10 @@ version = "0.1.0"
 workspace = true
 
 [dependencies]
-strata-acct-types.workspace = true
 strata-identifiers.workspace = true
-strata-ol-chain-types-new.workspace = true
-strata-snark-acct-types.workspace = true
+strata-ol-rpc-types.workspace = true
 
-hex.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
-serde.workspace = true
 
 [features]
 client = ["jsonrpsee/client"]

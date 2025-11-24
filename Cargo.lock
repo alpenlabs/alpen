@@ -14422,8 +14422,16 @@ dependencies = [
 name = "strata-ol-rpc-api"
 version = "0.1.0"
 dependencies = [
- "hex",
  "jsonrpsee",
+ "strata-identifiers",
+ "strata-ol-rpc-types",
+]
+
+[[package]]
+name = "strata-ol-rpc-types"
+version = "0.1.0"
+dependencies = [
+ "hex",
  "serde",
  "strata-acct-types",
  "strata-identifiers",
