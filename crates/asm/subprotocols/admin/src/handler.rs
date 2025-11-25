@@ -177,8 +177,8 @@ fn relay_checkpoint_predicate(relayer: &mut impl MsgRelayer, key: PredicateKey) 
 mod tests {
     use std::any::Any;
 
-    use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
     use strata_asm_proto_checkpoint_v0::CheckpointIncomingMsg;
     use strata_asm_txs_admin::{
@@ -238,15 +238,10 @@ mod tests {
         }
     }
 
-    fn create_test_params() -> (
-        AdministrationSubprotoParams,
-        Vec<SecretKey>,
-        Vec<SecretKey>,
-    ) {
+    fn create_test_params() -> (AdministrationSubprotoParams, Vec<SecretKey>, Vec<SecretKey>) {
         let secp = Secp256k1::new();
 
-        let strata_admin_sks: Vec<SecretKey> =
-            (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let strata_admin_sks: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
         let strata_admin_pks: Vec<CompressedPublicKey> = strata_admin_sks
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
@@ -259,8 +254,7 @@ mod tests {
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
             .collect();
-        let strata_sequencer_manager =
-            ThresholdConfig::try_new(strata_seq_manager_pks, 2).unwrap();
+        let strata_sequencer_manager = ThresholdConfig::try_new(strata_seq_manager_pks, 2).unwrap();
 
         let config = AdministrationSubprotoParams {
             strata_administrator,

@@ -125,12 +125,7 @@ pub fn create_agg_pubkey_from_privkeys(operators_privkeys: &[EvenSecretKey]) -> 
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        hashes::Hash,
-        key::TapTweak,
-        secp256k1::Secp256k1,
-        TapNodeHash,
-    };
+    use bitcoin::{hashes::Hash, key::TapTweak, secp256k1::Secp256k1, TapNodeHash};
     use rand::rngs::OsRng;
     use secp256k1::SecretKey;
 
