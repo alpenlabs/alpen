@@ -1,5 +1,5 @@
 use strata_asm_txs_admin::actions::UpdateId;
-use strata_crypto::multisig::MultisigError;
+use strata_crypto::threshold_signing::ThresholdSigningError;
 use thiserror::Error;
 
 /// Top-level error type for the administration subprotocol, composed of smaller error categories.
@@ -13,7 +13,7 @@ pub enum AdministrationError {
     #[error("no pending update found for action_id = {0:?}")]
     UnknownAction(UpdateId),
 
-    /// Indicates a multisig error (configuration, aggregation, or signature validation).
+    /// Indicates a threshold signing error (configuration or signature validation).
     #[error(transparent)]
-    Multisig(#[from] MultisigError),
+    ThresholdSigning(#[from] ThresholdSigningError),
 }

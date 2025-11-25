@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::UpdateId;
-use strata_crypto::multisig::SchnorrMultisigConfigUpdate;
+use strata_crypto::threshold_signing::ThresholdConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
@@ -51,11 +51,11 @@ impl AdministrationSubprotoState {
         self.authorities.get_mut(role as usize)
     }
 
-    /// Apply a multisig config update for the specified role.
+    /// Apply a threshold config update for the specified role.
     pub fn apply_multisig_update(
         &mut self,
         role: Role,
-        update: &SchnorrMultisigConfigUpdate,
+        update: &ThresholdConfigUpdate,
     ) -> Result<(), AdministrationError> {
         if let Some(auth) = self.authority_mut(role) {
             auth.config_mut().apply_update(update)?;
@@ -110,10 +110,11 @@ impl AdministrationSubprotoState {
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, thread_rng};
+    use rand::rngs::OsRng;
+    use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use strata_asm_txs_admin::actions::UpdateAction;
-    use strata_crypto::multisig::config::MultisigConfigUpdate;
-    use strata_primitives::{buf::Buf32, roles::Role};
+    use strata_crypto::threshold_signing::{CompressedPublicKey, ThresholdConfig, ThresholdConfigUpdate};
+    use strata_primitives::roles::Role;
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{
@@ -121,10 +122,35 @@ mod tests {
         state::AdministrationSubprotoState,
     };
 
+    fn create_test_config() -> AdministrationSubprotoParams {
+        let secp = Secp256k1::new();
+
+        // Create admin keys
+        let admin_sks: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let admin_pks: Vec<CompressedPublicKey> = admin_sks
+            .iter()
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .collect();
+        let strata_administrator = ThresholdConfig::try_new(admin_pks, 2).unwrap();
+
+        // Create seq manager keys
+        let seq_sks: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let seq_pks: Vec<CompressedPublicKey> = seq_sks
+            .iter()
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .collect();
+        let strata_sequencer_manager = ThresholdConfig::try_new(seq_pks, 2).unwrap();
+
+        AdministrationSubprotoParams {
+            strata_administrator,
+            strata_sequencer_manager,
+            confirmation_depth: 2016,
+        }
+    }
+
     #[test]
     fn test_initial_state() {
-        let mut arb = ArbitraryGenerator::new();
-        let config: AdministrationSubprotoParams = arb.generate();
+        let config = create_test_config();
         let state = AdministrationSubprotoState::new(&config);
 
         assert_eq!(state.next_update_id(), 0);
@@ -134,7 +160,7 @@ mod tests {
     #[test]
     fn test_enqueue_find_and_remove_queued() {
         let mut arb = ArbitraryGenerator::new();
-        let config: AdministrationSubprotoParams = arb.generate();
+        let config = create_test_config();
         let mut state = AdministrationSubprotoState::new(&config);
 
         // Use arbitrary action or fallback to guaranteed queueable action
@@ -153,7 +179,7 @@ mod tests {
     /// Helper to seed queued updates with specific activation heights
     fn seed_queued(ids: &[u32], activation_heights: &[u64]) -> AdministrationSubprotoState {
         let mut arb = ArbitraryGenerator::new();
-        let config = arb.generate();
+        let config = create_test_config();
         let mut state = AdministrationSubprotoState::new(&config);
 
         for (&id, &activation_height) in ids.iter().zip(activation_heights.iter()) {
@@ -223,34 +249,31 @@ mod tests {
 
     #[test]
     fn test_apply_multisig_update() {
-        let mut arb = ArbitraryGenerator::new();
-        let config: AdministrationSubprotoParams = arb.generate();
+        let secp = Secp256k1::new();
+        let config = create_test_config();
         let mut state = AdministrationSubprotoState::new(&config);
-        let role: Role = arb.generate();
+        let role = Role::StrataAdministrator;
 
         let initial_auth = state.authority(role).unwrap().config();
-        let initial_members: Vec<Buf32> = initial_auth.keys().to_vec();
+        let initial_members: Vec<CompressedPublicKey> = initial_auth.keys().to_vec();
 
-        let add_members: Vec<Buf32> = arb.generate();
+        // Generate new members to add
+        let add_sks: Vec<SecretKey> = (0..2).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let add_members: Vec<CompressedPublicKey> = add_sks
+            .iter()
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .collect();
 
-        // Randomly pick some members to remove
-        let mut rng = thread_rng();
-        let mut remove_members = Vec::new();
-
-        for member in &initial_members {
-            if rng.gen_bool(0.3) {
-                // 30% chance to remove each member
-                remove_members.push(*member);
-            }
-        }
+        // Remove the first member
+        let remove_members = vec![initial_members[0]];
 
         let new_size = initial_members.len() + add_members.len() - remove_members.len();
-        let new_threshold = rng.gen_range(1..=new_size);
+        let new_threshold = 2u8;
 
-        let update = MultisigConfigUpdate::new(
+        let update = ThresholdConfigUpdate::new(
             add_members.clone(),
             remove_members.clone(),
-            new_threshold as u8,
+            new_threshold,
         );
 
         state.apply_multisig_update(role, &update).unwrap();
@@ -258,7 +281,10 @@ mod tests {
         let updated_auth = state.authority(role).unwrap().config();
 
         // Verify threshold was updated
-        assert_eq!(updated_auth.threshold(), new_threshold as u8);
+        assert_eq!(updated_auth.threshold(), new_threshold);
+
+        // Verify size is correct
+        assert_eq!(updated_auth.keys().len(), new_size);
 
         // Verify that specified members were removed
         for member_to_remove in &remove_members {
