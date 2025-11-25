@@ -12,6 +12,7 @@ pub(super) struct CommitTxHeaderAux {
     pub deposit_idx: u32,
 
     /// The index of the game being committed to.
+    /// This is needed to later constrain the bridge proof public parameters.
     pub game_idx: u32,
 }
 
