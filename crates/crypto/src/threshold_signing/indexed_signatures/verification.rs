@@ -1,6 +1,9 @@
 //! ECDSA signature verification for threshold signing.
 
-use secp256k1::{ecdsa::{RecoverableSignature, RecoveryId}, Message, SECP256K1};
+use secp256k1::{
+    ecdsa::{RecoverableSignature, RecoveryId},
+    Message, SECP256K1,
+};
 
 use super::{SignatureSet, ThresholdConfig, ThresholdSigningError};
 
@@ -58,8 +61,9 @@ pub fn verify_threshold_signatures(
         let recovery_id = RecoveryId::from_i32(indexed_sig.recovery_id() as i32)
             .map_err(|_| ThresholdSigningError::InvalidSignatureFormat)?;
 
-        let recoverable_sig = RecoverableSignature::from_compact(&indexed_sig.compact(), recovery_id)
-            .map_err(|_| ThresholdSigningError::InvalidSignatureFormat)?;
+        let recoverable_sig =
+            RecoverableSignature::from_compact(&indexed_sig.compact(), recovery_id)
+                .map_err(|_| ThresholdSigningError::InvalidSignatureFormat)?;
 
         // Recover the public key from the signature
         let recovered_pubkey = SECP256K1
@@ -83,10 +87,7 @@ pub fn verify_threshold_signatures(
 ///
 /// This is a helper function for testing and creating signatures.
 #[cfg(test)]
-fn sign_ecdsa_recoverable(
-    message_hash: &[u8; 32],
-    secret_key: &secp256k1::SecretKey,
-) -> [u8; 65] {
+fn sign_ecdsa_recoverable(message_hash: &[u8; 32], secret_key: &secp256k1::SecretKey) -> [u8; 65] {
     let message = Message::from_digest_slice(message_hash).expect("32 bytes");
     let sig = SECP256K1.sign_ecdsa_recoverable(&message, secret_key);
     let (recovery_id, compact) = sig.serialize_compact();
@@ -202,7 +203,8 @@ mod tests {
 
         let signatures = SignatureSet::new(vec![
             IndexedSignature::new(0, sig0),
-            IndexedSignature::new(1, sig1_from_wrong_key), // Claims to be key 1, but signed by key 0
+            IndexedSignature::new(1, sig1_from_wrong_key), /* Claims to be key 1, but signed by
+                                                            * key 0 */
         ])
         .unwrap();
 

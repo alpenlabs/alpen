@@ -6,35 +6,21 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThresholdSigningError {
     /// Not enough signatures to meet the threshold.
-    InsufficientSignatures {
-        provided: usize,
-        required: usize,
-    },
+    InsufficientSignatures { provided: usize, required: usize },
     /// Invalid public key data.
-    InvalidPublicKey {
-        index: usize,
-        reason: String,
-    },
+    InvalidPublicKey { index: usize, reason: String },
     /// Invalid threshold value.
-    InvalidThreshold {
-        threshold: u8,
-        total_keys: usize,
-    },
+    InvalidThreshold { threshold: u8, total_keys: usize },
     /// Threshold cannot be zero.
     ZeroThreshold,
     /// Signature verification failed.
-    InvalidSignature {
-        index: u8,
-    },
+    InvalidSignature { index: u8 },
     /// Invalid signature format.
     InvalidSignatureFormat,
     /// Duplicate signer index in signature set.
     DuplicateSignerIndex(u8),
     /// Signer index out of bounds.
-    SignerIndexOutOfBounds {
-        index: u8,
-        max: usize,
-    },
+    SignerIndexOutOfBounds { index: u8, max: usize },
     /// Member already exists in the configuration.
     MemberAlreadyExists,
     /// Duplicate member in add list.

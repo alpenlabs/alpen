@@ -110,10 +110,12 @@ impl AdministrationSubprotoState {
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::OsRng;
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use rand::rngs::OsRng;
     use strata_asm_txs_admin::actions::UpdateAction;
-    use strata_crypto::threshold_signing::{CompressedPublicKey, ThresholdConfig, ThresholdConfigUpdate};
+    use strata_crypto::threshold_signing::{
+        CompressedPublicKey, ThresholdConfig, ThresholdConfigUpdate,
+    };
     use strata_primitives::roles::Role;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -270,11 +272,8 @@ mod tests {
         let new_size = initial_members.len() + add_members.len() - remove_members.len();
         let new_threshold = 2u8;
 
-        let update = ThresholdConfigUpdate::new(
-            add_members.clone(),
-            remove_members.clone(),
-            new_threshold,
-        );
+        let update =
+            ThresholdConfigUpdate::new(add_members.clone(), remove_members.clone(), new_threshold);
 
         state.apply_multisig_update(role, &update).unwrap();
 

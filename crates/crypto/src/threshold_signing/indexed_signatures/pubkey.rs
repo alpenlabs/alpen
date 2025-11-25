@@ -23,10 +23,11 @@ impl CompressedPublicKey {
     ///
     /// The slice must be exactly 33 bytes in compressed format (0x02 or 0x03 prefix).
     pub fn from_slice(data: &[u8]) -> Result<Self, ThresholdSigningError> {
-        let pk = PublicKey::from_slice(data).map_err(|e| ThresholdSigningError::InvalidPublicKey {
-            index: 0,
-            reason: e.to_string(),
-        })?;
+        let pk =
+            PublicKey::from_slice(data).map_err(|e| ThresholdSigningError::InvalidPublicKey {
+                index: 0,
+                reason: e.to_string(),
+            })?;
         Ok(Self(pk))
     }
 
@@ -77,8 +78,7 @@ impl<'a> Arbitrary<'a> for CompressedPublicKey {
             sk_bytes[31] = 1;
         }
         let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&sk_bytes)
-            .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+        let sk = SecretKey::from_slice(&sk_bytes).map_err(|_| arbitrary::Error::IncorrectFormat)?;
         let pk = PublicKey::from_secret_key(&secp, &sk);
         Ok(Self(pk))
     }

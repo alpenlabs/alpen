@@ -19,9 +19,7 @@ use strata_primitives::buf::Buf32;
 pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
 use crate::{
-    actions::MultisigAction,
-    constants::ADMINISTRATION_SUBPROTOCOL_ID,
-    parser::SignedPayload,
+    actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::SignedPayload,
 };
 
 /// Creates an ECDSA recoverable signature for a message hash.
@@ -195,7 +193,7 @@ mod tests {
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
     use strata_crypto::threshold_signing::{
-        verify_threshold_signatures, CompressedPublicKey, ThresholdConfig,
+        CompressedPublicKey, ThresholdConfig, verify_threshold_signatures,
     };
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils::ArbitraryGenerator;

@@ -9,9 +9,8 @@ pub mod musig2;
 
 // Re-export commonly used types from indexed_signatures
 pub use indexed_signatures::{
-    CompressedPublicKey, IndexedSignature, SignatureSet, ThresholdConfig, ThresholdConfigUpdate,
-    ThresholdSigningError, verify_threshold_signatures,
+    verify_threshold_signatures, CompressedPublicKey, IndexedSignature, SignatureSet,
+    ThresholdConfig, ThresholdConfigUpdate, ThresholdSigningError,
 };
-
 // Re-export MuSig2 key aggregation
 pub use musig2::{aggregate_schnorr_keys, Musig2Error};
