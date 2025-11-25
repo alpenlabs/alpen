@@ -203,8 +203,8 @@ strata-ol-chain-types = { path = "crates/ol-chain-types" }
 strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-ol-da = { path = "crates/ol/da" }
-strata-ol-msg-types = { path = "crates/ol/msg-types" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
+strata-ol-msg-types = { path = "crates/ol/msg-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-stf = { path = "crates/ol/stf" }
 strata-params = { path = "crates/params" }
@@ -424,10 +424,6 @@ sha2 = "0.10"
 shrex = { version = "1", features = ["serde"] }
 shrex_macros = "1"
 sled = "0.34.7"
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
 tempfile = "3.10.1"
 terrors = "0.3.0"
 thiserror = "2.0.11"
@@ -438,10 +434,15 @@ tower = "0.5"
 tracing = "0.1"
 tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", branch = "ref-types-fix" }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
+
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
 
 # This is needed for custom build of SP1
 [profile.release.build-override]

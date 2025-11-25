@@ -12639,6 +12639,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sizzle-parser"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "skeptic"
 version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13281,6 +13289,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+dependencies = [
+ "itertools 0.13.0",
+ "smallvec",
+ "ssz_primitives 0.8.0",
+]
+
+[[package]]
 name = "ssz_codegen"
 version = "0.7.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.7.1#06dbc48413f46cf7137619a4d4c65196f3d190e7"
@@ -13319,6 +13337,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_codegen"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "sizzle-parser 0.8.0",
+ "ssz 0.8.0",
+ "ssz_derive 0.8.0",
+ "ssz_types 0.8.0",
+ "syn 2.0.110",
+ "toml 0.8.23",
+ "tree_hash 0.8.0",
+ "tree_hash_derive 0.8.0",
+]
+
+[[package]]
 name = "ssz_derive"
 version = "0.7.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.7.1#06dbc48413f46cf7137619a4d4c65196f3d190e7"
@@ -13332,6 +13369,16 @@ dependencies = [
 name = "ssz_derive"
 version = "0.7.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.110",
+]
+
+[[package]]
+name = "ssz_derive"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
 dependencies = [
  "darling 0.20.11",
  "quote",
@@ -13352,6 +13399,16 @@ dependencies = [
 name = "ssz_primitives"
 version = "0.7.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "ruint",
+]
+
+[[package]]
+name = "ssz_primitives"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -13379,6 +13436,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_types"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+dependencies = [
+ "ssz 0.8.0",
+ "ssz_primitives 0.8.0",
+ "tree_hash 0.8.0",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13397,18 +13464,18 @@ dependencies = [
  "digest 0.10.7",
  "proptest",
  "sha2 0.10.9",
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_codegen 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_types 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
+ "ssz_codegen 0.8.0",
+ "ssz_derive 0.8.0",
+ "ssz_types 0.8.0",
  "strata-btc-types",
  "strata-codec",
  "strata-identifiers",
  "strata-merkle",
  "strata-test-utils-ssz",
  "thiserror 2.0.17",
- "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "tree_hash_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "tree_hash 0.8.0",
+ "tree_hash_derive 0.8.0",
 ]
 
 [[package]]
@@ -13709,8 +13776,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
+ "ssz_derive 0.8.0",
  "strata-checkpoint-types",
  "strata-codec",
  "strata-identifiers",
@@ -13719,7 +13786,7 @@ dependencies = [
  "strata-test-utils-btc",
  "strata-test-utils-ssz",
  "thiserror 2.0.17",
- "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "tree_hash 0.8.0",
 ]
 
 [[package]]
@@ -13918,8 +13985,8 @@ name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
  "borsh",
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
+ "ssz_derive 0.8.0",
  "strata-codec",
 ]
 
@@ -14204,14 +14271,14 @@ name = "strata-ee-chain-types"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_codegen 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_types 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
+ "ssz_codegen 0.8.0",
+ "ssz_derive 0.8.0",
+ "ssz_types 0.8.0",
  "strata-acct-types",
  "strata-test-utils-ssz",
- "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "tree_hash_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "tree_hash 0.8.0",
+ "tree_hash_derive 0.8.0",
 ]
 
 [[package]]
@@ -14283,12 +14350,12 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
+ "ssz_derive 0.8.0",
  "strata-codec",
  "strata-codec-derive",
  "strata-test-utils-ssz",
- "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "tree_hash 0.8.0",
  "zeroize",
 ]
 
@@ -14494,7 +14561,7 @@ name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
  "strata-acct-types",
  "strata-codec",
  "strata-codec-derive",
@@ -14503,7 +14570,7 @@ dependencies = [
  "strata-ledger-types",
  "strata-merkle",
  "strata-snark-acct-types",
- "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "tree_hash 0.8.0",
 ]
 
 [[package]]
@@ -14832,13 +14899,13 @@ dependencies = [
 name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_codegen 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "ssz_types 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
+ "ssz_codegen 0.8.0",
+ "ssz_derive 0.8.0",
+ "ssz_types 0.8.0",
  "strata-acct-types",
- "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "tree_hash_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "tree_hash 0.8.0",
+ "tree_hash_derive 0.8.0",
 ]
 
 [[package]]
@@ -15038,8 +15105,8 @@ name = "strata-test-utils-ssz"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz 0.8.0",
+ "tree_hash 0.8.0",
 ]
 
 [[package]]
@@ -15964,6 +16031,18 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+dependencies = [
+ "digest 0.10.7",
+ "sha2 0.10.9",
+ "smallvec",
+ "ssz 0.8.0",
+ "ssz_primitives 0.8.0",
+]
+
+[[package]]
+name = "tree_hash"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee44f4cef85f88b4dea21c0b1f58320bdf35715cf56d840969487cff00613321"
@@ -15989,6 +16068,16 @@ dependencies = [
 name = "tree_hash_derive"
 version = "0.7.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.110",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.8.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
 dependencies = [
  "darling 0.20.11",
  "quote",
