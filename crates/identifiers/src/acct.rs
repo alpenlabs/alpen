@@ -98,6 +98,16 @@ pub struct AccountSerial(RawAccountSerial);
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
 
 impl AccountSerial {
+    /// Returns the zero serial.
+    pub const fn zero() -> AccountSerial {
+        AccountSerial(0)
+    }
+
+    /// Returns the one serial.
+    pub const fn one() -> AccountSerial {
+        AccountSerial(1)
+    }
+
     /// Creates a serial for one of the reserved accounts.
     ///
     /// # Panics

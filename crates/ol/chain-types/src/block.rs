@@ -57,7 +57,9 @@ impl SignedOLBlockHeader {
         &self.header
     }
 
-    /// This MUST be a schnorr signature for now.
+    /// This MUST be a schnorr signature over the `Codec`-encoded `header`.
+    ///
+    /// This is not currently checked anywhere.
     pub fn signature(&self) -> &Buf64 {
         &self.signature
     }

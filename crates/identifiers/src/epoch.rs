@@ -19,7 +19,6 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
-
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 use crate::{
@@ -129,7 +128,7 @@ impl fmt::Display for EpochCommitment {
             .expect("Failed to encode first 2 bytes to hex");
         hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
 
-        // SAFETY: we made sure of it
+        // SAFETY: hex always encodes 2->4 bytes
         write!(
             f,
             "{}[{}]@{}..{}",

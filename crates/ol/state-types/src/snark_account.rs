@@ -7,7 +7,7 @@ use strata_merkle::CompactMmr64B32;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 use tree_hash::TreeHash;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeSnarkAccountState {
     seqno: Seqno,
     proof_state: ProofState,
@@ -72,7 +72,7 @@ impl ISnarkAccountState for NativeSnarkAccountState {
     }
 }
 
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, Eq, PartialEq, Codec)]
 pub struct ProofState {
     inner_state_root: Hash,
     next_msg_read_idx: u64,

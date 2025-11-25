@@ -140,7 +140,6 @@ fn process_update_tx<S: StateAccessor>(
 
     // Capture values needed for the log before moving
     let account_serial = astate.serial();
-    let new_seq_no: u64 = sastate.seqno().into();
 
     // 3. Write the state back.
     astate.set_type_state(AccountTypeState::Snark(sastate))?;
@@ -153,8 +152,10 @@ fn process_update_tx<S: StateAccessor>(
     // According to the spec, the log should contain:
     // - new_msg_idx: The sequence number from the account state
     // - extra_data: The extra data from the update operation
-    let log_data = SnarkAccountUpdateLogData::new(new_seq_no, extra_data.to_vec())
-        .ok_or_else(|| ExecError::Codec(strata_codec::CodecError::OverflowContainer))?;
+    // TODO improve codec error handling here when more stuff is SSZed
+    let log_data =
+        SnarkAccountUpdateLogData::new(new_state.next_inbox_msg_idx, extra_data.to_vec())
+            .ok_or_else(|| ExecError::Codec(strata_codec::CodecError::OverflowContainer))?;
 
     // Encode the log data and emit it
     let log_payload = encode_to_vec(&log_data)?;

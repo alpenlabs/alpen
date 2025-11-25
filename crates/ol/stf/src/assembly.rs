@@ -1,5 +1,4 @@
 //! Block assembly flows.
-// TODO should this be in another crate?
 
 use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;

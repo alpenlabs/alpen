@@ -88,13 +88,10 @@ fn handle_bridge_gateway_message<S: StateAccessor>(
         return Ok(());
     };
 
-    if msg.ty() != WITHDRAWAL_MSG_TYPE_ID {
-        // Some other message type, just ignore.
-        return Ok(());
-    }
-
     let Some(withdrawal_data) = msg.try_as_withdrawal() else {
-        // Invalid withdrawal message, just ignore.
+        // Not a withdrawal message, or malformed, just ignore.
+        //
+        // TODO maybe reroute this to a different thing?
         return Ok(());
     };
 

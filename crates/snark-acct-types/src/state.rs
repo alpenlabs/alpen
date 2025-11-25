@@ -17,7 +17,7 @@ pub struct Seqno(RawSeqno);
 impl_opaque_thin_wrapper!(Seqno => RawSeqno);
 
 impl Seqno {
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         Self(0)
     }
 

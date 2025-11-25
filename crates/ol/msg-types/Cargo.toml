@@ -10,5 +10,8 @@ strata-codec-derive.workspace = true
 strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true

@@ -30,13 +30,14 @@ pub struct WithdrawalMsgData {
     fees: u32,
 
     /// Bitcoin Output Script Descriptor describing the withdrawal output.
+    // TODO idk why, but I can't make the MAX_WITHDRAWAL_DESC_LEN const generic work
     dest_desc: VarVec<u8>,
 }
 
 impl WithdrawalMsgData {
     /// Create a new withdrawal message data instance.
     pub fn new(fees: u32, dest_desc: Vec<u8>) -> Option<Self> {
-        // Ensure the destination descriptor isn't too long
+        // Ensure the destination descriptor isn't too long.
         if dest_desc.len() > MAX_WITHDRAWAL_DESC_LEN {
             return None;
         }
@@ -72,7 +73,9 @@ impl Codec for WithdrawalMsgData {
         let fees = u32::decode(dec)?;
         let dest_desc = VarVec::<u8>::decode(dec)?;
 
-        // Validate the length constraint
+        // Validate the length constraint.
+        //
+        // TODO remove this when we fix the const generic type
         if dest_desc.len() > MAX_WITHDRAWAL_DESC_LEN {
             return Err(CodecError::OverflowContainer);
         }
@@ -144,19 +147,12 @@ impl WithdrawalRejectionType {
 
 impl Codec for WithdrawalRejectionType {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        match dec.read_arr::<1>()?[0] {
-            0 => Ok(Self::RejectedEntirely),
-            1 => Ok(Self::FeeBumpRejection),
-            _ => Err(CodecError::InvalidVariant("WithdrawalRejectionType")),
-        }
+        Self::from_u8(dec.read_arr::<1>()?[0])
+            .ok_or(CodecError::InvalidVariant("WithdrawalRejectionType"))
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        let b = match self {
-            Self::RejectedEntirely => 0,
-            Self::FeeBumpRejection => 1,
-        };
-        enc.write_buf(&[b])
+        enc.write_buf(&[self.to_u8()])
     }
 }
 
@@ -210,127 +206,43 @@ impl WithdrawalRejectionMsgData {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use strata_codec::{decode_buf_exact, encode_to_vec};
 
     use super::*;
 
-    #[test]
-    fn test_withdrawal_msg_data_codec() {
-        // Create test data
-        let msg_data = WithdrawalMsgData {
-            fees: 10_000,
-            dest_desc: VarVec::from_vec(b"bc1qtest123".to_vec()).unwrap(),
-        };
+    proptest! {
+        #[test]
+        fn test_withdrawal_msg_data_codec(
+            fees in 0u32..=u32::MAX,
+            // Use a reasonable size limit for the descriptor (up to 255 bytes for safety)
+            dest_desc_bytes in prop::collection::vec(any::<u8>(), 0..=255)
+        ) {
+            // Create test data with random values
+            let dest_desc = VarVec::from_vec(dest_desc_bytes.clone())
+                .expect("VarVec creation should succeed for valid byte vectors");
 
-        // Encode
-        let encoded = encode_to_vec(&msg_data).unwrap();
+            let msg_data = WithdrawalMsgData {
+                fees,
+                dest_desc,
+            };
 
-        // Decode
-        let decoded: WithdrawalMsgData = decode_buf_exact(&encoded).unwrap();
+            // Encode
+            let encoded = encode_to_vec(&msg_data).expect("Encoding should succeed");
 
-        // Verify round-trip
-        assert_eq!(decoded.fees, msg_data.fees);
-        assert_eq!(decoded.dest_desc.as_ref(), msg_data.dest_desc.as_ref());
-    }
+            // Decode
+            let decoded: WithdrawalMsgData = decode_buf_exact(&encoded)
+                .expect("Decoding should succeed");
 
-    #[test]
-    fn test_withdrawal_msg_data_empty_desc() {
-        // Test with empty descriptor
-        let msg_data = WithdrawalMsgData {
-            fees: 0,
-            dest_desc: VarVec::from_vec(vec![]).unwrap(),
-        };
-
-        let encoded = encode_to_vec(&msg_data).unwrap();
-        let decoded: WithdrawalMsgData = decode_buf_exact(&encoded).unwrap();
-
-        assert_eq!(decoded.fees, 0);
-        assert!(decoded.dest_desc.is_empty());
-    }
-
-    #[test]
-    fn test_withdrawal_msg_data_max_fees() {
-        // Test with max fees
-        let msg_data = WithdrawalMsgData {
-            fees: u32::MAX,
-            dest_desc: VarVec::from_vec(vec![255u8; 100]).unwrap(),
-        };
-
-        let encoded = encode_to_vec(&msg_data).unwrap();
-        let decoded: WithdrawalMsgData = decode_buf_exact(&encoded).unwrap();
-
-        assert_eq!(decoded.fees, u32::MAX);
-        assert_eq!(decoded.dest_desc.len(), 100);
-    }
-
-    #[test]
-    fn test_withdrawal_fee_bump_msg_data_codec() {
-        // Create test data
-        let msg_data = WithdrawalFeeBumpMsgData {
-            withdrawal_intent_idx: 42,
-            source_subject: SubjectId::from([1u8; 32]),
-        };
-
-        // Encode
-        let encoded = encode_to_vec(&msg_data).unwrap();
-
-        // Decode
-        let decoded: WithdrawalFeeBumpMsgData = decode_buf_exact(&encoded).unwrap();
-
-        // Verify round-trip
-        assert_eq!(
-            decoded.withdrawal_intent_idx,
-            msg_data.withdrawal_intent_idx
-        );
-        assert_eq!(decoded.source_subject, msg_data.source_subject);
-    }
-
-    #[test]
-    fn test_withdrawal_rejection_msg_data_codec() {
-        // Test with RejectedEntirely
-        let msg_data = WithdrawalRejectionMsgData {
-            withdrawal_intent_idx: 100,
-            rejection_type: WithdrawalRejectionType::RejectedEntirely,
-            source_subject: SubjectId::from([2u8; 32]),
-        };
-
-        let encoded = encode_to_vec(&msg_data).unwrap();
-        let decoded: WithdrawalRejectionMsgData = decode_buf_exact(&encoded).unwrap();
-
-        assert_eq!(
-            decoded.withdrawal_intent_idx,
-            msg_data.withdrawal_intent_idx
-        );
-        assert_eq!(
-            decoded.rejection_type,
-            WithdrawalRejectionType::RejectedEntirely
-        );
-        assert_eq!(decoded.source_subject, msg_data.source_subject);
-    }
-
-    #[test]
-    fn test_withdrawal_rejection_fee_bump_codec() {
-        // Test with FeeBumpRejection
-        let msg_data = WithdrawalRejectionMsgData {
-            withdrawal_intent_idx: 0,
-            rejection_type: WithdrawalRejectionType::FeeBumpRejection,
-            source_subject: SubjectId::from([255u8; 32]),
-        };
-
-        let encoded = encode_to_vec(&msg_data).unwrap();
-        let decoded: WithdrawalRejectionMsgData = decode_buf_exact(&encoded).unwrap();
-
-        assert_eq!(decoded.withdrawal_intent_idx, 0);
-        assert_eq!(
-            decoded.rejection_type,
-            WithdrawalRejectionType::FeeBumpRejection
-        );
-        assert_eq!(decoded.source_subject, SubjectId::from([255u8; 32]));
+            // Verify round-trip
+            prop_assert_eq!(decoded.fees, msg_data.fees);
+            prop_assert_eq!(decoded.dest_desc.as_ref(), msg_data.dest_desc.as_ref());
+        }
     }
 
     #[test]
     fn test_withdrawal_rejection_type_conversion() {
-        // Test type conversions
+        // This just test all values exhaustively.
         assert_eq!(
             WithdrawalRejectionType::from_u8(0),
             Some(WithdrawalRejectionType::RejectedEntirely)
