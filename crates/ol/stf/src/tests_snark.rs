@@ -186,35 +186,33 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     for log in logs {
         // Check if it's a snark account update log (from the snark account)
-        if log.account_serial() == snark_serial {
-            if let Ok(update_log) =
-                strata_codec::decode_buf_exact::<SnarkAccountUpdateLogData>(&log.payload())
-            {
-                snark_update_found = true;
-                // The update log indicates the snark account was updated
-                assert_eq!(update_log.new_msg_idx(), 0, "Message index should be 0");
-            }
+        if log.account_serial() == snark_serial
+            && let Ok(update_log) =
+                strata_codec::decode_buf_exact::<SnarkAccountUpdateLogData>(log.payload())
+        {
+            snark_update_found = true;
+            // The update log indicates the snark account was updated
+            assert_eq!(update_log.new_msg_idx(), 0, "Message index should be 0");
         }
 
         // Check if it's a withdrawal intent log (from the bridge gateway)
-        if log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL {
-            if let Ok(withdrawal_log) =
-                strata_codec::decode_buf_exact::<SimpleWithdrawalIntentLogData>(&log.payload())
-            {
-                withdrawal_found = true;
+        if log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL
+            && let Ok(withdrawal_log) =
+                strata_codec::decode_buf_exact::<SimpleWithdrawalIntentLogData>(log.payload())
+        {
+            withdrawal_found = true;
 
-                // Verify the withdrawal details
-                assert_eq!(
-                    withdrawal_log.amt, withdrawal_amount,
-                    "Withdrawal amount should match"
-                );
+            // Verify the withdrawal details
+            assert_eq!(
+                withdrawal_log.amt, withdrawal_amount,
+                "Withdrawal amount should match"
+            );
 
-                assert_eq!(
-                    withdrawal_log.dest.as_slice(),
-                    withdrawal_dest_desc.as_slice(),
-                    "Withdrawal destination should match"
-                );
-            }
+            assert_eq!(
+                withdrawal_log.dest.as_slice(),
+                withdrawal_dest_desc.as_slice(),
+                "Withdrawal destination should match"
+            );
         }
     }
 

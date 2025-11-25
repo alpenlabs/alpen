@@ -60,7 +60,7 @@ impl AccountId {
 impl fmt::Display for AccountId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buf = [0; SUBJ_ID_LEN * 2];
-        hex::encode_to_slice(&self.0, &mut buf).expect("ident/acct: encode hex");
+        hex::encode_to_slice(self.0, &mut buf).expect("ident/acct: encode hex");
         // SAFETY: correct lengths
         f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
     }
@@ -192,7 +192,7 @@ impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 impl fmt::Display for SubjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buf = [0; SUBJ_ID_LEN * 2];
-        hex::encode_to_slice(&self.0, &mut buf).expect("ident/subj: encode hex");
+        hex::encode_to_slice(self.0, &mut buf).expect("ident/subj: encode hex");
         // SAFETY: correct lengths
         f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
     }
