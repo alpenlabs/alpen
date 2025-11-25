@@ -15,7 +15,7 @@ use crate::{
 pub const COMMIT_TX_AUX_DATA_LEN: usize = 4 + 4;
 
 /// Expected number of inputs in a commit transaction.
-pub const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
+const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
 
 /// Information extracted from a Bitcoin commit transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
