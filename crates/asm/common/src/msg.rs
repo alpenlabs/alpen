@@ -7,7 +7,7 @@ use strata_l1_txfmt::SubprotocolId;
 // Re-export standard types for convenience
 pub use strata_msg_fmt::{Error as MessageError, Msg, OwnedMsg, TypeId};
 
-use crate::AsmError;
+use crate::{AsmError, AsmManifestError};
 
 /// Generic wrapper around a inter-proto msg.
 pub trait InterprotoMsg: Any + 'static {
@@ -55,13 +55,15 @@ pub struct Message(pub OwnedMsg);
 impl Message {
     /// Creates a new message from type and body
     pub fn new(ty: TypeId, body: Vec<u8>) -> Result<Self, AsmError> {
-        let owned_msg = OwnedMsg::new(ty, body).map_err(AsmError::from)?;
+        let owned_msg = OwnedMsg::new(ty, body)
+            .map_err(|e| AsmError::ManifestError(AsmManifestError::MsgFmtError(e)))?;
         Ok(Message(owned_msg))
     }
 
     /// Creates a message from raw encoded bytes
     pub fn from_encoded(encoded_bytes: Vec<u8>) -> Result<Self, AsmError> {
-        let owned_msg = OwnedMsg::try_from(encoded_bytes.as_slice()).map_err(AsmError::from)?;
+        let owned_msg = OwnedMsg::try_from(encoded_bytes.as_slice())
+            .map_err(|e| AsmError::ManifestError(AsmManifestError::MsgFmtError(e)))?;
         Ok(Message(owned_msg))
     }
 

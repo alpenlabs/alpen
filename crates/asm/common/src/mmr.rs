@@ -12,8 +12,8 @@ pub const ASM_MMR_CAP_LOG2: usize = 64;
 /// Uses SHA-256 with full 32-byte hash output.
 pub type AsmHasher = Sha256Hasher;
 
-/// A 32-byte cryptographic hash.
-pub type Hash32 = [u8; 32];
+// Re-export Hash32 from manifest-types to maintain backward compatibility
+pub use strata_asm_manifest_types::Hash32;
 
 /// Compact representation of the ASM manifest MMR using 64-bit indexing.
 ///

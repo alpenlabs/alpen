@@ -19,18 +19,5 @@ mod ssz_generated {
 }
 
 pub use proof_interface::UpdateProofPubParams;
-pub use ssz_generated::ssz::{
-    accumulators::{AccumulatorClaim, AccumulatorClaimRef, MmrEntryProof, MmrEntryProofRef},
-    messages::{MessageEntry, MessageEntryProof, MessageEntryRef},
-    outputs::{
-        MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs, UpdateOutputsRef,
-    },
-    state::{MAX_VK_BYTES, ProofState, ProofStateRef, SnarkAccountState, SnarkAccountStateRef},
-    update::{
-        LedgerRefs, LedgerRefsRef, MAX_EXTRA_DATA_BYTES, MAX_LEDGER_REFS, MAX_PROCESSED_MESSAGES,
-        MAX_UPDATE_PROOF_BYTES, SnarkAccountUpdate, SnarkAccountUpdateContainer,
-        SnarkAccountUpdateContainerRef, SnarkAccountUpdateRef, UpdateAccumulatorProofs,
-        UpdateAccumulatorProofsRef, UpdateInputData, UpdateInputDataRef, UpdateOperationData,
-        UpdateOperationDataRef, UpdateStateData, UpdateStateDataRef,
-    },
-};
+pub use ssz_generated::ssz::{accumulators::*, messages::*, outputs::*, state::*, update::*};
+pub use state::Seqno;

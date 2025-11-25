@@ -2,7 +2,7 @@
 //! and interacting with subprotocols in an ASM (Anchor State Machine) framework.
 
 mod aux;
-mod error;
+mod errors;
 mod log;
 mod manifest;
 mod mmr;
@@ -13,7 +13,7 @@ mod subprotocol;
 mod tx;
 
 pub use aux::*;
-pub use error::*;
+pub use errors::*;
 pub use log::*;
 pub use manifest::*;
 pub use mmr::*;

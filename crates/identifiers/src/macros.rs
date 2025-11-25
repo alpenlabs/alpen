@@ -91,6 +91,25 @@ macro_rules! impl_buf_wrapper {
                 ::core::fmt::Display::fmt(&self.0, f)
             }
         }
+
+        // Codec implementation for Buf wrapper types - passthrough to underlying Buf
+        impl $crate::strata_codec::Codec for $wrapper {
+            fn encode(
+                &self,
+                enc: &mut impl $crate::strata_codec::Encoder,
+            ) -> Result<(), $crate::strata_codec::CodecError> {
+                // Delegate to the underlying Buf type's Codec implementation
+                self.0.encode(enc)
+            }
+
+            fn decode(
+                dec: &mut impl $crate::strata_codec::Decoder,
+            ) -> Result<Self, $crate::strata_codec::CodecError> {
+                // Decode the underlying Buf type and wrap it
+                let buf = $name::decode(dec)?;
+                Ok(Self(buf))
+            }
+        }
     };
 }
 
@@ -229,6 +248,25 @@ pub(crate) mod internal {
                     let mut array = [0u8; $len];
                     u.fill_buffer(&mut array)?;
                     Ok(array.into())
+                }
+            }
+
+            // Codec implementation for Buf types
+            impl $crate::strata_codec::Codec for $name {
+                fn encode(
+                    &self,
+                    enc: &mut impl $crate::strata_codec::Encoder,
+                ) -> Result<(), $crate::strata_codec::CodecError> {
+                    // Encode the underlying byte array
+                    self.0.encode(enc)
+                }
+
+                fn decode(
+                    dec: &mut impl $crate::strata_codec::Decoder,
+                ) -> Result<Self, $crate::strata_codec::CodecError> {
+                    // Decode the byte array and wrap it
+                    let bytes = <[u8; $len]>::decode(dec)?;
+                    Ok(Self(bytes))
                 }
             }
         };

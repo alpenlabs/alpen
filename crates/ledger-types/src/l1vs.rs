@@ -27,7 +27,7 @@ pub trait IL1ViewState {
 
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
     /// block height and other fields.
-    fn append_manifest(&mut self, mf: AsmManifest);
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest);
 
     /// Gets the field for the epoch that the ASM considers to be valid.
     ///
@@ -45,5 +45,5 @@ pub trait IL1ViewState {
     fn total_ledger_balance(&self) -> BitcoinAmount;
 
     /// Sets the total OL ledger balance.
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) -> BitcoinAmount;
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount);
 }

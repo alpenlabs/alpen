@@ -1,5 +1,8 @@
 //! Account message types.
 
+use ssz_types::VariableList;
+use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
+
 use crate::{
     AccountId, BitcoinAmount,
     ssz_generated::ssz::messages::{MsgPayload, ReceivedMessage, SentMessage},
@@ -47,6 +50,29 @@ impl MsgPayload {
 
     pub fn data(&self) -> &[u8] {
         &self.data
+    }
+}
+
+impl Codec for MsgPayload {
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let value = BitcoinAmount::decode(dec)?;
+
+        let len_vi = Varint::decode(dec)?;
+        let mut buf = vec![0; len_vi.inner() as usize];
+        dec.read_buf(&mut buf)?;
+        let data = VariableList::new(buf).map_err(|_| CodecError::OverflowContainer)?;
+
+        Ok(Self { data, value })
+    }
+
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.value.encode(enc)?;
+
+        let len_vi = Varint::new_usize(self.data.len()).ok_or(CodecError::OverflowContainer)?;
+        len_vi.encode(enc)?;
+        enc.write_buf(&self.data)?;
+
+        Ok(())
     }
 }
 

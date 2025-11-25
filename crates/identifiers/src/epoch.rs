@@ -19,11 +19,15 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 use crate::{
     buf::Buf32,
     ol::{OLBlockCommitment, OLBlockId},
 };
+
+// TODO convert to u32
+type RawEpoch = u64;
 
 /// Commits to a particular epoch by the last block and slot.
 #[derive(
@@ -41,13 +45,14 @@ use crate::{
     Serialize,
 )]
 pub struct EpochCommitment {
-    epoch: u64,
+    epoch: RawEpoch,
     last_slot: u64,
     last_blkid: OLBlockId,
+    // TODO convert to using OLBlockCommitment?
 }
 
 impl EpochCommitment {
-    pub fn new(epoch: u64, last_slot: u64, last_blkid: OLBlockId) -> Self {
+    pub fn new(epoch: RawEpoch, last_slot: u64, last_blkid: OLBlockId) -> Self {
         Self {
             epoch,
             last_slot,
@@ -57,7 +62,7 @@ impl EpochCommitment {
 
     /// Creates a new instance given the terminal block of an epoch and the
     /// epoch index.
-    pub fn from_terminal(epoch: u64, block: OLBlockCommitment) -> Self {
+    pub fn from_terminal(epoch: RawEpoch, block: OLBlockCommitment) -> Self {
         Self::new(epoch, block.slot(), *block.blkid())
     }
 
@@ -66,7 +71,7 @@ impl EpochCommitment {
         Self::new(0, 0, OLBlockId::from(Buf32::zero()))
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> RawEpoch {
         self.epoch
     }
 
@@ -90,10 +95,30 @@ impl EpochCommitment {
     }
 }
 
+impl Codec for EpochCommitment {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.epoch.encode(enc)?;
+        self.last_slot.encode(enc)?;
+        self.last_blkid.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let epoch = u64::decode(dec)?;
+        let last_slot = u64::decode(dec)?;
+        let last_blkid = OLBlockId::decode(dec)?;
+        Ok(Self {
+            epoch,
+            last_slot,
+            last_blkid,
+        })
+    }
+}
+
 impl fmt::Display for EpochCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Show first 2 and last 2 bytes of block ID (4 hex chars each)
-        let blkid_bytes = self.last_blkid.as_ref();
+        let blkid_bytes = self.last_blkid().as_ref();
         let first_2 = &blkid_bytes[..2];
         let last_2 = &blkid_bytes[30..];
 
@@ -103,15 +128,14 @@ impl fmt::Display for EpochCommitment {
             .expect("Failed to encode first 2 bytes to hex");
         hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
 
+        // SAFETY: hex always encodes 2->4 bytes
         write!(
             f,
             "{}[{}]@{}..{}",
-            self.last_slot,
-            self.epoch,
-            std::str::from_utf8(&first_hex)
-                .expect("Failed to convert first 2 hex bytes to UTF-8 string"),
-            std::str::from_utf8(&last_hex)
-                .expect("Failed to convert last 2 hex bytes to UTF-8 string")
+            self.last_slot(),
+            self.epoch(),
+            unsafe { std::str::from_utf8_unchecked(&first_hex) },
+            unsafe { std::str::from_utf8_unchecked(&last_hex) },
         )
     }
 }
@@ -121,7 +145,9 @@ impl fmt::Debug for EpochCommitment {
         write!(
             f,
             "EpochCommitment(epoch={}, last_slot={}, last_blkid={:?})",
-            self.epoch, self.last_slot, self.last_blkid
+            self.epoch(),
+            self.last_slot(),
+            self.last_blkid()
         )
     }
 }

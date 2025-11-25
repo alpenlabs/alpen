@@ -42,28 +42,28 @@ fn process_checkpoint_log(
     checkpoint_update: &CheckpointUpdate,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
-    let epoch = checkpoint_update.batch_info.epoch();
+    let epoch = checkpoint_update.batch_info().epoch();
 
     info!(
         %epoch,
         %asm_block,
-        checkpoint_txid = ?checkpoint_update.checkpoint_txid,
+        checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
         "CSM is processing checkpoint update from ASM log"
     );
 
     // Create L1 checkpoint reference from the log data
     let l1_reference = CheckpointL1Ref::new(
         *asm_block,
-        checkpoint_update.checkpoint_txid.inner_raw(),
-        checkpoint_update.checkpoint_txid.inner_raw(), // TODO: get wtxid if available
+        checkpoint_update.checkpoint_txid().inner_raw(),
+        checkpoint_update.checkpoint_txid().inner_raw(), // TODO: get wtxid if available
     );
 
     // Create L1Checkpoint for client state
     let l1_checkpoint = L1Checkpoint::new(
-        checkpoint_update.batch_info.clone(),
+        checkpoint_update.batch_info().clone(),
         BatchTransition {
             epoch,
-            chainstate_transition: checkpoint_update.chainstate_transition,
+            chainstate_transition: *checkpoint_update.chainstate_transition(),
         },
         l1_reference.clone(),
     );
@@ -166,16 +166,16 @@ fn update_client_state_with_checkpoint(
 /// This will be largely changed as we move to the new OL STF as the checkpoint structure
 /// will be different than the existing ones.
 fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
-    let epoch = update.batch_info.epoch();
+    let epoch = update.batch_info().epoch();
 
     // Create empty sidecar - checkpoint was already verified by ASM
     let sidecar = CheckpointSidecar::new(vec![]);
 
     Checkpoint::new(
-        update.batch_info.clone(),
+        update.batch_info().clone(),
         BatchTransition {
             epoch,
-            chainstate_transition: update.chainstate_transition,
+            chainstate_transition: *update.chainstate_transition(),
         },
         Default::default(), // Empty proof - actual proof was already verified by ASM
         sidecar,

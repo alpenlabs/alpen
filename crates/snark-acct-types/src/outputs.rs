@@ -11,6 +11,7 @@ impl UpdateOutputs {
     /// Creates new update outputs.
     pub fn new(transfers: Vec<OutputTransfer>, messages: Vec<OutputMessage>) -> Self {
         Self {
+            // FIXME does this panic if the vecs are too large?
             transfers: transfers.into(),
             messages: messages.into(),
         }
@@ -23,7 +24,7 @@ impl UpdateOutputs {
 
     /// Gets the transfers.
     pub fn transfers(&self) -> &[OutputTransfer] {
-        &self.transfers
+        self.transfers.as_ref()
     }
 
     /// Gets mutable transfers.
@@ -35,7 +36,7 @@ impl UpdateOutputs {
 
     /// Gets the messages.
     pub fn messages(&self) -> &[OutputMessage] {
-        &self.messages
+        self.messages.as_ref()
     }
 
     /// Gets mutable messages.

@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-checkpoint-types.workspace = true
+strata-codec.workspace = true
 strata-identifiers = { workspace = true, features = ["bitcoin"] }
 strata-l1-txfmt.workspace = true
 

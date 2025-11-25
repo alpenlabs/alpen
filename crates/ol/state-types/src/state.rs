@@ -69,7 +69,7 @@ pub struct L1View {
 
     /// Latest seen checkpoint corresponding to an epoch.
     recorded_epoch: EpochCommitment,
-    // TODO: add witness root mmr
+    // TODO add witnesses/manifests root mmr?
 }
 
 impl L1View {

@@ -7999,9 +7999,9 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pest"
-version = "2.8.3"
+version = "2.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "989e7521a040efde50c3ab6bbadafbe15ab6dc042686926be59ac35d74607df4"
+checksum = "cbcfd20a6d4eeba40179f05735784ad32bdaef05ce8e8af05f180d45bb3e7e22"
 dependencies = [
  "memchr",
  "ucd-trie",
@@ -12633,7 +12633,7 @@ dependencies = [
 [[package]]
 name = "sizzle-parser"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -13273,7 +13273,7 @@ dependencies = [
 [[package]]
 name = "ssz"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "itertools 0.13.0",
  "smallvec",
@@ -13302,7 +13302,7 @@ dependencies = [
 [[package]]
 name = "ssz_codegen"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -13331,7 +13331,7 @@ dependencies = [
 [[package]]
 name = "ssz_derive"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "darling 0.20.11",
  "quote",
@@ -13351,7 +13351,7 @@ dependencies = [
 [[package]]
 name = "ssz_primitives"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -13371,7 +13371,7 @@ dependencies = [
 [[package]]
 name = "ssz_types"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_primitives 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
@@ -13402,7 +13402,7 @@ dependencies = [
  "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_types 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "strata-btc-types",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
  "strata-identifiers",
  "strata-merkle",
  "strata-test-utils-ssz",
@@ -13418,6 +13418,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-asm-manifest-types",
  "strata-asm-types",
  "strata-btc-types",
  "strata-identifiers",
@@ -13437,9 +13438,25 @@ dependencies = [
  "moho-types",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-codec",
+ "strata-codec-derive",
+ "strata-codec-utils",
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
+]
+
+[[package]]
+name = "strata-asm-manifest-types"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "serde",
+ "strata-codec",
+ "strata-codec-derive",
+ "strata-identifiers",
+ "strata-msg-fmt",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -13623,7 +13640,7 @@ dependencies = [
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "strata-asm-common",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
  "strata-crypto",
  "strata-l1-txfmt",
  "strata-primitives",
@@ -13695,6 +13712,7 @@ dependencies = [
  "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "strata-checkpoint-types",
+ "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-test-utils",
@@ -13881,17 +13899,28 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?branch=merkle-proof-ssz#c776d9310ce0f8809a7953a1c1ed1397676a8b85"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "thiserror 2.0.17",
 ]
 
 [[package]]
-name = "strata-codec"
+name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#4a4c6f1b7b3e215f6a06ed0080a3453325b2cdba"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
- "thiserror 2.0.17",
+ "quote",
+ "syn 2.0.110",
+]
+
+[[package]]
+name = "strata-codec-utils"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "strata-codec",
 ]
 
 [[package]]
@@ -14024,7 +14053,7 @@ name = "strata-da-framework"
 version = "0.1.0"
 dependencies = [
  "sha2 0.10.9",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
  "strata-merkle",
  "thiserror 2.0.17",
 ]
@@ -14151,7 +14180,7 @@ dependencies = [
  "digest 0.10.7",
  "sha2 0.10.9",
  "strata-acct-types",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-msg-fmt",
@@ -14165,7 +14194,7 @@ name = "strata-ee-acct-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
  "strata-ee-chain-types",
  "strata-msg-fmt",
  "thiserror 2.0.17",
@@ -14257,7 +14286,8 @@ dependencies = [
  "sha2 0.10.9",
  "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
+ "strata-codec-derive",
  "strata-test-utils-ssz",
  "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "zeroize",
@@ -14277,7 +14307,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#4a4c6f1b7b3e215f6a06ed0080a3453325b2cdba"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.17",
@@ -14286,7 +14316,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#4a4c6f1b7b3e215f6a06ed0080a3453325b2cdba"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.17",
@@ -14331,7 +14361,7 @@ dependencies = [
 [[package]]
 name = "strata-merkle"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?branch=merkle-proof-ssz#c776d9310ce0f8809a7953a1c1ed1397676a8b85"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "borsh",
  "digest 0.10.7",
@@ -14341,7 +14371,7 @@ dependencies = [
  "ssz_codegen 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_types 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?branch=merkle-proof-ssz)",
+ "strata-codec",
  "thiserror 2.0.17",
  "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "tree_hash_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
@@ -14365,7 +14395,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#4a4c6f1b7b3e215f6a06ed0080a3453325b2cdba"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -14404,10 +14434,14 @@ dependencies = [
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "int-enum",
  "strata-acct-types",
  "strata-asm-common",
- "strata-primitives",
+ "strata-codec",
+ "strata-codec-derive",
+ "strata-codec-utils",
+ "strata-identifiers",
  "strata-snark-acct-types",
 ]
 
@@ -14426,6 +14460,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-da"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
@@ -14434,11 +14479,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-msg-types"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-codec-derive",
+ "strata-identifiers",
+ "strata-msg-fmt",
+]
+
+[[package]]
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
+ "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-codec-derive",
+ "strata-codec-utils",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-snark-acct-types",
+ "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
+]
+
+[[package]]
+name = "strata-ol-stf"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-asm-common",
+ "strata-asm-manifest-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-msg-fmt",
  "strata-ol-chain-types-new",
- "strata-primitives",
+ "strata-ol-da",
+ "strata-ol-msg-types",
+ "strata-ol-state-types",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -14460,7 +14546,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#4a4c6f1b7b3e215f6a06ed0080a3453325b2cdba"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -14719,7 +14805,7 @@ dependencies = [
 [[package]]
 name = "strata-service"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common#4a4c6f1b7b3e215f6a06ed0080a3453325b2cdba"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "anyhow",
  "futures",
@@ -14738,7 +14824,7 @@ dependencies = [
  "digest 0.10.7",
  "sha2 0.10.9",
  "strata-acct-types",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
 ]
@@ -14856,7 +14942,7 @@ dependencies = [
 [[package]]
 name = "strata-tasks"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common#4a4c6f1b7b3e215f6a06ed0080a3453325b2cdba"
+source = "git+https://github.com/alpenlabs/strata-common#c486a6b9a00d47546977ad4388134ce463f9ec4d"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -15868,7 +15954,7 @@ dependencies = [
 [[package]]
 name = "tree_hash"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "digest 0.10.7",
  "sha2 0.10.9",
@@ -15903,7 +15989,7 @@ dependencies = [
 [[package]]
 name = "tree_hash_derive"
 version = "0.7.1"
-source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#01c82ff84bb2c479adc02ef038d9c50fd4616ed7"
+source = "git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix#d57def3dea353e7c454e36184f1b2f1583fab90f"
 dependencies = [
  "darling 0.20.11",
  "quote",

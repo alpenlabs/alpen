@@ -23,6 +23,7 @@ use rand::rngs::OsRng;
 use secp256k1::SECP256K1;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use ssz_derive::{Decode, Encode};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::Buf32;
 
 use crate::ParseError;
@@ -293,6 +294,16 @@ impl std::ops::Deref for BitcoinAmount {
 impl std::ops::DerefMut for BitcoinAmount {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl Codec for BitcoinAmount {
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        Ok(Self(u64::decode(dec)?))
+    }
+
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.0.encode(enc)
     }
 }
 

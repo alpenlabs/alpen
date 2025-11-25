@@ -1,0 +1,16 @@
+[package]
+name = "strata-asm-manifest-types"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+borsh.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+strata-codec.workspace = true
+strata-codec-derive.workspace = true
+strata-identifiers.workspace = true
+strata-msg-fmt.workspace = true
+
+[lints]
+workspace = true

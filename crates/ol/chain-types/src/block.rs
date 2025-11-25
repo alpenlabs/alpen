@@ -1,9 +1,17 @@
-use strata_asm_common::AsmLogEntry;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_asm_common::AsmManifest;
+use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec, encode_to_vec};
+use strata_codec_derive::Codec;
+use strata_identifiers::{Buf32, Buf64, L1BlockId, OLBlockId, hash::raw};
 
-use crate::{Epoch, OLBlockId, OLTransaction, Slot};
+use crate::{
+    block_flags::BlockFlags,
+    common::{Epoch, Slot},
+    transaction::OLTransaction,
+};
 
-/// The Orchestration Layer(OL) block.
+/// Fully constructed and signed orchestration layer block.
+///
+/// The internal hashes should all be consistent.
 #[derive(Clone, Debug)]
 pub struct OLBlock {
     signed_header: SignedOLBlockHeader,
@@ -18,20 +26,22 @@ impl OLBlock {
         }
     }
 
-    pub fn body(&self) -> &OLBlockBody {
-        &self.body
-    }
-
     pub fn signed_header(&self) -> &SignedOLBlockHeader {
         &self.signed_header
     }
 
+    /// Returns the executionally-relevant block header inside the signed header
+    /// structure.
     pub fn header(&self) -> &OLBlockHeader {
         self.signed_header.header()
     }
+
+    pub fn body(&self) -> &OLBlockBody {
+        &self.body
+    }
 }
 
-/// OL Block header with signature.
+/// OL block header with signature.
 #[derive(Clone, Debug)]
 pub struct SignedOLBlockHeader {
     header: OLBlockHeader,
@@ -47,16 +57,32 @@ impl SignedOLBlockHeader {
         &self.header
     }
 
-    pub fn signature(&self) -> Buf64 {
-        self.signature
+    /// This MUST be a schnorr signature over the `Codec`-encoded `header`.
+    ///
+    /// This is not currently checked anywhere.
+    pub fn signature(&self) -> &Buf64 {
+        &self.signature
     }
 }
 
-/// OL Block header without signature.
-#[derive(Clone, Debug)]
+/// OL block header.
+///
+/// This should not be directly used itself during execution, it has hash fields
+/// that are computed from execution, so this is what we use as an input to
+/// validation.
+#[derive(Clone, Debug, Codec)]
 pub struct OLBlockHeader {
     /// The timestamp the block was created at.
     timestamp: u64,
+
+    /// Flags used for better signalling.
+    ///
+    /// This was added so that we can look at a header and know if it a terminal
+    /// without having to examine the body to see if the body had an L1 update
+    /// or not.  I suggested this a while ago but we dismissed it as probably
+    /// unnecessary, but it really does help simplifying a lot of checks, so I'm
+    /// adding it now.
+    flags: BlockFlags,
 
     /// Slot the block was created for.
     slot: Slot,
@@ -70,31 +96,34 @@ pub struct OLBlockHeader {
     /// Root of the block body.
     body_root: Buf32,
 
-    /// Root of the block logs.
-    logs_root: Buf32,
-
     /// The state root resulting after the block execution.
     state_root: Buf32,
+
+    /// Root of the block logs.
+    logs_root: Buf32,
 }
 
 impl OLBlockHeader {
+    #[expect(clippy::too_many_arguments, reason = "headers are complicated")]
     pub fn new(
         timestamp: u64,
+        flags: BlockFlags,
         slot: Slot,
         epoch: Epoch,
         parent_blkid: OLBlockId,
         body_root: Buf32,
-        logs_root: Buf32,
         state_root: Buf32,
+        logs_root: Buf32,
     ) -> Self {
         Self {
             timestamp,
+            flags,
             slot,
             epoch,
             parent_blkid,
             body_root,
-            logs_root,
             state_root,
+            logs_root,
         }
     }
 
@@ -102,28 +131,48 @@ impl OLBlockHeader {
         self.timestamp
     }
 
+    pub fn flags(&self) -> BlockFlags {
+        self.flags
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.flags.is_terminal()
+    }
+
     pub fn slot(&self) -> u64 {
         self.slot
+    }
+
+    /// Checks if this is header is the genesis slot, meaning that it's slot 0.
+    pub fn is_genesis_slot(&self) -> bool {
+        self.slot() == 0
     }
 
     pub fn epoch(&self) -> u32 {
         self.epoch
     }
 
-    pub fn parent_blkid(&self) -> Buf32 {
-        self.parent_blkid
+    pub fn parent_blkid(&self) -> &OLBlockId {
+        &self.parent_blkid
     }
 
-    pub fn body_root(&self) -> Buf32 {
-        self.body_root
+    pub fn body_root(&self) -> &Buf32 {
+        &self.body_root
     }
 
-    pub fn logs_root(&self) -> Buf32 {
-        self.logs_root
+    pub fn state_root(&self) -> &Buf32 {
+        &self.state_root
     }
 
-    pub fn state_root(&self) -> Buf32 {
-        self.state_root
+    pub fn logs_root(&self) -> &Buf32 {
+        &self.logs_root
+    }
+
+    /// Computes the block ID by hashing the header's Codec encoding.
+    pub fn compute_blkid(&self) -> OLBlockId {
+        let encoded = encode_to_vec(self).expect("block: header encoding should succeed");
+        let hash = raw(&encoded);
+        OLBlockId::from(hash)
     }
 }
 
@@ -134,40 +183,93 @@ pub struct OLBlockBody {
     tx_segment: OLTxSegment,
 
     /// Updates from L1.
-    l1_update: L1Update,
+    ///
+    /// This is only set in terminal blocks.
+    l1_update: Option<OLL1Update>,
 }
 
 impl OLBlockBody {
-    pub fn new(tx_segment: OLTxSegment, l1_update: L1Update) -> Self {
+    pub fn new(tx_segment: OLTxSegment, l1_update: Option<OLL1Update>) -> Self {
         Self {
             tx_segment,
             l1_update,
         }
     }
 
-    pub fn txs(&self) -> &[OLTransaction] {
-        self.tx_segment.txs()
+    /// Constructs a new instance for a common block with just a tx segment.
+    pub fn new_common(tx_segment: OLTxSegment) -> Self {
+        Self::new(tx_segment, None)
     }
 
-    pub fn l1_update(&self) -> &L1Update {
-        &self.l1_update
+    // TODO convert to builder?
+    pub fn set_l1_update(&mut self, l1_update: OLL1Update) {
+        self.l1_update = Some(l1_update);
     }
 
     pub fn tx_segment(&self) -> &OLTxSegment {
         &self.tx_segment
     }
+
+    pub fn l1_update(&self) -> Option<&OLL1Update> {
+        self.l1_update.as_ref()
+    }
+
+    /// Computes the hash commitment of this block body.
+    pub fn compute_hash_commitment(&self) -> Buf32 {
+        let encoded = encode_to_vec(self).expect("block: block body encoding should succeed");
+        raw(&encoded)
+    }
+
+    /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update
+    /// is present.  This has to match the `IS_TERMINAL` flag in the header.
+    pub fn is_body_terminal(&self) -> bool {
+        self.l1_update().is_some()
+    }
 }
 
-#[derive(Clone, Debug)]
+impl Codec for OLBlockBody {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.tx_segment.encode(enc)?;
+        // Encode Option as bool (is_some) followed by value if present
+        match &self.l1_update {
+            Some(update) => {
+                true.encode(enc)?;
+                update.encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let tx_segment = OLTxSegment::decode(dec)?;
+        let l1_update = if bool::decode(dec)? {
+            Some(OLL1Update::decode(dec)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            tx_segment,
+            l1_update,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Codec)]
 pub struct OLTxSegment {
     /// Transactions in the segment.
-    txs: Vec<OLTransaction>,
+    txs: VarVec<OLTransaction>,
     // Add other attributes.
 }
 
 impl OLTxSegment {
     pub fn new(txs: Vec<OLTransaction>) -> Self {
-        Self { txs }
+        Self {
+            txs: VarVec::from_vec(txs).expect("block: too many txs"),
+        }
     }
 
     pub fn txs(&self) -> &[OLTransaction] {
@@ -176,69 +278,95 @@ impl OLTxSegment {
 }
 
 /// Represents an update from L1.
-#[derive(Clone, Debug)]
-pub struct L1Update {
+#[derive(Clone, Debug, Codec)]
+pub struct OLL1Update {
     /// The state root before applying updates from L1.
-    pub preseal_state_root: Buf32,
+    preseal_state_root: Buf32,
 
-    /// L1 height the manifests are read upto.
-    pub new_l1_blk_height: u64,
-
-    /// L1 block hash the manifests are read upto.
-    pub new_l1_blkid: Buf32,
-
-    /// Manifests from last l1 height to the new l1 height.
-    pub manifests: Vec<AsmManifest>,
+    /// The manifests we extend the chain with.
+    manifest_cont: OLL1ManifestContainer,
 }
 
-impl L1Update {
-    pub fn new(
-        preseal_state_root: Buf32,
-        new_l1_blk_height: u64,
-        new_l1_blkid: Buf32,
-        manifests: Vec<AsmManifest>,
-    ) -> Self {
+impl OLL1Update {
+    pub fn new(preseal_state_root: Buf32, manifest_cont: OLL1ManifestContainer) -> Self {
         Self {
             preseal_state_root,
-            new_l1_blk_height,
-            new_l1_blkid,
-            manifests,
+            manifest_cont,
         }
     }
 
-    pub fn preseal_state_root(&self) -> Buf32 {
-        self.preseal_state_root
+    pub fn preseal_state_root(&self) -> &Buf32 {
+        &self.preseal_state_root
     }
 
-    pub fn new_l1_blk_height(&self) -> u64 {
-        self.new_l1_blk_height
-    }
-
-    pub fn new_l1_blkid(&self) -> Buf32 {
-        self.new_l1_blkid
+    pub fn manifest_cont(&self) -> &OLL1ManifestContainer {
+        &self.manifest_cont
     }
 }
 
-/// A manifest containing ASM data corresponding to a L1 block.
-#[derive(Debug, Clone)]
-pub struct AsmManifest {
-    /// L1 block id.
-    l1blkid: Buf32,
-
-    /// Logs from ASM STF.
-    logs: Vec<AsmLogEntry>,
+#[derive(Clone, Debug)]
+pub struct OLL1ManifestContainer {
+    /// Manifests building on top of previous l1 height to the new l1 height.
+    manifests: Vec<AsmManifest>,
 }
 
-impl AsmManifest {
-    pub fn new(l1blkid: Buf32, logs: Vec<AsmLogEntry>) -> Self {
-        Self { l1blkid, logs }
+impl OLL1ManifestContainer {
+    pub fn new(manifests: Vec<AsmManifest>) -> Self {
+        Self { manifests }
     }
 
-    pub fn l1blkid(&self) -> Buf32 {
-        self.l1blkid
+    pub fn manifests(&self) -> &[AsmManifest] {
+        &self.manifests
+    }
+}
+
+// TODO rewrite this Codec impl by giving AsmManifest a Codec impl and converting to using VarVec
+impl Codec for OLL1ManifestContainer {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode Vec as length followed by elements
+        (self.manifests.len() as u64).encode(enc)?;
+        for manifest in &self.manifests {
+            // Encode each manifest field directly
+            manifest.blkid.encode(enc)?;
+            manifest.wtxids_root.encode(enc)?;
+            // Encode logs as length + elements
+            (manifest.logs.len() as u64).encode(enc)?;
+            for log in &manifest.logs {
+                // We need to encode AsmLogEntry - let's encode it as bytes for now
+                let bytes = borsh::to_vec(log)
+                    .map_err(|_| CodecError::InvalidVariant("Failed to serialize AsmLogEntry"))?;
+                (bytes.len() as u64).encode(enc)?;
+                for byte in bytes {
+                    byte.encode(enc)?;
+                }
+            }
+        }
+        Ok(())
     }
 
-    pub fn logs(&self) -> &[AsmLogEntry] {
-        &self.logs
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let len = u64::decode(dec)? as usize;
+        let mut manifests = Vec::with_capacity(len);
+        for _ in 0..len {
+            // Decode each manifest field
+            let blkid = L1BlockId::decode(dec)?;
+            let wtxids_root = Buf32::decode(dec)?;
+            // Decode logs
+            let logs_len = u64::decode(dec)? as usize;
+            let mut logs = Vec::with_capacity(logs_len);
+            for _ in 0..logs_len {
+                // Decode AsmLogEntry from bytes
+                let byte_len = u64::decode(dec)? as usize;
+                let mut bytes = Vec::with_capacity(byte_len);
+                for _ in 0..byte_len {
+                    bytes.push(u8::decode(dec)?);
+                }
+                let log = borsh::from_slice(&bytes)
+                    .map_err(|_| CodecError::InvalidVariant("Failed to deserialize AsmLogEntry"))?;
+                logs.push(log);
+            }
+            manifests.push(AsmManifest::new(blkid, wtxids_root, logs));
+        }
+        Ok(Self { manifests })
     }
 }

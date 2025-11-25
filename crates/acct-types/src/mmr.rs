@@ -1,9 +1,7 @@
 //! Concrete orchestration layer MMR types.
+// TODO move this to its own crate, why is it in acct-types?
 
-use strata_merkle::{
-    CompactMmr64B32, CompactMmr64B32Ref, MerkleMr64B32, MerkleMr64B32Ref, MerkleProofB32,
-    MerkleProofB32Ref, RawMerkleProofB32, RawMerkleProofB32Ref, Sha256Hasher,
-};
+use strata_merkle::*;
 
 /// The basic hasher we use for all the MMR stuff.
 ///
