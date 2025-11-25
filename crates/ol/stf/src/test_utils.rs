@@ -11,7 +11,7 @@ use strata_ol_state_types::OLState;
 
 use crate::{
     ExecResult,
-    assembly::{BlockComponents, CompletedBlock, execute_and_complete_block},
+    assembly::{BlockComponents, CompletedBlock, ConstructBlockOutput, construct_block, execute_and_complete_block},
     context::{BlockContext, BlockInfo},
     errors::ExecError,
     verification::verify_block,
@@ -26,6 +26,18 @@ pub fn execute_block(
 ) -> ExecResult<CompletedBlock> {
     let block_context = BlockContext::new(block_info, parent_header);
     execute_and_complete_block(state, block_context, components)
+}
+
+/// Execute a block and return the construct output which includes both the completed block and execution outputs.
+/// This is useful for tests that need to inspect the logs.
+pub fn execute_block_with_outputs(
+    state: &mut OLState,
+    block_info: &BlockInfo,
+    parent_header: Option<&OLBlockHeader>,
+    components: BlockComponents,
+) -> ExecResult<ConstructBlockOutput> {
+    let block_context = BlockContext::new(block_info, parent_header);
+    construct_block(state, block_context, components)
 }
 
 /// Build and execute a chain of empty blocks starting from genesis.

@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, AcctError};
+use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
 use strata_codec::CodecError;
 use strata_ol_chain_types_new::{Epoch, Slot};
 use thiserror::Error;
@@ -64,6 +64,9 @@ pub enum ExecError {
 
     #[error("genesis block was not a terminal")]
     GenesisNonterminal,
+
+    #[error("insufficient account balance (acct {0}, need {1})")]
+    InsufficientAccountBalance(AccountId, BitcoinAmount),
 
     /// Various account errors.
     #[error("acct: {0}")]

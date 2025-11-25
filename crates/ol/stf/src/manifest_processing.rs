@@ -25,7 +25,6 @@ pub fn process_block_manifests<S: StateAccessor>(
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     let terminating_epoch = state.l1_view().cur_epoch();
-    eprintln!("epoch that's terminating {terminating_epoch}");
 
     // 1. Process all the manifests.
     let orig_l1_height = state.l1_view().last_l1_height();

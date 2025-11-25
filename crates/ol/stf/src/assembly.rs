@@ -193,6 +193,30 @@ impl BlockComponents {
     }
 }
 
+/// A completed block from `construct_block` and the execution outputs.
+#[derive(Clone, Debug)]
+pub struct ConstructBlockOutput {
+    completed_block: CompletedBlock,
+    outputs: BlockExecOutputs,
+}
+
+impl ConstructBlockOutput {
+    pub fn new(completed_block: CompletedBlock, outputs: BlockExecOutputs) -> Self {
+        Self {
+            completed_block,
+            outputs,
+        }
+    }
+
+    pub fn completed_block(&self) -> &CompletedBlock {
+        &self.completed_block
+    }
+
+    pub fn outputs(&self) -> &BlockExecOutputs {
+        &self.outputs
+    }
+}
+
 /// A block that has a completed header and body, but does not have a signature.
 #[derive(Clone, Debug)]
 pub struct CompletedBlock {
@@ -215,12 +239,13 @@ impl CompletedBlock {
 }
 
 /// Given components of a block, executes it and uses it to construct the
-/// components of a block that can be signed.
-pub fn execute_and_complete_block<S: StateAccessor>(
+/// components of a block that can be signed, returning the completed block and
+/// the execution outputs (like logs).
+pub fn construct_block<S: StateAccessor>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
-) -> ExecResult<CompletedBlock> {
+) -> ExecResult<ConstructBlockOutput> {
     // 1. First just execute the block with the inputs.
     let block_exec_input = block_components.to_exec_input();
     let exec_outputs = execute_block_inputs(state, block_context, block_exec_input)?;
@@ -264,5 +289,17 @@ pub fn execute_and_complete_block<S: StateAccessor>(
         logs_root,
     );
 
-    Ok(CompletedBlock::new(header, body))
+    let completed = CompletedBlock::new(header, body);
+    Ok(ConstructBlockOutput::new(completed, exec_outputs))
+}
+
+/// Given components of a block, executes it and uses it to construct the
+/// components of a block that can be signed.
+pub fn execute_and_complete_block<S: StateAccessor>(
+    state: &mut S,
+    block_context: BlockContext<'_>,
+    block_components: BlockComponents,
+) -> ExecResult<CompletedBlock> {
+    let construct_output = construct_block(state, block_context, block_components)?;
+    Ok(construct_output.completed_block)
 }

@@ -3,13 +3,16 @@ use std::fmt;
 use int_enum::IntEnum;
 use ssz_derive::{Decode, Encode};
 
+const ACCT_ID_LEN: usize = 32;
+const SUBJ_ID_LEN: usize = 32;
+
 /// Total number of system reserved accounts, which is the space where we do special casing of
 /// things.
 pub const SYSTEM_RESERVED_ACCTS: u32 = 128;
 
-const SPECIAL_ACCT_ID_BYTE: usize = 31;
+const SPECIAL_ACCT_ID_BYTE: usize = ACCT_ID_LEN - 1;
 
-type RawAccountId = [u8; 32];
+type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
@@ -22,14 +25,14 @@ impl_opaque_thin_wrapper!(AccountId => RawAccountId);
 impl AccountId {
     /// The "zero" account ID.
     pub const fn zero() -> Self {
-        Self([0; 32])
+        Self([0; ACCT_ID_LEN])
     }
 
     /// Gets a special account ID for reserved accounts.
     ///
     /// This is permitted to produce the zero ID.
     pub const fn special(b: u8) -> Self {
-        let mut buf = [0; 32];
+        let mut buf = [0; ACCT_ID_LEN];
         buf[SPECIAL_ACCT_ID_BYTE] = b;
         Self(buf)
     }
@@ -51,6 +54,15 @@ impl AccountId {
     /// This is permitted to check if this is the zero account ID.
     pub fn is_special_id(&self, b: u8) -> bool {
         self.is_special() && self.0[SPECIAL_ACCT_ID_BYTE] == b
+    }
+}
+
+impl fmt::Display for AccountId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buf = [0; SUBJ_ID_LEN * 2];
+        hex::encode_to_slice(&self.0, &mut buf).expect("ident/acct: encode hex");
+        // SAFETY: correct lengths
+        f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
     }
 }
 
@@ -76,12 +88,12 @@ impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for AccountId {
 // Manual DecodeView implementation for transparent wrapper
 impl<'a> ssz::view::DecodeView<'a> for AccountId {
     fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
-        let array: [u8; 32] =
+        let array: [u8; ACCT_ID_LEN] =
             bytes
                 .try_into()
                 .map_err(|_| ssz::DecodeError::InvalidByteLength {
                     len: bytes.len(),
-                    expected: 32,
+                    expected: ACCT_ID_LEN,
                 })?;
         Ok(Self(array))
     }
@@ -134,6 +146,12 @@ impl AccountSerial {
     }
 }
 
+impl fmt::Display for AccountSerial {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "serial:{}", &self.0)
+    }
+}
+
 // Manual TreeHash implementation for transparent wrapper
 impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for AccountSerial {
     fn tree_hash_type() -> tree_hash::TreeHashType {
@@ -161,7 +179,7 @@ impl<'a> ssz::view::DecodeView<'a> for AccountSerial {
     }
 }
 
-type RawSubjectId = [u8; 32];
+type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
@@ -170,6 +188,15 @@ type RawSubjectId = [u8; 32];
 pub struct SubjectId(RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
+
+impl fmt::Display for SubjectId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buf = [0; SUBJ_ID_LEN * 2];
+        hex::encode_to_slice(&self.0, &mut buf).expect("ident/subj: encode hex");
+        // SAFETY: correct lengths
+        f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
+    }
+}
 
 // Manual TreeHash implementation for transparent wrapper
 impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for SubjectId {
@@ -193,12 +220,12 @@ impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for SubjectId {
 // Manual DecodeView implementation for transparent wrapper
 impl<'a> ssz::view::DecodeView<'a> for SubjectId {
     fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
-        let array: [u8; 32] =
+        let array: [u8; SUBJ_ID_LEN] =
             bytes
                 .try_into()
                 .map_err(|_| ssz::DecodeError::InvalidByteLength {
                     len: bytes.len(),
-                    expected: 32,
+                    expected: SUBJ_ID_LEN,
                 })?;
         Ok(Self(array))
     }
@@ -242,13 +269,13 @@ mod tests {
 
         ssz_proptest!(
             AccountId,
-            any::<[u8; 32]>(),
+            any::<[u8; ACCT_ID_LEN]>(),
             transparent_wrapper_of(RawAccountId, new)
         );
 
         #[test]
         fn test_zero_ssz() {
-            let zero = AccountId::new([0u8; 32]);
+            let zero = AccountId::new([0u8; ACCT_ID_LEN]);
             let encoded = zero.as_ssz_bytes();
             let decoded = AccountId::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(zero, decoded);
@@ -278,13 +305,13 @@ mod tests {
 
         ssz_proptest!(
             SubjectId,
-            any::<[u8; 32]>(),
+            any::<[u8; SUBJ_ID_LEN]>(),
             transparent_wrapper_of(RawSubjectId, new)
         );
 
         #[test]
         fn test_zero_ssz() {
-            let zero = SubjectId::new([0u8; 32]);
+            let zero = SubjectId::new([0u8; SUBJ_ID_LEN]);
             let encoded = zero.as_ssz_bytes();
             let decoded = SubjectId::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(zero, decoded);

@@ -131,10 +131,15 @@ fn process_update_tx<S: StateAccessor>(
         extra_data,
     )?;
 
-    // We also have to extract the effects here too.
+    // We also have to extract the effects here too, subtracting balance in the
+    // process.
     let mut fx_buf = AcctInteractionBuffer::new_empty();
     let outputs = update.operation().outputs();
     for m in outputs.messages() {
+        let coin = astate
+            .take_balance(m.payload().value())
+            .map_err(|_| ExecError::InsufficientAccountBalance(*target, m.payload().value()))?;
+        coin.safely_consume_unchecked(); // TODO track this better
         fx_buf.send_message_to(m.dest(), m.payload().clone());
     }
 
