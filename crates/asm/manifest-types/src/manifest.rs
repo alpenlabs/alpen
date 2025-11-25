@@ -10,16 +10,16 @@ use crate::{AsmLogEntry, Hash32};
 /// containing the essential commitments and execution logs needed.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct AsmManifest {
-    /// The L1 block identifier, essentially a [`bitcoin::BlockHash`].
+    /// The L1 blkid.
     pub blkid: L1BlockId,
 
-    /// The witness transaction ID merkle root, essentially a [`bitcoin::WitnessMerkleNode`].
+    /// The witness transaction ID merkle root, essentially a `bitcoin::WitnessMerkleNode`.
     ///
-    /// Used instead of [`bitcoin::TxMerkleNode`] to include witness data for complete transaction
-    /// verification and malleability protection.
+    /// Used instead of `bitcoin::TxMerkleNode` to include witness data so we
+    /// can use this for DA inscriptions.
     pub wtxids_root: Buf32,
 
-    /// Ordered list of log entries emitted by different subprotocols during L1 block processing.
+    /// Ordered list of log entries emitted during ASM STF.
     pub logs: Vec<AsmLogEntry>,
 }
 
