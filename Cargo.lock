@@ -13372,7 +13372,6 @@ dependencies = [
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-codec",
- "strata-codec-derive",
  "strata-codec-utils",
  "strata-msg-fmt",
  "strata-predicate",
@@ -13386,7 +13385,6 @@ dependencies = [
  "borsh",
  "serde",
  "strata-codec",
- "strata-codec-derive",
  "strata-identifiers",
  "strata-msg-fmt",
  "thiserror 2.0.17",
@@ -13443,6 +13441,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-txs-bridge-v1",
  "strata-bridge-types",
+ "strata-codec",
  "strata-crypto",
  "strata-l1-txfmt",
  "strata-primitives",
@@ -13833,6 +13832,7 @@ name = "strata-codec"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
 dependencies = [
+ "strata-codec-derive",
  "thiserror 2.0.17",
 ]
 
@@ -14218,7 +14218,6 @@ dependencies = [
  "ssz",
  "ssz_derive",
  "strata-codec",
- "strata-codec-derive",
  "strata-test-utils-ssz",
  "tree_hash 0.8.0",
  "zeroize",
@@ -14370,7 +14369,6 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-codec",
- "strata-codec-derive",
  "strata-codec-utils",
  "strata-identifiers",
  "strata-snark-acct-types",
@@ -14416,7 +14414,6 @@ dependencies = [
  "proptest",
  "strata-acct-types",
  "strata-codec",
- "strata-codec-derive",
  "strata-identifiers",
  "strata-msg-fmt",
 ]
@@ -14429,7 +14426,6 @@ dependencies = [
  "ssz",
  "strata-acct-types",
  "strata-codec",
- "strata-codec-derive",
  "strata-codec-utils",
  "strata-identifiers",
  "strata-ledger-types",

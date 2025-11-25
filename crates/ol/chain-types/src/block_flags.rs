@@ -1,6 +1,6 @@
 //! Flags field for block header.
 
-use strata_codec_derive::Codec;
+use strata_codec::Codec;
 
 type RawBlockFlags = u16;
 

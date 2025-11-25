@@ -1,6 +1,6 @@
 //! Global state variables that are always accessible.
 
-use strata_codec_derive::Codec;
+use strata_codec::Codec;
 use strata_ledger_types::IGlobalState;
 
 #[derive(Clone, Debug, Codec)]

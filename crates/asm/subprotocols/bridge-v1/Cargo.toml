@@ -19,6 +19,7 @@ strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
 strata-bridge-types.workspace = true
+strata-codec.workspace = true
 strata-crypto = { workspace = true, features = ["serde"] }
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true

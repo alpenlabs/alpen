@@ -233,8 +233,9 @@ strata-test-utils-tx-indexer = { path = "crates/test-utils/tx-indexer" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
-strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
-strata-codec-derive = { git = "https://github.com/alpenlabs/strata-common" }
+strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
+  "derive",
+] }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }

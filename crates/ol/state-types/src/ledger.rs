@@ -4,7 +4,6 @@
 
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, SYSTEM_RESERVED_ACCTS};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_codec_derive::Codec;
 
 use crate::account::AccountState;
 

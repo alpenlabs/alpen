@@ -2,7 +2,6 @@ use strata_acct_types::{
     AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, RawAccountTypeId,
 };
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_codec_derive::Codec;
 use strata_ledger_types::{AccountTypeState, Coin, IAccountState};
 
 use crate::snark_account::NativeSnarkAccountState;

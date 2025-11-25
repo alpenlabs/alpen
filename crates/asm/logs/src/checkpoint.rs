@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
 use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
-use strata_codec_derive::Codec;
+use strata_codec::Codec;
 use strata_codec_utils::CodecBorsh;
 use strata_msg_fmt::TypeId;
 use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};

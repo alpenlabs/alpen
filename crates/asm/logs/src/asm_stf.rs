@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
-use strata_codec_derive::Codec;
+use strata_codec::Codec;
 use strata_codec_utils::CodecBorsh;
 use strata_msg_fmt::TypeId;
 use strata_predicate::PredicateKey;

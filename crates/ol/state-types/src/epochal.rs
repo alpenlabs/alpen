@@ -3,7 +3,7 @@
 //! This can be completely omitted from DA.
 
 use strata_acct_types::BitcoinAmount;
-use strata_codec_derive::Codec;
+use strata_codec::Codec;
 use strata_identifiers::L1BlockCommitment;
 use strata_ledger_types::*;
 
