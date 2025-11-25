@@ -4,12 +4,18 @@ use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 use strata_primitives::Buf32;
 
-use crate::{commit::aux::CommitTxHeaderAux, errors::CommitParseError};
+use crate::{
+    commit::aux::CommitTxHeaderAux,
+    errors::{CommitParseError, Mismatch},
+};
 
 /// Length of auxiliary data for commit transactions.
 /// - 4 bytes for deposit_idx (u32)
 /// - 4 bytes for game_idx (u32)
 pub const COMMIT_TX_AUX_DATA_LEN: usize = 4 + 4;
+
+/// Expected number of inputs in a commit transaction.
+pub const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
 
 /// Information extracted from a Bitcoin commit transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,8 +86,11 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
     // Validate that the transaction has exactly one input
-    if tx.tx().input.len() != 1 {
-        return Err(CommitParseError::InvalidInputCount(tx.tx().input.len()));
+    if tx.tx().input.len() != EXPECTED_COMMIT_TX_INPUT_COUNT {
+        return Err(CommitParseError::InvalidInputCount(Mismatch {
+            expected: EXPECTED_COMMIT_TX_INPUT_COUNT,
+            got: tx.tx().input.len(),
+        }));
     }
 
     // Extract the N/N output script from the second output (index 1)

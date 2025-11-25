@@ -88,9 +88,9 @@ pub enum CommitParseError {
     #[error("Invalid auxiliary data: {0}")]
     InvalidAuxiliaryData(#[from] CodecError),
 
-    /// The commit transaction does not have exactly one input.
-    #[error("Commit transaction must have exactly one input, got {0}")]
-    InvalidInputCount(usize),
+    /// The commit transaction does not have the expected number of inputs.
+    #[error("Invalid input count: {0}")]
+    InvalidInputCount(Mismatch<usize>),
 
     /// Missing N/N output at index 1.
     #[error("Missing N/N output at index 1")]
