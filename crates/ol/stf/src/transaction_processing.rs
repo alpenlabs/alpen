@@ -154,8 +154,9 @@ fn process_update_tx<S: StateAccessor>(
     // - extra_data: The extra data from the update operation
     // TODO improve codec error handling here when more stuff is SSZed
     let log_data =
-        SnarkAccountUpdateLogData::new(new_state.next_inbox_msg_idx, extra_data.to_vec())
-            .ok_or_else(|| ExecError::Codec(strata_codec::CodecError::OverflowContainer))?;
+        SnarkAccountUpdateLogData::new(new_state.next_inbox_msg_idx, extra_data.to_vec()).ok_or(
+            ExecError::Codec(strata_codec::CodecError::OverflowContainer),
+        )?;
 
     // Encode the log data and emit it
     let log_payload = encode_to_vec(&log_data)?;
@@ -185,16 +186,16 @@ fn apply_interactions<S: StateAccessor>(
 /// This DOES NOT perform any other validation on the tx.
 fn check_tx_attachments(atch: &TransactionAttachment, context: &BlockContext<'_>) -> bool {
     // Check slot ranges.
-    if let Some(min_slot) = atch.min_slot() {
-        if context.slot() < min_slot {
-            return false;
-        }
+    if let Some(min_slot) = atch.min_slot()
+        && context.slot() < min_slot
+    {
+        return false;
     }
 
-    if let Some(max_slot) = atch.max_slot() {
-        if context.slot() > max_slot {
-            return false;
-        }
+    if let Some(max_slot) = atch.max_slot()
+        && context.slot() > max_slot
+    {
+        return false;
     }
 
     true

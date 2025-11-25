@@ -64,7 +64,7 @@ pub fn build_empty_chain(
 
         // Check if this should be a terminal block
         // After genesis, terminal blocks are at slots that are multiples of slots_per_epoch
-        let is_terminal = slot % slots_per_epoch == 0;
+        let is_terminal = slot.is_multiple_of(slots_per_epoch);
 
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
@@ -191,10 +191,10 @@ pub fn tamper_state_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHead
         header.flags(),
         header.slot(),
         header.epoch(),
-        header.parent_blkid().clone(),
-        header.body_root().clone(),
+        *header.parent_blkid(),
+        *header.body_root(),
         new_root,
-        header.logs_root().clone(),
+        *header.logs_root(),
     )
 }
 
@@ -205,9 +205,9 @@ pub fn tamper_logs_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeade
         header.flags(),
         header.slot(),
         header.epoch(),
-        header.parent_blkid().clone(),
-        header.body_root().clone(),
-        header.state_root().clone(),
+        *header.parent_blkid(),
+        *header.body_root(),
+        *header.state_root(),
         new_root,
     )
 }
@@ -219,10 +219,10 @@ pub fn tamper_body_root(header: &OLBlockHeader, new_root: Buf32) -> OLBlockHeade
         header.flags(),
         header.slot(),
         header.epoch(),
-        header.parent_blkid().clone(),
+        *header.parent_blkid(),
         new_root,
-        header.state_root().clone(),
-        header.logs_root().clone(),
+        *header.state_root(),
+        *header.logs_root(),
     )
 }
 
@@ -233,10 +233,10 @@ pub fn tamper_slot(header: &OLBlockHeader, new_slot: u64) -> OLBlockHeader {
         header.flags(),
         new_slot,
         header.epoch(),
-        header.parent_blkid().clone(),
-        header.body_root().clone(),
-        header.state_root().clone(),
-        header.logs_root().clone(),
+        *header.parent_blkid(),
+        *header.body_root(),
+        *header.state_root(),
+        *header.logs_root(),
     )
 }
 
@@ -247,9 +247,9 @@ pub fn tamper_epoch(header: &OLBlockHeader, new_epoch: u32) -> OLBlockHeader {
         header.flags(),
         header.slot(),
         new_epoch,
-        header.parent_blkid().clone(),
-        header.body_root().clone(),
-        header.state_root().clone(),
-        header.logs_root().clone(),
+        *header.parent_blkid(),
+        *header.body_root(),
+        *header.state_root(),
+        *header.logs_root(),
     )
 }

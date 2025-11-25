@@ -94,7 +94,7 @@ pub fn execute_block_inputs<S: StateAccessor>(
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
     if block_context.is_epoch_initial() {
-        let init_ctx = block_context.to_epoch_initial_context();
+        let init_ctx = block_context.get_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &init_ctx)?;
     }
 
@@ -240,11 +240,11 @@ pub fn execute_and_complete_block<S: StateAccessor>(
     let mut body = OLBlockBody::new_common(block_components.tx_segment);
 
     // If this is a terminal block with manifests, create the L1 update.
-    if let Some(manifest_container) = block_components.manifest_container {
-        if let Some(preseal_root) = exec_outputs.post_state_roots().preseal_state_root() {
-            let l1_update = OLL1Update::new(*preseal_root, manifest_container);
-            body.set_l1_update(l1_update);
-        }
+    if let Some(manifest_container) = block_components.manifest_container
+        && let Some(preseal_root) = exec_outputs.post_state_roots().preseal_state_root()
+    {
+        let l1_update = OLL1Update::new(*preseal_root, manifest_container);
+        body.set_l1_update(l1_update);
     }
 
     // Compute the body root using the hash commitment method.

@@ -162,7 +162,7 @@ impl<'b> BlockContext<'b> {
     /// # Panics
     ///
     /// If we're "probably not" an epoch initial.
-    pub fn to_epoch_initial_context(&self) -> EpochInitialContext {
+    pub fn get_epoch_initial_context(&self) -> EpochInitialContext {
         assert!(self.is_epoch_initial(), "stf/context: not epoch initial");
         EpochInitialContext::new(self.epoch(), self.compute_parent_commitment())
     }

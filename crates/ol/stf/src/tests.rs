@@ -314,7 +314,7 @@ fn test_process_chain_with_multiple_epochs() {
         let is_terminal = if block_num == 0 {
             true // Genesis is always terminal
         } else {
-            slot % BLOCKS_PER_EPOCH == 0 // Slots 3, 6, 9, etc. are terminal
+            slot.is_multiple_of(BLOCKS_PER_EPOCH) // Slots 3, 6, 9, etc. are terminal
         };
 
         let components = if is_terminal {
@@ -329,11 +329,9 @@ fn test_process_chain_with_multiple_epochs() {
             BlockComponents::new_empty()
         };
 
-        let block =
-            execute_block(&mut state, &block_info, parent_header, components).expect(&format!(
-                "Block {} (epoch {}, slot {}) should execute",
-                block_num, epoch, slot
-            ));
+        let Ok(block) = execute_block(&mut state, &block_info, parent_header, components) else {
+            panic!("test: block {block_num} (epoch {epoch}, slot {slot}) should execute properly");
+        };
 
         // Verify block position
         assert_block_position(block.header(), epoch as u64, slot);
@@ -405,24 +403,21 @@ fn test_process_chain_with_multiple_epochs() {
         let block_epoch = if i == 0 {
             0 // Genesis is epoch 0
         } else {
-            ((expected_slot - 1) / BLOCKS_PER_EPOCH + 1) as u64
+            (expected_slot - 1) / BLOCKS_PER_EPOCH + 1
         };
 
         // Check if this block is terminal
         let is_terminal = if i == 0 {
             true // Genesis is terminal
         } else {
-            expected_slot % BLOCKS_PER_EPOCH == 0 // Slots 3, 6, 9 are terminal
+            expected_slot.is_multiple_of(BLOCKS_PER_EPOCH) // Slots 3, 6, 9 are terminal
         };
 
-        let expected_state_epoch = if is_terminal {
-            block_epoch + 1 // After terminal block, state epoch is incremented
-        } else {
-            block_epoch
-        };
+        // After terminal block, state epoch is incremented.
+        let expected_state_epoch = block_epoch + (is_terminal as u64);
         assert_state_updated(&mut verify_state, expected_state_epoch, expected_slot);
 
-        // Special checks for epoch transitions
+        // Special checks for epoch transitions.
         if i > 0 && headers[i].epoch() != headers[i - 1].epoch() {
             // This is an epoch initial block (follows a terminal block)
             assert_eq!(
@@ -501,7 +496,7 @@ fn test_assemble_then_verify_roundtrip() {
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis block assembly should succeed");
+        .expect("test: Genesis block assembly should succeed");
 
     // Assemble block 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -511,7 +506,7 @@ fn test_assemble_then_verify_roundtrip() {
         Some(genesis.header()),
         BlockComponents::new_empty(),
     )
-    .expect("Block 1 assembly should succeed");
+    .expect("test: Block 1 assembly should succeed");
 
     // Assemble block 2 (still epoch 1)
     let block2_info = BlockInfo::new(1002000, 2, 1);
@@ -521,7 +516,7 @@ fn test_assemble_then_verify_roundtrip() {
         Some(block1.header()),
         BlockComponents::new_empty(),
     )
-    .expect("Block 2 assembly should succeed");
+    .expect("test: Block 2 assembly should succeed");
 
     // Now verify the entire chain
     let mut verify_state = OLState::new_genesis();
@@ -576,10 +571,12 @@ fn test_multi_block_chain_verification() {
 
         // Check if this should be a terminal block
         // Genesis (slot 0) is terminal, then slots 10, 20, etc.
+        // FIXME wait, 0 is a multiple of everything, this could be simpler, not
+        // going to touch it though
         let is_terminal = if i == 0 {
             true // Genesis is always terminal
         } else {
-            slot % SLOTS_PER_EPOCH == 0 // Slots 10, 20, etc. are terminal
+            slot.is_multiple_of(SLOTS_PER_EPOCH) // Slots 10, 20, etc. are terminal
         };
 
         let components = if is_terminal {
@@ -594,8 +591,9 @@ fn test_multi_block_chain_verification() {
             BlockComponents::new_empty()
         };
 
-        let block = execute_block(&mut state, &block_info, parent_header, components)
-            .expect(&format!("Block {} assembly should succeed", i));
+        let Ok(block) = execute_block(&mut state, &block_info, parent_header, components) else {
+            panic!("test: block {i} assembly should succeed");
+        };
 
         headers.push(block.header().clone());
         blocks.push(block);

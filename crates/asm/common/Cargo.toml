@@ -20,4 +20,5 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-identifiers.workspace = true
 strata-test-utils.workspace = true

@@ -13421,6 +13421,7 @@ dependencies = [
  "strata-asm-manifest-types",
  "strata-asm-types",
  "strata-btc-types",
+ "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-msg-fmt",

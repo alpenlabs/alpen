@@ -104,6 +104,7 @@ pub struct OLBlockHeader {
 }
 
 impl OLBlockHeader {
+    #[expect(clippy::too_many_arguments, reason = "headers are complicated")]
     pub fn new(
         timestamp: u64,
         flags: BlockFlags,
@@ -169,7 +170,7 @@ impl OLBlockHeader {
 
     /// Computes the block ID by hashing the header's Codec encoding.
     pub fn compute_blkid(&self) -> OLBlockId {
-        let encoded = encode_to_vec(self).expect("header encoding should succeed");
+        let encoded = encode_to_vec(self).expect("block: header encoding should succeed");
         let hash = raw(&encoded);
         OLBlockId::from(hash)
     }
@@ -215,10 +216,8 @@ impl OLBlockBody {
 
     /// Computes the hash commitment of this block body.
     pub fn compute_hash_commitment(&self) -> Buf32 {
-        // Encode the block body and hash it
-        let encoded = encode_to_vec(self).expect("block body encoding should succeed");
-        let hash = raw(&encoded);
-        hash
+        let encoded = encode_to_vec(self).expect("block: block body encoding should succeed");
+        raw(&encoded)
     }
 
     /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update

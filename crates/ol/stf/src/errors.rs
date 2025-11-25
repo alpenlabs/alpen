@@ -77,10 +77,9 @@ pub enum ExecError {
 
 impl ExecError {
     pub fn kind(&self) -> ErrorKind {
-        // By default, we can assume all errors indicate the block is invalid.
-        match self {
-            _ => ErrorKind::Correctness,
-        }
+        // By default, we can assume all errors indicate the block is invalid,
+        // we don't have any execution ones yet.
+        ErrorKind::Correctness
     }
 }
 

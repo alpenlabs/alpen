@@ -22,7 +22,7 @@ pub fn process_epoch_initial<S: StateAccessor>(
 
     // 2. Make sure the state's epoch matches the block.
     let state_cur_epoch = estate.cur_epoch();
-    let block_cur_epoch = context.cur_epoch() as u32;
+    let block_cur_epoch = context.cur_epoch();
     if block_cur_epoch != state_cur_epoch {
         return Err(ExecError::ChainIntegrity);
     }
@@ -59,10 +59,8 @@ pub fn process_block_start<S: StateAccessor>(
                 ph.is_terminal(),
             ));
         }
-    } else {
-        if context.slot() != 0 || context.epoch() != 0 {
-            return Err(ExecError::GenesisCoordsNonzero);
-        }
+    } else if context.slot() != 0 || context.epoch() != 0 {
+        return Err(ExecError::GenesisCoordsNonzero);
     }
 
     // 2. Make sure that the current state epoch matches the header's epoch.

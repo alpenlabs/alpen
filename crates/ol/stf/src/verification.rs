@@ -155,7 +155,7 @@ pub fn verify_block<S: StateAccessor>(
     let block_info = BlockInfo::from_header(header);
     let block_context = BlockContext::new(&block_info, parent_header.as_ref());
     if block_context.is_epoch_initial() {
-        let epoch_context = block_context.to_epoch_initial_context();
+        let epoch_context = block_context.get_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &epoch_context)?;
     }
 

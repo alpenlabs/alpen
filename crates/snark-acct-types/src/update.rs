@@ -61,8 +61,7 @@ impl UpdateOperationData {
         Self {
             input: UpdateInputData::new(
                 seq_no,
-                // FIXME does this panic?
-                messages.into(),
+                messages,
                 UpdateStateData::new(proof_state, extra_data),
             ),
             ledger_refs,
@@ -143,8 +142,7 @@ impl LedgerRefProofs {
                 .as_ref()
                 .iter()
                 .map(|e| e.to_claim())
-                .collect::<Vec<_>>()
-                .into(), // FIXME does this panic
+                .collect::<Vec<_>>(),
         )
     }
 }

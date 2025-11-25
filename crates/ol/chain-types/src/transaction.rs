@@ -41,6 +41,10 @@ impl OLTransaction {
 /// The actual payload of the transaction.
 // TODO probably convert these from being struct-like variants
 #[derive(Clone, Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "will be converted to SSZ soon anyways"
+)]
 pub enum TransactionPayload {
     GenericAccountMessage(GamTxPayload),
     SnarkAccountUpdate(SnarkAccountUpdateTxPayload),
