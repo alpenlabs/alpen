@@ -4,6 +4,7 @@
 //! by the ASM and processed by the orchestration layer state transition function.
 
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec_derive::Codec;
 use strata_identifiers::{AccountSerial, EpochCommitment, SubjectId};
 use strata_msg_fmt::TypeId;
 
@@ -17,14 +18,16 @@ pub const CHECKPOINT_ACK_ASM_LOG_TYPE_ID: TypeId = 101; // TODO: Confirm the act
 ///
 /// This represents a deposit operation targeting a specific account and subject
 /// in the orchestration layer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct DepositIntentLogData {
     /// Serial number of the destination account.
-    pub dest_acct_serial: AccountSerial,
+    dest_acct_serial: AccountSerial,
+
     /// Subject ID within the destination account.
-    pub dest_subject: SubjectId,
+    dest_subject: SubjectId,
+
     /// Amount to deposit (in satoshis).
-    pub amt: u64,
+    amt: u64,
 }
 
 impl DepositIntentLogData {
@@ -36,26 +39,17 @@ impl DepositIntentLogData {
             amt,
         }
     }
-}
 
-// Codec implementation for DepositIntentLogData
-impl Codec for DepositIntentLogData {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.dest_acct_serial.encode(enc)?;
-        self.dest_subject.encode(enc)?;
-        self.amt.encode(enc)?;
-        Ok(())
+    pub fn dest_acct_serial(&self) -> AccountSerial {
+        self.dest_acct_serial
     }
 
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let dest_acct_serial = AccountSerial::decode(dec)?;
-        let dest_subject = SubjectId::decode(dec)?;
-        let amt = u64::decode(dec)?;
-        Ok(Self {
-            dest_acct_serial,
-            dest_subject,
-            amt,
-        })
+    pub fn dest_subject(&self) -> SubjectId {
+        self.dest_subject
+    }
+
+    pub fn amt(&self) -> u64 {
+        self.amt
     }
 }
 
@@ -70,13 +64,17 @@ impl AsmLog for DepositIntentLogData {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckpointAckLogData {
     /// The epoch commitment that was acknowledged.
-    pub epoch: EpochCommitment,
+    epoch: EpochCommitment,
 }
 
 impl CheckpointAckLogData {
     /// Create a new checkpoint acknowledgment log data instance.
     pub fn new(epoch: EpochCommitment) -> Self {
         Self { epoch }
+    }
+
+    pub fn epoch(&self) -> EpochCommitment {
+        self.epoch
     }
 }
 
@@ -99,9 +97,10 @@ impl AsmLog for CheckpointAckLogData {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_identifiers::{AccountSerial, Buf32, OLBlockId, SubjectId};
+
+    use super::*;
 
     #[test]
     fn test_deposit_intent_log_data_codec() {
@@ -128,8 +127,8 @@ mod tests {
     fn test_checkpoint_ack_log_data_codec() {
         // Create test data
         let epoch_commitment = EpochCommitment::new(
-            100,  // RawEpoch is just u32
-            999,  // last_slot is u64
+            100, // RawEpoch is just u32
+            999, // last_slot is u64
             OLBlockId::from(Buf32::from([2u8; 32])),
         );
         let log_data = CheckpointAckLogData {

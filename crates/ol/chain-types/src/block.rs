@@ -1,5 +1,5 @@
 use strata_asm_common::AsmManifest;
-use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec, encode_to_vec};
 use strata_codec_derive::Codec;
 use strata_identifiers::{Buf32, Buf64, L1BlockId, OLBlockId, hash::raw};
 
@@ -9,7 +9,9 @@ use crate::{
     transaction::OLTransaction,
 };
 
-/// Signed full orchestration layer block.
+/// Fully constructed and signed orchestration layer block.
+///
+/// The internal hashes should all be consistent.
 #[derive(Clone, Debug)]
 pub struct OLBlock {
     signed_header: SignedOLBlockHeader,
@@ -28,7 +30,8 @@ impl OLBlock {
         &self.signed_header
     }
 
-    /// Returns the actual block header inside the signed header structure.
+    /// Returns the executionally-relevant block header inside the signed header
+    /// structure.
     pub fn header(&self) -> &OLBlockHeader {
         self.signed_header.header()
     }
@@ -38,7 +41,7 @@ impl OLBlock {
     }
 }
 
-/// OL header with signature.
+/// OL block header with signature.
 #[derive(Clone, Debug)]
 pub struct SignedOLBlockHeader {
     header: OLBlockHeader,
@@ -60,9 +63,11 @@ impl SignedOLBlockHeader {
     }
 }
 
-/// OL header.
+/// OL block header.
 ///
-/// This should not be directly used itself during execution.
+/// This should not be directly used itself during execution, it has hash fields
+/// that are computed from execution, so this is what we use as an input to
+/// validation.
 #[derive(Clone, Debug, Codec)]
 pub struct OLBlockHeader {
     /// The timestamp the block was created at.
@@ -135,6 +140,11 @@ impl OLBlockHeader {
         self.slot
     }
 
+    /// Checks if this is header is the genesis slot, meaning that it's slot 0.
+    pub fn is_genesis_slot(&self) -> bool {
+        self.slot() == 0
+    }
+
     pub fn epoch(&self) -> u32 {
         self.epoch
     }
@@ -170,6 +180,8 @@ pub struct OLBlockBody {
     tx_segment: OLTxSegment,
 
     /// Updates from L1.
+    ///
+    /// This is only set in terminal blocks.
     l1_update: Option<OLL1Update>,
 }
 
@@ -181,7 +193,8 @@ impl OLBlockBody {
         }
     }
 
-    pub fn new_regular(tx_segment: OLTxSegment) -> Self {
+    /// Constructs a new instance for a common block with just a tx segment.
+    pub fn new_common(tx_segment: OLTxSegment) -> Self {
         Self::new(tx_segment, None)
     }
 
@@ -208,7 +221,7 @@ impl OLBlockBody {
 
     /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update
     /// is present.  This has to match the `IS_TERMINAL` flag in the header.
-    pub fn is_probably_terminal(&self) -> bool {
+    pub fn is_body_terminal(&self) -> bool {
         self.l1_update().is_some()
     }
 }
@@ -236,6 +249,7 @@ impl Codec for OLBlockBody {
         } else {
             None
         };
+
         Ok(Self {
             tx_segment,
             l1_update,
@@ -243,40 +257,22 @@ impl Codec for OLBlockBody {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec)]
 pub struct OLTxSegment {
     /// Transactions in the segment.
-    txs: Vec<OLTransaction>,
+    txs: VarVec<OLTransaction>,
     // Add other attributes.
 }
 
 impl OLTxSegment {
     pub fn new(txs: Vec<OLTransaction>) -> Self {
-        Self { txs }
+        Self {
+            txs: VarVec::from_vec(txs).expect("block: too many txs"),
+        }
     }
 
     pub fn txs(&self) -> &[OLTransaction] {
         &self.txs
-    }
-}
-
-impl Codec for OLTxSegment {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Encode Vec as length followed by elements
-        (self.txs.len() as u64).encode(enc)?;
-        for tx in &self.txs {
-            tx.encode(enc)?;
-        }
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let len = u64::decode(dec)? as usize;
-        let mut txs = Vec::with_capacity(len);
-        for _ in 0..len {
-            txs.push(OLTransaction::decode(dec)?);
-        }
-        Ok(Self { txs })
     }
 }
 
@@ -323,6 +319,7 @@ impl OLL1ManifestContainer {
     }
 }
 
+// TODO rewrite this Codec impl by giving AsmManifest a Codec impl and converting to using VarVec
 impl Codec for OLL1ManifestContainer {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode Vec as length followed by elements

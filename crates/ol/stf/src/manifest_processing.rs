@@ -111,19 +111,21 @@ fn process_deposit_intent_log<S: StateAccessor>(
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Convert the account serial to account ID.
-    let Some(dest_id) = state.find_account_id_by_serial(data.dest_acct_serial)? else {
-        // Account serial not found, skip this deposit
-        // This could happen if the account doesn't exist yet
+    let Some(dest_id) = state.find_account_id_by_serial(data.dest_acct_serial())? else {
+        // Account serial not found, skip this deposit.
+        //
+        // TODO make this actually do something more sophisticated to make loss
+        // of funds less likely
         return Ok(());
     };
 
     // Create the message payload containing the subject ID.
     // TODO make better handling for this like we have for ASM logs
     let mut msg_data = Vec::new();
-    let subject_bytes: [u8; 32] = data.dest_subject.into();
+    let subject_bytes: [u8; 32] = data.dest_subject().into();
     msg_data.extend_from_slice(&subject_bytes);
 
-    let msg_payload = MsgPayload::new(data.amt.into(), msg_data);
+    let msg_payload = MsgPayload::new(data.amt().into(), msg_data);
 
     // Deliver the deposit message to the target account
     // TODO need to tweak this a bit to deal with the changes to epoch contexts
@@ -143,11 +145,10 @@ fn process_checkpoint_ack_log<S: StateAccessor>(
     data: &CheckpointAckLogData,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // Update the L1 view state with the acknowledged epoch
-    // This records that a checkpoint has been observed on L1
-    state
-        .l1_view_mut()
-        .set_asm_recorded_epoch(data.epoch.clone());
+    // Update the L1 view state with the acknowledged epoch.
+    //
+    // This records that a checkpoint has been observed on L1.
+    state.l1_view_mut().set_asm_recorded_epoch(data.epoch());
 
     Ok(())
 }

@@ -2,6 +2,7 @@
 
 use strata_acct_types::VarVec;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec_derive::Codec;
 use strata_identifiers::SubjectId;
 
 /// Message type ID for withdrawal initiation.
@@ -24,9 +25,12 @@ pub const MAX_WITHDRAWAL_DESC_LEN: usize = 255;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalMsgData {
     /// Fees in satoshis to be paid to the operator.
-    pub fees: u32,
+    ///
+    /// Currently, this is just ignored.
+    fees: u32,
+
     /// Bitcoin Output Script Descriptor describing the withdrawal output.
-    pub dest_desc: VarVec<u8>,
+    dest_desc: VarVec<u8>,
 }
 
 impl WithdrawalMsgData {
@@ -41,7 +45,7 @@ impl WithdrawalMsgData {
         Some(Self { fees, dest_desc })
     }
 
-    /// Get the fees.
+    /// Get the fees paid to the operator, in sats.
     pub fn fees(&self) -> u32 {
         self.fees
     }
@@ -49,6 +53,11 @@ impl WithdrawalMsgData {
     /// Get the destination descriptor as bytes.
     pub fn dest_desc(&self) -> &[u8] {
         self.dest_desc.as_ref()
+    }
+
+    /// Takes out the inner destination descriptor as a `VarVec`.
+    pub fn into_dest_desc(self) -> VarVec<u8> {
+        self.dest_desc
     }
 }
 
@@ -76,12 +85,15 @@ impl Codec for WithdrawalMsgData {
 ///
 /// This message type is sent by accounts that want to bump the fee for
 /// a pending withdrawal in the withdrawal intents queue.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// This is currently unused and unsupported.
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct WithdrawalFeeBumpMsgData {
     /// Index of the withdrawal intent to bump.
-    pub withdrawal_intent_idx: u32,
+    withdrawal_intent_idx: u32,
+
     /// Source subject requesting the fee bump.
-    pub source_subject: SubjectId,
+    source_subject: SubjectId,
 }
 
 impl WithdrawalFeeBumpMsgData {
@@ -104,28 +116,12 @@ impl WithdrawalFeeBumpMsgData {
     }
 }
 
-impl Codec for WithdrawalFeeBumpMsgData {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.withdrawal_intent_idx.encode(enc)?;
-        self.source_subject.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let withdrawal_intent_idx = u32::decode(dec)?;
-        let source_subject = SubjectId::decode(dec)?;
-        Ok(Self {
-            withdrawal_intent_idx,
-            source_subject,
-        })
-    }
-}
-
 /// Rejection type for withdrawal rejection messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WithdrawalRejectionType {
     /// The withdrawal was rejected entirely.
     RejectedEntirely = 0,
+
     /// This is a withdrawal fee bump rejection.
     FeeBumpRejection = 1,
 }
@@ -146,18 +142,40 @@ impl WithdrawalRejectionType {
     }
 }
 
+impl Codec for WithdrawalRejectionType {
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        match dec.read_arr::<1>()?[0] {
+            0 => Ok(Self::RejectedEntirely),
+            1 => Ok(Self::FeeBumpRejection),
+            _ => Err(CodecError::InvalidVariant("WithdrawalRejectionType")),
+        }
+    }
+
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        let b = match self {
+            Self::RejectedEntirely => 0,
+            Self::FeeBumpRejection => 1,
+        };
+        enc.write_buf(&[b])
+    }
+}
+
 /// Message data for withdrawal rejection from the bridge gateway account.
 ///
 /// This message type occurs when the bridge gateway account rejects
 /// a withdrawal initiation or a withdrawal fee bump.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// This is currently unused.
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct WithdrawalRejectionMsgData {
     /// Index of the withdrawal intent.
-    pub withdrawal_intent_idx: u32,
+    withdrawal_intent_idx: u32,
+
     /// Type of rejection.
-    pub rejection_type: WithdrawalRejectionType,
+    rejection_type: WithdrawalRejectionType,
+
     /// Source subject that initiated the withdrawal.
-    pub source_subject: SubjectId,
+    source_subject: SubjectId,
 }
 
 impl WithdrawalRejectionMsgData {
@@ -190,32 +208,11 @@ impl WithdrawalRejectionMsgData {
     }
 }
 
-impl Codec for WithdrawalRejectionMsgData {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.withdrawal_intent_idx.encode(enc)?;
-        self.rejection_type.to_u8().encode(enc)?;
-        self.source_subject.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let withdrawal_intent_idx = u32::decode(dec)?;
-        let rejection_type_u8 = u8::decode(dec)?;
-        let rejection_type = WithdrawalRejectionType::from_u8(rejection_type_u8)
-            .ok_or(CodecError::OverflowContainer)?;
-        let source_subject = SubjectId::decode(dec)?;
-        Ok(Self {
-            withdrawal_intent_idx,
-            rejection_type,
-            source_subject,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use strata_codec::{decode_buf_exact, encode_to_vec};
+
+    use super::*;
 
     #[test]
     fn test_withdrawal_msg_data_codec() {
@@ -281,7 +278,10 @@ mod tests {
         let decoded: WithdrawalFeeBumpMsgData = decode_buf_exact(&encoded).unwrap();
 
         // Verify round-trip
-        assert_eq!(decoded.withdrawal_intent_idx, msg_data.withdrawal_intent_idx);
+        assert_eq!(
+            decoded.withdrawal_intent_idx,
+            msg_data.withdrawal_intent_idx
+        );
         assert_eq!(decoded.source_subject, msg_data.source_subject);
     }
 
@@ -297,8 +297,14 @@ mod tests {
         let encoded = encode_to_vec(&msg_data).unwrap();
         let decoded: WithdrawalRejectionMsgData = decode_buf_exact(&encoded).unwrap();
 
-        assert_eq!(decoded.withdrawal_intent_idx, msg_data.withdrawal_intent_idx);
-        assert_eq!(decoded.rejection_type, WithdrawalRejectionType::RejectedEntirely);
+        assert_eq!(
+            decoded.withdrawal_intent_idx,
+            msg_data.withdrawal_intent_idx
+        );
+        assert_eq!(
+            decoded.rejection_type,
+            WithdrawalRejectionType::RejectedEntirely
+        );
         assert_eq!(decoded.source_subject, msg_data.source_subject);
     }
 
@@ -315,15 +321,24 @@ mod tests {
         let decoded: WithdrawalRejectionMsgData = decode_buf_exact(&encoded).unwrap();
 
         assert_eq!(decoded.withdrawal_intent_idx, 0);
-        assert_eq!(decoded.rejection_type, WithdrawalRejectionType::FeeBumpRejection);
+        assert_eq!(
+            decoded.rejection_type,
+            WithdrawalRejectionType::FeeBumpRejection
+        );
         assert_eq!(decoded.source_subject, SubjectId::from([255u8; 32]));
     }
 
     #[test]
     fn test_withdrawal_rejection_type_conversion() {
         // Test type conversions
-        assert_eq!(WithdrawalRejectionType::from_u8(0), Some(WithdrawalRejectionType::RejectedEntirely));
-        assert_eq!(WithdrawalRejectionType::from_u8(1), Some(WithdrawalRejectionType::FeeBumpRejection));
+        assert_eq!(
+            WithdrawalRejectionType::from_u8(0),
+            Some(WithdrawalRejectionType::RejectedEntirely)
+        );
+        assert_eq!(
+            WithdrawalRejectionType::from_u8(1),
+            Some(WithdrawalRejectionType::FeeBumpRejection)
+        );
         assert_eq!(WithdrawalRejectionType::from_u8(2), None);
 
         assert_eq!(WithdrawalRejectionType::RejectedEntirely.to_u8(), 0);

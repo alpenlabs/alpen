@@ -54,13 +54,11 @@ fn test_genesis_block_processing() {
 
     // ADDITIONAL VERIFICATION: Verify the block passes verification
     let mut verify_state = OLState::new_genesis();
-    let genesis_exp = create_expectations_from_block(&genesis_block);
     assert_verification_succeeds(
         &mut verify_state,
         genesis_block.header(),
         None,
         genesis_block.body(),
-        &genesis_exp,
     );
 }
 
@@ -70,13 +68,8 @@ fn test_post_genesis_blocks() {
 
     // Process genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis block should execute");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis block should execute");
 
     // Process block at slot 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -108,33 +101,22 @@ fn test_post_genesis_blocks() {
     let mut verify_state = OLState::new_genesis();
 
     // Verify genesis
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Verify block 1
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_succeeds(
         &mut verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
     );
 
     // Verify block 2
-    let block2_exp = create_expectations_from_block(&block2);
     assert_verification_succeeds(
         &mut verify_state,
         block2.header(),
         Some(block1.header().clone()),
         block2.body(),
-        &block2_exp,
     );
 }
 
@@ -164,13 +146,8 @@ fn test_genesis_with_initial_transactions() {
     );
 
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_components,
-    )
-    .expect("Genesis with transactions should execute");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_components)
+        .expect("Genesis with transactions should execute");
 
     // Verify block was created at correct position
     assert_block_position(genesis.header(), 0, 0);
@@ -180,14 +157,7 @@ fn test_genesis_with_initial_transactions() {
 
     // ADDITIONAL VERIFICATION: Verify the block with transactions passes verification
     let mut verify_state = OLState::new_genesis();
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 }
 
 #[test]
@@ -256,13 +226,8 @@ fn test_state_persistence_across_blocks() {
 
     // Process genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis should execute");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis should execute");
 
     // Get state root after genesis
     let genesis_state_root = state
@@ -297,23 +262,14 @@ fn test_state_persistence_across_blocks() {
     let mut verify_state = OLState::new_genesis();
 
     // Verify genesis
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Verify block 1
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_succeeds(
         &mut verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
     );
 }
 
@@ -434,19 +390,17 @@ fn test_process_chain_with_multiple_epochs() {
             Some(headers[i - 1].clone())
         };
 
-        let expectations = create_expectations_from_block(block);
-
         // Verify this block succeeds
         assert_verification_succeeds(
             &mut verify_state,
             block.header(),
             parent_header.clone(),
             block.body(),
-            &expectations,
         );
 
         // Verify state is updated correctly after each block
         let expected_slot = i as u64;
+
         // Calculate expected state epoch based on new structure
         let block_epoch = if i == 0 {
             0 // Genesis is epoch 0
@@ -529,28 +483,14 @@ fn test_verify_valid_block_succeeds() {
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis block assembly should succeed");
-
-    // Create expectations from the assembled block
-    let expectations = create_expectations_from_block(&genesis);
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis block assembly should succeed");
 
     // Reset state for verification (verification should start from same initial state)
     let mut verify_state = OLState::new_genesis();
 
     // Verify the block - this should succeed
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &expectations,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 }
 
 #[test]
@@ -560,13 +500,8 @@ fn test_assemble_then_verify_roundtrip() {
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis block assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis block assembly should succeed");
 
     // Assemble block 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -592,33 +527,22 @@ fn test_assemble_then_verify_roundtrip() {
     let mut verify_state = OLState::new_genesis();
 
     // Verify genesis
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Verify block 1
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_succeeds(
         &mut verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
     );
 
     // Verify block 2
-    let block2_exp = create_expectations_from_block(&block2);
     assert_verification_succeeds(
         &mut verify_state,
         block2.header(),
         Some(block1.header().clone()),
         block2.body(),
-        &block2_exp,
     );
 }
 
@@ -687,13 +611,11 @@ fn test_multi_block_chain_verification() {
             Some(headers[i - 1].clone())
         };
 
-        let expectations = create_expectations_from_block(block);
         assert_verification_succeeds(
             &mut verify_state,
             block.header(),
             parent_header,
             block.body(),
-            &expectations,
         );
     }
 
@@ -728,24 +650,12 @@ fn test_verify_block_with_transactions() {
     );
 
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_components,
-    )
-    .expect("Genesis with tx should assemble");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_components)
+        .expect("Genesis with tx should assemble");
 
     // Verify the block
     let mut verify_state = OLState::new_genesis();
-    let expectations = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &expectations,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Verify transaction was included
     assert_eq!(genesis.body().tx_segment().txs().len(), 1);
@@ -761,13 +671,8 @@ fn test_verify_rejects_wrong_parent_blkid() {
 
     // Assemble genesis and block 1
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis assembly should succeed");
 
     let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
@@ -786,23 +691,14 @@ fn test_verify_rejects_wrong_parent_blkid() {
     let mut verify_state = OLState::new_genesis();
 
     // First verify genesis succeeds
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Then verify block 1 with wrong parent ID fails
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
         |e| matches!(e, ExecError::BlockParentMismatch),
     );
 }
@@ -814,13 +710,8 @@ fn test_verify_rejects_epoch_skip() {
 
     // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis assembly should succeed");
 
     // Assemble block 1 normally (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -839,23 +730,14 @@ fn test_verify_rejects_epoch_skip() {
     let mut verify_state = OLState::new_genesis();
 
     // First verify genesis
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Then verify block with skipped epoch fails
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
         |e| matches!(e, ExecError::SkipEpochs(_, _)),
     );
 }
@@ -867,13 +749,8 @@ fn test_verify_rejects_slot_skip() {
 
     // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis assembly should succeed");
 
     // Create block 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -892,23 +769,14 @@ fn test_verify_rejects_slot_skip() {
     let mut verify_state = OLState::new_genesis();
 
     // First verify genesis
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Then verify block with skipped slot fails
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
         |e| matches!(e, ExecError::SkipTooManySlots(_, _)),
     );
 }
@@ -920,13 +788,8 @@ fn test_verify_rejects_slot_backwards() {
 
     // Assemble genesis and block 1
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis assembly should succeed");
 
     let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
@@ -954,33 +817,22 @@ fn test_verify_rejects_slot_backwards() {
     let mut verify_state = OLState::new_genesis();
 
     // Verify genesis
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Verify block 1
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_succeeds(
         &mut verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
     );
 
     // Then verify block 2 with backwards slot fails
-    let block2_exp = create_expectations_from_block(&block2);
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
         Some(block1.header().clone()),
         block2.body(),
-        &block2_exp,
         |e| matches!(e, ExecError::SkipTooManySlots(_, _)), /* This will trigger because it's
                                                              * not exactly +1 */
     );
@@ -1014,14 +866,12 @@ fn test_verify_rejects_nongenesis_without_parent() {
 
     // Try to verify block 1 without providing parent header
     let mut verify_state = OLState::new_genesis();
-    let block1_exp = create_expectations_from_block(&block1);
 
     assert_verification_fails_with(
         &mut verify_state,
         block1.header(),
         None, // No parent provided for non-genesis block
         block1.body(),
-        &block1_exp,
         |e| matches!(e, ExecError::GenesisCoordsNonzero),
     );
 }
@@ -1047,14 +897,12 @@ fn test_verify_rejects_genesis_with_nonnull_parent() {
 
     // Try to verify tampered genesis
     let mut verify_state = OLState::new_genesis();
-    let genesis_exp = create_expectations_from_block(&genesis);
 
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_genesis,
         None,
         genesis.body(),
-        &genesis_exp,
         |e| matches!(e, ExecError::GenesisParentNonnull),
     );
 }
@@ -1064,46 +912,32 @@ fn test_verify_rejects_genesis_with_nonnull_parent() {
 
 #[test]
 fn test_verify_rejects_mismatched_state_root() {
-    // Test that verification fails when state root doesn't match expected
+    // Test that verification fails when state root doesn't match computed
     let mut state = OLState::new_genesis();
 
     // Assemble a normal genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis assembly should succeed");
 
     // Tamper with the state root in the header
     let wrong_root = Buf32::from([99u8; 32]);
-    let tampered_header = tamper_state_root(genesis.header(), wrong_root.clone());
+    let tampered_header = tamper_state_root(genesis.header(), wrong_root);
 
-    // Create expectations from the TAMPERED header to match what verify_block_classically expects
-    // The verification will fail because the computed state root won't match the tampered header's
-    // root
-    let tampered_expectations = crate::verification::BlockExecExpectations::new(
-        crate::verification::BlockPostStateCommitments::Common(wrong_root),
-        tampered_header.logs_root().clone(),
-    );
-
-    // Verification should fail because computed state root won't match expectation
+    // Verification should fail because computed state root won't match header
     let mut verify_state = OLState::new_genesis();
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
         None,
         genesis.body(),
-        &tampered_expectations,
         |e| matches!(e, ExecError::ChainIntegrity),
     );
 }
 
 #[test]
 fn test_verify_rejects_mismatched_logs_root() {
-    // Test that verification fails when logs root doesn't match expected
+    // Test that verification fails when logs root doesn't match computed
     let mut state = OLState::new_genesis();
 
     // Create a block with a transaction (which will generate logs)
@@ -1127,36 +961,20 @@ fn test_verify_rejects_mismatched_logs_root() {
     );
 
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_components,
-    )
-    .expect("Genesis assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_components)
+        .expect("Genesis assembly should succeed");
 
     // Tamper with the logs root
     let wrong_root = Buf32::from([88u8; 32]);
-    let tampered_header = tamper_logs_root(genesis.header(), wrong_root.clone());
+    let tampered_header = tamper_logs_root(genesis.header(), wrong_root);
 
-    // Create expectations from the TAMPERED header
-    // The verification will fail because the computed logs root won't match the tampered
-    // expectation
-    let tampered_expectations = crate::verification::BlockExecExpectations::new(
-        crate::verification::BlockPostStateCommitments::Common(
-            tampered_header.state_root().clone(),
-        ),
-        wrong_root,
-    );
-
-    // Verification should fail
+    // Verification should fail because computed logs root won't match header
     let mut verify_state = OLState::new_genesis();
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
         None,
         genesis.body(),
-        &tampered_expectations,
         |e| matches!(e, ExecError::ChainIntegrity),
     );
 }
@@ -1168,13 +986,8 @@ fn test_verify_empty_block_logs_root() {
 
     // Assemble genesis block (terminal but with no transactions)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis assembly should succeed");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis assembly should succeed");
 
     // Verify that empty blocks have zero logs root
     assert_eq!(
@@ -1185,15 +998,8 @@ fn test_verify_empty_block_logs_root() {
 
     // Verify the block succeeds
     let mut verify_state = OLState::new_genesis();
-    let genesis_exp = create_expectations_from_block(&genesis);
 
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 }
 
 #[test]
@@ -1241,13 +1047,8 @@ fn test_verify_state_root_changes_with_state() {
 
     // Execute genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis should execute");
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis should execute");
 
     // Execute block 1 (will change slot in state, epoch 1)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -1270,56 +1071,13 @@ fn test_verify_state_root_changes_with_state() {
     let mut verify_state = OLState::new_genesis();
 
     // Verify genesis
-    let genesis_exp = create_expectations_from_block(&genesis);
-    assert_verification_succeeds(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &genesis_exp,
-    );
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Verify block 1
-    let block1_exp = create_expectations_from_block(&block1);
     assert_verification_succeeds(
         &mut verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
-        &block1_exp,
-    );
-}
-
-#[test]
-fn test_verify_wrong_state_root_expectation_fails() {
-    // Test that providing wrong expectations causes verification to fail
-    let mut state = OLState::new_genesis();
-
-    // Assemble genesis (terminal)
-    let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
-        &mut state,
-        &genesis_info,
-        None,
-        genesis_block_components(),
-    )
-    .expect("Genesis assembly should succeed");
-
-    // Create expectations with wrong state root
-    let wrong_state_root = Buf32::from([123u8; 32]);
-    let wrong_expectations = crate::verification::BlockExecExpectations::new(
-        crate::verification::BlockPostStateCommitments::Common(wrong_state_root),
-        genesis.header().logs_root().clone(),
-    );
-
-    // Verification should fail
-    let mut verify_state = OLState::new_genesis();
-    assert_verification_fails_with(
-        &mut verify_state,
-        genesis.header(),
-        None,
-        genesis.body(),
-        &wrong_expectations,
-        |e| matches!(e, ExecError::ChainIntegrity),
     );
 }

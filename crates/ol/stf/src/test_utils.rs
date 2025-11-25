@@ -14,7 +14,7 @@ use crate::{
     assembly::{BlockComponents, CompletedBlock, execute_and_complete_block},
     context::{BlockContext, BlockInfo},
     errors::ExecError,
-    verification::{BlockExecExpectations, BlockPostStateCommitments, verify_block_classically},
+    verification::verify_block,
 };
 
 /// Execute a block with the given block info and return the completed block.
@@ -78,12 +78,7 @@ pub fn build_empty_chain(
             BlockComponents::new_empty()
         };
 
-        let block = execute_block(
-            state,
-            &block_info,
-            Some(parent),
-            components,
-        )?;
+        let block = execute_block(state, &block_info, Some(parent), components)?;
         headers.push(block.header().clone());
     }
 
@@ -138,43 +133,14 @@ pub fn assert_state_updated(state: &mut OLState, expected_epoch: u64, expected_s
 
 // ===== Verification Test Utilities =====
 
-/// Create BlockExecExpectations from a CompletedBlock.
-/// This is used to verify that a block can be verified after assembly.
-pub fn create_expectations_from_block(block: &CompletedBlock) -> BlockExecExpectations {
-    let post_state_roots = if let Some(l1_update) = block.body().l1_update() {
-        // Terminal block has both preseal and final state roots
-        BlockPostStateCommitments::Terminal(
-            l1_update.preseal_state_root().clone(),
-            block.header().state_root().clone(),
-        )
-    } else {
-        // Non-terminal block has only final state root
-        BlockPostStateCommitments::Common(block.header().state_root().clone())
-    };
-
-    BlockExecExpectations::new(post_state_roots, block.header().logs_root().clone())
-}
-
-/// Verify a block using verify_block_classically and assert it succeeds.
-pub fn verify_block<S: StateAccessor>(
-    state: &mut S,
-    header: &OLBlockHeader,
-    parent_header: Option<OLBlockHeader>,
-    body: &strata_ol_chain_types_new::OLBlockBody,
-    exp: &BlockExecExpectations,
-) -> ExecResult<()> {
-    verify_block_classically(state, header, parent_header, body, exp)
-}
-
 /// Assert that block verification succeeds.
 pub fn assert_verification_succeeds<S: StateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
-    exp: &BlockExecExpectations,
 ) {
-    let result = verify_block(state, header, parent_header, body, exp);
+    let result = verify_block(state, header, parent_header, body);
     assert!(
         result.is_ok(),
         "Block verification failed when it should have succeeded: {:?}",
@@ -188,10 +154,9 @@ pub fn assert_verification_fails_with(
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
-    exp: &BlockExecExpectations,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
-    let result = verify_block(state, header, parent_header, body, exp);
+    let result = verify_block(state, header, parent_header, body);
     assert!(
         result.is_err(),
         "Block verification succeeded when it should have failed"

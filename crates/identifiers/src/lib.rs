@@ -1,5 +1,8 @@
 //! Core identifier types and buffer types.
 
+// dumb dismiss warning
+use strata_codec_derive as _;
+
 #[macro_use]
 mod macros;
 
@@ -23,6 +26,8 @@ pub use exec::{
 };
 pub use l1::{BitcoinBlockHeight, L1BlockCommitment, L1BlockId, L1Height};
 pub use ol::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId};
+
 // Re-export for macro use
 #[doc(hidden)]
+#[rustfmt::skip]
 pub use strata_codec;

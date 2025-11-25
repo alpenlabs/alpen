@@ -29,7 +29,6 @@ pub fn process_block_tx_segment<S: StateAccessor>(
         process_single_tx(state, tx, context)?;
     }
 
-    // TODO
     Ok(())
 }
 
@@ -106,6 +105,7 @@ fn process_update_tx<S: StateAccessor>(
     update: &SnarkAccountUpdateContainer,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
+    // 1. Make sure it's a snark account.
     let AccountTypeState::Snark(mut sastate) = astate.get_type_state()? else {
         return Err(ExecError::IncorrectTxTargetType);
     };
@@ -153,10 +153,8 @@ fn process_update_tx<S: StateAccessor>(
     // According to the spec, the log should contain:
     // - new_msg_idx: The sequence number from the account state
     // - extra_data: The extra data from the update operation
-    let log_data = SnarkAccountUpdateLogData::new(
-        new_seq_no,
-        extra_data.to_vec(),
-    ).ok_or_else(|| ExecError::Codec(strata_codec::CodecError::OverflowContainer))?;
+    let log_data = SnarkAccountUpdateLogData::new(new_seq_no, extra_data.to_vec())
+        .ok_or_else(|| ExecError::Codec(strata_codec::CodecError::OverflowContainer))?;
 
     // Encode the log data and emit it
     let log_payload = encode_to_vec(&log_data)?;

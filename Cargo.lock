@@ -13452,6 +13452,7 @@ dependencies = [
  "borsh",
  "serde",
  "strata-codec",
+ "strata-codec-derive",
  "strata-identifiers",
  "strata-msg-fmt",
  "thiserror 2.0.17",
@@ -14285,6 +14286,7 @@ dependencies = [
  "ssz 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "ssz_derive 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "strata-codec",
+ "strata-codec-derive",
  "strata-test-utils-ssz",
  "tree_hash 0.7.1 (git+https://github.com/alpenlabs/ssz-gen?branch=ref-types-fix)",
  "zeroize",
@@ -14481,6 +14483,7 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-codec",
+ "strata-codec-derive",
  "strata-identifiers",
  "strata-msg-fmt",
 ]

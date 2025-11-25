@@ -112,7 +112,7 @@ fn handle_bridge_gateway_message<S: StateAccessor>(
     // If it is, then we can emit a OL log with the amount and destination.
     let log_data = SimpleWithdrawalIntentLogData {
         amt: withdrawal_amt.into(),
-        dest: withdrawal_data.dest_desc.clone(),
+        dest: withdrawal_data.into_dest_desc(),
     };
 
     // Encode the log data and then just emit it.

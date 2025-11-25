@@ -39,6 +39,11 @@ impl BlockExecExpectations {
             logs_root,
         }
     }
+
+    pub(crate) fn from_block_parts(header: &OLBlockHeader, body: &OLBlockBody) -> Self {
+        let psr = BlockPostStateCommitments::from_block_parts(header, body);
+        Self::new(psr, *header.logs_root())
+    }
 }
 
 /// Describes the state roots we might compute in the different phases.
@@ -132,21 +137,19 @@ impl<'b> BlockExecInput<'b> {
     }
 }
 
-/// Verifies a block classically by executing it the normal way.
+/// Verifies a block by executing it the normal way.
 ///
 /// This closely aligns with `execute_block_inputs`.
-pub fn verify_block_classically<S: StateAccessor>(
+pub fn verify_block<S: StateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
     body: &OLBlockBody,
-    exp: &BlockExecExpectations,
 ) -> ExecResult<()> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header.as_ref())?;
-    // TODO verify_block_structure(...)?;
-    // TODO make sure that we properly increment the epoch when the parent was a
-    // terminal!
+    verify_block_structure(header, body)?;
+    let exp = BlockExecExpectations::from_block_parts(header, body);
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
     let block_info = BlockInfo::from_header(header);
@@ -157,7 +160,9 @@ pub fn verify_block_classically<S: StateAccessor>(
     }
 
     // 2. Process the slot start for every block.
-    chain_processing::process_slot_start(state, &block_context)?;
+    //
+    // This is where we start doing stuff covered by DA.
+    chain_processing::process_block_start(state, &block_context)?;
 
     // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
@@ -166,11 +171,11 @@ pub fn verify_block_classically<S: StateAccessor>(
     transaction_processing::process_block_tx_segment(state, body.tx_segment(), &tx_ctx)?;
 
     // 4. Check the state root.
-    // - if it's a nonterminal, then check against the header state root
+    // - if it not a terminal, then check against the header state root
     // - if it *is* a terminal, then check against the preseal state root
     let pre_manifest_state_root = state.compute_state_root()?;
 
-    if body.is_probably_terminal() {
+    if header.is_terminal() {
         // For terminal blocks, check against the preseal state root
         let expected_preseal = exp
             .post_state_roots

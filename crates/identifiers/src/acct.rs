@@ -12,7 +12,7 @@ const SPECIAL_ACCT_ID_BYTE: usize = 31;
 type RawAccountId = [u8; 32];
 
 /// Universal account identifier.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
 #[repr(transparent)]
 #[ssz(struct_behaviour = "transparent")]
 pub struct AccountId(RawAccountId);
@@ -90,7 +90,7 @@ impl<'a> ssz::view::DecodeView<'a> for AccountId {
 type RawAccountSerial = u32;
 
 /// Incrementally assigned account serial number.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
 #[repr(transparent)]
 #[ssz(struct_behaviour = "transparent")]
 pub struct AccountSerial(RawAccountSerial);
@@ -154,7 +154,7 @@ impl<'a> ssz::view::DecodeView<'a> for AccountSerial {
 type RawSubjectId = [u8; 32];
 
 /// Identifier for a "subject" within the scope of an execution environment.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
 #[repr(transparent)]
 #[ssz(struct_behaviour = "transparent")]
 pub struct SubjectId(RawSubjectId);

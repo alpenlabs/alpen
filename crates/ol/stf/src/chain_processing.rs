@@ -38,10 +38,10 @@ pub fn process_epoch_initial<S: StateAccessor>(
     Ok(())
 }
 
-/// Processing that happens at the start of every slot (block).
+/// Processing that happens at the start of every block.
 ///
 /// This updates the global state to track the current slot number.
-pub fn process_slot_start<S: StateAccessor>(
+pub fn process_block_start<S: StateAccessor>(
     state: &mut S,
     context: &BlockContext<'_>,
 ) -> ExecResult<()> {

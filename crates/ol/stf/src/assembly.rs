@@ -100,7 +100,7 @@ pub fn execute_block_inputs<S: StateAccessor>(
     }
 
     // 2. Process the slot start for every block.
-    chain_processing::process_slot_start(state, &block_context)?;
+    chain_processing::process_block_start(state, &block_context)?;
 
     // 3. Call process_block_tx_segment for every block as usual.
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);
@@ -238,7 +238,7 @@ pub fn execute_and_complete_block<S: StateAccessor>(
     let parent_blkid = block_context.compute_parent_blkid();
 
     // Construct the block body.
-    let mut body = OLBlockBody::new_regular(block_components.tx_segment);
+    let mut body = OLBlockBody::new_common(block_components.tx_segment);
 
     // If this is a terminal block with manifests, create the L1 update.
     if let Some(manifest_container) = block_components.manifest_container {
@@ -251,7 +251,7 @@ pub fn execute_and_complete_block<S: StateAccessor>(
     // Compute the body root using the hash commitment method.
     let body_root = body.compute_hash_commitment();
     let mut flags = BlockFlags::zero();
-    flags.set_is_terminal(body.is_probably_terminal());
+    flags.set_is_terminal(body.is_body_terminal());
 
     // 3. Assemble the final completed block.
     let header = OLBlockHeader::new(
