@@ -34,7 +34,7 @@ alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
 alloy-rlp.workspace = true
 
 # Serialization
-bincode.workspace = true
+rlp.workspace = true
 
 # Utilities
 itertools.workspace = true

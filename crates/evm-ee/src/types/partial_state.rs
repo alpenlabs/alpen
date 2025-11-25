@@ -13,8 +13,8 @@ use strata_ee_acct_types::{EnvResult, ExecPartialState};
 use super::Hash;
 use crate::{
     codec_shims::{
-        decode_bytes_with_length, decode_rlp_with_length, encode_bytes_with_length,
-        encode_rlp_with_length,
+        decode_bytes_with_length, decode_ethereum_state, decode_rlp_with_length,
+        encode_bytes_with_length, encode_ethereum_state, encode_rlp_with_length,
     },
     types::{EvmWriteBatch, WitnessDB},
 };
@@ -197,10 +197,8 @@ impl ExecPartialState for EvmPartialState {
 
 impl Codec for EvmPartialState {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
-        // Encode EthereumState using bincode (it has serde support and is a complex MPT structure)
-        let ethereum_state_bytes = bincode::serialize(&self.ethereum_state)
-            .map_err(|_| CodecError::MalformedField("EthereumState serialize failed"))?;
-        encode_bytes_with_length(&ethereum_state_bytes, enc)?;
+        // Encode EthereumState using custom deterministic encoding
+        encode_ethereum_state(&self.ethereum_state, enc)?;
 
         // Encode bytecodes count
         (self.bytecodes.len() as u32).encode(enc)?;
@@ -222,10 +220,8 @@ impl Codec for EvmPartialState {
     }
 
     fn decode(dec: &mut impl strata_codec::Decoder) -> Result<Self, CodecError> {
-        // Decode EthereumState using bincode
-        let ethereum_state_bytes = decode_bytes_with_length(dec)?;
-        let ethereum_state = bincode::deserialize(&ethereum_state_bytes)
-            .map_err(|_| CodecError::MalformedField("EthereumState deserialize failed"))?;
+        // Decode EthereumState using custom deterministic decoding
+        let ethereum_state = decode_ethereum_state(dec)?;
 
         // Decode bytecodes with their pre-computed hashes
         let bytecodes_count = u32::decode(dec)? as usize;

@@ -5,7 +5,7 @@ use revm_primitives::alloy_primitives::Bloom;
 use strata_codec::{Codec, CodecError};
 
 use super::Hash;
-use crate::codec_shims::{decode_bytes_with_length, encode_bytes_with_length};
+use crate::codec_shims::{decode_hashed_post_state, encode_hashed_post_state};
 
 /// Write batch for EVM execution containing state changes.
 ///
@@ -57,10 +57,8 @@ impl EvmWriteBatch {
 
 impl Codec for EvmWriteBatch {
     fn encode(&self, enc: &mut impl strata_codec::Encoder) -> Result<(), CodecError> {
-        // Encode HashedPostState using bincode (it has serde support)
-        let hashed_post_state_bytes = bincode::serialize(&self.hashed_post_state)
-            .map_err(|_| CodecError::MalformedField("HashedPostState serialize failed"))?;
-        encode_bytes_with_length(&hashed_post_state_bytes, enc)?;
+        // Encode HashedPostState using custom deterministic encoding
+        encode_hashed_post_state(&self.hashed_post_state, enc)?;
 
         // Encode state_root (32 bytes)
         enc.write_buf(&self.state_root)?;
@@ -72,10 +70,8 @@ impl Codec for EvmWriteBatch {
     }
 
     fn decode(dec: &mut impl strata_codec::Decoder) -> Result<Self, CodecError> {
-        // Decode HashedPostState using bincode
-        let hashed_post_state_bytes = decode_bytes_with_length(dec)?;
-        let hashed_post_state = bincode::deserialize(&hashed_post_state_bytes)
-            .map_err(|_| CodecError::MalformedField("HashedPostState deserialize failed"))?;
+        // Decode HashedPostState using custom deterministic decoding
+        let hashed_post_state = decode_hashed_post_state(dec)?;
 
         // Decode state_root (32 bytes)
         let mut state_root = [0u8; 32];
