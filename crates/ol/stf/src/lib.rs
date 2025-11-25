@@ -1,4 +1,4 @@
-// TODO
+//! Strata orchestration layer block execution and validation library.
 
 #![allow(unused, reason = "in development")]
 
