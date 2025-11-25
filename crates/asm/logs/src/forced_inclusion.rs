@@ -1,6 +1,5 @@
 use strata_asm_common::AsmLog;
-use strata_codec::VarVec;
-use strata_codec_derive::Codec;
+use strata_codec::{Codec, VarVec};
 use strata_msg_fmt::TypeId;
 
 use crate::constants::FORCED_INCLUSION_LOG_TYPE_ID;

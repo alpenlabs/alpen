@@ -1,6 +1,5 @@
 use strata_asm_common::AsmManifest;
 use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec, encode_to_vec};
-use strata_codec_derive::Codec;
 use strata_identifiers::{Buf32, Buf64, L1BlockId, OLBlockId, hash::raw};
 
 use crate::{

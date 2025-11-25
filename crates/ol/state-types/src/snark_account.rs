@@ -1,6 +1,5 @@
 use strata_acct_types::{AcctResult, Hash, Mmr64};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_codec_derive::Codec;
 use strata_codec_utils::CodecSsz;
 use strata_ledger_types::ISnarkAccountState;
 use strata_merkle::CompactMmr64B32;

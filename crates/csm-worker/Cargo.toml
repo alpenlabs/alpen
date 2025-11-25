@@ -30,4 +30,3 @@ strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 bitcoin.workspace = true
 threadpool.workspace = true
 serde_json.workspace = true
-borsh.workspace = true

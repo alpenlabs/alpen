@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 strata-codec.workspace = true
-strata-codec-derive.workspace = true
 
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }

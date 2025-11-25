@@ -3,7 +3,6 @@ use std::fmt;
 use int_enum::IntEnum;
 use strata_acct_types::{AccountId, VarVec};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_codec_derive::Codec;
 use strata_codec_utils::CodecSsz;
 use strata_snark_acct_types::SnarkAccountUpdateContainer;
 

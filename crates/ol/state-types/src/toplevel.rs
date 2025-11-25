@@ -2,8 +2,7 @@
 
 use bitcoin::absolute;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
-use strata_codec::encode_to_vec;
-use strata_codec_derive::Codec;
+use strata_codec::{Codec, encode_to_vec};
 use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, OLBlockId, hash::raw};
 use strata_ledger_types::{AccountTypeState, EpochCommitment, StateAccessor};
 

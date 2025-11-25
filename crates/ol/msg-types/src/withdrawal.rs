@@ -2,7 +2,6 @@
 
 use strata_acct_types::VarVec;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_codec_derive::Codec;
 use strata_identifiers::SubjectId;
 
 /// Message type ID for withdrawal initiation.

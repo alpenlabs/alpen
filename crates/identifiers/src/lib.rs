@@ -1,8 +1,5 @@
 //! Core identifier types and buffer types.
 
-// dumb dismiss warning
-use strata_codec_derive as _;
-
 #[macro_use]
 mod macros;
 

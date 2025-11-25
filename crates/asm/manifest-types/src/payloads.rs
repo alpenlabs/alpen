@@ -4,7 +4,6 @@
 //! by the ASM and processed by the orchestration layer state transition function.
 
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_codec_derive::Codec;
 use strata_identifiers::{AccountSerial, EpochCommitment, SubjectId};
 use strata_msg_fmt::TypeId;
 

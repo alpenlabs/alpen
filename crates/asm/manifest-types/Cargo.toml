@@ -8,7 +8,6 @@ borsh.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 strata-codec.workspace = true
-strata-codec-derive.workspace = true
 strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
 
