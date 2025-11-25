@@ -85,7 +85,7 @@ impl ExecError {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ErrorKind {
-    /// This is an execution error that should abord validation inconclusively.
+    /// This is an execution error that should abort validation inconclusively.
     Execution,
 
     /// This is some correctness error that indicates the block is invalid.
