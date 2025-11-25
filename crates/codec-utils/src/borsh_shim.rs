@@ -90,7 +90,8 @@ mod tests {
         let encoded = encode_to_vec(&wrapped).expect("Failed to encode");
 
         // Decode from bytes
-        let decoded: CodecBorsh<EmptyStruct> = decode_buf_exact(&encoded).expect("Failed to decode");
+        let decoded: CodecBorsh<EmptyStruct> =
+            decode_buf_exact(&encoded).expect("Failed to decode");
 
         // Check that we got the same value back
         assert_eq!(decoded.inner(), &original);

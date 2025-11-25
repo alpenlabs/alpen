@@ -149,11 +149,12 @@ impl Codec for TsnlLedgerAccountsTable {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::account::NativeAccountTypeState;
     use strata_acct_types::BitcoinAmount;
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_ledger_types::IAccountState;
+
+    use super::*;
+    use crate::account::NativeAccountTypeState;
 
     // Helper function to create an Empty account state
     fn create_empty_account_state(serial: AccountSerial, balance: BitcoinAmount) -> AccountState {
@@ -183,7 +184,10 @@ mod tests {
         }
 
         // Verify next available serial is correct
-        assert_eq!(table.next_avail_serial(), AccountSerial::from(SYSTEM_RESERVED_ACCTS));
+        assert_eq!(
+            table.next_avail_serial(),
+            AccountSerial::from(SYSTEM_RESERVED_ACCTS)
+        );
     }
 
     #[test]
@@ -341,14 +345,18 @@ mod tests {
             assert_eq!(serial, AccountSerial::from(expected_serial));
 
             let account_id = test_account_id(i);
-            let account_state = create_empty_account_state(serial, BitcoinAmount::from_sat(i as u64));
+            let account_state =
+                create_empty_account_state(serial, BitcoinAmount::from_sat(i as u64));
 
             table.create_account(account_id, account_state).unwrap();
             expected_serial += 1;
         }
 
         // Verify final serial is correct
-        assert_eq!(table.next_avail_serial(), AccountSerial::from(expected_serial));
+        assert_eq!(
+            table.next_avail_serial(),
+            AccountSerial::from(expected_serial)
+        );
     }
 
     #[test]
@@ -410,8 +418,14 @@ mod tests {
         assert_eq!(decoded.accounts.len(), table.accounts.len());
         for i in 0..table.accounts.len() {
             assert_eq!(decoded.accounts[i].id, table.accounts[i].id);
-            assert_eq!(decoded.accounts[i].state.serial(), table.accounts[i].state.serial());
-            assert_eq!(decoded.accounts[i].state.balance(), table.accounts[i].state.balance());
+            assert_eq!(
+                decoded.accounts[i].state.serial(),
+                table.accounts[i].state.serial()
+            );
+            assert_eq!(
+                decoded.accounts[i].state.balance(),
+                table.accounts[i].state.balance()
+            );
         }
 
         // Verify serials match
