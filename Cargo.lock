@@ -13464,7 +13464,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "bitvec",
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
@@ -13599,7 +13598,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "bitvec",
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
@@ -13965,7 +13963,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "bitvec",
  "borsh",
  "hex",
  "k256",
@@ -13974,7 +13971,6 @@ dependencies = [
  "secp256k1 0.29.1",
  "serde",
  "strata-identifiers",
- "strata-test-utils",
  "thiserror 2.0.17",
 ]
 
