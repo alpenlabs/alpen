@@ -14027,7 +14027,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitcoin",
- "borsh",
  "serde",
  "serde_json",
  "strata-asm-common",

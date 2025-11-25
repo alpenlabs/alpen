@@ -187,7 +187,6 @@ mod tests {
     use std::sync::Arc;
 
     use bitcoin::absolute::Height;
-    use borsh::to_vec;
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
@@ -431,13 +430,8 @@ mod tests {
                 checkpoint_txid,
             );
 
-            // Serialize to bytes using borsh
-            let checkpoint_bytes =
-                to_vec(&checkpoint_update).expect("Failed to serialize checkpoint");
-
             // Create log entry
-            let log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, checkpoint_bytes)
-                .expect("Failed to create log");
+            let log = AsmLogEntry::from_log(&checkpoint_update).expect("make log");
 
             // Process the log
             let result = process_log(&mut state, &log, &asm_block);
