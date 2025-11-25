@@ -8,7 +8,12 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
-use strata_primitives::{bitcoin_bosd::Descriptor, hash::compute_borsh_hash, l1::BitcoinAmount};
+use strata_codec::{Codec, encode_to_vec};
+use strata_primitives::{
+    bitcoin_bosd::Descriptor,
+    hash::{self},
+    l1::BitcoinAmount,
+};
 
 /// Command specifying a Bitcoin output for a withdrawal operation.
 ///
@@ -123,7 +128,7 @@ impl WithdrawOutput {
 /// - This data is stored in the MohoState and emitted as an ASM log via `NewExportEntry`.
 /// - The Bridge proof system consumes these entries to verify operators have correctly fulfilled
 ///   withdrawal obligations before allowing them to unlock deposit UTXOs.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Codec)]
 pub struct OperatorClaimUnlock {
     /// The index of the deposit that was fulfilled.
     pub deposit_idx: u32,
@@ -134,6 +139,7 @@ pub struct OperatorClaimUnlock {
 
 impl OperatorClaimUnlock {
     pub fn compute_hash(&self) -> [u8; 32] {
-        compute_borsh_hash(self).0
+        let buf = encode_to_vec(self).expect("failed to encode OperatorClaimUnlock");
+        hash::raw(&buf).0
     }
 }
