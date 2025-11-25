@@ -90,7 +90,7 @@ impl MohoProgram for AsmStfProgram {
         let mut new_export_state = export_state;
         for log in &output.manifest.logs {
             if let Ok(export) = log.try_into_log::<NewExportEntry>() {
-                new_export_state.add_entry(export.container_id(), export.entry_data().clone());
+                new_export_state.add_entry(export.container_id(), *export.entry_data());
             }
         }
         new_export_state

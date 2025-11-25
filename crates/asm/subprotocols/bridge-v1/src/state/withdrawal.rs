@@ -6,10 +6,9 @@
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use moho_types::ExportEntry;
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
-use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
+use strata_primitives::{bitcoin_bosd::Descriptor, hash::compute_borsh_hash, l1::BitcoinAmount};
 
 /// Command specifying a Bitcoin output for a withdrawal operation.
 ///
@@ -134,8 +133,7 @@ pub struct OperatorClaimUnlock {
 }
 
 impl OperatorClaimUnlock {
-    pub fn to_export_entry(&self) -> ExportEntry {
-        let payload = borsh::to_vec(&self).expect("Failed to serialize OperatorClaimUnlock");
-        ExportEntry::new(self.deposit_idx, payload)
+    pub fn compute_hash(&self) -> [u8; 32] {
+        compute_borsh_hash(self).0
     }
 }

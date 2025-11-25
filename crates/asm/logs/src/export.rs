@@ -1,5 +1,4 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use moho_types::ExportEntry;
 use strata_asm_common::AsmLog;
 use strata_codec_derive::Codec;
 use strata_codec_utils::CodecBorsh;
@@ -11,26 +10,26 @@ use crate::constants::NEW_EXPORT_ENTRY_LOG_TYPE;
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Codec)]
 pub struct NewExportEntry {
     /// Export container ID.
-    container_id: u16,
+    container_id: u8,
 
     /// Export entry data.
-    entry_data: CodecBorsh<ExportEntry>,
+    entry_data: CodecBorsh<[u8; 32]>,
 }
 
 impl NewExportEntry {
     /// Create a new NewExportEntry instance.
-    pub fn new(container_id: u16, entry_data: ExportEntry) -> Self {
+    pub fn new(container_id: u8, entry_data: [u8; 32]) -> Self {
         Self {
             container_id,
             entry_data: CodecBorsh::new(entry_data),
         }
     }
 
-    pub fn container_id(&self) -> u16 {
+    pub fn container_id(&self) -> u8 {
         self.container_id
     }
 
-    pub fn entry_data(&self) -> &ExportEntry {
+    pub fn entry_data(&self) -> &[u8; 32] {
         self.entry_data.inner()
     }
 }

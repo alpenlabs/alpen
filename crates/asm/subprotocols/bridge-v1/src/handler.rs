@@ -37,9 +37,8 @@ pub(crate) fn handle_parsed_tx<'t>(
             let unlock = state.process_withdrawal_fulfillment_tx(&info)?;
 
             let container_id = 0; // Replace with actual logic to determine container ID
-            let withdrawal_processed_log =
-                NewExportEntry::new(container_id, unlock.to_export_entry());
-            relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:"));
+            let withdrawal_processed_log = NewExportEntry::new(container_id, unlock.compute_hash());
+            relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:PG"));
 
             Ok(())
         }

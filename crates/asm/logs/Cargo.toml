@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 borsh.workspace = true
-moho-types.workspace = true
 strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true

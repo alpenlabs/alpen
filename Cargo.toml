@@ -250,9 +250,9 @@ strata-tasks = { git = "https://github.com/alpenlabs/strata-common" }
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 
 # moho
-moho-runtime-impl = { git = "https://github.com/alpenlabs/moho", branch = "fix/borsh-for-export-entry" }
-moho-runtime-interface = { git = "https://github.com/alpenlabs/moho", branch = "fix/borsh-for-export-entry" }
-moho-types = { git = "https://github.com/alpenlabs/moho", branch = "fix/borsh-for-export-entry" }
+moho-runtime-impl = { git = "https://github.com/alpenlabs/moho", branch = "STR-1797-container-mmr" }
+moho-runtime-interface = { git = "https://github.com/alpenlabs/moho", branch = "STR-1797-container-mmr" }
+moho-types = { git = "https://github.com/alpenlabs/moho", branch = "STR-1797-container-mmr" }
 
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17" }
