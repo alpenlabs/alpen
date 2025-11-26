@@ -1,14 +1,13 @@
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
-use strata_codec::{BufDecoder, Codec};
+use strata_codec::decode_buf_exact;
 use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
-    constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
     errors::WithdrawalParseError,
     withdrawal_fulfillment::{
-        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, tag::WithdrawalFulfillmentTxTagData,
+        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, aux::WithdrawalFulfillmentTxHeaderAux,
     },
 };
 
@@ -77,12 +76,8 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
-    if tx.tag().tx_type() != WITHDRAWAL_FULFILLMENT_TX_TYPE {
-        return Err(WithdrawalParseError::InvalidTxType(tx.tag().tx_type()));
-    }
-
-    let mut decoder = BufDecoder::new(tx.tag().aux_data());
-    let withdrawal_auxdata = WithdrawalFulfillmentTxTagData::decode(&mut decoder)?;
+    let withdrawal_auxdata: WithdrawalFulfillmentTxHeaderAux =
+        decode_buf_exact(tx.tag().aux_data())?;
 
     let withdrawal_fulfillment_output = &tx
         .tx()
@@ -110,6 +105,7 @@ mod tests {
     use super::*;
     use crate::{
         BRIDGE_V1_SUBPROTOCOL_ID,
+        constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
         test_utils::{
             TEST_MAGIC_BYTES, create_tagged_payload, create_test_withdrawal_fulfillment_tx,
             mutate_op_return_output, parse_tx,
@@ -143,26 +139,6 @@ mod tests {
             .expect("Should successfully extract withdrawal info");
 
         assert_eq!(extracted_info, info);
-    }
-
-    #[test]
-    fn test_parse_withdrawal_fulfillment_tx_invalid_type() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: WithdrawalFulfillmentInfo = arb.generate();
-
-        let mut tx = create_test_withdrawal_fulfillment_tx(&info);
-
-        // Mutate the OP_RETURN output to have wrong transaction type
-        let aux_data = vec![0u8; 40]; // Some dummy aux data
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, WithdrawalParseError::InvalidTxType { .. }));
-        if let WithdrawalParseError::InvalidTxType(tx_type) = err {
-            assert_eq!(tx_type, tx_input.tag().tx_type());
-        }
     }
 
     #[test]
@@ -207,12 +183,9 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(
-            err,
-            WithdrawalParseError::InvalidAuxiliaryData { .. }
-        ));
+        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
 
-        // Mutate the OP_RETURN output to have shorter aux len - this should fail
+        // Mutate the OP_RETURN output to have longer aux len - this should fail
         let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
         let tagged_payload = create_tagged_payload(
             BRIDGE_V1_SUBPROTOCOL_ID,
@@ -222,9 +195,7 @@ mod tests {
         mutate_op_return_output(&mut tx, tagged_payload);
 
         let tx_input = parse_tx(&tx);
-        let res = parse_withdrawal_fulfillment_tx(&tx_input);
-        // REVIEW: right now it is still valid if the aux payload is larger
-        // verify if this is good
-        assert!(res.is_ok());
+        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
     }
 }

@@ -6,6 +6,7 @@
 //! This crate defines the canonical transaction structures for Bridge V1.
 //! Other components must be compatible with the transaction definitions defined here.
 
+pub mod commit;
 pub mod constants;
 pub mod deposit;
 pub mod errors;

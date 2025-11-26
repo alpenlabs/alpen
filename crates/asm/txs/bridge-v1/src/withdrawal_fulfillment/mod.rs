@@ -29,8 +29,8 @@
 //!    - The withdrawal amount (may be less than deposit due to fees)
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
+mod aux;
 mod parse;
-mod tag;
 
 pub const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
 

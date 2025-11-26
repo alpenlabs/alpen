@@ -1,23 +1,21 @@
 use arbitrary::Arbitrary;
-use bitcoin::{OutPoint, taproot::TAPROOT_CONTROL_NODE_SIZE};
+use bitcoin::OutPoint;
 use strata_asm_common::TxInputRef;
+use strata_codec::decode_buf_exact;
 use strata_primitives::{
     buf::Buf32,
     l1::{BitcoinAmount, BitcoinOutPoint},
 };
 
 use crate::{
-    constants::DEPOSIT_TX_TYPE, deposit::DEPOSIT_OUTPUT_INDEX, errors::DepositTxParseError,
+    deposit::{DEPOSIT_OUTPUT_INDEX, aux::DepositTxHeaderAux},
+    errors::DepositTxParseError,
 };
 
-/// Length of the deposit index field in the auxiliary data (4 bytes for u32)
-const DEPOSIT_IDX_LEN: usize = 4;
-
-/// Length of the tapscript root hash in the auxiliary data (32 bytes)
-const TAPSCRIPT_ROOT_LEN: usize = TAPROOT_CONTROL_NODE_SIZE;
-
 /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
-pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_LEN + TAPSCRIPT_ROOT_LEN;
+/// - 4 bytes for deposit_idx (u32)
+/// - 32 bytes for drt_tapscript_merkle_root
+pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = 4 + 32;
 
 /// Information extracted from a Bitcoin deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
@@ -66,34 +64,8 @@ pub struct DepositInfo {
 /// - `Err(DepositError)` - If the transaction structure is invalid, signature verification fails,
 ///   or any parsing step encounters malformed data
 pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
-    if tx_input.tag().tx_type() != DEPOSIT_TX_TYPE {
-        return Err(DepositTxParseError::InvalidTxType(tx_input.tag().tx_type()));
-    }
-
-    let aux_data = tx_input.tag().aux_data();
-
-    // Validate minimum auxiliary data length (must have at least the fixed fields)
-    if aux_data.len() < MIN_DEPOSIT_TX_AUX_DATA_LEN {
-        return Err(DepositTxParseError::InvalidAuxiliaryData(aux_data.len()));
-    }
-
-    // Parse deposit index (bytes 0-3)
-    let (deposit_idx_bytes, rest) = aux_data.split_at(DEPOSIT_IDX_LEN);
-    let deposit_idx = u32::from_be_bytes(
-        deposit_idx_bytes
-            .try_into()
-            .expect("deposit index is exactly 4 bytes because we validate aux_data length early"),
-    );
-
-    // Parse tapscript root hash (bytes 4-35)
-    let (tapscript_root_bytes, destination_address) = rest.split_at(TAPSCRIPT_ROOT_LEN);
-    let tapscript_root =
-        Buf32::new(tapscript_root_bytes.try_into().expect(
-            "tapscript root is exactly 32 bytes because we validate aux_data length early",
-        ));
-
-    // Destination address is remaining bytes (bytes 36+)
-    // Allow empty destination address (0 bytes is valid)
+    // Parse auxiliary data using DepositTxHeaderAux
+    let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
 
     // Extract the deposit output (second output at index 1)
     let deposit_output = tx_input
@@ -110,11 +82,11 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
 
     // Construct the validated deposit information
     Ok(DepositInfo {
-        deposit_idx,
+        deposit_idx: header_aux.deposit_idx,
         amt: deposit_output.value.into(),
-        address: destination_address.to_vec(),
+        address: header_aux.address,
         outpoint: deposit_outpoint,
-        drt_tapscript_merkle_root: tapscript_root,
+        drt_tapscript_merkle_root: Buf32::new(header_aux.drt_tapscript_merkle_root),
     })
 }
 
@@ -134,12 +106,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        constants::BRIDGE_V1_SUBPROTOCOL_ID,
-        test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_deposit_tx,
-            mutate_op_return_output, parse_tx,
-        },
+    use crate::test_utils::{
+        TEST_MAGIC_BYTES, create_tagged_payload, create_test_deposit_tx, mutate_op_return_output,
+        parse_tx,
     };
 
     // Helper function to create a test operator keypair
@@ -192,27 +161,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_deposit_invalid_tx_type() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: DepositInfo = arb.generate();
-
-        let mut tx = create_test_tx(&info);
-
-        // Mutate the OP_RETURN output to have wrong transaction type
-        let aux_data = vec![0u8; 40]; // Some dummy aux data
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_deposit_tx(&tx_input).unwrap_err();
-
-        assert!(matches!(err, DepositTxParseError::InvalidTxType(..)));
-        if let DepositTxParseError::InvalidTxType(tx_type) = err {
-            assert_eq!(tx_type, tx_input.tag().tx_type());
-        }
-    }
-
-    #[test]
     fn test_parse_deposit_aux_data_too_short() {
         use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
@@ -230,9 +178,6 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
         assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData(_)));
-        if let DepositTxParseError::InvalidAuxiliaryData(len) = err {
-            assert_eq!(len, MIN_DEPOSIT_TX_AUX_DATA_LEN - 1);
-        }
     }
 
     #[test]
