@@ -12,9 +12,9 @@ const STAKE_INPUT_INDEX: usize = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
 pub struct SlashInfo {
     /// SPS-50 auxiliary data from the transaction tag.
-    header_aux: SlashTxHeaderAux,
+    pub header_aux: SlashTxHeaderAux,
     /// Previous outpoint referenced second input (stake connector).
-    second_input_outpoint: BitcoinOutPoint,
+    pub second_input_outpoint: BitcoinOutPoint,
 }
 
 /// Parse a slash transaction to extract [`SlashInfo`].
@@ -48,4 +48,62 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, SlashTxParse
     };
 
     Ok(info)
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils::ArbitraryGenerator;
+
+    use super::*;
+    use crate::test_utils::{create_test_slash_tx, mutate_aux_data, parse_tx};
+
+    const AUX_LEN: usize = std::mem::size_of::<SlashTxHeaderAux>();
+
+    #[test]
+    fn test_parse_slash_tx_success() {
+        let info: SlashInfo = ArbitraryGenerator::new().generate();
+
+        let tx = create_test_slash_tx(&info);
+        let tx_input = parse_tx(&tx);
+
+        let parsed = parse_slash_tx(&tx_input).expect("Should parse slash tx");
+
+        assert_eq!(info, parsed);
+    }
+
+    #[test]
+    fn test_parse_slash_missing_stake_input() {
+        let info: SlashInfo = ArbitraryGenerator::new().generate();
+        let mut tx = create_test_slash_tx(&info);
+
+        // Remove the stake connector to force an input count mismatch
+        tx.input.pop();
+
+        let tx_input = parse_tx(&tx);
+        let err = parse_slash_tx(&tx_input).unwrap_err();
+        assert!(matches!(
+            err,
+            SlashTxParseError::MissingInput(STAKE_INPUT_INDEX)
+        ))
+    }
+
+    #[test]
+    fn test_parse_invalid_aux() {
+        let info: SlashInfo = ArbitraryGenerator::new().generate();
+        let mut tx = create_test_slash_tx(&info);
+
+        let larger_aux = [0u8; AUX_LEN + 1].to_vec();
+        mutate_aux_data(&mut tx, larger_aux);
+
+        let tx_input = parse_tx(&tx);
+        let err = parse_slash_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, SlashTxParseError::InvalidAuxiliaryData(_)));
+
+        let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
+        mutate_aux_data(&mut tx, smaller_aux);
+
+        let tx_input = parse_tx(&tx);
+        let err = parse_slash_tx(&tx_input).unwrap_err();
+        assert!(matches!(err, SlashTxParseError::InvalidAuxiliaryData(_)));
+    }
 }
