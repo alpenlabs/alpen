@@ -59,8 +59,8 @@ members = [
   "crates/ol/da",
   "crates/ol/mempool",
   "crates/ol/msg-types",
-  "crates/ol/rpc/api",
-  "crates/ol/rpc/types",
+  "crates/rpc-new/api",
+  "crates/rpc-new/types",
   "crates/ol/state-types",
   "crates/ol/stf",
   "crates/ol-chainstate-types",
@@ -207,8 +207,6 @@ strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-ol-da = { path = "crates/ol/da" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-msg-types = { path = "crates/ol/msg-types" }
-strata-ol-rpc-api = { path = "crates/ol/rpc/api" }
-strata-ol-rpc-types = { path = "crates/ol/rpc/types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-stf = { path = "crates/ol/stf" }
 strata-params = { path = "crates/params" }
@@ -218,7 +216,9 @@ strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
 strata-rpc-api = { path = "crates/rpc/api" }
+strata-rpc-api-new = { path = "crates/rpc-new/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
+strata-rpc-types-new = { path = "crates/rpc-new/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
 strata-simple-ee = { path = "crates/simple-ee" }

@@ -6,22 +6,6 @@ use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::TransactionAttachment;
 use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
 
-/// Account ID as 32-byte hex string.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct RpcAccountId(#[serde(with = "hex::serde")] pub [u8; 32]);
-
-impl From<AccountId> for RpcAccountId {
-    fn from(id: AccountId) -> Self {
-        RpcAccountId(*id.inner())
-    }
-}
-
-impl From<RpcAccountId> for AccountId {
-    fn from(rpc: RpcAccountId) -> Self {
-        AccountId::new(rpc.0)
-    }
-}
-
 /// OL chain status with latest, confirmed, and finalized blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcOLChainStatus {

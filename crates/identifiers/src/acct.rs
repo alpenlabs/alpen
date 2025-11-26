@@ -1,6 +1,7 @@
 use std::fmt;
 
 use int_enum::IntEnum;
+use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
 const ACCT_ID_LEN: usize = 32;
@@ -15,10 +16,12 @@ const SPECIAL_ACCT_ID_BYTE: usize = ACCT_ID_LEN - 1;
 type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, Serialize, Deserialize,
+)]
 #[repr(transparent)]
 #[ssz(struct_behaviour = "transparent")]
-pub struct AccountId(RawAccountId);
+pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
 

@@ -14419,27 +14419,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-ol-rpc-api"
-version = "0.1.0"
-dependencies = [
- "jsonrpsee",
- "strata-identifiers",
- "strata-ol-rpc-types",
-]
-
-[[package]]
-name = "strata-ol-rpc-types"
-version = "0.1.0"
-dependencies = [
- "hex",
- "serde",
- "strata-acct-types",
- "strata-identifiers",
- "strata-ol-chain-types-new",
- "strata-snark-acct-types",
-]
-
-[[package]]
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
@@ -14669,6 +14648,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-rpc-api-new"
+version = "0.1.0"
+dependencies = [
+ "jsonrpsee",
+ "strata-identifiers",
+ "strata-rpc-types-new",
+]
+
+[[package]]
 name = "strata-rpc-types"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14684,6 +14672,18 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-primitives",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "strata-rpc-types-new"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "strata-acct-types",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-snark-acct-types",
 ]
 
 [[package]]

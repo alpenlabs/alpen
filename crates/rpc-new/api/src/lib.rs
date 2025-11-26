@@ -1,8 +1,8 @@
 //! OL RPC API definitions.
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
-use strata_identifiers::{OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ol_rpc_types::*;
+use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_rpc_types_new::*;
 
 /// Core OL RPC methods for querying chain state.
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
@@ -28,7 +28,7 @@ pub trait OLSequencerApi {
     #[method(name = "getUpdateInputsForBlocks")]
     async fn get_update_inputs_for_blocks(
         &self,
-        account_id: RpcAccountId,
+        account_id: AccountId,
         blocks: Vec<OLBlockId>,
     ) -> RpcResult<Vec<BlockUpdateInputs>>;
 
@@ -36,7 +36,7 @@ pub trait OLSequencerApi {
     #[method(name = "getMessagesForBlocks")]
     async fn get_messages_for_blocks(
         &self,
-        account_id: RpcAccountId,
+        account_id: AccountId,
         blocks: Vec<OLBlockId>,
     ) -> RpcResult<Vec<BlockMessages>>;
 

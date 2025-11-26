@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "strata-ol-rpc-types"
+name = "strata-rpc-types-new"
 version = "0.1.0"
 
 [lints]
