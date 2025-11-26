@@ -10,10 +10,7 @@
 //! the operator stake and distributes it to watchtowers.
 //!
 //! ### Inputs
-//!
 //! - 1. **Contest slash connector**: Locked to the N-of-N multisig with a relative timelock
-//!   `DeltaPayout`.
-//!
 //! - 2. **Stake connector**: Locked to the pure N-of-N multisig.
 //!
 //! Only the stake connector is validated. The contest connector carries a relative timelock that
