@@ -42,7 +42,7 @@ pub fn create_test_deposit_tx(
     use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
     // Create auxiliary data in the expected format for deposit transactions
-    let aux_data = encode_to_vec(&deposit_info.header_aux).unwrap();
+    let aux_data = encode_to_vec(deposit_info.header_aux()).unwrap();
     let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data).unwrap();
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
@@ -58,10 +58,10 @@ pub fn create_test_deposit_tx(
 
     // Create the UTXO being spent (DRT output) with aggregated key for MuSig2
     let merkle_root =
-        TapNodeHash::from_byte_array(deposit_info.header_aux.drt_tapscript_merkle_root);
+        TapNodeHash::from_byte_array(deposit_info.header_aux().drt_tapscript_merkle_root());
     let drt_script_pubkey = ScriptBuf::new_p2tr(&secp, aggregated_xonly, Some(merkle_root));
 
-    let deposit_amount: Amount = deposit_info.amt.into();
+    let deposit_amount: Amount = deposit_info.amt().into();
     let prev_txout = TxOut {
         value: deposit_amount,
         script_pubkey: drt_script_pubkey,

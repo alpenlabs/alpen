@@ -12,5 +12,19 @@ pub struct WithdrawalFulfillmentTxHeaderAux {
     /// (correct amount to the correct user within the assigned deadline). Upon successful
     /// verification against the state's assignments table, the operator is authorized to
     /// claim the payout from this deposit.
-    pub deposit_idx: u32,
+    deposit_idx: u32,
+}
+
+impl WithdrawalFulfillmentTxHeaderAux {
+    pub fn new(deposit_idx: u32) -> Self {
+        Self { deposit_idx }
+    }
+
+    pub fn deposit_idx(&self) -> u32 {
+        self.deposit_idx
+    }
+
+    pub fn set_deposit_idx(&mut self, deposit_idx: u32) {
+        self.deposit_idx = deposit_idx;
+    }
 }

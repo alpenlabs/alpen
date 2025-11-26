@@ -10,9 +10,26 @@ pub struct CommitTxHeaderAux {
     /// The index of the deposit that the operator is committing to.
     /// This must be validated against the operator's assigned deposits in the state's assignments
     /// table to ensure the operator is authorized to withdraw this specific deposit.
-    pub deposit_idx: u32,
+    deposit_idx: u32,
 
     /// The index of the game being played.
     /// This is needed to later constrain the bridge proof public parameters.
-    pub game_idx: u32,
+    game_idx: u32,
+}
+
+impl CommitTxHeaderAux {
+    pub fn new(deposit_idx: u32, game_idx: u32) -> Self {
+        Self {
+            deposit_idx,
+            game_idx,
+        }
+    }
+
+    pub fn deposit_idx(&self) -> u32 {
+        self.deposit_idx
+    }
+
+    pub fn game_idx(&self) -> u32 {
+        self.game_idx
+    }
 }

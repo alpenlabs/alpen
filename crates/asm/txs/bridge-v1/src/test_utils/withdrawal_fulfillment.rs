@@ -32,7 +32,7 @@ use crate::{
 pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
-    let aux_data = encode_to_vec(&withdrawal_info.header_aux).unwrap();
+    let aux_data = encode_to_vec(withdrawal_info.header_aux()).unwrap();
     let td = TagData::new(
         BRIDGE_V1_SUBPROTOCOL_ID,
         WITHDRAWAL_FULFILLMENT_TX_TYPE,
@@ -60,8 +60,8 @@ pub fn create_test_withdrawal_fulfillment_tx(
             },
             // Withdrawal fulfillment output
             TxOut {
-                value: Amount::from_sat(withdrawal_info.withdrawal_amount.to_sat()),
-                script_pubkey: withdrawal_info.withdrawal_destination.clone(),
+                value: Amount::from_sat(withdrawal_info.withdrawal_amount().to_sat()),
+                script_pubkey: withdrawal_info.withdrawal_destination().clone(),
             },
         ],
     }

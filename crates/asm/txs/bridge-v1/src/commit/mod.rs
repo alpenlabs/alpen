@@ -30,6 +30,8 @@
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod aux;
+mod info;
 mod parse;
 
-pub use parse::{CommitInfo, parse_commit_tx};
+pub use info::CommitInfo;
+pub use parse::parse_commit_tx;

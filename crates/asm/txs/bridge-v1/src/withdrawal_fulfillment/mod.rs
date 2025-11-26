@@ -30,9 +30,11 @@
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod aux;
+mod info;
 mod parse;
 
 pub const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
 
 pub use aux::WithdrawalFulfillmentTxHeaderAux;
-pub use parse::{WithdrawalFulfillmentInfo, parse_withdrawal_fulfillment_tx};
+pub use info::WithdrawalFulfillmentInfo;
+pub use parse::parse_withdrawal_fulfillment_tx;

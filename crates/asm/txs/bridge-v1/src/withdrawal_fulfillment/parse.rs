@@ -1,5 +1,3 @@
-use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 use strata_primitives::l1::BitcoinAmount;
@@ -7,35 +5,10 @@ use strata_primitives::l1::BitcoinAmount;
 use crate::{
     errors::WithdrawalParseError,
     withdrawal_fulfillment::{
-        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, aux::WithdrawalFulfillmentTxHeaderAux,
+        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, WithdrawalFulfillmentInfo,
+        aux::WithdrawalFulfillmentTxHeaderAux,
     },
 };
-
-/// Information extracted from a Bitcoin withdrawal fulfillment transaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WithdrawalFulfillmentInfo {
-    /// Parsed SPS-50 auxiliary data.
-    pub header_aux: WithdrawalFulfillmentTxHeaderAux,
-
-    /// The Bitcoin script address where the withdrawn funds are being sent.
-    pub withdrawal_destination: ScriptBuf,
-
-    /// The amount of Bitcoin being withdrawn (may be less than the original deposit due to fees).
-    pub withdrawal_amount: BitcoinAmount,
-}
-
-impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        use strata_primitives::bitcoin_bosd::Descriptor;
-
-        let withdrawal_destination = Descriptor::arbitrary(u)?.to_script();
-        Ok(WithdrawalFulfillmentInfo {
-            header_aux: WithdrawalFulfillmentTxHeaderAux::arbitrary(u)?,
-            withdrawal_destination,
-            withdrawal_amount: BitcoinAmount::from_sat(u64::arbitrary(u)?),
-        })
-    }
-}
 
 /// Parses withdrawal fulfillment transaction to extract [`WithdrawalFulfillmentInfo`].
 ///
@@ -63,11 +36,11 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
-    Ok(WithdrawalFulfillmentInfo {
+    Ok(WithdrawalFulfillmentInfo::new(
         header_aux,
         withdrawal_destination,
         withdrawal_amount,
-    })
+    ))
 }
 
 #[cfg(test)]

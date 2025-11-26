@@ -1,45 +1,13 @@
-use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::l1::BitcoinOutPoint;
 
 use crate::{
-    commit::aux::CommitTxHeaderAux,
+    commit::{CommitInfo, aux::CommitTxHeaderAux},
     errors::{CommitParseError, Mismatch},
 };
 
 /// Expected number of inputs in a commit transaction.
 const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
-
-/// Information extracted from a Bitcoin commit transaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitInfo {
-    /// Parsed SPS-50 auxiliary data.
-    pub header_aux: CommitTxHeaderAux,
-
-    /// The outpoint spent by the first input.
-    /// Must be validated that it spends from an N/N-locked output during transaction validation.
-    pub first_input_outpoint: BitcoinOutPoint,
-
-    /// The script from the second output (index 1).
-    /// Must be validated as N/N-locked during transaction validation.
-    pub second_output_script: ScriptBuf,
-}
-
-impl<'a> Arbitrary<'a> for CommitInfo {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let header_aux = CommitTxHeaderAux::arbitrary(u)?;
-        let first_input_outpoint = BitcoinOutPoint::arbitrary(u)?;
-        let second_output_script = ScriptBuf::new();
-
-        Ok(CommitInfo {
-            header_aux,
-            first_input_outpoint,
-            second_output_script,
-        })
-    }
-}
 
 /// Parses a commit transaction into [`CommitInfo`], decoding the SPS-50 auxiliary data as
 /// [`CommitTxHeaderAux`] (via [`strata_codec::Codec`]) and validating basic structure.
@@ -73,11 +41,11 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
     // Extract the previous outpoint from the first (and only) input
     let first_input_outpoint = tx.tx().input[0].previous_output.into();
 
-    Ok(CommitInfo {
+    Ok(CommitInfo::new(
         header_aux,
         first_input_outpoint,
         second_output_script,
-    })
+    ))
 }
 
 #[cfg(test)]

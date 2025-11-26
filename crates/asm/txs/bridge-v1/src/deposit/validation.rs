@@ -165,7 +165,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{deposit::parse::DepositInfo, test_utils::create_test_deposit_tx};
+    use crate::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
 
     // Helper function to create test operator keys with proper MuSig2 aggregation
     fn create_test_operators() -> (BitcoinXOnlyPublicKey, Vec<EvenSecretKey>) {
@@ -258,9 +258,9 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.header_aux.drt_tapscript_merkle_root,
+            deposit_info.header_aux().drt_tapscript_merkle_root(),
             &operators_pubkey,
-            deposit_info.amt.into(),
+            deposit_info.amt().into(),
         )
         .unwrap_err();
 
@@ -280,9 +280,9 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.header_aux.drt_tapscript_merkle_root,
+            deposit_info.header_aux().drt_tapscript_merkle_root(),
             &operators_pubkey,
-            deposit_info.amt.into(),
+            deposit_info.amt().into(),
         )
         .unwrap_err();
 
@@ -293,9 +293,9 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.header_aux.drt_tapscript_merkle_root,
+            deposit_info.header_aux().drt_tapscript_merkle_root(),
             &operators_pubkey,
-            deposit_info.amt.into(),
+            deposit_info.amt().into(),
         )
         .unwrap_err();
 
@@ -315,9 +315,9 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.header_aux.drt_tapscript_merkle_root,
+            deposit_info.header_aux().drt_tapscript_merkle_root(),
             &operators_pubkey,
-            deposit_info.amt.into(),
+            deposit_info.amt().into(),
         )
         .unwrap_err();
 
@@ -337,9 +337,9 @@ mod tests {
         // Test the validation using the same tapnode hash from deposit_info
         let result = validate_drt_spending_signature(
             &tx,
-            deposit_info.header_aux.drt_tapscript_merkle_root,
+            deposit_info.header_aux().drt_tapscript_merkle_root(),
             &operators_pubkey,
-            deposit_info.amt.into(),
+            deposit_info.amt().into(),
         );
 
         assert!(result.is_ok(), "Valid signature should pass validation");

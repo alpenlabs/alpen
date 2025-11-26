@@ -28,7 +28,7 @@ use crate::{
 ///
 /// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
 pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
-    let aux_data = encode_to_vec(&commit_info.header_aux).unwrap();
+    let aux_data = encode_to_vec(commit_info.header_aux()).unwrap();
     let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data).unwrap();
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
@@ -38,7 +38,7 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
-            previous_output: commit_info.first_input_outpoint.0,
+            previous_output: *commit_info.first_input_outpoint().outpoint(),
             script_sig: ScriptBuf::new(),
             sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
             witness: Witness::from_slice(&[vec![0u8; 64]]), // Dummy witness
@@ -52,7 +52,7 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
             // Second output (N/N output at index 1)
             TxOut {
                 value: Amount::from_sat(1000),
-                script_pubkey: commit_info.second_output_script.clone(),
+                script_pubkey: commit_info.second_output_script().clone(),
             },
         ],
     }

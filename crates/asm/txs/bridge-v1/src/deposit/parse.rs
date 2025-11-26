@@ -1,26 +1,12 @@
-use arbitrary::Arbitrary;
 use bitcoin::OutPoint;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint};
+use strata_primitives::l1::BitcoinOutPoint;
 
 use crate::{
-    deposit::{DEPOSIT_OUTPUT_INDEX, aux::DepositTxHeaderAux},
+    deposit::{DEPOSIT_OUTPUT_INDEX, DepositInfo, aux::DepositTxHeaderAux},
     errors::DepositTxParseError,
 };
-
-/// Information extracted from a Bitcoin deposit transaction.
-#[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
-pub struct DepositInfo {
-    /// Parsed SPS-50 auxiliary data.
-    pub header_aux: DepositTxHeaderAux,
-
-    /// The amount of Bitcoin deposited.
-    pub amt: BitcoinAmount,
-
-    /// The outpoint of the deposit transaction.
-    pub outpoint: BitcoinOutPoint,
-}
 
 /// Parses deposit transaction to extract [`DepositInfo`].
 ///
@@ -51,11 +37,11 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
     });
 
     // Construct the validated deposit information
-    Ok(DepositInfo {
+    Ok(DepositInfo::new(
         header_aux,
-        amt: deposit_output.value.into(),
-        outpoint: deposit_outpoint,
-    })
+        deposit_output.value.into(),
+        deposit_outpoint,
+    ))
 }
 
 #[cfg(test)]
@@ -118,7 +104,7 @@ mod tests {
             txid: tx.compute_txid(),
             vout: DEPOSIT_OUTPUT_INDEX as u32,
         });
-        assert_eq!(expected_outpoint, parsed_info.outpoint);
+        assert_eq!(expected_outpoint, parsed_info.outpoint());
     }
 
     #[test]
@@ -155,7 +141,7 @@ mod tests {
 
         let deposit_info = result.unwrap();
         assert!(
-            deposit_info.header_aux.address.is_empty(),
+            deposit_info.header_aux().address().is_empty(),
             "Address should be empty"
         );
     }
