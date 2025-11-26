@@ -40,30 +40,15 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 /// Parses withdrawal fulfillment transaction to extract [`WithdrawalFulfillmentInfo`].
 ///
 /// Parses a withdrawal fulfillment transaction following the SPS-50 specification and extracts
-/// the withdrawal fulfillment information including the deposit index, recipient address, and
-/// withdrawal amount. See the module-level documentation for the complete transaction structure.
-///
-/// The function validates the transaction structure and parses the auxiliary data containing:
-/// - Deposit index (4 bytes, big-endian u32) - identifies the locked deposit UTXO that the operator
-///   will receive payout from after successful verification of assignment fulfillment
-///
-/// # Parameters
-///
-/// - `tx` - Reference to the transaction input containing the withdrawal fulfillment transaction
-///   and its associated tag data
-///
-/// # Returns
-///
-/// - `Ok(WithdrawalFulfillmentInfo)` - Successfully parsed withdrawal fulfillment information
-/// - `Err(WithdrawalParseError)` - If the transaction structure is invalid, has insufficient
-///   outputs, invalid metadata size, or any parsing step encounters malformed data
+/// the decoded auxiliary data ([`WithdrawalFulfillmentTxHeaderAux`]), recipient address, and
+/// withdrawal amount. The auxiliary data is encoded with [`strata_codec::Codec`] and currently
+/// contains only the deposit index that ties the payout to a specific assignment.
 ///
 /// # Errors
 ///
-/// This function will return an error if:
-/// - The transaction has fewer than 2 outputs (missing withdrawal fulfillment or OP_RETURN)
-/// - The auxiliary data size doesn't match the expected metadata size
-/// - Any of the metadata fields cannot be parsed correctly
+/// Returns [`WithdrawalParseError`] if the auxiliary data cannot be decoded into
+/// [`WithdrawalFulfillmentTxHeaderAux`] or if the required withdrawal fulfillment output at index 1
+/// is missing.
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {

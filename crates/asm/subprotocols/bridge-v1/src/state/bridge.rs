@@ -97,7 +97,7 @@ impl BridgeV1State {
     /// # Returns
     ///
     /// - `Ok(())` - If the deposit passes all validation checks
-    /// - `Err(DepositError)` - If validation fails for any reason
+    /// - `Err(DepositValidationError)` - If validation fails for any reason
     ///
     /// # Errors
     ///
@@ -158,8 +158,8 @@ impl BridgeV1State {
     ///
     /// # Returns
     ///
-    /// - `Ok(u32)` - The deposit index assigned to the newly created deposit entry
-    /// - `Err(DepositError)` - If validation fails for any reason
+    /// - `Ok(())` - If the deposit is validated and inserted successfully
+    /// - `Err(DepositValidationError)` - If validation fails for any reason
     ///
     /// # Errors
     ///

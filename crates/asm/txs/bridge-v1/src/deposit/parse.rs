@@ -24,20 +24,15 @@ pub struct DepositInfo {
 
 /// Parses deposit transaction to extract [`DepositInfo`].
 ///
-/// Parses a deposit transaction following the SPS-50 specification and extracts
-/// the deposit information including amount, destination address, and validation data.
-/// See the module-level documentation for the complete transaction structure.
+/// Parses a deposit transaction following the SPS-50 specification and extracts the decoded
+/// auxiliary data ([`DepositTxHeaderAux`]) along with the deposit amount and outpoint. The
+/// auxiliary data is encoded with [`strata_codec::Codec`] and includes the deposit index, DRT
+/// tapscript merkle root, and destination bytes.
 ///
-/// # Parameters
+/// # Errors
 ///
-/// - `tx_input` - Reference to the transaction input containing the deposit transaction and its
-///   associated tag data
-///
-/// # Returns
-///
-/// - `Ok(DepositInfo)` - Successfully parsed deposit information
-/// - `Err(DepositError)` - If the transaction structure is invalid, signature verification fails,
-///   or any parsing step encounters malformed data
+/// Returns [`DepositTxParseError`] if the auxiliary data cannot be decoded or if the expected
+/// deposit output at index 1 is missing.
 pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
     // Parse auxiliary data using DepositTxHeaderAux
     let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;

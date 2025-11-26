@@ -9,11 +9,6 @@ use crate::{
     errors::{CommitParseError, Mismatch},
 };
 
-/// Length of auxiliary data for commit transactions.
-/// - 4 bytes for deposit_idx (u32)
-/// - 4 bytes for game_idx (u32)
-pub const COMMIT_TX_AUX_DATA_LEN: usize = 4 + 4;
-
 /// Expected number of inputs in a commit transaction.
 const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
 
@@ -46,31 +41,14 @@ impl<'a> Arbitrary<'a> for CommitInfo {
     }
 }
 
-/// Parses commit transaction to extract [`CommitInfo`].
-///
-/// The function validates the transaction structure and parses the auxiliary data (encoded using
-/// [`strata_codec::Codec`] with big-endian for integers) containing:
-/// - Deposit index (4 bytes, u32)
-/// - Game index (4 bytes, u32)
-///
-/// # Parameters
-///
-/// - `tx` - Reference to the transaction input containing the commit transaction and its associated
-///   tag data
-///
-/// # Returns
-///
-/// - `Ok(CommitInfo)` - Successfully parsed commit information
-/// - `Err(CommitParseError)` - If the transaction structure is invalid, has invalid metadata size,
-///   or any parsing step encounters malformed data
+/// Parses a commit transaction into [`CommitInfo`], decoding the SPS-50 auxiliary data as
+/// [`CommitTxHeaderAux`] (via [`strata_codec::Codec`]) and validating basic structure.
 ///
 /// # Errors
 ///
-/// This function will return an error if:
-/// - The transaction doesn't have exactly one input
-/// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
-/// - Any of the metadata fields cannot be parsed correctly
-/// - The second output (N/N output at index 1) is missing
+/// Returns [`CommitParseError`] if the transaction does not have exactly one input, the auxiliary
+/// data fails to decode into [`CommitTxHeaderAux`], or the required N/N output at index 1 is
+/// missing.
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
     // Parse auxiliary data using CommitTxHeaderAux
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;

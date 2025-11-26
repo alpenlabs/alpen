@@ -19,8 +19,8 @@
 //!    - Magic number (4 bytes): Protocol instance identifier
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier
 //!    - Transaction type (1 byte): Deposit transaction type
-//!    - Auxiliary data (≤74 bytes):
-//!      - Deposit index (4 bytes, big-endian u32)
+//!    - Auxiliary data encoded as [`aux::DepositTxHeaderAux`] via [`strata_codec::Codec`] containing:
+//!      - Deposit index (u32)
 //!      - Tapscript root hash (32 bytes) from the spent DRT
 //!      - Destination address (variable length)
 //!

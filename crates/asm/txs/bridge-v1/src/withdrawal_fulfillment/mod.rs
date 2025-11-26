@@ -20,9 +20,9 @@
 //!    - Magic number (4 bytes): Protocol instance identifier
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier
 //!    - Transaction type (1 byte): Withdrawal transaction type
-//!    - Auxiliary data (=4 bytes):
-//!      - Deposit index (4 bytes, big-endian u32): Index of the deposit that has been assigned to
-//!        the operator
+//!    - Auxiliary data encoded as [`aux::WithdrawalFulfillmentTxHeaderAux`] via
+//!      [`strata_codec::Codec`]:
+//!      - Deposit index (u32): Index of the deposit that has been assigned to the operator
 //!
 //! 2. **Withdrawal Fulfillment Output (Index 1)** (required): The actual withdrawal containing:
 //!    - The recipient's Bitcoin address (script_pubkey)
