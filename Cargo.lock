@@ -14563,14 +14563,21 @@ dependencies = [
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "int-enum",
+ "proptest",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_types",
  "strata-acct-types",
  "strata-asm-common",
  "strata-codec",
- "strata-codec-utils",
  "strata-identifiers",
  "strata-snark-acct-types",
+ "strata-test-utils-ssz",
+ "thiserror 2.0.17",
+ "tree_hash 0.9.0",
+ "tree_hash_derive 0.9.0",
 ]
 
 [[package]]

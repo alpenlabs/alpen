@@ -42,7 +42,7 @@ pub fn process_single_tx<S: StateAccessor>(
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Check the transaction's attachments.
-    if !check_tx_attachments(tx.attachments(), &context.to_block_context()) {
+    if !check_tx_attachments(tx.attachment(), &context.to_block_context()) {
         return Err(ExecError::TxConditionCheckFailed);
     }
 

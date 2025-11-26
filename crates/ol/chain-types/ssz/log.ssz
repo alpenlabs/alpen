@@ -1,0 +1,11 @@
+import strata_identifiers
+
+MAX_LOG_PAYLOAD_LEN = 1 << 12
+
+### OL log entry emitted during block execution.
+class OLLog(Container):
+    ### Account serial number this log relates to
+    account_serial: strata_identifiers.AccountSerial
+
+    ### Opaque log payload
+    payload: List[uint8, MAX_LOG_PAYLOAD_LEN]
