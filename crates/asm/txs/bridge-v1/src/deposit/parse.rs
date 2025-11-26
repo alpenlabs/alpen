@@ -9,11 +9,6 @@ use crate::{
     errors::DepositTxParseError,
 };
 
-/// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
-/// - 4 bytes for deposit_idx (u32)
-/// - 32 bytes for drt_tapscript_merkle_root
-pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = 4 + 32;
-
 /// Information extracted from a Bitcoin deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
 pub struct DepositInfo {
@@ -84,10 +79,12 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{
-        TEST_MAGIC_BYTES, create_tagged_payload, create_test_deposit_tx, mutate_op_return_output,
-        parse_tx,
-    };
+    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_deposit_tx, mutate_aux_data, parse_tx};
+
+    /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
+    /// - 4 bytes for deposit_idx (u32)
+    /// - 32 bytes for drt_tapscript_merkle_root
+    const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = 4 + 32;
 
     // Helper function to create a test operator keypair
     fn create_test_operator_keypair() -> (BitcoinXOnlyPublicKey, EvenSecretKey) {
@@ -131,8 +128,6 @@ mod tests {
 
     #[test]
     fn test_parse_deposit_aux_data_too_short() {
-        use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
-
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
 
@@ -140,9 +135,7 @@ mod tests {
 
         // Mutate the OP_RETURN output to have short aux data
         let short_aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN - 1];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, short_aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
+        mutate_aux_data(&mut tx, short_aux_data);
 
         let tx_input = parse_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
@@ -151,8 +144,6 @@ mod tests {
 
     #[test]
     fn test_parse_deposit_empty_destination() {
-        use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
-
         let mut arb = ArbitraryGenerator::new();
         let info: DepositInfo = arb.generate();
 
@@ -161,9 +152,7 @@ mod tests {
         // Mutate the OP_RETURN output to have aux data with no destination (exactly
         // MIN_AUX_DATA_LEN)
         let aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
+        mutate_aux_data(&mut tx, aux_data);
 
         let tx_input = parse_tx(&tx);
         let result = parse_deposit_tx(&tx_input);

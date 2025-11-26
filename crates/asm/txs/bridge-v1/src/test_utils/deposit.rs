@@ -7,6 +7,7 @@ use bitcoin::{
     secp256k1::Secp256k1,
     sighash::{Prevouts, SighashCache, TapSighashType},
 };
+use strata_codec::encode_to_vec;
 use strata_crypto::{
     EvenSecretKey,
     test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature},
@@ -41,13 +42,9 @@ pub fn create_test_deposit_tx(
     use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE};
 
     // Create auxiliary data in the expected format for deposit transactions
-    let mut aux_data = Vec::new();
-    aux_data.extend_from_slice(&deposit_info.header_aux.deposit_idx.to_be_bytes()); // 4 bytes
-    aux_data.extend_from_slice(deposit_info.header_aux.drt_tapscript_merkle_root.as_ref()); // 32 bytes
-    aux_data.extend_from_slice(&deposit_info.header_aux.address); // variable length
-
+    let aux_data = encode_to_vec(&deposit_info.header_aux).unwrap();
     let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data).unwrap();
-    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+    let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();
 
@@ -84,7 +81,7 @@ pub fn create_test_deposit_tx(
             // OP_RETURN output at index 0 (contains the SPS-50 tagged data)
             TxOut {
                 value: Amount::ZERO,
-                script_pubkey: op_return_script,
+                script_pubkey: sps_50_script,
             },
             // Deposit output at index 1 (P2TR locked to aggregated operator key)
             TxOut {

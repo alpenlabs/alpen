@@ -109,24 +109,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        BRIDGE_V1_SUBPROTOCOL_ID,
-        constants::COMMIT_TX_TYPE,
-        test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_commit_tx,
-            mutate_op_return_output, parse_tx,
-        },
-    };
+    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_commit_tx, mutate_aux_data, parse_tx};
 
-    /// Tests that our hardcoded size constant matches the expected format.
-    /// This validates that the auxiliary data length (8 bytes) matches the sum of:
-    /// - deposit_idx (4 bytes, u32)
-    /// - game_idx (4 bytes, u32)
-    #[test]
-    fn test_valid_size() {
-        let expected_len = std::mem::size_of::<u32>() * 2; // deposit_idx + game_idx
-        assert_eq!(expected_len, COMMIT_TX_AUX_DATA_LEN);
-    }
+    const COMMIT_TX_AUX_DATA_LEN: usize = std::mem::size_of::<CommitTxHeaderAux>();
 
     #[test]
     fn test_parse_commit_tx_success() {
@@ -156,10 +141,8 @@ mod tests {
         let mut tx = create_test_commit_tx(&info);
 
         // Mutate the OP_RETURN output to have shorter aux len
-        let aux_data = vec![0u8; COMMIT_TX_AUX_DATA_LEN - 1];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let shorter_aux = vec![0u8; COMMIT_TX_AUX_DATA_LEN - 1];
+        mutate_aux_data(&mut tx, shorter_aux);
 
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
@@ -167,10 +150,8 @@ mod tests {
         assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
 
         // Mutate the OP_RETURN output to have longer aux len
-        let aux_data = vec![0u8; COMMIT_TX_AUX_DATA_LEN + 1];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let longer_aux = vec![0u8; COMMIT_TX_AUX_DATA_LEN + 1];
+        mutate_aux_data(&mut tx, longer_aux);
 
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();

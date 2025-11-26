@@ -2,6 +2,7 @@ use bitcoin::{
     Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
     transaction::Version,
 };
+use strata_codec::encode_to_vec;
 use strata_l1_txfmt::{ParseConfig, TagData};
 
 use crate::{
@@ -27,12 +28,9 @@ use crate::{
 ///
 /// A [`Transaction`] that follows the SPS-50 specification and can be parsed for testing.
 pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
-    // Auxiliary data: [DEPOSIT_IDX][GAME_IDX]
-    let mut aux_data = Vec::with_capacity(8);
-    aux_data.extend_from_slice(&commit_info.header_aux.deposit_idx.to_be_bytes());
-    aux_data.extend_from_slice(&commit_info.header_aux.game_idx.to_be_bytes());
+    let aux_data = encode_to_vec(&commit_info.header_aux).unwrap();
     let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data).unwrap();
-    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+    let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();
 
@@ -49,7 +47,7 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
             // OP_RETURN output with SPS-50 tagged payload
             TxOut {
                 value: Amount::from_sat(0),
-                script_pubkey: op_return_script,
+                script_pubkey: sps_50_script,
             },
             // Second output (N/N output at index 1)
             TxOut {

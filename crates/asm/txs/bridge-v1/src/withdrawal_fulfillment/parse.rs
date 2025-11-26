@@ -11,11 +11,6 @@ use crate::{
     },
 };
 
-const DEPOSIT_IDX_SIZE: usize = 4;
-
-/// Minimum length of auxiliary data for withdrawal fulfillment transactions.
-pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE;
-
 /// Information extracted from a Bitcoin withdrawal fulfillment transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalFulfillmentInfo {
@@ -98,23 +93,13 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        BRIDGE_V1_SUBPROTOCOL_ID,
-        constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
-        test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_withdrawal_fulfillment_tx,
-            mutate_op_return_output, parse_tx,
-        },
+    use crate::test_utils::{
+        TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data, parse_tx,
     };
 
-    /// Tests that our hardcoded size constants match the actual type sizes.
-    /// This is necessary to catch if the underlying types change size in the future,
-    /// which would break the wire format compatibility for auxiliary data parsing.
-    #[test]
-    fn test_valid_size() {
-        let deposit_idx_size: usize = std::mem::size_of::<u32>();
-        assert_eq!(deposit_idx_size, DEPOSIT_IDX_SIZE);
-    }
+    /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
+    const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
+        std::mem::size_of::<WithdrawalFulfillmentTxHeaderAux>();
 
     #[test]
     fn test_parse_withdrawal_fulfillment_tx_success() {
@@ -167,13 +152,8 @@ mod tests {
         let mut tx = create_test_withdrawal_fulfillment_tx(&info);
 
         // Mutate the OP_RETURN output to have shorter aux len - this should fail
-        let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
-        let tagged_payload = create_tagged_payload(
-            BRIDGE_V1_SUBPROTOCOL_ID,
-            WITHDRAWAL_FULFILLMENT_TX_TYPE,
-            aux_data,
-        );
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let short_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
+        mutate_aux_data(&mut tx, short_aux_data);
 
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
@@ -181,13 +161,8 @@ mod tests {
         assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
 
         // Mutate the OP_RETURN output to have longer aux len - this should fail
-        let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
-        let tagged_payload = create_tagged_payload(
-            BRIDGE_V1_SUBPROTOCOL_ID,
-            WITHDRAWAL_FULFILLMENT_TX_TYPE,
-            aux_data,
-        );
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let long_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
+        mutate_aux_data(&mut tx, long_aux_data);
 
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();

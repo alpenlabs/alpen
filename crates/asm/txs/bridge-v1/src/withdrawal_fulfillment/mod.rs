@@ -35,7 +35,4 @@ mod parse;
 pub const USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX: usize = 1;
 
 pub use aux::WithdrawalFulfillmentTxHeaderAux;
-pub use parse::{
-    WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN, WithdrawalFulfillmentInfo,
-    parse_withdrawal_fulfillment_tx,
-};
+pub use parse::{WithdrawalFulfillmentInfo, parse_withdrawal_fulfillment_tx};
