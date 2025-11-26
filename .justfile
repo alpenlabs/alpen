@@ -281,6 +281,7 @@ lint-check-shell: ensure-shellcheck
 lint-check-style:
     ./contrib/find_with_structs.sh crates/
     ./contrib/find_with_structs.sh bin/
+    ./contrib/check_toml_branch.sh
 
 # Lints the functional tests and applies fixes where possible
 [group('code-quality')]
