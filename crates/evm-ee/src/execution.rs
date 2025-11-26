@@ -8,6 +8,7 @@ use std::sync::Arc;
 use alloy_consensus::Header;
 use alpen_reth_evm::{accumulate_logs_bloom, evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
+use reth_consensus_common::validation::validate_body_against_header;
 use reth_evm::execute::{BasicBlockExecutor, Executor};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
@@ -15,7 +16,7 @@ use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
 use strata_ee_acct_types::{
-    BlockAssembler, EnvError, EnvResult, ExecBlockOutput, ExecHeader, ExecPayload,
+    BlockAssembler, EnvError, EnvResult, ExecBlockOutput, ExecPartialState, ExecPayload,
     ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
@@ -93,7 +94,11 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         )
         .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 2a: Validate deposits from BlockInputs against block withdrawals
+        // Step 2b: Validate body against header (transactions_root, ommers_hash, withdrawals_root)
+        validate_body_against_header(block.body(), block.header())
+            .map_err(|_| EnvError::InvalidBlock)?;
+
+        // Step 2c: Validate deposits from BlockInputs against block withdrawals
         // The withdrawals header field is hijacked to represent deposits from the OL.
         // We need to ensure the authenticated deposits from BlockInputs match what's in the block.
         validate_deposits_against_block(&block, inputs)?;
@@ -129,14 +134,17 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
 
         // Step 9: Convert execution outcome to HashedPostState
-        let block_number = exec_payload.header_intrinsics().number;
-        let hashed_post_state = compute_hashed_post_state(execution_output, block_number);
+        let header_intrinsics = exec_payload.header_intrinsics();
+        let hashed_post_state =
+            compute_hashed_post_state(execution_output, header_intrinsics.number);
 
-        // Step 10: Compute state root
-        let state_root = pre_state.compute_state_root_with_changes(&hashed_post_state);
+        // Step 10: Get state root from header intrinsics (verification happens during merge)
+        // This avoids an expensive state clone that would be needed to compute the root here.
+        let intrinsics_state_root = header_intrinsics.state_root;
 
-        // Step 11: Create WriteBatch with computed metadata
-        let write_batch = EvmWriteBatch::new(hashed_post_state, state_root.into(), logs_bloom);
+        // Step 11: Create WriteBatch with intrinsics state root (to be verified during merge)
+        let write_batch =
+            EvmWriteBatch::new(hashed_post_state, intrinsics_state_root.into(), logs_bloom);
 
         // Step 12: Create BlockOutputs with withdrawal intent messages
         let mut outputs = BlockOutputs::new_empty();
@@ -147,22 +155,16 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
     fn verify_outputs_against_header(
         &self,
-        header: &<Self::Block as strata_ee_acct_types::ExecBlock>::Header,
-        outputs: &ExecBlockOutput<Self>,
+        _header: &<Self::Block as strata_ee_acct_types::ExecBlock>::Header,
+        _outputs: &ExecBlockOutput<Self>,
     ) -> EnvResult<()> {
-        // Verify that the outputs match what's committed in the header
-
-        // Check state root matches
-        let computed_state_root = outputs.write_batch().state_root();
-        let header_state_root = header.get_state_root();
-
-        if computed_state_root != header_state_root {
-            //FIXME: is it correct enum to represent this error?
-            return Err(EnvError::MismatchedCurStateData);
-        }
-
-        // Note: transactions_root and receipts_root are verified during execution
-        // by validate_block_post_execution() in execute_block_body()
+        // State root verification is deferred to merge_write_into_state to avoid
+        // an expensive state clone. The actual verification happens when the state
+        // is mutated and we can compute the root directly without cloning.
+        //
+        // Note: The following are verified during execution in execute_block_body():
+        // - transactions_root, ommers_hash, withdrawals_root: by validate_body_against_header()
+        // - receipts_root, logs_bloom, gas_used: by validate_block_post_execution()
 
         Ok(())
     }
@@ -174,6 +176,16 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
     ) -> EnvResult<()> {
         // Merge the HashedPostState into the EthereumState
         state.merge_write_batch(wb);
+
+        // Verify state root AFTER merge (avoids expensive clone that would be needed
+        // to compute the root before mutation)
+        let computed_state_root = state.compute_state_root()?;
+        let intrinsics_state_root = wb.intrinsics_state_root();
+
+        if computed_state_root != intrinsics_state_root {
+            return Err(EnvError::InvalidBlock);
+        }
+
         Ok(())
     }
 }
@@ -185,7 +197,7 @@ impl BlockAssembler for EvmExecutionEnvironment {
         output: &ExecBlockOutput<Self>,
     ) -> EnvResult<<Self::Block as strata_ee_acct_types::ExecBlock>::Header> {
         let intrinsics = exec_payload.header_intrinsics();
-        let state_root = output.write_batch().state_root();
+        let state_root = output.write_batch().intrinsics_state_root();
         let logs_bloom = output.write_batch().logs_bloom();
 
         let header = Header {

@@ -167,19 +167,6 @@ impl EvmPartialState {
         WitnessDB::new(&self.ethereum_state, &self.block_hashes, &self.bytecodes)
     }
 
-    /// Computes the new state root by merging hashed post state changes into this state.
-    ///
-    /// This clones the current state, applies the changes from the hashed post state,
-    /// and computes the resulting state root.
-    pub fn compute_state_root_with_changes(
-        &self,
-        hashed_post_state: &reth_trie::HashedPostState,
-    ) -> revm_primitives::B256 {
-        let mut updated_state = self.ethereum_state.clone();
-        updated_state.update(hashed_post_state);
-        updated_state.state_root()
-    }
-
     /// Merges a write batch into this state by applying the hashed post state changes.
     ///
     /// This updates the internal EthereumState with the changes from the write batch.

@@ -314,6 +314,7 @@ reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-cli-runner = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-cli-util = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-consensus-common = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }

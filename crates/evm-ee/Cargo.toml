@@ -18,6 +18,7 @@ rsp-mpt.workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
 reth-chainspec.workspace = true
+reth-consensus-common.workspace = true
 reth-errors.workspace = true
 reth-evm.workspace = true
 reth-evm-ethereum.workspace = true

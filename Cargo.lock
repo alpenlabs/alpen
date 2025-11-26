@@ -14175,6 +14175,7 @@ dependencies = [
  "alpen-reth-primitives",
  "itertools 0.14.0",
  "reth-chainspec",
+ "reth-consensus-common",
  "reth-errors",
  "reth-evm",
  "reth-evm-ethereum",
@@ -14189,7 +14190,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-acct-types",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common)",
+ "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
 ]

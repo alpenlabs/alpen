@@ -13,23 +13,33 @@ use crate::codec_shims::{decode_hashed_post_state, encode_hashed_post_state};
 /// in account states and storage slots after executing a block. It's used to
 /// apply state changes to the sparse EthereumState.
 ///
-/// Also stores execution metadata (state root, logs bloom) needed for completing
-/// the block header.
+/// Also stores execution metadata (state root from header intrinsics, logs bloom)
+/// needed for block header completion and state root verification during merge.
 #[derive(Clone, Debug)]
 pub struct EvmWriteBatch {
     hashed_post_state: HashedPostState,
-    /// The computed state root after applying the state changes
-    state_root: Hash,
+    /// The state root extracted from block header intrinsics.
+    ///
+    /// This value is taken directly from `header_intrinsics.state_root` during
+    /// block execution, NOT computed from the pre-state. Actual verification
+    /// occurs in `merge_write_into_state` after the state is mutated, where
+    /// we compute the real state root and compare it against this value.
+    /// This approach avoids an expensive state clone in zkVM.
+    intrinsics_state_root: Hash,
     /// The accumulated logs bloom from all receipts
     logs_bloom: Bloom,
 }
 
 impl EvmWriteBatch {
-    /// Creates a new EvmWriteBatch from a HashedPostState and computed metadata.
-    pub fn new(hashed_post_state: HashedPostState, state_root: Hash, logs_bloom: Bloom) -> Self {
+    /// Creates a new EvmWriteBatch from a HashedPostState and header intrinsics metadata.
+    pub fn new(
+        hashed_post_state: HashedPostState,
+        intrinsics_state_root: Hash,
+        logs_bloom: Bloom,
+    ) -> Self {
         Self {
             hashed_post_state,
-            state_root,
+            intrinsics_state_root,
             logs_bloom,
         }
     }
@@ -39,9 +49,12 @@ impl EvmWriteBatch {
         &self.hashed_post_state
     }
 
-    /// Gets the computed state root.
-    pub fn state_root(&self) -> Hash {
-        self.state_root
+    /// Gets the state root from block header intrinsics.
+    ///
+    /// This value is verified against the actual computed state root
+    /// during `merge_write_into_state`.
+    pub fn intrinsics_state_root(&self) -> Hash {
+        self.intrinsics_state_root
     }
 
     /// Gets the accumulated logs bloom.
@@ -60,8 +73,8 @@ impl Codec for EvmWriteBatch {
         // Encode HashedPostState using custom deterministic encoding
         encode_hashed_post_state(&self.hashed_post_state, enc)?;
 
-        // Encode state_root (32 bytes)
-        enc.write_buf(&self.state_root)?;
+        // Encode intrinsics_state_root (32 bytes)
+        enc.write_buf(&self.intrinsics_state_root)?;
 
         // Encode logs_bloom (256 bytes)
         enc.write_buf(self.logs_bloom.as_slice())?;
@@ -73,9 +86,9 @@ impl Codec for EvmWriteBatch {
         // Decode HashedPostState using custom deterministic decoding
         let hashed_post_state = decode_hashed_post_state(dec)?;
 
-        // Decode state_root (32 bytes)
-        let mut state_root = [0u8; 32];
-        dec.read_buf(&mut state_root)?;
+        // Decode intrinsics_state_root (32 bytes)
+        let mut intrinsics_state_root = [0u8; 32];
+        dec.read_buf(&mut intrinsics_state_root)?;
 
         // Decode logs_bloom (256 bytes)
         let mut logs_bloom_bytes = [0u8; 256];
@@ -84,7 +97,7 @@ impl Codec for EvmWriteBatch {
 
         Ok(Self {
             hashed_post_state,
-            state_root,
+            intrinsics_state_root,
             logs_bloom,
         })
     }
