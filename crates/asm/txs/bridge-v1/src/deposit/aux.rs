@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use bitcoin::taproot::TAPROOT_CONTROL_NODE_SIZE;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
@@ -5,8 +6,8 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 ///
 /// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
 /// and tx_type fields in the OP_RETURN output at position 0.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DepositTxHeaderAux {
+#[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
+pub struct DepositTxHeaderAux {
     /// idx of the deposit as given by the N/N multisig.
     pub deposit_idx: u32,
 

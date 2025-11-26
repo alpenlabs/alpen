@@ -29,8 +29,8 @@ use crate::{
 pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
     // Auxiliary data: [DEPOSIT_IDX][GAME_IDX]
     let mut aux_data = Vec::with_capacity(8);
-    aux_data.extend_from_slice(&commit_info.deposit_idx.to_be_bytes());
-    aux_data.extend_from_slice(&commit_info.game_idx.to_be_bytes());
+    aux_data.extend_from_slice(&commit_info.header_aux.deposit_idx.to_be_bytes());
+    aux_data.extend_from_slice(&commit_info.header_aux.game_idx.to_be_bytes());
     let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data).unwrap();
     let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
@@ -40,7 +40,7 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
-            previous_output: commit_info.first_input_outpoint,
+            previous_output: commit_info.first_input_outpoint.0,
             script_sig: ScriptBuf::new(),
             sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
             witness: Witness::from_slice(&[vec![0u8; 64]]), // Dummy witness

@@ -32,7 +32,11 @@ pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
     // Auxiliary data: [DEPOSIT_IDX]
-    let aux_data = withdrawal_info.deposit_idx.to_be_bytes().to_vec(); // 4 bytes
+    let aux_data = withdrawal_info
+        .header_aux
+        .deposit_idx
+        .to_be_bytes()
+        .to_vec(); // 4 bytes
 
     let td = TagData::new(
         BRIDGE_V1_SUBPROTOCOL_ID,

@@ -2,10 +2,7 @@ use arbitrary::Arbitrary;
 use bitcoin::OutPoint;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::{
-    buf::Buf32,
-    l1::{BitcoinAmount, BitcoinOutPoint},
-};
+use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint};
 
 use crate::{
     deposit::{DEPOSIT_OUTPUT_INDEX, aux::DepositTxHeaderAux},
@@ -20,31 +17,14 @@ pub const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = 4 + 32;
 /// Information extracted from a Bitcoin deposit transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
 pub struct DepositInfo {
-    /// The index of the deposit in the bridge's deposit table.
-    pub deposit_idx: u32,
+    /// Parsed SPS-50 auxiliary data.
+    pub header_aux: DepositTxHeaderAux,
 
     /// The amount of Bitcoin deposited.
     pub amt: BitcoinAmount,
 
-    /// The destination address for the deposit.
-    pub address: Vec<u8>,
-
     /// The outpoint of the deposit transaction.
     pub outpoint: BitcoinOutPoint,
-
-    /// The merkle root of the Script Tree from the Deposit Request Transaction (DRT) being spent.
-    ///
-    /// This value is extracted from the auxiliary data and represents the merkle root of the
-    /// tapscript tree from the DRT that this deposit transaction is spending. It is combined
-    /// with the internal key (aggregated operator key) to reconstruct the taproot address
-    /// that was used in the DRT's P2TR output.
-    ///
-    /// This is required to verify that the transaction was indeed signed by the claimed pubkey.
-    /// Without this validation, someone could send funds to the N-of-N address without proper
-    /// authorization, which would mint tokens but break the peg since there would be no presigned
-    /// withdrawal transactions. This would require N-of-N trust for withdrawals instead of the
-    /// intended 1-of-N trust assumption with presigned transactions.
-    pub drt_tapscript_merkle_root: Buf32,
 }
 
 /// Parses deposit transaction to extract [`DepositInfo`].
@@ -82,11 +62,9 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
 
     // Construct the validated deposit information
     Ok(DepositInfo {
-        deposit_idx: header_aux.deposit_idx,
+        header_aux,
         amt: deposit_output.value.into(),
-        address: header_aux.address,
         outpoint: deposit_outpoint,
-        drt_tapscript_merkle_root: Buf32::new(header_aux.drt_tapscript_merkle_root),
     })
 }
 
@@ -139,25 +117,16 @@ mod tests {
             .try_parse_tx(&tx)
             .expect("Should parse transaction");
         let tx_input = TxInputRef::new(&tx, tag_data_ref);
-        let deposit_info =
+        let parsed_info =
             parse_deposit_tx(&tx_input).expect("Should successfully extract deposit info");
-
-        // The extracted info should match the original except for the outpoint,
-        // which will be calculated from the created transaction
-        assert_eq!(info.deposit_idx, deposit_info.deposit_idx);
-        assert_eq!(info.amt, deposit_info.amt);
-        assert_eq!(info.address, deposit_info.address);
-        assert_eq!(
-            info.drt_tapscript_merkle_root,
-            deposit_info.drt_tapscript_merkle_root
-        );
+        assert_eq!(info, parsed_info);
 
         // The outpoint should be from the created transaction with vout = 1 (DEPOSIT_OUTPUT_INDEX)
         let expected_outpoint = BitcoinOutPoint::from(OutPoint {
             txid: tx.compute_txid(),
             vout: DEPOSIT_OUTPUT_INDEX as u32,
         });
-        assert_eq!(expected_outpoint, deposit_info.outpoint);
+        assert_eq!(expected_outpoint, parsed_info.outpoint);
     }
 
     #[test]
@@ -201,7 +170,10 @@ mod tests {
         assert!(result.is_ok(), "Should succeed with empty destination");
 
         let deposit_info = result.unwrap();
-        assert!(deposit_info.address.is_empty(), "Address should be empty");
+        assert!(
+            deposit_info.header_aux.address.is_empty(),
+            "Address should be empty"
+        );
     }
 
     #[test]

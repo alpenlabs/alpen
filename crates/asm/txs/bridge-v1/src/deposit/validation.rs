@@ -6,7 +6,7 @@ use bitcoin::{
     taproot::{self},
 };
 use secp256k1::Message;
-use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey};
+use strata_primitives::l1::BitcoinXOnlyPublicKey;
 
 use crate::{
     deposit::DEPOSIT_OUTPUT_INDEX,
@@ -50,7 +50,7 @@ use crate::{
 /// built-in `tx.verify()` method once bitcoinconsensus supports Taproot.
 pub fn validate_drt_spending_signature(
     tx: &Transaction,
-    drt_tapnode_hash: Buf32,
+    drt_tapnode_hash: [u8; 32],
     operators_pubkey: &BitcoinXOnlyPublicKey,
     deposit_amount: Amount,
 ) -> Result<(), DrtSignatureError> {
@@ -78,7 +78,7 @@ pub fn validate_drt_spending_signature(
     let sighash_type = taproot_sig.sighash_type;
 
     // Parse the internal pubkey and merkle root
-    let merkle_root: TapNodeHash = TapNodeHash::from_byte_array(drt_tapnode_hash.0);
+    let merkle_root: TapNodeHash = TapNodeHash::from_byte_array(drt_tapnode_hash);
 
     let internal_pubkey = XOnlyPublicKey::from_slice(operators_pubkey.inner().as_bytes()).unwrap();
     let (tweaked_key, _) = internal_pubkey.tap_tweak(secp, Some(merkle_root));
@@ -258,7 +258,7 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapscript_merkle_root,
+            deposit_info.header_aux.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         )
@@ -280,7 +280,7 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapscript_merkle_root,
+            deposit_info.header_aux.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         )
@@ -293,7 +293,7 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapscript_merkle_root,
+            deposit_info.header_aux.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         )
@@ -315,7 +315,7 @@ mod tests {
 
         let err = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapscript_merkle_root,
+            deposit_info.header_aux.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         )
@@ -337,7 +337,7 @@ mod tests {
         // Test the validation using the same tapnode hash from deposit_info
         let result = validate_drt_spending_signature(
             &tx,
-            deposit_info.drt_tapscript_merkle_root,
+            deposit_info.header_aux.drt_tapscript_merkle_root,
             &operators_pubkey,
             deposit_info.amt.into(),
         );

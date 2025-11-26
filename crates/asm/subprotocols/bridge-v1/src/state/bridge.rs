@@ -122,7 +122,7 @@ impl BridgeV1State {
         // Validate the DRT spending signature against the aggregated operator key
         validate_drt_spending_signature(
             tx,
-            info.drt_tapscript_merkle_root,
+            info.header_aux.drt_tapscript_merkle_root,
             self.operators().agg_key(),
             info.amt.into(),
         )?;
@@ -131,9 +131,13 @@ impl BridgeV1State {
         validate_deposit_output_lock(tx, self.operators().agg_key())?;
 
         // Verify this deposit index hasn't been used before
-        if self.deposits().get_deposit(info.deposit_idx).is_some() {
+        if self
+            .deposits()
+            .get_deposit(info.header_aux.deposit_idx)
+            .is_some()
+        {
             return Err(DepositValidationError::DepositIdxAlreadyExists(
-                info.deposit_idx,
+                info.header_aux.deposit_idx,
             ));
         }
 
@@ -171,7 +175,12 @@ impl BridgeV1State {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
         let notary_operators = self.operators.current_multisig().clone();
-        let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
+        let entry = DepositEntry::new(
+            info.header_aux.deposit_idx,
+            info.outpoint,
+            notary_operators,
+            info.amt,
+        )?;
         self.deposits.insert_deposit(entry)?;
 
         Ok(())
@@ -277,7 +286,7 @@ impl BridgeV1State {
         &self,
         withdrawal_info: &WithdrawalFulfillmentInfo,
     ) -> Result<(), WithdrawalValidationError> {
-        let deposit_idx = withdrawal_info.deposit_idx;
+        let deposit_idx = withdrawal_info.header_aux.deposit_idx;
 
         // Check if an assignment exists for this deposit
         let assignment = self
@@ -344,7 +353,7 @@ impl BridgeV1State {
         // Safe to unwrap since validate_withdrawal ensures the assignment exists
         let removed_assignment = self
             .assignments
-            .remove_assignment(withdrawal_info.deposit_idx)
+            .remove_assignment(withdrawal_info.header_aux.deposit_idx)
             .expect("Assignment must exist after successful validation");
 
         Ok(OperatorClaimUnlock {
@@ -358,7 +367,10 @@ impl BridgeV1State {
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::Rng;
-    use strata_asm_txs_bridge_v1::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
+    use strata_asm_txs_bridge_v1::{
+        deposit::DepositInfo, test_utils::create_test_deposit_tx,
+        withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux,
+    };
     use strata_crypto::{EvenSecretKey, schnorr::EvenPublicKey};
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
@@ -486,8 +498,11 @@ mod tests {
     fn create_withdrawal_info_from_assignment(
         assignment: &AssignmentEntry,
     ) -> WithdrawalFulfillmentInfo {
-        WithdrawalFulfillmentInfo {
+        let header_aux = WithdrawalFulfillmentTxHeaderAux {
             deposit_idx: assignment.deposit_idx(),
+        };
+        WithdrawalFulfillmentInfo {
+            header_aux,
             withdrawal_destination: assignment.withdrawal_command().destination().to_script(),
             withdrawal_amount: assignment.withdrawal_command().net_amount(),
         }
@@ -517,9 +532,9 @@ mod tests {
             assert_eq!(bridge_state.deposits().len(), i + 1);
             let stored_deposit = bridge_state
                 .deposits()
-                .get_deposit(deposit_info.deposit_idx)
+                .get_deposit(deposit_info.header_aux.deposit_idx)
                 .unwrap();
-            assert_eq!(stored_deposit.idx(), deposit_info.deposit_idx);
+            assert_eq!(stored_deposit.idx(), deposit_info.header_aux.deposit_idx);
             assert_eq!(stored_deposit.amt(), deposit_info.amt);
             assert_eq!(stored_deposit.output(), &deposit_info.outpoint);
         }
@@ -732,7 +747,7 @@ mod tests {
 
         let assignment = bridge_state.assignments().assignments().first().unwrap();
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-        withdrawal_info.deposit_idx = arb.generate();
+        withdrawal_info.header_aux.deposit_idx = arb.generate();
 
         let err = bridge_state
             .process_withdrawal_fulfillment_tx(&withdrawal_info)
@@ -743,7 +758,7 @@ mod tests {
             WithdrawalValidationError::NoAssignmentFound { .. }
         ));
         if let WithdrawalValidationError::NoAssignmentFound { deposit_idx } = err {
-            assert_eq!(deposit_idx, withdrawal_info.deposit_idx);
+            assert_eq!(deposit_idx, withdrawal_info.header_aux.deposit_idx);
         }
     }
 }

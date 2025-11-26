@@ -19,12 +19,8 @@ pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE;
 /// Information extracted from a Bitcoin withdrawal fulfillment transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalFulfillmentInfo {
-    /// The index of the locked deposit UTXO that the operator will receive payout from.
-    /// This index is used to verify that the operator correctly fulfilled their assignment
-    /// (correct amount to the correct user within the assigned deadline). Upon successful
-    /// verification against the state's assignments table, the operator is authorized to
-    /// claim the payout from this deposit.
-    pub deposit_idx: u32,
+    /// Parsed SPS-50 auxiliary data.
+    pub header_aux: WithdrawalFulfillmentTxHeaderAux,
 
     /// The Bitcoin script address where the withdrawn funds are being sent.
     pub withdrawal_destination: ScriptBuf,
@@ -39,7 +35,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 
         let withdrawal_destination = Descriptor::arbitrary(u)?.to_script();
         Ok(WithdrawalFulfillmentInfo {
-            deposit_idx: u32::arbitrary(u)?,
+            header_aux: WithdrawalFulfillmentTxHeaderAux::arbitrary(u)?,
             withdrawal_destination,
             withdrawal_amount: BitcoinAmount::from_sat(u64::arbitrary(u)?),
         })
@@ -76,8 +72,7 @@ impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
-    let withdrawal_auxdata: WithdrawalFulfillmentTxHeaderAux =
-        decode_buf_exact(tx.tag().aux_data())?;
+    let header_aux: WithdrawalFulfillmentTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
     let withdrawal_fulfillment_output = &tx
         .tx()
@@ -89,7 +84,7 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
     Ok(WithdrawalFulfillmentInfo {
-        deposit_idx: withdrawal_auxdata.deposit_idx,
+        header_aux,
         withdrawal_destination,
         withdrawal_amount,
     })

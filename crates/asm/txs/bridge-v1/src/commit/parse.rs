@@ -1,8 +1,8 @@
 use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::{OutPoint, ScriptBuf, Txid};
+use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::Buf32;
+use strata_primitives::l1::BitcoinOutPoint;
 
 use crate::{
     commit::aux::CommitTxHeaderAux,
@@ -20,17 +20,12 @@ const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
 /// Information extracted from a Bitcoin commit transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitInfo {
-    /// The index of the deposit being committed by the operator.
-    /// This must be validated against the operator's assigned deposits in the state's assignments
-    /// table to ensure the operator is authorized to withdraw this specific deposit UTXO.
-    pub deposit_idx: u32,
-
-    /// The index of the game being played.
-    pub game_idx: u32,
+    /// Parsed SPS-50 auxiliary data.
+    pub header_aux: CommitTxHeaderAux,
 
     /// The outpoint spent by the first input.
     /// Must be validated that it spends from an N/N-locked output during transaction validation.
-    pub first_input_outpoint: OutPoint,
+    pub first_input_outpoint: BitcoinOutPoint,
 
     /// The script from the second output (index 1).
     /// Must be validated as N/N-locked during transaction validation.
@@ -39,14 +34,12 @@ pub struct CommitInfo {
 
 impl<'a> Arbitrary<'a> for CommitInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        // Generate arbitrary txid but ensure vout is always 0
-        let txid: Txid = Buf32::arbitrary(u)?.into();
-        let first_input_outpoint = OutPoint { txid, vout: 0 };
+        let header_aux = CommitTxHeaderAux::arbitrary(u)?;
+        let first_input_outpoint = BitcoinOutPoint::arbitrary(u)?;
         let second_output_script = ScriptBuf::new();
 
         Ok(CommitInfo {
-            deposit_idx: u32::arbitrary(u)?,
-            game_idx: u32::arbitrary(u)?,
+            header_aux,
             first_input_outpoint,
             second_output_script,
         })
@@ -100,11 +93,10 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
         .clone();
 
     // Extract the previous outpoint from the first (and only) input
-    let first_input_outpoint = tx.tx().input[0].previous_output;
+    let first_input_outpoint = tx.tx().input[0].previous_output.into();
 
     Ok(CommitInfo {
-        deposit_idx: header_aux.deposit_idx,
-        game_idx: header_aux.game_idx,
+        header_aux,
         first_input_outpoint,
         second_output_script,
     })
