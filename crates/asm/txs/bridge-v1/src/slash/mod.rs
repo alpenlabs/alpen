@@ -12,7 +12,7 @@
 //! ### Inputs
 //!
 //! - 1. **Contest slash connector**: Locked to the N-of-N multisig with a relative timelock
-//!   `DeltaPayout`.
+//!      `DeltaPayout`.
 //!
 //! - 2. **Stake connector**: Locked to the pure N-of-N multisig.
 //!
@@ -37,3 +37,6 @@
 
 mod aux;
 mod parse;
+
+pub use aux::SlashTxHeaderAux;
+pub use parse::{SlashInfo, parse_slash_tx};
