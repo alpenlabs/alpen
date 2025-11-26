@@ -2,20 +2,32 @@
 
 mod init_db;
 
-use std::sync::Arc;
+use std::{collections::HashMap, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
-use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
+use alpen_reth_node::{
+    args::AlpenNodeArgs,
+    head_gossip::{
+        connection::HeadGossipCommand,
+        handler::{HeadGossipEvent, HeadGossipProtocolHandler, HeadGossipState},
+    },
+    AlpenEthereumNode,
+};
 use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
 use clap::Parser;
 use init_db::init_witness_db;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
+use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
+use reth_network_api::PeerId;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
-use tracing::info;
+use reth_primitives::Header;
+use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
+use tokio::sync::{broadcast, mpsc};
+use tracing::{info, warn};
 
 fn main() {
     reth_cli_util::sigsegv_handler::install();
@@ -83,11 +95,84 @@ fn main() {
             });
 
             let handle = node_builder.launch().await?;
+
+            // Create and add the custom RLPx subprotocol
+            // See: crates/reth/node/src/head_gossip/
+            let (gossip_tx, mut gossip_rx) = mpsc::unbounded_channel();
+            let handler = HeadGossipProtocolHandler {
+                state: HeadGossipState { events: gossip_tx },
+            };
+            handle
+                .node
+                .network
+                .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
+
+            // This task will handle gossip events
+            let mut state_events = handle.node.provider.subscribe_to_canonical_state();
+            tokio::spawn(async move {
+                let mut connections: HashMap<PeerId, mpsc::UnboundedSender<HeadGossipCommand>> =
+                    HashMap::new();
+
+                loop {
+                    tokio::select! {
+                        Some(event) = gossip_rx.recv() => {
+                            match event {
+                                HeadGossipEvent::Established {
+                                    peer_id,
+                                    to_connection,
+                                    ..
+                                } => {
+                                    connections.insert(peer_id, to_connection);
+                                }
+                                HeadGossipEvent::Closed { peer_id } => {
+                                    connections.remove(&peer_id);
+                                }
+                                HeadGossipEvent::HeadHash { peer_id, header } => {
+                                    // TODO(@storopoli): do something when we receive a single `Header`.
+                                    info!(target: "head-gossip", "Received head hash from peer {}: {:?}", peer_id, header.hash_slow());
+                                }
+                                HeadGossipEvent::HeadHashes { peer_id, headers } => {
+                                    // TODO(@storopoli): do something when we receive multiple `Header`s.
+                                    info!(target: "head-gossip", "Received {} head hashes from peer {}", headers.len(), peer_id);
+                                }
+                            }
+                        },
+                        res = state_events.recv() => {
+                            match res {
+                                Ok(event) => {
+                                    if let CanonStateNotification::Commit { new } = event {
+                                        // Extract headers from the new chain segment
+                                        // Explicitly using Header type to fix type inference and unused dependency check
+                                        let headers: Vec<Header> = new.headers().map(|h| h.header().clone()).collect();
+
+                                        if let Some(tip) = headers.last() {
+                                            info!(target: "head-gossip", "New block committed: {:?}, broadcasting to {} peers", tip.hash_slow(), connections.len());
+                                            for sender in connections.values() {
+                                                let _ = sender.send(HeadGossipCommand::SendHeadHash(tip.clone()));
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(broadcast::error::RecvError::Lagged(n)) => {
+                                    warn!(target: "head-gossip", "Canonical state subscription lagged by {n} messages");
+                                    continue;
+                                }
+                                Err(broadcast::error::RecvError::Closed) => {
+                                    warn!(target: "head-gossip", "Canonical state subscription closed");
+                                    break;
+                                }
+                            }
+                        },
+                        else => { break; }
+                    }
+                }
+            });
+
             handle.node_exit_future.await
         },
     ) {
         eprintln!("Error: {err:?}");
-        std::process::exit(1);
+        process::exit(1);
     }
 }
 
