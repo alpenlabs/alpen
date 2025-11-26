@@ -1,14 +1,42 @@
 //! Flags field for block header.
 
-use strata_codec::Codec;
+use ssz_derive::{Decode, Encode};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_identifiers::impl_ssz_transparent_wrapper;
 
 type RawBlockFlags = u16;
 
 const IS_TERMINAL: RawBlockFlags = 0x0001;
 
 /// Flags in the block header that we use for various signalling purposes.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Codec)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Encode, Decode)]
+#[ssz(struct_behaviour = "transparent")]
 pub struct BlockFlags(RawBlockFlags);
+
+impl_ssz_transparent_wrapper!(BlockFlags, u16, 2);
+
+impl Codec for BlockFlags {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.0.encode(enc)
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let raw = u16::decode(dec)?;
+        Ok(Self(raw))
+    }
+}
+
+impl From<u16> for BlockFlags {
+    fn from(value: u16) -> Self {
+        Self(value)
+    }
+}
+
+impl From<BlockFlags> for u16 {
+    fn from(value: BlockFlags) -> Self {
+        value.0
+    }
+}
 
 impl BlockFlags {
     /// Constructs a zero flag.
