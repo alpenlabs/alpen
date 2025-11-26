@@ -2,3 +2,6 @@
 pub mod connection;
 pub mod handler;
 pub mod protocol;
+
+#[cfg(test)]
+mod tests;
