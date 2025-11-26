@@ -27,8 +27,8 @@ pub struct SlashInfo {
 ///
 /// # Returns
 /// - `Ok(SlashInfo)` on success
-/// - `Err(SlashTxParseError)` if auxiliary data cannot be decoded, the input count is wrong, or the
-///   stake connector input is missing
+/// - `Err(SlashTxParseError)` if [`SlashTxHeaderAux`] data cannot be decoded, or the stake
+///   connector input (at index [`STAKE_INPUT_INDEX`]) is missing.
 pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, SlashTxParseError> {
     // Parse auxiliary data using CommitTxHeaderAux
     let header_aux: SlashTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
