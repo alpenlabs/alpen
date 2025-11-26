@@ -5,15 +5,14 @@
 //!
 //! ## Commit Transaction Structure
 //!
-//! A commit transaction is posted by an operator to commit to a specific deposit and its
-//! associated payouts among many available deposits.
+//! A commit transaction is posted by an operator to commit to a specific deposit UTXO and its
+//! and its corresponding payout transactions (among the available linked deposit UTXOs).
 //!
 //! ### Inputs
 //! - **First Input** (required): Must spend the first output of a Claim transaction
 //!   - The input must be locked to the N/N aggregated operator key (key-spend only P2TR)
-//!   - This ensures only the operator set can commit to deposits
 //!   - While we don't verify it came from a specific Claim transaction during parsing, later
-//!     validation checks that it was properly spent from the N/N multisig
+//!     validation must check that it was properly spent from the N/N multisig
 //!
 //! ### Outputs
 //! 1. **OP_RETURN Output (Index 0)** (required): Contains SPS-50 tagged data with:

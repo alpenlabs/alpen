@@ -8,10 +8,10 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 pub(super) struct CommitTxHeaderAux {
     /// The index of the deposit that the operator is committing to.
     /// This must be validated against the operator's assigned deposits in the state's assignments
-    /// table to ensure the operator is authorized to commit to this specific deposit.
+    /// table to ensure the operator is authorized to withdraw this specific deposit.
     pub deposit_idx: u32,
 
-    /// The index of the game being committed to.
+    /// The index of the game being played.
     /// This is needed to later constrain the bridge proof public parameters.
     pub game_idx: u32,
 }

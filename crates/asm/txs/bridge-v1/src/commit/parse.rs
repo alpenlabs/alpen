@@ -20,12 +20,12 @@ const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
 /// Information extracted from a Bitcoin commit transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitInfo {
-    /// The index of the deposit that the operator is committing to.
+    /// The index of the deposit being committed by the operator.
     /// This must be validated against the operator's assigned deposits in the state's assignments
-    /// table to ensure the operator is authorized to commit to this specific deposit.
+    /// table to ensure the operator is authorized to withdraw this specific deposit UTXO.
     pub deposit_idx: u32,
 
-    /// The index of the game being committed to.
+    /// The index of the game being played.
     pub game_idx: u32,
 
     /// The outpoint spent by the first input.
@@ -54,9 +54,6 @@ impl<'a> Arbitrary<'a> for CommitInfo {
 }
 
 /// Parses commit transaction to extract [`CommitInfo`].
-///
-/// Parses a commit transaction following the SPS-50 specification and extracts
-/// the commit information including the deposit index that the operator is committing to.
 ///
 /// The function validates the transaction structure and parses the auxiliary data (encoded using
 /// [`strata_codec::Codec`] with big-endian for integers) containing:

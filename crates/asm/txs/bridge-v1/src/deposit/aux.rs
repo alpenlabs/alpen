@@ -7,7 +7,7 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 /// and tx_type fields in the OP_RETURN output at position 0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DepositTxHeaderAux {
-    /// idx of the deposit as given by the N/N multisig after processing DRT
+    /// idx of the deposit as given by the N/N multisig.
     pub deposit_idx: u32,
 
     /// The merkle root of the Script Tree from the Deposit Request Transaction (DRT) being spent.
