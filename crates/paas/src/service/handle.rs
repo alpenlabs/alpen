@@ -33,11 +33,11 @@ impl<P: ProgramType> std::fmt::Debug for ProverHandle<P> {
 impl<P: ProgramType> ProverHandle<P> {
     /// Create a new handle
     pub fn new(
-        command_handle: CommandHandle<ProverCommand<TaskId<P>>>,
+        command_handle: Arc<CommandHandle<ProverCommand<TaskId<P>>>>,
         monitor: ServiceMonitor<ProverServiceStatus>,
     ) -> Self {
         Self {
-            command_handle: Arc::new(command_handle),
+            command_handle,
             monitor,
         }
     }
