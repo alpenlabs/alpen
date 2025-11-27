@@ -296,6 +296,8 @@ class RethFactory(flexitest.Factory):
         custom_chain: str = "dev",
         name_suffix: str = "",
         enable_state_diff_gen: bool = False,
+        p2p_secret_key: str | None = None,
+        trusted_peers: list[str] | None = None,
     ) -> flexitest.Service:
         name = f"reth.{id}{'.' + name_suffix if name_suffix else ''}"
         datadir = ctx.make_service_dir(name)
@@ -318,6 +320,7 @@ class RethFactory(flexitest.Factory):
             "--ws.port", str(ethrpc_ws_port),
             "--http",
             "--http.port", str(ethrpc_http_port),
+            "--http.api", "eth,net,web3,admin",
             "--color", "never",
             "--enable-witness-gen",
             "--custom-chain", custom_chain,
@@ -337,7 +340,19 @@ class RethFactory(flexitest.Factory):
         if sequencer_reth_rpc is not None:
             cmd.extend(["--sequencer-http", sequencer_reth_rpc])
 
-        props = {"rpc_port": authrpc_port, "eth_rpc_http_port": ethrpc_http_port}
+        # P2P peering configuration
+        if p2p_secret_key is not None:
+            cmd.extend(["--p2p-secret-key", p2p_secret_key])
+
+        if trusted_peers:
+            for peer in trusted_peers:
+                cmd.extend(["--trusted-peers", peer])
+
+        props = {
+            "rpc_port": authrpc_port,
+            "eth_rpc_http_port": ethrpc_http_port,
+            "listener_port": listener_port,
+        }
 
         ethrpc_url = f"ws://localhost:{ethrpc_ws_port}"
 

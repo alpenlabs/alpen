@@ -4,6 +4,7 @@ import logging
 import time
 
 import flexitest
+import requests as req
 
 from envs.rollup_params_cfg import RollupConfig
 from factory.alpen_client import AlpenCliBuilder
@@ -430,6 +431,217 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         fn_waiter = StrataWaiter(fullnode.create_rpc(), logger, timeout=30, interval=2)
         fn_waiter.wait_until_client_ready()
         # TODO: add others like prover, reth, btc
+
+        return BasicLiveEnv(svcs, bridge_pk, rollup_cfg)
+
+
+class P2PGossipEnvConfig(flexitest.EnvConfig):
+    """
+    Environment config for testing P2P gossip protocol between reth nodes.
+
+    This config sets up actual RLPx P2P peering between sequencer and follower reth
+    nodes using pre-generated P2P keys and trusted peers configuration.
+    """
+
+    def __init__(
+        self,
+        pre_generate_blocks: int = 0,
+        rollup_settings: RollupParamsSettings | None = None,
+        auto_generate_blocks: bool = True,
+        n_operators: int = 2,
+    ):
+        self.pre_generate_blocks = pre_generate_blocks
+        self.rollup_settings = rollup_settings
+        self.auto_generate_blocks = auto_generate_blocks
+        self.n_operators = n_operators
+        super().__init__()
+
+    def _wait_for_reth_rpc(self, port: int, timeout: int = 30) -> bool:
+        """Wait for reth HTTP RPC to be ready."""
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                resp = req.post(
+                    f"http://localhost:{port}",
+                    json={"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1},
+                    timeout=2,
+                )
+                if resp.status_code == 200:
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return False
+
+    def init(self, ctx: flexitest.EnvContext) -> flexitest.LiveEnv:
+        btc_fac = ctx.get_factory("bitcoin")
+        seq_fac = ctx.get_factory("sequencer")
+        seq_signer_fac = ctx.get_factory("sequencer_signer")
+        reth_fac = ctx.get_factory("reth")
+        fn_fac = ctx.get_factory("fullnode")
+
+        logger = logging.getLogger(__name__)
+
+        bitcoind = btc_fac.create_regtest_bitcoin()
+        bitcoind_config = BitcoindConfig(
+            rpc_url=f"http://localhost:{bitcoind.get_prop('rpc_port')}",
+            rpc_user=bitcoind.get_prop("rpc_user"),
+            rpc_password=bitcoind.get_prop("rpc_password"),
+        )
+        time.sleep(BLOCK_GENERATION_INTERVAL_SECS)
+
+        brpc = bitcoind.create_rpc()
+        walletname = bitcoind.get_prop("walletname")
+        brpc.proxy.createwallet(walletname)
+        seqaddr = brpc.proxy.getnewaddress()
+
+        if self.pre_generate_blocks > 0:
+            logger.info(f"Pre generating {self.pre_generate_blocks} blocks to address {seqaddr}")
+            brpc.proxy.generatetoaddress(self.pre_generate_blocks, seqaddr)
+
+        if self.auto_generate_blocks:
+            generate_blocks(brpc, BLOCK_GENERATION_INTERVAL_SECS, seqaddr)
+
+        # Set up network params
+        initdir = ctx.make_service_dir("_init")
+        settings = self.rollup_settings or RollupParamsSettings.new_default().fast_batch()
+        params_gen_data = generate_simple_params(
+            initdir, settings, self.n_operators, bitcoind_config
+        )
+        params = params_gen_data["params"]
+        rollup_cfg = RollupConfig.model_validate_json(params)
+        bridge_pk = get_bridge_pubkey_from_cfg(rollup_cfg)
+
+        # JWT secret for reth auth
+        secret_dir = ctx.make_service_dir("secret")
+        reth_secret_path = os.path.join(secret_dir, "jwt.hex")
+        with open(reth_secret_path, "w") as file:
+            file.write(generate_jwt_secret())
+
+        # Generate P2P keys for both reth nodes
+        p2p_dir = ctx.make_service_dir("p2p_keys")
+
+        seq_p2p_secret = generate_p2p_secret_key()
+        seq_p2p_secret_path = os.path.join(p2p_dir, "seq_p2p.hex")
+        write_p2p_secret_key(seq_p2p_secret_path, seq_p2p_secret)
+        seq_p2p_pubkey = get_p2p_pubkey_from_secret(seq_p2p_secret)
+
+        fn_p2p_secret = generate_p2p_secret_key()
+        fn_p2p_secret_path = os.path.join(p2p_dir, "fn_p2p.hex")
+        write_p2p_secret_key(fn_p2p_secret_path, fn_p2p_secret)
+        fn_p2p_pubkey = get_p2p_pubkey_from_secret(fn_p2p_secret)
+
+        logger.info(f"Sequencer P2P pubkey: {seq_p2p_pubkey[:32]}...")
+        logger.info(f"Follower P2P pubkey: {fn_p2p_pubkey[:32]}...")
+
+        # Create sequencer reth first to get its listener port
+        seq_reth = reth_fac.create_exec_client(
+            0,
+            reth_secret_path,
+            None,
+            p2p_secret_key=seq_p2p_secret_path,
+        )
+        seq_reth_listener_port = seq_reth.get_prop("listener_port")
+        seq_reth_rpc_port = seq_reth.get_prop("eth_rpc_http_port")
+
+        # Create enode URL for sequencer
+        seq_enode = make_enode_url(seq_p2p_pubkey, "127.0.0.1", seq_reth_listener_port)
+        logger.info(f"Sequencer enode: {seq_enode[:80]}...")
+
+        # Create follower reth WITHOUT trusted peers initially
+        # We'll add peers via admin RPC after both nodes have registered head_gossip
+        fullnode_reth = reth_fac.create_exec_client(
+            1,
+            reth_secret_path,
+            f"http://localhost:{seq_reth_rpc_port}",
+            p2p_secret_key=fn_p2p_secret_path,
+        )
+        fn_reth_rpc_port = fullnode_reth.get_prop("eth_rpc_http_port")
+
+        # Wait for both reth nodes HTTP servers and head_gossip protocol to be ready
+        logger.info("Waiting for both reth nodes to be fully initialized...")
+
+        # Wait for both reth nodes
+        if not self._wait_for_reth_rpc(seq_reth_rpc_port):
+            logger.warning("Sequencer reth HTTP RPC not ready")
+        if not self._wait_for_reth_rpc(fn_reth_rpc_port):
+            logger.warning("Follower reth HTTP RPC not ready")
+
+        # Additional delay to ensure head_gossip protocol is registered (happens after launch)
+        time.sleep(2)
+
+        # Now add the sequencer as a peer via admin RPC
+        # This ensures capability negotiation includes the head_gossip protocol
+        try:
+            resp = req.post(
+                f"http://localhost:{fn_reth_rpc_port}",
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "admin_addPeer",
+                    "params": [seq_enode],
+                    "id": 1,
+                },
+                timeout=5,
+            )
+            result = resp.json()
+            logger.info(f"admin_addPeer result: {result}")
+        except Exception as e:
+            logger.warning(f"Failed to add peer via admin RPC: {e}")
+
+        reth_authrpc_port = seq_reth.get_prop("rpc_port")
+        reth_config = RethELConfig(
+            rpc_url=f"localhost:{reth_authrpc_port}",
+            secret=reth_secret_path,
+        )
+        reth_rpc_http_port = seq_reth.get_prop("eth_rpc_http_port")
+
+        sequencer = seq_fac.create_sequencer_node(bitcoind_config, reth_config, seqaddr, params)
+        seq_host = sequencer.get_prop("rpc_host")
+        seq_port = sequencer.get_prop("rpc_port")
+        sequencer_signer = seq_signer_fac.create_sequencer_signer(seq_host, seq_port)
+
+        if self.auto_generate_blocks:
+            time.sleep(BLOCK_GENERATION_INTERVAL_SECS * 10)
+
+        fullnode_reth_port = fullnode_reth.get_prop("rpc_port")
+        fullnode_reth_config = RethELConfig(
+            rpc_url=f"localhost:{fullnode_reth_port}",
+            secret=reth_secret_path,
+        )
+
+        sequencer_rpc = f"ws://localhost:{sequencer.get_prop('rpc_port')}"
+        fullnode = fn_fac.create_fullnode(
+            bitcoind_config,
+            fullnode_reth_config,
+            sequencer_rpc,
+            params,
+        )
+
+        prover_client_fac = ctx.get_factory("prover_client")
+        prover_client_settings = ProverClientSettings.new_with_proving()
+        prover_client = prover_client_fac.create_prover_client(
+            bitcoind_config,
+            f"http://localhost:{seq_port}",
+            f"http://localhost:{reth_rpc_http_port}",
+            params,
+            prover_client_settings,
+        )
+
+        svcs = {
+            "bitcoin": bitcoind,
+            "seq_node": sequencer,
+            "sequencer_signer": sequencer_signer,
+            "seq_reth": seq_reth,
+            "follower_1_node": fullnode,
+            "follower_1_reth": fullnode_reth,
+            "prover_client": prover_client,
+        }
+
+        seq_waiter = StrataWaiter(sequencer.create_rpc(), logger, timeout=30, interval=2)
+        seq_waiter.wait_until_client_ready()
+        fn_waiter = StrataWaiter(fullnode.create_rpc(), logger, timeout=30, interval=2)
+        fn_waiter.wait_until_client_ready()
 
         return BasicLiveEnv(svcs, bridge_pk, rollup_cfg)
 

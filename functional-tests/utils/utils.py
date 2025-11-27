@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 
 import base58
 from bitcoinlib.services.bitcoind import BitcoindClient
+from eth_keys import keys
 
 from factory.config import BitcoindConfig
 from factory.seqrpc import JsonrpcClient
@@ -761,3 +762,39 @@ def run_tty(cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.C
         stdout=(b"".join(buf) if buf is not None else None),
         stderr=None,  # PTY merges stderr
     )
+
+
+# P2P Key utilities for RLPx peering
+
+
+def generate_p2p_secret_key() -> str:
+    """Generate a random 32-byte hex string for use as a P2P secret key."""
+    return os.urandom(32).hex()
+
+
+def get_p2p_pubkey_from_secret(secret_hex: str) -> str:
+    """
+    Derive the secp256k1 public key from a P2P secret key.
+    Returns the uncompressed public key (64 bytes hex, without 04 prefix).
+    """
+
+    secret_bytes = bytes.fromhex(secret_hex)
+    private_key = keys.PrivateKey(secret_bytes)
+    # Get the uncompressed public key without the 04 prefix
+    public_key_bytes = private_key.public_key.to_bytes()
+    # eth_keys returns 64 bytes (uncompressed without prefix)
+    return public_key_bytes.hex()
+
+
+def make_enode_url(pubkey_hex: str, host: str, port: int) -> str:
+    """
+    Create an enode URL from a public key, host, and port.
+    Format: enode://<pubkey>@<host>:<port>
+    """
+    return f"enode://{pubkey_hex}@{host}:{port}"
+
+
+def write_p2p_secret_key(path: str, secret_hex: str):
+    """Write the P2P secret key to a file."""
+    with open(path, "w") as f:
+        f.write(secret_hex)
