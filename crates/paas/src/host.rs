@@ -20,7 +20,9 @@
 
 use std::sync::Arc;
 
-use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram, ZkVmRemoteHost, ZkVmRemoteProgram};
+use zkaleido::{
+    ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram, ZkVmRemoteHost, ZkVmRemoteProgram,
+};
 
 use crate::{program::ProgramType, ZkVmBackend};
 
