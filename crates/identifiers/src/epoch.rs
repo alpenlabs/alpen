@@ -15,41 +15,19 @@
 
 use std::fmt;
 
-use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeStruct};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 use crate::{
     buf::Buf32,
-    ol::{OLBlockCommitment, OLBlockId},
+    ol::OLBlockId,
+    ssz_generated::ssz::commitments::{EpochCommitment, OLBlockCommitment},
 };
 
 // TODO convert to u32
 type RawEpoch = u64;
-
-/// Commits to a particular epoch by the last block and slot.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
-)]
-pub struct EpochCommitment {
-    epoch: RawEpoch,
-    last_slot: u64,
-    last_blkid: OLBlockId,
-    // TODO convert to using OLBlockCommitment?
-}
 
 impl EpochCommitment {
     pub fn new(epoch: RawEpoch, last_slot: u64, last_blkid: OLBlockId) -> Self {
@@ -140,14 +118,171 @@ impl fmt::Display for EpochCommitment {
     }
 }
 
-impl fmt::Debug for EpochCommitment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "EpochCommitment(epoch={}, last_slot={}, last_blkid={:?})",
-            self.epoch(),
-            self.last_slot(),
-            self.last_blkid()
+// Serde implementations delegate to fields
+impl Serialize for EpochCommitment {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("EpochCommitment", 3)?;
+        state.serialize_field("epoch", &self.epoch)?;
+        state.serialize_field("last_slot", &self.last_slot)?;
+        state.serialize_field("last_blkid", &self.last_blkid)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for EpochCommitment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Epoch,
+            LastSlot,
+            LastBlkid,
+        }
+
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = EpochCommitment;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("struct EpochCommitment")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<EpochCommitment, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut epoch = None;
+                let mut last_slot = None;
+                let mut last_blkid = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Epoch => {
+                            if epoch.is_some() {
+                                return Err(serde::de::Error::duplicate_field("epoch"));
+                            }
+                            epoch = Some(map.next_value()?);
+                        }
+                        Field::LastSlot => {
+                            if last_slot.is_some() {
+                                return Err(serde::de::Error::duplicate_field("last_slot"));
+                            }
+                            last_slot = Some(map.next_value()?);
+                        }
+                        Field::LastBlkid => {
+                            if last_blkid.is_some() {
+                                return Err(serde::de::Error::duplicate_field("last_blkid"));
+                            }
+                            last_blkid = Some(map.next_value()?);
+                        }
+                    }
+                }
+                let epoch = epoch.ok_or_else(|| serde::de::Error::missing_field("epoch"))?;
+                let last_slot =
+                    last_slot.ok_or_else(|| serde::de::Error::missing_field("last_slot"))?;
+                let last_blkid =
+                    last_blkid.ok_or_else(|| serde::de::Error::missing_field("last_blkid"))?;
+                Ok(EpochCommitment {
+                    epoch,
+                    last_slot,
+                    last_blkid,
+                })
+            }
+        }
+
+        deserializer.deserialize_struct(
+            "EpochCommitment",
+            &["epoch", "last_slot", "last_blkid"],
+            Visitor,
         )
+    }
+}
+
+// Borsh implementations are a shim over SSZ - just write/read SSZ bytes directly
+impl BorshSerialize for EpochCommitment {
+    fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
+        let ssz_bytes = ssz::Encode::as_ssz_bytes(self);
+        writer.write_all(&ssz_bytes)
+    }
+}
+
+impl BorshDeserialize for EpochCommitment {
+    fn deserialize_reader<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Self> {
+        // Read exactly the SSZ fixed length
+        // This is critical: we must read exactly the fixed length, not all remaining bytes,
+        // because EpochCommitment may be nested inside larger Borsh structures.
+        let ssz_fixed_len = <Self as ssz::Decode>::ssz_fixed_len();
+        let mut ssz_bytes = vec![0u8; ssz_fixed_len];
+        reader.read_exact(&mut ssz_bytes)?;
+        ssz::Decode::from_ssz_bytes(&ssz_bytes).map_err(|e| {
+            borsh::io::Error::new(
+                borsh::io::ErrorKind::InvalidData,
+                format!("SSZ decode error: {:?}", e),
+            )
+        })
+    }
+}
+
+impl<'a> arbitrary::Arbitrary<'a> for EpochCommitment {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            epoch: u.arbitrary()?,
+            last_slot: u.arbitrary()?,
+            last_blkid: u.arbitrary()?,
+        })
+    }
+}
+
+impl Ord for EpochCommitment {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.epoch, self.last_slot, &self.last_blkid).cmp(&(
+            other.epoch,
+            other.last_slot,
+            &other.last_blkid,
+        ))
+    }
+}
+
+impl PartialOrd for EpochCommitment {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+
+    mod epoch_commitment {
+        use super::*;
+
+        ssz_proptest!(
+            EpochCommitment,
+            (any::<u64>(), any::<u64>(), any::<[u8; 32]>()).prop_map(
+                |(epoch, last_slot, blkid)| {
+                    EpochCommitment::new(epoch, last_slot, OLBlockId::from(Buf32::from(blkid)))
+                }
+            )
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let commitment = EpochCommitment::null();
+            let encoded = commitment.as_ssz_bytes();
+            let decoded = EpochCommitment::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(commitment.epoch(), decoded.epoch());
+            assert_eq!(commitment.last_slot(), decoded.last_slot());
+            assert_eq!(commitment.last_blkid(), decoded.last_blkid());
+        }
     }
 }

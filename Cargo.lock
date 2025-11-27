@@ -13258,7 +13258,9 @@ name = "ssz"
 version = "0.8.2"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.2#5070203a66a3f5363a1466f36563f9716893a2db"
 dependencies = [
+ "hex",
  "itertools 0.13.0",
+ "serde",
  "smallvec",
  "ssz_primitives",
 ]
@@ -13307,6 +13309,9 @@ name = "ssz_types"
 version = "0.8.2"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.2#5070203a66a3f5363a1466f36563f9716893a2db"
 dependencies = [
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
  "ssz",
  "ssz_primitives",
  "tree_hash 0.8.2",
@@ -14216,11 +14221,13 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "ssz",
+ "ssz_codegen",
  "ssz_derive",
  "ssz_types",
  "strata-codec",
  "strata-test-utils-ssz",
  "tree_hash 0.8.2",
+ "tree_hash_derive 0.8.2",
  "zeroize",
 ]
 
