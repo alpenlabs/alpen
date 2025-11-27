@@ -51,6 +51,19 @@ where
     Native(Arc<N>),
 }
 
+impl<R, N> std::fmt::Debug for HostInstance<R, N>
+where
+    R: ZkVmHost + Send + Sync,
+    N: ZkVmHost + Send + Sync,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Remote(_) => f.debug_tuple("Remote").field(&"<host>").finish(),
+            Self::Native(_) => f.debug_tuple("Native").field(&"<host>").finish(),
+        }
+    }
+}
+
 impl<R, N> HostInstance<R, N>
 where
     R: ZkVmHost + ZkVmRemoteHost + Send + Sync,

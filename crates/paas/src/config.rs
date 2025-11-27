@@ -37,6 +37,9 @@ pub struct WorkerConfig<B: Clone + Eq + std::hash::Hash> {
 }
 
 /// Retry policy configuration
+///
+/// TODO: Reconcile with strata_common::RetryConfig - these should potentially
+/// be unified into a single retry configuration type used across the codebase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetryConfig {
     /// Maximum number of retry attempts
@@ -166,7 +169,6 @@ mod tests {
 
         let config = ProverServiceConfig::new(worker_count);
 
-        assert_eq!(config.retry.max_retries, 15);
-        assert_eq!(config.retry.base_delay_secs, 5);
+        assert!(config.retry.is_none()); // Retries disabled by default
     }
 }

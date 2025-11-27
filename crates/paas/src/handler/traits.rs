@@ -37,6 +37,12 @@ use crate::{error::ProverServiceResult, program::ProgramType, ZkVmBackend};
 /// This allows PaaS to remain generic while handlers work with specific types.
 pub struct BoxedInput(pub Box<dyn Any + Send + Sync>);
 
+impl std::fmt::Debug for BoxedInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("BoxedInput").field(&"<any>").finish()
+    }
+}
+
 impl BoxedInput {
     /// Create a new boxed input from any Send + Sync type
     pub fn new<T: Send + Sync + 'static>(input: T) -> Self {

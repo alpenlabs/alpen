@@ -4,15 +4,23 @@ use strata_service::{AsyncService, Response, Service};
 use tracing::{debug, info};
 
 use crate::{
-    commands::ProverCommand,
-    state::{ProverServiceState, StatusSummary},
+    program::ProgramType,
+    service::{
+        commands::ProverCommand,
+        state::{ProverServiceState, StatusSummary},
+    },
     task::TaskId,
-    ProgramType,
 };
 
 /// Prover service that manages proof generation tasks
 pub struct ProverService<P: ProgramType> {
     _phantom: std::marker::PhantomData<P>,
+}
+
+impl<P: ProgramType> std::fmt::Debug for ProverService<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProverService").finish()
+    }
 }
 
 impl<P: ProgramType> Service for ProverService<P> {
@@ -95,6 +103,15 @@ impl<P: ProgramType> AsyncService for ProverService<P> {
                     completion.send(status).await;
                 }
             }
+            ProverCommand::RetryTask { task_id } => {
+                debug!(?task_id, "Processing RetryTask command (from scheduler)");
+                // Spawn retry execution in background
+                let state_clone = state.clone();
+                let task_id_clone = task_id.clone();
+                state.executor.handle().spawn(async move {
+                    state_clone.execute_and_track(task_id_clone).await;
+                });
+            }
         }
 
         Ok(Response::Continue)
@@ -125,7 +142,7 @@ impl<P: ProgramType> Clone for ProverServiceState<P> {
             handlers: self.handlers.clone(),
             semaphores: self.semaphores.clone(),
             executor: self.executor.clone(),
-            timer: self.timer.clone(),
+            retry_scheduler: self.retry_scheduler.clone(),
         }
     }
 }

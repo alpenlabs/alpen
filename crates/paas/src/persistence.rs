@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use crate::{
     error::ProverServiceResult,
+    program::ProgramType,
     task::{TaskId, TaskStatus},
-    ProgramType,
 };
 
 /// Task metadata for persistence

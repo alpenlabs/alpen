@@ -21,8 +21,7 @@ use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram, ZkVmRemoteProgram};
 
 use crate::{
     error::{ProverServiceError, ProverServiceResult},
-    handler::{BoxedInput, InputFetcher, ProofHandler, ProofStorer},
-    host::HostResolver,
+    handler::{host::HostResolver, BoxedInput, InputFetcher, ProofHandler, ProofStorer},
     program::ProgramType,
     ZkVmBackend,
 };
@@ -69,6 +68,16 @@ pub struct RemoteProofHandler<P, F, S, R, Prog> {
     resolver: R,
     executor: TaskExecutor,
     _phantom: std::marker::PhantomData<(P, Prog)>,
+}
+
+impl<P, F, S, R, Prog> std::fmt::Debug for RemoteProofHandler<P, F, S, R, Prog> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteProofHandler")
+            .field("fetcher", &std::any::type_name::<F>())
+            .field("storer", &std::any::type_name::<S>())
+            .field("resolver", &std::any::type_name::<R>())
+            .finish()
+    }
 }
 
 impl<P, F, S, R, Prog> RemoteProofHandler<P, F, S, R, Prog>
