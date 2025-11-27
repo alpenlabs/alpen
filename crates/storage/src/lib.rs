@@ -11,6 +11,7 @@ use anyhow::Context;
 pub use managers::{
     asm::AsmStateManager, chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
     client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
+    sequencer::SequencerPayloadManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_types::traits::DatabaseBackend;
