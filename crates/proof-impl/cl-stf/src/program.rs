@@ -10,7 +10,7 @@ use strata_params::RollupParams;
 use strata_primitives::buf::Buf32;
 use zkaleido::{
     AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
-    ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
+    ZkVmInputResult, ZkVmProgram, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -70,8 +70,6 @@ impl ZkVmProgram for ClStfProgram {
         H::extract_borsh_public_output(public_values)
     }
 }
-
-impl ZkVmProgramPerf for ClStfProgram {}
 
 impl ClStfProgram {
     pub fn native_host() -> NativeHost {
