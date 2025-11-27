@@ -9,8 +9,10 @@ use strata_db_store_sled::prover::ProofDBSled;
 use strata_paas::RemoteProofHandler;
 use strata_tasks::TaskExecutor;
 
-use super::adapters::{OperatorInputFetcher, ProofDbStorer};
-use super::host_resolver::CentralizedHostResolver;
+use super::{
+    adapters::{OperatorInputFetcher, ProofDbStorer},
+    host_resolver::CentralizedHostResolver,
+};
 use crate::operators::{CheckpointOperator, ClStfOperator, EvmEeOperator};
 
 /// Type alias for Checkpoint proof handler

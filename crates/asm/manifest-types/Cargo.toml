@@ -6,10 +6,10 @@ edition = "2024"
 [dependencies]
 borsh.workspace = true
 serde.workspace = true
-thiserror.workspace = true
 strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
