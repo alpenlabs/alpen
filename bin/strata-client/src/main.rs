@@ -29,7 +29,10 @@ use strata_db_types::{
     traits::{DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
     DbError,
 };
-use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
+use strata_eectl::{
+    engine::{BlockStatus, ExecEngineCtl, L2BlockRef},
+    messages::ExecPayloadData,
+};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
 use strata_params::{Params, ProofPublishMode};
 use strata_rpc_api::{
@@ -40,7 +43,7 @@ use strata_sequencer::{
     checkpoint::{checkpoint_expiry_worker, checkpoint_worker, CheckpointHandle},
 };
 use strata_status::StatusChannel;
-use strata_storage::{create_node_storage, NodeStorage};
+use strata_storage::{create_node_storage, NodeStorage, SequencerPayloadManager};
 use strata_sync::{self, L2SyncContext, RpcSyncPeer};
 use strata_tasks::{ShutdownSignal, TaskExecutor, TaskManager};
 use tokio::{
@@ -117,7 +120,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     let ctx = start_core_tasks(
         &executor,
-        pool,
+        pool.clone(),
         &config,
         params.clone(),
         database.clone(),
@@ -139,6 +142,9 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             config.btcio.broadcaster.poll_interval_ms,
         );
         let writer_db = DatabaseBackend::writer_db(database.as_ref());
+        let sequencer_db = DatabaseBackend::sequencer_db(database.as_ref());
+        let sequencer_payload_manager =
+            Arc::new(SequencerPayloadManager::new(pool.clone(), sequencer_db));
 
         // TODO: split writer tasks from this
         start_sequencer_tasks(
@@ -146,6 +152,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             &config,
             &executor,
             writer_db,
+            sequencer_payload_manager,
             checkpoint_handle.clone(),
             broadcast_handle,
             &mut methods,
@@ -297,6 +304,112 @@ fn do_startup_checks(
     Ok(())
 }
 
+/// Checks for EE (reth) consistency and recovers missing blocks.
+///
+/// This is called on sequencer startup to detect and recover from situations where
+/// reth may have lost blocks due to consistency checks on forced exits.
+/// Blocks in the sequencer's database are considered canonical, and any missing
+/// blocks in reth are replayed using the stored exec payloads.
+fn check_ee_consistency_and_recover(
+    storage: &NodeStorage,
+    engine: &impl ExecEngineCtl,
+    sequencer_payload_manager: &SequencerPayloadManager,
+) -> anyhow::Result<()> {
+    info!("startup: checking EE consistency");
+
+    // Get the last stored exec payload slot
+    let last_payload_slot = match sequencer_payload_manager.get_last_exec_payload_slot_blocking()? {
+        Some(slot) => slot,
+        None => {
+            info!("startup: no stored exec payloads, skipping EE consistency check");
+            return Ok(());
+        }
+    };
+
+    info!(%last_payload_slot, "startup: checking EE consistency up to slot");
+
+    // Iterate through all stored payloads and check if they exist in reth
+    // We start from slot 1 (after genesis) since genesis is checked separately
+    let mut recovered_count = 0u64;
+
+    // Get all payloads from slot 1 to the last payload slot
+    let payloads =
+        sequencer_payload_manager.get_exec_payloads_in_range_blocking(1, last_payload_slot)?;
+
+    for (slot, block_id, _payload) in payloads {
+        // Get the block from storage
+        let block_bundle = storage
+            .l2()
+            .get_block_data_blocking(&block_id)?
+            .ok_or_else(|| anyhow!("missing L2BlockBundle for block {}", block_id))?;
+
+        // Check if block exists in reth
+        let block_exists = retry_with_backoff(
+            "engine_check_block_exists",
+            DEFAULT_ENGINE_CALL_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            || engine.check_block_exists(L2BlockRef::Id(block_id)),
+        )?;
+
+        if !block_exists {
+            info!(%slot, %block_id, "startup: block missing in reth, recovering");
+
+            // Create ExecPayloadData from the block bundle
+            let payload_data = ExecPayloadData::from_l2_block_bundle(&block_bundle);
+
+            // Submit the payload to reth
+            let status = retry_with_backoff(
+                "engine_submit_payload",
+                DEFAULT_ENGINE_CALL_MAX_RETRIES,
+                &ExponentialBackoff::default(),
+                || engine.submit_payload(payload_data.clone()),
+            )?;
+
+            match status {
+                BlockStatus::Valid => {
+                    info!(%slot, %block_id, "startup: recovered block in reth");
+                    recovered_count += 1;
+                }
+                BlockStatus::Invalid => {
+                    anyhow::bail!(
+                        "startup: block {} at slot {} is invalid in reth",
+                        block_id,
+                        slot
+                    );
+                }
+                BlockStatus::Syncing => {
+                    warn!(
+                        %slot,
+                        %block_id,
+                        "startup: reth is syncing, block status pending"
+                    );
+                }
+            }
+        }
+    }
+
+    if recovered_count > 0 {
+        info!(
+            %recovered_count,
+            "startup: recovered missing blocks in reth"
+        );
+
+        // Update head block to the tip after recovery
+        let tip_blockid = storage.l2().get_tip_block_blocking()?;
+        if let Err(e) = engine.update_head_block(tip_blockid) {
+            warn!(
+                %tip_blockid,
+                error = %e,
+                "startup: failed to update head block after recovery"
+            );
+        }
+    } else {
+        info!("startup: EE consistency check passed, no recovery needed");
+    }
+
+    Ok(())
+}
+
 fn start_core_tasks(
     executor: &TaskExecutor,
     pool: threadpool::ThreadPool,
@@ -362,11 +475,13 @@ fn start_core_tasks(
     })
 }
 
+#[expect(clippy::too_many_arguments, reason = "there's no way around this")]
 fn start_sequencer_tasks(
     ctx: CoreContext,
     config: &Config,
     executor: &TaskExecutor,
     writer_db: Arc<impl L1WriterDatabase>,
+    sequencer_payload_manager: Arc<SequencerPayloadManager>,
     checkpoint_handle: Arc<CheckpointHandle>,
     broadcast_handle: Arc<L1BroadcastHandle>,
     methods: &mut Methods,
@@ -378,8 +493,14 @@ fn start_sequencer_tasks(
         params,
         status_channel,
         bitcoin_client,
+        engine,
         ..
     } = ctx.clone();
+
+    // Check EE consistency and recover any missing blocks before starting sequencer operations.
+    // This must be done before any other operations to ensure reth has all blocks the sequencer
+    // has produced.
+    check_ee_consistency_and_recover(&storage, engine.as_ref(), &sequencer_payload_manager)?;
 
     // Use provided address or generate an address owned by the sequencer's bitcoin wallet
     let sequencer_bitcoin_address = executor.handle().block_on(generate_sequencer_address(
@@ -403,7 +524,8 @@ fn start_sequencer_tasks(
         broadcast_handle.clone(),
     )?;
 
-    let template_manager_handle = start_template_manager_task(&ctx, executor);
+    let template_manager_handle =
+        start_template_manager_task(&ctx, executor, sequencer_payload_manager);
 
     let admin_rpc = rpc_server::SequencerServerImpl::new(
         envelope_handle,
@@ -534,6 +656,7 @@ async fn start_rpc(
 fn start_template_manager_task(
     ctx: &CoreContext,
     executor: &TaskExecutor,
+    sequencer_payload_manager: Arc<SequencerPayloadManager>,
 ) -> block_template::TemplateManagerHandle {
     let CoreContext {
         storage,
@@ -566,5 +689,6 @@ fn start_template_manager_task(
         shared_state,
         storage.l2().clone(),
         sync_manager.clone(),
+        sequencer_payload_manager,
     )
 }
