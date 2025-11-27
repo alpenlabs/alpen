@@ -21,7 +21,8 @@ pub fn get_verification_key(key: &ProofKey) -> VerifyingKey {
         ProofZkVm::SP1 => {
             #[cfg(feature = "sp1")]
             {
-                sp1::get_host(key.context()).vk()
+                let host = sp1::get_host(key.context());
+                host.vk()
             }
             #[cfg(not(feature = "sp1"))]
             {
@@ -40,14 +41,14 @@ pub fn get_verification_key(key: &ProofKey) -> VerifyingKey {
 /// and SP1, which each implement the [`ZkVmHost`](zkaleido::ZkVmHost) trait. The
 /// [`ZkVmHost`](zkaleido::ZkVmHost) trait is not object-safe, so this enum is used to encapsulate
 /// the different implementations.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum ZkVmHostInstance {
     /// Represents the native ZKVM host implementation.
     ///
     /// This variant uses the [`zkaleido_native_adapter::NativeHost`] implementation
     /// to provide ZKVM functionality without requiring any feature flags.
-    Native(zkaleido_native_adapter::NativeHost),
+    Native(std::sync::Arc<zkaleido_native_adapter::NativeHost>),
 
     /// Represents the SP1 ZKVM host implementation.
     ///
@@ -55,7 +56,7 @@ pub enum ZkVmHostInstance {
     /// available when the `sp1` feature flag is enabled. Attempting to use this variant
     /// without enabling the `sp1` feature will result in a compile-time error or a runtime panic.
     #[cfg(feature = "sp1")]
-    SP1(&'static zkaleido_sp1_host::SP1Host),
+    SP1(std::sync::Arc<zkaleido_sp1_host::SP1Host>),
 }
 
 /// Resolves the appropriate ZKVM host instance based on the provided [`ProofKey`].
@@ -71,7 +72,8 @@ pub fn resolve_host(proof_key: &ProofKey) -> ZkVmHostInstance {
         ProofZkVm::SP1 => {
             #[cfg(feature = "sp1")]
             {
-                ZkVmHostInstance::SP1(sp1::get_host(proof_key.context()))
+                let host = sp1::get_host(proof_key.context());
+                ZkVmHostInstance::SP1(host)
             }
             #[cfg(not(feature = "sp1"))]
             {
