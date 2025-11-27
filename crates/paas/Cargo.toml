@@ -3,6 +3,9 @@ name = "strata-paas"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 # Strata service framework
 strata-service.workspace = true
@@ -20,4 +23,3 @@ zkaleido.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-tokio-test = "0.4"

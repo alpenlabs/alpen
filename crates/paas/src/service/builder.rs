@@ -9,12 +9,11 @@ use tokio::sync::{mpsc, Semaphore};
 use crate::{
     config::ProverServiceConfig,
     error::ProverServiceResult,
-    handle::ProverHandle,
     handler::ProofHandler,
-    service::ProverService,
-    state::ProverServiceState,
-    timer::{TimerCommand, TimerHandle, TimerService},
-    ProgramType, ZkVmBackend,
+    program::ProgramType,
+    scheduler::{RetryScheduler, SchedulerCommand, SchedulerHandle},
+    service::{handle::ProverHandle, runtime::ProverService, state::ProverServiceState},
+    ZkVmBackend,
 };
 
 /// Builder for creating a prover service with direct handler execution
@@ -37,6 +36,16 @@ pub struct ProverServiceBuilder<P: ProgramType> {
     config: ProverServiceConfig<ZkVmBackend>,
     handlers: HashMap<P::RoutingKey, Arc<dyn ProofHandler<P>>>,
     task_store: Option<Arc<dyn crate::persistence::TaskStore<P>>>,
+}
+
+impl<P: ProgramType> std::fmt::Debug for ProverServiceBuilder<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProverServiceBuilder")
+            .field("config", &self.config)
+            .field("handler_count", &self.handlers.len())
+            .field("has_task_store", &self.task_store.is_some())
+            .finish()
+    }
 }
 
 impl<P: ProgramType> ProverServiceBuilder<P> {
@@ -144,16 +153,9 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
             .task_store
             .expect("TaskStore must be provided via with_task_store()");
 
-        // Create timer service channel
-        let (timer_tx, timer_rx) = mpsc::unbounded_channel::<TimerCommand<P>>();
-        let timer_handle = TimerHandle::new(timer_tx);
-
-        // Create timer service and spawn it as a critical background task
-        let timer_service = TimerService::new(timer_rx, executor.clone());
-        executor.spawn_critical_async("paas_timer_service", async move {
-            timer_service.run().await;
-            Ok(())
-        });
+        // Create retry scheduler channel (handle created first, service later)
+        let (scheduler_tx, scheduler_rx) = mpsc::unbounded_channel::<SchedulerCommand<P>>();
+        let scheduler_handle = SchedulerHandle::new(scheduler_tx);
 
         // Create ProverServiceState with handlers and semaphores
         let state = ProverServiceState::new(
@@ -162,14 +164,23 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
             self.handlers,
             semaphores,
             executor.clone(),
-            timer_handle,
+            scheduler_handle,
         );
 
         // Create service builder
         let mut service_builder = ServiceBuilder::<ProverService<P>, _>::new().with_state(state);
 
-        // Create command handle
+        // Create command handles (retry scheduler needs its own handle)
+        let scheduler_command_handle = Arc::new(service_builder.create_command_handle(100));
         let command_handle = service_builder.create_command_handle(100);
+
+        // Now create and spawn retry scheduler with its command handle
+        let retry_scheduler =
+            RetryScheduler::new(scheduler_rx, scheduler_command_handle, executor.clone());
+        executor.spawn_critical_async("paas_retry_scheduler", async move {
+            retry_scheduler.run().await;
+            Ok(())
+        });
 
         // Launch service
         let monitor = service_builder

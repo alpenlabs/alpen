@@ -13,9 +13,10 @@ use crate::{
     error::{ProverServiceError, ProverServiceResult},
     handler::ProofHandler,
     persistence::{TaskRecord, TaskStore},
+    program::ProgramType,
+    scheduler::SchedulerHandle,
     task::{TaskId, TaskResult, TaskStatus},
-    timer::TimerHandle,
-    ProgramType, ZkVmBackend,
+    ZkVmBackend,
 };
 
 /// Service state for ProverService (Direct Handler Execution with Persistence)
@@ -43,8 +44,18 @@ pub struct ProverServiceState<P: ProgramType> {
     /// Task executor for spawning background tasks
     pub(crate) executor: TaskExecutor,
 
-    /// Timer service handle for delayed executions
-    pub(crate) timer: TimerHandle<P>,
+    /// Retry scheduler handle for delayed executions
+    pub(crate) retry_scheduler: SchedulerHandle<P>,
+}
+
+impl<P: ProgramType> std::fmt::Debug for ProverServiceState<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProverServiceState")
+            .field("config", &self.config)
+            .field("handler_count", &self.handlers.len())
+            .field("retry_scheduler", &self.retry_scheduler)
+            .finish()
+    }
 }
 
 impl<P: ProgramType> ProverServiceState<P> {
@@ -55,7 +66,7 @@ impl<P: ProgramType> ProverServiceState<P> {
         handlers: HashMap<P::RoutingKey, Arc<dyn ProofHandler<P>>>,
         semaphores: HashMap<ZkVmBackend, Arc<Semaphore>>,
         executor: TaskExecutor,
-        timer: TimerHandle<P>,
+        retry_scheduler: SchedulerHandle<P>,
     ) -> Self {
         Self {
             config,
@@ -63,7 +74,7 @@ impl<P: ProgramType> ProverServiceState<P> {
             handlers,
             semaphores,
             executor,
-            timer,
+            retry_scheduler,
         }
     }
 
@@ -457,11 +468,7 @@ impl<P: ProgramType> ProverServiceState<P> {
             }
             Err(e) => {
                 // Unknown error - treat as transient if retries enabled
-                warn!(
-                    ?task_id,
-                    ?e,
-                    "Task failed with unknown error"
-                );
+                warn!(?task_id, ?e, "Task failed with unknown error");
 
                 if self.config.retry.is_some() {
                     // Retries enabled - treat as transient error
@@ -492,7 +499,11 @@ impl<P: ProgramType> ProverServiceState<P> {
                             error: error_msg.clone(),
                         },
                     ) {
-                        error!(?task_id, ?err, "Failed to update status to PermanentFailure");
+                        error!(
+                            ?task_id,
+                            ?err,
+                            "Failed to update status to PermanentFailure"
+                        );
                     } else {
                         warn!(?task_id, %error_msg, "Task permanently failed (retries disabled)");
                     }
@@ -503,13 +514,12 @@ impl<P: ProgramType> ProverServiceState<P> {
 
     /// Schedule a retry for a task after the calculated delay
     ///
-    /// This is a non-async method that delegates to the timer service.
-    /// Assumes retry config is present (caller should check before calling).
+    /// This is a non-async method that delegates to the retry scheduler.
+    /// The scheduler will send a RetryTask command back to the service after the delay.
     fn schedule_retry(&self, task_id: TaskId<P>, retry_count: u32) {
         if let Some(ref retry_config) = self.config.retry {
             let delay_secs = retry_config.calculate_delay(retry_count);
-            let state = self.clone();
-            self.timer.schedule_retry(task_id, delay_secs, state);
+            self.retry_scheduler.schedule_retry(task_id, delay_secs);
         }
     }
 

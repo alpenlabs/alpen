@@ -36,4 +36,8 @@ where
         task_id: T,
         completion: CommandCompletionSender<TaskStatus>,
     },
+
+    /// Internal command to retry a task (sent by retry scheduler)
+    /// No completion sender needed - fire and forget
+    RetryTask { task_id: T },
 }

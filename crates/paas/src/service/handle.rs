@@ -5,12 +5,11 @@ use std::sync::Arc;
 use strata_service::{CommandHandle, ServiceMonitor};
 
 use crate::{
-    commands::ProverCommand,
     error::{ProverServiceError, ProverServiceResult},
-    service::ProverServiceStatus,
-    state::StatusSummary,
+    program::ProgramType,
+    service::{commands::ProverCommand, runtime::ProverServiceStatus, state::StatusSummary},
     task::{TaskId, TaskResult, TaskStatus},
-    ProgramType, ZkVmBackend,
+    ZkVmBackend,
 };
 
 /// Handle for interacting with the prover service
@@ -21,6 +20,14 @@ use crate::{
 pub struct ProverHandle<P: ProgramType> {
     command_handle: Arc<CommandHandle<ProverCommand<TaskId<P>>>>,
     monitor: ServiceMonitor<ProverServiceStatus>,
+}
+
+impl<P: ProgramType> std::fmt::Debug for ProverHandle<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProverHandle")
+            .field("monitor", &self.monitor)
+            .finish()
+    }
 }
 
 impl<P: ProgramType> ProverHandle<P> {

@@ -17,26 +17,30 @@
 //! returning a `HostInstance` enum that wraps concrete host types. This design
 //! centralizes all host resolution logic in the consumer code.
 //!
-//! See the handler and remote_handler modules for examples.
+//! See the handler module for examples.
+//!
+//! ## Module Organization
+//!
+//! - **service**: Core service runtime (service, state, commands, handle, builder)
+//! - **scheduler**: Retry scheduler for delayed execution (internal)
+//! - **handler**: Proof generation handlers (traits, remote handler, host resolution)
+//! - Root-level modules: task, config, program, error, persistence (fundamental types)
 
 use serde::{Deserialize, Serialize};
 // Re-export zkaleido traits for convenience
 pub use zkaleido::{ZkVmRemoteHost, ZkVmRemoteProgram};
 
-mod builder;
-mod commands;
+// Core type modules at root
 mod config;
 mod error;
-mod handle;
-mod handler;
-mod host;
 mod persistence;
 mod program;
-mod remote_handler;
-mod service;
-mod state;
 mod task;
-mod timer;
+
+// Domain modules
+mod handler;
+mod scheduler;
+mod service;
 
 /// ZkVm backend identifier
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -49,19 +53,23 @@ pub enum ZkVmBackend {
     Risc0,
 }
 
-// Re-export framework types
-pub use builder::ProverServiceBuilder;
+// Re-export all public types
 pub use config::{ProverServiceConfig, RetryConfig, WorkerConfig};
 pub use error::{ProverServiceError, ProverServiceResult};
-pub use handle::ProverHandle;
-pub use handler::{BoxedInput, InputFetcher, ProofHandler, ProofStorer};
-pub use host::{HostInstance, HostResolver};
+pub use handler::{
+    BoxedInput, HostInstance, HostResolver, InputFetcher, ProofHandler, ProofStorer,
+    RemoteProofHandler,
+};
 pub use persistence::{TaskRecord, TaskStore};
 pub use program::ProgramType;
-pub use remote_handler::RemoteProofHandler;
-pub use service::{ProverService, ProverServiceStatus};
-pub use state::{ProverServiceState, StatusSummary};
+pub use service::{
+    ProverHandle, ProverService, ProverServiceBuilder, ProverServiceState, ProverServiceStatus,
+    StatusSummary,
+};
 pub use task::{TaskId, TaskResult, TaskStatus};
+
+// Scheduler types are internal, not re-exported
+// (used by service internals, not public API)
 
 #[cfg(test)]
 mod tests {
