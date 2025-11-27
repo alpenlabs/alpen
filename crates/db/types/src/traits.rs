@@ -8,7 +8,7 @@ use serde::Serialize;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_ol_chain_types::L2BlockBundle;
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
@@ -35,6 +35,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
+    fn sequencer_db(&self) -> Arc<impl SequencerDatabase>;
 }
 
 /// Database interface to control our view of ASM state.
@@ -350,4 +351,37 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
+}
+
+/// Sequencer-specific database for storing exec payloads.
+///
+/// This database stores execution payloads produced by the sequencer to enable
+/// recovery in case reth loses blocks on restart due to consistency checks.
+/// On sequencer startup, blocks stored here are treated as canonical and any
+/// missing blocks in reth will be resubmitted using the stored payloads.
+pub trait SequencerDatabase: Send + Sync + 'static {
+    /// Stores an exec payload for a given L2 block slot.
+    ///
+    /// The payload data is the serialized EL payload from `L2BlockAccessory::exec_payload`.
+    fn put_exec_payload(&self, slot: u64, block_id: L2BlockId, payload: Vec<u8>) -> DbResult<()>;
+
+    /// Gets the exec payload for a given slot, if present.
+    fn get_exec_payload(&self, slot: u64) -> DbResult<Option<(L2BlockId, Vec<u8>)>>;
+
+    /// Gets the highest slot that has a stored exec payload.
+    fn get_last_exec_payload_slot(&self) -> DbResult<Option<u64>>;
+
+    /// Gets exec payloads in a slot range (inclusive).
+    ///
+    /// Returns payloads ordered by slot ascending.
+    fn get_exec_payloads_in_range(
+        &self,
+        start_slot: u64,
+        end_slot: u64,
+    ) -> DbResult<Vec<(u64, L2BlockId, Vec<u8>)>>;
+
+    /// Deletes exec payloads from start_slot onwards (inclusive).
+    ///
+    /// This is used for cleanup after checkpoints are finalized.
+    fn del_exec_payloads_from_slot(&self, start_slot: u64) -> DbResult<Vec<u64>>;
 }
