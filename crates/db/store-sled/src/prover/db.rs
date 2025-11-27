@@ -20,7 +20,7 @@ define_sled_database!(
 
 impl ProofDBSled {
     /// Get task by TaskId
-    pub fn paas_get_task(
+    pub fn get_task(
         &self,
         task_id: &SerializableTaskId,
     ) -> Result<Option<SerializableTaskRecord>, typed_sled::error::Error> {
@@ -28,7 +28,7 @@ impl ProofDBSled {
     }
 
     /// Get TaskId by UUID
-    pub fn paas_get_task_id_by_uuid(
+    pub fn get_task_id_by_uuid(
         &self,
         uuid: &str,
     ) -> Result<Option<SerializableTaskId>, typed_sled::error::Error> {
@@ -36,7 +36,7 @@ impl ProofDBSled {
     }
 
     /// Insert a task record (both task tree and UUID index)
-    pub fn paas_insert_task(
+    pub fn insert_task(
         &self,
         task_id: &SerializableTaskId,
         record: &SerializableTaskRecord,
@@ -47,7 +47,7 @@ impl ProofDBSled {
     }
 
     /// Update task record
-    pub fn paas_update_task(
+    pub fn update_task(
         &self,
         task_id: &SerializableTaskId,
         record: &SerializableTaskRecord,
@@ -57,7 +57,7 @@ impl ProofDBSled {
     }
 
     /// List all tasks (helper to avoid private iterator types)
-    pub fn paas_list_all_tasks(&self) -> Vec<(SerializableTaskId, SerializableTaskRecord)> {
+    pub fn list_all_tasks(&self) -> Vec<(SerializableTaskId, SerializableTaskRecord)> {
         self.paas_task_tree
             .iter()
             .filter_map(|result| result.ok())

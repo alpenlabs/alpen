@@ -94,22 +94,39 @@ async fn main_inner(args: Args) -> anyhow::Result<()> {
     let db_config = SledDbConfig::new_with_constant_backoff(retries, delay_ms);
     let db = Arc::new(ProofDBSled::new(sled_db, db_config)?);
 
-    let prover_config = ProverManagerConfig::new(
-        config.get_workers(),
-        config.polling_interval,
-        config.max_retry_counter,
-    );
-    let manager = ProverManager::new(
-        task_tracker.clone(),
-        operator.clone(),
+    // Create handlers for each proof type
+    let checkpoint_handler = Arc::new(new_checkpoint_handler(
+        operator.checkpoint_operator().clone(),
         db.clone(),
-        prover_config,
-    );
-    debug!("Initialized Prover Manager");
+        executor.clone(),
+    ));
 
-    // Run prover manager in background
-    spawn(async move { manager.process_pending_tasks().await });
-    debug!("Spawn process pending tasks");
+    let cl_stf_handler = Arc::new(new_cl_stf_handler(
+        operator.cl_stf_operator().clone(),
+        db.clone(),
+        executor.clone(),
+    ));
+
+    let evm_ee_handler = Arc::new(new_evm_ee_stf_handler(
+        operator.evm_ee_operator().clone(),
+        db.clone(),
+        executor.clone(),
+    ));
+
+    // Create and launch Prover Service with handlers
+    let builder = ProverServiceBuilder::<ProofTask>::new(service_config)
+        .with_task_store(task_store)
+        .with_retry_config(strata_paas::RetryConfig::default())
+        .with_handler(ProofContextVariant::Checkpoint, checkpoint_handler)
+        .with_handler(ProofContextVariant::ClStf, cl_stf_handler)
+        .with_handler(ProofContextVariant::EvmEeStf, evm_ee_handler);
+
+    // Launch the service
+    let service_handle = runtime
+        .block_on(builder.launch(&executor))
+        .context("Failed to launch prover service")?;
+
+    debug!("Initialized Prover Service");
 
     // run the checkpoint runner
     if config.enable_checkpoint_runner {
