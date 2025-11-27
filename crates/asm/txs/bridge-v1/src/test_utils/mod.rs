@@ -1,3 +1,4 @@
+#[cfg(test)]
 mod commit;
 mod deposit;
 mod utils;

@@ -5,7 +5,7 @@
 
 use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
-    script::PushBytesBuf, transaction::Version,
+    transaction::Version,
 };
 use strata_codec::encode_to_vec;
 use strata_l1_txfmt::{ParseConfig, TagData};

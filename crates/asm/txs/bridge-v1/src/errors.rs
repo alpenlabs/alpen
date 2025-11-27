@@ -3,11 +3,7 @@ use std::fmt::Debug;
 use strata_codec::CodecError;
 use thiserror::Error;
 
-use crate::{
-    constants::{DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
-    deposit::MIN_DEPOSIT_TX_AUX_DATA_LEN,
-    deposit_request::MIN_DRT_AUX_DATA_LEN,
-};
+use crate::deposit_request::MIN_DRT_AUX_DATA_LEN;
 
 /// A generic "expected vs got" error.
 #[derive(Debug, Error, Clone)]
