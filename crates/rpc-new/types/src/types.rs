@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ol_chain_types_new::TransactionAttachment;
+use strata_identifiers::{Buf32, OLBlockCommitment};
+use strata_ol_chain_types_new::{Slot, TransactionAttachment};
 use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
 
 /// OL chain status with latest, confirmed, and finalized blocks.
@@ -12,6 +12,34 @@ pub struct RpcOLChainStatus {
     pub latest: OLBlockCommitment,
     pub confirmed: OLBlockCommitment,
     pub finalized: OLBlockCommitment,
+}
+
+/// Epoch summary for an account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcAccountEpochSummary {
+    /// Final balance at the end of the epoch(sats).
+    final_balance: u64,
+    /// Final sequence number at the end of the epoch.
+    final_seq_no: u64,
+    /// Final next input idx for the account.
+    final_next_input_idx: u64,
+    /// All the updates processed in the epoch.
+    updates: Vec<RpcUpdateSummary>,
+    /// All new messages received in the epoch.
+    messages: Vec<RpcMessageEntry>,
+}
+
+/// Describes an update to a snark account. This is derivable from L1.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RpcUpdateSummary {
+    /// New state after update.
+    new_state: Buf32,
+    /// Num messages processed in the update.
+    processed_msgs_count: u64,
+    /// Next input idx for the account.
+    new_next_input_idx: u64,
+    /// Any extra data associated with the account.
+    extra_data: Vec<u8>,
 }
 
 /// Message payload with bitcoin value and data.
@@ -39,29 +67,25 @@ impl From<RpcMsgPayload> for MsgPayload {
     }
 }
 
-impl From<&MsgPayload> for RpcMsgPayload {
-    fn from(payload: &MsgPayload) -> Self {
-        Self {
-            value: payload.value().to_sat(),
-            data: payload.data().to_vec(),
-        }
-    }
-}
-
 /// Message entry with source account, epoch, and payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcMessageEntry {
+    /// Sender of the message.
     #[serde(with = "hex::serde")]
     pub source: [u8; 32],
+    /// Epoch that the message was included.
     pub incl_epoch: u32,
+    /// Actual message payload.
     pub payload: RpcMsgPayload,
 }
 
 /// Proof state: inner state commitment and next message index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcProofState {
+    /// The state root.
     #[serde(with = "hex::serde")]
     pub inner_state: [u8; 32],
+    /// Next inbox id to process.
     pub next_inbox_msg_idx: u64,
 }
 
@@ -122,18 +146,19 @@ pub struct RpcOLTransaction {
     pub attachments: RpcTransactionAttachment,
 }
 
-/// Block messages: block ID and its message payloads.
+/// Block data associated with an account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockMessages {
-    pub block_id: OLBlockId,
-    pub messages: Vec<RpcMsgPayload>,
-}
-
-/// Block update inputs: block ID and its update input data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockUpdateInputs {
-    pub block_id: OLBlockId,
-    pub inputs: Vec<RpcUpdateInputData>,
+pub struct RpcAccountBlockSummary {
+    /// Block's slot.
+    slot: Slot,
+    /// Account's balance after the block execution(sats).
+    final_balance: u64,
+    /// Account's seq no after the block execution.
+    final_seq_no: u64,
+    /// Account's updates processed in the block.
+    updates: Vec<RpcUpdateSummary>,
+    /// New messages for the account in the block.
+    new_messages: Vec<RpcMessageEntry>,
 }
 
 // Type conversions

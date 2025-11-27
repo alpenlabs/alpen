@@ -2,12 +2,26 @@
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_primitives::proof::Epoch;
 use strata_rpc_types_new::*;
 
-/// Core OL RPC methods for querying chain state.
+/// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
-pub trait OLApi {
+pub trait OLCommonApi {
+    /// Get an account's epoch summary for a given epoch.
+    #[method(name = "getAccountEpochSummary")]
+    async fn get_acct_epoch_summary(
+        &self,
+        account_id: AccountId,
+        epoch: Epoch,
+    ) -> RpcResult<RpcAccountEpochSummary>;
+}
+
+/// Api methods served by all block executing nodes.
+#[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
+#[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
+pub trait OLFullNodeApi {
     /// Get current chain status (latest, confirmed, finalized).
     #[method(name = "chainStatus")]
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus>;
@@ -19,28 +33,16 @@ pub trait OLApi {
         start_slot: u64,
         end_slot: u64,
     ) -> RpcResult<Vec<OLBlockCommitment>>;
-}
 
-#[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
-#[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
-pub trait OLSequencerApi {
-    /// Get update inputs for specified blocks and account.
-    #[method(name = "getUpdateInputsForBlocks")]
-    async fn get_update_inputs_for_blocks(
+    /// Get summaries associated with an account for given blocks.
+    #[method(name = "getBlocksSummaries")]
+    async fn get_blocks_data(
         &self,
         account_id: AccountId,
         blocks: Vec<OLBlockId>,
-    ) -> RpcResult<Vec<BlockUpdateInputs>>;
+    ) -> RpcResult<Vec<RpcAccountBlockSummary>>;
 
-    /// Get message payloads for specified blocks and account.
-    #[method(name = "getMessagesForBlocks")]
-    async fn get_messages_for_blocks(
-        &self,
-        account_id: AccountId,
-        blocks: Vec<OLBlockId>,
-    ) -> RpcResult<Vec<BlockMessages>>;
-
-    /// Submit transaction to mempool. Returns immediately with tx ID.
+    /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId>;
 }

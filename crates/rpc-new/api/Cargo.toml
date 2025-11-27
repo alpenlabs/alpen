@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-identifiers.workspace = true
+strata-primitives.workspace = true
 strata-rpc-types-new.workspace = true
 
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
