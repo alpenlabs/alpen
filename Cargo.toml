@@ -249,9 +249,9 @@ strata-tasks = { git = "https://github.com/alpenlabs/strata-common" }
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 
 # moho
-moho-runtime-impl = { git = "https://github.com/alpenlabs/moho", branch = "STR-1797-container-mmr" }
-moho-runtime-interface = { git = "https://github.com/alpenlabs/moho", branch = "STR-1797-container-mmr" }
-moho-types = { git = "https://github.com/alpenlabs/moho", branch = "STR-1797-container-mmr" }
+moho-runtime-impl = { git = "https://github.com/alpenlabs/moho" }
+moho-runtime-interface = { git = "https://github.com/alpenlabs/moho" }
+moho-types = { git = "https://github.com/alpenlabs/moho" }
 
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17" }
@@ -436,12 +436,12 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.0" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
 
 # This is needed for custom build of SP1
 [profile.release.build-override]
