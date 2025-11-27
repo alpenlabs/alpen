@@ -170,13 +170,12 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
         // Create service builder
         let mut service_builder = ServiceBuilder::<ProverService<P>, _>::new().with_state(state);
 
-        // Create command handles (retry scheduler needs its own handle)
-        let scheduler_command_handle = Arc::new(service_builder.create_command_handle(100));
-        let command_handle = service_builder.create_command_handle(100);
+        // Create command handle (shared between scheduler and ProverHandle)
+        let command_handle = Arc::new(service_builder.create_command_handle(100));
 
-        // Now create and spawn retry scheduler with its command handle
+        // Now create and spawn retry scheduler with the command handle
         let retry_scheduler =
-            RetryScheduler::new(scheduler_rx, scheduler_command_handle, executor.clone());
+            RetryScheduler::new(scheduler_rx, Arc::clone(&command_handle), executor.clone());
         executor.spawn_critical_async("paas_retry_scheduler", async move {
             retry_scheduler.run().await;
             Ok(())
