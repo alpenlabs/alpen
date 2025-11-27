@@ -2564,7 +2564,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2584,7 +2584,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -2602,7 +2602,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -4225,7 +4225,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4538,7 +4538,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5674,7 +5674,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "tokio",
  "tower-service",
  "tracing",
@@ -6958,7 +6958,7 @@ dependencies = [
  "strata-predicate",
  "tree_hash 0.8.0",
  "tree_hash_derive 0.8.0",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17)",
 ]
 
 [[package]]
@@ -7133,7 +7133,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7299,7 +7299,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate 3.4.0",
  "proc-macro2",
  "quote",
  "syn 2.0.111",
@@ -8458,7 +8458,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.31",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -8495,9 +8495,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11830,7 +11830,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12149,7 +12149,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.13.0",
+ "bitcoin_hashes 0.14.0",
  "rand 0.8.5",
  "secp256k1-sys 0.10.1",
  "serde",
@@ -13771,7 +13771,7 @@ dependencies = [
  "serde",
  "strata-crypto",
  "strata-identifiers",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -13823,7 +13823,7 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -13916,7 +13916,7 @@ dependencies = [
  "threadpool",
  "tokio",
  "tracing",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -14033,10 +14033,11 @@ dependencies = [
  "strata-db-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
+ "strata-paas",
  "strata-primitives",
  "strata-state",
  "typed-sled",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -14055,7 +14056,7 @@ dependencies = [
  "strata-state",
  "strata-test-utils",
  "strata-test-utils-btc",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -14079,7 +14080,7 @@ dependencies = [
  "strata-storage-common",
  "thiserror 2.0.17",
  "typed-sled",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -14454,6 +14455,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-paas"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "borsh",
+ "serde",
+ "serde_json",
+ "strata-service",
+ "strata-tasks",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "uuid",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+]
+
+[[package]]
 name = "strata-params"
 version = "0.1.0"
 dependencies = [
@@ -14507,7 +14526,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-checkpoint-types",
  "strata-proofimpl-cl-stf",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
  "zkaleido-native-adapter",
 ]
 
@@ -14522,7 +14541,7 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-params",
  "strata-primitives",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
  "zkaleido-native-adapter",
 ]
 
@@ -14550,7 +14569,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
  "zkaleido-native-adapter",
 ]
 
@@ -14568,12 +14587,12 @@ dependencies = [
  "jsonrpsee",
  "serde",
  "serde_json",
- "sled",
  "strata-common",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
+ "strata-paas",
  "strata-params",
  "strata-primitives",
  "strata-proofimpl-checkpoint",
@@ -14584,14 +14603,14 @@ dependencies = [
  "strata-rpc-types",
  "strata-rpc-utils",
  "strata-sp1-guest-builder",
- "strata-test-utils",
+ "strata-tasks",
  "strata-zkvm-hosts",
  "thiserror 2.0.17",
  "tokio",
  "toml 0.5.11",
  "tracing",
- "typed-sled",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "zkaleido-native-adapter",
  "zkaleido-sp1-host",
 ]
 
@@ -14602,7 +14621,7 @@ dependencies = [
  "jsonrpsee",
  "strata-primitives",
  "strata-rpc-types",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -14624,7 +14643,7 @@ dependencies = [
  "strata-zkvm-hosts",
  "tokio",
  "tracing",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
  "zkaleido-sp1-host",
 ]
 
@@ -14643,7 +14662,7 @@ dependencies = [
  "strata-primitives",
  "strata-rpc-types",
  "strata-sequencer",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -14991,7 +15010,7 @@ dependencies = [
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
  "zkaleido-native-adapter",
  "zkaleido-sp1-host",
 ]
@@ -15235,7 +15254,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -16140,6 +16159,7 @@ checksum = "2f87b8aa10b915a06587d0dec516c282ff295b475d94abf425d62b57710070a2"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 
@@ -16456,7 +16476,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -17174,14 +17194,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "zkaleido-native-adapter"
+name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17#3cd4f232d2807fa61b6545847f695a7119841adb"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
 dependencies = [
+ "arbitrary",
+ "async-trait",
  "bincode",
  "borsh",
  "serde",
- "zkaleido",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "zkaleido-native-adapter"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "borsh",
+ "hex",
+ "serde",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
@@ -17196,21 +17231,23 @@ dependencies = [
  "sha2 0.10.9",
  "substrate-bn",
  "thiserror 1.0.69",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17)",
 ]
 
 [[package]]
 name = "zkaleido-sp1-host"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17#3cd4f232d2807fa61b6545847f695a7119841adb"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
 dependencies = [
+ "async-trait",
  "bincode",
  "borsh",
+ "hex",
  "serde",
  "sp1-prover",
  "sp1-sdk",
  "sp1-stark",
- "zkaleido",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
 ]
 
 [[package]]
