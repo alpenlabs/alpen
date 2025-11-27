@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use strata_consensus_logic::{message::ForkChoiceMessage, sync_manager::SyncManager};
-use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
-use strata_storage::L2BlockManager;
+use strata_ol_chain_types::{L2BlockBundle, L2BlockId, L2Header};
+use strata_storage::{L2BlockManager, SequencerPayloadManager};
 use tokio::sync::{mpsc, oneshot};
+use tracing::warn;
 
 use super::{BlockCompletionData, BlockGenerationConfig, BlockTemplate, Error, SharedState};
 
@@ -37,6 +38,10 @@ pub struct TemplateManagerHandle {
     shared: SharedState,
     l2_block_manager: Arc<L2BlockManager>,
     sync_manager: Arc<SyncManager>,
+
+    /// Sequencer payload manager for persisting exec payloads.
+    /// Used for EE consistency recovery on startup.
+    sequencer_payload_manager: Arc<SequencerPayloadManager>,
 }
 
 impl TemplateManagerHandle {
@@ -47,12 +52,14 @@ impl TemplateManagerHandle {
         shared: SharedState,
         l2_block_manager: Arc<L2BlockManager>,
         sync_manager: Arc<SyncManager>,
+        sequencer_payload_manager: Arc<SequencerPayloadManager>,
     ) -> Self {
         Self {
             tx,
             shared,
             l2_block_manager,
             sync_manager,
+            sequencer_payload_manager,
         }
     }
 
@@ -94,6 +101,9 @@ impl TemplateManagerHandle {
     }
 
     /// Complete specified template with [`BlockCompletionData`] and submit to FCM.
+    ///
+    /// This also persists the exec payload to the sequencer database for EE consistency
+    /// recovery in case reth loses blocks on restart.
     pub async fn complete_block_template(
         &self,
         template_id: L2BlockId,
@@ -104,6 +114,26 @@ impl TemplateManagerHandle {
                 TemplateManagerRequest::CompleteBlockTemplate(template_id, completion, tx)
             })
             .await?;
+
+        // Persist exec payload to sequencer db for EE consistency recovery.
+        // This is done before saving to L2BlockManager to ensure the payload is persisted
+        // even if subsequent operations fail.
+        let slot = block_bundle.header().slot();
+        let exec_payload = block_bundle.accessory().exec_payload().to_vec();
+        if let Err(e) = self
+            .sequencer_payload_manager
+            .put_exec_payload_async(slot, template_id, exec_payload)
+            .await
+        {
+            // Log the error but don't fail - the block can still be processed
+            // and the payload can be recovered from the L2BlockBundle if needed
+            warn!(
+                %slot,
+                %template_id,
+                error = %e,
+                "failed to persist exec payload to sequencer db"
+            );
+        }
 
         // save block to db
         self.l2_block_manager
