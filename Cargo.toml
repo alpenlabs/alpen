@@ -66,6 +66,7 @@ members = [
   "crates/ol/state-types",
   "crates/ol/stf",
   "crates/ol-chainstate-types",
+  "crates/paas",
   "crates/params",
   "crates/primitives",
   "crates/proof-impl/checkpoint",
@@ -160,7 +161,7 @@ strata-asm-common = { path = "crates/asm/common" }
 strata-asm-logs = { path = "crates/asm/logs" }
 strata-asm-manifest-types = { path = "crates/asm/manifest-types" }
 strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
-strata-asm-proto-administration = { path = "crates/asm/subprotocols/administration" }
+strata-asm-proto-administration = { path = "crates/asm/subprotocols/admin" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-checkpoint-txs = { path = "crates/asm/txs/checkpoint" }
 strata-asm-proto-checkpoint-v0 = { path = "crates/asm/subprotocols/checkpoint-v0" }
@@ -212,6 +213,7 @@ strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-msg-types = { path = "crates/ol/msg-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-stf = { path = "crates/ol/stf" }
+strata-paas = { path = "crates/paas" }
 strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
@@ -261,8 +263,8 @@ moho-runtime-interface = { git = "https://github.com/alpenlabs/moho" }
 moho-types = { git = "https://github.com/alpenlabs/moho" }
 
 # zkaleido
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17" }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
