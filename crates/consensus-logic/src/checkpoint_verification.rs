@@ -2,67 +2,9 @@
 
 use strata_chaintsn::transition::verify_checkpoint_proof;
 use strata_checkpoint_types::{BatchTransition, Checkpoint};
-use strata_csm_types::L1Checkpoint;
 use strata_primitives::params::*;
 use tracing::*;
 use zkaleido::{ProofReceipt, ZkVmError, ZkVmResult};
-
-use crate::errors::CheckpointError;
-
-/// Verifies if a checkpoint if valid, given the context of a previous checkpoint.
-///
-/// If this is the first checkpoint we verify, then there is no checkpoint to
-/// check against.
-///
-/// This does NOT check the signature.
-// TODO reduce this to actually just passing in the core information we really
-// need, not like the height
-pub fn verify_checkpoint(
-    checkpoint: &Checkpoint,
-    prev_checkpoint: Option<&L1Checkpoint>,
-    params: &RollupParams,
-) -> Result<(), CheckpointError> {
-    // First thing obviously is to verify the proof.  No sense in continuing if
-    // the proof is invalid.
-    let proof_receipt = construct_receipt(checkpoint);
-    verify_proof(checkpoint, &proof_receipt, params)?;
-
-    // And check that we're building upon the previous state correctly.
-    if let Some(prev) = prev_checkpoint {
-        verify_checkpoint_extends(checkpoint, prev, params)?;
-    } else {
-        // If it's the first checkpoint we want it to be the initial epoch.
-        if checkpoint.batch_info().epoch() != 0 {
-            return Err(CheckpointError::SkippedGenesis);
-        }
-    }
-
-    Ok(())
-}
-
-/// Verifies that the a checkpoint extends the state of a previous checkpoint.
-fn verify_checkpoint_extends(
-    checkpoint: &Checkpoint,
-    prev: &L1Checkpoint,
-    _params: &RollupParams,
-) -> Result<(), CheckpointError> {
-    let epoch = checkpoint.batch_info().epoch();
-    let prev_epoch = prev.batch_info.epoch();
-    let last_tsn = prev.batch_transition;
-    let tsn = checkpoint.batch_transition();
-
-    // Check that the epoch numbers line up.
-    if epoch != prev_epoch + 1 {
-        return Err(CheckpointError::Sequencing(epoch, prev_epoch));
-    }
-
-    if last_tsn.chainstate_transition.post_state_root != tsn.chainstate_transition.pre_state_root {
-        warn!("checkpoint mismatch on L2 state!");
-        return Err(CheckpointError::MismatchL2State);
-    }
-
-    Ok(())
-}
 
 /// Constructs a receipt from a checkpoint.
 ///
@@ -72,12 +14,12 @@ pub fn construct_receipt(checkpoint: &Checkpoint) -> ProofReceipt {
     checkpoint.construct_receipt()
 }
 
-/// Verify that the provided checkpoint proof is valid for the verifier key.
+/// Verify that the provided checkpoint and proof is valid for the verifier key.
 ///
 /// # Caution
 ///
 /// If the checkpoint proof is empty, this function returns an `Ok(())`.
-pub fn verify_proof(
+pub fn verify_proof_receipt_against_checkpoint(
     checkpoint: &Checkpoint,
     proof_receipt: &ProofReceipt,
     rollup_params: &RollupParams,
@@ -98,7 +40,7 @@ pub fn verify_proof(
         ));
     }
 
-    verify_checkpoint_proof(checkpoint, rollup_params)
+    verify_checkpoint_proof(checkpoint, proof_receipt, rollup_params)
 }
 
 #[cfg(test)]
@@ -125,7 +67,8 @@ mod tests {
         // Explicitly create an empty proof receipt for this test case
         let empty_receipt = ProofReceipt::new(Proof::new(vec![]), PublicValues::new(vec![]));
 
-        let result = verify_proof(&checkpoint, &empty_receipt, &rollup_params);
+        let result =
+            verify_proof_receipt_against_checkpoint(&checkpoint, &empty_receipt, &rollup_params);
 
         // Check that the result is an Err containing the OutputExtractionError variant.
         assert!(matches!(
@@ -152,7 +95,8 @@ mod tests {
         // with our receipt handling.
         checkpoint.set_proof(Proof::new(Vec::new()));
 
-        let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
+        let result =
+            verify_proof_receipt_against_checkpoint(&checkpoint, &proof_receipt, &rollup_params);
 
         // In native mode, there is no proof so it is fine
         assert!(result.is_ok());
@@ -179,7 +123,8 @@ mod tests {
         // with our receipt handling.
         checkpoint.set_proof(Proof::new(Vec::new()));
 
-        let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
+        let result =
+            verify_proof_receipt_against_checkpoint(&checkpoint, &proof_receipt, &rollup_params);
 
         assert!(matches!(
             result,
@@ -189,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_empty_proof_on_non_native_mode_with_timeout() {
-        let (mut checkpoint, mut rollup_params) = get_test_input();
+        let (checkpoint, mut rollup_params) = get_test_input();
 
         // Ensure the mode is Timeout for this test
         rollup_params.proof_publish_mode = ProofPublishMode::Timeout(1_000);
@@ -207,11 +152,9 @@ mod tests {
         let proof_receipt =
             ProofReceipt::new(Proof::new(vec![]), PublicValues::new(encoded_public_values));
 
-        // We have to to make the proof empty a second time because we're sloppy
-        // with our receipt handling.
-        checkpoint.set_proof(Proof::new(Vec::new()));
+        let result =
+            verify_proof_receipt_against_checkpoint(&checkpoint, &proof_receipt, &rollup_params);
 
-        let result = verify_proof(&checkpoint, &proof_receipt, &rollup_params);
         eprintln!("verify_proof result {result:?}");
         assert!(result.is_ok());
     }

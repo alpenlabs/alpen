@@ -281,8 +281,11 @@ fn has_expected_checkpoint(
 
         // Proof inside checkpoint must be valid.
         let proof_receipt = checkpoint_verification::construct_receipt(checkpoint);
-        if let Err(err) = checkpoint_verification::verify_proof(checkpoint, &proof_receipt, params)
-        {
+        if let Err(err) = checkpoint_verification::verify_proof_receipt_against_checkpoint(
+            checkpoint,
+            &proof_receipt,
+            params,
+        ) {
             warn!(?err, blockid = %rec.blkid(), "checkpoint proof verification failed");
             continue;
         }
