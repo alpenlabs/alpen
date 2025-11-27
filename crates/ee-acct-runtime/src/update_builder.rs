@@ -5,8 +5,8 @@ use strata_ee_acct_types::{
     CommitChainSegment, EeAccountState, ExecBlock, ExecutionEnvironment, UpdateExtraData,
 };
 use strata_snark_acct_types::{
-    LedgerRefs, MessageEntry, OutputMessage, OutputTransfer, ProofState, UpdateOperationData,
-    UpdateOutputs,
+    LedgerRefs, MAX_MESSAGES, MAX_TRANSFERS, MessageEntry, OutputMessage, OutputTransfer,
+    ProofState, UpdateOperationData, UpdateOutputs,
 };
 
 use crate::{
@@ -106,7 +106,14 @@ impl UpdateBuilder {
                         .iter()
                         .map(|t| OutputTransfer::new(t.dest(), t.value())),
                 )
-                .expect("transfers capacity exceeded in test builder");
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "transfers capacity exceeded in test builder: {e}. Current: {}, Adding: {}, Max: {}",
+                        self.accumulated_outputs.transfers().len(),
+                        block_outputs.output_transfers().len(),
+                        MAX_TRANSFERS
+                    )
+                });
 
             // Add messages (converting payload types)
             self.accumulated_outputs
@@ -116,7 +123,14 @@ impl UpdateBuilder {
                         .iter()
                         .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
                 )
-                .expect("messages capacity exceeded in test builder");
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "messages capacity exceeded in test builder: {e}. Current: {}, Adding: {}, Max: {}",
+                        self.accumulated_outputs.messages().len(),
+                        block_outputs.output_messages().len(),
+                        MAX_MESSAGES
+                    )
+                });
         }
 
         // Remove consumed inputs from the current state
