@@ -129,7 +129,10 @@ fn test_genesis_with_initial_transactions() {
     let msg = b"Hello from genesis".to_vec();
     let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
 
-    let tx = TransactionPayload::GenericAccountMessage(GamTxPayload::new(target, msg_varvec));
+    let tx = TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(target, msg_varvec.into_inner())
+            .expect("GamTxPayload creation should succeed"),
+    );
 
     // Create genesis components with both transactions and manifest (to make it terminal)
     let dummy_manifest = AsmManifest::new(
@@ -139,8 +142,8 @@ fn test_genesis_with_initial_transactions() {
     );
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![OLTransaction::new(
-            TransactionAttachment::default(),
             tx.clone(),
+            TransactionAttachment::new_empty(),
         )]),
         Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
     );
@@ -631,7 +634,10 @@ fn test_verify_block_with_transactions() {
     let target = test_account_id(1);
     let msg = b"Test message".to_vec();
     let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
-    let tx = TransactionPayload::GenericAccountMessage(GamTxPayload::new(target, msg_varvec));
+    let tx = TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(target, msg_varvec.into_inner())
+            .expect("GamTxPayload creation should succeed"),
+    );
 
     // Assemble genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
@@ -641,8 +647,8 @@ fn test_verify_block_with_transactions() {
     );
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![OLTransaction::new(
-            TransactionAttachment::default(),
             tx,
+            TransactionAttachment::new_empty(),
         )]),
         Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
     );
@@ -942,7 +948,10 @@ fn test_verify_rejects_mismatched_logs_root() {
     let target = test_account_id(1);
     let msg = b"Test message".to_vec();
     let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
-    let tx = TransactionPayload::GenericAccountMessage(GamTxPayload::new(target, msg_varvec));
+    let tx = TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(target, msg_varvec.into_inner())
+            .expect("GamTxPayload creation should succeed"),
+    );
 
     // Create genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
@@ -952,8 +961,8 @@ fn test_verify_rejects_mismatched_logs_root() {
     );
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![OLTransaction::new(
-            TransactionAttachment::default(),
             tx,
+            TransactionAttachment::new_empty(),
         )]),
         Some(OLL1ManifestContainer::new(vec![dummy_manifest])),
     );
@@ -1010,7 +1019,10 @@ fn test_verify_rejects_mismatched_body_root() {
     let target = test_account_id(1);
     let msg = b"Test message".to_vec();
     let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
-    let tx = TransactionPayload::GenericAccountMessage(GamTxPayload::new(target, msg_varvec));
+    let tx = TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(target, msg_varvec.into_inner())
+            .expect("GamTxPayload creation should succeed"),
+    );
 
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
