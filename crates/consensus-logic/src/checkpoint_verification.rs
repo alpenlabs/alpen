@@ -2,67 +2,9 @@
 
 use strata_chaintsn::transition::verify_checkpoint_proof;
 use strata_checkpoint_types::{BatchTransition, Checkpoint};
-use strata_csm_types::L1Checkpoint;
 use strata_primitives::params::*;
 use tracing::*;
 use zkaleido::{ProofReceipt, ZkVmError, ZkVmResult};
-
-use crate::errors::CheckpointError;
-
-/// Verifies if a checkpoint if valid, given the context of a previous checkpoint.
-///
-/// If this is the first checkpoint we verify, then there is no checkpoint to
-/// check against.
-///
-/// This does NOT check the signature.
-// TODO reduce this to actually just passing in the core information we really
-// need, not like the height
-pub fn verify_checkpoint(
-    checkpoint: &Checkpoint,
-    prev_checkpoint: Option<&L1Checkpoint>,
-    params: &RollupParams,
-) -> Result<(), CheckpointError> {
-    // First thing obviously is to verify the proof.  No sense in continuing if
-    // the proof is invalid.
-    let proof_receipt = construct_receipt(checkpoint);
-    verify_proof_receipt_against_checkpoint(checkpoint, &proof_receipt, params)?;
-
-    // And check that we're building upon the previous state correctly.
-    if let Some(prev) = prev_checkpoint {
-        verify_checkpoint_extends(checkpoint, prev, params)?;
-    } else {
-        // If it's the first checkpoint we want it to be the initial epoch.
-        if checkpoint.batch_info().epoch() != 0 {
-            return Err(CheckpointError::SkippedGenesis);
-        }
-    }
-
-    Ok(())
-}
-
-/// Verifies that the a checkpoint extends the state of a previous checkpoint.
-fn verify_checkpoint_extends(
-    checkpoint: &Checkpoint,
-    prev: &L1Checkpoint,
-    _params: &RollupParams,
-) -> Result<(), CheckpointError> {
-    let epoch = checkpoint.batch_info().epoch();
-    let prev_epoch = prev.batch_info.epoch();
-    let last_tsn = prev.batch_transition;
-    let tsn = checkpoint.batch_transition();
-
-    // Check that the epoch numbers line up.
-    if epoch != prev_epoch + 1 {
-        return Err(CheckpointError::Sequencing(epoch, prev_epoch));
-    }
-
-    if last_tsn.chainstate_transition.post_state_root != tsn.chainstate_transition.pre_state_root {
-        warn!("checkpoint mismatch on L2 state!");
-        return Err(CheckpointError::MismatchL2State);
-    }
-
-    Ok(())
-}
 
 /// Constructs a receipt from a checkpoint.
 ///
