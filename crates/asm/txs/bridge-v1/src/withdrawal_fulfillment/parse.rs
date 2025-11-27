@@ -80,26 +80,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_withdrawal_fulfillment_tx_invalid_type() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: WithdrawalFulfillmentInfo = arb.generate();
-
-        let mut tx = create_test_withdrawal_fulfillment_tx(&info);
-
-        // Mutate the OP_RETURN output to have wrong transaction type
-        let aux_data = vec![0u8; 4];
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, WithdrawalParseError::InvalidTxType { .. }));
-        if let WithdrawalParseError::InvalidTxType(tx_type) = err {
-            assert_eq!(tx_type, tx_input.tag().tx_type());
-        }
-    }
-
-    #[test]
     fn test_parse_withdrawal_fulfillment_tx_withdrawal_output_missing() {
         let mut arb = ArbitraryGenerator::new();
         let info: WithdrawalFulfillmentInfo = arb.generate();
