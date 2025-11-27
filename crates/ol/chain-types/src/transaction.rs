@@ -2,8 +2,9 @@ use std::fmt;
 
 use int_enum::IntEnum;
 use strata_acct_types::{AccountId, VarVec};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
 use strata_codec_utils::CodecSsz;
+use strata_identifiers::{OLTxId, hash::raw};
 use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 use crate::Slot;
@@ -34,6 +35,16 @@ impl OLTransaction {
 
     pub fn type_id(&self) -> TxTypeId {
         self.payload().type_id()
+    }
+
+    /// Computes the transaction ID by hashing the transaction's Codec encoding.
+    ///
+    /// This is used by the mempool to identify transactions and for deduplication.
+    /// The computation matches the pattern used for block IDs (`OLBlockHeader::compute_blkid()`).
+    pub fn compute_txid(&self) -> OLTxId {
+        let encoded = encode_to_vec(self).expect("transaction: encoding should succeed");
+        let hash = raw(&encoded);
+        OLTxId::from(hash)
     }
 }
 
