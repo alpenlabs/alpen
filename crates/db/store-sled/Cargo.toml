@@ -23,7 +23,9 @@ sled.workspace = true
 
 [dev-dependencies]
 strata-db-tests.workspace = true
-sled = "0.34.7"
+strata-test-utils.workspace = true
+
+sled.workspace = true
 
 [lints]
 workspace = true

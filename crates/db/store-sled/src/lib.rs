@@ -11,6 +11,7 @@ pub mod l1;
 pub mod l2;
 pub mod macros;
 pub mod prover;
+pub mod sequencer;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
 pub mod utils;
@@ -27,7 +28,14 @@ use client_state::db::ClientStateDBSled;
 pub use config::SledDbConfig;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
-use strata_db_types::{DbResult, traits::DatabaseBackend};
+use sequencer::db::SequencerDBSled;
+use strata_db_types::{
+    DbResult,
+    traits::{
+        AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend, L1BroadcastDatabase,
+        L1Database, L1WriterDatabase, L2BlockDatabase, ProofDatabase, SequencerDatabase,
+    },
+};
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
 
@@ -62,6 +70,7 @@ pub struct SledBackend {
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
+    sequencer_db: Arc<SequencerDBSled>,
 }
 
 impl SledBackend {
@@ -77,6 +86,7 @@ impl SledBackend {
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let sequencer_db = Arc::new(SequencerDBSled::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
@@ -88,24 +98,25 @@ impl SledBackend {
             writer_db,
             prover_db,
             broadcast_db,
+            sequencer_db,
         })
     }
 }
 
 impl DatabaseBackend for SledBackend {
-    fn asm_db(&self) -> Arc<impl strata_db_types::traits::AsmDatabase> {
+    fn asm_db(&self) -> Arc<impl AsmDatabase> {
         self.asm_db.clone()
     }
 
-    fn l1_db(&self) -> Arc<impl strata_db_types::traits::L1Database> {
+    fn l1_db(&self) -> Arc<impl L1Database> {
         self.l1_db.clone()
     }
 
-    fn l2_db(&self) -> Arc<impl strata_db_types::traits::L2BlockDatabase> {
+    fn l2_db(&self) -> Arc<impl L2BlockDatabase> {
         self.l2_db.clone()
     }
 
-    fn client_state_db(&self) -> Arc<impl strata_db_types::traits::ClientStateDatabase> {
+    fn client_state_db(&self) -> Arc<impl ClientStateDatabase> {
         self.client_state_db.clone()
     }
 
@@ -113,19 +124,23 @@ impl DatabaseBackend for SledBackend {
         self.chain_state_db.clone()
     }
 
-    fn checkpoint_db(&self) -> Arc<impl strata_db_types::traits::CheckpointDatabase> {
+    fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase> {
         self.checkpoint_db.clone()
     }
 
-    fn writer_db(&self) -> Arc<impl strata_db_types::traits::L1WriterDatabase> {
+    fn writer_db(&self) -> Arc<impl L1WriterDatabase> {
         self.writer_db.clone()
     }
 
-    fn prover_db(&self) -> Arc<impl strata_db_types::traits::ProofDatabase> {
+    fn prover_db(&self) -> Arc<impl ProofDatabase> {
         self.prover_db.clone()
     }
 
-    fn broadcast_db(&self) -> Arc<impl strata_db_types::traits::L1BroadcastDatabase> {
+    fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase> {
         self.broadcast_db.clone()
+    }
+
+    fn sequencer_db(&self) -> Arc<impl SequencerDatabase> {
+        self.sequencer_db.clone()
     }
 }
