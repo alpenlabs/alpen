@@ -135,14 +135,6 @@ impl<P: ProgramType> ProverHandle<P> {
             .map_err(|e| ProverServiceError::Internal(e.into()))
     }
 
-    /// Get status summary
-    pub async fn get_summary(&self) -> ProverServiceResult<StatusSummary> {
-        self.command_handle
-            .send_and_wait(|completion| ProverCommand::GetSummary { completion })
-            .await
-            .map_err(|e| ProverServiceError::Internal(e.into()))
-    }
-
     /// Get the current service status summary
     pub fn get_current_status(&self) -> StatusSummary {
         self.monitor.get_current().summary

@@ -16,6 +16,7 @@ strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-paas.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint.workspace = true
@@ -25,8 +26,8 @@ strata-prover-client-rpc-api.workspace = true
 strata-rpc-api = { workspace = true, features = ["client"] }
 strata-rpc-types.workspace = true
 strata-rpc-utils.workspace = true
+strata-tasks.workspace = true
 strata-zkvm-hosts.workspace = true
-typed-sled.workspace = true
 zkaleido.workspace = true
 
 alloy-rpc-types.workspace = true
@@ -46,11 +47,12 @@ tracing.workspace = true
 
 # sp1
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc17", optional = true }
+zkaleido-native-adapter.workspace = true
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18", features = [
+  "remote-prover",
+], optional = true }
 
 [dev-dependencies]
-strata-test-utils.workspace = true
-sled.workspace = true
 
 [features]
 default = []

@@ -1,9 +1,6 @@
 use strata_db_types::DbError;
 use strata_primitives::proof::ProofKey;
 use thiserror::Error;
-use zkaleido::ZkVmError;
-
-use crate::status::ProvingTaskStatus;
 
 /// Represents errors that can occur while performing proving tasks.
 ///
@@ -22,14 +19,6 @@ pub(crate) enum ProvingTaskError {
     #[error("Failed to borsh deserialize the input")]
     BorshSerialization(#[from] borsh::io::Error),
 
-    /// Occurs when attempting to create a task with an ID that already exists.
-    #[error("Task with ID {0:?} already exists.")]
-    TaskAlreadyFound(ProofKey),
-
-    /// Occurs when trying to access a task that does not exist.
-    #[error("Task with ID {0:?} does not exist.")]
-    TaskNotFound(ProofKey),
-
     /// Occurs when a required dependency for a task does not exist.
     #[error("Dependency with ID {0:?} does not exist.")]
     DependencyNotFound(ProofKey),
@@ -37,10 +26,6 @@ pub(crate) enum ProvingTaskError {
     /// Occurs when a requested proof is not found in the database.
     #[error("Proof with ID {0:?} does not exist in DB.")]
     ProofNotFound(ProofKey),
-
-    /// Occurs when a state transition is invalid based on the task's current status.
-    #[error("Invalid status transition: {0:?} -> {1:?}")]
-    InvalidStatusTransition(ProvingTaskStatus, ProvingTaskStatus),
 
     /// Occurs when input to a task is deemed invalid.
     #[error("Invalid input: Expected {0:?}")]
@@ -65,19 +50,4 @@ pub(crate) enum ProvingTaskError {
     /// Represents an error occurring during an RPC call.
     #[error("{0}")]
     RpcError(String),
-
-    /// Represents an error returned by the ZKVM.
-    #[error("{0:?}")]
-    ZkVmError(ZkVmError),
-
-    /// Error related to completion of something that was already completed in the past.
-    /// This error ultimately transforms the proving task into completed.
-    //
-    // Currently only used when checkpoint proof already accepted by the sequencer.
-    // TODO(STR-1567): this is a workaround - sequencer currently returns the latest checkpoint
-    // index (regardless if the checkpoint has already been proven or not) and lacks
-    // proper method to fetch the latest unproven checkpoint.
-    // Once the sequencer can return the latest unproven checkpoint, this error can be removed.
-    #[error("{0}")]
-    IdempotentCompletion(String),
 }

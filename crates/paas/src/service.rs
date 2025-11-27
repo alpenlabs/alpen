@@ -95,11 +95,6 @@ impl<P: ProgramType> AsyncService for ProverService<P> {
                     completion.send(status).await;
                 }
             }
-            ProverCommand::GetSummary { completion } => {
-                debug!("Processing GetSummary command");
-                let summary = state.generate_summary();
-                completion.send(summary).await;
-            }
         }
 
         Ok(Response::Continue)
