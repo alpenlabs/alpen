@@ -4,15 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-types.workspace = true
 strata-checkpoint-types.workspace = true
+strata-codec.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
+strata-snark-acct-types.workspace = true
 strata-state.workspace = true
 typed-sled.workspace = true
 zkaleido.workspace = true

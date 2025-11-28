@@ -13,3 +13,4 @@ pub mod l1_tests;
 pub mod l1_writer_tests;
 pub mod l2_tests;
 pub mod proof_tests;
+pub mod snark_account_message_tests;

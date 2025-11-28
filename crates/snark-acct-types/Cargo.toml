@@ -7,6 +7,7 @@ edition = "2024"
 [dependencies]
 strata-acct-types.workspace = true
 
+borsh.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
 ssz_types.workspace = true

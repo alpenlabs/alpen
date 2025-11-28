@@ -37,6 +37,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
+    fn snark_account_message_db(&self) -> Arc<impl SnarkAccountMessageDatabase>;
 }
 
 /// Database interface to control our view of ASM state.

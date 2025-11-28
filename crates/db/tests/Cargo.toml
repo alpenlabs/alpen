@@ -7,6 +7,7 @@ edition = "2021"
 workspace = true
 
 [dependencies]
+strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-types.workspace = true
 strata-checkpoint-types.workspace = true
@@ -15,6 +16,7 @@ strata-db-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
+strata-snark-acct-types.workspace = true
 strata-state.workspace = true
 strata-test-utils.workspace = true
 strata-test-utils-btc.workspace = true

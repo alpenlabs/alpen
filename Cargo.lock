@@ -14170,9 +14170,11 @@ dependencies = [
  "bincode",
  "borsh",
  "sled",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
+ "strata-codec",
  "strata-csm-types",
  "strata-db-tests",
  "strata-db-types",
@@ -14180,6 +14182,7 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-paas",
  "strata-primitives",
+ "strata-snark-acct-types",
  "strata-state",
  "typed-sled",
  "zkaleido",
@@ -14190,6 +14193,7 @@ name = "strata-db-tests"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
@@ -14198,6 +14202,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-primitives",
+ "strata-snark-acct-types",
  "strata-state",
  "strata-test-utils",
  "strata-test-utils-btc",
@@ -14988,6 +14993,7 @@ dependencies = [
 name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "ssz",
  "ssz_codegen",
  "ssz_derive",

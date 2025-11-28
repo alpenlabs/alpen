@@ -1,5 +1,7 @@
 //! Snark account types.
 
+use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, Encode};
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, RawMerkleProof};
 
 use crate::ssz_generated::ssz::messages::{MessageEntry, MessageEntryProof};
@@ -54,5 +56,59 @@ impl MessageEntryProof {
     /// Gets the raw merkle proof.
     pub fn raw_proof(&self) -> &RawMerkleProof {
         &self.raw_proof
+    }
+}
+
+// Implement BorshSerialize/BorshDeserialize for database storage
+// These types are SSZ types, but we add Borsh implementations for database storage
+impl BorshSerialize for MessageEntry {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        // Serialize as SSZ bytes, then write length + bytes
+        let ssz_bytes = self.as_ssz_bytes();
+        let len = ssz_bytes.len() as u32;
+        borsh::BorshSerialize::serialize(&len, writer)?;
+        writer.write_all(&ssz_bytes)?;
+        Ok(())
+    }
+}
+
+impl BorshDeserialize for MessageEntry {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        // Read length, then SSZ bytes
+        let len = u32::deserialize_reader(reader)?;
+        let mut ssz_bytes = vec![0u8; len as usize];
+        reader.read_exact(&mut ssz_bytes)?;
+        MessageEntry::from_ssz_bytes(&ssz_bytes).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to decode MessageEntry from SSZ: {:?}", e),
+            )
+        })
+    }
+}
+
+impl BorshSerialize for MessageEntryProof {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        // Serialize as SSZ bytes, then write length + bytes
+        let ssz_bytes = self.as_ssz_bytes();
+        let len = ssz_bytes.len() as u32;
+        borsh::BorshSerialize::serialize(&len, writer)?;
+        writer.write_all(&ssz_bytes)?;
+        Ok(())
+    }
+}
+
+impl BorshDeserialize for MessageEntryProof {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        // Read length, then SSZ bytes
+        let len = u32::deserialize_reader(reader)?;
+        let mut ssz_bytes = vec![0u8; len as usize];
+        reader.read_exact(&mut ssz_bytes)?;
+        MessageEntryProof::from_ssz_bytes(&ssz_bytes).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to decode MessageEntryProof from SSZ: {:?}", e),
+            )
+        })
     }
 }
