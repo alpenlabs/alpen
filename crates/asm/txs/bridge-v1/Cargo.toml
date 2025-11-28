@@ -17,7 +17,7 @@ strata-codec.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
-# Optional dependency for test utilities
+# Optional dependencies for test utilities
 strata-crypto = { workspace = true, optional = true }
 
 [dev-dependencies]

@@ -1,17 +1,12 @@
-use bdk_wallet::bitcoin::{bip32::Xpriv, PublicKey, Transaction, XOnlyPublicKey};
+use bdk_wallet::bitcoin::{bip32::Xpriv, Network, PublicKey, XOnlyPublicKey};
 use secp256k1::SECP256K1;
 use strata_crypto::EvenSecretKey;
-use strata_l1tx::deposit::deposit_request::extract_deposit_request_info;
-use strata_params::DepositTxParams;
+use strata_l1tx::utils::generate_taproot_address as generate_taproot_address_impl;
 use strata_primitives::{
-    constants::{EE_ADDRESS_LEN, STRATA_OP_WALLET_DERIVATION_PATH},
-    l1::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey, DepositRequestInfo},
+    buf::Buf32, constants::STRATA_OP_WALLET_DERIVATION_PATH, l1::BitcoinAddress,
 };
 
-use crate::{
-    constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES},
-    error::Error,
-};
+use crate::error::Error;
 
 /// Parses operator EvenSecretKey from extended private key bytes
 ///
@@ -24,47 +19,27 @@ use crate::{
 /// # Returns
 /// * `Result<Vec<EvenSecretKey>, Error>` - Vector of derived even secret keys
 pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<EvenSecretKey>, Error> {
-    Ok(operator_keys
+    operator_keys
         .iter()
         .map(|bytes| {
-            let xpriv = Xpriv::decode(bytes).expect("valid Xpriv bytes");
+            let xpriv = Xpriv::decode(bytes).map_err(|_| Error::InvalidXpriv)?;
 
             let derived_xpriv = xpriv
                 .derive_priv(SECP256K1, &STRATA_OP_WALLET_DERIVATION_PATH)
-                .expect("good child key");
+                .map_err(|_| Error::InvalidXpriv)?;
 
-            EvenSecretKey::from(derived_xpriv.private_key)
+            Ok(EvenSecretKey::from(derived_xpriv.private_key))
         })
-        .collect())
+        .collect::<Result<Vec<_>, Error>>()
 }
 
-/// Parses a deposit request transaction (DRT) and extracts relevant information
-///
-/// Validates the transaction against expected parameters and extracts
-/// deposit request information for further processing.
-///
-/// # Arguments
-/// * `tx` - The Bitcoin transaction to parse
-/// * `address` - Expected Bitcoin address for validation
-/// * `operators_pubkey` - Aggregated public key of operators
-///
-/// # Returns
-/// * `Result<DepositRequestInfo, Error>` - Parsed deposit request information
-pub(crate) fn parse_drt(
-    tx: &Transaction,
-    address: BitcoinAddress,
-    operators_pubkey: XOnlyPublicKey,
-) -> Result<DepositRequestInfo, Error> {
-    let config = DepositTxParams {
-        magic_bytes: *MAGIC_BYTES,
-        max_address_length: EE_ADDRESS_LEN,
-        deposit_amount: BitcoinAmount::from(BRIDGE_OUT_AMOUNT),
-        address,
-        operators_pubkey: BitcoinXOnlyPublicKey::new(operators_pubkey.serialize().into())
-            .expect("good XOnlyPublicKey"),
-    };
-
-    extract_deposit_request_info(tx, &config).ok_or(Error::TxParser("Bad DRT".to_string()))
+/// Generates a taproot address from operator public keys
+pub(crate) fn generate_taproot_address(
+    operator_wallet_pks: &[Buf32],
+    network: Network,
+) -> Result<(BitcoinAddress, XOnlyPublicKey), Error> {
+    generate_taproot_address_impl(operator_wallet_pks, network)
+        .map_err(|e| Error::TxBuilder(e.to_string()))
 }
 
 /// Parses an [`XOnlyPublicKey`] from a hex string.

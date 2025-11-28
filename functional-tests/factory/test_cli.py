@@ -66,9 +66,7 @@ def create_deposit_transaction(
 def create_withdrawal_fulfillment(
     destination: str,
     amount: int,
-    operator_idx: int,
     deposit_idx: int,
-    deposit_txid: str,
     btc_url: str,
     btc_user: str,
     btc_password: str,
@@ -79,9 +77,7 @@ def create_withdrawal_fulfillment(
     Args:
         destination: Destination Bitcoin address (BOSD format)
         amount: Amount in satoshis
-        operator_idx: Operator index
         deposit_idx: Deposit index
-        deposit_txid: Deposit transaction ID (hex)
         btc_url: Bitcoin RPC URL
         btc_user: Bitcoin RPC username
         btc_password: Bitcoin RPC password
@@ -94,9 +90,7 @@ def create_withdrawal_fulfillment(
         "create-withdrawal-fulfillment",
         "--destination", destination,
         "--amount", str(amount),
-        "--operator-idx", str(operator_idx),
         "--deposit-idx", str(deposit_idx),
-        "--deposit-txid", deposit_txid,
         "--btc-url", btc_url,
         "--btc-user", btc_user,
         "--btc-password", btc_password,

@@ -12,6 +12,9 @@ pub(crate) enum Error {
     #[error("Invalid public key")]
     PublicKey,
 
+    #[error("Invalid extended private key")]
+    InvalidXpriv,
+
     #[error("Not a P2TR address")]
     NotTaprootAddress,
 
@@ -23,9 +26,6 @@ pub(crate) enum Error {
 
     #[error("Transaction builder error: {0}")]
     TxBuilder(String),
-
-    #[error("MuSig error: {0}")]
-    Musig(String),
 
     #[error("Transaction parser error: {0}")]
     TxParser(String),

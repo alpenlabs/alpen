@@ -9,6 +9,7 @@
 pub mod commit;
 pub mod constants;
 pub mod deposit;
+pub mod deposit_request;
 pub mod errors;
 pub mod withdrawal_fulfillment;
 

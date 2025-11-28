@@ -144,15 +144,14 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
     pub fn mark_deposit_fulfilled(&mut self, winfo: &WithdrawalFulfillmentInfo) {
         let deposit_ent = self.deposit_entry_mut_expect(winfo.deposit_idx);
 
-        let oidx = winfo.operator_idx;
-        let is_valid = deposit_ent.deposit_state().is_dispatched_to(oidx);
-
-        assert!(is_valid, "stateop: incorrect deposit state dispatch");
+        // Derive operator_idx from the deposit's Dispatched state
+        let oidx = match deposit_ent.deposit_state() {
+            DepositState::Dispatched(dispatched) => dispatched.assignee(),
+            _ => panic!("stateop: deposit must be in Dispatched state to be fulfilled"),
+        };
 
         deposit_ent.set_state(DepositState::Fulfilled(FulfilledState::new(
-            winfo.operator_idx,
-            winfo.amt,
-            winfo.txid,
+            oidx, winfo.amt, winfo.txid,
         )));
     }
 

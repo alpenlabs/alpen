@@ -250,15 +250,15 @@ fn process_l1_deposit(
 }
 
 /// Withdrawal Fulfillment with correct metadata is seen.
-/// Mark the withthdrawal as being executed and prevent reassignment to another operator.
+/// Mark the withdrawal as being executed and prevent reassignment to another operator.
 fn process_withdrawal_fulfillment(
     state: &mut StateCache,
     info: &WithdrawalFulfillmentInfo,
 ) -> Result<(), OpError> {
-    if !state.is_valid_withdrawal_fulfillment(info.deposit_idx, info.operator_idx) {
+    if !state.is_valid_withdrawal_fulfillment(info.deposit_idx) {
         return Err(OpError::InvalidDeposit {
             deposit_idx: info.deposit_idx,
-            operator_idx: info.operator_idx,
+            operator_idx: 0, // Placeholder, actual operator is derived from state
         });
     }
 
@@ -588,7 +588,6 @@ mod tests {
         let withdrawal_fulfillment_protocol_op =
             ProtocolOperation::WithdrawalFulfillment(WithdrawalFulfillmentInfo {
                 deposit_idx: 0,
-                operator_idx: 0,
                 amt: BitcoinAmount::from_int_btc(10),
                 txid: Buf32::zero(),
             });

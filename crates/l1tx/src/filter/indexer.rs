@@ -1,11 +1,20 @@
 use bitcoin::{Block, Transaction};
+use strata_asm_stf::group_txs_by_subprotocol;
+use strata_asm_txs_bridge_v1::{
+    deposit::{parse_deposit_tx, validate_deposit_output_lock},
+    withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
+    BRIDGE_V1_SUBPROTOCOL_ID,
+};
 use strata_asm_types::{DepositInfo, DepositSpendInfo, WithdrawalFulfillmentInfo};
 use strata_checkpoint_types::SignedCheckpoint;
 use strata_primitives::indexed::Indexed;
 
 use super::{
-    extract_da_blobs, find_deposit_spends, parse_valid_checkpoint_envelope,
-    try_parse_tx_as_withdrawal_fulfillment, try_parse_tx_deposit, TxFilterConfig,
+    extract_da_blobs, find_deposit_spends, parse_valid_checkpoint_envelope, TxFilterConfig,
+};
+use crate::utils::{
+    convert_bridge_v1_deposit_to_protocol_deposit,
+    convert_bridge_v1_withdrawal_to_protocol_withdrawal,
 };
 
 /// Interface to handle storage of extracted information from a transaction.
@@ -54,20 +63,39 @@ fn index_tx<V: TxVisitor>(
     mut visitor: V,
     filter_config: &TxFilterConfig,
 ) -> Option<V::Output> {
+    let tag = filter_config.deposit_config.magic_bytes;
+
+    if let Some(tx_refs) = group_txs_by_subprotocol(tag, [tx]).remove(&BRIDGE_V1_SUBPROTOCOL_ID) {
+        for tx_input in tx_refs {
+            if let Ok(dp) =
+                parse_deposit_tx(&tx_input).map(convert_bridge_v1_deposit_to_protocol_deposit)
+            {
+                if validate_deposit_output_lock(
+                    tx_input.tx(),
+                    &filter_config.deposit_config.operators_pubkey,
+                )
+                .is_ok()
+                {
+                    visitor.visit_deposit(dp);
+                }
+            }
+
+            if let Ok(bridge_v1_withdrawal) = parse_withdrawal_fulfillment_tx(&tx_input) {
+                let wf = convert_bridge_v1_withdrawal_to_protocol_withdrawal(
+                    bridge_v1_withdrawal,
+                    tx.compute_txid(),
+                );
+                visitor.visit_withdrawal_fulfillment(wf);
+            }
+        }
+    }
+
     if let Some(ckpt) = parse_valid_checkpoint_envelope(tx, filter_config) {
         visitor.visit_checkpoint(ckpt);
     }
 
-    for dp in try_parse_tx_deposit(tx, filter_config) {
-        visitor.visit_deposit(dp);
-    }
-
     for da in extract_da_blobs(tx, filter_config) {
         visitor.visit_da(da);
-    }
-
-    if let Some(info) = try_parse_tx_as_withdrawal_fulfillment(tx, filter_config) {
-        visitor.visit_withdrawal_fulfillment(info);
     }
 
     for spend_info in find_deposit_spends(tx, filter_config) {

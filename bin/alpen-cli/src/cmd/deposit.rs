@@ -15,6 +15,7 @@ use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
+use strata_asm_txs_bridge_v1::deposit_request::DepositRequestAuxData;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_primitives::crypto::even_kp;
 
@@ -123,31 +124,29 @@ pub async fn deposit(
     let fee_rate = get_fee_rate(fee_rate, settings.signet_backend.as_ref()).await;
     log_fee_rate(&fee_rate);
 
-    // Construct the DRT metadata OP_RETURN:
-    // <magic_bytes>
-    // <recovery_address_pk>
-    // <alpen_address>
-    let magic_bytes = settings.magic_bytes.as_bytes();
-    let recovery_address_pk_bytes = recovery_public_key.serialize();
-    let alpen_address_bytes = alpen_address.as_slice();
-    let mut op_return_data = Vec::with_capacity(
-        magic_bytes.len() + recovery_address_pk_bytes.len() + alpen_address_bytes.len(),
-    );
-
-    op_return_data.extend_from_slice(magic_bytes);
-    op_return_data.extend_from_slice(&recovery_address_pk_bytes);
-    op_return_data.extend_from_slice(alpen_address_bytes);
+    // Construct the DRT metadata using the canonical builder
+    let drt_metadata =
+        DepositRequestAuxData::new(recovery_public_key, alpen_address.as_slice().to_vec());
 
     // Convert to PushBytes (ensures length ≤ 80 bytes)
+    let magic_bytes: [u8; 4] = settings
+        .magic_bytes
+        .as_bytes()
+        .try_into()
+        .expect("magic_bytes validated to be 4 bytes");
+    let op_return_data = drt_metadata
+        .op_return_data(magic_bytes)
+        .internal_error("Failed to generate DRT metadata")?;
     let push_bytes = PushBytesBuf::try_from(op_return_data)
         .expect("conversion should succeed after length check");
 
     let mut psbt = {
         let mut builder = l1w.build_tx();
         // Important: the deposit won't be found by the sequencer if the order isn't correct.
+        // Per SPS-50 spec: OP_RETURN must be at index 0, P2TR at index 1
         builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
         builder.add_data(&push_bytes);
+        builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
         builder.fee_rate(fee_rate);
         match builder.finish() {
             Ok(psbt) => psbt,

@@ -267,17 +267,15 @@ impl StateCache {
             .is_some()
     }
 
-    pub fn is_valid_withdrawal_fulfillment(
-        &self,
-        deposit_idx: u32,
-        assigned_operator_idx: OperatorIdx,
-    ) -> bool {
+    /// Validates that a withdrawal fulfillment is valid for the given deposit.
+    ///
+    /// A withdrawal is valid if the deposit is in Dispatched state (has an assigned operator).
+    pub fn is_valid_withdrawal_fulfillment(&self, deposit_idx: u32) -> bool {
         let Some(deposit_ent) = self.state().deposits_table().get_deposit(deposit_idx) else {
             return false;
         };
-        deposit_ent
-            .deposit_state()
-            .is_dispatched_to(assigned_operator_idx)
+        // Check that the deposit is in Dispatched state (has an assigned operator)
+        matches!(deposit_ent.deposit_state(), DepositState::Dispatched(_))
     }
 
     /// Updates the deposit state to `Fulfilled`.
@@ -285,19 +283,18 @@ impl StateCache {
     /// # Panics
     ///
     /// If the deposit idx being referenced by the withdrawal fulfillment info
-    /// does not exist.
+    /// does not exist, or if the deposit is not in Dispatched state.
     pub fn mark_deposit_fulfilled(&mut self, winfo: &WithdrawalFulfillmentInfo) {
         let deposit_ent = self.deposit_entry_mut_expect(winfo.deposit_idx);
 
-        let oidx = winfo.operator_idx;
-        let is_valid = deposit_ent.deposit_state().is_dispatched_to(oidx);
-
-        assert!(is_valid, "stateop: incorrect deposit state dispatch");
+        // Derive operator_idx from the deposit's Dispatched state
+        let oidx = match deposit_ent.deposit_state() {
+            DepositState::Dispatched(dispatched) => dispatched.assignee(),
+            _ => panic!("stateop: deposit must be in Dispatched state to be fulfilled"),
+        };
 
         deposit_ent.set_state(DepositState::Fulfilled(FulfilledState::new(
-            winfo.operator_idx,
-            winfo.amt,
-            winfo.txid,
+            oidx, winfo.amt, winfo.txid,
         )));
     }
 

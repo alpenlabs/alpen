@@ -17,17 +17,9 @@ pub struct CreateWithdrawalFulfillmentArgs {
     #[argh(option)]
     pub amount: u64,
 
-    /// operator index
-    #[argh(option)]
-    pub operator_idx: u32,
-
     /// deposit index
     #[argh(option)]
     pub deposit_idx: u32,
-
-    /// deposit transaction ID (hex)
-    #[argh(option)]
-    pub deposit_txid: String,
 
     /// bitcoin RPC URL
     #[argh(option)]
@@ -54,9 +46,7 @@ pub(crate) fn create_withdrawal_fulfillment(
     let result = withdrawal::create_withdrawal_fulfillment_cli(
         args.destination,
         args.amount,
-        args.operator_idx,
         args.deposit_idx,
-        args.deposit_txid,
         bitcoind_config,
     )
     .internal_error("Failed to create withdrawal fulfillment transaction")?;
