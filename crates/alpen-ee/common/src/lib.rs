@@ -7,9 +7,12 @@ pub mod types;
 pub use traits::{
     engine::{ExecutionEngine, ExecutionEngineError},
     ol_client::{OlClient, OlClientError},
+    payload_builder::PayloadBuilderEngine,
     storage::{OLBlockOrSlot, Storage, StorageError},
 };
 pub use types::{
-    consensus_heads::ConsensusHeads, ee_account_state::EeAccountStateAtBlock,
+    consensus_heads::ConsensusHeads,
+    ee_account_state::EeAccountStateAtBlock,
     ol_chain_status::OlChainStatus,
+    payload_builder::{DepositInfo, PayloadBuildAttributes},
 };
