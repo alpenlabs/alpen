@@ -6,7 +6,7 @@
 //! ## Commit Transaction Structure
 //!
 //! A commit transaction is posted by an operator to commit to a specific deposit UTXO and its
-//! and its corresponding payout transactions (among the available linked deposit UTXOs).
+//! corresponding payout transactions (among the available linked deposit UTXOs).
 //!
 //! ### Inputs
 //! - **First Input** (required): Must spend the first output of a Claim transaction
@@ -19,8 +19,7 @@
 //!    - Magic number (4 bytes): Protocol instance identifier
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier
 //!    - Transaction type (1 byte): Commit transaction type
-//!    - Auxiliary data (8 bytes, encoded using [`strata_codec::Codec`] which uses big-endian for
-//!      integers):
+//!    - Auxiliary data encoded as [`aux::CommitTxHeaderAux`] via [`strata_codec::Codec`]:
 //!      - Deposit index (4 bytes, u32): Index of the deposit being committed to
 //!      - Game index (4 bytes, u32): Index of the game being committed to
 //!
@@ -31,6 +30,9 @@
 //!
 //! Additional outputs may be present (e.g., change outputs) but are ignored during validation.
 mod aux;
+mod info;
 mod parse;
 
-pub use parse::{COMMIT_TX_AUX_DATA_LEN, CommitInfo, parse_commit_tx};
+pub use aux::CommitTxHeaderAux;
+pub use info::CommitInfo;
+pub use parse::parse_commit_tx;

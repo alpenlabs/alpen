@@ -19,8 +19,9 @@
 //!    - Magic number (4 bytes): Protocol instance identifier
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier
 //!    - Transaction type (1 byte): Deposit transaction type
-//!    - Auxiliary data (≤74 bytes):
-//!      - Deposit index (4 bytes, big-endian u32)
+//!    - Auxiliary data encoded as [`aux::DepositTxHeaderAux`] via [`strata_codec::Codec`]
+//!      containing:
+//!      - Deposit index (u32)
 //!      - Tapscript root hash (32 bytes) from the spent DRT
 //!      - Destination address (variable length)
 //!
@@ -37,10 +38,13 @@
 //! guarantees. It ensures that only properly authorized deposits (with presigned withdrawal
 //! transactions) can mint tokens, preserving the 1-of-N trust assumption for withdrawals.
 mod aux;
+mod info;
 mod parse;
 mod validation;
 
 pub const DEPOSIT_OUTPUT_INDEX: usize = 1;
 
-pub use parse::{DepositInfo, MIN_DEPOSIT_TX_AUX_DATA_LEN, parse_deposit_tx};
+pub use aux::DepositTxHeaderAux;
+pub use info::DepositInfo;
+pub use parse::parse_deposit_tx;
 pub use validation::{validate_deposit_output_lock, validate_drt_spending_signature};

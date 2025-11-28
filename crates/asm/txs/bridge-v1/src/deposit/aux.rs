@@ -1,3 +1,4 @@
+use arbitrary::Arbitrary;
 use bitcoin::taproot::TAPROOT_CONTROL_NODE_SIZE;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
@@ -5,10 +6,10 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 ///
 /// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
 /// and tx_type fields in the OP_RETURN output at position 0.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DepositTxHeaderAux {
+#[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
+pub struct DepositTxHeaderAux {
     /// idx of the deposit as given by the N/N multisig.
-    pub deposit_idx: u32,
+    deposit_idx: u32,
 
     /// The merkle root of the Script Tree from the Deposit Request Transaction (DRT) being spent.
     ///
@@ -22,10 +23,36 @@ pub(super) struct DepositTxHeaderAux {
     /// authorization, which would mint tokens but break the peg since there would be no presigned
     /// withdrawal transactions. This would require N-of-N trust for withdrawals instead of the
     /// intended 1-of-N trust assumption with presigned transactions.
-    pub drt_tapscript_merkle_root: [u8; TAPROOT_CONTROL_NODE_SIZE],
+    drt_tapscript_merkle_root: [u8; TAPROOT_CONTROL_NODE_SIZE],
 
     /// The destination address for the deposit.
-    pub address: Vec<u8>,
+    address: Vec<u8>,
+}
+
+impl DepositTxHeaderAux {
+    pub fn new(
+        deposit_idx: u32,
+        drt_tapscript_merkle_root: [u8; TAPROOT_CONTROL_NODE_SIZE],
+        address: Vec<u8>,
+    ) -> Self {
+        Self {
+            deposit_idx,
+            drt_tapscript_merkle_root,
+            address,
+        }
+    }
+
+    pub fn deposit_idx(&self) -> u32 {
+        self.deposit_idx
+    }
+
+    pub fn drt_tapscript_merkle_root(&self) -> [u8; TAPROOT_CONTROL_NODE_SIZE] {
+        self.drt_tapscript_merkle_root
+    }
+
+    pub fn address(&self) -> &[u8] {
+        &self.address
+    }
 }
 
 impl Codec for DepositTxHeaderAux {

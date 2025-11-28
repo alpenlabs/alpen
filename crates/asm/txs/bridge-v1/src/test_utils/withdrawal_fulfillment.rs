@@ -2,6 +2,7 @@ use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
     transaction::Version,
 };
+use strata_codec::encode_to_vec;
 use strata_l1_txfmt::{ParseConfig, TagData};
 
 use crate::{
@@ -31,16 +32,14 @@ use crate::{
 pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
-    // Auxiliary data: [DEPOSIT_IDX]
-    let aux_data = withdrawal_info.deposit_idx.to_be_bytes().to_vec(); // 4 bytes
-
+    let aux_data = encode_to_vec(withdrawal_info.header_aux()).unwrap();
     let td = TagData::new(
         BRIDGE_V1_SUBPROTOCOL_ID,
         WITHDRAWAL_FULFILLMENT_TX_TYPE,
         aux_data,
     )
     .unwrap();
-    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+    let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();
 
@@ -57,12 +56,12 @@ pub fn create_test_withdrawal_fulfillment_tx(
             // OP_RETURN output with SPS-50 tagged payload
             TxOut {
                 value: Amount::from_sat(0),
-                script_pubkey: op_return_script,
+                script_pubkey: sps_50_script,
             },
             // Withdrawal fulfillment output
             TxOut {
-                value: Amount::from_sat(withdrawal_info.withdrawal_amount.to_sat()),
-                script_pubkey: withdrawal_info.withdrawal_destination.clone(),
+                value: Amount::from_sat(withdrawal_info.withdrawal_amount().to_sat()),
+                script_pubkey: withdrawal_info.withdrawal_destination().clone(),
             },
         ],
     }

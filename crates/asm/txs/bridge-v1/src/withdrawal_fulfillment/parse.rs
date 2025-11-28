@@ -1,5 +1,3 @@
-use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 use strata_primitives::l1::BitcoinAmount;
@@ -7,77 +5,27 @@ use strata_primitives::l1::BitcoinAmount;
 use crate::{
     errors::WithdrawalParseError,
     withdrawal_fulfillment::{
-        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, aux::WithdrawalFulfillmentTxHeaderAux,
+        USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, WithdrawalFulfillmentInfo,
+        aux::WithdrawalFulfillmentTxHeaderAux,
     },
 };
-
-const DEPOSIT_IDX_SIZE: usize = 4;
-
-/// Minimum length of auxiliary data for withdrawal fulfillment transactions.
-pub const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize = DEPOSIT_IDX_SIZE;
-
-/// Information extracted from a Bitcoin withdrawal fulfillment transaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WithdrawalFulfillmentInfo {
-    /// The index of the locked deposit UTXO that the operator will receive payout from.
-    /// This index is used to verify that the operator correctly fulfilled their assignment
-    /// (correct amount to the correct user within the assigned deadline). Upon successful
-    /// verification against the state's assignments table, the operator is authorized to
-    /// claim the payout from this deposit.
-    pub deposit_idx: u32,
-
-    /// The Bitcoin script address where the withdrawn funds are being sent.
-    pub withdrawal_destination: ScriptBuf,
-
-    /// The amount of Bitcoin being withdrawn (may be less than the original deposit due to fees).
-    pub withdrawal_amount: BitcoinAmount,
-}
-
-impl<'a> Arbitrary<'a> for WithdrawalFulfillmentInfo {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        use strata_primitives::bitcoin_bosd::Descriptor;
-
-        let withdrawal_destination = Descriptor::arbitrary(u)?.to_script();
-        Ok(WithdrawalFulfillmentInfo {
-            deposit_idx: u32::arbitrary(u)?,
-            withdrawal_destination,
-            withdrawal_amount: BitcoinAmount::from_sat(u64::arbitrary(u)?),
-        })
-    }
-}
 
 /// Parses withdrawal fulfillment transaction to extract [`WithdrawalFulfillmentInfo`].
 ///
 /// Parses a withdrawal fulfillment transaction following the SPS-50 specification and extracts
-/// the withdrawal fulfillment information including the deposit index, recipient address, and
-/// withdrawal amount. See the module-level documentation for the complete transaction structure.
-///
-/// The function validates the transaction structure and parses the auxiliary data containing:
-/// - Deposit index (4 bytes, big-endian u32) - identifies the locked deposit UTXO that the operator
-///   will receive payout from after successful verification of assignment fulfillment
-///
-/// # Parameters
-///
-/// - `tx` - Reference to the transaction input containing the withdrawal fulfillment transaction
-///   and its associated tag data
-///
-/// # Returns
-///
-/// - `Ok(WithdrawalFulfillmentInfo)` - Successfully parsed withdrawal fulfillment information
-/// - `Err(WithdrawalParseError)` - If the transaction structure is invalid, has insufficient
-///   outputs, invalid metadata size, or any parsing step encounters malformed data
+/// the decoded auxiliary data ([`WithdrawalFulfillmentTxHeaderAux`]), recipient address, and
+/// withdrawal amount. The auxiliary data is encoded with [`strata_codec::Codec`] and currently
+/// contains only the deposit index that ties the payout to a specific assignment.
 ///
 /// # Errors
 ///
-/// This function will return an error if:
-/// - The transaction has fewer than 2 outputs (missing withdrawal fulfillment or OP_RETURN)
-/// - The auxiliary data size doesn't match the expected metadata size
-/// - Any of the metadata fields cannot be parsed correctly
+/// Returns [`WithdrawalParseError`] if the auxiliary data cannot be decoded into
+/// [`WithdrawalFulfillmentTxHeaderAux`] or if the required withdrawal fulfillment output at index 1
+/// is missing.
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
 ) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
-    let withdrawal_auxdata: WithdrawalFulfillmentTxHeaderAux =
-        decode_buf_exact(tx.tag().aux_data())?;
+    let header_aux: WithdrawalFulfillmentTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
     let withdrawal_fulfillment_output = &tx
         .tx()
@@ -88,11 +36,11 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
 
-    Ok(WithdrawalFulfillmentInfo {
-        deposit_idx: withdrawal_auxdata.deposit_idx,
+    Ok(WithdrawalFulfillmentInfo::new(
+        header_aux,
         withdrawal_destination,
         withdrawal_amount,
-    })
+    ))
 }
 
 #[cfg(test)]
@@ -103,23 +51,13 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        BRIDGE_V1_SUBPROTOCOL_ID,
-        constants::WITHDRAWAL_FULFILLMENT_TX_TYPE,
-        test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_withdrawal_fulfillment_tx,
-            mutate_op_return_output, parse_tx,
-        },
+    use crate::test_utils::{
+        TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data, parse_tx,
     };
 
-    /// Tests that our hardcoded size constants match the actual type sizes.
-    /// This is necessary to catch if the underlying types change size in the future,
-    /// which would break the wire format compatibility for auxiliary data parsing.
-    #[test]
-    fn test_valid_size() {
-        let deposit_idx_size: usize = std::mem::size_of::<u32>();
-        assert_eq!(deposit_idx_size, DEPOSIT_IDX_SIZE);
-    }
+    /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
+    const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
+        std::mem::size_of::<WithdrawalFulfillmentTxHeaderAux>();
 
     #[test]
     fn test_parse_withdrawal_fulfillment_tx_success() {
@@ -172,13 +110,8 @@ mod tests {
         let mut tx = create_test_withdrawal_fulfillment_tx(&info);
 
         // Mutate the OP_RETURN output to have shorter aux len - this should fail
-        let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
-        let tagged_payload = create_tagged_payload(
-            BRIDGE_V1_SUBPROTOCOL_ID,
-            WITHDRAWAL_FULFILLMENT_TX_TYPE,
-            aux_data,
-        );
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let short_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
+        mutate_aux_data(&mut tx, short_aux_data);
 
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
@@ -186,13 +119,8 @@ mod tests {
         assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
 
         // Mutate the OP_RETURN output to have longer aux len - this should fail
-        let aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
-        let tagged_payload = create_tagged_payload(
-            BRIDGE_V1_SUBPROTOCOL_ID,
-            WITHDRAWAL_FULFILLMENT_TX_TYPE,
-            aux_data,
-        );
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let long_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
+        mutate_aux_data(&mut tx, long_aux_data);
 
         let tx_input = parse_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();

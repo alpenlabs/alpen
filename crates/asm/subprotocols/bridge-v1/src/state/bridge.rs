@@ -97,7 +97,7 @@ impl BridgeV1State {
     /// # Returns
     ///
     /// - `Ok(())` - If the deposit passes all validation checks
-    /// - `Err(DepositError)` - If validation fails for any reason
+    /// - `Err(DepositValidationError)` - If validation fails for any reason
     ///
     /// # Errors
     ///
@@ -112,28 +112,32 @@ impl BridgeV1State {
         info: &DepositInfo,
     ) -> Result<(), DepositValidationError> {
         // Verify the deposit amount matches the bridge's expected amount
-        if info.amt.to_sat() != self.denomination.to_sat() {
+        if info.amt().to_sat() != self.denomination.to_sat() {
             return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
                 expected: self.denomination.to_sat(),
-                got: info.amt.to_sat(),
+                got: info.amt().to_sat(),
             }));
         }
 
         // Validate the DRT spending signature against the aggregated operator key
         validate_drt_spending_signature(
             tx,
-            info.drt_tapscript_merkle_root,
+            info.header_aux().drt_tapscript_merkle_root(),
             self.operators().agg_key(),
-            info.amt.into(),
+            info.amt().into(),
         )?;
 
         // Ensure the deposit output is properly locked to the aggregated operator key
         validate_deposit_output_lock(tx, self.operators().agg_key())?;
 
         // Verify this deposit index hasn't been used before
-        if self.deposits().get_deposit(info.deposit_idx).is_some() {
+        if self
+            .deposits()
+            .get_deposit(info.header_aux().deposit_idx())
+            .is_some()
+        {
             return Err(DepositValidationError::DepositIdxAlreadyExists(
-                info.deposit_idx,
+                info.header_aux().deposit_idx(),
             ));
         }
 
@@ -154,8 +158,8 @@ impl BridgeV1State {
     ///
     /// # Returns
     ///
-    /// - `Ok(u32)` - The deposit index assigned to the newly created deposit entry
-    /// - `Err(DepositError)` - If validation fails for any reason
+    /// - `Ok(())` - If the deposit is validated and inserted successfully
+    /// - `Err(DepositValidationError)` - If validation fails for any reason
     ///
     /// # Errors
     ///
@@ -171,7 +175,12 @@ impl BridgeV1State {
         // Validate the deposit first
         self.validate_deposit(tx, info)?;
         let notary_operators = self.operators.current_multisig().clone();
-        let entry = DepositEntry::new(info.deposit_idx, info.outpoint, notary_operators, info.amt)?;
+        let entry = DepositEntry::new(
+            info.header_aux().deposit_idx(),
+            info.outpoint(),
+            notary_operators,
+            info.amt(),
+        )?;
         self.deposits.insert_deposit(entry)?;
 
         Ok(())
@@ -277,7 +286,7 @@ impl BridgeV1State {
         &self,
         withdrawal_info: &WithdrawalFulfillmentInfo,
     ) -> Result<(), WithdrawalValidationError> {
-        let deposit_idx = withdrawal_info.deposit_idx;
+        let deposit_idx = withdrawal_info.header_aux().deposit_idx();
 
         // Check if an assignment exists for this deposit
         let assignment = self
@@ -287,7 +296,7 @@ impl BridgeV1State {
 
         // Validate withdrawal amount against assignment command
         let expected_amount = assignment.withdrawal_command().net_amount();
-        let actual_amount = withdrawal_info.withdrawal_amount;
+        let actual_amount = withdrawal_info.withdrawal_amount();
         if expected_amount != actual_amount {
             return Err(WithdrawalValidationError::AmountMismatch(Mismatch {
                 expected: expected_amount,
@@ -297,7 +306,7 @@ impl BridgeV1State {
 
         // Validate withdrawal destination against assignment command
         let expected_destination = assignment.withdrawal_command().destination().to_script();
-        let actual_destination = withdrawal_info.withdrawal_destination.clone();
+        let actual_destination = withdrawal_info.withdrawal_destination().clone();
         if expected_destination != actual_destination {
             return Err(WithdrawalValidationError::DestinationMismatch(Mismatch {
                 expected: expected_destination,
@@ -344,7 +353,7 @@ impl BridgeV1State {
         // Safe to unwrap since validate_withdrawal ensures the assignment exists
         let removed_assignment = self
             .assignments
-            .remove_assignment(withdrawal_info.deposit_idx)
+            .remove_assignment(withdrawal_info.header_aux().deposit_idx())
             .expect("Assignment must exist after successful validation");
 
         Ok(OperatorClaimUnlock {
@@ -358,7 +367,10 @@ impl BridgeV1State {
 mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::Rng;
-    use strata_asm_txs_bridge_v1::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
+    use strata_asm_txs_bridge_v1::{
+        deposit::DepositInfo, test_utils::create_test_deposit_tx,
+        withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux,
+    };
     use strata_crypto::{EvenSecretKey, schnorr::EvenPublicKey};
     use strata_primitives::{
         bitcoin_bosd::Descriptor,
@@ -436,7 +448,7 @@ mod tests {
         let mut infos = Vec::new();
         for _ in 0..count {
             let mut info: DepositInfo = arb.generate();
-            info.amt = state.denomination;
+            info.set_amt(state.denomination);
             let tx = create_test_deposit_tx(&info, privkeys);
             state.process_deposit_tx(&tx, &info).unwrap();
             infos.push(info);
@@ -486,11 +498,12 @@ mod tests {
     fn create_withdrawal_info_from_assignment(
         assignment: &AssignmentEntry,
     ) -> WithdrawalFulfillmentInfo {
-        WithdrawalFulfillmentInfo {
-            deposit_idx: assignment.deposit_idx(),
-            withdrawal_destination: assignment.withdrawal_command().destination().to_script(),
-            withdrawal_amount: assignment.withdrawal_command().net_amount(),
-        }
+        let header_aux = WithdrawalFulfillmentTxHeaderAux::new(assignment.deposit_idx());
+        WithdrawalFulfillmentInfo::new(
+            header_aux,
+            assignment.withdrawal_command().destination().to_script(),
+            assignment.withdrawal_command().net_amount(),
+        )
     }
 
     /// Test successful deposit transaction processing.
@@ -502,7 +515,7 @@ mod tests {
         let (mut bridge_state, privkeys) = create_test_state();
         for i in 0..5 {
             let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-            deposit_info.amt = bridge_state.denomination;
+            deposit_info.set_amt(bridge_state.denomination);
 
             let deposit_tx = create_test_deposit_tx(&deposit_info, &privkeys);
 
@@ -517,11 +530,14 @@ mod tests {
             assert_eq!(bridge_state.deposits().len(), i + 1);
             let stored_deposit = bridge_state
                 .deposits()
-                .get_deposit(deposit_info.deposit_idx)
+                .get_deposit(deposit_info.header_aux().deposit_idx())
                 .unwrap();
-            assert_eq!(stored_deposit.idx(), deposit_info.deposit_idx);
-            assert_eq!(stored_deposit.amt(), deposit_info.amt);
-            assert_eq!(stored_deposit.output(), &deposit_info.outpoint);
+            assert_eq!(
+                stored_deposit.idx(),
+                deposit_info.header_aux().deposit_idx()
+            );
+            assert_eq!(stored_deposit.amt(), deposit_info.amt());
+            assert_eq!(stored_deposit.output(), &deposit_info.outpoint());
         }
     }
 
@@ -545,7 +561,7 @@ mod tests {
         ));
         if let DepositValidationError::MismatchDepositAmount(mismatch) = err {
             assert_eq!(mismatch.expected, bridge_state.denomination.to_sat());
-            assert_eq!(mismatch.got, deposit_info.amt.to_sat());
+            assert_eq!(mismatch.got, deposit_info.amt().to_sat());
         }
 
         // Verify no deposit was added
@@ -561,7 +577,7 @@ mod tests {
         let (mut bridge_state, mut privkeys) = create_test_state();
 
         let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-        deposit_info.amt = bridge_state.denomination;
+        deposit_info.set_amt(bridge_state.denomination);
 
         privkeys.pop();
         let tx = create_test_deposit_tx(&deposit_info, &privkeys);
@@ -636,7 +652,7 @@ mod tests {
         ));
         if let WithdrawalCommandError::DepositWithdrawalAmountMismatch(mismatch) = err {
             assert_eq!(mismatch.got, output.amt.to_sat());
-            assert_eq!(mismatch.expected, deposit.amt.to_sat());
+            assert_eq!(mismatch.expected, deposit.amt().to_sat());
         }
     }
 
@@ -674,8 +690,8 @@ mod tests {
         let assignment = bridge_state.assignments().assignments().first().unwrap();
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
 
-        let correct_withdrawal_destination = withdrawal_info.withdrawal_destination.clone();
-        withdrawal_info.withdrawal_destination = arb.generate::<Descriptor>().to_script();
+        let correct_withdrawal_destination = withdrawal_info.withdrawal_destination().clone();
+        withdrawal_info.set_withdrawal_destination(arb.generate::<Descriptor>().to_script());
         let err = bridge_state
             .process_withdrawal_fulfillment_tx(&withdrawal_info)
             .unwrap_err();
@@ -686,7 +702,7 @@ mod tests {
         ));
         if let WithdrawalValidationError::DestinationMismatch(mismatch) = err {
             assert_eq!(mismatch.expected, correct_withdrawal_destination);
-            assert_eq!(mismatch.got, withdrawal_info.withdrawal_destination);
+            assert_eq!(mismatch.got, *withdrawal_info.withdrawal_destination());
         }
     }
 
@@ -705,8 +721,8 @@ mod tests {
         let assignment = bridge_state.assignments().assignments().first().unwrap();
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
 
-        let correct_withdrawal_amount = withdrawal_info.withdrawal_amount;
-        withdrawal_info.withdrawal_amount = arb.generate();
+        let correct_withdrawal_amount = withdrawal_info.withdrawal_amount();
+        withdrawal_info.set_withdrawal_amount(arb.generate());
         let err = bridge_state
             .process_withdrawal_fulfillment_tx(&withdrawal_info)
             .unwrap_err();
@@ -714,7 +730,7 @@ mod tests {
         assert!(matches!(err, WithdrawalValidationError::AmountMismatch(_)));
         if let WithdrawalValidationError::AmountMismatch(mismatch) = err {
             assert_eq!(mismatch.expected, correct_withdrawal_amount);
-            assert_eq!(mismatch.got, withdrawal_info.withdrawal_amount);
+            assert_eq!(mismatch.got, withdrawal_info.withdrawal_amount());
         }
     }
 
@@ -732,7 +748,9 @@ mod tests {
 
         let assignment = bridge_state.assignments().assignments().first().unwrap();
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-        withdrawal_info.deposit_idx = arb.generate();
+        withdrawal_info
+            .header_aux_mut()
+            .set_deposit_idx(arb.generate());
 
         let err = bridge_state
             .process_withdrawal_fulfillment_tx(&withdrawal_info)
@@ -743,7 +761,7 @@ mod tests {
             WithdrawalValidationError::NoAssignmentFound { .. }
         ));
         if let WithdrawalValidationError::NoAssignmentFound { deposit_idx } = err {
-            assert_eq!(deposit_idx, withdrawal_info.deposit_idx);
+            assert_eq!(deposit_idx, withdrawal_info.header_aux().deposit_idx());
         }
     }
 }

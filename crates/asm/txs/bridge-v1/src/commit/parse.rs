@@ -1,83 +1,22 @@
-use arbitrary::{Arbitrary, Unstructured};
-use bitcoin::{OutPoint, ScriptBuf, Txid};
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::Buf32;
 
 use crate::{
-    commit::aux::CommitTxHeaderAux,
+    commit::{CommitInfo, aux::CommitTxHeaderAux},
     errors::{CommitParseError, Mismatch},
 };
-
-/// Length of auxiliary data for commit transactions.
-/// - 4 bytes for deposit_idx (u32)
-/// - 4 bytes for game_idx (u32)
-pub const COMMIT_TX_AUX_DATA_LEN: usize = 4 + 4;
 
 /// Expected number of inputs in a commit transaction.
 const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
 
-/// Information extracted from a Bitcoin commit transaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitInfo {
-    /// The index of the deposit being committed by the operator.
-    /// This must be validated against the operator's assigned deposits in the state's assignments
-    /// table to ensure the operator is authorized to withdraw this specific deposit UTXO.
-    pub deposit_idx: u32,
-
-    /// The index of the game being played.
-    pub game_idx: u32,
-
-    /// The outpoint spent by the first input.
-    /// Must be validated that it spends from an N/N-locked output during transaction validation.
-    pub first_input_outpoint: OutPoint,
-
-    /// The script from the second output (index 1).
-    /// Must be validated as N/N-locked during transaction validation.
-    pub second_output_script: ScriptBuf,
-}
-
-impl<'a> Arbitrary<'a> for CommitInfo {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        // Generate arbitrary txid but ensure vout is always 0
-        let txid: Txid = Buf32::arbitrary(u)?.into();
-        let first_input_outpoint = OutPoint { txid, vout: 0 };
-        let second_output_script = ScriptBuf::new();
-
-        Ok(CommitInfo {
-            deposit_idx: u32::arbitrary(u)?,
-            game_idx: u32::arbitrary(u)?,
-            first_input_outpoint,
-            second_output_script,
-        })
-    }
-}
-
-/// Parses commit transaction to extract [`CommitInfo`].
-///
-/// The function validates the transaction structure and parses the auxiliary data (encoded using
-/// [`strata_codec::Codec`] with big-endian for integers) containing:
-/// - Deposit index (4 bytes, u32)
-/// - Game index (4 bytes, u32)
-///
-/// # Parameters
-///
-/// - `tx` - Reference to the transaction input containing the commit transaction and its associated
-///   tag data
-///
-/// # Returns
-///
-/// - `Ok(CommitInfo)` - Successfully parsed commit information
-/// - `Err(CommitParseError)` - If the transaction structure is invalid, has invalid metadata size,
-///   or any parsing step encounters malformed data
+/// Parses a commit transaction into [`CommitInfo`], decoding the SPS-50 auxiliary data as
+/// [`CommitTxHeaderAux`] (via [`strata_codec::Codec`]) and validating basic structure.
 ///
 /// # Errors
 ///
-/// This function will return an error if:
-/// - The transaction doesn't have exactly one input
-/// - The auxiliary data size doesn't match the expected metadata size (8 bytes)
-/// - Any of the metadata fields cannot be parsed correctly
-/// - The second output (N/N output at index 1) is missing
+/// Returns [`CommitParseError`] if the transaction does not have exactly one input, the auxiliary
+/// data fails to decode into [`CommitTxHeaderAux`], or the required N/N output at index 1 is
+/// missing.
 pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
     // Parse auxiliary data using CommitTxHeaderAux
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
@@ -100,14 +39,13 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitPars
         .clone();
 
     // Extract the previous outpoint from the first (and only) input
-    let first_input_outpoint = tx.tx().input[0].previous_output;
+    let first_input_outpoint = tx.tx().input[0].previous_output.into();
 
-    Ok(CommitInfo {
-        deposit_idx: header_aux.deposit_idx,
-        game_idx: header_aux.game_idx,
+    Ok(CommitInfo::new(
+        header_aux,
         first_input_outpoint,
         second_output_script,
-    })
+    ))
 }
 
 #[cfg(test)]
@@ -117,24 +55,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        BRIDGE_V1_SUBPROTOCOL_ID,
-        constants::COMMIT_TX_TYPE,
-        test_utils::{
-            TEST_MAGIC_BYTES, create_tagged_payload, create_test_commit_tx,
-            mutate_op_return_output, parse_tx,
-        },
-    };
+    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_commit_tx, mutate_aux_data, parse_tx};
 
-    /// Tests that our hardcoded size constant matches the expected format.
-    /// This validates that the auxiliary data length (8 bytes) matches the sum of:
-    /// - deposit_idx (4 bytes, u32)
-    /// - game_idx (4 bytes, u32)
-    #[test]
-    fn test_valid_size() {
-        let expected_len = std::mem::size_of::<u32>() * 2; // deposit_idx + game_idx
-        assert_eq!(expected_len, COMMIT_TX_AUX_DATA_LEN);
-    }
+    const COMMIT_TX_AUX_DATA_LEN: usize = std::mem::size_of::<CommitTxHeaderAux>();
 
     #[test]
     fn test_parse_commit_tx_success() {
@@ -164,10 +87,8 @@ mod tests {
         let mut tx = create_test_commit_tx(&info);
 
         // Mutate the OP_RETURN output to have shorter aux len
-        let aux_data = vec![0u8; COMMIT_TX_AUX_DATA_LEN - 1];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let shorter_aux = vec![0u8; COMMIT_TX_AUX_DATA_LEN - 1];
+        mutate_aux_data(&mut tx, shorter_aux);
 
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
@@ -175,10 +96,8 @@ mod tests {
         assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
 
         // Mutate the OP_RETURN output to have longer aux len
-        let aux_data = vec![0u8; COMMIT_TX_AUX_DATA_LEN + 1];
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data);
-        mutate_op_return_output(&mut tx, tagged_payload);
+        let longer_aux = vec![0u8; COMMIT_TX_AUX_DATA_LEN + 1];
+        mutate_aux_data(&mut tx, longer_aux);
 
         let tx_input = parse_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
