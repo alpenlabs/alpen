@@ -1,7 +1,8 @@
+use alloy_consensus::TxReceipt;
 use alloy_sol_types::SolEvent;
 use alpen_reth_primitives::{WithdrawalIntent, WithdrawalIntentEvent};
 use reth_primitives::{Receipt, TransactionSigned};
-use revm_primitives::U256;
+use revm_primitives::{alloy_primitives::Bloom, U256};
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
 use crate::constants::BRIDGEOUT_PRECOMPILE_ADDRESS;
@@ -22,37 +23,56 @@ pub(crate) fn wei_to_sats(wei: U256) -> (U256, U256) {
     wei.div_rem(WEI_PER_SAT)
 }
 
-/// Tuple of executed transaction and receipt
-pub(crate) type TxReceiptPair<'a> = (&'a TransactionSigned, &'a Receipt);
-
-/// Collects withdrawal intents from bridge-out events by matching
-/// executed transactions (for txid) and receipts.
-/// Returns a vector of [`WithdrawalIntent`]s.
+/// Extracts withdrawal intents from bridge-out events in transaction receipts.
+/// Returns an iterator of [`WithdrawalIntent`]s.
 ///
 /// # Note
 ///
-/// A [`Descriptor`], if invalid does not create an [`WithdrawalIntent`].
-pub fn collect_withdrawal_intents<'a, I>(
-    tx_receipt_pairs: I,
-) -> impl Iterator<Item = WithdrawalIntent> + 'a
-where
-    I: Iterator<Item = TxReceiptPair<'a>> + 'a,
-{
-    tx_receipt_pairs.flat_map(|(tx, receipt)| {
-        let txid = Buf32((*tx.hash()).into());
-        receipt.logs.iter().filter_map(move |log| {
-            if log.address != BRIDGEOUT_PRECOMPILE_ADDRESS {
-                return None;
-            }
+/// A [`Descriptor`], if invalid does not create a [`WithdrawalIntent`].
+///
+/// # Panics
+///
+/// Panics if the number of transactions does not match the number of receipts.
+pub fn extract_withdrawal_intents<'a>(
+    transactions: &'a [TransactionSigned],
+    receipts: &'a [Receipt],
+) -> impl Iterator<Item = WithdrawalIntent> + 'a {
+    assert_eq!(
+        transactions.len(),
+        receipts.len(),
+        "transactions and receipts must have the same length"
+    );
 
-            let event = WithdrawalIntentEvent::decode_log(log).ok()?;
-            let destination = Descriptor::from_bytes(&event.destination).ok()?;
+    transactions
+        .iter()
+        .zip(receipts.iter())
+        .flat_map(|(tx, receipt)| {
+            let txid = Buf32((*tx.hash()).into());
+            receipt.logs.iter().filter_map(move |log| {
+                if log.address != BRIDGEOUT_PRECOMPILE_ADDRESS {
+                    return None;
+                }
 
-            Some(WithdrawalIntent {
-                amt: event.amount,
-                destination,
-                withdrawal_txid: txid,
+                let event = WithdrawalIntentEvent::decode_log(log).ok()?;
+                let destination = Descriptor::from_bytes(&event.destination).ok()?;
+
+                Some(WithdrawalIntent {
+                    amt: event.amount,
+                    destination,
+                    withdrawal_txid: txid,
+                })
             })
         })
-    })
+}
+
+/// Accumulates logs bloom from all receipts in the execution output.
+///
+/// This is a general EVM function that combines blooms from all transaction receipts
+/// into a single block-level bloom filter for efficient log filtering.
+pub fn accumulate_logs_bloom(receipts: &[Receipt]) -> Bloom {
+    let mut logs_bloom = Bloom::default();
+    receipts.iter().for_each(|r| {
+        logs_bloom.accrue_bloom(&r.bloom());
+    });
+    logs_bloom
 }

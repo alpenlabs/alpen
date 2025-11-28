@@ -48,6 +48,7 @@ members = [
   "crates/ee-acct-types",
   "crates/ee-chain-types",
   "crates/eectl",
+  "crates/evm-ee",
   "crates/evmexec",
   "crates/identifiers",
   "crates/key-derivation",
@@ -311,6 +312,7 @@ reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-cli-runner = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-cli-util = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-consensus-common = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
@@ -347,7 +349,9 @@ reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth", tag = "v1
 reth-storage-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", default-features = false }
 reth-tasks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
-reth-trie = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
+reth-trie = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", features = [
+  "serde",
+] }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2", default-features = false }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
 
@@ -391,6 +395,7 @@ hex = { version = "0.4", features = ["serde"] }
 http = "1.0.0"
 hyper = "0.14.25"
 int-enum = "1.2"
+itertools = "0.14"
 jsonrpsee = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
 jsonrpsee-types = { version = "0.26.0" }

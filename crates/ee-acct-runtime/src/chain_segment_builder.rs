@@ -4,8 +4,8 @@ use digest::Digest;
 use sha2::Sha256;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
-    CommitBlockData, CommitChainSegment, ExecBlock, ExecHeader, ExecPartialState, ExecPayload,
-    ExecutionEnvironment, PendingInputEntry,
+    BlockAssembler, CommitBlockData, CommitChainSegment, ExecBlock, ExecHeader, ExecPartialState,
+    ExecPayload, ExecutionEnvironment, PendingInputEntry,
 };
 use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockPackage};
 
@@ -28,7 +28,7 @@ pub struct ChainSegmentBuilder<E: ExecutionEnvironment> {
     consumed_inputs: usize,
 }
 
-impl<E: ExecutionEnvironment> ChainSegmentBuilder<E> {
+impl<E: ExecutionEnvironment + BlockAssembler> ChainSegmentBuilder<E> {
     /// Creates a new chain segment builder from an existing state, header, and
     /// pending inputs queue.
     pub fn new(
