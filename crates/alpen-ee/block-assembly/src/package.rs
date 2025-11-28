@@ -12,6 +12,7 @@ use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
 use tracing::warn;
 
+/// Builds the block package based on execution inputs and results.
 pub(crate) fn build_block_package(
     bridge_gateway_account_id: AccountId,
     parsed_inputs: Vec<MsgData>,

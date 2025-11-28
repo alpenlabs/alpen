@@ -8,6 +8,8 @@ use strata_acct_types::Hash;
 use strata_ee_acct_types::{EeAccountState, PendingInputEntry, UpdateExtraData};
 use tracing::debug;
 
+/// Builds the block payload.
+/// All EE <-> EVM conversions should be contained inside here.
 pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine<AlpenBuiltPayload>>(
     account_state: &mut EeAccountState,
     parent_exec_blkid: Hash,

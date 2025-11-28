@@ -1,4 +1,5 @@
-#![warn(unused_crate_dependencies, reason = "wip")]
+//! Handles assembly of EE blocks.
+
 mod block;
 mod package;
 mod payload;

@@ -10,6 +10,7 @@ use strata_snark_acct_types::MessageEntry;
 
 use crate::{package::build_block_package, payload::build_exec_payload};
 
+/// All inputs that control the next built block.
 #[derive(Debug)]
 pub struct BlockAssemblyInputs {
     /// EeAccountState of last block.
@@ -27,13 +28,18 @@ pub struct BlockAssemblyInputs {
     pub bridge_gateway_account_id: AccountId,
 }
 
+/// Outputs from block assembly
 #[derive(Debug)]
 pub struct BlockAssemblyOutputs {
+    /// Block package representing the OL inputs and outputs for this block.
     pub package: ExecBlockPackage,
+    /// Block payload including full exec block body.
     pub payload: AlpenBuiltPayload,
+    /// EeAccountState after applying the new block.
     pub account_state: EeAccountState,
 }
 
+/// Builds the next block using `inputs` and `payload_builder`.
 pub async fn build_next_exec_block<E: PayloadBuilderEngine<AlpenBuiltPayload>>(
     inputs: BlockAssemblyInputs,
     payload_builder: &E,
