@@ -7,13 +7,13 @@ use crate::deposit::aux::DepositTxHeaderAux;
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
 pub struct DepositInfo {
     /// Parsed SPS-50 auxiliary data.
-    pub header_aux: DepositTxHeaderAux,
+    header_aux: DepositTxHeaderAux,
 
     /// The amount of Bitcoin deposited.
-    pub amt: BitcoinAmount,
+    amt: BitcoinAmount,
 
     /// The outpoint of the deposit transaction.
-    pub outpoint: BitcoinOutPoint,
+    outpoint: BitcoinOutPoint,
 }
 
 impl DepositInfo {

@@ -652,7 +652,7 @@ mod tests {
         ));
         if let WithdrawalCommandError::DepositWithdrawalAmountMismatch(mismatch) = err {
             assert_eq!(mismatch.got, output.amt.to_sat());
-            assert_eq!(mismatch.expected, deposit.amt.to_sat());
+            assert_eq!(mismatch.expected, deposit.amt().to_sat());
         }
     }
 

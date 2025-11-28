@@ -8,13 +8,13 @@ use crate::withdrawal_fulfillment::aux::WithdrawalFulfillmentTxHeaderAux;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WithdrawalFulfillmentInfo {
     /// Parsed SPS-50 auxiliary data.
-    pub header_aux: WithdrawalFulfillmentTxHeaderAux,
+    header_aux: WithdrawalFulfillmentTxHeaderAux,
 
     /// The Bitcoin script address where the withdrawn funds are being sent.
-    pub withdrawal_destination: ScriptBuf,
+    withdrawal_destination: ScriptBuf,
 
     /// The amount of Bitcoin being withdrawn.
-    pub withdrawal_amount: BitcoinAmount,
+    withdrawal_amount: BitcoinAmount,
 }
 
 impl WithdrawalFulfillmentInfo {

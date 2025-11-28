@@ -8,15 +8,15 @@ use crate::commit::aux::CommitTxHeaderAux;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitInfo {
     /// Parsed SPS-50 auxiliary data.
-    pub header_aux: CommitTxHeaderAux,
+    header_aux: CommitTxHeaderAux,
 
     /// The outpoint spent by the first input.
     /// Must be validated that it spends from an N/N-locked output during transaction validation.
-    pub first_input_outpoint: BitcoinOutPoint,
+    first_input_outpoint: BitcoinOutPoint,
 
     /// The script from the second output (index 1).
     /// Must be validated as N/N-locked during transaction validation.
-    pub second_output_script: ScriptBuf,
+    second_output_script: ScriptBuf,
 }
 
 impl CommitInfo {

@@ -96,8 +96,8 @@ mod tests {
             parse_deposit_tx(&tx_input).expect("Should successfully extract deposit info");
         // NOTE: we are delibertely skipping the deposit output test as the outpoint is created by
         // computing transaction id but we are using random txid in the info
-        assert_eq!(info.header_aux, parsed_info.header_aux);
-        assert_eq!(info.amt, parsed_info.amt);
+        assert_eq!(info.header_aux(), parsed_info.header_aux());
+        assert_eq!(info.amt(), parsed_info.amt());
     }
 
     #[test]
