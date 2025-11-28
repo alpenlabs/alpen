@@ -36,6 +36,7 @@ impl CommitInfo {
         &self.header_aux
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn header_aux_mut(&mut self) -> &mut CommitTxHeaderAux {
         &mut self.header_aux
     }

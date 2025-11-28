@@ -33,6 +33,7 @@ impl DepositInfo {
         &self.header_aux
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn header_aux_mut(&mut self) -> &mut DepositTxHeaderAux {
         &mut self.header_aux
     }
@@ -41,6 +42,7 @@ impl DepositInfo {
         self.amt
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn set_amt(&mut self, amt: BitcoinAmount) {
         self.amt = amt;
     }
@@ -49,6 +51,7 @@ impl DepositInfo {
         self.outpoint
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn set_outpoint(&mut self, outpoint: BitcoinOutPoint) {
         self.outpoint = outpoint;
     }

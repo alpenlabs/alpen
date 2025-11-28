@@ -34,6 +34,7 @@ impl WithdrawalFulfillmentInfo {
         &self.header_aux
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn header_aux_mut(&mut self) -> &mut WithdrawalFulfillmentTxHeaderAux {
         &mut self.header_aux
     }
@@ -42,6 +43,7 @@ impl WithdrawalFulfillmentInfo {
         &self.withdrawal_destination
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn set_withdrawal_destination(&mut self, withdrawal_destination: ScriptBuf) {
         self.withdrawal_destination = withdrawal_destination;
     }
@@ -50,6 +52,7 @@ impl WithdrawalFulfillmentInfo {
         self.withdrawal_amount
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn set_withdrawal_amount(&mut self, withdrawal_amount: BitcoinAmount) {
         self.withdrawal_amount = withdrawal_amount;
     }

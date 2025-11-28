@@ -24,6 +24,7 @@ impl WithdrawalFulfillmentTxHeaderAux {
         self.deposit_idx
     }
 
+    #[cfg(feature = "test-utils")]
     pub fn set_deposit_idx(&mut self, deposit_idx: u32) {
         self.deposit_idx = deposit_idx;
     }
