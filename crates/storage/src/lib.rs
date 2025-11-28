@@ -11,6 +11,7 @@ use anyhow::Context;
 pub use managers::{
     asm::AsmStateManager, chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
     client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
+    snark_account_message::SnarkAccountMessageManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_types::traits::DatabaseBackend;
@@ -34,6 +35,8 @@ pub struct NodeStorage {
     // TODO maybe move this into a different one?
     // update: probably not, would require moving data around
     checkpoint_manager: Arc<CheckpointDbManager>,
+
+    snark_account_message_manager: Arc<SnarkAccountMessageManager>,
 }
 
 impl NodeStorage {
@@ -60,6 +63,10 @@ impl NodeStorage {
     pub fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
         &self.checkpoint_manager
     }
+
+    pub fn snark_account_message(&self) -> &Arc<SnarkAccountMessageManager> {
+        &self.snark_account_message_manager
+    }
 }
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
@@ -78,6 +85,7 @@ where
     let chainstate_db = db.chain_state_db();
     let client_state_db = db.client_state_db();
     let checkpoint_db = db.checkpoint_db();
+    let snark_account_message_db = db.snark_account_message_db();
 
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
@@ -91,6 +99,9 @@ where
     // (see above)
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
+    let snark_account_message_manager =
+        Arc::new(SnarkAccountMessageManager::new(snark_account_message_db));
+
     Ok(NodeStorage {
         asm_state_manager: asm_manager,
         l1_block_manager,
@@ -102,5 +113,7 @@ where
 
         // (see above)
         checkpoint_manager,
+
+        snark_account_message_manager,
     })
 }
