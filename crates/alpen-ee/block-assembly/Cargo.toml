@@ -1,0 +1,29 @@
+[package]
+edition = "2021"
+name = "alpen-ee-block-assembly"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-common.workspace = true
+alpen-reth-node.workspace = true
+strata-acct-types.workspace = true
+strata-codec.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-msg-fmt.workspace = true
+strata-ol-msg-types.workspace = true
+strata-snark-acct-types.workspace = true
+
+alloy-primitives.workspace = true
+bitcoin-bosd.workspace = true
+eyre.workspace = true
+reth-node-api.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+alpen-ee-common = { workspace = true, features = ["test-utils"] }
+alloy-primitives.workspace = true

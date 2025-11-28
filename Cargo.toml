@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
   "crates/acct-types",
+  "crates/alpen-ee/block-assembly",
   "crates/alpen-ee/common",
   "crates/alpen-ee/config",
   "crates/alpen-ee/database",
@@ -138,6 +139,7 @@ rustdoc.all = "warn"
 
 [workspace.dependencies]
 alpen-chainspec = { path = "crates/reth/chainspec" }
+alpen-ee-block-assembly = { path = "crates/alpen-ee/block-assembly" }
 alpen-ee-common = { path = "crates/alpen-ee/common" }
 alpen-ee-config = { path = "crates/alpen-ee/config" }
 alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }

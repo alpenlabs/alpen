@@ -132,6 +132,10 @@ impl AlpenBuiltPayload {
             withdrawal_intents,
         }
     }
+
+    pub fn withdrawal_intents(&self) -> &[WithdrawalIntent] {
+        &self.withdrawal_intents
+    }
 }
 
 impl BuiltPayload for AlpenBuiltPayload {
