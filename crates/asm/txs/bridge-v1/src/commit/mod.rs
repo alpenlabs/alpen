@@ -33,5 +33,6 @@ mod aux;
 mod info;
 mod parse;
 
+pub use aux::CommitTxHeaderAux;
 pub use info::CommitInfo;
 pub use parse::parse_commit_tx;
