@@ -3,7 +3,7 @@
 mod genesis;
 mod ol_client;
 
-use std::sync::Arc;
+use std::{collections::HashMap, env, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::traits::ol_client::chain_status_checked;
@@ -11,27 +11,39 @@ use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OlTrackerBuilder};
-use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
+use alpen_reth_node::{
+    args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipCommand, AlpenGossipEvent,
+    AlpenGossipMessage, AlpenGossipProtocolHandler, AlpenGossipState,
+};
 use clap::Parser;
 use ol_client::DummyOlClient;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
+use reth_cli_util::sigsegv_handler;
+use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
+use reth_network_api::PeerId;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
-use strata_acct_types::AccountId;
+use reth_primitives::Header;
+use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
+use strata_acct_types::{AccountId, Hash};
 use strata_identifiers::{CredRule, OLBlockId};
-use tokio::sync::broadcast;
-use tracing::info;
+use strata_primitives::buf::Buf64;
+use tokio::{
+    select, spawn,
+    sync::{broadcast, mpsc},
+};
+use tracing::{debug, info, warn};
 
 use crate::genesis::ee_genesis_block_info;
 
 fn main() {
-    reth_cli_util::sigsegv_handler::install();
+    sigsegv_handler::install();
 
     // Enable backtraces unless a RUST_BACKTRACE value has already been explicitly provided.
-    if std::env::var_os("RUST_BACKTRACE").is_none() {
-        std::env::set_var("RUST_BACKTRACE", "1");
+    if env::var_os("RUST_BACKTRACE").is_none() {
+        env::set_var("RUST_BACKTRACE", "1");
     }
 
     let mut command = NodeCommand::<AlpenChainSpecParser, AdditionalConfig>::parse();
@@ -95,8 +107,29 @@ fn main() {
                 ))
                 .expect("ol tracker state initialization should not fail");
 
+            // Create gossip channel before building the node so we can register it early
+            let (gossip_tx, gossip_rx) = mpsc::unbounded_channel();
+
+            // Create preconf channel for p2p head block gossip -> engine control integration
+            // This channel sends block hashes received from peers to the engine control task
+            let (preconf_tx, preconf_rx) = broadcast::channel(16);
+
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
+                .on_component_initialized({
+                    let gossip_tx = gossip_tx.clone();
+                    move |node| {
+                        // Add the custom RLPx subprotocol before node fully starts
+                        // See: crates/reth/node/src/gossip/
+                        let handler =
+                            AlpenGossipProtocolHandler::new(AlpenGossipState::new(gossip_tx));
+                        node.components
+                            .network
+                            .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
+                        info!(target: "alpen-gossip", "Registered Alpen gossip RLPx subprotocol");
+                        Ok(())
+                    }
+                })
                 .on_node_started(move |node| {
                     let (ol_tracker, ol_tracker_task) = OlTrackerBuilder::new(
                         ol_tracker_state,
@@ -105,9 +138,6 @@ fn main() {
                         ol_client,
                     )
                     .build();
-
-                    // TODO: p2p head block gossip
-                    let (_preconf_tx, preconf_rx) = broadcast::channel(1);
 
                     let engine_control_task = create_engine_control_task(
                         preconf_rx,
@@ -131,6 +161,125 @@ fn main() {
                 });
 
             let handle = node_builder.launch().await?;
+
+            // Subscribe to canonical state notifications for broadcasting new blocks
+            let mut state_events = handle.node.provider.subscribe_to_canonical_state();
+
+            // Spawn the gossip event handling task
+            let mut gossip_rx = gossip_rx;
+            spawn(async move {
+                let mut connections: HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>> =
+                    HashMap::new();
+
+                loop {
+                    select! {
+                        Some(event) = gossip_rx.recv() => {
+                            match event {
+                                AlpenGossipEvent::Established {
+                                    peer_id,
+                                    direction,
+                                    to_connection,
+                                } => {
+                                    debug!(
+                                        target: "alpen-gossip",
+                                        %peer_id,
+                                        ?direction,
+                                        "New gossip connection established"
+                                    );
+                                    connections.insert(peer_id, to_connection);
+                                }
+                                AlpenGossipEvent::Closed { peer_id } => {
+                                    debug!(
+                                        target: "alpen-gossip",
+                                        %peer_id,
+                                        "Gossip connection closed"
+                                    );
+                                    connections.remove(&peer_id);
+                                }
+                                AlpenGossipEvent::Message { peer_id, message } => {
+                                    // TODO(@storopoli): validate signature before processing.
+                                    //                   get the sequencer's public key from the config somehow.
+                                    let block_hash = message.header().hash_slow();
+                                    info!(
+                                        target: "alpen-gossip",
+                                        %peer_id,
+                                        ?block_hash,
+                                        seq_no = message.seq_no(),
+                                        "Received gossip message"
+                                    );
+
+                                    // Forward the block hash to engine control task for fork choice update
+                                    let hash = Hash::from(block_hash.0);
+                                    if preconf_tx.send(hash).is_err() {
+                                        warn!(
+                                            target: "alpen-gossip",
+                                            "Failed to forward block hash to engine control (no receivers)"
+                                        );
+                                    }
+                                }
+                            }
+                        },
+                        res = state_events.recv() => {
+                            match res {
+                                Ok(event) => {
+                                    if let CanonStateNotification::Commit { new } = event {
+                                        // Extract headers from the new chain segment
+                                        let headers: Vec<Header> = new
+                                            .headers()
+                                            .map(|h| h.header().clone())
+                                            .collect();
+
+                                        if let Some(tip) = headers.last() {
+                                            info!(
+                                                target: "alpen-gossip",
+                                                block_hash = ?tip.hash_slow(),
+                                                block_number = tip.number,
+                                                peer_count = connections.len(),
+                                                "Broadcasting new block to peers"
+                                            );
+
+                                            // TODO(@storopoli): sign the message with sequencer key.
+                                            //                   should this be feature-gated to the sequencer-only mode?
+                                            let msg = AlpenGossipMessage::new(
+                                                tip.clone(),
+                                                0, // seq_no placeholder
+                                                Buf64::default(), // signature placeholder
+                                            );
+
+                                            for (peer_id, sender) in &connections {
+                                                if sender.send(AlpenGossipCommand::SendMessage(msg.clone())).is_err() {
+                                                    warn!(
+                                                        target: "alpen-gossip",
+                                                        %peer_id,
+                                                        "Failed to send message to peer"
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(broadcast::error::RecvError::Lagged(n)) => {
+                                    warn!(
+                                        target: "alpen-gossip",
+                                        lagged = n,
+                                        "Canonical state subscription lagged"
+                                    );
+                                    continue;
+                                }
+                                Err(broadcast::error::RecvError::Closed) => {
+                                    warn!(
+                                        target: "alpen-gossip",
+                                        "Canonical state subscription closed"
+                                    );
+                                    break;
+                                }
+                            }
+                        },
+                        else => { break; }
+                    }
+                }
+            });
+
             handle.node_exit_future.await
         },
     ) {
