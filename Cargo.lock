@@ -1070,6 +1070,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-block-assembly"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-common",
+ "alpen-reth-node",
+ "bitcoin-bosd",
+ "eyre",
+ "reth-node-api",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-msg-fmt",
+ "strata-ol-msg-types",
+ "strata-snark-acct-types",
+ "tracing",
+]
+
+[[package]]
 name = "alpen-ee-common"
 version = "0.3.0-alpha.1"
 dependencies = [
