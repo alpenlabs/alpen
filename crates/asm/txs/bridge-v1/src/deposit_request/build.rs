@@ -16,12 +16,12 @@ use crate::{
 ///
 /// SPS-50 format: \[MAGIC\]\[SUBPROTOCOL_ID\]\[TX_TYPE\]\[RECOVERY_PK (32)\]\[EE_ADDRESS\]
 #[derive(Debug, Clone)]
-pub struct DepositRequestMetadata {
+pub struct DepositRequestAuxData {
     recovery_pk: [u8; 32],
     ee_address: Vec<u8>,
 }
 
-impl<'a> Arbitrary<'a> for DepositRequestMetadata {
+impl<'a> Arbitrary<'a> for DepositRequestAuxData {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let recovery_pk = <[u8; 32]>::arbitrary(u)?;
         // Generate address between 20 and 64 bytes (reasonable range for EE addresses)
@@ -30,14 +30,14 @@ impl<'a> Arbitrary<'a> for DepositRequestMetadata {
             .map(|_| u8::arbitrary(u))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(DepositRequestMetadata {
+        Ok(DepositRequestAuxData {
             recovery_pk,
             ee_address,
         })
     }
 }
 
-impl DepositRequestMetadata {
+impl DepositRequestAuxData {
     /// Creates new deposit request metadata
     pub fn new(recovery_pk: XOnlyPublicKey, ee_address: Vec<u8>) -> Self {
         Self {
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_deposit_request_metadata_creation() {
         let mut arb = ArbitraryGenerator::new();
-        let metadata: DepositRequestMetadata = arb.generate();
+        let metadata: DepositRequestAuxData = arb.generate();
 
         // Verify accessors work
         assert_eq!(metadata.recovery_pk().len(), 32);
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn test_op_return_data_format() {
         let mut arb = ArbitraryGenerator::new();
-        let metadata: DepositRequestMetadata = arb.generate();
+        let metadata: DepositRequestAuxData = arb.generate();
         let magic: [u8; 4] = arb.generate();
 
         let op_return_data = metadata.op_return_data(magic).unwrap();
@@ -135,7 +135,7 @@ mod tests {
         let magic: [u8; 4] = arb.generate();
 
         // Test with 20-byte address (EVM standard)
-        let metadata_20 = DepositRequestMetadata {
+        let metadata_20 = DepositRequestAuxData {
             recovery_pk: arb.generate(),
             ee_address: vec![0x06; 20],
         };
@@ -145,7 +145,7 @@ mod tests {
         );
 
         // Test with 32-byte address (different EE)
-        let metadata_32 = DepositRequestMetadata {
+        let metadata_32 = DepositRequestAuxData {
             recovery_pk: arb.generate(),
             ee_address: vec![0x07; 32],
         };

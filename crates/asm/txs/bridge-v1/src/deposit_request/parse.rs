@@ -91,11 +91,12 @@ mod tests {
         Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
         absolute::LockTime, transaction::Version,
     };
+    use strata_l1_txfmt::{ParseConfig, TagData};
 
     use super::*;
     use crate::{
         constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE},
-        test_utils::{create_tagged_payload, mutate_op_return_output, parse_tx},
+        test_utils::{TEST_MAGIC_BYTES, parse_tx},
     };
 
     fn create_test_drt_tx(
@@ -108,9 +109,12 @@ mod tests {
         aux_data.extend_from_slice(&recovery_pk);
         aux_data.extend_from_slice(ee_address);
 
-        // Create tagged payload using test utils helper
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
+        // Create OP_RETURN script following SPS-50 format
+        let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data)
+            .expect("valid tag data");
+        let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+            .encode_script_buf(&td.as_ref())
+            .expect("encode OP_RETURN script");
 
         // Create base transaction
         let mut tx = Transaction {
@@ -136,8 +140,8 @@ mod tests {
             ],
         };
 
-        // Use test utils helper to set the OP_RETURN output
-        mutate_op_return_output(&mut tx, tagged_payload);
+        // Set OP_RETURN output script
+        tx.output[0].script_pubkey = sps_50_script;
         tx
     }
 
@@ -169,8 +173,11 @@ mod tests {
         aux_data.extend_from_slice(&recovery_pk);
         aux_data.extend_from_slice(&ee_address);
 
-        // Create tagged payload with wrong tx_type (99 instead of DEPOSIT_REQUEST_TX_TYPE)
-        let tagged_payload = create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data);
+        // Create OP_RETURN script with wrong tx_type (99 instead of DEPOSIT_REQUEST_TX_TYPE)
+        let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, 99, aux_data).unwrap();
+        let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+            .encode_script_buf(&td.as_ref())
+            .unwrap();
 
         let mut tx = Transaction {
             version: Version::TWO,
@@ -188,7 +195,7 @@ mod tests {
             ],
         };
 
-        mutate_op_return_output(&mut tx, tagged_payload);
+        tx.output[0].script_pubkey = sps_50_script;
         let tx_input = parse_tx(&tx);
 
         let result = parse_drt(&tx_input);
@@ -206,9 +213,11 @@ mod tests {
         // Create aux_data with only 10 bytes (need at least 32)
         let aux_data = vec![0x05; 10];
 
-        // Create tagged payload with insufficient aux_data
-        let tagged_payload =
-            create_tagged_payload(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data);
+        // Create OP_RETURN script with insufficient aux_data
+        let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data).unwrap();
+        let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+            .encode_script_buf(&td.as_ref())
+            .unwrap();
 
         let mut tx = Transaction {
             version: Version::TWO,
@@ -226,7 +235,7 @@ mod tests {
             ],
         };
 
-        mutate_op_return_output(&mut tx, tagged_payload);
+        tx.output[0].script_pubkey = sps_50_script;
         let tx_input = parse_tx(&tx);
 
         let result = parse_drt(&tx_input);

@@ -8,7 +8,7 @@ use bitcoin::{
     transaction::Version,
 };
 use strata_codec::encode_to_vec;
-use strata_l1_txfmt::{ParseConfig, TagData};
+use strata_l1_txfmt::{ParseConfig, TagData, TagDataRef};
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_FULFILLMENT_TX_TYPE},

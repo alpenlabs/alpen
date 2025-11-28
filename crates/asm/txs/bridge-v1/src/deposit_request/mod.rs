@@ -39,7 +39,7 @@
 pub mod build;
 pub mod parse;
 
-pub use build::DepositRequestMetadata;
+pub use build::DepositRequestAuxData;
 pub use parse::{MIN_DRT_AUX_DATA_LEN, parse_drt, parse_drt_from_tx};
 
 pub use crate::errors::{DepositRequestBuildError, DepositRequestParseError};

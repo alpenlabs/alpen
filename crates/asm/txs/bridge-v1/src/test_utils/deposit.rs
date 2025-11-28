@@ -5,7 +5,6 @@ use bitcoin::{
     Txid, Witness, XOnlyPublicKey,
     absolute::LockTime,
     hashes::Hash,
-    script::PushBytesBuf,
     secp256k1::Secp256k1,
     sighash::{Prevouts, SighashCache},
     taproot::TaprootBuilder,
@@ -16,12 +15,12 @@ use strata_crypto::{
     EvenSecretKey,
     test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
-use strata_l1_txfmt::{ParseConfig, TagDataRef};
+use strata_l1_txfmt::{ParseConfig, TagData, TagDataRef};
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE},
     deposit::DepositInfo,
-    test_utils::create_tagged_payload as create_tagged_payload_util,
+    test_utils::TEST_MAGIC_BYTES,
 };
 
 /// Creates a test deposit transaction with MuSig2 signatures
@@ -164,7 +163,7 @@ pub fn build_deposit_transaction(
 ///
 /// # Returns
 /// The auxiliary data bytes that should be encoded into an OP_RETURN script
-pub fn create_deposit_aux_data(
+fn create_deposit_aux_data(
     deposit_idx: u32,
     takeback_hash: TapNodeHash,
     ee_address: &[u8],
@@ -177,7 +176,7 @@ pub fn create_deposit_aux_data(
 }
 
 /// Returns the subprotocol ID and transaction type for deposit transactions
-pub fn deposit_tx_tag() -> (u8, u8) {
+fn deposit_tx_tag() -> (u8, u8) {
     (BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE)
 }
 

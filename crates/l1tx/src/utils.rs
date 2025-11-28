@@ -157,10 +157,10 @@ pub(crate) fn convert_bridge_v1_deposit_to_protocol_deposit(
     bridge_v1_deposit: BridgeV1DepositInfo,
 ) -> DepositInfo {
     DepositInfo {
-        deposit_idx: bridge_v1_deposit.deposit_idx,
-        amt: bridge_v1_deposit.amt,
-        outpoint: bridge_v1_deposit.outpoint,
-        address: bridge_v1_deposit.address,
+        deposit_idx: bridge_v1_deposit.header_aux().deposit_idx(),
+        amt: bridge_v1_deposit.amt(),
+        outpoint: bridge_v1_deposit.outpoint(),
+        address: bridge_v1_deposit.header_aux().address().to_vec(),
     }
 }
 
@@ -172,8 +172,8 @@ pub(crate) fn convert_bridge_v1_withdrawal_to_protocol_withdrawal(
     withdrawal_txid: Txid,
 ) -> WithdrawalFulfillmentInfo {
     WithdrawalFulfillmentInfo {
-        deposit_idx: bridge_v1_withdrawal.deposit_idx,
-        amt: bridge_v1_withdrawal.withdrawal_amount,
+        deposit_idx: bridge_v1_withdrawal.header_aux().deposit_idx(),
+        amt: bridge_v1_withdrawal.withdrawal_amount(),
         txid: Buf32::from(withdrawal_txid),
     }
 }
