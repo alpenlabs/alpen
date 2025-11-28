@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
+use strata_acct_types::AccountId;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
@@ -13,6 +14,7 @@ use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
+use strata_snark_acct_types::{MessageEntry, MessageEntryProof};
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -350,4 +352,53 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
+}
+
+/// Database interface for snark account message entries and proofs.
+///
+/// This trait provides access to message entries and their accumulator proofs
+/// stored in the snark account message accumulator storage. Message entries are
+/// indexed by account ID and message index within that account's inbox MMR.
+///
+/// This is used by block assembly to fetch accumulator proofs just-in-time
+/// when constructing blocks with SnarkAccountUpdate transactions.
+pub trait SnarkAccountMessageDatabase: Send + Sync + 'static {
+    /// Retrieve a message entry by account ID and index.
+    ///
+    /// Returns None if the message entry doesn't exist.
+    fn get_message_entry(
+        &self,
+        account_id: AccountId,
+        index: u64,
+    ) -> DbResult<Option<MessageEntry>>;
+
+    /// Retrieve a message entry proof by account ID and index.
+    ///
+    /// Returns None if the proof doesn't exist.
+    fn get_message_proof(
+        &self,
+        account_id: AccountId,
+        index: u64,
+    ) -> DbResult<Option<MessageEntryProof>>;
+
+    /// Store a message entry.
+    ///
+    /// Used for persisting message entries to accumulator storage.
+    fn put_message_entry(
+        &self,
+        account_id: AccountId,
+        index: u64,
+        entry: MessageEntry,
+    ) -> DbResult<()>;
+
+    /// Store a message entry proof.
+    ///
+    /// Used for persisting accumulator proofs to storage for later retrieval
+    /// during block assembly.
+    fn put_message_proof(
+        &self,
+        account_id: AccountId,
+        index: u64,
+        proof: MessageEntryProof,
+    ) -> DbResult<()>;
 }
