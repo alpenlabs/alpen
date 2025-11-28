@@ -1,15 +1,34 @@
-use bitvec::vec::BitVec;
+use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
-use strata_crypto::multisig::SchnorrMultisigSignature;
+use strata_crypto::threshold_signing::SignatureSet;
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
 use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
 
-/// Parses a transaction to extract both the multisig action and the aggregated signature.
+/// A signed administration payload containing both the action and its signatures.
 ///
-/// This function extracts the administrative action from the taproot leaf script embedded
-/// in the transaction's witness data, and parses the aggregated signature from
-/// the transaction's auxiliary data.
+/// This structure is serialized with Borsh and embedded in the witness envelope.
+/// The OP_RETURN only contains the SPS-50 tag (magic bytes, subprotocol ID, tx type).
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+pub struct SignedPayload {
+    /// The administrative action being proposed
+    pub action: MultisigAction,
+    /// The set of ECDSA signatures authorizing this action
+    pub signatures: SignatureSet,
+}
+
+impl SignedPayload {
+    /// Creates a new signed payload combining an action with its signatures.
+    pub fn new(action: MultisigAction, signatures: SignatureSet) -> Self {
+        Self { action, signatures }
+    }
+}
+
+/// Parses a transaction to extract both the multisig action and the signature set.
+///
+/// This function extracts the signed payload from the taproot leaf script embedded
+/// in the transaction's witness data. The payload contains both the administrative
+/// action and its authorizing signatures.
 ///
 /// # Arguments
 /// * `tx` - A reference to the transaction input to parse
@@ -17,19 +36,16 @@ use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
 /// # Returns
 /// A tuple containing:
 /// - `MultisigAction` - The administrative action extracted from the envelope payload
-/// - `SchnorrMultisigSignature` - The aggregated signature with signer indices
+/// - `SignatureSet` - The set of indexed ECDSA signatures
 ///
 /// # Errors
 /// Returns `AdministrationTxParseError` if:
 /// - The transaction lacks a taproot leaf script in its witness
 /// - The envelope payload cannot be parsed
-/// - The action cannot be deserialized from the payload
-/// - The aggregated signature parsing fails
+/// - The signed payload cannot be deserialized
 pub fn parse_tx(
     tx: &TxInputRef<'_>,
-) -> Result<(MultisigAction, SchnorrMultisigSignature), AdministrationTxParseError> {
-    // Parse the aggregated signature first
-    let agg_multisig = parse_aggregated_multisig(tx)?;
+) -> Result<(MultisigAction, SignatureSet), AdministrationTxParseError> {
     let tx_type = tx.tag().tx_type();
 
     // Extract the taproot leaf script from the first input's witness
@@ -42,43 +58,9 @@ pub fn parse_tx(
     // Parse the envelope payload from the script
     let envelope_payload = parse_envelope_payload(&payload_script.into())?;
 
-    // Deserialize the multisig action from the payload
-    let action = borsh::from_slice(&envelope_payload)
+    // Deserialize the signed payload (action + signatures) from the envelope
+    let signed_payload: SignedPayload = borsh::from_slice(&envelope_payload)
         .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
 
-    Ok((action, agg_multisig))
-}
-
-/// Parses the aggregated signature from transaction auxiliary data.
-///
-/// The auxiliary data contains a 64-byte Schnorr signature followed by a bit vector
-/// indicating which signers participated in the aggregated signature.
-///
-/// # Arguments
-/// * `tx` - A reference to the transaction input containing the auxiliary data
-///
-/// # Returns
-/// A `SchnorrMultisigSignature` containing the aggregated signature and signer indices
-///
-/// # Errors
-/// Returns `AdministrationTxParseError` if the auxiliary data format is invalid
-///
-/// # Data Format
-/// The auxiliary data is structured as:
-/// - Bytes 0-63: 64-byte Schnorr signature
-/// - Bytes 64+: Bit vector representing signer indices
-pub fn parse_aggregated_multisig(
-    tx: &TxInputRef<'_>,
-) -> Result<SchnorrMultisigSignature, AdministrationTxParseError> {
-    let data = tx.tag().aux_data();
-
-    // Extract the 64-byte signature from the beginning of aux data
-    let mut sig = [0u8; 64];
-    sig.copy_from_slice(&data[0..64]);
-
-    // Extract signer indices from the remaining bytes as a bit vector
-    let signer_indices_bytes = &data[64..];
-    let indices: BitVec<u8> = BitVec::from_slice(signer_indices_bytes);
-
-    Ok(SchnorrMultisigSignature::new(indices, sig.into()))
+    Ok((signed_payload.action, signed_payload.signatures))
 }

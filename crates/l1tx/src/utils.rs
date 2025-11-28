@@ -6,7 +6,7 @@ use bitcoin::{
     taproot::TaprootBuilder,
     Address, Network, Opcode, XOnlyPublicKey,
 };
-use strata_crypto::multisig::aggregate_schnorr_keys;
+use strata_crypto::threshold_signing::aggregate_schnorr_keys;
 use strata_params::{OperatorConfig, RollupParams};
 use strata_primitives::{buf::Buf32, l1::BitcoinAddress};
 

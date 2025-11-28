@@ -1,26 +1,25 @@
-use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::MultisigAction;
-use strata_crypto::multisig::{
-    MultisigError, SchnorrMultisigConfig, SchnorrMultisigSignature, verify_multisig,
+use strata_crypto::threshold_signing::{
+    SignatureSet, ThresholdConfig, ThresholdSigningError, verify_threshold_signatures,
 };
 use strata_primitives::roles::Role;
 
-/// Manages multisignature operations for a given role and key set, with replay protection via a
-/// seqno.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+/// Manages threshold signature operations for a given role and key set, with replay protection via
+/// a seqno.
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct MultisigAuthority {
-    /// The role of this multisignature authority.
+    /// The role of this threshold signature authority.
     role: Role,
     /// The public keys of all grant-holders authorized to sign.
-    config: SchnorrMultisigConfig,
-    /// Sequence number for the multisig configuration. It increases on each valid action.
+    config: ThresholdConfig,
+    /// Sequence number for the threshold configuration. It increases on each valid action.
     /// This is used to prevent replay attacks.
     seqno: u64,
 }
 
 impl MultisigAuthority {
-    pub fn new(role: Role, config: SchnorrMultisigConfig) -> Self {
+    pub fn new(role: Role, config: ThresholdConfig) -> Self {
         Self {
             role,
             config,
@@ -28,35 +27,35 @@ impl MultisigAuthority {
         }
     }
 
-    /// The role authorized to perform multisig operations.
+    /// The role authorized to perform threshold signature operations.
     pub fn role(&self) -> Role {
         self.role
     }
 
-    /// Borrow the current multisig configuration.
-    pub fn config(&self) -> &SchnorrMultisigConfig {
+    /// Borrow the current threshold configuration.
+    pub fn config(&self) -> &ThresholdConfig {
         &self.config
     }
 
-    /// Mutably borrow the multisig configuration.
-    pub fn config_mut(&mut self) -> &mut SchnorrMultisigConfig {
+    /// Mutably borrow the threshold configuration.
+    pub fn config_mut(&mut self) -> &mut ThresholdConfig {
         &mut self.config
     }
 
-    /// Verify that `signature` is a valid threshold signature for `action` under the current config
-    /// and seqno.
+    /// Verify that `signatures` is a valid threshold signature set for `action` under the current
+    /// config and seqno.
     ///
-    /// Uses the generic multisig verification function to orchestrate the workflow.
+    /// Uses individual ECDSA signature verification against each signer's public key.
     pub fn verify_action_signature(
         &self,
         action: &MultisigAction,
-        signature: &SchnorrMultisigSignature,
-    ) -> Result<(), MultisigError> {
+        signatures: &SignatureSet,
+    ) -> Result<(), ThresholdSigningError> {
         // Compute the msg to sign by combining UpdateAction with sequence no
         let sig_hash = action.compute_sighash(self.seqno);
 
-        // Use the generic multisig verification function
-        verify_multisig(&self.config, signature, &sig_hash.into())
+        // Verify each ECDSA signature against the corresponding public key
+        verify_threshold_signatures(&self.config, signatures, &sig_hash.into())
     }
 
     /// Increments the seqno.
