@@ -23,18 +23,21 @@ mod services;
 
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
+
+    // Validate params, configs and create node context.
     let nodectx = init_node_context(args)?;
 
     init_logging(nodectx.executor.handle());
 
-    startup_checks(&nodectx)?;
+    do_startup_checks(&nodectx)?;
 
-    // Start services
+    // Start services.
     let runctx = start_services(nodectx)?;
 
-    // Start RPC
+    // Start RPC.
     start_rpc(&runctx)?;
 
+    // Monitor tasks.
     runctx.task_manager.start_signal_listeners();
     runctx.task_manager.monitor(Some(Duration::from_secs(5)))?;
 
@@ -42,7 +45,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn startup_checks(_ctx: &NodeContext) -> anyhow::Result<()> {
+fn do_startup_checks(_ctx: &NodeContext) -> anyhow::Result<()> {
     // TODO: things like if bitcoin client is running or not, db consistency checks and any other
     // checks prior to starting services, GENESIS checks etc.
     Ok(())
