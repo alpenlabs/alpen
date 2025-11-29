@@ -17,6 +17,7 @@ use tracing::warn;
 use crate::{args::*, config::*, errors::*, init_db};
 
 /// Contains resources needed to run node services.
+#[expect(unused, reason = "will be used later")]
 pub(crate) struct NodeContext {
     pub runtime: Runtime,
     pub config: Config,
@@ -28,25 +29,28 @@ pub(crate) struct NodeContext {
     pub status_channel: Arc<StatusChannel>,
 }
 
-// Initialize runtime, database, etc.
+/// Initialize runtime, database, etc.
 pub(crate) fn init_node_context(args: Args) -> Result<NodeContext, InitError> {
     let config = get_config(args.clone())?;
-    let params = resolve_and_validate_params(
-        &args.rollup_params.expect("args: no params path"),
-        &config,
-    )?;
+    let params_path = args
+        .rollup_params
+        .ok_or_else(|| InitError::Anyhow(anyhow::anyhow!("Missing rollup params path")))?;
+    let params = resolve_and_validate_params(&params_path, &config)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("strata-rt")
         .build()
-        .expect("init: build rt");
+        .map_err(|e| InitError::Anyhow(anyhow::anyhow!("Failed to build runtime: {}", e)))?;
 
     let task_manager = TaskManager::new(runtime.handle().clone());
     let executor = task_manager.create_executor();
 
     let db = init_db::init_database(&config.client.datadir, config.client.db_retry_count)?;
     let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
-    let storage = Arc::new(create_node_storage(db, pool.clone()).unwrap());
+    let storage = Arc::new(
+        create_node_storage(db, pool.clone())
+            .map_err(|e| InitError::Anyhow(anyhow::anyhow!("Failed to create storage: {}", e)))?,
+    );
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
@@ -107,10 +111,7 @@ fn load_configuration(path: &Path) -> Result<toml::Value, InitError> {
     toml::from_str(&config_str).map_err(|e| InitError::Anyhow(e.into()))
 }
 
-fn resolve_and_validate_params(
-    path: &Path,
-    config: &Config,
-) -> Result<Arc<Params>, InitError> {
+fn resolve_and_validate_params(path: &Path, config: &Config) -> Result<Arc<Params>, InitError> {
     let rollup_params = load_rollup_params(path)?;
     rollup_params.check_well_formed()?;
 
@@ -133,8 +134,7 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     Ok(rollup_params)
 }
 
-// Client initialization
-
+/// Bitcoin client initialization
 fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Client>> {
     let btc_rpc = Client::new(
         config.rpc_url.clone(),
@@ -152,13 +152,12 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Clie
     Ok(btc_rpc.into())
 }
 
-// Status initialization
-
+/// Status channel initialization
 fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
     let csman = storage.client_state();
     let (cur_block, cur_state) = csman
         .fetch_most_recent_state()?
-        .expect("missing init client state?");
+        .ok_or_else(|| anyhow::anyhow!("Missing initial client state"))?;
 
     let l1_status = L1Status {
         ..Default::default()
