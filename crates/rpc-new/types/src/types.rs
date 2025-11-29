@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_identifiers::{Buf32, OLBlockCommitment};
 use strata_ol_chain_types_new::{Slot, TransactionAttachment};
+use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
 
 /// OL chain status with latest, confirmed, and finalized blocks.
@@ -24,9 +25,11 @@ pub struct RpcAccountEpochSummary {
     /// Final next input idx for the account.
     final_next_input_idx: u64,
     /// All the updates processed in the epoch.
+    // NOTE: DA syncing node won't have all the updates for the epoch blocks, it will only have a
+    // final update. Maybe it might make sense to have this field as a single RpcUpdateSummary ?
     updates: Vec<RpcUpdateSummary>,
     /// All new messages received in the epoch.
-    messages: Vec<RpcMessageEntry>,
+    new_messages: Vec<RpcMessageEntry>,
 }
 
 /// Describes an update to a snark account. This is derivable from L1.
@@ -48,22 +51,21 @@ pub struct RpcMsgPayload {
     /// Value in satoshis.
     pub value: u64,
     /// Hex-encoded data.
-    #[serde(with = "hex::serde")]
-    pub data: Vec<u8>,
+    pub data: HexBytes,
 }
 
 impl From<MsgPayload> for RpcMsgPayload {
     fn from(payload: MsgPayload) -> Self {
         Self {
             value: payload.value().to_sat(),
-            data: payload.data().to_vec(),
+            data: payload.data().into(),
         }
     }
 }
 
 impl From<RpcMsgPayload> for MsgPayload {
     fn from(rpc: RpcMsgPayload) -> Self {
-        MsgPayload::new(BitcoinAmount::from_sat(rpc.value), rpc.data)
+        MsgPayload::new(BitcoinAmount::from_sat(rpc.value), rpc.data.into())
     }
 }
 
@@ -71,8 +73,7 @@ impl From<RpcMsgPayload> for MsgPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcMessageEntry {
     /// Sender of the message.
-    #[serde(with = "hex::serde")]
-    pub source: [u8; 32],
+    pub source: HexBytes32,
     /// Epoch that the message was included.
     pub incl_epoch: u32,
     /// Actual message payload.
@@ -83,8 +84,7 @@ pub struct RpcMessageEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcProofState {
     /// The state root.
-    #[serde(with = "hex::serde")]
-    pub inner_state: [u8; 32],
+    pub inner_state: HexBytes32,
     /// Next inbox id to process.
     pub next_inbox_msg_idx: u64,
 }
@@ -93,8 +93,7 @@ pub struct RpcProofState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcUpdateStateData {
     pub proof_state: RpcProofState,
-    #[serde(with = "hex::serde")]
-    pub extra_data: Vec<u8>,
+    pub extra_data: HexBytes,
 }
 
 /// Update input data for state transitions.
@@ -108,20 +107,16 @@ pub struct RpcUpdateInputData {
 /// Generic account message payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcGenericAccountMessage {
-    #[serde(with = "hex::serde")]
-    pub target: [u8; 32],
-    #[serde(with = "hex::serde")]
-    pub payload: Vec<u8>,
+    pub target: HexBytes32,
+    pub payload: HexBytes,
 }
 
 /// Snark account update payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcSnarkAccountUpdate {
-    #[serde(with = "hex::serde")]
-    pub target: [u8; 32],
+    pub target: HexBytes32,
     pub update: RpcUpdateInputData,
-    #[serde(with = "hex::serde")]
-    pub update_proof: Vec<u8>,
+    pub update_proof: HexBytes,
 }
 
 /// Transaction payload: generic message or snark account update.
@@ -158,6 +153,8 @@ pub struct RpcAccountBlockSummary {
     /// Account's updates processed in the block.
     updates: Vec<RpcUpdateSummary>,
     /// New messages for the account in the block.
+    // NOTE: This might not be necessary for block summary if we have a different method to serve
+    // new messages in a block.
     new_messages: Vec<RpcMessageEntry>,
 }
 
@@ -166,7 +163,7 @@ pub struct RpcAccountBlockSummary {
 impl From<MessageEntry> for RpcMessageEntry {
     fn from(entry: MessageEntry) -> Self {
         Self {
-            source: *entry.source().inner(),
+            source: (*entry.source().inner()).into(),
             incl_epoch: entry.incl_epoch(),
             payload: entry.payload().clone().into(),
         }
@@ -176,7 +173,7 @@ impl From<MessageEntry> for RpcMessageEntry {
 impl From<RpcMessageEntry> for MessageEntry {
     fn from(rpc: RpcMessageEntry) -> Self {
         MessageEntry::new(
-            AccountId::new(rpc.source),
+            AccountId::new(rpc.source.0),
             rpc.incl_epoch,
             rpc.payload.into(),
         )
@@ -186,7 +183,7 @@ impl From<RpcMessageEntry> for MessageEntry {
 impl From<ProofState> for RpcProofState {
     fn from(state: ProofState) -> Self {
         Self {
-            inner_state: state.inner_state(),
+            inner_state: state.inner_state().into(),
             next_inbox_msg_idx: state.next_inbox_msg_idx(),
         }
     }
@@ -194,13 +191,13 @@ impl From<ProofState> for RpcProofState {
 
 impl From<RpcProofState> for ProofState {
     fn from(rpc: RpcProofState) -> Self {
-        ProofState::new(rpc.inner_state, rpc.next_inbox_msg_idx)
+        ProofState::new(rpc.inner_state.into(), rpc.next_inbox_msg_idx)
     }
 }
 
 impl From<RpcUpdateStateData> for UpdateStateData {
     fn from(rpc: RpcUpdateStateData) -> Self {
-        UpdateStateData::new(rpc.proof_state.into(), rpc.extra_data)
+        UpdateStateData::new(rpc.proof_state.into(), rpc.extra_data.into())
     }
 }
 
@@ -215,7 +212,7 @@ impl From<UpdateInputData> for RpcUpdateInputData {
                 .collect(),
             update_state: RpcUpdateStateData {
                 proof_state: input.new_state().into(),
-                extra_data: input.extra_data().to_vec(),
+                extra_data: input.extra_data().into(),
             },
         }
     }

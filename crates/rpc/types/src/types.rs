@@ -11,6 +11,7 @@ use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
 use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_ol_chain_types::L2BlockId;
+pub use strata_primitives::serde_helpers::serde_hex_bytes::{HexBytes, HexBytes32, HexBytes64};
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
     buf::Buf32,
@@ -18,51 +19,6 @@ use strata_primitives::{
     l1::{BitcoinAmount, BitcoinOutPoint, L1BlockCommitment},
     l2::L2BlockCommitment,
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HexBytes(#[serde(with = "hex::serde")] pub Vec<u8>);
-
-impl HexBytes {
-    pub fn into_inner(self) -> Vec<u8> {
-        self.0
-    }
-}
-
-impl From<Vec<u8>> for HexBytes {
-    fn from(value: Vec<u8>) -> Self {
-        HexBytes(value)
-    }
-}
-
-impl From<&[u8]> for HexBytes {
-    fn from(value: &[u8]) -> Self {
-        HexBytes(value.to_vec())
-    }
-}
-
-impl From<Box<[u8]>> for HexBytes {
-    fn from(value: Box<[u8]>) -> Self {
-        HexBytes(value.into_vec())
-    }
-}
-
-impl From<HexBytes> for Vec<u8> {
-    fn from(value: HexBytes) -> Self {
-        value.0
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HexBytes32(#[serde(with = "hex::serde")] pub [u8; 32]);
-
-impl From<&L2BlockId> for HexBytes32 {
-    fn from(value: &L2BlockId) -> Self {
-        Self(*value.as_ref())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HexBytes64(#[serde(with = "hex::serde")] pub [u8; 64]);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcL1Status {
