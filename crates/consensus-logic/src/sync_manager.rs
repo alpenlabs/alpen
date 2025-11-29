@@ -8,11 +8,11 @@ use bitcoin::absolute::Height;
 use bitcoind_async_client::Client;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
-use strata_csm_worker::{CsmWorkerService, CsmWorkerState};
+use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_params::Params;
 use strata_primitives::prelude::L1BlockCommitment;
-use strata_service::{ServiceBuilder, SyncAsyncInput};
+use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
@@ -111,7 +111,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     let csm_st_ch = status_channel.clone();
     let csm_asm_monitor = asm_controller.monitor();
 
-    spawn_csm_listener(
+    let _csm_monitor = spawn_csm_listener(
         executor,
         csm_params,
         csm_storage,
@@ -146,13 +146,13 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     })
 }
 
-fn spawn_csm_listener(
+pub fn spawn_csm_listener(
     executor: &TaskExecutor,
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
     asm_monitor: &strata_service::ServiceMonitor<AsmWorkerStatus>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
     // Create CSM worker state.
     let csm_state = CsmWorkerState::new(params, storage.clone(), status_channel.clone())?;
 
@@ -194,12 +194,12 @@ fn spawn_csm_listener(
     let csm_input = SyncAsyncInput::new(async_input, executor.handle().clone());
 
     // Launch the CSM worker service (which acts as a listener to ASM worker).
-    let _csm_monitor = ServiceBuilder::<CsmWorkerService, _>::new()
+    let csm_monitor = ServiceBuilder::<CsmWorkerService, _>::new()
         .with_state(csm_state)
         .with_input(csm_input)
         .launch_sync("csm_worker", executor)?;
 
-    Ok(())
+    Ok(csm_monitor)
 }
 
 fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
@@ -250,7 +250,7 @@ fn spawn_chain_worker(
     Ok(handle)
 }
 
-fn spawn_asm_worker(
+pub fn spawn_asm_worker(
     executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
