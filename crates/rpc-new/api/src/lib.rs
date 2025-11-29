@@ -36,11 +36,19 @@ pub trait OLFullNodeApi {
 
     /// Get summaries associated with an account for given blocks.
     #[method(name = "getBlocksSummaries")]
-    async fn get_blocks_data(
+    async fn get_blocks_summaries(
         &self,
         account_id: AccountId,
         blocks: Vec<OLBlockId>,
     ) -> RpcResult<Vec<RpcAccountBlockSummary>>;
+
+    /// Get new messages associated with an account for given blocks.
+    #[method(name = "getBlocksNewMessages")]
+    async fn get_blocks_new_messages(
+        &self,
+        account_id: AccountId,
+        blocks: Vec<OLBlockId>,
+    ) -> RpcResult<Vec<Vec<RpcMessageEntry>>>;
 
     /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]

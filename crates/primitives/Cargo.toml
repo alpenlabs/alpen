@@ -20,6 +20,7 @@ bitcoin-bosd = { workspace = true, features = [
   "arbitrary",
 ] }
 borsh.workspace = true
+hex.workspace = true
 secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
