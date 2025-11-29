@@ -1,3 +1,5 @@
+//! Database initialization.
+
 use std::{path::Path, sync::Arc};
 
 use strata_db_store_sled::{
