@@ -1,3 +1,5 @@
+//! Error types for initialization and configuration.
+
 use std::io;
 
 use format_serde_error::SerdeError;

@@ -1,3 +1,5 @@
+//! Node context initialization and configuration loading.
+
 use std::{fs, path::Path, sync::Arc};
 
 use bitcoin::Network;
@@ -7,29 +9,78 @@ use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::L1Status;
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
+use strata_storage::{NodeStorage, create_node_storage};
+use strata_tasks::{TaskExecutor, TaskManager};
+use tokio::runtime::Runtime;
 use tracing::warn;
 
-use crate::{args::*, errors::*};
+use crate::{args::*, config::*, errors::*, init_db};
 
-pub(crate) fn get_config(args: Args) -> Result<Config, InitError> {
-    // First load from config file.
+/// Contains resources needed to run node services.
+pub(crate) struct NodeContext {
+    pub runtime: Runtime,
+    pub config: Config,
+    pub params: Arc<Params>,
+    pub task_manager: TaskManager,
+    pub executor: TaskExecutor,
+    pub storage: Arc<NodeStorage>,
+    pub bitcoin_client: Arc<Client>,
+    pub status_channel: Arc<StatusChannel>,
+}
+
+// Initialize runtime, database, etc.
+pub(crate) fn init_node_context(args: Args) -> Result<NodeContext, InitError> {
+    let config = get_config(args.clone())?;
+    let params = resolve_and_validate_params(
+        &args.rollup_params.expect("args: no params path"),
+        &config,
+    )?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("strata-rt")
+        .build()
+        .expect("init: build rt");
+
+    let task_manager = TaskManager::new(runtime.handle().clone());
+    let executor = task_manager.create_executor();
+
+    let db = init_db::init_database(&config.client.datadir, config.client.db_retry_count)?;
+    let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
+    let storage = Arc::new(create_node_storage(db, pool.clone()).unwrap());
+
+    // Init bitcoin client
+    let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
+
+    // Init status channel
+    let status_channel = init_status_channel(&storage)?.into();
+
+    Ok(NodeContext {
+        runtime,
+        config,
+        params,
+        task_manager,
+        executor,
+        storage,
+        bitcoin_client,
+        status_channel,
+    })
+}
+
+// Config loading and validation
+
+fn get_config(args: Args) -> Result<Config, InitError> {
     let mut config_toml = load_configuration(args.config.as_ref())?;
 
-    // Extend overrides from env.
     let env_args = EnvArgs::from_env();
     let mut override_strs = env_args.get_overrides();
 
-    // Extend overrides from args.
     override_strs.extend_from_slice(&args.get_overrides()?);
 
-    // Parse overrides.
     let overrides = override_strs
         .iter()
         .map(|o| parse_override(o))
         .collect::<Result<Vec<_>, ConfigError>>()?;
 
-    // Apply overrides to toml table.
     let table = config_toml
         .as_table_mut()
         .ok_or(ConfigError::TraverseNonTableAt("".to_string()))?;
@@ -38,16 +89,13 @@ pub(crate) fn get_config(args: Args) -> Result<Config, InitError> {
         apply_override(&path, val, table)?;
     }
 
-    // Convert back to Config.
     config_toml
         .try_into::<Config>()
         .map_err(|e| InitError::Anyhow(e.into()))
         .and_then(validate_config)
 }
 
-/// Does any extra validations that need to be done for `Config` which are not enforced by type.
 fn validate_config(config: Config) -> Result<Config, InitError> {
-    // Check if the client is not running as sequencer then has sync endpoint.
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
         return Err(InitError::Anyhow(anyhow::anyhow!("Missing sync_endpoint")));
     }
@@ -59,9 +107,7 @@ fn load_configuration(path: &Path) -> Result<toml::Value, InitError> {
     toml::from_str(&config_str).map_err(|e| InitError::Anyhow(e.into()))
 }
 
-/// Resolves the rollup params file to use, possibly from a path, and validates
-/// it to ensure it passes sanity checks.
-pub(crate) fn resolve_and_validate_params(
+fn resolve_and_validate_params(
     path: &Path,
     config: &Config,
 ) -> Result<Arc<Params>, InitError> {
@@ -87,8 +133,9 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     Ok(rollup_params)
 }
 
-pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Client>> {
-    // Set up Bitcoin client RPC.
+// Client initialization
+
+fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Client>> {
     let btc_rpc = Client::new(
         config.rpc_url.clone(),
         config.rpc_user.clone(),
@@ -105,9 +152,9 @@ pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Resu
     Ok(btc_rpc.into())
 }
 
-// initializes the status bundle that we can pass around cheaply for status/metrics
-pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
-    // init client state
+// Status initialization
+
+fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
     let csman = storage.client_state();
     let (cur_block, cur_state) = csman
         .fetch_most_recent_state()?

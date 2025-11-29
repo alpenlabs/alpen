@@ -250,7 +250,7 @@ fn spawn_chain_worker(
     Ok(handle)
 }
 
-fn spawn_asm_worker(
+pub fn spawn_asm_worker(
     executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
