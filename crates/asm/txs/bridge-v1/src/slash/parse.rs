@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Index of the stake connector input.
-const STAKE_INPUT_INDEX: usize = 1;
+pub const STAKE_INPUT_INDEX: usize = 1;
 
 /// Parse a slash transaction to extract [`SlashInfo`].
 ///

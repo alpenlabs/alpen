@@ -38,4 +38,4 @@ mod parse;
 
 pub use aux::SlashTxHeaderAux;
 pub use info::SlashInfo;
-pub use parse::parse_slash_tx;
+pub use parse::{STAKE_INPUT_INDEX, parse_slash_tx};
