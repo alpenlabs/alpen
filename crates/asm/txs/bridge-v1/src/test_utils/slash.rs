@@ -19,7 +19,7 @@ use crate::{
 /// - A dummy payout output
 pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
     // Encode auxiliary data and construct op_return script
-    let aux_data = encode_to_vec(&info.header_aux).unwrap();
+    let aux_data = encode_to_vec(info.header_aux()).unwrap();
     let tag_data = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, SLASH_TX_TYPE, aux_data).unwrap();
     let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&tag_data.as_ref())
@@ -36,7 +36,7 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
                 witness: Witness::from_slice(&[vec![0u8; 64]]),
             },
             TxIn {
-                previous_output: info.second_input_outpoint.0, // stake connector we validate
+                previous_output: info.second_input_outpoint().0, // stake connector we validate
                 script_sig: ScriptBuf::new(),
                 sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
                 witness: Witness::from_slice(&[vec![0u8; 64]]),

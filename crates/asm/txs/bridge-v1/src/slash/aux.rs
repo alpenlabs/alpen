@@ -9,5 +9,15 @@ use strata_codec::Codec;
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Codec)]
 pub struct SlashTxHeaderAux {
     /// The index of the operator being slashed.
-    pub operator_idx: OperatorIdx,
+    operator_idx: OperatorIdx,
+}
+
+impl SlashTxHeaderAux {
+    pub fn new(operator_idx: OperatorIdx) -> Self {
+        Self { operator_idx }
+    }
+
+    pub fn operator_idx(&self) -> OperatorIdx {
+        self.operator_idx
+    }
 }

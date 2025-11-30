@@ -1,21 +1,13 @@
-use arbitrary::Arbitrary;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::l1::BitcoinOutPoint;
 
-use crate::{errors::SlashTxParseError, slash::aux::SlashTxHeaderAux};
+use crate::{
+    errors::SlashTxParseError,
+    slash::{aux::SlashTxHeaderAux, info::SlashInfo},
+};
 
 /// Index of the stake connector input.
 const STAKE_INPUT_INDEX: usize = 1;
-
-/// Information extracted from a Bitcoin slash transaction.
-#[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
-pub struct SlashInfo {
-    /// SPS-50 auxiliary data from the transaction tag.
-    pub header_aux: SlashTxHeaderAux,
-    /// Previous outpoint referenced second input (stake connector).
-    pub second_input_outpoint: BitcoinOutPoint,
-}
 
 /// Parse a slash transaction to extract [`SlashInfo`].
 ///
@@ -42,10 +34,7 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, SlashTxParse
         .previous_output
         .into();
 
-    let info = SlashInfo {
-        header_aux,
-        second_input_outpoint,
-    };
+    let info = SlashInfo::new(header_aux, second_input_outpoint);
 
     Ok(info)
 }

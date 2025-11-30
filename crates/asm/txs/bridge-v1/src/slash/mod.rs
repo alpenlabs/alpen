@@ -33,7 +33,9 @@
 //! same N/N multisig.
 
 mod aux;
+mod info;
 mod parse;
 
 pub use aux::SlashTxHeaderAux;
-pub use parse::{SlashInfo, parse_slash_tx};
+pub use info::SlashInfo;
+pub use parse::parse_slash_tx;
