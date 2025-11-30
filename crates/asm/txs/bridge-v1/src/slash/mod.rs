@@ -5,13 +5,13 @@
 //!
 //! ## Slash Transaction Structure
 //!
-//! A slash transaction is posted by a watchtower if the operator hasn't posted the
-//! Contested Payout Transaction within the allotted time frame. The transaction spends
+//! A slash transaction is posted by a watchtower if the claim was contested but the operator hasn't
+//! posted the Contested Payout Transaction within the allotted time frame. The transaction spends
 //! the operator stake and distributes it to watchtowers.
 //!
 //! ### Inputs
 //! - 1. **Contest slash connector**: Locked to the N-of-N multisig with a relative timelock
-//! - 2. **Stake connector**: Locked to the pure N-of-N multisig.
+//! - 2. **Stake connector**: Locked to the N-of-N pure multisig, without any timelocks.
 //!
 //! Only the stake connector is validated. The contest connector carries a relative timelock that
 //! is enforced on-chain, but the bridge subprotocol does not store the timelock that is used,

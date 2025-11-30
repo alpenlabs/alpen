@@ -135,7 +135,7 @@ pub enum CommitParseError {
 /// Errors that can occur when parsing slash transaction.
 #[derive(Debug, Error)]
 pub enum SlashTxParseError {
-    /// The auxiliary data in the withdrawal fulfillment transaction is invalid
+    /// The auxiliary data in the slash transaction is invalid
     #[error("Invalid auxiliary data")]
     InvalidAuxiliaryData(#[from] CodecError),
 
