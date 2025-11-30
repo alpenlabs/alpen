@@ -7,7 +7,7 @@ mod withdrawal_fulfillment;
 pub const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
 pub use commit::create_test_commit_tx;
-pub use deposit::create_test_deposit_tx;
+pub use deposit::{build_deposit_transaction, create_deposit_op_return, create_test_deposit_tx};
 pub use slash::create_test_slash_tx;
 pub use utils::{mutate_aux_data, parse_tx};
 pub use withdrawal_fulfillment::create_test_withdrawal_fulfillment_tx;

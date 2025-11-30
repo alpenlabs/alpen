@@ -132,25 +132,6 @@ pub enum CommitParseError {
     MissingNnOutput,
 }
 
-/// Errors that can occur when parsing commit transactions.
-///
-/// When these parsing errors occur, they are logged and the transaction is skipped.
-/// No further processing is performed on transactions that fail to parse.
-#[derive(Debug, Error)]
-pub enum CommitParseError {
-    /// The auxiliary data in the commit transaction is invalid.
-    #[error("Invalid auxiliary data: {0}")]
-    InvalidAuxiliaryData(#[from] CodecError),
-
-    /// The commit transaction does not have the expected number of inputs.
-    #[error("Invalid input count: {0}")]
-    InvalidInputCount(Mismatch<usize>),
-
-    /// Missing N/N output at index 1.
-    #[error("Missing N/N output at index 1")]
-    MissingNnOutput,
-}
-
 /// Errors that can occur when parsing slash transaction.
 #[derive(Debug, Error)]
 pub enum SlashTxParseError {
