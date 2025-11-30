@@ -13,18 +13,18 @@ use strata_primitives::sorted_vec::SortedVec;
 
 /// Entry recording a fulfilled withdrawal assignment awaiting payout claim.
 ///
-/// This represents a completed withdrawal where an operator has successfully
+/// This represents a completed fulfillment where an operator has successfully
 /// fronted the withdrawal transaction for a specific deposit, but has not yet
 /// submitted a commit transaction to claim their payout.
 ///
-/// Once the operator submits a commit transaction and the payout is processed,
-/// this entry should be removed from the fulfillment table.
+/// Once the operator's commit transaction has been posted onchain this entry should
+/// be removed from the fulfillment table.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct FulfillmentEntry {
     /// Index of the deposit that was fulfilled.
     deposit_idx: u32,
 
-    /// Index of the operator who fulfilled the withdrawal.
+    /// Index of the operator who fulfilled the withdrawal request.
     operator_idx: OperatorIdx,
 }
 
@@ -60,18 +60,18 @@ impl Ord for FulfillmentEntry {
     }
 }
 
-/// Table for managing fulfilled withdrawal assignments awaiting payout claims.
+/// Table for managing fulfilled withdrawal assignments awaiting commit transactions.
 ///
-/// This table maintains records of withdrawals that have been successfully fulfilled
-/// by operators but for which the operators have not yet submitted commit transactions
-/// to claim their payouts. The table provides efficient insertion, lookup, and removal
-/// operations, maintaining sorted order by deposit index for binary search efficiency.
+/// This table maintains records of withdrawal requests that have been successfully fulfilled
+/// by operators, for which the operators have not yet submitted commit transactions. The table
+/// provides efficient insertion, lookup, and removal operations, maintaining sorted order by
+/// deposit index for binary search efficiency.
 ///
 /// # Fulfillment Workflow
 ///
-/// - **Add**: When an operator successfully fronts a withdrawal transaction
-/// - **Query**: To check if an operator is eligible to claim a payout for a specific deposit
-/// - **Remove**: When an operator submits a commit transaction and receives their payout
+/// - **Add**: When an operator successfully front-pays the user with a withdrwal fulfillment
+///   transaction
+/// - **Remove**: When an operator submits a commit transaction
 ///
 /// # Ordering Invariant
 ///
@@ -170,27 +170,27 @@ impl Default for FulfillmentTable {
     }
 }
 
-/// Represents an operator's claim to unlock a deposit UTXO after successful withdrawal processing.
+/// Represents the operator eligibility to make a withdrawal claim for the assigned deposit UTXO,
+/// after a successful user withdrawal request fulfillment.
 ///
-/// This structure is created when an operator successfully processes a withdrawal by making
-/// the required front payment to the user within the specified deadline. It serves as proof
-/// that the operator has fulfilled their obligation and is now entitled to claim the
-/// corresponding locked deposit funds.
+/// This structure is created when an operator successfully processes a withdrawal request by
+/// making the required front payment to the user within the specified deadline. It serves as proof
+/// that the operator has fulfilled their obligation and is now entitled to claim the corresponding
+/// funds.
 ///
 /// The claim contains all necessary information to:
-/// - Link the withdrawal transaction to the original deposit
+/// - Link the withdrawal fulfillment transaction to the original deposit
 /// - Identify which operator performed the withdrawal
-/// - Enable the Bridge proof to verify the operator's right to withdraw locked funds
+/// - Enable the bridge proof to prove the operator's right to make a withdrawal from the bridge
 ///
-/// This data is stored in the MohoState and used by the Bridge proof system to validate
-/// that operators have correctly front-paid users before allowing them to withdraw the
-/// corresponding deposit UTXOs.
+/// This data is stored in the MohoState and used by the bridge proof to prove
+/// that operators have correctly front-paid users.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct OperatorClaimUnlock {
-    /// The transaction idx of the deposit that was assigned.
+    /// The index of the assigned deposit UTXO.
     pub deposit_idx: u32,
 
-    /// The index of the operator who processed the withdrawal.
+    /// The index of the operator who processed the withdrawal fulfillment.
     pub operator_idx: OperatorIdx,
 }
 

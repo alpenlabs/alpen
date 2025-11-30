@@ -15,7 +15,7 @@ pub const COMMIT_TX_AUX_DATA_LEN: usize = 4 + 4;
 pub struct CommitInfo {
     /// The index of the deposit that the operator is committing to.
     /// This must be validated against the operator's assigned deposits in the state's assignments
-    /// table to ensure the operator is authorized to commit to this specific deposit.
+    /// table to ensure the operator is authorized to withdraw this specific deposit.
     pub deposit_idx: u32,
 
     /// The index of the game being committed to.

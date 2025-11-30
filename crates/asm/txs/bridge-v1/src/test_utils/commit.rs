@@ -17,8 +17,8 @@ use crate::{
 /// Sets up a complete commit transaction chain for testing purposes.
 ///
 /// This function creates two transactions:
-/// 1. An N/N UTXO transaction with an output locked to an N/N MuSig2 aggregated public key
-/// 2. A commit transaction that spends from the N/N UTXO tx with proper MuSig2 signature
+/// 1. An UTXO transaction with an output locked to an N/N MuSig2 aggregated public key
+/// 2. A commit transaction that spends from the UTXO tx with proper MuSig2 signature
 ///
 /// The commit transaction follows the full SPS-50 specification and contains:
 /// - Input: Spends from a P2TR N/N multisig output with proper MuSig2 signature

@@ -54,7 +54,7 @@ impl Subprotocol for BridgeV1Subproto {
         // Pre-Process each transaction
         for tx in txs {
             // Parse transaction to extract structured data, then handle the preprocess transaction
-            // to get the auxilary requests
+            // to get the auxiliary requests
             match parse_tx(tx) {
                 Ok(parsed_tx) => {
                     preprocess_parsed_tx(parsed_tx, state, collector);
