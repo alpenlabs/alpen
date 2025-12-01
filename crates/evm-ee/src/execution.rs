@@ -15,11 +15,13 @@ use reth_primitives::EthPrimitives;
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
+use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     BlockAssembler, EnvError, EnvResult, ExecBlockOutput, ExecPartialState, ExecPayload,
     ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
+use strata_ol_msg_types::WithdrawalMsgData;
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
@@ -42,22 +44,22 @@ pub struct EvmExecutionEnvironment {
 
 /// Converts withdrawal intents to messages sent to the bridge gateway account.
 ///
-/// Each withdrawal intent is encoded as a message containing:
+/// Each withdrawal intent is encoded using `WithdrawalMsgData` containing:
 /// - The withdrawal amount (as message value)
-/// - The descriptor bytes + transaction ID (as message data)
+/// - The destination descriptor (encoded in message data)
 fn convert_withdrawal_intents_to_messages(
     withdrawal_intents: Vec<alpen_reth_primitives::WithdrawalIntent>,
     outputs: &mut BlockOutputs,
 ) {
     for intent in withdrawal_intents {
-        // Encode withdrawal intent data: descriptor bytes + txid
-        let mut msg_data = Vec::new();
-        msg_data.extend_from_slice(&intent.destination.to_bytes());
-        msg_data.extend_from_slice(&intent.withdrawal_txid.0);
+        // Create withdrawal message data with fees=0 (currently ignored) and destination descriptor
+        let withdrawal_msg = WithdrawalMsgData::new(0, intent.destination.to_bytes().to_vec())
+            .expect("destination descriptor too long");
 
+        let msg_data = encode_to_vec(&withdrawal_msg).expect("encoding failed");
         let bridge_gateway_account = AccountId::from(BRIDGE_GATEWAY_ACCOUNT);
 
-        // Create message to bridge gateway with withdrawal amount and intent data
+        // Create message to bridge gateway with withdrawal amount and encoded data
         let payload = MsgPayload::new(BitcoinAmount::from_sat(intent.amt), msg_data);
         let message = SentMessage::new(bridge_gateway_account, payload);
         outputs.add_message(message);

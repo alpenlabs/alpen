@@ -14174,6 +14174,7 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "itertools 0.14.0",
+ "proptest",
  "reth-chainspec",
  "reth-consensus-common",
  "reth-errors",
@@ -14193,6 +14194,7 @@ dependencies = [
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
+ "strata-ol-msg-types",
 ]
 
 [[package]]

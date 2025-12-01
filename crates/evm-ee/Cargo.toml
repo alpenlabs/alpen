@@ -9,6 +9,7 @@ strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
+strata-ol-msg-types.workspace = true
 
 # RSP for sparse MPT and execution
 rsp-client-executor.workspace = true
@@ -42,6 +43,7 @@ itertools.workspace = true
 
 [dev-dependencies]
 alloy-eips.workspace = true
+proptest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
