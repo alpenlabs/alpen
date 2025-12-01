@@ -447,12 +447,12 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.2" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.8.3" }
 
 # This is needed for custom build of SP1
 [profile.release.build-override]

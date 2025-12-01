@@ -35,7 +35,7 @@ use crate::{error::ProverServiceResult, program::ProgramType, ZkVmBackend};
 /// to the concrete type when executing the proof.
 ///
 /// This allows PaaS to remain generic while handlers work with specific types.
-pub struct BoxedInput(pub Box<dyn Any + Send + Sync>);
+pub struct BoxedInput(Box<dyn Any + Send + Sync>);
 
 impl std::fmt::Debug for BoxedInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

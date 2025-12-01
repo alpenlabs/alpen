@@ -143,6 +143,38 @@ pub enum TaskResult {
     Failed { uuid: String, error: String },
 }
 
+impl TaskResult {
+    /// Create a completed task result
+    pub fn completed(uuid: impl Into<String>) -> Self {
+        Self::Completed { uuid: uuid.into() }
+    }
+
+    /// Create a failed task result
+    pub fn failed(uuid: impl Into<String>, error: impl Into<String>) -> Self {
+        Self::Failed {
+            uuid: uuid.into(),
+            error: error.into(),
+        }
+    }
+
+    /// Check if the task completed successfully
+    pub fn is_completed(&self) -> bool {
+        matches!(self, Self::Completed { .. })
+    }
+
+    /// Check if the task failed
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed { .. })
+    }
+
+    /// Get the UUID regardless of completion status
+    pub fn uuid(&self) -> &str {
+        match self {
+            Self::Completed { uuid } | Self::Failed { uuid, .. } => uuid,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;

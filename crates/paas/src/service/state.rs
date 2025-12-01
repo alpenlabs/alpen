@@ -1,12 +1,12 @@
 //! Service state management with persistence
 
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::HashMap, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use strata_service::ServiceState;
 use strata_tasks::TaskExecutor;
 use tokio::sync::Semaphore;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     config::ProverServiceConfig,
@@ -101,15 +101,8 @@ impl<P: ProgramType> ProverServiceState<P> {
 
         // Generate UUID for new task
         let uuid = uuid::Uuid::new_v4().to_string();
-        let now = Instant::now();
 
-        let record = TaskRecord {
-            task_id: task_id.clone(),
-            uuid: uuid.clone(),
-            status: TaskStatus::Pending,
-            created_at: now,
-            updated_at: now,
-        };
+        let record = TaskRecord::new(task_id.clone(), uuid.clone(), TaskStatus::Pending);
 
         // Persist the task - handle race condition where another thread inserted first
         match self.task_store.insert_task(record) {
@@ -138,7 +131,7 @@ impl<P: ProgramType> ProverServiceState<P> {
             .get_task_by_uuid(uuid)
             .ok_or_else(|| ProverServiceError::TaskNotFound(format!("UUID: {}", uuid)))?;
 
-        Ok(record.status)
+        Ok(record.status().clone())
     }
 
     /// Get task status by TaskId (internal use)
@@ -148,7 +141,7 @@ impl<P: ProgramType> ProverServiceState<P> {
             .get_task(task_id)
             .ok_or_else(|| ProverServiceError::TaskNotFound(format!("{:?}", task_id)))?;
 
-        Ok(record.status)
+        Ok(record.status().clone())
     }
 
     /// Update task status
@@ -165,7 +158,7 @@ impl<P: ProgramType> ProverServiceState<P> {
         self.task_store
             .list_tasks(filter)
             .into_iter()
-            .map(|record| record.task_id)
+            .map(|record| record.task_id().clone())
             .collect()
     }
 
@@ -199,7 +192,7 @@ impl<P: ProgramType> ProverServiceState<P> {
         };
 
         for record in all_tasks {
-            match record.status {
+            match record.status() {
                 TaskStatus::Pending => summary.pending += 1,
                 TaskStatus::Queued => summary.queued += 1,
                 TaskStatus::Proving => summary.proving += 1,
@@ -220,6 +213,7 @@ impl<P: ProgramType> ProverServiceState<P> {
     /// 3. Store completed proof
     ///
     /// Returns Ok(()) on success, Err for transient/permanent failures.
+    #[tracing::instrument(skip(self))]
     async fn execute_task(&self, task_id: &TaskId<P>) -> ProverServiceResult<()> {
         // Get handler for this program variant
         let routing_key = task_id.program().routing_key();
@@ -239,21 +233,21 @@ impl<P: ProgramType> ProverServiceState<P> {
             ))
         })?;
 
-        info!(?task_id, "Fetching input");
+        debug!("Fetching input");
         let input = handler.fetch_input(task_id.program()).await?;
 
         // Acquire semaphore for capacity control (blocks if at limit)
-        info!(?task_id, ?backend, "Acquiring capacity permit");
+        debug!(?backend, "Acquiring capacity permit");
         let _permit = semaphore.acquire().await.map_err(|e| {
             ProverServiceError::Internal(anyhow::anyhow!("Semaphore closed: {}", e))
         })?;
 
-        info!(?task_id, "Executing proof with capacity permit held");
+        debug!("Executing proof with capacity permit held");
         let proof = handler
             .execute_proof(task_id.program(), input, backend)
             .await?;
 
-        info!(?task_id, "Storing proof");
+        debug!("Storing proof");
         handler.store_proof(task_id.program(), proof).await?;
 
         // Permit automatically released when dropped
@@ -272,12 +266,13 @@ impl<P: ProgramType> ProverServiceState<P> {
     ///
     /// - `TaskResult::Completed` if proof generation succeeded
     /// - `TaskResult::Failed` if proof generation failed
+    #[tracing::instrument(skip(self), fields(uuid))]
     pub async fn execute_task_sync(&self, task_id: TaskId<P>) -> TaskResult {
         // Submit task to get UUID (idempotent)
         let (uuid, is_new) = match self.submit_task(task_id.clone()) {
             Ok(result) => result,
             Err(e) => {
-                error!(?task_id, ?e, "Failed to submit task");
+                error!(?e, "Failed to submit task");
                 return TaskResult::Failed {
                     uuid: "unknown".to_string(),
                     error: format!("Submit failed: {}", e),
@@ -285,65 +280,68 @@ impl<P: ProgramType> ProverServiceState<P> {
             }
         };
 
+        // Record uuid in span
+        tracing::Span::current().record("uuid", &uuid);
+
         // If task already exists, check its status
         if !is_new {
             match self.get_status(&task_id) {
                 Ok(TaskStatus::Completed) => {
-                    info!(?task_id, %uuid, "Task already completed");
+                    debug!("Task already completed");
                     return TaskResult::Completed { uuid };
                 }
                 Ok(TaskStatus::PermanentFailure { error }) => {
-                    warn!(?task_id, %uuid, %error, "Task already failed");
+                    warn!(%error, "Task already failed");
                     return TaskResult::Failed { uuid, error };
                 }
                 Ok(status) => {
-                    info!(?task_id, %uuid, ?status, "Task exists, waiting for current execution");
+                    debug!(?status, "Task exists, waiting for current execution");
                     // Task is in progress, we'll wait for it by executing again
                 }
                 Err(e) => {
-                    warn!(?task_id, %uuid, ?e, "Failed to get task status");
+                    warn!(?e, "Failed to get task status");
                 }
             }
         }
 
         // Transition to Queued
         if let Err(e) = self.update_status(&task_id, TaskStatus::Queued) {
-            error!(?task_id, ?e, "Failed to update status to Queued");
+            error!(?e, "Failed to update status to Queued");
             return TaskResult::Failed {
                 uuid: uuid.clone(),
                 error: format!("Status update failed: {}", e),
             };
         }
-        info!(?task_id, %uuid, "Task queued");
+        debug!("Task queued");
 
         // Transition to Proving
         if let Err(e) = self.update_status(&task_id, TaskStatus::Proving) {
-            error!(?task_id, ?e, "Failed to update status to Proving");
+            error!(?e, "Failed to update status to Proving");
             return TaskResult::Failed {
                 uuid: uuid.clone(),
                 error: format!("Status update failed: {}", e),
             };
         }
-        info!(?task_id, %uuid, "Task proving started");
+        info!("Task proving started");
 
         // Execute the task
         match self.execute_task(&task_id).await {
             Ok(()) => {
                 // Success - mark as completed
                 if let Err(e) = self.update_status(&task_id, TaskStatus::Completed) {
-                    error!(?task_id, ?e, "Failed to update status to Completed");
+                    error!(?e, "Failed to update status to Completed");
                     return TaskResult::Failed {
                         uuid: uuid.clone(),
                         error: format!("Status update failed: {}", e),
                     };
                 }
-                info!(?task_id, %uuid, "Task completed successfully");
+                info!("Task completed successfully");
                 TaskResult::Completed { uuid }
             }
             Err(e) => {
                 // Failure - mark as failed
                 let error_msg = e.to_string();
-                error!(?task_id, %uuid, %error_msg, "Task failed");
+                error!(%error_msg, "Task failed");
 
                 if let Err(update_err) = self.update_status(
                     &task_id,
@@ -351,11 +349,7 @@ impl<P: ProgramType> ProverServiceState<P> {
                         error: error_msg.clone(),
                     },
                 ) {
-                    error!(
-                        ?task_id,
-                        ?update_err,
-                        "Failed to update status to PermanentFailure"
-                    );
+                    error!(?update_err, "Failed to update status to PermanentFailure");
                 }
 
                 TaskResult::Failed {
@@ -529,6 +523,20 @@ impl<P: ProgramType> ProverServiceState<P> {
             retry_count
         } else {
             0
+        }
+    }
+}
+
+// Implement Clone for ProverServiceState (required by ServiceState)
+impl<P: ProgramType> Clone for ProverServiceState<P> {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            task_store: self.task_store.clone(),
+            handlers: self.handlers.clone(),
+            semaphores: self.semaphores.clone(),
+            executor: self.executor.clone(),
+            retry_scheduler: self.retry_scheduler.clone(),
         }
     }
 }

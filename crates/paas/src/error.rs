@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use crate::task::TaskStatus;
+
 /// Result type for PaaS operations
 pub type ProverServiceResult<T> = Result<T, ProverServiceError>;
 
@@ -13,30 +15,27 @@ pub enum ProverServiceError {
     TaskNotFound(String),
 
     /// Transient failure that should be retried
-    #[error("Transient failure: {0}")]
+    #[error("Transient: {0}")]
     TransientFailure(String),
 
     /// Permanent failure that should not be retried
-    #[error("Permanent failure: {0}")]
+    #[error("Permanent: {0}")]
     PermanentFailure(String),
 
     /// Invalid state transition
     #[error("Invalid state transition from {from:?} to {to:?}")]
-    InvalidTransition {
-        from: crate::task::TaskStatus,
-        to: crate::task::TaskStatus,
-    },
+    InvalidTransition { from: TaskStatus, to: TaskStatus },
 
     /// Worker pool error
-    #[error("Worker pool error: {0}")]
+    #[error("Worker pool: {0}")]
     WorkerPool(String),
 
     /// Configuration error
-    #[error("Configuration error: {0}")]
+    #[error("Configuration: {0}")]
     Config(String),
 
     /// Internal error
-    #[error("Internal error: {0}")]
+    #[error("{0}")]
     Internal(#[from] anyhow::Error),
 }
 

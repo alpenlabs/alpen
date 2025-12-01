@@ -8,8 +8,9 @@ use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
     config::ProverServiceConfig,
-    error::ProverServiceResult,
+    error::{ProverServiceError, ProverServiceResult},
     handler::ProofHandler,
+    persistence::TaskStore,
     program::ProgramType,
     scheduler::{RetryScheduler, SchedulerCommand, SchedulerHandle},
     service::{handle::ProverHandle, runtime::ProverService, state::ProverServiceState},
@@ -35,7 +36,7 @@ use crate::{
 pub struct ProverServiceBuilder<P: ProgramType> {
     config: ProverServiceConfig<ZkVmBackend>,
     handlers: HashMap<P::RoutingKey, Arc<dyn ProofHandler<P>>>,
-    task_store: Option<Arc<dyn crate::persistence::TaskStore<P>>>,
+    task_store: Option<Arc<dyn TaskStore<P>>>,
 }
 
 impl<P: ProgramType> std::fmt::Debug for ProverServiceBuilder<P> {
@@ -65,7 +66,7 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
     /// for production deployments.
     pub fn with_task_store<S>(mut self, store: S) -> Self
     where
-        S: crate::persistence::TaskStore<P> + 'static,
+        S: TaskStore<P> + 'static,
     {
         self.task_store = Some(Arc::new(store));
         self
@@ -185,7 +186,7 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
         let monitor = service_builder
             .launch_async("prover", executor)
             .await
-            .map_err(crate::error::ProverServiceError::Internal)?;
+            .map_err(ProverServiceError::Internal)?;
 
         // Return handle
         Ok(ProverHandle::new(command_handle, monitor))

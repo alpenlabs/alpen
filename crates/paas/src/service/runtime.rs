@@ -132,17 +132,3 @@ impl<P: ProgramType> AsyncService for ProverService<P> {
 pub struct ProverServiceStatus {
     pub(crate) summary: StatusSummary,
 }
-
-// Implement Clone for ProverServiceState (required by ServiceState)
-impl<P: ProgramType> Clone for ProverServiceState<P> {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            task_store: self.task_store.clone(),
-            handlers: self.handlers.clone(),
-            semaphores: self.semaphores.clone(),
-            executor: self.executor.clone(),
-            retry_scheduler: self.retry_scheduler.clone(),
-        }
-    }
-}

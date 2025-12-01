@@ -111,12 +111,12 @@ where
 impl<P, F, S, R, Prog> ProofHandler<P> for RemoteProofHandler<P, F, S, R, Prog>
 where
     P: ProgramType + Send + Sync + 'static,
-    F: InputFetcher<P> + Clone + Send + Sync + 'static,
+    F: InputFetcher<P> + Clone + 'static,
     F::Input: Into<Prog::Input> + 'static,
     F::Error: 'static,
-    S: ProofStorer<P> + Clone + Send + Sync + 'static,
+    S: ProofStorer<P> + Clone + 'static,
     S::Error: 'static,
-    R: HostResolver<P> + Clone + Send + Sync + 'static,
+    R: HostResolver<P> + Clone + 'static,
     Prog: ZkVmProgram + ZkVmRemoteProgram + Send + Sync + 'static,
     Prog::Input: Send + Sync + 'static,
 {

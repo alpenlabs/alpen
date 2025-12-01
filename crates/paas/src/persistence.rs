@@ -14,17 +14,68 @@ pub struct TaskRecord<T>
 where
     T: Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
 {
-    pub task_id: T,
-    pub uuid: String,
-    pub status: TaskStatus,
-    pub created_at: Instant,
-    pub updated_at: Instant,
+    task_id: T,
+    uuid: String,
+    status: TaskStatus,
+    created_at: Instant,
+    updated_at: Instant,
+}
+
+impl<T> TaskRecord<T>
+where
+    T: Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
+{
+    /// Create a new task record
+    pub fn new(task_id: T, uuid: String, status: TaskStatus) -> Self {
+        let now = Instant::now();
+        Self {
+            task_id,
+            uuid,
+            status,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Get the task ID
+    pub fn task_id(&self) -> &T {
+        &self.task_id
+    }
+
+    /// Get the UUID
+    pub fn uuid(&self) -> &str {
+        &self.uuid
+    }
+
+    /// Get the status
+    pub fn status(&self) -> &TaskStatus {
+        &self.status
+    }
+
+    /// Get creation timestamp
+    pub fn created_at(&self) -> Instant {
+        self.created_at
+    }
+
+    /// Get last update timestamp
+    pub fn updated_at(&self) -> Instant {
+        self.updated_at
+    }
+
+    /// Update the status and timestamp
+    pub fn update_status(&mut self, status: TaskStatus) {
+        self.status = status;
+        self.updated_at = Instant::now();
+    }
 }
 
 /// Trait for persistent task storage
 ///
 /// Implementations should be database-backed for production use.
 /// This trait enables idempotent task submission and crash recovery.
+///
+/// TODO: Ideally, this trait should be called from blocking-safe context
+/// so we don't block the executor. Analyze usage and fix it.
 pub trait TaskStore<P: ProgramType>: Send + Sync + 'static {
     /// Get UUID for a task if it exists
     fn get_uuid(&self, task_id: &TaskId<P>) -> Option<String>;

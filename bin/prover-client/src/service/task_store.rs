@@ -46,13 +46,6 @@ impl SledTaskStore {
         TaskId::new(ProofTask(ser.program), backend)
     }
 
-    /// Convert SystemTime to Instant (approximate)
-    fn system_time_to_instant(_secs: u64) -> Instant {
-        // For persistence, we lose the exact instant but that's OK for task tracking
-        // We just use "now" as the reference point
-        Instant::now()
-    }
-
     /// Convert Instant to SystemTime seconds
     fn instant_to_secs(_instant: &Instant) -> u64 {
         SystemTime::now()
@@ -64,23 +57,23 @@ impl SledTaskStore {
     /// Convert from paas TaskRecord to serializable form
     fn to_serializable_record(record: &TaskRecord<TaskId<ProofTask>>) -> SerializableTaskRecord {
         SerializableTaskRecord {
-            task_id: Self::to_serializable_task_id(&record.task_id),
-            uuid: record.uuid.clone(),
-            status: record.status.clone(),
-            created_at_secs: Self::instant_to_secs(&record.created_at),
-            updated_at_secs: Self::instant_to_secs(&record.updated_at),
+            task_id: Self::to_serializable_task_id(record.task_id()),
+            uuid: record.uuid().to_string(),
+            status: record.status().clone(),
+            created_at_secs: Self::instant_to_secs(&record.created_at()),
+            updated_at_secs: Self::instant_to_secs(&record.updated_at()),
         }
     }
 
     /// Convert from serializable form to paas TaskRecord
     fn from_serializable_record(ser: &SerializableTaskRecord) -> TaskRecord<TaskId<ProofTask>> {
-        TaskRecord {
-            task_id: Self::from_serializable_task_id(&ser.task_id),
-            uuid: ser.uuid.clone(),
-            status: ser.status.clone(),
-            created_at: Self::system_time_to_instant(ser.created_at_secs),
-            updated_at: Self::system_time_to_instant(ser.updated_at_secs),
-        }
+        // Note: created_at and updated_at from serialized record are lost here
+        // This is a limitation - timestamps will be reset to current time
+        TaskRecord::new(
+            Self::from_serializable_task_id(&ser.task_id),
+            ser.uuid.clone(),
+            ser.status.clone(),
+        )
     }
 }
 
@@ -88,7 +81,7 @@ impl TaskStore<ProofTask> for SledTaskStore {
     fn get_uuid(&self, task_id: &TaskId<ProofTask>) -> Option<String> {
         let key = Self::to_serializable_task_id(task_id);
         let record = self.db.get_task(&key).ok()??;
-        Some(record.uuid)
+        Some(record.uuid) // SerializableTaskRecord has public uuid field
     }
 
     fn get_task(&self, task_id: &TaskId<ProofTask>) -> Option<TaskRecord<TaskId<ProofTask>>> {
@@ -106,7 +99,7 @@ impl TaskStore<ProofTask> for SledTaskStore {
     }
 
     fn insert_task(&self, record: TaskRecord<TaskId<ProofTask>>) -> ProverServiceResult<()> {
-        let key = Self::to_serializable_task_id(&record.task_id);
+        let key = Self::to_serializable_task_id(record.task_id());
 
         // Check for duplicate task_id
         if self
@@ -117,20 +110,20 @@ impl TaskStore<ProofTask> for SledTaskStore {
         {
             return Err(ProverServiceError::Config(format!(
                 "Task already exists: {:?}",
-                record.task_id
+                record.task_id()
             )));
         }
 
         // Check for duplicate UUID
         if self
             .db
-            .get_task_id_by_uuid(&record.uuid)
+            .get_task_id_by_uuid(record.uuid())
             .map_err(|e| ProverServiceError::Internal(anyhow::anyhow!("DB error: {}", e)))?
             .is_some()
         {
             return Err(ProverServiceError::Internal(anyhow::anyhow!(
                 "UUID collision detected: {}",
-                record.uuid
+                record.uuid()
             )));
         }
 
@@ -151,7 +144,7 @@ impl TaskStore<ProofTask> for SledTaskStore {
     ) -> ProverServiceResult<()> {
         let key = Self::to_serializable_task_id(task_id);
 
-        // Get existing record
+        // Get existing record (SerializableTaskRecord, not TaskRecord)
         let mut record = self
             .db
             .get_task(&key)
@@ -160,9 +153,9 @@ impl TaskStore<ProofTask> for SledTaskStore {
                 ProverServiceError::TaskNotFound(format!("Task not found: {:?}", task_id))
             })?;
 
-        // Update status and timestamp
+        // Update status and timestamp (SerializableTaskRecord has direct field access)
         record.status = status;
-        record.updated_at_secs = Self::instant_to_secs(&Instant::now());
+        record.updated_at_secs = Self::instant_to_secs(&std::time::Instant::now());
 
         // Write back
         self.db.update_task(&key, &record).map_err(|e| {
@@ -179,7 +172,7 @@ impl TaskStore<ProofTask> for SledTaskStore {
         self.db
             .list_all_tasks()
             .into_iter()
-            .filter(|(_key, record)| filter(&record.status))
+            .filter(|(_key, record)| filter(&record.status)) // SerializableTaskRecord has public status field
             .map(|(_key, record)| Self::from_serializable_record(&record))
             .collect()
     }
