@@ -5,7 +5,7 @@ use std::ops::Deref;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-#[cfg(feature = "serde")]
+#[cfg(all(feature = "serde", not(target_os = "zkvm")))]
 use serde::{Deserialize, Serialize};
 
 use super::ThresholdSignatureError;
@@ -15,6 +15,14 @@ use super::ThresholdSignatureError;
 /// This is a thin wrapper around `secp256k1::PublicKey` that adds Borsh
 /// serialization support. Unlike `EvenPublicKey`, this type does not
 /// enforce even parity - it accepts any valid compressed public key.
+///
+/// **Why no parity enforcement?** This key is used for ECDSA signature
+/// verification (not Schnorr/BIP340). ECDSA signatures work with both
+/// even and odd parity keys, unlike Schnorr which requires even parity
+/// for x-only public keys.
+///
+/// Serializes the key as a 33-byte compressed point where the first byte
+/// indicates the y-coordinate parity (0x02 for even, 0x03 for odd).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompressedPublicKey(PublicKey);
 
@@ -25,7 +33,7 @@ impl CompressedPublicKey {
     pub fn from_slice(data: &[u8]) -> Result<Self, ThresholdSignatureError> {
         let pk =
             PublicKey::from_slice(data).map_err(|e| ThresholdSignatureError::InvalidPublicKey {
-                index: 0,
+                index: None,
                 reason: e.to_string(),
             })?;
         Ok(Self(pk))
@@ -101,7 +109,7 @@ impl BorshDeserialize for CompressedPublicKey {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(all(feature = "serde", not(target_os = "zkvm")))]
 impl Serialize for CompressedPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -113,7 +121,7 @@ impl Serialize for CompressedPublicKey {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(all(feature = "serde", not(target_os = "zkvm")))]
 impl<'de> Deserialize<'de> for CompressedPublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

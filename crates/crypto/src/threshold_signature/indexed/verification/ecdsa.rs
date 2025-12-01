@@ -23,10 +23,10 @@ pub(super) fn verify_ecdsa_signatures(
     // Verify each signature
     for indexed_sig in signatures.signatures() {
         // Check index is in bounds
-        let index = indexed_sig.index as usize;
+        let index = indexed_sig.index() as usize;
         if index >= config.keys().len() {
             return Err(ThresholdSignatureError::SignerIndexOutOfBounds {
-                index: indexed_sig.index,
+                index: indexed_sig.index(),
                 max: config.keys().len(),
             });
         }
@@ -46,13 +46,13 @@ pub(super) fn verify_ecdsa_signatures(
         let recovered_pubkey = SECP256K1
             .recover_ecdsa(&message, &recoverable_sig)
             .map_err(|_| ThresholdSignatureError::InvalidSignature {
-                index: indexed_sig.index,
+                index: indexed_sig.index(),
             })?;
 
         // Verify the recovered key matches the expected key
         if &recovered_pubkey != expected_pubkey {
             return Err(ThresholdSignatureError::InvalidSignature {
-                index: indexed_sig.index,
+                index: indexed_sig.index(),
             });
         }
     }

@@ -11,16 +11,21 @@ use super::ThresholdSignatureError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedSignature {
     /// Index of the signer in the ThresholdConfig keys array (0-255).
-    pub index: u8,
+    index: u8,
     /// 65-byte recoverable ECDSA signature (recovery_id || r || s).
     /// Using recoverable format for hardware wallet compatibility (Ledger/Trezor native output).
-    pub signature: [u8; 65],
+    signature: [u8; 65],
 }
 
 impl IndexedSignature {
     /// Create a new indexed signature.
     pub fn new(index: u8, signature: [u8; 65]) -> Self {
         Self { index, signature }
+    }
+
+    /// Get the signer index.
+    pub fn index(&self) -> u8 {
+        self.index
     }
 
     /// Get the recovery ID (first byte of the signature).
@@ -30,12 +35,16 @@ impl IndexedSignature {
 
     /// Get the r component (bytes 1-32).
     pub fn r(&self) -> &[u8; 32] {
-        self.signature[1..33].try_into().unwrap()
+        self.signature[1..33]
+            .try_into()
+            .expect("signature[1..33] is always 32 bytes")
     }
 
     /// Get the s component (bytes 33-64).
     pub fn s(&self) -> &[u8; 32] {
-        self.signature[33..65].try_into().unwrap()
+        self.signature[33..65]
+            .try_into()
+            .expect("signature[33..65] is always 32 bytes")
     }
 
     /// Get the compact signature (r || s) without recovery ID.
@@ -166,9 +175,9 @@ mod tests {
         let set = SignatureSet::new(sigs).unwrap();
 
         // Should be sorted
-        assert_eq!(set.signatures()[0].index, 0);
-        assert_eq!(set.signatures()[1].index, 1);
-        assert_eq!(set.signatures()[2].index, 2);
+        assert_eq!(set.signatures()[0].index(), 0);
+        assert_eq!(set.signatures()[1].index(), 1);
+        assert_eq!(set.signatures()[2].index(), 2);
     }
 
     #[test]
@@ -201,7 +210,7 @@ mod tests {
 
         let sig = IndexedSignature::new(5, signature);
 
-        assert_eq!(sig.index, 5);
+        assert_eq!(sig.index(), 5);
         assert_eq!(sig.recovery_id(), 27);
         assert_eq!(sig.r(), &[0xAA; 32]);
         assert_eq!(sig.s(), &[0xBB; 32]);

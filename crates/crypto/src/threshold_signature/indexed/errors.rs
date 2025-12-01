@@ -10,8 +10,11 @@ pub enum ThresholdSignatureError {
     InsufficientSignatures { provided: usize, required: usize },
 
     /// Invalid public key data.
-    #[error("invalid public key at index {index}: {reason}")]
-    InvalidPublicKey { index: usize, reason: String },
+    #[error("invalid public key{}: {reason}", index.map(|i| format!(" at index {}", i)).unwrap_or_default())]
+    InvalidPublicKey {
+        index: Option<usize>,
+        reason: String,
+    },
 
     /// Invalid threshold value.
     #[error("invalid threshold: {threshold} exceeds total keys {total_keys}")]
@@ -61,7 +64,7 @@ pub enum ThresholdSignatureError {
 impl From<secp256k1::Error> for ThresholdSignatureError {
     fn from(e: secp256k1::Error) -> Self {
         Self::InvalidPublicKey {
-            index: 0,
+            index: None,
             reason: e.to_string(),
         }
     }

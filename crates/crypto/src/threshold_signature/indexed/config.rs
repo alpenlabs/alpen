@@ -1,6 +1,6 @@
 //! Configuration types for threshold signing.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, num::NonZero};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -10,12 +10,14 @@ use super::{CompressedPublicKey, ThresholdSignatureError};
 /// Configuration for a threshold signature authority.
 ///
 /// Defines who can sign (`keys`) and how many must sign (`threshold`).
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+/// The threshold is stored as `NonZero<u8>` to enforce at the type level
+/// that it can never be zero.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThresholdConfig {
     /// Public keys of all authorized signers.
     keys: Vec<CompressedPublicKey>,
-    /// Minimum number of signatures required.
-    threshold: u8,
+    /// Minimum number of signatures required (always >= 1).
+    threshold: NonZero<u8>,
 }
 
 impl ThresholdConfig {
@@ -31,11 +33,14 @@ impl ThresholdConfig {
         keys: Vec<CompressedPublicKey>,
         threshold: u8,
     ) -> Result<Self, ThresholdSignatureError> {
+        // Validate threshold is non-zero
+        let threshold = NonZero::new(threshold).ok_or(ThresholdSignatureError::ZeroThreshold)?;
+
         let mut config = ThresholdConfig {
             keys: vec![],
-            threshold: 0,
+            threshold,
         };
-        let update = ThresholdConfigUpdate::new(keys, vec![], threshold);
+        let update = ThresholdConfigUpdate::new(keys, vec![], threshold.get());
         config.apply_update(&update)?;
         Ok(config)
     }
@@ -45,9 +50,9 @@ impl ThresholdConfig {
         &self.keys
     }
 
-    /// Get the threshold.
+    /// Get the threshold value.
     pub fn threshold(&self) -> u8 {
-        self.threshold
+        self.threshold.get()
     }
 
     /// Get the number of authorized signers.
@@ -125,10 +130,29 @@ impl ThresholdConfig {
         // Add new members
         self.keys.extend_from_slice(update.add_members());
 
-        // Update threshold
-        self.threshold = update.new_threshold();
+        // Update threshold - safe because validate_update already checked it's non-zero
+        self.threshold =
+            NonZero::new(update.new_threshold()).expect("validate_update ensures non-zero");
 
         Ok(())
+    }
+}
+
+impl BorshSerialize for ThresholdConfig {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.keys.serialize(writer)?;
+        self.threshold.get().serialize(writer)
+    }
+}
+
+impl BorshDeserialize for ThresholdConfig {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let keys = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
+        let threshold_u8 = u8::deserialize_reader(reader)?;
+        let threshold = NonZero::new(threshold_u8).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "threshold cannot be zero")
+        })?;
+        Ok(Self { keys, threshold })
     }
 }
 
