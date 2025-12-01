@@ -1,7 +1,10 @@
-use strata_acct_types::{AccountId, AccountSerial, AcctResult};
-use strata_identifiers::Buf32;
+use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Hash};
+use strata_asm_common::AsmManifest;
+use strata_identifiers::{Buf32, EpochCommitment, L1Height};
+use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::{
+    Coin,
     account::{AccountTypeState, IAccountState},
     global_state::IGlobalState,
     l1vs::IL1ViewState,
@@ -25,14 +28,28 @@ pub trait StateAccessor {
     /// Gets a ref to the global state.
     fn global(&self) -> &Self::GlobalState;
 
-    /// Gets a mut ref to the global state.
-    fn global_mut(&mut self) -> &mut Self::GlobalState;
+    // GLOBAL MODIFIERS
+
+    /// Sets the current slot.
+    fn set_cur_slot(&mut self, slot: u64);
 
     /// Gets a ref to the L1 view state.
     fn l1_view(&self) -> &Self::L1ViewState;
 
-    /// Gets a mut ref to the L1 view state.
-    fn l1_view_mut(&mut self) -> &mut Self::L1ViewState;
+    // L1 View MODIFIERS
+
+    /// Sets the current epoch.
+    fn set_cur_epoch(&mut self, epoch: u32);
+
+    /// Appends a new ASM manifest to the accumulator, also updating the last L1
+    /// block height and other fields.
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest);
+
+    /// Sets the field for the epoch that the ASM considers to be finalized.
+    ///
+    /// This is our perspective of the perspective of the last block's ASM
+    /// manifest we've accepted.
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment);
 
     /// Checks if an account exists.
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;
@@ -40,16 +57,39 @@ pub trait StateAccessor {
     /// Gets a ref to an account, if it exists.
     fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>>;
 
-    /// Gets a mut ref to an account, if it exists.
-    fn get_account_state_mut(
+    // Account MODIFIERS
+
+    /// Adds a coin to this account's balance.
+    fn add_balance(&mut self, acct_id: AccountId, coin: Coin) -> AcctResult<()>;
+
+    /// Takes a coin from this account's balance, if funds are available.
+    fn take_balance(&mut self, acct_id: AccountId, amt: BitcoinAmount) -> AcctResult<Coin>;
+
+    /// Sets the inner state root unconditionally.
+    ///
+    /// # Note
+    /// Fails for non-snark account
+    fn set_proof_state_directly(
         &mut self,
-        id: AccountId,
-    ) -> AcctResult<Option<&mut Self::AccountState>>;
+        acct_id: AccountId,
+        state: Hash,
+        next_read_idx: u64,
+        seqno: Seqno,
+    ) -> AcctResult<()>;
+
+    /// Inserts message data into the inbox.  Performs no other operations.
+    ///
+    /// This is exposed like this so that we can expose the message entry in DA.
+    ///
+    /// # Note
+    /// Fails for non-snark account
+    fn insert_inbox_message(&mut self, acct_id: AccountId, entry: MessageEntry) -> AcctResult<()>;
 
     /// Overwrites an existing account entry's state, if it exists.
     ///
     /// This refuses to create new accounts in order to avoid accidents like
     /// screwing up serials.
+    // TODO: might not be necessary with the above modifiers.
     fn update_account_state(&mut self, id: AccountId, state: Self::AccountState) -> AcctResult<()>;
 
     /// Creates a new account as some ID with some type state, if that ID

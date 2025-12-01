@@ -1,12 +1,19 @@
 //! Toplevel state.
 
 use bitcoin::absolute;
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
+use strata_acct_types::{
+    AccountId, AccountSerial, AccountTypeId, AcctError, AcctResult, BitcoinAmount, Hash,
+};
 use strata_codec::{Codec, encode_to_vec};
-use strata_identifiers::{Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockId, Slot, hash::raw};
-use strata_ledger_types::{AccountTypeState, EpochCommitment, StateAccessor};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, hash::raw};
+use strata_ledger_types::{
+    AccountTypeState, AsmManifest, Coin, EpochCommitment, IAccountState, IGlobalState,
+    IL1ViewState, ISnarkAccountState, StateAccessor,
+};
+use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::{
+    NativeSnarkAccountState,
     account::{AccountState, NativeAccountTypeState},
     epochal::EpochalState,
     global::GlobalState,
@@ -54,6 +61,44 @@ impl OLState {
             ledger: TsnlLedgerAccountsTable::new_empty(),
         }
     }
+
+    fn get_acct_state_mut(&mut self, acct_id: &AccountId) -> AcctResult<&mut AccountState> {
+        self.ledger
+            .get_account_state_mut(acct_id)
+            .ok_or(AcctError::MissingExpectedAccount(*acct_id))
+    }
+
+    fn get_acct_state(&self, acct_id: &AccountId) -> AcctResult<&AccountState> {
+        self.ledger
+            .get_account_state(acct_id)
+            .ok_or(AcctError::MissingExpectedAccount(*acct_id))
+    }
+
+    fn get_snark_acct(&self, acct_id: &AccountId) -> AcctResult<NativeSnarkAccountState> {
+        let acct_state = self.get_acct_state(acct_id)?;
+        match acct_state.get_type_state()? {
+            AccountTypeState::Snark(s) => Ok(s),
+            _ => Err(AcctError::MismatchedType(
+                AccountTypeId::Empty,
+                AccountTypeId::Snark,
+            )),
+        }
+    }
+
+    fn set_snark_acct(
+        &mut self,
+        acct_id: &AccountId,
+        s: NativeSnarkAccountState,
+    ) -> AcctResult<()> {
+        let acct_state = self.get_acct_state_mut(acct_id)?;
+        match acct_state.get_type_state()? {
+            AccountTypeState::Snark(_) => acct_state.set_type_state(AccountTypeState::Snark(s)),
+            _ => Err(AcctError::MismatchedType(
+                AccountTypeId::Empty,
+                AccountTypeId::Snark,
+            )),
+        }
+    }
 }
 
 impl StateAccessor for OLState {
@@ -65,16 +110,24 @@ impl StateAccessor for OLState {
         &self.global
     }
 
-    fn global_mut(&mut self) -> &mut Self::GlobalState {
-        &mut self.global
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.global.set_cur_slot(slot);
     }
 
     fn l1_view(&self) -> &Self::L1ViewState {
         &self.epoch
     }
 
-    fn l1_view_mut(&mut self) -> &mut Self::L1ViewState {
-        &mut self.epoch
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.epoch.set_cur_epoch(epoch);
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.epoch.set_asm_recorded_epoch(epoch);
+    }
+
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+        self.epoch.append_manifest(height, mf);
     }
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
@@ -85,11 +138,33 @@ impl StateAccessor for OLState {
         Ok(self.ledger.get_account_state(&id))
     }
 
-    fn get_account_state_mut(
+    fn add_balance(&mut self, acct_id: AccountId, coin: Coin) -> AcctResult<()> {
+        let acct_state = self.get_acct_state_mut(&acct_id)?;
+        acct_state.add_balance(coin);
+        Ok(())
+    }
+
+    fn take_balance(&mut self, acct_id: AccountId, amt: BitcoinAmount) -> AcctResult<Coin> {
+        let acct_state = self.get_acct_state_mut(&acct_id)?;
+        acct_state.take_balance(amt)
+    }
+
+    fn insert_inbox_message(&mut self, acct_id: AccountId, entry: MessageEntry) -> AcctResult<()> {
+        let mut snark_acct = self.get_snark_acct(&acct_id)?;
+        snark_acct.insert_inbox_message(entry)?;
+        self.set_snark_acct(&acct_id, snark_acct)
+    }
+
+    fn set_proof_state_directly(
         &mut self,
-        id: AccountId,
-    ) -> AcctResult<Option<&mut Self::AccountState>> {
-        Ok(self.ledger.get_account_state_mut(&id))
+        acct_id: AccountId,
+        state: Hash,
+        next_read_idx: u64,
+        seqno: Seqno,
+    ) -> AcctResult<()> {
+        let mut snark_state = self.get_snark_acct(&acct_id)?;
+        snark_state.set_proof_state_directly(state, next_read_idx, seqno);
+        self.set_snark_acct(&acct_id, snark_state)
     }
 
     fn update_account_state(&mut self, id: AccountId, state: Self::AccountState) -> AcctResult<()> {
