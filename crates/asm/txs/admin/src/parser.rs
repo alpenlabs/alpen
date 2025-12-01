@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::TxInputRef;
-use strata_crypto::threshold_signing::SignatureSet;
+use strata_crypto::threshold_signature::SignatureSet;
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
 use crate::{actions::MultisigAction, errors::AdministrationTxParseError};

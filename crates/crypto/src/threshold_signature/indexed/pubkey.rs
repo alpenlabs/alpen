@@ -8,7 +8,7 @@ use secp256k1::{PublicKey, Secp256k1, SecretKey};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::ThresholdSigningError;
+use super::ThresholdSignatureError;
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
@@ -22,9 +22,9 @@ impl CompressedPublicKey {
     /// Create a new `CompressedPublicKey` from a byte slice.
     ///
     /// The slice must be exactly 33 bytes in compressed format (0x02 or 0x03 prefix).
-    pub fn from_slice(data: &[u8]) -> Result<Self, ThresholdSigningError> {
+    pub fn from_slice(data: &[u8]) -> Result<Self, ThresholdSignatureError> {
         let pk =
-            PublicKey::from_slice(data).map_err(|e| ThresholdSigningError::InvalidPublicKey {
+            PublicKey::from_slice(data).map_err(|e| ThresholdSignatureError::InvalidPublicKey {
                 index: 0,
                 reason: e.to_string(),
             })?;

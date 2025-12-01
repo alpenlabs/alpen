@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_crypto::threshold_signing::ThresholdConfigUpdate;
+use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 use strata_primitives::roles::Role;
 
 /// An update to a threshold configuration for a specific role:

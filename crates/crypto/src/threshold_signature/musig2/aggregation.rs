@@ -44,7 +44,7 @@ pub enum Musig2Error {
 ///
 /// # Example
 /// ```ignore
-/// use strata_crypto::threshold_signing::musig2::aggregate_schnorr_keys;
+/// use strata_crypto::threshold_signature::musig2::aggregate_schnorr_keys;
 /// use strata_identifiers::Buf32;
 ///
 /// let keys: Vec<Buf32> = operator_keys.iter().map(|k| k.into()).collect();

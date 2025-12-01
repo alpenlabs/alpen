@@ -11,7 +11,7 @@ use strata_asm_txs_bridge_v1::{
     withdrawal_fulfillment::WithdrawalFulfillmentInfo as BridgeV1WithdrawInfo,
 };
 use strata_asm_types::{DepositInfo, WithdrawalFulfillmentInfo};
-use strata_crypto::threshold_signing::aggregate_schnorr_keys;
+use strata_crypto::threshold_signature::aggregate_schnorr_keys;
 use strata_params::{OperatorConfig, RollupParams};
 use strata_primitives::{buf::Buf32, l1::BitcoinAddress};
 

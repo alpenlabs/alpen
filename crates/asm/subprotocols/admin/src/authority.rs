@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::MultisigAction;
-use strata_crypto::threshold_signing::{
-    SignatureSet, ThresholdConfig, ThresholdSigningError, verify_threshold_signatures,
+use strata_crypto::threshold_signature::{
+    SignatureSet, ThresholdConfig, ThresholdSignatureError, verify_threshold_signatures,
 };
 use strata_primitives::roles::Role;
 
@@ -50,12 +50,12 @@ impl MultisigAuthority {
         &self,
         action: &MultisigAction,
         signatures: &SignatureSet,
-    ) -> Result<(), ThresholdSigningError> {
+    ) -> Result<(), ThresholdSignatureError> {
         // Compute the msg to sign by combining UpdateAction with sequence no
         let sig_hash = action.compute_sighash(self.seqno);
 
         // Verify each ECDSA signature against the corresponding public key
-        verify_threshold_signatures(&self.config, signatures, &sig_hash.into())
+        verify_threshold_signatures(&self.config, signatures.signatures(), &sig_hash.into())
     }
 
     /// Increments the seqno.

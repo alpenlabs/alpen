@@ -1,4 +1,4 @@
-//! Individual ECDSA signature set for threshold signing (M-of-N).
+//! Individual ECDSA signature set for threshold signatures (M-of-N).
 //!
 //! This module provides types and functions for verifying a set of individual
 //! ECDSA signatures against a threshold configuration. Used by the admin
@@ -11,7 +11,7 @@ mod signature;
 mod verification;
 
 pub use config::{ThresholdConfig, ThresholdConfigUpdate};
-pub use errors::ThresholdSigningError;
+pub use errors::ThresholdSignatureError;
 pub use pubkey::CompressedPublicKey;
 pub use signature::{IndexedSignature, SignatureSet};
 pub use verification::verify_threshold_signatures;

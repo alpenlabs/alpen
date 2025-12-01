@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::UpdateId;
-use strata_crypto::threshold_signing::ThresholdConfigUpdate;
+use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 use strata_primitives::roles::Role;
 
 use crate::{
@@ -113,7 +113,7 @@ mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::rngs::OsRng;
     use strata_asm_txs_admin::actions::UpdateAction;
-    use strata_crypto::threshold_signing::{
+    use strata_crypto::threshold_signature::{
         CompressedPublicKey, ThresholdConfig, ThresholdConfigUpdate,
     };
     use strata_primitives::roles::Role;

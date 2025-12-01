@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use super::{CompressedPublicKey, ThresholdSigningError};
+use super::{CompressedPublicKey, ThresholdSignatureError};
 
 /// Configuration for a threshold signature authority.
 ///
@@ -23,14 +23,14 @@ impl ThresholdConfig {
     ///
     /// # Errors
     ///
-    /// Returns `ThresholdSigningError` if:
+    /// Returns `ThresholdSignatureError` if:
     /// - `DuplicateAddMember`: The keys list contains duplicate members
     /// - `ZeroThreshold`: The threshold is zero
     /// - `InvalidThreshold`: The threshold exceeds the total number of keys
     pub fn try_new(
         keys: Vec<CompressedPublicKey>,
         threshold: u8,
-    ) -> Result<Self, ThresholdSigningError> {
+    ) -> Result<Self, ThresholdSignatureError> {
         let mut config = ThresholdConfig {
             keys: vec![],
             threshold: 0,
@@ -64,7 +64,7 @@ impl ThresholdConfig {
     pub fn validate_update(
         &self,
         update: &ThresholdConfigUpdate,
-    ) -> Result<(), ThresholdSigningError> {
+    ) -> Result<(), ThresholdSignatureError> {
         let members_to_add: HashSet<CompressedPublicKey> =
             update.add_members().iter().cloned().collect();
         let members_to_remove: HashSet<CompressedPublicKey> =
@@ -72,28 +72,28 @@ impl ThresholdConfig {
 
         // Ensure no duplicate members in the add list
         if members_to_add.len() != update.add_members().len() {
-            return Err(ThresholdSigningError::DuplicateAddMember);
+            return Err(ThresholdSignatureError::DuplicateAddMember);
         }
 
         // Ensure no duplicate members in the remove list
         if members_to_remove.len() != update.remove_members().len() {
-            return Err(ThresholdSigningError::DuplicateRemoveMember);
+            return Err(ThresholdSignatureError::DuplicateRemoveMember);
         }
 
         // Ensure new members don't already exist in current configuration
         if members_to_add.iter().any(|m| self.keys.contains(m)) {
-            return Err(ThresholdSigningError::MemberAlreadyExists);
+            return Err(ThresholdSignatureError::MemberAlreadyExists);
         }
 
         // Ensure new threshold is not zero
         if update.new_threshold() == 0 {
-            return Err(ThresholdSigningError::ZeroThreshold);
+            return Err(ThresholdSignatureError::ZeroThreshold);
         }
 
         // Ensure all members to remove exist in current configuration
         for member_to_remove in update.remove_members() {
             if !self.keys.contains(member_to_remove) {
-                return Err(ThresholdSigningError::MemberNotFound);
+                return Err(ThresholdSignatureError::MemberNotFound);
             }
         }
 
@@ -102,7 +102,7 @@ impl ThresholdConfig {
             self.keys.len() + update.add_members().len() - update.remove_members().len();
 
         if (update.new_threshold() as usize) > updated_size {
-            return Err(ThresholdSigningError::InvalidThreshold {
+            return Err(ThresholdSignatureError::InvalidThreshold {
                 threshold: update.new_threshold(),
                 total_keys: updated_size,
             });
@@ -115,7 +115,7 @@ impl ThresholdConfig {
     pub fn apply_update(
         &mut self,
         update: &ThresholdConfigUpdate,
-    ) -> Result<(), ThresholdSigningError> {
+    ) -> Result<(), ThresholdSignatureError> {
         self.validate_update(update)?;
 
         // Remove members by matching public keys
@@ -245,7 +245,10 @@ mod tests {
     fn test_config_zero_threshold() {
         let keys = vec![make_key(1)];
         let result = ThresholdConfig::try_new(keys, 0);
-        assert!(matches!(result, Err(ThresholdSigningError::ZeroThreshold)));
+        assert!(matches!(
+            result,
+            Err(ThresholdSignatureError::ZeroThreshold)
+        ));
     }
 
     #[test]
@@ -254,7 +257,7 @@ mod tests {
         let result = ThresholdConfig::try_new(keys, 3);
         assert!(matches!(
             result,
-            Err(ThresholdSigningError::InvalidThreshold { .. })
+            Err(ThresholdSignatureError::InvalidThreshold { .. })
         ));
     }
 

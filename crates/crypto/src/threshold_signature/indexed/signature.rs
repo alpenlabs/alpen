@@ -2,7 +2,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use super::ThresholdSigningError;
+use super::ThresholdSignatureError;
 
 /// An individual ECDSA signature with its signer index.
 ///
@@ -75,14 +75,16 @@ impl SignatureSet {
     /// Create a new signature set from a vector of indexed signatures.
     ///
     /// The signatures will be sorted by index and checked for duplicates.
-    pub fn new(mut signatures: Vec<IndexedSignature>) -> Result<Self, ThresholdSigningError> {
+    pub fn new(mut signatures: Vec<IndexedSignature>) -> Result<Self, ThresholdSignatureError> {
         // Sort by index
         signatures.sort_by_key(|s| s.index);
 
         // Check for duplicate indices
         for window in signatures.windows(2) {
             if window[0].index == window[1].index {
-                return Err(ThresholdSigningError::DuplicateSignerIndex(window[0].index));
+                return Err(ThresholdSignatureError::DuplicateSignerIndex(
+                    window[0].index,
+                ));
             }
         }
 
@@ -175,7 +177,7 @@ mod tests {
         let result = SignatureSet::new(sigs);
         assert!(matches!(
             result,
-            Err(ThresholdSigningError::DuplicateSignerIndex(1))
+            Err(ThresholdSignatureError::DuplicateSignerIndex(1))
         ));
     }
 

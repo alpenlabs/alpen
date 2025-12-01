@@ -13,7 +13,7 @@ use bitcoin::{
     transaction::Version,
 };
 use rand::{RngCore, rngs::OsRng};
-use strata_crypto::threshold_signing::{IndexedSignature, SignatureSet};
+use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
 use strata_primitives::buf::Buf32;
 
 pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
@@ -192,7 +192,7 @@ mod tests {
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
-    use strata_crypto::threshold_signing::{
+    use strata_crypto::threshold_signature::{
         CompressedPublicKey, ThresholdConfig, verify_threshold_signatures,
     };
     use strata_l1_txfmt::ParseConfig;
@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(indices, vec![0, 2]);
 
         // Verify the signatures
-        let res = verify_threshold_signatures(&config, &signature_set, &sighash.0);
+        let res = verify_threshold_signatures(&config, signature_set.signatures(), &sighash.0);
         assert!(res.is_ok());
     }
 
@@ -264,7 +264,11 @@ mod tests {
         assert_eq!(action, p_action);
 
         // Verify the signatures
-        let res = verify_threshold_signatures(&config, &sig, &action.compute_sighash(seqno).0);
+        let res = verify_threshold_signatures(
+            &config,
+            sig.signatures(),
+            &action.compute_sighash(seqno).0,
+        );
         assert!(res.is_ok());
     }
 }

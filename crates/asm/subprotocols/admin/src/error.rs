@@ -1,5 +1,5 @@
 use strata_asm_txs_admin::actions::UpdateId;
-use strata_crypto::threshold_signing::ThresholdSigningError;
+use strata_crypto::threshold_signature::ThresholdSignatureError;
 use thiserror::Error;
 
 /// Top-level error type for the administration subprotocol, composed of smaller error categories.
@@ -15,5 +15,5 @@ pub enum AdministrationError {
 
     /// Indicates a threshold signing error (configuration or signature validation).
     #[error(transparent)]
-    ThresholdSigning(#[from] ThresholdSigningError),
+    ThresholdSigning(#[from] ThresholdSignatureError),
 }

@@ -4,7 +4,7 @@ use strata_asm_common::{
 };
 use strata_asm_proto_checkpoint_v0::CheckpointIncomingMsg;
 use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction};
-use strata_crypto::threshold_signing::SignatureSet;
+use strata_crypto::threshold_signature::SignatureSet;
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, roles::ProofType};
 
@@ -188,8 +188,8 @@ mod tests {
         },
         test_utils::create_signature_set,
     };
-    use strata_crypto::threshold_signing::{
-        CompressedPublicKey, SignatureSet, ThresholdConfig, ThresholdSigningError,
+    use strata_crypto::threshold_signature::{
+        CompressedPublicKey, SignatureSet, ThresholdConfig, ThresholdSignatureError,
     };
     use strata_predicate::PredicateKey;
     use strata_primitives::roles::{ProofType, Role};
@@ -387,7 +387,7 @@ mod tests {
         assert!(matches!(
             res,
             Err(AdministrationError::ThresholdSigning(
-                ThresholdSigningError::InvalidSignature { .. }
+                ThresholdSignatureError::InvalidSignature { .. }
             ))
         ));
 
@@ -407,7 +407,7 @@ mod tests {
         assert!(matches!(
             res,
             Err(AdministrationError::ThresholdSigning(
-                ThresholdSigningError::InvalidSignature { .. }
+                ThresholdSignatureError::InvalidSignature { .. }
             ))
         ));
     }
