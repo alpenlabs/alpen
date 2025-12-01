@@ -14174,7 +14174,6 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "itertools 0.14.0",
- "proptest",
  "reth-chainspec",
  "reth-consensus-common",
  "reth-errors",
