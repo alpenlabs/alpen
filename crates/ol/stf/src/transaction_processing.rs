@@ -68,6 +68,7 @@ pub fn process_single_tx<S: StateAccessor>(
                 .cloned()
                 .ok_or(ExecError::UnknownAccount(target))?;
 
+            // TODO: with the flattened state modifiers, we don't need to pass the mut astate
             process_update_tx(state, &target, astate, update.update_container(), context)?;
         }
     }

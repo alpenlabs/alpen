@@ -15,7 +15,7 @@ pub fn process_epoch_initial<S: StateAccessor>(
     state: &mut S,
     context: &EpochInitialContext,
 ) -> ExecResult<()> {
-    let estate = state.l1_view_mut();
+    let estate = state.l1_view();
 
     // 1. Check that this is the first block of the epoch.
     // TODO maybe we actually do this implicitly?
@@ -70,7 +70,7 @@ pub fn process_block_start<S: StateAccessor>(
 
     // 3. Update the global state's current slot to match the block's slot
     let slot = context.slot();
-    state.global_mut().set_cur_slot(slot);
+    state.set_cur_slot(slot);
 
     Ok(())
 }

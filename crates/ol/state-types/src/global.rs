@@ -21,7 +21,7 @@ impl GlobalState {
 }
 
 impl IGlobalState for GlobalState {
-    fn cur_slot(&mut self) -> u64 {
+    fn cur_slot(&self) -> u64 {
         self.cur_slot
     }
 

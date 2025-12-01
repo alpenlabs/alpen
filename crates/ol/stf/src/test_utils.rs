@@ -140,7 +140,7 @@ pub fn assert_state_updated(state: &mut OLState, expected_epoch: u64, expected_s
         "test: state epoch mismatch"
     );
     assert_eq!(
-        state.global_mut().cur_slot(),
+        state.global().cur_slot(),
         expected_slot,
         "test: state slot mismatch"
     );

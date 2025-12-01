@@ -42,7 +42,7 @@ pub fn process_block_manifests<S: StateAccessor>(
     }
 
     // 2. Finally, we can update the epoch to get it ready for the next epoch.
-    state.l1_view_mut().set_cur_epoch(terminating_epoch + 1);
+    state.set_cur_epoch(terminating_epoch + 1);
 
     Ok(())
 }
@@ -61,7 +61,7 @@ fn process_asm_manifest<S: StateAccessor>(
     }
 
     // 2. Accept the manifest into the ASM MMR.
-    state.l1_view_mut().append_manifest(real_height, mf.clone());
+    state.append_manifest(real_height, mf.clone());
 
     Ok(())
 }
@@ -147,7 +147,7 @@ fn process_checkpoint_ack_log<S: StateAccessor>(
     // Update the L1 view state with the acknowledged epoch.
     //
     // This records that a checkpoint has been observed on L1.
-    state.l1_view_mut().set_asm_recorded_epoch(data.epoch());
+    state.set_asm_recorded_epoch(data.epoch());
 
     Ok(())
 }

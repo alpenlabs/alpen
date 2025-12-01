@@ -32,7 +32,7 @@ fn test_genesis_block_processing() {
 
     // Verify initial state
     assert_eq!(state.l1_view().cur_epoch(), 0);
-    assert_eq!(state.global_mut().cur_slot(), 0);
+    assert_eq!(state.global().cur_slot(), 0);
 
     // Process genesis block (with manifest to make it terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -465,8 +465,8 @@ fn test_process_chain_with_multiple_epochs() {
         "Assembly and verification states should have same epoch"
     );
     assert_eq!(
-        state.global_mut().cur_slot(),
-        verify_state.global_mut().cur_slot(),
+        state.global().cur_slot(),
+        verify_state.global().cur_slot(),
         "Assembly and verification states should have same slot"
     );
 
