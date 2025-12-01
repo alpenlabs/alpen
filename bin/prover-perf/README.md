@@ -15,7 +15,8 @@ cargo run --release
 To generate a report along with profiling information, use the following command:
 
 ```shell
-cargo run --release -F profiling
+ZKVM_MOCK=1 cargo run --profile prover-ci -- \
+--programs evm-ee,evm-ee-stf,cl-stf,checkpoint
 ```
 
 This will generate a file with a `.trace` extension containing the profiling data.
