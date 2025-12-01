@@ -4,20 +4,22 @@ use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_identifiers::{Buf32, OLBlockCommitment};
 use strata_ol_chain_types_new::{Slot, TransactionAttachment};
-use strata_primitives::{HexBytes, HexBytes32};
+use strata_primitives::{EpochCommitment, HexBytes, HexBytes32};
 use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
 
 /// OL chain status with latest, confirmed, and finalized blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcOLChainStatus {
     pub latest: OLBlockCommitment,
-    pub confirmed: OLBlockCommitment,
-    pub finalized: OLBlockCommitment,
+    pub confirmed: EpochCommitment,
+    pub finalized: EpochCommitment,
 }
 
 /// Epoch summary for an account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcAccountEpochSummary {
+    /// The epoch commitment.
+    epoch_commitment: EpochCommitment,
     /// Final balance at the end of the epoch(sats).
     final_balance: u64,
     /// Final sequence number at the end of the epoch.
@@ -29,7 +31,7 @@ pub struct RpcAccountEpochSummary {
     // final update. Maybe it might make sense to have this field as a single RpcUpdateSummary ?
     updates: Vec<RpcUpdateSummary>,
     /// All new messages received in the epoch.
-    new_messages: Vec<RpcMessageEntry>,
+    new_received_messages: Vec<RpcMessageEntry>,
 }
 
 /// Describes an update to a snark account. This is derivable from L1.
@@ -56,9 +58,11 @@ pub struct RpcMsgPayload {
 
 impl From<MsgPayload> for RpcMsgPayload {
     fn from(payload: MsgPayload) -> Self {
+        let MsgPayload { data, value } = payload;
+        let data: Vec<u8> = data.into();
         Self {
-            value: payload.value().to_sat(),
-            data: payload.data().into(),
+            value: value.to_sat(),
+            data: data.into(),
         }
     }
 }
@@ -144,6 +148,8 @@ pub struct RpcOLTransaction {
 /// Block data associated with an account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcAccountBlockSummary {
+    /// Block commitment.
+    block_commitment: OLBlockCommitment,
     /// Block's slot.
     slot: Slot,
     /// Account's balance after the block execution(sats).
@@ -153,9 +159,7 @@ pub struct RpcAccountBlockSummary {
     /// Account's updates processed in the block.
     updates: Vec<RpcUpdateSummary>,
     /// New messages for the account in the block.
-    // NOTE: This might not be necessary for block summary if we have a different method to serve
-    // new messages in a block.
-    new_messages: Vec<RpcMessageEntry>,
+    new_received_messages: Vec<RpcMessageEntry>,
 }
 
 // Type conversions
@@ -165,7 +169,7 @@ impl From<MessageEntry> for RpcMessageEntry {
         Self {
             source: (*entry.source().inner()).into(),
             incl_epoch: entry.incl_epoch(),
-            payload: entry.payload().clone().into(),
+            payload: entry.payload.into(),
         }
     }
 }
