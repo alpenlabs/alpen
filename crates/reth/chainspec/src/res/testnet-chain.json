@@ -10,7 +10,7 @@
     "gasUsed": "0x0",
     "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "config": {
-        "chainId": 2892,
+        "chainId": 8150,
         "homesteadBlock": 0,
         "eip150Block": 0,
         "eip155Block": 0,
