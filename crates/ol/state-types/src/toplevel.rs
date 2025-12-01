@@ -200,3 +200,38 @@ impl StateAccessor for OLState {
         Ok(hash)
     }
 }
+
+impl OLState {
+    /// Apply a WriteBatch to this state
+    ///
+    /// This takes the changes accumulated during block execution and applies them
+    /// to the current state. Used when accepting blocks into the canonical chain.
+    pub fn apply_write_batch(&mut self, batch: crate::WriteBatch) -> AcctResult<()> {
+        // Apply global state changes
+        self.global.set_cur_slot(batch.new_slot);
+
+        // Apply L1 view changes
+        self.epoch.set_cur_epoch(batch.l1_view_writes.cur_epoch);
+        self.epoch
+            .set_asm_recorded_epoch(batch.l1_view_writes.asm_recorded_epoch);
+        self.epoch
+            .set_total_ledger_balance(batch.l1_view_writes.total_ledger_balance);
+
+        // Note: manifests were already applied during execution via append_manifest()
+        // They're included in WriteBatch for DB persistence, not for state application
+
+        // Apply new accounts
+        for (id, _serial, acct_state) in batch.new_accounts {
+            // Accounts should have been created during execution
+            // This just ensures they're in the final state
+            self.update_account_state(id, acct_state)?;
+        }
+
+        // Apply modified accounts
+        for (id, acct_state) in batch.modified_accounts {
+            self.update_account_state(id, acct_state)?;
+        }
+
+        Ok(())
+    }
+}

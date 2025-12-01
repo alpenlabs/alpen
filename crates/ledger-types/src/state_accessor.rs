@@ -68,7 +68,7 @@ pub trait StateAccessor {
     /// Sets the inner state root unconditionally.
     ///
     /// # Note
-    /// Fails for non-snark account
+    /// Returns error for non-snark account.
     fn set_proof_state_directly(
         &mut self,
         acct_id: AccountId,
@@ -82,7 +82,7 @@ pub trait StateAccessor {
     /// This is exposed like this so that we can expose the message entry in DA.
     ///
     /// # Note
-    /// Fails for non-snark account
+    /// Returns error for non-snark account
     fn insert_inbox_message(&mut self, acct_id: AccountId, entry: MessageEntry) -> AcctResult<()>;
 
     /// Overwrites an existing account entry's state, if it exists.

@@ -12,8 +12,9 @@ use crate::account::AccountState;
 /// This is part of a transitional design.
 #[derive(Clone, Debug)]
 pub struct TsnlLedgerAccountsTable {
+    // TODO: use SortedVec.
     accounts: Vec<TsnlAccountEntry>,
-    serials: Vec<AccountId>,
+    serials: Vec<AccountId>, // sorted ??
 }
 
 impl TsnlLedgerAccountsTable {
@@ -23,6 +24,7 @@ impl TsnlLedgerAccountsTable {
     pub fn new_empty() -> Self {
         Self {
             accounts: Vec::new(),
+            // FIXME: all reserved accounts can't have same account ids??
             serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize],
         }
     }
@@ -62,7 +64,8 @@ impl TsnlLedgerAccountsTable {
     pub(crate) fn create_account(
         &mut self,
         id: AccountId,
-        acct_state: AccountState,
+        acct_state: AccountState, /* FIXME: the state passed should not contain serial, it is
+                                   * assigned by the system. */
     ) -> AcctResult<AccountSerial> {
         // Sanity check, this should get optimized out.
         let next_serial = self.next_avail_serial();
@@ -84,6 +87,7 @@ impl TsnlLedgerAccountsTable {
         self.serials.push(id);
 
         // Sanity check.
+        // FIXME: remove runtime panics while it can be avoided with proper types(SortedVec)
         assert!(
             self.accounts.is_sorted_by_key(|e| e.id),
             "ol/state: accounts table not sorted by ID"
