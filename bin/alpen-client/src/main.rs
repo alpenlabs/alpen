@@ -2,6 +2,7 @@
 
 mod genesis;
 mod ol_client;
+mod payload_builder;
 
 use std::sync::Arc;
 
@@ -24,7 +25,7 @@ use strata_identifiers::{CredRule, OLBlockId};
 use tokio::sync::broadcast;
 use tracing::info;
 
-use crate::genesis::ee_genesis_block_info;
+use crate::{genesis::ee_genesis_block_info, payload_builder::AlpenRethPayloadEngine};
 
 fn main() {
     reth_cli_util::sigsegv_handler::install();
@@ -122,6 +123,11 @@ fn main() {
                         .spawn_critical("engine_control", engine_control_task);
 
                     // sequencer specific tasks
+                    let _payload_engine = AlpenRethPayloadEngine::new(
+                        node.payload_builder_handle.clone(),
+                        node.beacon_engine_handle.clone(),
+                    );
+
                     // TODO: block assembly
                     // TODO: batch assembly
                     // TODO: proof generation
