@@ -75,22 +75,16 @@ where
         let coinbase_reward = coinbase_gas_price * gas_used;
 
         // Transfer base fee to BASEFEE_ADDRESS
-        let basefee_account = context.journal_mut().load_account(BASEFEE_ADDRESS)?;
-        basefee_account.data.mark_touch();
-        basefee_account.data.info.balance = basefee_account
-            .data
-            .info
-            .balance
-            .saturating_add(U256::from(base_fee_total));
+        context
+            .journal_mut()
+            .load_account_mut(BASEFEE_ADDRESS)?
+            .incr_balance(U256::from(base_fee_total));
 
         // Transfer remaining reward to beneficiary
-        let coinbase_account = context.journal_mut().load_account(beneficiary)?;
-        coinbase_account.data.mark_touch();
-        coinbase_account.data.info.balance = coinbase_account
-            .data
-            .info
-            .balance
-            .saturating_add(U256::from(coinbase_reward));
+        context
+            .journal_mut()
+            .load_account_mut(beneficiary)?
+            .incr_balance(U256::from(coinbase_reward));
 
         Ok(())
     }

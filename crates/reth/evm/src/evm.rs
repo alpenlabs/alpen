@@ -2,7 +2,7 @@ use reth_evm::{eth::EthEvmContext, precompiles::PrecompilesMap, Database, EvmEnv
 use revm::{
     context::{
         result::{EVMError, HaltReason},
-        TxEnv,
+        BlockEnv, TxEnv,
     },
     inspector::NoOpInspector,
     interpreter::interpreter::EthInterpreter,
@@ -24,6 +24,7 @@ impl EvmFactory for AlpenEvmFactory {
     type HaltReason = HaltReason;
     type Context<DB: Database> = EthEvmContext<DB>;
     type Spec = SpecId;
+    type BlockEnv = BlockEnv;
     type Precompiles = PrecompilesMap;
 
     fn create_evm<DB: Database>(&self, db: DB, input: EvmEnv) -> Self::Evm<DB, NoOpInspector> {
