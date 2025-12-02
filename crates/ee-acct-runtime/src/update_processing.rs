@@ -60,7 +60,8 @@ impl<'v> SharedData<'v> {
 }
 
 /// Meta fields extracted from a message.
-pub(crate) struct MsgMeta {
+#[derive(Debug)]
+pub struct MsgMeta {
     #[expect(dead_code, reason = "for future use")]
     pub(crate) source: AccountId,
     #[expect(dead_code, reason = "for future use")]
@@ -69,7 +70,8 @@ pub(crate) struct MsgMeta {
 }
 
 /// Decoded message and its metadata.
-pub(crate) struct MsgData {
+#[derive(Debug)]
+pub struct MsgData {
     pub(crate) meta: MsgMeta,
     pub(crate) message: DecodedEeMessageData,
 }
@@ -84,6 +86,14 @@ impl MsgData {
         };
 
         Ok(Self { meta, message })
+    }
+
+    pub fn value(&self) -> BitcoinAmount {
+        self.meta.value
+    }
+
+    pub fn decoded_message(&self) -> &DecodedEeMessageData {
+        &self.message
     }
 }
 
@@ -136,7 +146,7 @@ pub fn verify_and_apply_update_operation<'i>(
             .map_err(make_inp_err_indexer(i))?;
 
         // Then apply the message.  This doesn't rely on the private coinput.
-        apply_message(astate, &msg, &extra).map_err(make_inp_err_indexer(i))?;
+        apply_message(astate, &msg).map_err(make_inp_err_indexer(i))?;
     }
 
     // Make sure there are no more leftover coinputs we haven't recognized.
@@ -235,7 +245,7 @@ pub fn apply_update_operation_unconditionally(
             continue;
         };
 
-        apply_message(astate, &msg, &extra).map_err(make_inp_err_indexer(i))?;
+        apply_message(astate, &msg).map_err(make_inp_err_indexer(i))?;
     }
 
     // 2. Apply the final update changes.
@@ -248,11 +258,7 @@ pub fn apply_update_operation_unconditionally(
 }
 
 /// Applies state changes from the message.
-pub(crate) fn apply_message(
-    astate: &mut EeAccountState,
-    msg: &MsgData,
-    _extra: &UpdateExtraData,
-) -> EnvResult<()> {
+pub(crate) fn apply_message(astate: &mut EeAccountState, msg: &MsgData) -> EnvResult<()> {
     if !msg.meta.value.is_zero() {
         astate.add_tracked_balance(msg.meta.value);
     }
@@ -279,7 +285,7 @@ pub(crate) fn apply_message(
 /// Applies the final changes to the account state.
 ///
 /// This just updates the exec tip blkid and removes pending entries.
-fn apply_final_update_changes(
+pub fn apply_final_update_changes(
     state: &mut EeAccountState,
     extra: &UpdateExtraData,
 ) -> EnvResult<()> {
@@ -310,6 +316,6 @@ fn maybe_index_inp_err(e: EnvError, idx: usize) -> EnvError {
     }
 }
 
-fn make_inp_err_indexer(idx: usize) -> impl Fn(EnvError) -> EnvError {
+pub(crate) fn make_inp_err_indexer(idx: usize) -> impl Fn(EnvError) -> EnvError {
     move |e| maybe_index_inp_err(e, idx)
 }

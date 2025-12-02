@@ -64,9 +64,7 @@ impl UpdateBuilder {
         let msg_data = MsgData::from_entry(&message)?;
 
         // Apply message effects to the state using the same function as normal processing
-        // For now we use a dummy UpdateExtraData since apply_message doesn't use it
-        let dummy_extra = UpdateExtraData::new([0; 32], 0, 0);
-        apply_message(&mut self.current_state, &msg_data, &dummy_extra)?;
+        apply_message(&mut self.current_state, &msg_data)?;
 
         // Store the message and coinput for later
         self.processed_messages.push(message);
