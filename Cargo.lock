@@ -13868,6 +13868,7 @@ dependencies = [
  "strata-asm-spec",
  "strata-asm-stf",
  "strata-asm-types",
+ "strata-btc-types",
  "strata-params",
  "strata-primitives",
  "strata-service",
