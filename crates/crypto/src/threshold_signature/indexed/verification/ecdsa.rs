@@ -55,10 +55,12 @@ pub(super) fn verify_ecdsa_signatures(
     for indexed_sig in signatures.signatures() {
         // Check index is in bounds
         let index = indexed_sig.index() as usize;
-        if index > config.keys().len() {
+        let keys_len = config.keys().len();
+        // Reject indices at/above the key count to avoid panicking on the lookup; report the last valid slot.
+        if index >= keys_len {
             return Err(ThresholdSignatureError::SignerIndexOutOfBounds {
                 index: indexed_sig.index(),
-                max: config.keys().len(),
+                max: keys_len.saturating_sub(1),
             });
         }
 
@@ -74,7 +76,8 @@ pub(super) fn verify_ecdsa_signatures(
             RecoverableSignature::from_compact(&indexed_sig.compact(), recovery_id)
                 .map_err(|_| ThresholdSignatureError::InvalidSignatureFormat)?;
 
-        // Recover the public key from the signature
+        // Hardware wallets emit recoverable signatures (with a header). Recover first so we
+        // honor the header and then compare to the configured public key.
         let recovered_pubkey = SECP256K1
             .recover_ecdsa(&message, &recoverable_sig)
             .map_err(|_| ThresholdSignatureError::InvalidSignature {

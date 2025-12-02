@@ -20,7 +20,7 @@ pub enum ThresholdSignatureError {
     #[error("invalid threshold: {threshold} exceeds total keys {total_keys}")]
     InvalidThreshold { threshold: u8, total_keys: usize },
 
-    /// Signature verification failed.
+    /// Signature verification failed for the given signer index.
     #[error("invalid signature at index {index}")]
     InvalidSignature { index: u8 },
 

@@ -20,6 +20,10 @@ use super::ThresholdSignatureError;
 ///    - 39-42: Native SegWit P2WPKH
 ///
 /// The verification code normalizes both formats to extract the raw recovery ID (0-3).
+///
+/// The signer includes their own index (position in `ThresholdConfig::keys`) when creating
+/// an `IndexedSignature`. Verification uses that index to fetch the expected public key and
+/// compare it against the recovered key from the signature.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct IndexedSignature {
     /// Index of the signer in the ThresholdConfig keys array (0-255).
