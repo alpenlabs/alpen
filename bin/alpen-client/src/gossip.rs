@@ -1,7 +1,8 @@
 //! Gossip event handling task for managing peer connections and broadcasting blocks.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use alloy_primitives::B256;
 use alpen_reth_node::{AlpenGossipCommand, AlpenGossipEvent, AlpenGossipMessage};
 use reth_network_api::PeerId;
 use reth_primitives::Header;
@@ -23,6 +24,9 @@ pub(crate) struct GossipConfig {
     /// Sequencer's private key for signing (only in sequencer mode).
     #[cfg(feature = "sequencer")]
     pub sequencer_privkey: Buf32,
+
+    /// Maximum number of seen packages to track before clearing the set.
+    pub max_seen_packages: usize,
 }
 
 /// Creates the gossip event handling task.
@@ -40,6 +44,7 @@ pub(crate) async fn create_gossip_task(
 ) {
     let mut connections: HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>> =
         HashMap::new();
+    let mut seen_packages: HashSet<B256> = HashSet::new();
 
     loop {
         select! {
@@ -88,6 +93,24 @@ pub(crate) async fn create_gossip_task(
                         }
 
                         let block_hash = package.message().header().hash_slow();
+
+                        // Check if already seen (dedup)
+                        if seen_packages.contains(&block_hash) {
+                            debug!(
+                                target: "alpen-gossip",
+                                %peer_id,
+                                ?block_hash,
+                                "Package already seen, skipping"
+                            );
+                            continue;
+                        }
+                        seen_packages.insert(block_hash);
+
+                        // Cleanup seen set if it grows too large
+                        if seen_packages.len() > config.max_seen_packages {
+                            seen_packages.clear();
+                        }
+
                         info!(
                             target: "alpen-gossip",
                             %peer_id,
@@ -103,6 +126,20 @@ pub(crate) async fn create_gossip_task(
                                 target: "alpen-gossip",
                                 "Failed to forward block hash to engine control (no receivers)"
                             );
+                        }
+
+                        // Re-broadcast to all OTHER peers (exclude sender)
+                        for (other_peer_id, sender) in &connections {
+                            if other_peer_id == &peer_id {
+                                continue;
+                            }
+                            if sender.send(AlpenGossipCommand::SendPackage(package.clone())).is_err() {
+                                warn!(
+                                    target: "alpen-gossip",
+                                    %other_peer_id,
+                                    "Failed to re-broadcast to peer"
+                                );
+                            }
                         }
                     }
                 }
