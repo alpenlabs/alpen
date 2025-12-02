@@ -1,0 +1,320 @@
+name: Bridge-v1 Fuzzing
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: 'Fuzz duration in seconds (e.g., 300 for 5min, 3600 for 1hr)'
+        required: true
+        default: '300'
+        type: string
+      targets:
+        description: 'Fuzz targets to run (comma-separated or "all")'
+        required: true
+        default: 'parse_deposit'
+        type: string
+  schedule:
+    # Run every 15 days at 2 AM UTC
+    - cron: '0 2 */15 * *'
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz Bridge-v1
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hour max
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Setup fuzzing parameters
+        id: fuzz_params
+        run: |
+          # Default to 1 hour for scheduled runs, use input for manual runs
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            DURATION=3600
+            TARGETS="parse_deposit"
+          else
+            DURATION="${{ inputs.duration_seconds }}"
+            TARGETS="${{ inputs.targets }}"
+          fi
+
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "targets=$TARGETS" >> $GITHUB_OUTPUT
+          echo "📊 Fuzzing for ${DURATION}s on targets: ${TARGETS}"
+
+      - name: Cache corpus
+        uses: actions/cache@v3
+        with:
+          path: |
+            crates/asm/txs/bridge-v1/fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-
+
+      - name: Minimize corpus before fuzzing
+        working-directory: crates/asm/txs/bridge-v1/fuzz
+        run: |
+          TARGETS="${{ steps.fuzz_params.outputs.targets }}"
+
+          if [ "$TARGETS" = "all" ]; then
+            TARGET_LIST="parse_deposit"
+          else
+            TARGET_LIST=$(echo "$TARGETS" | tr ',' ' ')
+          fi
+
+          for TARGET in $TARGET_LIST; do
+            if [ -d "corpus/$TARGET" ] && [ "$(ls -A corpus/$TARGET 2>/dev/null)" ]; then
+              echo "🗜️ Minimizing existing corpus for $TARGET"
+              BEFORE_COUNT=$(find "corpus/$TARGET" -type f | wc -l)
+              cargo fuzz cmin "$TARGET" || true
+              AFTER_COUNT=$(find "corpus/$TARGET" -type f | wc -l)
+              echo "Corpus minimized: $BEFORE_COUNT → $AFTER_COUNT inputs"
+            else
+              echo "ℹ️ No existing corpus for $TARGET, skipping cmin"
+            fi
+          done
+
+      - name: Run fuzzing
+        id: run_fuzz
+        working-directory: crates/asm/txs/bridge-v1/fuzz
+        run: |
+          DURATION="${{ steps.fuzz_params.outputs.duration }}"
+          TARGETS="${{ steps.fuzz_params.outputs.targets }}"
+
+          # Parse targets
+          if [ "$TARGETS" = "all" ]; then
+            TARGET_LIST="parse_deposit"
+          else
+            TARGET_LIST=$(echo "$TARGETS" | tr ',' ' ')
+          fi
+
+          mkdir -p ../fuzz_results
+          FAILED_TARGETS=""
+
+          for TARGET in $TARGET_LIST; do
+            echo "::group::🎯 Fuzzing $TARGET for ${DURATION}s"
+
+            # Run fuzzer
+            if cargo fuzz run "$TARGET" -- \
+              -max_total_time="$DURATION" \
+              -fork=2 \
+              -ignore_crashes=0 \
+              -print_final_stats=1 \
+              2>&1 | tee "../fuzz_results/${TARGET}.log"; then
+              echo "✅ $TARGET completed successfully"
+            else
+              echo "❌ $TARGET failed or found crashes"
+              FAILED_TARGETS="$FAILED_TARGETS $TARGET"
+            fi
+
+            echo "::endgroup::"
+          done
+
+          if [ -n "$FAILED_TARGETS" ]; then
+            echo "failed_targets=$FAILED_TARGETS" >> $GITHUB_OUTPUT
+            echo "status=failed" >> $GITHUB_OUTPUT
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check coverage thresholds
+        id: check_coverage
+        working-directory: crates/asm/txs/bridge-v1/fuzz
+        run: |
+          TARGETS="${{ steps.fuzz_params.outputs.targets }}"
+
+          if [ "$TARGETS" = "all" ]; then
+            TARGET_LIST="parse_deposit"
+          else
+            TARGET_LIST=$(echo "$TARGETS" | tr ',' ' ')
+          fi
+
+          # Coverage thresholds (edges)
+          declare -A THRESHOLDS=(
+            ["parse_deposit"]=799
+          )
+
+          COVERAGE_FAILURES=""
+
+          for TARGET in $TARGET_LIST; do
+            echo "::group::📊 Checking coverage for $TARGET"
+
+            # Generate coverage report
+            cargo fuzz coverage "$TARGET"
+
+            # Extract edge count from coverage output
+            if [ -f "coverage/$TARGET/coverage.txt" ]; then
+              EDGE_COUNT=$(grep -oP 'cov: \K\d+' "coverage/$TARGET/coverage.txt" | head -1 || echo "0")
+              THRESHOLD=${THRESHOLDS[$TARGET]:-0}
+
+              echo "Target: $TARGET"
+              echo "Edges covered: $EDGE_COUNT"
+              echo "Threshold: $THRESHOLD"
+
+              if [ "$EDGE_COUNT" -lt "$THRESHOLD" ]; then
+                echo "⚠️ Coverage regression detected!"
+                COVERAGE_FAILURES="$COVERAGE_FAILURES\n- $TARGET: $EDGE_COUNT edges (expected ≥$THRESHOLD)"
+              else
+                echo "✅ Coverage threshold met"
+              fi
+            else
+              echo "⚠️ Could not find coverage report"
+              COVERAGE_FAILURES="$COVERAGE_FAILURES\n- $TARGET: coverage report missing"
+            fi
+
+            echo "::endgroup::"
+          done
+
+          if [ -n "$COVERAGE_FAILURES" ]; then
+            echo "coverage_failures<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$COVERAGE_FAILURES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "coverage_status=failed" >> $GITHUB_OUTPUT
+          else
+            echo "coverage_status=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate summary report
+        if: always()
+        id: summary
+        working-directory: crates/asm/txs/bridge-v1/fuzz
+        run: |
+          cat > ../fuzz_results/SUMMARY.md << 'EOFSUM'
+          # Bridge-v1 Fuzzing Report
+
+          **Run ID**: ${{ github.run_id }}
+          **Trigger**: ${{ github.event_name }}
+          **Duration**: ${{ steps.fuzz_params.outputs.duration }}s
+          **Targets**: ${{ steps.fuzz_params.outputs.targets }}
+          **Date**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ## Results
+
+          ### Fuzzing Status
+          ${{ steps.run_fuzz.outputs.status == 'success' && '✅ All targets completed successfully' || '❌ Some targets failed or found crashes' }}
+
+          ${{ steps.run_fuzz.outputs.failed_targets != '' && format('**Failed targets**: {0}', steps.run_fuzz.outputs.failed_targets) || '' }}
+
+          ### Coverage Status
+          ${{ steps.check_coverage.outputs.coverage_status == 'success' && '✅ All coverage thresholds met' || '⚠️ Coverage regressions detected' }}
+
+          ${{ steps.check_coverage.outputs.coverage_failures != '' && format('**Coverage failures**:\n{0}', steps.check_coverage.outputs.coverage_failures) || '' }}
+
+          ## Corpus Stats
+
+          EOFSUM
+
+          # Add corpus stats for each target
+          TARGETS="${{ steps.fuzz_params.outputs.targets }}"
+          if [ "$TARGETS" = "all" ]; then
+            TARGET_LIST="parse_deposit"
+          else
+            TARGET_LIST=$(echo "$TARGETS" | tr ',' ' ')
+          fi
+
+          for TARGET in $TARGET_LIST; do
+            CORPUS_COUNT=$(find "corpus/$TARGET" -type f 2>/dev/null | wc -l || echo "0")
+            echo "- **$TARGET**: $CORPUS_COUNT inputs" >> ../fuzz_results/SUMMARY.md
+          done
+
+          # Attach logs
+          echo "" >> ../fuzz_results/SUMMARY.md
+          echo "## Detailed Logs" >> ../fuzz_results/SUMMARY.md
+          echo "" >> ../fuzz_results/SUMMARY.md
+          echo "See attached artifacts for full fuzzing logs and coverage reports." >> ../fuzz_results/SUMMARY.md
+
+      - name: Upload fuzzing artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-results-${{ github.run_id }}
+          path: |
+            crates/asm/txs/bridge-v1/fuzz_results/
+            crates/asm/txs/bridge-v1/fuzz/corpus/
+            crates/asm/txs/bridge-v1/fuzz/coverage/
+            crates/asm/txs/bridge-v1/fuzz/artifacts/
+          retention-days: 90
+
+      - name: Upload crash artifacts separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-${{ github.run_id }}
+          path: |
+            crates/asm/txs/bridge-v1/fuzz/artifacts/
+          retention-days: 365
+          if-no-files-found: ignore
+
+      - name: Post summary
+        if: always()
+        run: |
+          cat crates/asm/txs/bridge-v1/fuzz_results/SUMMARY.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Slack on failure
+        if: failure() || (always() && (steps.run_fuzz.outputs.status == 'failed' || steps.check_coverage.outputs.coverage_status == 'failed'))
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚨 Bridge-v1 Fuzzing Failed",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚨 Bridge-v1 Fuzzing Failed"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Trigger:*\n${{ github.event_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Duration:*\n${{ steps.fuzz_params.outputs.duration }}s"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Fuzzing Status:* ${{ steps.run_fuzz.outputs.status == 'failed' && '❌ Failed' || '✅ Success' }}\n*Coverage Status:* ${{ steps.check_coverage.outputs.coverage_status == 'failed' && '⚠️ Regression' || '✅ OK' }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run Details>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
