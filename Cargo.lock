@@ -1223,6 +1223,7 @@ dependencies = [
 name = "alpen-reth-evm"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-consensus",
  "alloy-sol-types",
  "alpen-reth-primitives",
  "reth-evm",
@@ -14162,6 +14163,38 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-evm-ee"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-rlp",
+ "alpen-reth-evm",
+ "alpen-reth-primitives",
+ "itertools 0.14.0",
+ "reth-chainspec",
+ "reth-consensus-common",
+ "reth-errors",
+ "reth-evm",
+ "reth-evm-ethereum",
+ "reth-primitives",
+ "reth-primitives-traits",
+ "reth-trie",
+ "revm",
+ "revm-primitives",
+ "rlp",
+ "rsp-client-executor",
+ "rsp-mpt",
+ "serde",
+ "serde_json",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-ol-msg-types",
 ]
 
 [[package]]
