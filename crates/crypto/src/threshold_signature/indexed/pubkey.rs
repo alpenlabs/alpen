@@ -45,6 +45,10 @@ impl CompressedPublicKey {
     }
 
     /// Serialize to 33-byte compressed format.
+    ///
+    /// Serializes the key as a byte-encoded pair of values. In compressed form
+    /// the y-coordinate is represented by only a single bit, as x determines
+    /// it up to one bit.
     pub fn serialize(&self) -> [u8; 33] {
         self.0.serialize()
     }

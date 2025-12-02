@@ -42,10 +42,11 @@ impl MultisigAuthority {
         &mut self.config
     }
 
-    /// Verify that `signatures` is a valid threshold signature set for `action` under the current
-    /// config and seqno.
+    /// Verifies a set of ECDSA signatures against a threshold configuration.
     ///
-    /// Uses individual ECDSA signature verification against each signer's public key.
+    /// This function is intentionally ECDSA-specific as part of the hardware wallet
+    /// compatibility design (BIP-137 format support). A trait-based abstraction
+    /// could be added in the future if multiple signature schemes are needed.
     pub fn verify_action_signature(
         &self,
         action: &MultisigAction,
@@ -54,7 +55,6 @@ impl MultisigAuthority {
         // Compute the msg to sign by combining UpdateAction with sequence no
         let sig_hash = action.compute_sighash(self.seqno);
 
-        // Verify each ECDSA signature against the corresponding public key
         verify_threshold_signatures(&self.config, signatures.signatures(), &sig_hash.into())
     }
 

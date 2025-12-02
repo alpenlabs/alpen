@@ -1,6 +1,6 @@
 //! Configuration types for threshold signing.
 
-use std::{collections::HashSet, num::NonZero};
+use std::{collections::HashSet, hash::Hash, num::NonZero};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -72,6 +72,12 @@ impl ThresholdConfig {
     }
 
     /// Validates that an update can be applied to this configuration.
+    ///
+    /// # Note
+    ///
+    /// This method is called automatically by [`apply_update`]. External callers
+    /// may use this for dry-run validation, but there's no need to call it
+    /// before `apply_update` as validation is always performed.
     pub fn validate_update(
         &self,
         update: &ThresholdConfigUpdate,
@@ -175,7 +181,7 @@ impl BorshDeserialize for ThresholdConfig {
     }
 }
 
-impl std::hash::Hash for CompressedPublicKey {
+impl Hash for CompressedPublicKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.serialize().hash(state);
     }
