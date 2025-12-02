@@ -1190,6 +1190,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-exec-chain"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-common",
+ "alpen-ee-config",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "alpen-ee-ol-tracker"
 version = "0.3.0-alpha.1"
 dependencies = [
