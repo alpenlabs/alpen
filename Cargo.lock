@@ -14547,6 +14547,7 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
+ "hex",
  "secp256k1 0.29.1",
  "serde",
  "strata-btc-types",
@@ -14702,6 +14703,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-rpc-api-new"
+version = "0.1.0"
+dependencies = [
+ "jsonrpsee",
+ "strata-identifiers",
+ "strata-primitives",
+ "strata-rpc-types-new",
+]
+
+[[package]]
 name = "strata-rpc-types"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14717,6 +14728,18 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-primitives",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "strata-rpc-types-new"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "strata-acct-types",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-primitives",
+ "strata-snark-acct-types",
 ]
 
 [[package]]

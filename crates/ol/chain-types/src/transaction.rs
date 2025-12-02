@@ -19,8 +19,7 @@ pub struct OLTransaction {
 }
 
 impl OLTransaction {
-    // TODO use a builder
-    pub fn new(extra: TransactionAttachment, payload: TransactionPayload) -> Self {
+    pub fn new(payload: TransactionPayload, extra: TransactionAttachment) -> Self {
         Self { payload, extra }
     }
 
@@ -99,11 +98,8 @@ pub struct TransactionAttachment {
 }
 
 impl TransactionAttachment {
-    pub fn new_empty() -> Self {
-        Self {
-            min_slot: None,
-            max_slot: None,
-        }
+    pub fn new(min_slot: Option<Slot>, max_slot: Option<Slot>) -> Self {
+        Self { min_slot, max_slot }
     }
 
     pub fn min_slot(&self) -> Option<Slot> {

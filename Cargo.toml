@@ -61,6 +61,8 @@ members = [
   "crates/ol/da",
   "crates/ol/mempool",
   "crates/ol/msg-types",
+  "crates/rpc-new/api",
+  "crates/rpc-new/types",
   "crates/ol/state-types",
   "crates/ol/stf",
   "crates/ol-chainstate-types",
@@ -217,7 +219,9 @@ strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
 strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
 strata-rpc-api = { path = "crates/rpc/api" }
+strata-rpc-api-new = { path = "crates/rpc-new/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
+strata-rpc-types-new = { path = "crates/rpc-new/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
 strata-simple-ee = { path = "crates/simple-ee" }
