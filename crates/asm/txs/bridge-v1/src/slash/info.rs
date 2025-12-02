@@ -9,14 +9,14 @@ pub struct SlashInfo {
     /// SPS-50 auxiliary data from the transaction tag.
     header_aux: SlashTxHeaderAux,
     /// Previous outpoint referenced second input (stake connector).
-    second_input_outpoint: BitcoinOutPoint,
+    second_inpoint: BitcoinOutPoint,
 }
 
 impl SlashInfo {
-    pub fn new(header_aux: SlashTxHeaderAux, second_input_outpoint: BitcoinOutPoint) -> Self {
+    pub fn new(header_aux: SlashTxHeaderAux, second_inpoint: BitcoinOutPoint) -> Self {
         Self {
             header_aux,
-            second_input_outpoint,
+            second_inpoint,
         }
     }
 
@@ -25,6 +25,6 @@ impl SlashInfo {
     }
 
     pub fn second_input_outpoint(&self) -> &BitcoinOutPoint {
-        &self.second_input_outpoint
+        &self.second_inpoint
     }
 }

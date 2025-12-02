@@ -11,7 +11,7 @@
 //!
 //! ### Inputs
 //! - 1. **Contest slash connector**: Locked to the N-of-N multisig with a relative timelock
-//! - 2. **Stake connector**: Locked to the N-of-N pure multisig, without any timelocks.
+//! - 2. **Stake connector**: Locked to the N-of-N multisig..
 //!
 //! Only the stake connector is validated. The contest connector carries a relative timelock that
 //! is enforced on-chain, but the bridge subprotocol does not store the timelock that is used,
