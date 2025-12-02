@@ -20,7 +20,7 @@ use super::ThresholdSignatureError;
 ///    - 39-42: Native SegWit P2WPKH
 ///
 /// The verification code normalizes both formats to extract the raw recovery ID (0-3).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct IndexedSignature {
     /// Index of the signer in the ThresholdConfig keys array (0-255).
     index: u8,
@@ -76,26 +76,10 @@ impl IndexedSignature {
     }
 }
 
-impl BorshSerialize for IndexedSignature {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.index.serialize(writer)?;
-        writer.write_all(&self.signature)
-    }
-}
-
-impl BorshDeserialize for IndexedSignature {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let index = u8::deserialize_reader(reader)?;
-        let mut signature = [0u8; 65];
-        reader.read_exact(&mut signature)?;
-        Ok(Self { index, signature })
-    }
-}
-
 /// A set of indexed ECDSA signatures for threshold verification.
 ///
 /// Signatures are sorted by index and must not contain duplicates.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize)]
 pub struct SignatureSet {
     /// Sorted signatures by index, no duplicates.
     signatures: Vec<IndexedSignature>,
@@ -151,31 +135,6 @@ impl SignatureSet {
     /// Consume and return the inner signatures.
     pub fn into_inner(self) -> Vec<IndexedSignature> {
         self.signatures
-    }
-}
-
-impl BorshSerialize for SignatureSet {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        // Write count as u8 (max 255 signatures)
-        let count = self.signatures.len() as u8;
-        count.serialize(writer)?;
-        // Write each signature
-        for sig in &self.signatures {
-            sig.serialize(writer)?;
-        }
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for SignatureSet {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let count = u8::deserialize_reader(reader)?;
-        let mut signatures = Vec::with_capacity(count as usize);
-        for _ in 0..count {
-            signatures.push(IndexedSignature::deserialize_reader(reader)?);
-        }
-        SignatureSet::new(signatures)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
     }
 }
 

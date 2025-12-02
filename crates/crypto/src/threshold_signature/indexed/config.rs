@@ -18,7 +18,7 @@ pub const MAX_SIGNERS: usize = 256;
 /// Defines who can sign (`keys`) and how many must sign (`threshold`).
 /// The threshold is stored as `NonZero<u8>` to enforce at the type level
 /// that it can never be zero.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ThresholdConfig {
     /// Public keys of all authorized signers.
     keys: Vec<CompressedPublicKey>,
@@ -71,7 +71,7 @@ impl ThresholdConfig {
     ///
     /// # Note
     ///
-    /// This method is called automatically by [`apply_update`]. External callers
+    /// This method is called automatically by [`Self::apply_update`]. External callers
     /// may use this for dry-run validation, but there's no need to call it
     /// before `apply_update` as validation is always performed.
     pub fn validate_update(
@@ -140,37 +140,6 @@ impl ThresholdConfig {
     }
 }
 
-impl BorshSerialize for ThresholdConfig {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.keys.serialize(writer)?;
-        self.threshold.get().serialize(writer)
-    }
-}
-
-impl BorshDeserialize for ThresholdConfig {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let keys = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
-
-        // Validate key count doesn't exceed maximum (prevents DoS via large allocations)
-        if keys.len() > MAX_SIGNERS {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "too many signers: {} exceeds maximum {}",
-                    keys.len(),
-                    MAX_SIGNERS
-                ),
-            ));
-        }
-
-        let threshold_u8 = u8::deserialize_reader(reader)?;
-        let threshold = NonZero::new(threshold_u8).ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "threshold cannot be zero")
-        })?;
-        Ok(Self { keys, threshold })
-    }
-}
-
 impl Hash for CompressedPublicKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.serialize().hash(state);
@@ -178,7 +147,7 @@ impl Hash for CompressedPublicKey {
 }
 
 /// Represents a change to the threshold configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ThresholdConfigUpdate {
     add_members: Vec<CompressedPublicKey>,
     remove_members: Vec<CompressedPublicKey>,
@@ -223,31 +192,6 @@ impl ThresholdConfigUpdate {
         NonZero<u8>,
     ) {
         (self.add_members, self.remove_members, self.new_threshold)
-    }
-}
-
-impl BorshSerialize for ThresholdConfigUpdate {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.add_members.serialize(writer)?;
-        self.remove_members.serialize(writer)?;
-        self.new_threshold.get().serialize(writer)
-    }
-}
-
-impl BorshDeserialize for ThresholdConfigUpdate {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let add_members = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
-        let remove_members = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
-        let threshold_u8 = u8::deserialize_reader(reader)?;
-        let new_threshold = NonZero::new(threshold_u8).ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "threshold cannot be zero")
-        })?;
-
-        Ok(Self {
-            add_members,
-            remove_members,
-            new_threshold,
-        })
     }
 }
 
