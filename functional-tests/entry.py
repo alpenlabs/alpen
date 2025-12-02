@@ -176,6 +176,7 @@ def main(argv):
         rt.prepare_test(KEEP_ALIVE_TEST_NAME, tests)
         tests = [KEEP_ALIVE_TEST_NAME]
 
+    print("Abishek running tests ", tests)
     results = rt.run_tests(tests)
     rt.save_json_file("results.json", results)
     flexitest.dump_results(results)
