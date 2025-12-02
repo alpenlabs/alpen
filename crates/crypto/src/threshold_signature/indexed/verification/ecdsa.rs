@@ -56,7 +56,8 @@ pub(super) fn verify_ecdsa_signatures(
         // Check index is in bounds
         let index = indexed_sig.index() as usize;
         let keys_len = config.keys().len();
-        // Reject indices at/above the key count to avoid panicking on the lookup; report the last valid slot.
+        // Reject indices at/above the key count to avoid panicking on the lookup; report the last
+        // valid slot.
         if index >= keys_len {
             return Err(ThresholdSignatureError::SignerIndexOutOfBounds {
                 index: indexed_sig.index(),
