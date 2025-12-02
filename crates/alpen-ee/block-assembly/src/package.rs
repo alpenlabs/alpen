@@ -1,6 +1,5 @@
-use alpen_reth_node::AlpenBuiltPayload;
+use alpen_ee_common::EnginePayload;
 use bitcoin_bosd::Descriptor;
-use reth_node_api::BuiltPayload;
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::MsgData;
@@ -13,13 +12,13 @@ use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
 use tracing::warn;
 
 /// Builds the block package based on execution inputs and results.
-pub(crate) fn build_block_package(
+pub(crate) fn build_block_package<TPayload: EnginePayload>(
     bridge_gateway_account_id: AccountId,
     parsed_inputs: Vec<MsgData>,
-    payload: &AlpenBuiltPayload,
+    payload: &TPayload,
 ) -> ExecBlockPackage {
     // 1. build block commitment
-    let exec_blkid = payload.block().hash().0;
+    let exec_blkid = payload.blockhash();
     // TODO: get using `EvmExecutionEnvironment`
     let raw_block_encoded_hash = [0u8; 32];
     let commitment = ExecBlockCommitment::new(exec_blkid, raw_block_encoded_hash);

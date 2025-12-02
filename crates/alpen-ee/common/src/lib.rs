@@ -7,7 +7,7 @@ pub mod types;
 pub use traits::{
     engine::{ExecutionEngine, ExecutionEngineError},
     ol_client::{OlClient, OlClientError},
-    payload_builder::PayloadBuilderEngine,
+    payload_builder::{EnginePayload, PayloadBuilderEngine},
     storage::{OLBlockOrSlot, Storage, StorageError},
 };
 pub use types::{
