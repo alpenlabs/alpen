@@ -33,20 +33,16 @@ impl ThresholdConfig {
     ///
     /// Returns `ThresholdSignatureError` if:
     /// - `DuplicateAddMember`: The keys list contains duplicate members
-    /// - `ZeroThreshold`: The threshold is zero
     /// - `InvalidThreshold`: The threshold exceeds the total number of keys
     pub fn try_new(
         keys: Vec<CompressedPublicKey>,
-        threshold: u8,
+        threshold: NonZero<u8>,
     ) -> Result<Self, ThresholdSignatureError> {
-        // Validate threshold is non-zero
-        let threshold = NonZero::new(threshold).ok_or(ThresholdSignatureError::ZeroThreshold)?;
-
         let mut config = ThresholdConfig {
             keys: vec![],
             threshold,
         };
-        let update = ThresholdConfigUpdate::new(keys, vec![], threshold.get());
+        let update = ThresholdConfigUpdate::new(keys, vec![], threshold);
         config.apply_update(&update)?;
         Ok(config)
     }
@@ -102,11 +98,6 @@ impl ThresholdConfig {
             return Err(ThresholdSignatureError::MemberAlreadyExists);
         }
 
-        // Ensure new threshold is not zero
-        if update.new_threshold() == 0 {
-            return Err(ThresholdSignatureError::ZeroThreshold);
-        }
-
         // Ensure all members to remove exist in current configuration
         for member_to_remove in update.remove_members() {
             if !self.keys.contains(member_to_remove) {
@@ -118,9 +109,9 @@ impl ThresholdConfig {
         let updated_size =
             self.keys.len() + update.add_members().len() - update.remove_members().len();
 
-        if (update.new_threshold() as usize) > updated_size {
+        if (update.new_threshold().get() as usize) > updated_size {
             return Err(ThresholdSignatureError::InvalidThreshold {
-                threshold: update.new_threshold(),
+                threshold: update.new_threshold().get(),
                 total_keys: updated_size,
             });
         }
@@ -142,9 +133,8 @@ impl ThresholdConfig {
         // Add new members
         self.keys.extend_from_slice(update.add_members());
 
-        // Update threshold - safe because validate_update already checked it's non-zero
-        self.threshold =
-            NonZero::new(update.new_threshold()).expect("validate_update ensures non-zero");
+        // Update threshold
+        self.threshold = update.new_threshold();
 
         Ok(())
     }
@@ -192,7 +182,7 @@ impl Hash for CompressedPublicKey {
 pub struct ThresholdConfigUpdate {
     add_members: Vec<CompressedPublicKey>,
     remove_members: Vec<CompressedPublicKey>,
-    new_threshold: u8,
+    new_threshold: NonZero<u8>,
 }
 
 impl ThresholdConfigUpdate {
@@ -200,7 +190,7 @@ impl ThresholdConfigUpdate {
     pub fn new(
         add_members: Vec<CompressedPublicKey>,
         remove_members: Vec<CompressedPublicKey>,
-        new_threshold: u8,
+        new_threshold: NonZero<u8>,
     ) -> Self {
         Self {
             add_members,
@@ -220,12 +210,18 @@ impl ThresholdConfigUpdate {
     }
 
     /// Returns the new threshold.
-    pub fn new_threshold(&self) -> u8 {
+    pub fn new_threshold(&self) -> NonZero<u8> {
         self.new_threshold
     }
 
     /// Consume and return the inner components.
-    pub fn into_inner(self) -> (Vec<CompressedPublicKey>, Vec<CompressedPublicKey>, u8) {
+    pub fn into_inner(
+        self,
+    ) -> (
+        Vec<CompressedPublicKey>,
+        Vec<CompressedPublicKey>,
+        NonZero<u8>,
+    ) {
         (self.add_members, self.remove_members, self.new_threshold)
     }
 }
@@ -234,7 +230,7 @@ impl BorshSerialize for ThresholdConfigUpdate {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.add_members.serialize(writer)?;
         self.remove_members.serialize(writer)?;
-        self.new_threshold.serialize(writer)
+        self.new_threshold.get().serialize(writer)
     }
 }
 
@@ -242,7 +238,10 @@ impl BorshDeserialize for ThresholdConfigUpdate {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let add_members = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
         let remove_members = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
-        let new_threshold = u8::deserialize_reader(reader)?;
+        let threshold_u8 = u8::deserialize_reader(reader)?;
+        let new_threshold = NonZero::new(threshold_u8).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "threshold cannot be zero")
+        })?;
 
         Ok(Self {
             add_members,
@@ -258,7 +257,9 @@ impl<'a> Arbitrary<'a> for ThresholdConfigUpdate {
         let remove_members = Vec::<CompressedPublicKey>::arbitrary(u)?;
         // Generate a threshold between 1 and max(1, len(add_members))
         let max_threshold = add_members.len().max(1);
-        let new_threshold = u.int_in_range(1..=(max_threshold as u8))?;
+        let threshold_u8 = u.int_in_range(1..=(max_threshold as u8))?;
+        // Safe: threshold_u8 is always >= 1
+        let new_threshold = NonZero::new(threshold_u8).expect("threshold is always >= 1");
         Ok(Self {
             add_members,
             remove_members,
@@ -284,26 +285,16 @@ mod tests {
     #[test]
     fn test_config_creation() {
         let keys = vec![make_key(1), make_key(2), make_key(3)];
-        let config = ThresholdConfig::try_new(keys.clone(), 2).unwrap();
+        let config = ThresholdConfig::try_new(keys.clone(), NonZero::new(2).unwrap()).unwrap();
 
         assert_eq!(config.keys().len(), 3);
         assert_eq!(config.threshold(), 2);
     }
 
     #[test]
-    fn test_config_zero_threshold() {
-        let keys = vec![make_key(1)];
-        let result = ThresholdConfig::try_new(keys, 0);
-        assert!(matches!(
-            result,
-            Err(ThresholdSignatureError::ZeroThreshold)
-        ));
-    }
-
-    #[test]
     fn test_config_threshold_exceeds_keys() {
         let keys = vec![make_key(1), make_key(2)];
-        let result = ThresholdConfig::try_new(keys, 3);
+        let result = ThresholdConfig::try_new(keys, NonZero::new(3).unwrap());
         assert!(matches!(
             result,
             Err(ThresholdSignatureError::InvalidThreshold { .. })
@@ -313,9 +304,10 @@ mod tests {
     #[test]
     fn test_config_update_add_member() {
         let keys = vec![make_key(1), make_key(2)];
-        let mut config = ThresholdConfig::try_new(keys, 2).unwrap();
+        let mut config = ThresholdConfig::try_new(keys, NonZero::new(2).unwrap()).unwrap();
 
-        let update = ThresholdConfigUpdate::new(vec![make_key(3)], vec![], 2);
+        let update =
+            ThresholdConfigUpdate::new(vec![make_key(3)], vec![], NonZero::new(2).unwrap());
         config.apply_update(&update).unwrap();
 
         assert_eq!(config.keys().len(), 3);
@@ -327,9 +319,10 @@ mod tests {
         let k2 = make_key(2);
         let k3 = make_key(3);
 
-        let mut config = ThresholdConfig::try_new(vec![k1, k2, k3], 2).unwrap();
+        let mut config =
+            ThresholdConfig::try_new(vec![k1, k2, k3], NonZero::new(2).unwrap()).unwrap();
 
-        let update = ThresholdConfigUpdate::new(vec![], vec![k2], 2);
+        let update = ThresholdConfigUpdate::new(vec![], vec![k2], NonZero::new(2).unwrap());
         config.apply_update(&update).unwrap();
 
         assert_eq!(config.keys().len(), 2);
@@ -339,7 +332,7 @@ mod tests {
     #[test]
     fn test_config_borsh_roundtrip() {
         let keys = vec![make_key(1), make_key(2)];
-        let config = ThresholdConfig::try_new(keys, 2).unwrap();
+        let config = ThresholdConfig::try_new(keys, NonZero::new(2).unwrap()).unwrap();
 
         let encoded = borsh::to_vec(&config).unwrap();
         let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();

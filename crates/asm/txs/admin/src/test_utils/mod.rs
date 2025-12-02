@@ -189,6 +189,8 @@ fn build_envelope_script(payload: &[u8]) -> ScriptBuf {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZero;
+
     use bitcoin::secp256k1::{PublicKey, Secp256k1};
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
@@ -205,7 +207,7 @@ mod tests {
     fn test_create_signature_set() {
         let mut arb = ArbitraryGenerator::new();
         let seqno = 1;
-        let threshold = 2;
+        let threshold = NonZero::new(2).unwrap();
         let secp = Secp256k1::new();
 
         // Generate test private keys
@@ -239,7 +241,7 @@ mod tests {
     fn test_admin_tx() {
         let mut arb = ArbitraryGenerator::new();
         let seqno = 1;
-        let threshold = 2;
+        let threshold = NonZero::new(2).unwrap();
         let secp = Secp256k1::new();
 
         // Generate test private keys

@@ -46,6 +46,8 @@ pub fn verify_threshold_signatures(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZero;
+
     use secp256k1::{Secp256k1, SecretKey};
 
     use super::*;
@@ -66,7 +68,8 @@ mod tests {
         let (sk2, pk2) = generate_keypair(2);
         let (_sk3, pk3) = generate_keypair(3);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2, pk3], 2).unwrap();
+        let config =
+            ThresholdConfig::try_new(vec![pk1, pk2, pk3], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
 
@@ -89,7 +92,8 @@ mod tests {
         let (sk2, pk2) = generate_keypair(2);
         let (_sk3, pk3) = generate_keypair(3);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2, pk3], 2).unwrap();
+        let config =
+            ThresholdConfig::try_new(vec![pk1, pk2, pk3], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
 
@@ -110,7 +114,7 @@ mod tests {
         let (sk1, pk1) = generate_keypair(1);
         let (sk2, pk2) = generate_keypair(2);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2], 2).unwrap();
+        let config = ThresholdConfig::try_new(vec![pk1, pk2], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
         let wrong_message_hash = [0xCD; 32];
@@ -137,7 +141,7 @@ mod tests {
         let (sk1, pk1) = generate_keypair(1);
         let (_sk2, pk2) = generate_keypair(2);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2], 2).unwrap();
+        let config = ThresholdConfig::try_new(vec![pk1, pk2], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
 
@@ -163,7 +167,7 @@ mod tests {
         let (sk1, pk1) = generate_keypair(1);
         let (sk2, pk2) = generate_keypair(2);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2], 2).unwrap();
+        let config = ThresholdConfig::try_new(vec![pk1, pk2], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
 
@@ -187,7 +191,7 @@ mod tests {
         let (sk1, pk1) = generate_keypair(1);
         let (_sk2, pk2) = generate_keypair(2);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2], 2).unwrap();
+        let config = ThresholdConfig::try_new(vec![pk1, pk2], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
 
@@ -214,7 +218,8 @@ mod tests {
         let (sk2, pk2) = generate_keypair(2);
         let (_sk3, pk3) = generate_keypair(3);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2, pk3], 2).unwrap();
+        let config =
+            ThresholdConfig::try_new(vec![pk1, pk2, pk3], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
 
@@ -246,7 +251,8 @@ mod tests {
         let (sk2, pk2) = generate_keypair(2);
         let (_sk3, pk3) = generate_keypair(3);
 
-        let config = ThresholdConfig::try_new(vec![pk1, pk2, pk3], 2).unwrap();
+        let config =
+            ThresholdConfig::try_new(vec![pk1, pk2, pk3], NonZero::new(2).unwrap()).unwrap();
 
         let message_hash = [0xAB; 32];
 

@@ -175,7 +175,7 @@ fn relay_checkpoint_predicate(relayer: &mut impl MsgRelayer, key: PredicateKey) 
 
 #[cfg(test)]
 mod tests {
-    use std::any::Any;
+    use std::{any::Any, num::NonZero};
 
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
@@ -246,7 +246,8 @@ mod tests {
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
             .collect();
-        let strata_administrator = ThresholdConfig::try_new(strata_admin_pks, 2).unwrap();
+        let strata_administrator =
+            ThresholdConfig::try_new(strata_admin_pks, NonZero::new(2).unwrap()).unwrap();
 
         let strata_seq_manager_sks: Vec<SecretKey> =
             (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
@@ -254,7 +255,8 @@ mod tests {
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
             .collect();
-        let strata_sequencer_manager = ThresholdConfig::try_new(strata_seq_manager_pks, 2).unwrap();
+        let strata_sequencer_manager =
+            ThresholdConfig::try_new(strata_seq_manager_pks, NonZero::new(2).unwrap()).unwrap();
 
         let config = AdministrationSubprotoParams {
             strata_administrator,

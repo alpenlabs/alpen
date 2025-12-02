@@ -110,6 +110,8 @@ impl AdministrationSubprotoState {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZero;
+
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::rngs::OsRng;
     use strata_asm_txs_admin::actions::UpdateAction;
@@ -133,7 +135,8 @@ mod tests {
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
             .collect();
-        let strata_administrator = ThresholdConfig::try_new(admin_pks, 2).unwrap();
+        let strata_administrator =
+            ThresholdConfig::try_new(admin_pks, NonZero::new(2).unwrap()).unwrap();
 
         // Create seq manager keys
         let seq_sks: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
@@ -141,7 +144,8 @@ mod tests {
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
             .collect();
-        let strata_sequencer_manager = ThresholdConfig::try_new(seq_pks, 2).unwrap();
+        let strata_sequencer_manager =
+            ThresholdConfig::try_new(seq_pks, NonZero::new(2).unwrap()).unwrap();
 
         AdministrationSubprotoParams {
             strata_administrator,
@@ -270,7 +274,7 @@ mod tests {
         let remove_members = vec![initial_members[0]];
 
         let new_size = initial_members.len() + add_members.len() - remove_members.len();
-        let new_threshold = 2u8;
+        let new_threshold = NonZero::new(2).unwrap();
 
         let update =
             ThresholdConfigUpdate::new(add_members.clone(), remove_members.clone(), new_threshold);
@@ -280,7 +284,7 @@ mod tests {
         let updated_auth = state.authority(role).unwrap().config();
 
         // Verify threshold was updated
-        assert_eq!(updated_auth.threshold(), new_threshold);
+        assert_eq!(updated_auth.threshold(), new_threshold.get());
 
         // Verify size is correct
         assert_eq!(updated_auth.keys().len(), new_size);

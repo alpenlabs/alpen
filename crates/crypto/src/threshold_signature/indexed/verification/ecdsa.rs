@@ -55,7 +55,7 @@ pub(super) fn verify_ecdsa_signatures(
     for indexed_sig in signatures.signatures() {
         // Check index is in bounds
         let index = indexed_sig.index() as usize;
-        if index >= config.keys().len() {
+        if index > config.keys().len() {
             return Err(ThresholdSignatureError::SignerIndexOutOfBounds {
                 index: indexed_sig.index(),
                 max: config.keys().len(),
