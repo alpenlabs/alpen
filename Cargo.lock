@@ -1048,13 +1048,16 @@ dependencies = [
 name = "alpen-client"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-eips",
  "alloy-primitives",
+ "alloy-rpc-types-engine",
  "alpen-chainspec",
  "alpen-ee-common",
  "alpen-ee-config",
  "alpen-ee-database",
  "alpen-ee-engine",
  "alpen-ee-ol-tracker",
+ "alpen-reth-evm",
  "alpen-reth-node",
  "async-trait",
  "clap",
@@ -1068,6 +1071,7 @@ dependencies = [
  "reth-network-api",
  "reth-node-builder",
  "reth-node-core",
+ "reth-payload-builder",
  "reth-primitives",
  "reth-provider",
  "strata-acct-types",

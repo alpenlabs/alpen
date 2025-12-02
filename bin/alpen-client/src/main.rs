@@ -3,6 +3,7 @@
 mod genesis;
 mod gossip;
 mod ol_client;
+mod payload_builder;
 
 use std::{env, process, sync::Arc};
 
@@ -34,6 +35,7 @@ use tracing::{error, info};
 use crate::{
     genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
+    payload_builder::AlpenRethPayloadEngine,
 };
 
 fn main() {
@@ -195,6 +197,11 @@ fn main() {
                         .spawn_critical("gossip_task", gossip_task);
 
                     // sequencer specific tasks
+                    let _payload_engine = AlpenRethPayloadEngine::new(
+                        node.payload_builder_handle.clone(),
+                        node.beacon_engine_handle.clone(),
+                    );
+
                     // TODO: block assembly
                     // TODO: batch assembly
                     // TODO: proof generation
