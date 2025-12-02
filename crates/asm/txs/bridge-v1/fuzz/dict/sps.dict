@@ -1,0 +1,66 @@
+# Bridge V1 Protocol Dictionary for libFuzzer
+# Extracted from: crates/asm/txs/bridge-v1/src/constants.rs
+# Helps fuzzer discover important byte sequences faster
+
+# Magic bytes
+# Production magic bytes may vary - check your ParseConfig initialization
+# Test magic bytes from src/test_utils/mod.rs:
+magic_alpn="ALPN"
+magic_alpn_hex="\x41\x4c\x50\x4e"
+
+# Alternative magic bytes (if using SPS-50 format):
+magic_sps1="SPS1"
+magic_sps1_hex="\x53\x50\x53\x31"
+
+# Protocol IDs
+# ACTUAL VALUE from src/constants.rs: BRIDGE_V1_SUBPROTOCOL_ID = 2
+protocol_bridge_v1="\x02"
+protocol_zero="\x00"
+protocol_max="\xff"
+
+# Transaction types for bridge-v1
+# ACTUAL VALUES from src/constants.rs:
+tx_type_deposit_request="\x00"         # DEPOSIT_REQUEST_TX_TYPE = 0
+tx_type_deposit="\x01"                 # DEPOSIT_TX_TYPE = 1
+tx_type_withdrawal_fulfillment="\x02"  # WITHDRAWAL_FULFILLMENT_TX_TYPE = 2
+tx_type_commit="\x03"                  # COMMIT_TX_TYPE = 3
+tx_type_max="\xff"
+
+# Boundary values for output counts
+output_count_zero="\x00"
+output_count_one="\x01"
+output_count_two="\x02"
+output_count_three="\x03"
+output_count_max="\xff"
+
+# Common bitcoin amounts (in satoshis, little-endian u64)
+amount_zero="\x00\x00\x00\x00\x00\x00\x00\x00"
+amount_1sat="\x01\x00\x00\x00\x00\x00\x00\x00"
+amount_1000sat="\xe8\x03\x00\x00\x00\x00\x00\x00"
+amount_1btc="\x00\xe1\xf5\x05\x00\x00\x00\x00"
+amount_max="\xff\xff\xff\xff\xff\xff\xff\xff"
+
+# Aux data corruption edge cases
+corruption_zero="\x00"
+corruption_neg1="\xff"
+corruption_neg127="\x81"
+corruption_neg128="\x80"
+corruption_pos127="\x7f"
+
+# Common u32 boundaries
+u32_zero="\x00\x00\x00\x00"
+u32_one="\x01\x00\x00\x00"
+u32_max="\xff\xff\xff\xff"
+
+# Common u16 boundaries
+u16_zero="\x00\x00"
+u16_one="\x01\x00"
+u16_max="\xff\xff"
+
+# Empty and small buffers
+empty=""
+single_byte="\x00"
+two_bytes="\x00\x00"
+
+# OP_RETURN opcode
+op_return="\x6a"
