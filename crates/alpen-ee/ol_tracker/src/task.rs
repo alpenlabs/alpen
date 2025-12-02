@@ -1,11 +1,9 @@
 use std::time::Duration;
 
 use alpen_ee_common::{
-    traits::ol_client::{
-        block_commitments_in_range_checked, chain_status_checked,
-        get_update_operations_for_blocks_checked,
-    },
-    EeAccountStateAtBlock, OlChainStatus, OlClient, Storage,
+    block_commitments_in_range_checked, chain_status_checked,
+    get_update_operations_for_blocks_checked, EeAccountStateAtBlock, OlChainStatus, OlClient,
+    Storage,
 };
 use strata_ee_acct_runtime::apply_update_operation_unconditionally;
 use strata_ee_acct_types::EeAccountState;
@@ -237,7 +235,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{traits::ol_client::MockOlClient, OlChainStatus};
+    use alpen_ee_common::{MockOlClient, OlChainStatus};
     use strata_acct_types::BitcoinAmount;
     use strata_identifiers::{Buf32, OLBlockCommitment};
 
