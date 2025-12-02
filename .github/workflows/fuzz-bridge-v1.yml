@@ -53,7 +53,7 @@ jobs:
 
           echo "duration=$DURATION" >> $GITHUB_OUTPUT
           echo "targets=$TARGETS" >> $GITHUB_OUTPUT
-          echo "📊 Fuzzing for ${DURATION}s on targets: ${TARGETS}"
+          echo "Fuzzing for ${DURATION}s on targets: ${TARGETS}"
 
       - name: Cache corpus
         uses: actions/cache@v3
@@ -77,13 +77,13 @@ jobs:
 
           for TARGET in $TARGET_LIST; do
             if [ -d "corpus/$TARGET" ] && [ "$(ls -A corpus/$TARGET 2>/dev/null)" ]; then
-              echo "🗜️ Minimizing existing corpus for $TARGET"
+              echo "Minimizing existing corpus for $TARGET"
               BEFORE_COUNT=$(find "corpus/$TARGET" -type f | wc -l)
               cargo fuzz cmin "$TARGET" || true
               AFTER_COUNT=$(find "corpus/$TARGET" -type f | wc -l)
-              echo "Corpus minimized: $BEFORE_COUNT → $AFTER_COUNT inputs"
+              echo "Corpus minimized: $BEFORE_COUNT -> $AFTER_COUNT inputs"
             else
-              echo "ℹ️ No existing corpus for $TARGET, skipping cmin"
+              echo "No existing corpus for $TARGET, skipping cmin"
             fi
           done
 
@@ -105,7 +105,7 @@ jobs:
           FAILED_TARGETS=""
 
           for TARGET in $TARGET_LIST; do
-            echo "::group::🎯 Fuzzing $TARGET for ${DURATION}s"
+            echo "::group::Fuzzing $TARGET for ${DURATION}s"
 
             # Run fuzzer
             if cargo fuzz run "$TARGET" -- \
@@ -114,9 +114,9 @@ jobs:
               -ignore_crashes=0 \
               -print_final_stats=1 \
               2>&1 | tee "../fuzz_results/${TARGET}.log"; then
-              echo "✅ $TARGET completed successfully"
+              echo "[PASS] $TARGET completed successfully"
             else
-              echo "❌ $TARGET failed or found crashes"
+              echo "[FAIL] $TARGET failed or found crashes"
               FAILED_TARGETS="$FAILED_TARGETS $TARGET"
             fi
 
@@ -150,7 +150,7 @@ jobs:
           COVERAGE_FAILURES=""
 
           for TARGET in $TARGET_LIST; do
-            echo "::group::📊 Checking coverage for $TARGET"
+            echo "::group::Checking coverage for $TARGET"
 
             # Generate coverage report
             cargo fuzz coverage "$TARGET"
@@ -165,13 +165,13 @@ jobs:
               echo "Threshold: $THRESHOLD"
 
               if [ "$EDGE_COUNT" -lt "$THRESHOLD" ]; then
-                echo "⚠️ Coverage regression detected!"
-                COVERAGE_FAILURES="$COVERAGE_FAILURES\n- $TARGET: $EDGE_COUNT edges (expected ≥$THRESHOLD)"
+                echo "[WARNING] Coverage regression detected!"
+                COVERAGE_FAILURES="$COVERAGE_FAILURES\n- $TARGET: $EDGE_COUNT edges (expected >=$THRESHOLD)"
               else
-                echo "✅ Coverage threshold met"
+                echo "[PASS] Coverage threshold met"
               fi
             else
-              echo "⚠️ Could not find coverage report"
+              echo "[WARNING] Could not find coverage report"
               COVERAGE_FAILURES="$COVERAGE_FAILURES\n- $TARGET: coverage report missing"
             fi
 
@@ -204,12 +204,12 @@ jobs:
           ## Results
 
           ### Fuzzing Status
-          ${{ steps.run_fuzz.outputs.status == 'success' && '✅ All targets completed successfully' || '❌ Some targets failed or found crashes' }}
+          ${{ steps.run_fuzz.outputs.status == 'success' && '[PASS] All targets completed successfully' || '[FAIL] Some targets failed or found crashes' }}
 
           ${{ steps.run_fuzz.outputs.failed_targets != '' && format('**Failed targets**: {0}', steps.run_fuzz.outputs.failed_targets) || '' }}
 
           ### Coverage Status
-          ${{ steps.check_coverage.outputs.coverage_status == 'success' && '✅ All coverage thresholds met' || '⚠️ Coverage regressions detected' }}
+          ${{ steps.check_coverage.outputs.coverage_status == 'success' && '[PASS] All coverage thresholds met' || '[WARNING] Coverage regressions detected' }}
 
           ${{ steps.check_coverage.outputs.coverage_failures != '' && format('**Coverage failures**:\n{0}', steps.check_coverage.outputs.coverage_failures) || '' }}
 
@@ -269,13 +269,13 @@ jobs:
         with:
           payload: |
             {
-              "text": "🚨 Bridge-v1 Fuzzing Failed",
+              "text": "[ALERT] Bridge-v1 Fuzzing Failed",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "🚨 Bridge-v1 Fuzzing Failed"
+                    "text": "[ALERT] Bridge-v1 Fuzzing Failed"
                   }
                 },
                 {
@@ -303,7 +303,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Fuzzing Status:* ${{ steps.run_fuzz.outputs.status == 'failed' && '❌ Failed' || '✅ Success' }}\n*Coverage Status:* ${{ steps.check_coverage.outputs.coverage_status == 'failed' && '⚠️ Regression' || '✅ OK' }}"
+                    "text": "*Fuzzing Status:* ${{ steps.run_fuzz.outputs.status == 'failed' && '[FAIL] Failed' || '[PASS] Success' }}\n*Coverage Status:* ${{ steps.check_coverage.outputs.coverage_status == 'failed' && '[WARNING] Regression' || '[PASS] OK' }}"
                   }
                 },
                 {
