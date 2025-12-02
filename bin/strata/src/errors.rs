@@ -14,27 +14,45 @@ pub(crate) enum InitError {
     #[error("unparsable params file: {0}")]
     UnparsableParamsFile(#[from] SerdeError),
 
-    #[error("config: {0:?}")]
+    #[error("config: {0}")]
     MalformedConfig(#[from] ConfigError),
 
     #[error("params: {0}")]
     MalformedParams(#[from] ParamsError),
 
-    #[error("{0}")]
-    Anyhow(#[from] anyhow::Error),
+    #[error("missing rollup params path in arguments")]
+    MissingRollupParams,
+
+    #[error("invalid datadir path: {0:?}")]
+    InvalidDatadirPath(std::path::PathBuf),
+
+    #[error("failed to build tokio runtime: {0}")]
+    RuntimeBuild(#[source] io::Error),
+
+    #[error("failed to create node storage: {0}")]
+    StorageCreation(String),
+
+    #[error("missing sync endpoint (required for non-sequencer nodes)")]
+    MissingSyncEndpoint,
+
+    #[error("failed to parse TOML configuration: {0}")]
+    TomlParse(#[source] toml::de::Error),
+
+    #[error("failed to create bitcoin RPC client: {0}")]
+    BitcoinClientCreation(String),
+
+    #[error("missing initial client state in database")]
+    MissingInitialState,
 }
 
 #[derive(Debug, Error)]
 pub(crate) enum ConfigError {
-    /// Missing key in table.
-    #[error("missing key: {0}")]
-    MissingKey(String),
+    #[error("missing key '{key}' in path '{path}'")]
+    MissingKey { key: String, path: String },
 
-    /// Tried to traverse into a primitive.
-    #[error("can't traverse into non-table key: {0}")]
-    TraverseNonTableAt(String),
+    #[error("attempt to traverse into non-table at key '{key}' in path '{path}'")]
+    TraverseNonTableAt { key: String, path: String },
 
-    /// Invalid override string.
-    #[error("Invalid override: '{0}'")]
-    InvalidOverride(String),
+    #[error("invalid override string '{override_str}' (expected format: 'key.path=value')")]
+    InvalidOverride { override_str: String },
 }

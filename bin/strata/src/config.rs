@@ -6,12 +6,14 @@ use crate::errors::ConfigError;
 
 type Override = (String, toml::Value);
 
-/// Parses an override string. Splits by '=' to get key and value, then splits
-/// the key by '.' which is the update path.
+/// Parses an override string. Splits by '=' to get key and raw str value, then parses the str
+/// value.
 pub(crate) fn parse_override(override_str: &str) -> Result<Override, ConfigError> {
     let (key, value_str) = override_str
         .split_once("=")
-        .ok_or(ConfigError::InvalidOverride(override_str.to_string()))?;
+        .ok_or(ConfigError::InvalidOverride {
+            override_str: override_str.to_string(),
+        })?;
     Ok((key.to_string(), parse_value(value_str)))
 }
 
@@ -21,20 +23,31 @@ pub(crate) fn apply_override(
     value: toml::Value,
     table: &mut Table,
 ) -> Result<(), ConfigError> {
-    match path.split_once(".") {
+    apply_override_inner(path, path, value, table)
+}
+
+fn apply_override_inner(
+    original_path: &str,
+    remaining_path: &str,
+    value: toml::Value,
+    table: &mut Table,
+) -> Result<(), ConfigError> {
+    match remaining_path.split_once(".") {
         None => {
-            table.insert(path.to_string(), value);
+            table.insert(remaining_path.to_string(), value);
             Ok(())
         }
-        Some((key, rest)) => {
-            if let Some(t) = table.get_mut(key).and_then(|v| v.as_table_mut()) {
-                apply_override(rest, value, t)
-            } else if table.contains_key(key) {
-                Err(ConfigError::TraverseNonTableAt(key.to_string()))
-            } else {
-                Err(ConfigError::MissingKey(key.to_string()))
-            }
-        }
+        Some((key, rest)) => match table.get_mut(key) {
+            Some(toml::Value::Table(t)) => apply_override_inner(original_path, rest, value, t),
+            Some(_) => Err(ConfigError::TraverseNonTableAt {
+                key: key.to_string(),
+                path: original_path.to_string(),
+            }),
+            None => Err(ConfigError::MissingKey {
+                key: key.to_string(),
+                path: original_path.to_string(),
+            }),
+        },
     }
 }
 

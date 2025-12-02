@@ -159,6 +159,7 @@ mod test {
                 l2_blocks_fetch_limit: 20,
                 datadir: "".into(),
                 db_retry_count: 3,
+                db_retry_delay_ms: 200,
                 is_sequencer: false,
             },
             bitcoind: BitcoindConfig {

@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
 
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(args)?;
+    let nodectx = init_node_context(args).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     init_logging(nodectx.executor.handle());
 

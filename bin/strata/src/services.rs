@@ -55,7 +55,14 @@ async fn spawn_rpc(rpc_host: String, rpc_port: u16) -> anyhow::Result<()> {
     let rpc_server = jsonrpsee::server::ServerBuilder::new()
         .build(format!("{rpc_host}:{rpc_port}"))
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to build RPC server on {}:{}: {}", rpc_host, rpc_port, e))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to build RPC server on {}:{}: {}",
+                rpc_host,
+                rpc_port,
+                e
+            )
+        })?;
 
     let rpc_handle = rpc_server.start(module);
 

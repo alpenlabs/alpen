@@ -32,31 +32,30 @@ pub(crate) struct NodeContext {
 /// Initialize runtime, database, etc.
 pub(crate) fn init_node_context(args: Args) -> Result<NodeContext, InitError> {
     let config = get_config(args.clone())?;
-    let params_path = args
-        .rollup_params
-        .ok_or_else(|| InitError::Anyhow(anyhow::anyhow!("Missing rollup params path")))?;
+    let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("strata-rt")
         .build()
-        .map_err(|e| InitError::Anyhow(anyhow::anyhow!("Failed to build runtime: {}", e)))?;
+        .map_err(InitError::RuntimeBuild)?;
 
     let task_manager = TaskManager::new(runtime.handle().clone());
     let executor = task_manager.create_executor();
 
-    let db = init_db::init_database(&config.client.datadir, config.client.db_retry_count)?;
+    let db = init_db::init_database(&config.client)
+        .map_err(|e| InitError::StorageCreation(e.to_string()))?;
     let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
     let storage = Arc::new(
         create_node_storage(db, pool.clone())
-            .map_err(|e| InitError::Anyhow(anyhow::anyhow!("Failed to create storage: {}", e)))?,
+            .map_err(|e| InitError::StorageCreation(e.to_string()))?,
     );
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
 
     // Init status channel
-    let status_channel = init_status_channel(&storage)?.into();
+    let status_channel = init_status_channel(&storage)?;
 
     Ok(NodeContext {
         runtime,
@@ -73,12 +72,12 @@ pub(crate) fn init_node_context(args: Args) -> Result<NodeContext, InitError> {
 // Config loading and validation
 
 fn get_config(args: Args) -> Result<Config, InitError> {
-    let mut config_toml = load_configuration(args.config.as_ref())?;
+    let mut config_toml = load_config_from_path(args.config.as_ref())?;
 
     let env_args = EnvArgs::from_env();
     let mut override_strs = env_args.get_overrides();
 
-    override_strs.extend_from_slice(&args.get_overrides()?);
+    override_strs.extend_from_slice(&args.get_all_overrides()?);
 
     let overrides = override_strs
         .iter()
@@ -87,28 +86,32 @@ fn get_config(args: Args) -> Result<Config, InitError> {
 
     let table = config_toml
         .as_table_mut()
-        .ok_or(ConfigError::TraverseNonTableAt("".to_string()))?;
+        .ok_or(ConfigError::TraverseNonTableAt {
+            key: "<root>".to_string(),
+            path: "".to_string(),
+        })?;
 
     for (path, val) in overrides {
         apply_override(&path, val, table)?;
     }
 
-    config_toml
+    let config = config_toml
         .try_into::<Config>()
-        .map_err(|e| InitError::Anyhow(e.into()))
-        .and_then(validate_config)
+        .map_err(InitError::TomlParse)?;
+
+    validate_config(config)
 }
 
 fn validate_config(config: Config) -> Result<Config, InitError> {
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
-        return Err(InitError::Anyhow(anyhow::anyhow!("Missing sync_endpoint")));
+        return Err(InitError::MissingSyncEndpoint);
     }
     Ok(config)
 }
 
-fn load_configuration(path: &Path) -> Result<toml::Value, InitError> {
+fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
     let config_str = fs::read_to_string(path)?;
-    toml::from_str(&config_str).map_err(|e| InitError::Anyhow(e.into()))
+    toml::from_str(&config_str).map_err(InitError::TomlParse)
 }
 
 fn resolve_and_validate_params(path: &Path, config: &Config) -> Result<Arc<Params>, InitError> {
@@ -135,7 +138,7 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
 }
 
 /// Bitcoin client initialization
-fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Client>> {
+fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, InitError> {
     let btc_rpc = Client::new(
         config.rpc_url.clone(),
         config.rpc_user.clone(),
@@ -143,7 +146,7 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Clie
         config.retry_count,
         config.retry_interval,
     )
-    .map_err(anyhow::Error::from)?;
+    .map_err(|e| InitError::BitcoinClientCreation(e.to_string()))?;
 
     // TODO remove this
     if config.network != Network::Regtest {
@@ -153,16 +156,16 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Clie
 }
 
 /// Status channel initialization
-fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<StatusChannel> {
+fn init_status_channel(storage: &NodeStorage) -> Result<Arc<StatusChannel>, InitError> {
     let csman = storage.client_state();
     let (cur_block, cur_state) = csman
-        .fetch_most_recent_state()?
-        .ok_or_else(|| anyhow::anyhow!("Missing initial client state"))?;
+        .fetch_most_recent_state()
+        .map_err(|e| InitError::StorageCreation(e.to_string()))?
+        .ok_or(InitError::MissingInitialState)?;
 
     let l1_status = L1Status {
         ..Default::default()
     };
 
-    // TODO avoid clone, change status channel to use arc
-    Ok(StatusChannel::new(cur_state, cur_block, l1_status, None))
+    Ok(StatusChannel::new(cur_state, cur_block, l1_status, None).into())
 }

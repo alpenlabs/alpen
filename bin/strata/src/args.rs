@@ -37,7 +37,7 @@ pub(crate) struct Args {
     #[argh(
         option,
         short = 'd',
-        description = "datadir path that will contain databases"
+        description = "datadir path used mainly for databases"
     )]
     pub datadir: Option<PathBuf>,
 
@@ -64,24 +64,23 @@ pub(crate) struct Args {
 }
 
 impl Args {
-    /// Get strings of overrides gathered from args.
-    pub(crate) fn get_overrides(&self) -> Result<Vec<String>, InitError> {
+    /// Get strings of overrides gathered from user and internal attributes.
+    pub(crate) fn get_all_overrides(&self) -> Result<Vec<String>, InitError> {
         let mut overrides = self.overrides.clone();
-        overrides.extend_from_slice(&self.get_direct_overrides()?);
+        overrides.extend_from_slice(&self.get_internal_overrides()?);
         Ok(overrides)
     }
 
-    /// Overrides passed directly as args and not as overrides.
-    fn get_direct_overrides(&self) -> Result<Vec<String>, InitError> {
+    /// Overrides passed directly as args attributes.
+    fn get_internal_overrides(&self) -> Result<Vec<String>, InitError> {
         let mut overrides = Vec::new();
         if self.sequencer {
             overrides.push("client.is_sequencer=true".to_string());
         }
         if let Some(datadir) = &self.datadir {
-            let dd = datadir.to_str().ok_or(anyhow::anyhow!(
-                "Invalid datadir override path {:?}",
-                datadir
-            ))?;
+            let dd = datadir
+                .to_str()
+                .ok_or_else(|| InitError::InvalidDatadirPath(datadir.clone()))?;
             overrides.push(format!("client.datadir={dd}"));
         }
         if let Some(rpc_host) = &self.rpc_host {
