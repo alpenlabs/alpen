@@ -7,7 +7,7 @@ mod ol_client;
 use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
-use alpen_ee_common::traits::ol_client::chain_status_checked;
+use alpen_ee_common::chain_status_checked;
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};

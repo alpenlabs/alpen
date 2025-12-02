@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    traits::ol_client::{block_commitments_in_range_checked, chain_status_checked},
-    EeAccountStateAtBlock, OlChainStatus, OlClient, Storage,
+    block_commitments_in_range_checked, chain_status_checked, EeAccountStateAtBlock, OlChainStatus,
+    OlClient, Storage,
 };
 use tracing::{debug, error, info, warn};
 
@@ -121,10 +121,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{
-        traits::{ol_client::MockOlClient, storage::MockStorage},
-        OLBlockOrSlot, OlClientError, StorageError,
-    };
+    use alpen_ee_common::{MockOlClient, MockStorage, OLBlockOrSlot, OlClientError, StorageError};
     use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
     use strata_identifiers::{Buf32, OLBlockCommitment};
