@@ -1,7 +1,6 @@
 use std::num::NonZero;
 
-use alpen_ee_common::PayloadBuilderEngine;
-use alpen_reth_node::AlpenBuiltPayload;
+use alpen_ee_common::{EnginePayload, PayloadBuilderEngine};
 use strata_acct_types::{AccountId, Hash};
 use strata_ee_acct_runtime::{apply_final_update_changes, apply_input_messages};
 use strata_ee_acct_types::EeAccountState;
@@ -34,13 +33,13 @@ pub struct BlockAssemblyOutputs {
     /// Block package representing the OL inputs and outputs for this block.
     pub package: ExecBlockPackage,
     /// Block payload including full exec block body.
-    pub payload: AlpenBuiltPayload,
+    pub payload: Vec<u8>,
     /// EeAccountState after applying the new block.
     pub account_state: EeAccountState,
 }
 
 /// Builds the next block using `inputs` and `payload_builder`.
-pub async fn build_next_exec_block<E: PayloadBuilderEngine<AlpenBuiltPayload>>(
+pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
     inputs: BlockAssemblyInputs,
     payload_builder: &E,
 ) -> eyre::Result<BlockAssemblyOutputs> {
@@ -74,7 +73,7 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine<AlpenBuiltPayload>>(
 
     Ok(BlockAssemblyOutputs {
         package,
-        payload,
+        payload: payload.to_bytes(),
         account_state,
     })
 }

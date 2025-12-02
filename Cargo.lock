@@ -1084,10 +1084,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
- "alpen-reth-node",
  "bitcoin-bosd",
  "eyre",
- "reth-node-api",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-runtime",
