@@ -206,4 +206,69 @@ mod tests {
             Err(ThresholdSignatureError::DuplicateSignerIndex(0))
         ));
     }
+
+    #[test]
+    fn test_verify_bip137_format_signatures() {
+        // Test that BIP-137 format signatures (as produced by hardware wallets) work
+        let (sk1, pk1) = generate_keypair(1);
+        let (sk2, pk2) = generate_keypair(2);
+        let (_sk3, pk3) = generate_keypair(3);
+
+        let config = ThresholdConfig::try_new(vec![pk1, pk2, pk3], 2).unwrap();
+
+        let message_hash = [0xAB; 32];
+
+        // Sign with BIP-137 format (compressed P2PKH, header 31-34)
+        let sig0 = ecdsa::sign_ecdsa_bip137(&message_hash, &sk1);
+        let sig1 = ecdsa::sign_ecdsa_bip137(&message_hash, &sk2);
+
+        // Verify the header bytes are in BIP-137 range
+        assert!(sig0[0] >= 31 && sig0[0] <= 34);
+        assert!(sig1[0] >= 31 && sig1[0] <= 34);
+
+        let signatures = vec![
+            IndexedSignature::new(0, sig0),
+            IndexedSignature::new(1, sig1),
+        ];
+
+        // Should still verify successfully with BIP-137 format
+        let result = verify_threshold_signatures(&config, &signatures, &message_hash);
+        assert!(
+            result.is_ok(),
+            "BIP-137 format signatures should verify successfully"
+        );
+    }
+
+    #[test]
+    fn test_verify_mixed_format_signatures() {
+        // Test that a mix of raw and BIP-137 format signatures work together
+        let (sk1, pk1) = generate_keypair(1);
+        let (sk2, pk2) = generate_keypair(2);
+        let (_sk3, pk3) = generate_keypair(3);
+
+        let config = ThresholdConfig::try_new(vec![pk1, pk2, pk3], 2).unwrap();
+
+        let message_hash = [0xAB; 32];
+
+        // Sign with raw format
+        let sig0 = ecdsa::sign_ecdsa_recoverable(&message_hash, &sk1);
+        // Sign with BIP-137 format
+        let sig1 = ecdsa::sign_ecdsa_bip137(&message_hash, &sk2);
+
+        // Verify the formats are different
+        assert!(sig0[0] <= 3, "sig0 should be raw format");
+        assert!(sig1[0] >= 31, "sig1 should be BIP-137 format");
+
+        let signatures = vec![
+            IndexedSignature::new(0, sig0),
+            IndexedSignature::new(1, sig1),
+        ];
+
+        // Should still verify successfully with mixed formats
+        let result = verify_threshold_signatures(&config, &signatures, &message_hash);
+        assert!(
+            result.is_ok(),
+            "Mixed format signatures should verify successfully"
+        );
+    }
 }

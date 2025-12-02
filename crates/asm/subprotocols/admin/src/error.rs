@@ -13,7 +13,7 @@ pub enum AdministrationError {
     #[error("no pending update found for action_id = {0:?}")]
     UnknownAction(UpdateId),
 
-    /// Indicates a threshold signing error (configuration or signature validation).
+    /// Indicates a threshold signature error (configuration or signature validation).
     #[error(transparent)]
-    ThresholdSigning(#[from] ThresholdSignatureError),
+    ThresholdSignature(#[from] ThresholdSignatureError),
 }

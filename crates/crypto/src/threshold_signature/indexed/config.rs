@@ -7,6 +7,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use super::{CompressedPublicKey, ThresholdSignatureError};
 
+/// Maximum number of signers allowed in a threshold configuration.
+///
+/// This limit is derived from the signer index being a `u8` (0-255),
+/// which allows for at most 256 unique signers.
+pub const MAX_SIGNERS: usize = 256;
+
 /// Configuration for a threshold signature authority.
 ///
 /// Defines who can sign (`keys`) and how many must sign (`threshold`).
@@ -148,6 +154,19 @@ impl BorshSerialize for ThresholdConfig {
 impl BorshDeserialize for ThresholdConfig {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let keys = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
+
+        // Validate key count doesn't exceed maximum (prevents DoS via large allocations)
+        if keys.len() > MAX_SIGNERS {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "too many signers: {} exceeds maximum {}",
+                    keys.len(),
+                    MAX_SIGNERS
+                ),
+            ));
+        }
+
         let threshold_u8 = u8::deserialize_reader(reader)?;
         let threshold = NonZero::new(threshold_u8).ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, "threshold cannot be zero")

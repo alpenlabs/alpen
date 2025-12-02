@@ -386,7 +386,7 @@ mod tests {
         assert!(res.is_err());
         assert!(matches!(
             res,
-            Err(AdministrationError::ThresholdSigning(
+            Err(AdministrationError::ThresholdSignature(
                 ThresholdSignatureError::InvalidSignature { .. }
             ))
         ));
@@ -406,7 +406,7 @@ mod tests {
         );
         assert!(matches!(
             res,
-            Err(AdministrationError::ThresholdSigning(
+            Err(AdministrationError::ThresholdSignature(
                 ThresholdSignatureError::InvalidSignature { .. }
             ))
         ));
