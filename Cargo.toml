@@ -307,7 +307,6 @@ revm-primitives = { version = "21.0.2", features = [
 
 # reth itself:
 reth-basic-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
-reth-chain-state = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
