@@ -82,4 +82,8 @@ impl ExecBlockRecord {
     pub fn parent_blockhash(&self) -> Hash {
         self.metadata.parent_blockhash
     }
+
+    pub fn into_parts(self) -> (ExecBlockPackage, EeAccountState) {
+        (self.package, self.account_state)
+    }
 }
