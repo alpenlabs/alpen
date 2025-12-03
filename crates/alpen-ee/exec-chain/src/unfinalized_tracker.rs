@@ -60,16 +60,19 @@ impl UnfinalizedTracker {
     }
 
     pub(crate) fn attach_block(&mut self, block: BlockEntry) -> AttachBlockRes {
+        // 1. Is it an existing block ?
         let block_hash = block.blockhash;
         if self.blocks.contains_key(&block_hash) {
             return AttachBlockRes::ExistingBlock;
         }
 
+        // 2. Is it below finalized ?
         let block_height = block.blocknum;
         if block_height < self.finalized.height {
             return AttachBlockRes::BelowFinalized(block);
         }
 
+        // 3. Does it extend an existing tip ?
         let parent_blockhash = block.parent;
         if self.tips.contains_key(&parent_blockhash) {
             self.blocks.insert(block_hash, block);
@@ -80,7 +83,16 @@ impl UnfinalizedTracker {
             return AttachBlockRes::Ok(self.best.hash);
         };
 
-        // does not extend tip
+        // 4. does it create a new tip ?
+        if self.blocks.contains_key(&parent_blockhash) {
+            self.blocks.insert(block_hash, block);
+            self.tips.insert(block_hash, block_height);
+
+            (self.best.hash, self.best.height) = self.compute_best_tip();
+            return AttachBlockRes::Ok(self.best.hash);
+        }
+
+        // does not extend any known block
         AttachBlockRes::OrphanBlock(block)
     }
 

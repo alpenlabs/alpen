@@ -1,5 +1,5 @@
 #![expect(unused_crate_dependencies, reason = "wip")]
-//! Maintain in memory view of exec chain.
+//! Maintain in memory view of canonical exec chain.
 
 mod handle;
 mod orphan_tracker;
