@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{EeAccountStateAtBlock, OLBlockOrSlot, Storage, StorageError};
+use alpen_ee_common::{
+    EeAccountStateAtBlock, ExecBlockRecord, ExecBlockStorage, OLBlockOrSlot, Storage, StorageError,
+};
 use async_trait::async_trait;
+use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_storage_common::cache::CacheTable;
@@ -98,5 +101,58 @@ impl Storage for EeNodeStorage {
         self.account_state_cache.async_clear().await;
 
         Ok(())
+    }
+}
+
+#[expect(unused_variables, reason = "wip")]
+#[async_trait]
+impl ExecBlockStorage for EeNodeStorage {
+    /// Save block data and payload for a given block hash
+    async fn save_exec_block(
+        &self,
+        block: ExecBlockRecord,
+        payload: Vec<u8>,
+    ) -> Result<(), StorageError> {
+        unimplemented!()
+    }
+
+    /// Extend local view of canonical chain with specified block hash
+    async fn extend_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
+        unimplemented!()
+    }
+
+    /// Revert local view of canonical chain to specified height
+    async fn revert_finalized_chain(&self, to_height: u64) -> Result<(), StorageError> {
+        unimplemented!()
+    }
+
+    /// Remove all block data below specified height
+    async fn prune_block_data(&self, to_height: u64) -> Result<(), StorageError> {
+        unimplemented!()
+    }
+
+    /// Get exec block for the highest blocknum available in the local view of canonical chain.
+    async fn best_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError> {
+        unimplemented!()
+    }
+
+    /// Get height of block if it exists in local view of canonical chain.
+    async fn get_finalized_height(&self, hash: Hash) -> Result<Option<u64>, StorageError> {
+        unimplemented!()
+    }
+
+    /// Get all blocks in db with height > finalized height
+    async fn get_unfinalized_blocks(&self) -> Result<Vec<Hash>, StorageError> {
+        unimplemented!()
+    }
+
+    /// Get block data for a specified block, if it exits.
+    async fn get_exec_block(&self, hash: Hash) -> Result<Option<ExecBlockRecord>, StorageError> {
+        unimplemented!()
+    }
+
+    /// Get block payload for a specified block, if it exists.
+    async fn get_block_payload(&self, hash: Hash) -> Result<Option<Vec<u8>>, StorageError> {
+        unimplemented!()
     }
 }

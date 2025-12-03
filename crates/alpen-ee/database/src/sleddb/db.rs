@@ -8,15 +8,27 @@ use tracing::{error, warn};
 use typed_sled::{error::Error as TSledError, transaction::SledTransactional, SledDb, SledTree};
 
 use super::{AccountStateAtOlBlockSchema, OlBlockAtSlotSchema};
-use crate::{database::EeNodeDb, serialization_types::DBAccountStateAtSlot, DbError, DbResult};
+use crate::{
+    database::EeNodeDb,
+    serialization_types::DBAccountStateAtSlot,
+    sleddb::{
+        ExecBlockCanonicalSchema, ExecBlockPayloadSchema, ExecBlockSchema, ExecBlocksAtHeightSchema,
+    },
+    DbError, DbResult,
+};
 
 fn abort<T>(reason: impl std::error::Error + Send + Sync + 'static) -> Result<T, TSledError> {
     Err(TSledError::abort(reason))
 }
 
+#[expect(dead_code, reason = "wip")]
 pub(crate) struct EeNodeDBSled {
     ol_blockid_tree: SledTree<OlBlockAtSlotSchema>,
     account_state_tree: SledTree<AccountStateAtOlBlockSchema>,
+    exec_block_tree: SledTree<ExecBlockSchema>,
+    exec_blocks_by_height_tree: SledTree<ExecBlocksAtHeightSchema>,
+    exec_block_canonical_tree: SledTree<ExecBlockCanonicalSchema>,
+    exec_block_payload_tree: SledTree<ExecBlockPayloadSchema>,
     config: SledDbConfig,
 }
 
@@ -25,11 +37,16 @@ impl EeNodeDBSled {
         Ok(Self {
             ol_blockid_tree: db.get_tree()?,
             account_state_tree: db.get_tree()?,
+            exec_block_tree: db.get_tree()?,
+            exec_blocks_by_height_tree: db.get_tree()?,
+            exec_block_canonical_tree: db.get_tree()?,
+            exec_block_payload_tree: db.get_tree()?,
             config,
         })
     }
 }
 
+#[expect(unused, reason = "wip")]
 impl EeNodeDb for EeNodeDBSled {
     fn store_ee_account_state(
         &self,
@@ -159,6 +176,49 @@ impl EeNodeDb for EeNodeDBSled {
             ol_block,
             account_state.into(),
         )))
+    }
+
+    fn save_exec_block(
+        &self,
+        block: alpen_ee_common::ExecBlockRecord,
+        payload: Vec<u8>,
+    ) -> DbResult<()> {
+        todo!()
+    }
+
+    fn extend_finalized_chain(&self, hash: strata_acct_types::Hash) -> DbResult<()> {
+        todo!()
+    }
+
+    fn revert_finalized_chain(&self, to_height: u64) -> DbResult<()> {
+        todo!()
+    }
+
+    fn prune_block_data(&self, to_height: u64) -> DbResult<()> {
+        todo!()
+    }
+
+    fn best_finalized_block(&self) -> DbResult<Option<alpen_ee_common::ExecBlockRecord>> {
+        todo!()
+    }
+
+    fn get_finalized_height(&self, hash: strata_acct_types::Hash) -> DbResult<Option<u64>> {
+        todo!()
+    }
+
+    fn get_unfinalized_blocks(&self) -> DbResult<Vec<strata_acct_types::Hash>> {
+        todo!()
+    }
+
+    fn get_exec_block(
+        &self,
+        hash: strata_acct_types::Hash,
+    ) -> DbResult<Option<alpen_ee_common::ExecBlockRecord>> {
+        todo!()
+    }
+
+    fn get_block_payload(&self, hash: strata_acct_types::Hash) -> DbResult<Option<Vec<u8>>> {
+        todo!()
     }
 }
 
