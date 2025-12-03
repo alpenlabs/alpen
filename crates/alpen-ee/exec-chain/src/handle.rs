@@ -9,6 +9,9 @@ use crate::{
     task::{exec_chain_tracker_task, Message, Query},
 };
 
+/// Handle for interacting with the execution chain tracker task.
+///
+/// Provides methods to query chain state and submit new blocks or consensus updates.
 #[derive(Debug, Clone)]
 pub struct ExecChainHandle {
     msg_tx: mpsc::Sender<Message>,
@@ -43,6 +46,7 @@ impl ExecChainHandle {
     }
 }
 
+/// Creates the execution chain tracker task and handle for interacting with it.
 pub fn build_task<TStorage: ExecBlockStorage>(
     state: ExecChainState,
     preconf_head_tx: mpsc::Sender<Hash>,

@@ -4,12 +4,14 @@ use alpen_ee_common::ExecBlockRecord;
 use eyre::eyre;
 use strata_acct_types::Hash;
 
+/// A block identifier combining hash and height.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BlockNumHash {
     pub hash: Hash,
     pub height: u64,
 }
 
+/// Block metadata needed for chain tracking.
 #[derive(Debug, Clone)]
 pub(crate) struct BlockEntry {
     pub blocknum: u64,
@@ -27,11 +29,19 @@ impl From<&ExecBlockRecord> for BlockEntry {
     }
 }
 
+/// Tracks unfinalized blocks and maintains chain tips between the finalized block and the best tip.
+///
+/// Manages a tree of blocks starting from the last finalized block, tracking all competing
+/// chain tips and identifying the best (highest) tip.
 #[derive(Debug)]
 pub(crate) struct UnfinalizedTracker {
+    /// The last finalized block
     finalized: BlockNumHash,
+    /// The current best (highest) chain tip
     best: BlockNumHash,
+    /// Active chain tips mapping hash to height
     tips: HashMap<Hash, u64>,
+    /// All tracked blocks mapping hash to block entry
     blocks: HashMap<Hash, BlockEntry>,
 }
 
@@ -48,6 +58,7 @@ pub(crate) enum AttachBlockRes {
 }
 
 impl UnfinalizedTracker {
+    /// Creates a new tracker with the given finalized block as the initial state.
     pub(crate) fn new_empty(finalized_block: BlockEntry) -> Self {
         let hash = finalized_block.blockhash;
         let height = finalized_block.blocknum;
@@ -59,6 +70,9 @@ impl UnfinalizedTracker {
         }
     }
 
+    /// Attempts to attach a block to the tracker.
+    ///
+    /// Returns the result of the attachment attempt, updating tips and best block if successful.
     pub(crate) fn attach_block(&mut self, block: BlockEntry) -> AttachBlockRes {
         // 1. Is it an existing block ?
         let block_hash = block.blockhash;
@@ -96,6 +110,7 @@ impl UnfinalizedTracker {
         AttachBlockRes::OrphanBlock(block)
     }
 
+    /// Finds the tip with the highest block height.
     fn compute_best_tip(&self) -> (Hash, u64) {
         let height = self.tips.get(&self.best.hash).expect("entry must exist");
         let (hash, height) = self.tips.iter().fold(
@@ -111,18 +126,24 @@ impl UnfinalizedTracker {
         (*hash, *height)
     }
 
+    /// Checks if a block with the given hash is tracked.
     pub(crate) fn contains_block(&self, hash: &Hash) -> bool {
         self.blocks.contains_key(hash)
     }
 
+    /// Returns the current finalized block.
     pub(crate) fn finalized(&self) -> BlockNumHash {
         self.finalized
     }
 
+    /// Returns the current best (highest) chain tip.
     pub(crate) fn best(&self) -> BlockNumHash {
         self.best
     }
 
+    /// Advances the finalized block and prunes the tracker, removing blocks not on the finalized chain.
+    ///
+    /// Returns a report of newly finalized blocks and blocks that were pruned.
     pub(crate) fn prune_finalized(&mut self, new_finalized: Hash) -> eyre::Result<FinalizeReport> {
         if new_finalized == self.finalized.hash {
             // noop
@@ -175,19 +196,22 @@ impl UnfinalizedTracker {
     }
 }
 
+/// Report of blocks affected by finalization, used by caller to update their state.
 #[derive(Debug)]
 pub(crate) struct FinalizeReport {
-    /// blocks that are now in finalized chain
+    /// Blocks that became newly finalized (removed from tracker, now in canonical chain)
     pub(crate) finalize: Vec<Hash>,
-    /// blocks that need not be tracked any longer
+    /// Blocks that no longer extend the finalized block and should be removed
     pub(crate) remove: Vec<Hash>,
 }
 
 impl FinalizeReport {
+    /// Creates a new report with the given newly finalized and removed blocks.
     fn new(finalize: Vec<Hash>, remove: Vec<Hash>) -> Self {
         Self { finalize, remove }
     }
 
+    /// Creates an empty report indicating no changes.
     fn new_empty() -> Self {
         Self {
             finalize: Vec::new(),

@@ -13,13 +13,17 @@ use crate::{
     unfinalized_tracker::{AttachBlockRes, UnfinalizedTracker},
 };
 
+/// Manages the execution chain state, tracking both unfinalized blocks and orphans.
+///
+/// Coordinates between the unfinalized tracker (for blocks extending the chain)
+/// and the orphan tracker (for blocks whose parent is not yet known).
 #[derive(Debug)]
 pub struct ExecChainState {
-    /// unfinalized chains
+    /// Unfinalized block chains extending from the last finalized block
     unfinalized: UnfinalizedTracker,
-    /// orphan blocks
+    /// Orphan blocks waiting for their parent to arrive
     orphans: OrphanTracker,
-    /// cache block data
+    /// Cached block data for quick access
     blocks: HashMap<Hash, ExecBlockRecord>,
 }
 
@@ -33,14 +37,20 @@ impl ExecChainState {
         }
     }
 
+    /// Returns the hash of the current best chain tip.
     pub(crate) fn tip_blockhash(&self) -> Hash {
         self.unfinalized.best().hash
     }
 
+    /// Returns the hash of the current finalized block.
     pub(crate) fn finalized_blockhash(&self) -> Hash {
         self.unfinalized.finalized().hash
     }
 
+    /// Appends a new block to the chain state.
+    ///
+    /// Attempts to attach the block to the unfinalized chain. If successful, checks if any
+    /// orphan blocks can now be attached. Returns the new tip hash.
     pub(crate) fn append_block(&mut self, block: ExecBlockRecord) -> eyre::Result<Hash> {
         match self.unfinalized.attach_block((&block).into()) {
             AttachBlockRes::Ok(new_tip) => Ok(self.check_orphan_blocks(new_tip)),
@@ -56,6 +66,10 @@ impl ExecChainState {
         }
     }
 
+    /// Attempts to attach orphan blocks after a new block is added.
+    ///
+    /// Recursively checks if any orphans can now be attached to the chain,
+    /// updating the tip as orphans are connected.
     fn check_orphan_blocks(&mut self, mut tip: Hash) -> Hash {
         let mut attachable_blocks: VecDeque<_> = self.orphans.take_children(&tip).into();
         while let Some(block) = attachable_blocks.pop_front() {
@@ -76,20 +90,27 @@ impl ExecChainState {
         tip
     }
 
+    /// Returns the current best block record.
     pub(crate) fn get_best_block(&self) -> &ExecBlockRecord {
         self.blocks
             .get(&self.unfinalized.best().hash)
             .expect("should exist")
     }
 
+    /// Checks if a block exists in the unfinalized tracker.
     pub(crate) fn contains_unfinalized_block(&self, hash: &Hash) -> bool {
         self.unfinalized.contains_block(hash)
     }
 
+    /// Checks if a block exists in the orphan tracker.
     pub(crate) fn contains_orphan_block(&self, hash: &Hash) -> bool {
         self.orphans.has_block(hash)
     }
 
+    /// Advances finalization to the given block and prunes stale blocks.
+    ///
+    /// Removes finalized blocks and blocks that no longer extend the finalized chain,
+    /// as well as old orphans at or below the finalized height.
     pub(crate) fn prune_finalized(&mut self, finalized: Hash) {
         let report = self
             .unfinalized
@@ -113,7 +134,7 @@ impl ExecChainState {
     }
 }
 
-/// Init state using last finalized block and all unfinalized blocks from storage.
+/// Initializes chain state from storage using the last finalized block and all unfinalized blocks.
 pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
     storage: Arc<TStorage>,
 ) -> eyre::Result<ExecChainState> {

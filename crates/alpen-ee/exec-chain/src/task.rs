@@ -8,21 +8,26 @@ use tracing::error;
 
 use crate::state::ExecChainState;
 
+/// Queries for reading chain tracker state.
 pub(crate) enum Query {
     GetBestBlock(oneshot::Sender<ExecBlockRecord>),
 }
 
+/// Messages that can be sent to the execution chain tracker task.
 pub(crate) enum Message {
-    /// query chain tracker state
+    /// Query chain tracker state
     Query(Query),
     /// New exec block is available.
     /// The block data should be available through [`ExecBlockStorage`] when this event is
     /// processed.
     NewBlock(Hash),
-    /// OL chain has updated.
+    /// OL chain has updated
     OLConsensusUpdate(ConsensusHeads),
 }
 
+/// Main task loop for the execution chain tracker.
+///
+/// Processes incoming messages to update chain state, handle new blocks, and respond to queries.
 pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
     mut evt_rx: mpsc::Receiver<Message>,
     mut state: ExecChainState,
@@ -48,6 +53,7 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
     }
 }
 
+/// Handles state queries from external callers.
 async fn handle_query(state: &mut ExecChainState, query: Query) {
     match query {
         Query::GetBestBlock(tx) => {
@@ -56,6 +62,9 @@ async fn handle_query(state: &mut ExecChainState, query: Query) {
     }
 }
 
+/// Handles a new block notification by fetching it from storage and appending to chain state.
+///
+/// Sends a preconf head update if the best tip changes.
 async fn handle_new_block<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     hash: Hash,
@@ -80,6 +89,9 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     Ok(())
 }
 
+/// Handles an OL consensus update.
+///
+/// Updates finalized state if a tracked unfinalized block becomes finalized.
 async fn handle_ol_update<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     status: ConsensusHeads,
