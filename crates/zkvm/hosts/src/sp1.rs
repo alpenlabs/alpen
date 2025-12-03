@@ -30,7 +30,6 @@ define_host!(
     GUEST_EVM_EE_STF_ELF,
     "guest-evm-ee-stf.elf"
 );
-define_host!(EVM_EE_HOST, GUEST_EVM_EE_ELF, "guest-evm-ee.elf");
 define_host!(CL_STF_HOST, GUEST_CL_STF_ELF, "guest-cl-stf.elf");
 define_host!(
     CHECKPOINT_HOST,

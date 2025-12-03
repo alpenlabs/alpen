@@ -8,7 +8,7 @@ use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
 use crate::{
     primitives::{EvmEeProofInput, EvmEeProofOutput},
-    process_block_transaction_outer,
+    process_evm_blocks,
 };
 
 #[derive(Debug)]
@@ -53,7 +53,7 @@ impl EvmEeProgram {
         NativeHost {
             process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
                 catch_unwind(AssertUnwindSafe(|| {
-                    process_block_transaction_outer(zkvm);
+                    process_evm_blocks(zkvm);
                 }))
                 .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
                 Ok(())

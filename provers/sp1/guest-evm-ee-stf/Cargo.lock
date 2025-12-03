@@ -4207,6 +4207,14 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "sizzle-parser"
+version = "0.8.3"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "sizzle-parser"
 version = "0.9.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
@@ -4338,6 +4346,25 @@ dependencies = [
 
 [[package]]
 name = "ssz_codegen"
+version = "0.8.3"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "sizzle-parser 0.8.3",
+ "ssz 0.8.3",
+ "ssz_derive 0.8.3",
+ "ssz_types 0.8.3",
+ "syn 2.0.111",
+ "toml",
+ "tree_hash 0.8.3",
+ "tree_hash_derive 0.8.3",
+]
+
+[[package]]
+name = "ssz_codegen"
 version = "0.9.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
@@ -4345,14 +4372,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "sizzle-parser",
+ "sizzle-parser 0.9.0",
  "ssz 0.9.0",
  "ssz_derive 0.9.0",
- "ssz_types",
+ "ssz_types 0.9.0",
  "syn 2.0.111",
  "toml",
  "tree_hash 0.9.0",
- "tree_hash_derive",
+ "tree_hash_derive 0.9.0",
 ]
 
 [[package]]
@@ -4397,6 +4424,16 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
+version = "0.8.3"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+dependencies = [
+ "ssz 0.8.3",
+ "ssz_primitives 0.8.3",
+ "tree_hash 0.8.3",
+]
+
+[[package]]
+name = "ssz_types"
 version = "0.9.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
@@ -4416,6 +4453,25 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "strata-acct-types"
+version = "0.1.0"
+dependencies = [
+ "digest 0.10.7",
+ "sha2",
+ "ssz 0.8.3",
+ "ssz_codegen 0.8.3",
+ "ssz_derive 0.8.3",
+ "ssz_types 0.8.3",
+ "strata-btc-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-merkle",
+ "thiserror 2.0.17",
+ "tree_hash 0.8.3",
+ "tree_hash_derive 0.8.3",
+]
 
 [[package]]
 name = "strata-asm-common"
@@ -4577,6 +4633,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ee-acct-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-chain-types",
+ "strata-msg-fmt",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "strata-ee-chain-types"
+version = "0.1.0"
+dependencies = [
+ "ssz 0.8.3",
+ "ssz_codegen 0.8.3",
+ "ssz_derive 0.8.3",
+ "ssz_types 0.8.3",
+ "strata-acct-types",
+ "tree_hash 0.8.3",
+ "tree_hash_derive 0.8.3",
+]
+
+[[package]]
+name = "strata-evm-ee"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-rlp",
+ "alpen-reth-evm",
+ "alpen-reth-primitives",
+ "itertools 0.14.0",
+ "reth-chainspec",
+ "reth-consensus-common",
+ "reth-errors",
+ "reth-evm",
+ "reth-evm-ethereum",
+ "reth-primitives",
+ "reth-primitives-traits",
+ "reth-trie",
+ "revm",
+ "revm-primitives",
+ "rlp",
+ "rsp-client-executor",
+ "rsp-mpt",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-ol-msg-types",
+]
+
+[[package]]
 name = "strata-identifiers"
 version = "0.1.0"
 dependencies = [
@@ -4614,8 +4723,14 @@ dependencies = [
  "digest 0.10.7",
  "serde",
  "sha2",
+ "ssz 0.9.0",
+ "ssz_codegen 0.9.0",
+ "ssz_derive 0.9.0",
+ "ssz_types 0.9.0",
  "strata-codec",
  "thiserror 2.0.17",
+ "tree_hash 0.9.0",
+ "tree_hash_derive 0.9.0",
 ]
 
 [[package]]
@@ -4640,6 +4755,16 @@ dependencies = [
  "strata-state",
  "thiserror 2.0.17",
  "tracing",
+]
+
+[[package]]
+name = "strata-ol-msg-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-msg-fmt",
 ]
 
 [[package]]
@@ -4669,12 +4794,12 @@ dependencies = [
  "serde",
  "signature",
  "ssz 0.9.0",
- "ssz_codegen",
+ "ssz_codegen 0.9.0",
  "ssz_derive 0.9.0",
- "ssz_types",
+ "ssz_types 0.9.0",
  "thiserror 2.0.17",
  "tree_hash 0.9.0",
- "tree_hash_derive",
+ "tree_hash_derive 0.9.0",
  "zkaleido-sp1-groth16-verifier",
 ]
 
@@ -4702,22 +4827,17 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
- "alpen-reth-evm",
  "alpen-reth-primitives",
  "reth-chainspec",
- "reth-evm",
- "reth-evm-ethereum",
- "reth-primitives",
  "reth-primitives-traits",
- "reth-trie",
- "revm",
  "revm-primitives",
  "rsp-client-executor",
+ "rsp-primitives",
  "serde",
- "strata-bridge-types",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-evm-ee",
  "strata-ol-chain-types",
- "strata-primitives",
- "strata-state",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
@@ -5085,6 +5205,16 @@ dependencies = [
  "smallvec",
  "ssz 0.9.0",
  "ssz_primitives 0.9.0",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.8.3"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]

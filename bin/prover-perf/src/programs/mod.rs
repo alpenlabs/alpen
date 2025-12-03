@@ -12,7 +12,6 @@ use crate::PerformanceReport;
 #[non_exhaustive]
 pub enum GuestProgram {
     EvmEeStf,
-    EvmEe,
     ClStf,
     Checkpoint,
 }
@@ -23,7 +22,6 @@ impl FromStr for GuestProgram {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "evm-ee-stf" => Ok(GuestProgram::EvmEeStf),
-            "evm-ee" => Ok(GuestProgram::EvmEe),
             "cl-stf" => Ok(GuestProgram::ClStf),
             "checkpoint" => Ok(GuestProgram::Checkpoint),
             // Add more matches
@@ -37,16 +35,11 @@ impl FromStr for GuestProgram {
 /// Generates [`PerformanceReport`] for each invocation.
 #[cfg(feature = "sp1")]
 pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
-    use strata_zkvm_hosts::sp1::{CHECKPOINT_HOST, CL_STF_HOST, EVM_EE_HOST, EVM_EE_STF_HOST};
+    use strata_zkvm_hosts::sp1::{CHECKPOINT_HOST, CL_STF_HOST, EVM_EE_STF_HOST};
     programs
         .iter()
         .map(|program| match program {
-            GuestProgram::EvmEeStf => evm_ee::gen_perf_report(&**EVM_EE_STF_HOST),
-            GuestProgram::EvmEe => {
-                let mut report = evm_ee::gen_perf_report(&**EVM_EE_HOST);
-                report.name = format!("{} (new)", report.name);
-                report
-            }
+            GuestProgram::EvmEeStf => evm_ee::gen_perf_report(&*EVM_EE_STF_HOST),
             GuestProgram::ClStf => {
                 cl_stf::gen_perf_report(&**CL_STF_HOST, evm_ee::proof_with_vk(&**EVM_EE_STF_HOST))
             }
