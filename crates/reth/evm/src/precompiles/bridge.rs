@@ -49,11 +49,12 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     });
 
     // Burn value sent to bridge by adjusting the account balance of bridge precompile
-    let mut account = input
+    input
         .internals
-        .load_account(BRIDGEOUT_PRECOMPILE_ADDRESS) // Error case should never occur
-        .map_err(|_| PrecompileError::Fatal("Failed to load BRIDGEOUT_ADDRESS account".into()))?;
-    account.info.balance = U256::ZERO;
+        .set_balance(BRIDGEOUT_PRECOMPILE_ADDRESS, U256::ZERO)
+        .map_err(|_| {
+            PrecompileError::Fatal("Failed to reset BRIDGEOUT_ADDRESS account balance".into())
+        })?;
 
     // TODO: Properly calculate and deduct gas for the bridge out operation
     let gas_cost = 0;
