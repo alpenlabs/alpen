@@ -1,8 +1,19 @@
 use std::collections::HashMap;
 
 use alpen_ee_common::ExecBlockRecord;
-use eyre::eyre;
 use strata_acct_types::Hash;
+use thiserror::Error;
+
+/// Errors that can occur in the unfinalized tracker.
+#[derive(Debug, Error)]
+pub enum UnfinalizedTrackerError {
+    /// Block not found in tracker
+    #[error("unknown block: {0:?}")]
+    UnknownBlock(Hash),
+    /// Invalid tracker state
+    #[error("invalid tracker state")]
+    InvalidState,
+}
 
 /// A block identifier combining hash and height.
 #[derive(Debug, Clone, Copy)]
@@ -144,7 +155,10 @@ impl UnfinalizedTracker {
     /// chain.
     ///
     /// Returns a report of newly finalized blocks and blocks that were pruned.
-    pub(crate) fn prune_finalized(&mut self, new_finalized: Hash) -> eyre::Result<FinalizeReport> {
+    pub(crate) fn prune_finalized(
+        &mut self,
+        new_finalized: Hash,
+    ) -> Result<FinalizeReport, UnfinalizedTrackerError> {
         if new_finalized == self.finalized.hash {
             // noop
             return Ok(FinalizeReport::new_empty());
@@ -152,7 +166,7 @@ impl UnfinalizedTracker {
 
         let Some(new_finalized_block) = self.blocks.remove(&new_finalized) else {
             // unknown block
-            return Err(eyre!("unknown block: {:?}", new_finalized));
+            return Err(UnfinalizedTrackerError::UnknownBlock(new_finalized));
         };
 
         // get all blocks that are newly finalized
@@ -166,7 +180,7 @@ impl UnfinalizedTracker {
 
         // sanity check
         if block.blockhash != self.finalized.hash {
-            return Err(eyre!("invalid tracker state"));
+            return Err(UnfinalizedTrackerError::InvalidState);
         }
 
         // easier to just recreate the tracker using existing blocks
@@ -483,7 +497,10 @@ mod tests {
         // Try to finalize an unknown block
         let result = tracker.prune_finalized(hash_from_u8(99));
 
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(UnfinalizedTrackerError::UnknownBlock(_))
+        ));
     }
 
     #[test]

@@ -3,15 +3,32 @@ use std::{
     sync::Arc,
 };
 
-use alpen_ee_common::{ExecBlockRecord, ExecBlockStorage};
-use eyre::eyre;
+use alpen_ee_common::{ExecBlockRecord, ExecBlockStorage, StorageError};
 use strata_acct_types::Hash;
+use thiserror::Error;
 use tracing::warn;
 
 use crate::{
     orphan_tracker::OrphanTracker,
-    unfinalized_tracker::{AttachBlockRes, UnfinalizedTracker},
+    unfinalized_tracker::{AttachBlockRes, UnfinalizedTracker, UnfinalizedTrackerError},
 };
+
+/// Errors that can occur in the execution chain state.
+#[derive(Debug, Error)]
+pub enum ExecChainStateError {
+    /// Block is below finalized height
+    #[error("block height below finalized")]
+    BelowFinalized,
+    /// Block not found
+    #[error("missing expected block: {0:?}")]
+    MissingBlock(Hash),
+    /// Storage error
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+    /// Unfinalized tracker error
+    #[error(transparent)]
+    UnfinalizedTracker(#[from] UnfinalizedTrackerError),
+}
 
 /// Manages the execution chain state, tracking both unfinalized blocks and orphans.
 ///
@@ -51,14 +68,17 @@ impl ExecChainState {
     ///
     /// Attempts to attach the block to the unfinalized chain. If successful, checks if any
     /// orphan blocks can now be attached. Returns the new tip hash.
-    pub(crate) fn append_block(&mut self, block: ExecBlockRecord) -> eyre::Result<Hash> {
+    pub(crate) fn append_block(
+        &mut self,
+        block: ExecBlockRecord,
+    ) -> Result<Hash, ExecChainStateError> {
         let blockhash = block.blockhash();
         match self.unfinalized.attach_block((&block).into()) {
             AttachBlockRes::Ok(_new_tip) => {
                 self.blocks.insert(blockhash, block);
                 Ok(self.check_orphan_blocks(blockhash))
             }
-            AttachBlockRes::BelowFinalized(_) => Err(eyre!("block height below finalized")),
+            AttachBlockRes::BelowFinalized(_) => Err(ExecChainStateError::BelowFinalized),
             AttachBlockRes::ExistingBlock => {
                 warn!("block already present in tracker");
                 Ok(self.tip_blockhash())
@@ -117,11 +137,8 @@ impl ExecChainState {
     ///
     /// Removes finalized blocks and blocks that no longer extend the finalized chain,
     /// as well as old orphans at or below the finalized height.
-    pub(crate) fn prune_finalized(&mut self, finalized: Hash) {
-        let report = self
-            .unfinalized
-            .prune_finalized(finalized)
-            .expect("checked");
+    pub(crate) fn prune_finalized(&mut self, finalized: Hash) -> Result<(), ExecChainStateError> {
+        let report = self.unfinalized.prune_finalized(finalized)?;
         let finalized_height = self
             .blocks
             .get(&finalized)
@@ -137,13 +154,14 @@ impl ExecChainState {
         for hash in removed_orphans {
             self.blocks.remove(&hash);
         }
+        Ok(())
     }
 }
 
 /// Initializes chain state from storage using the last finalized block and all unfinalized blocks.
 pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
     storage: Arc<TStorage>,
-) -> eyre::Result<ExecChainState> {
+) -> Result<ExecChainState, ExecChainStateError> {
     let last_finalized_block = storage
         .best_finalized_block()
         .await?
@@ -155,7 +173,7 @@ pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
         let block = storage
             .get_exec_block(blockhash)
             .await?
-            .ok_or(eyre!("missing expected block: {:?}", blockhash))?;
+            .ok_or(ExecChainStateError::MissingBlock(blockhash))?;
 
         state.append_block(block)?;
     }
@@ -420,7 +438,7 @@ mod tests {
         state.append_block(block_d).unwrap();
 
         // Finalize block C
-        state.prune_finalized(hash_from_u8(2));
+        state.prune_finalized(hash_from_u8(2)).unwrap();
 
         // A, B should be removed, C kept as finalized, D remains unfinalized
         assert_eq!(state.finalized_blockhash(), hash_from_u8(2));
@@ -457,7 +475,7 @@ mod tests {
         assert!(state.contains_unfinalized_block(&hash_from_u8(4)));
 
         // Finalize block B
-        state.prune_finalized(hash_from_u8(1));
+        state.prune_finalized(hash_from_u8(1)).unwrap();
 
         // B is now finalized, C remains, D and E should be removed
         assert_eq!(state.finalized_blockhash(), hash_from_u8(1));
@@ -496,7 +514,7 @@ mod tests {
         assert!(state.contains_orphan_block(&hash_from_u8(12)));
 
         // Finalize block C (height 2)
-        state.prune_finalized(hash_from_u8(2));
+        state.prune_finalized(hash_from_u8(2)).unwrap();
 
         // Orphans at or below height 2 should be removed
         assert!(!state.contains_orphan_block(&hash_from_u8(10)));
@@ -528,7 +546,7 @@ mod tests {
         assert_eq!(state.tip_blockhash(), hash_from_u8(2));
 
         // Finalize D
-        state.prune_finalized(hash_from_u8(3));
+        state.prune_finalized(hash_from_u8(3)).unwrap();
 
         // Tip should now be D (the finalized block, since there are no unfinalized blocks)
         assert_eq!(state.finalized_blockhash(), hash_from_u8(3));

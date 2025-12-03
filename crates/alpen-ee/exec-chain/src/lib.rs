@@ -8,4 +8,4 @@ mod task;
 mod unfinalized_tracker;
 
 pub use handle::{build_task, ExecChainHandle};
-pub use state::{init_exec_chain_state_from_storage, ExecChainState};
+pub use state::{init_exec_chain_state_from_storage, ExecChainState, ExecChainStateError};
