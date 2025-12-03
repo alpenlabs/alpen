@@ -6,9 +6,9 @@ version = "0.1.0"
 [workspace]
 
 [dependencies]
-reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
-reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", tag = "v1.8.2" }
-rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.8.2" }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
+reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
+rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.9.1b" }
 strata-ee-acct-types = { path = "../../../crates/ee-acct-types" }
 strata-ee-chain-types = { path = "../../../crates/ee-chain-types" }
 strata-evm-ee = { path = "../../../crates/evm-ee" }
