@@ -45,7 +45,10 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
                 }
             }
             Message::OLConsensusUpdate(status) => {
-                if let Err(err) = handle_ol_update(&mut state, status, storage.as_ref()).await {
+                if let Err(err) =
+                    handle_ol_update(&mut state, status, storage.as_ref(), &mut preconf_head_tx)
+                        .await
+                {
                     error!("failed to handle OLConsensUpdate; err = {err}");
                 }
             }
@@ -71,12 +74,13 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     storage: &TStorage,
     preconf_tx: &mut mpsc::Sender<Hash>,
 ) -> eyre::Result<()> {
-    // get block from storage
+    // Get block from storage
     let record = storage
         .get_exec_block(hash)
         .await?
         .ok_or(eyre!("missing block: {:?}", hash))?;
 
+    // Append to tracker state and emit best hash if changed
     let prev_best = state.tip_blockhash();
     let new_best = state.append_block(record)?;
     if new_best != prev_best {
@@ -94,6 +98,7 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     status: ConsensusHeads,
     storage: &TStorage,
+    preconf_tx: &mut mpsc::Sender<Hash>,
 ) -> eyre::Result<()> {
     // we only care about reorgs on the finalized state
     let finalized = *status.finalized();
@@ -106,10 +111,17 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
     if state.contains_unfinalized_block(&finalized) {
         // one of the unfinalized blocks got finalized.
         // update database
+        let prev_best = state.tip_blockhash();
         storage.extend_finalized_chain(finalized).await?;
 
         // update in-memory state
         state.prune_finalized(finalized);
+        let new_best = state.tip_blockhash();
+
+        if prev_best != new_best {
+            // finalization has triggered a reorg of the tip
+            preconf_tx.send(new_best).await?;
+        }
 
         return Ok(());
     }
