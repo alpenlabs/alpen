@@ -1,12 +1,27 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{ConsensusHeads, ExecBlockRecord, ExecBlockStorage};
+use alpen_ee_common::{ConsensusHeads, ExecBlockRecord, ExecBlockStorage, StorageError};
 use eyre::eyre;
 use strata_acct_types::Hash;
+use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
 use crate::state::ExecChainState;
+
+/// Errors that can occur during execution chain tracker operations.
+#[derive(Debug, Error)]
+pub(crate) enum ChainTrackerError {
+    /// Preconf head channel is closed
+    #[error("preconf head channel closed")]
+    PreconfChannelClosed,
+    /// Storage error
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+    /// Other error
+    #[error(transparent)]
+    Other(#[from] eyre::Report),
+}
 
 /// Queries for reading chain tracker state.
 pub(crate) enum Query {
@@ -28,6 +43,7 @@ pub(crate) enum Message {
 /// Main task loop for the execution chain tracker.
 ///
 /// Processes incoming messages to update chain state, handle new blocks, and respond to queries.
+/// The task exits if the preconf head channel is closed, as this is considered a fatal error.
 pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
     mut evt_rx: mpsc::Receiver<Message>,
     mut state: ExecChainState,
@@ -38,18 +54,31 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
         match evt {
             Message::Query(query) => handle_query(&mut state, query).await,
             Message::NewBlock(hash) => {
-                if let Err(err) =
-                    handle_new_block(&mut state, hash, storage.as_ref(), &mut preconf_head_tx).await
+                match handle_new_block(&mut state, hash, storage.as_ref(), &mut preconf_head_tx)
+                    .await
                 {
-                    error!("failed to handle new block; err = {err}");
+                    Err(ChainTrackerError::PreconfChannelClosed) => {
+                        error!("preconf head channel closed, exiting task");
+                        return;
+                    }
+                    Err(err) => {
+                        error!("failed to handle new block; err = {err}");
+                    }
+                    Ok(()) => {}
                 }
             }
             Message::OLConsensusUpdate(status) => {
-                if let Err(err) =
-                    handle_ol_update(&mut state, status, storage.as_ref(), &mut preconf_head_tx)
-                        .await
+                match handle_ol_update(&mut state, status, storage.as_ref(), &mut preconf_head_tx)
+                    .await
                 {
-                    error!("failed to handle OLConsensUpdate; err = {err}");
+                    Err(ChainTrackerError::PreconfChannelClosed) => {
+                        error!("preconf head channel closed, exiting task");
+                        return;
+                    }
+                    Err(err) => {
+                        error!("failed to handle OLConsensUpdate; err = {err}");
+                    }
+                    Ok(()) => {}
                 }
             }
         }
@@ -73,7 +102,7 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     hash: Hash,
     storage: &TStorage,
     preconf_tx: &mut mpsc::Sender<Hash>,
-) -> eyre::Result<()> {
+) -> Result<(), ChainTrackerError> {
     // Get block from storage
     let record = storage
         .get_exec_block(hash)
@@ -84,8 +113,10 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     let prev_best = state.tip_blockhash();
     let new_best = state.append_block(record)?;
     if new_best != prev_best {
-        // TODO: this channel being closed should be considered fatal
-        preconf_tx.send(new_best).await?;
+        preconf_tx
+            .send(new_best)
+            .await
+            .map_err(|_| ChainTrackerError::PreconfChannelClosed)?;
     }
 
     Ok(())
@@ -99,7 +130,7 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
     status: ConsensusHeads,
     storage: &TStorage,
     preconf_tx: &mut mpsc::Sender<Hash>,
-) -> eyre::Result<()> {
+) -> Result<(), ChainTrackerError> {
     // we only care about reorgs on the finalized state
     let finalized = *status.finalized();
 
@@ -120,7 +151,10 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
 
         if prev_best != new_best {
             // finalization has triggered a reorg of the tip
-            preconf_tx.send(new_best).await?;
+            preconf_tx
+                .send(new_best)
+                .await
+                .map_err(|_| ChainTrackerError::PreconfChannelClosed)?;
         }
 
         return Ok(());
