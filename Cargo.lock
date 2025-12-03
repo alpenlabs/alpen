@@ -1059,6 +1059,7 @@ dependencies = [
  "async-trait",
  "clap",
  "eyre",
+ "lru 0.12.5",
  "reth-chainspec",
  "reth-cli-commands",
  "reth-cli-runner",
