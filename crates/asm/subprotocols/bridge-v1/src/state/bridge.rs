@@ -6,6 +6,7 @@ use strata_asm_txs_bridge_v1::{
     errors::Mismatch,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
+use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
@@ -361,6 +362,16 @@ impl BridgeV1State {
             deposit_idx: removed_assignment.deposit_idx(),
             operator_idx: removed_assignment.current_assignee(),
         })
+    }
+
+    /// Removes an operator from the active multisig by deactivating them.
+    ///
+    /// # Panics
+    ///
+    /// Panics if removing this operator would result in no active operators remaining.
+    pub fn remove_operator(&mut self, operator_idx: OperatorIdx) {
+        self.operators
+            .apply_membership_changes(&[], &[operator_idx]);
     }
 }
 
