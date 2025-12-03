@@ -1163,6 +1163,7 @@ dependencies = [
  "borsh",
  "eyre",
  "sled",
+ "ssz",
  "strata-acct-types",
  "strata-db-store-sled",
  "strata-ee-acct-types",
