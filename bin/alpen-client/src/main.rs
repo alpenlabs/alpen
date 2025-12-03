@@ -159,14 +159,12 @@ fn main() {
                         GossipConfig {
                             sequencer_pubkey: ext.sequencer_pubkey,
                             sequencer_privkey,
-                            max_seen_packages: ext.max_seen_packages,
                         }
                     };
 
                     #[cfg(not(feature = "sequencer"))]
                     let gossip_config = GossipConfig {
                         sequencer_pubkey: ext.sequencer_pubkey,
-                        max_seen_packages: ext.max_seen_packages,
                     };
 
                     let gossip_task = create_gossip_task(gossip_rx, state_events, preconf_tx, gossip_config);
@@ -229,10 +227,6 @@ pub struct AdditionalConfig {
     /// Sequencer's public key (hex-encoded, 32 bytes) for signature validation.
     #[arg(long, required = true, value_parser = parse_buf32)]
     pub sequencer_pubkey: Buf32,
-
-    /// Maximum number of seen gossip packages to track before clearing the deduplication set.
-    #[arg(long, default_value = "1_000")]
-    pub max_seen_packages: usize,
 }
 
 /// Run node with logging

@@ -1,12 +1,10 @@
 //! Gossip event handling task for managing peer connections and broadcasting blocks.
 
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::collections::HashMap;
 
-use alloy_primitives::B256;
 use alpen_reth_node::{
     AlpenGossipCommand, AlpenGossipEvent, AlpenGossipMessage, AlpenGossipPackage,
 };
-use lru::LruCache;
 use reth_network_api::PeerId;
 use reth_primitives::Header;
 use reth_provider::CanonStateNotification;
@@ -27,16 +25,13 @@ pub(crate) struct GossipConfig {
     /// Sequencer's private key for signing (only in sequencer mode).
     #[cfg(feature = "sequencer")]
     pub sequencer_privkey: Buf32,
-
-    /// Maximum number of seen packages to track in the LRU cache.
-    pub max_seen_packages: usize,
 }
 
 /// Handles a gossip event (connection established/closed or package received).
 fn handle_gossip_event(
     event: AlpenGossipEvent,
     connections: &mut HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
-    seen_packages: &mut LruCache<B256, ()>,
+    highest_seq_no: &mut u64,
     preconf_tx: &broadcast::Sender<Hash>,
     config: &GossipConfig,
 ) -> bool {
@@ -68,7 +63,7 @@ fn handle_gossip_event(
             peer_id,
             package,
             connections,
-            seen_packages,
+            highest_seq_no,
             preconf_tx,
             config,
         ),
@@ -80,7 +75,7 @@ fn handle_gossip_package(
     peer_id: PeerId,
     package: AlpenGossipPackage,
     connections: &HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
-    seen_packages: &mut LruCache<B256, ()>,
+    highest_seq_no: &mut u64,
     preconf_tx: &broadcast::Sender<Hash>,
     config: &GossipConfig,
 ) -> bool {
@@ -104,30 +99,33 @@ fn handle_gossip_package(
         return true; // Continue loop
     }
 
-    let block_hash = package.message().header().hash_slow();
+    let seq_no = package.message().seq_no();
 
-    // Check if already seen (dedup)
-    // Check existence and promote to most recently used
-    if seen_packages.get(&block_hash).is_some() {
+    // Check if already seen using sequence number (dedup).
+    // Since seq_no is the block number and blocks are produced monotonically by the sequencer,
+    // we only need to check if this seq_no is greater than the highest we've seen.
+    // This prevents duplicate messages and replay of stale blocks.
+    if seq_no <= *highest_seq_no {
         debug!(
             target: "alpen-gossip",
             %peer_id,
-            ?block_hash,
-            "Package already seen, skipping"
+            seq_no,
+            highest_seq_no = *highest_seq_no,
+            "Package already seen or stale, skipping"
         );
         return true; // Continue loop
     }
 
-    // Insert the block hash into the LRU cache
-    // The cache will automatically evict the least recently used entry
-    // if it exceeds max_seen_packages capacity
-    seen_packages.put(block_hash, ());
+    // Update the highest sequence number seen
+    *highest_seq_no = seq_no;
+
+    let block_hash = package.message().header().hash_slow();
 
     info!(
         target: "alpen-gossip",
         %peer_id,
         ?block_hash,
-        seq_no = package.message().seq_no(),
+        seq_no,
         "Received gossip package"
     );
 
@@ -247,10 +245,10 @@ pub(crate) async fn create_gossip_task(
 ) {
     let mut connections: HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>> =
         HashMap::new();
-    // Use LRU cache to automatically evict oldest entries when capacity is reached
-    let capacity = NonZeroUsize::new(config.max_seen_packages.max(1))
-        .expect("max_seen_packages should be at least 1");
-    let mut seen_packages: LruCache<B256, ()> = LruCache::new(capacity);
+    // Track the highest sequence number (block number) seen from the sequencer.
+    // This prevents duplicate and stale message processing since blocks are produced
+    // monotonically.
+    let mut highest_seq_no: u64 = 0;
 
     loop {
         select! {
@@ -258,7 +256,7 @@ pub(crate) async fn create_gossip_task(
                 handle_gossip_event(
                     event,
                     &mut connections,
-                    &mut seen_packages,
+                    &mut highest_seq_no,
                     &preconf_tx,
                     &config,
                 );
