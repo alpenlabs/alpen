@@ -78,12 +78,10 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
         .ok_or(eyre!("missing block: {:?}", hash))?;
 
     let prev_best = state.tip_blockhash();
-
-    let best = state.append_block(record)?;
-
-    if best != prev_best {
+    let new_best = state.append_block(record)?;
+    if new_best != prev_best {
         // TODO: this channel being closed should be considered fatal
-        preconf_tx.send(best).await?;
+        preconf_tx.send(new_best).await?;
     }
 
     Ok(())

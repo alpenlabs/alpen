@@ -104,8 +104,9 @@ impl OrphanTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use strata_identifiers::Buf32;
+
+    use super::*;
 
     fn hash_from_u8(value: u8) -> Hash {
         Hash::from(Buf32::new([value; 32]))
