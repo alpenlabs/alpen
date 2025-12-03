@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{ConsensusHeads, ExecBlockRecord, ExecBlockStorage, StorageError};
-use eyre::eyre;
 use strata_acct_types::Hash;
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
-use crate::state::ExecChainState;
+use crate::state::{ExecChainState, ExecChainStateError};
 
 /// Errors that can occur during execution chain tracker operations.
 #[derive(Debug, Error)]
@@ -15,12 +14,15 @@ pub(crate) enum ChainTrackerError {
     /// Preconf head channel is closed
     #[error("preconf head channel closed")]
     PreconfChannelClosed,
+    /// Block not found in storage
+    #[error("missing block: {0:?}")]
+    MissingBlock(Hash),
     /// Storage error
     #[error(transparent)]
     Storage(#[from] StorageError),
-    /// Other error
+    /// Execution chain state error
     #[error(transparent)]
-    Other(#[from] eyre::Report),
+    ExecChainState(#[from] ExecChainStateError),
 }
 
 /// Queries for reading chain tracker state.
@@ -107,7 +109,7 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     let record = storage
         .get_exec_block(hash)
         .await?
-        .ok_or(eyre!("missing block: {:?}", hash))?;
+        .ok_or(ChainTrackerError::MissingBlock(hash))?;
 
     // Append to tracker state and emit best hash if changed
     let prev_best = state.tip_blockhash();
@@ -146,7 +148,9 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
         storage.extend_finalized_chain(finalized).await?;
 
         // update in-memory state
-        state.prune_finalized(finalized);
+        state
+            .prune_finalized(finalized)
+            .expect("finalized exists in unfinalized blocks");
         let new_best = state.tip_blockhash();
 
         if prev_best != new_best {
