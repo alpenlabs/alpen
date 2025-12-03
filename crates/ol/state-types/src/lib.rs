@@ -5,14 +5,18 @@ use ssz as _;
 
 mod account;
 mod epochal;
+mod execution_state_accessor;
 mod global;
 mod ledger;
 mod snark_account;
 mod toplevel;
+mod writebatch;
 
 pub use account::*;
 pub use epochal::*;
+pub use execution_state_accessor::*;
 pub use global::*;
 pub use ledger::*;
 pub use snark_account::*;
 pub use toplevel::*;
+pub use writebatch::*;
