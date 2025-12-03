@@ -3,7 +3,8 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
-use bitcoin::absolute;
+use bitcoin::{ScriptBuf, absolute};
+use secp256k1::SECP256K1;
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
     AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
@@ -48,8 +49,8 @@ impl Subprotocol for BridgeV1Subproto {
     /// This function runs before the main transaction processing to identify and request
     /// any auxiliary data needed for verification. For Bridge V1, this primarily handles:
     ///
-    /// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced
-    ///   in the slash proof to enable verification of operator misbehavior
+    /// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced in the
+    ///   slash proof to enable verification of operator misbehavior
     ///
     /// The collected auxiliary data is then fetched and verified before being passed to
     /// the main `process_txs` function for full transaction processing.
@@ -128,15 +129,23 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _verified_aux_data: &VerifiedAuxData,
+        verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
+        // Compute the expected N/N locking script once to avoid multiple calculations
+        let nn_script = ScriptBuf::new_p2tr(
+            SECP256K1,
+            state.operators().agg_key().to_xonly_public_key(),
+            None,
+        );
         // Process each transaction
         for tx in txs {
             // Parse transaction to extract structured data (deposit/withdrawal info)
             // then handle the parsed transaction to update state and emit events
-            match parse_tx(tx).and_then(|parsed_tx| handle_parsed_tx(state, parsed_tx, relayer)) {
+            match parse_tx(tx).and_then(|parsed_tx| {
+                handle_parsed_tx(state, parsed_tx, &nn_script, verified_aux_data, relayer)
+            }) {
                 // `tx_id` is computed inside macro, because logging is compiled to noop in ZkVM
                 Ok(()) => info!(tx_id = %tx.tx().compute_txid(), "Successfully processed tx"),
                 Err(e) => {

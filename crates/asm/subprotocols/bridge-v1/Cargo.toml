@@ -12,6 +12,7 @@ bitcoin.workspace = true
 bitvec.workspace = true
 borsh.workspace = true
 rand_chacha.workspace = true
+secp256k1.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
@@ -29,4 +30,3 @@ strata-primitives.workspace = true
 strata-test-utils.workspace = true
 strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
 rand.workspace = true
-secp256k1.workspace = true
