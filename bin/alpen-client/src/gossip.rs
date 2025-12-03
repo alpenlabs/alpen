@@ -187,10 +187,6 @@ fn handle_state_event(
             true // Continue loop
         }
         Err(broadcast::error::RecvError::Closed) => {
-            warn!(
-                target: "alpen-gossip",
-                "Canonical state subscription closed"
-            );
             false // Break loop
         }
     }
