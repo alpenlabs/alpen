@@ -405,7 +405,7 @@ mod tests {
     /// - `Vec<EvenPublicKey>` - MuSig2 public keys for bridge configuration
     fn create_test_operators() -> (Vec<EvenSecretKey>, Vec<EvenPublicKey>) {
         let secp = Secp256k1::new();
-        let mut rng = secp256k1::rand::thread_rng();
+        let mut rng = bitcoin::secp256k1::rand::thread_rng();
         let num_operators = rng.gen_range(2..=5);
 
         // Generate random operator keys

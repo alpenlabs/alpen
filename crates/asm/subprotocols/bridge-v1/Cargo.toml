@@ -12,7 +12,6 @@ bitcoin.workspace = true
 bitvec.workspace = true
 borsh.workspace = true
 rand_chacha.workspace = true
-secp256k1.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
@@ -21,6 +20,7 @@ strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
 strata-bridge-types.workspace = true
+strata-btc-types.workspace = true
 strata-codec.workspace = true
 strata-crypto = { workspace = true, features = ["serde"] }
 strata-l1-txfmt.workspace = true

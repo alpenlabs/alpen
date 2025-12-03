@@ -3,8 +3,7 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
-use bitcoin::{ScriptBuf, absolute};
-use secp256k1::SECP256K1;
+use bitcoin::absolute;
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
     AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
@@ -133,18 +132,12 @@ impl Subprotocol for BridgeV1Subproto {
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
-        // Compute the expected N/N locking script once to avoid multiple calculations
-        let nn_script = ScriptBuf::new_p2tr(
-            SECP256K1,
-            state.operators().agg_key().to_xonly_public_key(),
-            None,
-        );
         // Process each transaction
         for tx in txs {
             // Parse transaction to extract structured data (deposit/withdrawal info)
             // then handle the parsed transaction to update state and emit events
             match parse_tx(tx).and_then(|parsed_tx| {
-                handle_parsed_tx(state, parsed_tx, &nn_script, verified_aux_data, relayer)
+                handle_parsed_tx(state, parsed_tx, verified_aux_data, relayer)
             }) {
                 // `tx_id` is computed inside macro, because logging is compiled to noop in ZkVM
                 Ok(()) => info!(tx_id = %tx.tx().compute_txid(), "Successfully processed tx"),

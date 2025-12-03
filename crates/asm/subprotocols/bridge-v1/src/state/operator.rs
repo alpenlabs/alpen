@@ -2,9 +2,11 @@
 //!
 //! This module contains types and tables for managing bridge operators
 
+use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
+use strata_btc_types::BitcoinScriptBuf;
 use strata_crypto::{multisig::aggregate_schnorr_keys, schnorr::EvenPublicKey};
 use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
 
@@ -124,6 +126,27 @@ pub struct OperatorTable {
     /// The key is automatically computed when the operator table is created or
     /// updated, ensuring it always reflects the current active multisig participants.
     agg_key: BitcoinXOnlyPublicKey,
+
+    /// Historical N/N multisig scripts from previous operator set configurations.
+    ///
+    /// This vector tracks all previous P2TR scripts that were used when the operator set
+    /// changed (due to slashing or unstaking). These historical scripts are necessary to validate
+    /// slash transactions that reference stake connectors from previous operator configurations.
+    ///
+    /// # Use Case
+    ///
+    /// When multiple operators are slashed in sequence:
+    /// 1. First slash: Validated against current N/N multisig script, operator removed, new script
+    ///    computed
+    /// 2. Second slash: Must be validated against the previous N/N multisig script (before first
+    ///    slash) because the stake connector was created when that operator set was active
+    ///
+    /// Without historical scripts, we could only validate the most recent slash, making subsequent
+    /// slashes from the same original operator set appear invalid.
+    ///
+    /// By storing the ScriptBuf directly instead of just keys, we avoid recomputing P2TR scripts
+    /// during validation, improving performance.
+    historical_nn_scripts: Vec<BitcoinScriptBuf>,
 }
 
 impl OperatorTable {
@@ -149,7 +172,7 @@ impl OperatorTable {
                 "Cannot create operator table with empty entries - at least one operator is required"
             );
         }
-        let agg_operator_key = aggregate_schnorr_keys(
+        let agg_operator_key: BitcoinXOnlyPublicKey = aggregate_schnorr_keys(
             entries
                 .iter()
                 .map(|pk| Buf32::from(pk.x_only_public_key().0.serialize()))
@@ -160,6 +183,10 @@ impl OperatorTable {
         .into();
         // Create bitmap with all initial operators as active (0, 1, 2, ..., n-1)
         let bitmap = OperatorBitmap::new_with_size(entries.len(), true);
+
+        // Compute the initial N/N script
+        let initial_nn_script = Self::build_nn_script(&agg_operator_key);
+
         Self {
             next_idx: entries.len() as OperatorIdx,
             operators: SortedVec::new_unchecked(
@@ -174,6 +201,7 @@ impl OperatorTable {
             ),
             active_operators: bitmap,
             agg_key: agg_operator_key,
+            historical_nn_scripts: vec![initial_nn_script],
         }
     }
 
@@ -197,6 +225,26 @@ impl OperatorTable {
     /// This key is computed by aggregating the MuSig2 public keys of all active operators.
     pub fn agg_key(&self) -> &BitcoinXOnlyPublicKey {
         &self.agg_key
+    }
+
+    /// Returns an iterator over all stored N/N multisig scripts in chronological order.
+    ///
+    /// The scripts represent past N/N multisig configurations (with the last entry always
+    /// corresponding to the current operator set) and are used to validate slash transactions that
+    /// reference stake connectors from those historical operator sets.
+    pub fn historical_nn_scripts(&self) -> impl Iterator<Item = &ScriptBuf> {
+        self.historical_nn_scripts.iter().map(|s| s.inner())
+    }
+
+    /// Returns the current N/N multisig script for the active operator set.
+    ///
+    /// The latest script is stored as the last entry in `historical_nn_scripts` and is reused for
+    /// validating new slash transactions and stake connectors without recomputing.
+    pub fn current_nn_script(&self) -> &ScriptBuf {
+        self.historical_nn_scripts
+            .last()
+            .expect("N/N script history should never be empty")
+            .inner()
     }
 
     /// Retrieves an operator entry by its unique index.
@@ -243,6 +291,10 @@ impl OperatorTable {
     /// Atomically applies membership changes by adding new operators and removing existing ones,
     /// then recalculates the aggregated key.
     ///
+    /// After recalculating, the new N/N script is appended to `historical_nn_scripts` so the latest
+    /// script remains accessible while older entries continue to support validation for previous
+    /// operator configurations.
+    ///
     /// # Processing Order
     ///
     /// Additions are processed before removals. If an operator index appears in both parameters,
@@ -266,6 +318,8 @@ impl OperatorTable {
 
         if !remove_members.is_empty() || !add_members.is_empty() {
             self.recalculate_aggregated_key();
+            self.historical_nn_scripts
+                .push(Self::build_nn_script(&self.agg_key));
         }
     }
 
@@ -355,6 +409,15 @@ impl OperatorTable {
         self.agg_key = aggregate_schnorr_keys(active_keys.iter())
             .expect("Failed to generate aggregated key")
             .into();
+    }
+
+    /// Builds a P2TR script for the provided aggregated operator key.
+    fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptBuf {
+        BitcoinScriptBuf::from(ScriptBuf::new_p2tr(
+            SECP256K1,
+            agg_key.to_xonly_public_key(),
+            None,
+        ))
     }
 }
 
@@ -466,5 +529,62 @@ mod tests {
         // Now only operators 0 and 2 should be active
         let active_indices: Vec<_> = table.current_multisig().active_indices().collect();
         assert_eq!(active_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_historical_nn_scripts_tracking() {
+        let operators = create_test_operator_pubkeys(3);
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 1);
+        let initial_script = table.current_nn_script().clone();
+        assert_eq!(historical_scripts[0], &initial_script);
+
+        table.apply_membership_changes(&[], &[0]);
+
+        let second_script = table.current_nn_script().clone();
+        assert_ne!(second_script, initial_script);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 2);
+        assert_eq!(historical_scripts[0], &initial_script);
+        assert_eq!(historical_scripts[1], &second_script);
+
+        table.apply_membership_changes(&[], &[1]);
+
+        let third_script = table.current_nn_script().clone();
+        assert_ne!(third_script, second_script);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 3);
+        assert_eq!(historical_scripts[0], &initial_script);
+        assert_eq!(historical_scripts[1], &second_script);
+        assert_eq!(historical_scripts[2], &third_script);
+
+        assert_ne!(initial_script, second_script);
+        assert_ne!(second_script, third_script);
+        assert_ne!(initial_script, third_script);
+    }
+
+    #[test]
+    fn test_historical_scripts_on_additions() {
+        let operators = create_test_operator_pubkeys(3);
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 1);
+        let initial_script = table.current_nn_script().clone();
+
+        let new_operators = create_test_operator_pubkeys(2);
+        table.apply_membership_changes(&new_operators, &[]);
+
+        let new_script = table.current_nn_script().clone();
+        assert_ne!(new_script, initial_script);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 2);
+        assert_eq!(historical_scripts[0], &initial_script);
+        assert_eq!(historical_scripts[1], &new_script);
     }
 }

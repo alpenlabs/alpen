@@ -1,4 +1,3 @@
-use bitcoin::ScriptBuf;
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
 
@@ -15,12 +14,12 @@ use crate::{
 /// - **Deposit**: Processes the deposit transaction without emitting logs
 /// - **WithdrawalFulfillment**: Processes the withdrawal and emits a withdrawal processed log via
 ///   the relayer to notify other components of the processed withdrawal
-/// - **Slash**: Validates the stake connector is locked to N/N multisig and processes slashing
+/// - **Slash**: Validates the stake connector is locked to any valid N/N multisig (current or
+///   historical) and processes slashing
 ///
 /// # Arguments
 /// * `state` - Mutable reference to the bridge state to be updated
 /// * `parsed_tx` - The parsed transaction to handle
-/// * `nn_script` - The expected N/N multisig locking script for validation
 /// * `verified_aux_data` - Auxiliary data containing referenced transaction outputs
 /// * `relayer` - The message relayer used for emitting logs
 ///
@@ -30,7 +29,6 @@ use crate::{
 pub(crate) fn handle_parsed_tx<'t>(
     state: &mut BridgeV1State,
     parsed_tx: ParsedTx<'t>,
-    nn_script: &ScriptBuf,
     verified_aux_data: &VerifiedAuxData,
     relayer: &mut impl MsgRelayer,
 ) -> Result<(), BridgeSubprotocolError> {
@@ -50,15 +48,28 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
         ParsedTx::Slash(info) => {
-            // Validate that the stake connector (second input) is locked to the expected N/N
-            // multisig script. This ensures this is a valid slash transaction that was presigned by
-            // N/N and not some arbitrary transaction posted by someone else.
+            // Validate that the stake connector (second input) is locked to a valid N/N
+            // multisig script from any historical configuration.
+            //
+            // This ensures this is a valid slash transaction that was presigned by an N/N
+            // multisig set and not some arbitrary transaction posted by someone else.
+            //
+            // We check against all historical scripts (which includes the current one)
+            // because when multiple operators are slashed in sequence, the second slash
+            // will reference a stake connector from the operator set configuration before
+            // the first slash occurred.
             let stake_connector_script = &verified_aux_data
                 .get_bitcoin_txout(info.second_inpoint().outpoint())?
                 .script_pubkey;
-            if stake_connector_script != nn_script {
+
+            // Validate against any historical N/N script (includes current configuration)
+            if !state
+                .operators()
+                .historical_nn_scripts()
+                .any(|script| script == stake_connector_script)
+            {
                 return Err(SlashValidationError::InvalidStakeConnectorScript.into());
-            }
+            };
 
             // Remove the slashed operator
             state.remove_operator(info.header_aux().operator_idx());
