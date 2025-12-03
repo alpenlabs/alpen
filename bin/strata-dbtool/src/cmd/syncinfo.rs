@@ -72,7 +72,7 @@ pub(crate) fn get_syncinfo(
         l2_tip_block_id: &l2_tip_block_id,
         l2_tip_block_status: &l2_tip_block_status,
         l2_finalized_block_id,
-        current_epoch,
+        current_epoch: current_epoch as u64,
         current_slot,
         previous_block: prev_block,
         previous_epoch: prev_epoch,

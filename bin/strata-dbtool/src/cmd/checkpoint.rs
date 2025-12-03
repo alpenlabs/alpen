@@ -10,7 +10,7 @@ use super::l1::{get_l1_block_id_at_height, get_l1_block_manifest, get_l1_chain_t
 use crate::{
     cli::OutputFormat,
     output::{
-        checkpoint::{CheckpointInfo, CheckpointsSummaryInfo, EpochInfo},
+        checkpoint::{CheckpointInfo, CheckpointsSummaryInfo, EpochInfo, UnexpectedCheckpointInfo},
         output,
     },
 };
@@ -196,16 +196,13 @@ pub(crate) fn get_checkpoints_summary(
     let checkpoints_in_l1_blocks = found_checkpoints as u64;
 
     // Convert unexpected checkpoints to the expected format
-    let unexpected_checkpoints_info: Vec<crate::output::checkpoint::UnexpectedCheckpointInfo> =
-        unexpected_checkpoints
-            .into_iter()
-            .map(|(checkpoint_index, l1_height)| {
-                crate::output::checkpoint::UnexpectedCheckpointInfo {
-                    checkpoint_index,
-                    l1_height,
-                }
-            })
-            .collect();
+    let unexpected_checkpoints_info: Vec<UnexpectedCheckpointInfo> = unexpected_checkpoints
+        .into_iter()
+        .map(|(checkpoint_index, l1_height)| UnexpectedCheckpointInfo {
+            checkpoint_index: checkpoint_index as u64,
+            l1_height,
+        })
+        .collect();
 
     // Create the output data structure
     let summary_info = CheckpointsSummaryInfo {

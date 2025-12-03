@@ -1,3 +1,4 @@
+use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
@@ -27,7 +28,7 @@ impl TipState {
 
     /// Returns the current epoch of the `cur_tip` block.  This is always the
     /// one after the `prev_epoch`.
-    pub fn cur_epoch(&self) -> u64 {
+    pub fn cur_epoch(&self) -> Epoch {
         self.prev_epoch.epoch() + 1
     }
 }

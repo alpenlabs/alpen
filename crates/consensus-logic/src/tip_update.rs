@@ -240,7 +240,7 @@ mod tests {
         L2BlockCommitment::new(s, rand_blkid())
     }
 
-    fn rand_epoch_commitment(e: u64, s: u64) -> EpochCommitment {
+    fn rand_epoch_commitment(e: u32, s: u64) -> EpochCommitment {
         EpochCommitment::from_terminal(e, rand_block_commitment(s))
     }
 

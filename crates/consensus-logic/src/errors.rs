@@ -1,5 +1,6 @@
 use strata_chaintsn::errors::TsnError;
 use strata_eectl::errors::EngineError;
+use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
 use strata_predicate::PredicateError;
 use strata_primitives::{
@@ -101,7 +102,7 @@ pub enum CheckpointError {
     SkippedGenesis,
 
     #[error("checkpoint is epoch {0} on top of previous checkpoint {1}")]
-    Sequencing(u64, u64),
+    Sequencing(Epoch, Epoch),
 
     #[error("L1 state transition mismatch")]
     MismatchL1State,

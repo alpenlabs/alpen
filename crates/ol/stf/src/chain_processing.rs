@@ -1,6 +1,6 @@
 //! General bookkeeping to ensure that the chain evolves correctly.
 
-use strata_identifiers::{EpochCommitment, OLBlockId};
+use strata_identifiers::{Epoch, EpochCommitment, OLBlockId};
 use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
 
 use crate::{
@@ -30,8 +30,7 @@ pub fn process_epoch_initial<S: StateAccessor>(
     // 3. Insert the previous terminal info into the MMR.
     // For genesis block (epoch 0), there is no previous terminal
     if state_cur_epoch > 0 {
-        let prev_ec =
-            EpochCommitment::from_terminal(state_cur_epoch as u64 - 1, context.prev_terminal());
+        let prev_ec = EpochCommitment::from_terminal(state_cur_epoch - 1, context.prev_terminal());
         // TODO insert into MMR
     }
 

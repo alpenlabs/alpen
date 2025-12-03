@@ -20,7 +20,7 @@ pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> an
             //
             // TODO In the future we should just be able to determine this on the fly.
             let epoch = epoch_comm.epoch();
-            let Some(mut ckpt_entry) = ckpt_db.get_checkpoint_blocking(epoch)? else {
+            let Some(mut ckpt_entry) = ckpt_db.get_checkpoint_blocking(epoch as u64)? else {
                 warn!(%epoch, "missing checkpoint we wanted to mark confirmed, ignoring");
                 return Ok(());
             };
@@ -38,7 +38,7 @@ pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> an
             // Mark it as finalized.
             ckpt_entry.confirmation_status = CheckpointConfStatus::Finalized(l1ref);
 
-            ckpt_db.put_checkpoint_blocking(epoch, ckpt_entry)?;
+            ckpt_db.put_checkpoint_blocking(epoch as u64, ckpt_entry)?;
         }
 
         // Update checkpoint entry in database to mark it as included in L1.
@@ -48,7 +48,7 @@ pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> an
         } => {
             let epoch = checkpoint.batch_info().epoch();
 
-            let mut ckpt_entry = match ckpt_db.get_checkpoint_blocking(epoch)? {
+            let mut ckpt_entry = match ckpt_db.get_checkpoint_blocking(epoch as u64)? {
                 Some(c) => c,
                 None => {
                     info!(%epoch, "creating new checkpoint entry since the database does not have one");
@@ -63,7 +63,7 @@ pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> an
 
             ckpt_entry.confirmation_status = CheckpointConfStatus::Confirmed(l1_reference);
 
-            ckpt_db.put_checkpoint_blocking(epoch, ckpt_entry)?;
+            ckpt_db.put_checkpoint_blocking(epoch as u64, ckpt_entry)?;
         }
     }
 

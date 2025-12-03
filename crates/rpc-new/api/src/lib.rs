@@ -1,8 +1,7 @@
 //! OL RPC API definitions.
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
-use strata_identifiers::{AccountId, OLTxId};
-use strata_primitives::proof::Epoch;
+use strata_identifiers::{AccountId, Epoch, OLTxId};
 use strata_rpc_types_new::*;
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).

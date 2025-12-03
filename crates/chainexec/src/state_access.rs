@@ -7,6 +7,7 @@
 //!   data
 
 use strata_chaintsn::context::StateAccessor;
+use strata_identifiers::Epoch;
 use strata_ol_chainstate_types::{Chainstate, StateCache, WriteBatch};
 use strata_primitives::prelude::*;
 
@@ -54,11 +55,11 @@ impl StateAccessor for MemStateAccessor {
         self.state_cache.set_prev_block(block);
     }
 
-    fn cur_epoch(&self) -> u64 {
+    fn cur_epoch(&self) -> Epoch {
         self.state_cache.state().cur_epoch()
     }
 
-    fn set_cur_epoch(&mut self, epoch: u64) {
+    fn set_cur_epoch(&mut self, epoch: Epoch) {
         self.state_cache.set_cur_epoch(epoch);
     }
 

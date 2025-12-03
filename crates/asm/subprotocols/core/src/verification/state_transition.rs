@@ -25,8 +25,8 @@ pub(crate) fn validate_state_transition(
     let new_batch_info = checkpoint.batch_info();
 
     // Validate epoch progression
-    let expected_epoch = (prev_epoch_summary.epoch() + 1) as u32;
-    let actual_epoch = new_batch_info.epoch() as u32;
+    let expected_epoch = prev_epoch_summary.epoch() + 1;
+    let actual_epoch = new_batch_info.epoch();
     if actual_epoch != expected_epoch {
         return Err(CoreError::InvalidEpoch {
             expected: expected_epoch,

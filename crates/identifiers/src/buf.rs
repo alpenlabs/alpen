@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use const_hex as hex;
+use ssz_derive::{Decode, Encode};
 use zeroize::Zeroize;
 
 use crate::macros::internal;
@@ -58,10 +59,12 @@ impl Zeroize for Buf20 {
 ///
 /// assert_eq!(buf, Buf32::from([0; 32]));
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 pub struct Buf32(pub [u8; 32]);
 internal::impl_buf_common!(Buf32, 32);
 internal::impl_buf_serde!(Buf32, 32);
+
+crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
 
 impl FromStr for Buf32 {
     type Err = hex::FromHexError;
@@ -188,10 +191,12 @@ impl Zeroize for Buf32 {
 ///
 /// assert_eq!(buf, Buf64::from([0; 64]));
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 pub struct Buf64(pub [u8; 64]);
 internal::impl_buf_common!(Buf64, 64);
 internal::impl_buf_serde!(Buf64, 64);
+
+crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
 
 // NOTE: we cannot do `ZeroizeOnDrop` since `Buf64` is `Copy`.
 impl Zeroize for Buf64 {
@@ -203,7 +208,47 @@ impl Zeroize for Buf64 {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_test_utils_ssz::ssz_proptest;
+
     use super::*;
+
+    mod buf32_ssz {
+        use super::*;
+
+        ssz_proptest!(
+            Buf32,
+            any::<[u8; 32]>(),
+            transparent_wrapper_of([u8; 32], from)
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let zero = Buf32::zero();
+            let encoded = zero.as_ssz_bytes();
+            let decoded = Buf32::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(zero, decoded);
+        }
+    }
+
+    mod buf64_ssz {
+        use super::*;
+
+        ssz_proptest!(
+            Buf64,
+            any::<[u8; 64]>(),
+            transparent_wrapper_of([u8; 64], from)
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let zero = Buf64::from([0u8; 64]);
+            let encoded = zero.as_ssz_bytes();
+            let decoded = Buf64::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(zero, decoded);
+        }
+    }
 
     #[test]
     fn test_buf32_deserialization() {

@@ -1,6 +1,7 @@
 //! Error types for checkpoint v0 subprotocol
 
 use strata_asm_proto_checkpoint_txs::CheckpointTxError;
+use strata_identifiers::Epoch;
 use thiserror::Error;
 
 /// Errors that can occur during checkpoint verification and processing
@@ -20,7 +21,7 @@ pub enum CheckpointV0Error {
 
     /// Invalid epoch progression
     #[error("Invalid epoch: expected {expected}, got {actual}")]
-    InvalidEpoch { expected: u64, actual: u64 },
+    InvalidEpoch { expected: Epoch, actual: Epoch },
 
     /// Serialization error
     #[error("Serialization error")]
@@ -35,8 +36,8 @@ pub enum CheckpointV0Error {
         "Checkpoint batch info epoch {info_epoch} differs from transition epoch {transition_epoch}"
     )]
     BatchEpochMismatch {
-        info_epoch: u64,
-        transition_epoch: u64,
+        info_epoch: Epoch,
+        transition_epoch: Epoch,
     },
 
     /// State roots between consecutive checkpoints do not align

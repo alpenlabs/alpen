@@ -11,6 +11,7 @@ use strata_bridge_types::{
     DepositEntry, DepositIntent, DepositState, DispatchCommand, DispatchedState, FulfilledState,
     OperatorIdx, OperatorPubkeys,
 };
+use strata_identifiers::Epoch;
 use strata_primitives::{
     buf::Buf32,
     epoch::EpochCommitment,
@@ -141,7 +142,7 @@ impl StateCache {
     }
 
     /// Sets the current epoch index.
-    pub fn set_cur_epoch(&mut self, epoch: u64) {
+    pub fn set_cur_epoch(&mut self, epoch: Epoch) {
         self.state_mut().cur_epoch = epoch;
     }
 

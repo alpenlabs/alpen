@@ -342,7 +342,7 @@ pub(crate) fn revert_chainstate(
     };
 
     // Check if there are checkpoints to clean
-    let needs_checkpoint_cleanup = first_epoch_to_clean <= latest_checkpoint_epoch;
+    let needs_checkpoint_cleanup = first_epoch_to_clean <= (latest_checkpoint_epoch as u64);
 
     // Check if there are epoch summaries to clean (may exist beyond latest checkpoint)
     let last_summarized_epoch = db
@@ -400,7 +400,7 @@ pub(crate) fn revert_chainstate(
 
         // Collect checkpoint statistics - we know the range from first_epoch_to_clean to
         // latest_checkpoint_epoch
-        for epoch in first_epoch_to_clean..=latest_checkpoint_epoch {
+        for epoch in first_epoch_to_clean..=(latest_checkpoint_epoch as u64) {
             checkpoints_to_delete.push(epoch);
         }
 

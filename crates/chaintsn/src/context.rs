@@ -1,6 +1,7 @@
 //! Interfaces to expose the context in which a block is being validated.
 
 use strata_asm_types::L1BlockManifest;
+use strata_identifiers::Epoch;
 use strata_ol_chain_types::{L2BlockHeader, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::prelude::*;
@@ -104,10 +105,10 @@ pub trait StateAccessor {
     fn set_prev_block(&mut self, block: L2BlockCommitment);
 
     /// Gets the current epoch.
-    fn cur_epoch(&self) -> u64;
+    fn cur_epoch(&self) -> Epoch;
 
     /// Sets the current epoch index.
-    fn set_cur_epoch(&mut self, epoch: u64);
+    fn set_cur_epoch(&mut self, epoch: Epoch);
 
     /// Gets the previous epoch.
     fn prev_epoch(&self) -> EpochCommitment;

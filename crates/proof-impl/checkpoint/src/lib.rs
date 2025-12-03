@@ -41,7 +41,7 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
     };
 
     let output = BatchTransition {
-        epoch,
+        epoch: epoch as u32,
         chainstate_transition,
     };
 

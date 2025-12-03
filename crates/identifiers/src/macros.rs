@@ -391,6 +391,336 @@ pub(crate) mod internal {
     pub(crate) use impl_buf_serde;
 }
 
+/// Implements Borsh serialization as a shim over SSZ bytes with length-prefixing.
+///
+/// This macro generates BorshSerialize and BorshDeserialize implementations that:
+/// 1. Convert the type to/from SSZ bytes
+/// 2. Use length-prefixed encoding (u32 length followed by data) to support nested structs
+///
+/// This solves the issue where `read_to_end()` fails when types are embedded in other structs,
+/// because it consumes the entire remaining stream. The length-prefix approach reads exactly
+/// the number of bytes needed for this specific value.
+///
+/// # Requirements
+///
+/// The type must implement both `ssz::Encode` and `ssz::Decode` traits.
+///
+/// # Example
+///
+/// ```ignore
+/// use ssz_derive::{Decode, Encode};
+///
+/// #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+/// pub struct MyType {
+///     field: u64,
+/// }
+///
+/// impl_borsh_via_ssz!(MyType);
+/// ```
+#[macro_export]
+macro_rules! impl_borsh_via_ssz {
+    ($type:ty) => {
+        impl ::borsh::BorshSerialize for $type {
+            fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
+                // Convert to SSZ bytes
+                let bytes = ::ssz::Encode::as_ssz_bytes(self);
+
+                // Write length as u32 (Borsh standard)
+                let len = bytes.len() as u32;
+                writer.write_all(&len.to_le_bytes())?;
+
+                // Write the SSZ bytes
+                writer.write_all(&bytes)?;
+
+                Ok(())
+            }
+        }
+
+        impl ::borsh::BorshDeserialize for $type {
+            fn deserialize_reader<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
+                // Read length as u32 (Borsh standard)
+                let mut len_bytes = [0u8; 4];
+                reader.read_exact(&mut len_bytes)?;
+                let len = u32::from_le_bytes(len_bytes) as usize;
+
+                // Read exactly len bytes
+                let mut buffer = vec![0u8; len];
+                reader.read_exact(&mut buffer)?;
+
+                // Decode from SSZ bytes
+                ::ssz::Decode::from_ssz_bytes(&buffer).map_err(|e| {
+                    ::std::io::Error::new(
+                        ::std::io::ErrorKind::InvalidData,
+                        format!("SSZ decode error: {:?}", e),
+                    )
+                })
+            }
+        }
+    };
+}
+
+/// Implements Borsh serialization as a shim over SSZ bytes for fixed-size types.
+///
+/// This macro generates BorshSerialize and BorshDeserialize implementations that:
+/// 1. Convert the type to/from SSZ bytes
+/// 2. Write/read SSZ bytes directly WITHOUT length-prefixing (for fixed-size types)
+///
+/// Use this macro for commitment types and other fixed-size SSZ containers where the size
+/// is always known. For variable-length types that may be nested, use `impl_borsh_via_ssz!`
+/// instead (which adds length-prefixing).
+///
+/// # Requirements
+///
+/// The type must:
+/// - Implement both `ssz::Encode` and `ssz::Decode` traits
+/// - Be a fixed-size SSZ container (ssz_fixed_len() returns true)
+///
+/// # Example
+///
+/// ```ignore
+/// use ssz_derive::{Decode, Encode};
+///
+/// #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+/// pub struct OLBlockCommitment {
+///     slot: u64,
+///     blkid: OLBlockId,
+/// }
+///
+/// impl_borsh_via_ssz_fixed!(OLBlockCommitment);
+/// ```
+#[macro_export]
+macro_rules! impl_borsh_via_ssz_fixed {
+    ($type:ty) => {
+        impl ::borsh::BorshSerialize for $type {
+            fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
+                // Convert to SSZ bytes and write directly (no length prefix)
+                let ssz_bytes = ::ssz::Encode::as_ssz_bytes(self);
+                writer.write_all(&ssz_bytes)
+            }
+        }
+
+        impl ::borsh::BorshDeserialize for $type {
+            fn deserialize_reader<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
+                // Read exactly the SSZ fixed length
+                // This is critical: we must read exactly the fixed length, not all remaining bytes,
+                // because this type may be nested inside larger Borsh structures.
+                let ssz_fixed_len = <$type as ::ssz::Decode>::ssz_fixed_len();
+                let mut ssz_bytes = vec![0u8; ssz_fixed_len];
+                reader.read_exact(&mut ssz_bytes)?;
+
+                // Decode from SSZ bytes
+                ::ssz::Decode::from_ssz_bytes(&ssz_bytes).map_err(|e| {
+                    ::std::io::Error::new(
+                        ::std::io::ErrorKind::InvalidData,
+                        format!("SSZ decode error: {:?}", e),
+                    )
+                })
+            }
+        }
+    };
+}
+
+/// Generates SSZ trait implementations for transparent wrappers (generic version).
+///
+/// This macro generates:
+/// - Manual `DecodeView` implementation (using fully qualified path to avoid conflicts)
+/// - `SszTypeInfo` implementation for fixed-length types
+/// - `TreeHash` implementation that delegates to the inner type
+///
+/// # Arguments
+///
+/// * `$wrapper` - The wrapper type
+/// * `$inner` - The inner type
+/// * `$fixed_len` - The fixed length in bytes (for SszTypeInfo)
+///
+/// # Example
+///
+/// ```ignore
+/// use ssz_derive::{Decode, Encode};
+///
+/// type RawAccountId = [u8; 32];
+///
+/// #[derive(Copy, Clone, Eq, PartialEq, Encode, Decode)]
+/// #[ssz(struct_behaviour = "transparent")]
+/// pub struct AccountId(RawAccountId);
+///
+/// impl_ssz_transparent_wrapper!(AccountId, RawAccountId, 32);
+/// ```
+#[macro_export]
+macro_rules! impl_ssz_transparent_wrapper {
+    ($wrapper:ty, $inner:ty, $fixed_len:expr) => {
+        // Manual DecodeView implementation for transparent wrapper
+        // Uses fully qualified path to avoid conflicts with Decode derive
+        impl<'a> ::ssz::view::DecodeView<'a> for $wrapper {
+            fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
+                Ok(Self(<$inner as ::ssz::view::DecodeView>::from_ssz_bytes(
+                    bytes,
+                )?))
+            }
+        }
+
+        // SszTypeInfo implementation for transparent wrapper
+        impl ::ssz::view::SszTypeInfo for $wrapper {
+            fn is_ssz_fixed_len() -> bool {
+                true
+            }
+
+            fn ssz_fixed_len() -> usize {
+                $fixed_len
+            }
+        }
+
+        // Manual TreeHash implementation for transparent wrapper
+        impl<H: ::tree_hash::TreeHashDigest> ::tree_hash::TreeHash<H> for $wrapper {
+            fn tree_hash_type() -> ::tree_hash::TreeHashType {
+                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_type()
+            }
+
+            fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
+            }
+
+            fn tree_hash_packing_factor() -> usize {
+                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_packing_factor()
+            }
+
+            fn tree_hash_root(&self) -> H::Output {
+                <$inner as ::tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
+            }
+        }
+    };
+}
+
+/// Generates SSZ trait implementations for transparent wrappers around Buf32.
+///
+/// This is a convenience macro that calls `impl_ssz_transparent_wrapper!` with Buf32-specific
+/// parameters.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::Buf32;
+/// use ssz_derive::{Decode, Encode};
+///
+/// #[derive(Copy, Clone, Eq, PartialEq, Encode, Decode)]
+/// #[ssz(struct_behaviour = "transparent")]
+/// pub struct OLBlockId(pub Buf32);
+///
+/// impl_ssz_transparent_buf32_wrapper!(OLBlockId);
+/// ```
+#[macro_export]
+macro_rules! impl_ssz_transparent_buf32_wrapper {
+    ($wrapper:ty) => {
+        $crate::impl_ssz_transparent_wrapper!($wrapper, $crate::buf::Buf32, 32);
+    };
+}
+
+/// Generates SSZ trait implementations for transparent wrappers around Buf32 that are also Copy.
+///
+/// This macro generates everything from `impl_ssz_transparent_buf32_wrapper!` plus:
+/// - `ToOwnedSsz` implementation (for Copy types, returns self)
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::buf::Buf32;
+/// use ssz_derive::{Decode, Encode};
+///
+/// #[derive(Copy, Clone, Eq, PartialEq, Encode, Decode)]
+/// #[ssz(struct_behaviour = "transparent")]
+/// pub struct OLTxId(pub Buf32);
+///
+/// impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
+/// ```
+#[macro_export]
+macro_rules! impl_ssz_transparent_buf32_wrapper_copy {
+    ($wrapper:ty) => {
+        $crate::impl_ssz_transparent_buf32_wrapper!($wrapper);
+
+        // ToOwnedSsz implementation - for Copy types, the reference IS the owned version
+        impl ::ssz_types::view::ToOwnedSsz<$wrapper> for $wrapper {
+            fn to_owned(&self) -> $wrapper {
+                *self
+            }
+        }
+    };
+}
+
+/// Generates SSZ trait implementations for transparent wrappers around raw byte arrays `[u8; N]`.
+///
+/// This macro is specifically for types wrapping raw arrays that don't implement DecodeView.
+/// It generates:
+/// - Custom `DecodeView` implementation that does array conversion
+/// - `SszTypeInfo` implementation for fixed-length types
+/// - `TreeHash` implementation that delegates to the inner array
+///
+/// # Arguments
+///
+/// * `$wrapper` - The wrapper type
+/// * `$len` - The array length (must match the wrapped `[u8; N]`)
+///
+/// # Example
+///
+/// ```ignore
+/// use ssz_derive::{Decode, Encode};
+///
+/// type RawAccountId = [u8; 32];
+///
+/// #[derive(Copy, Clone, Eq, PartialEq, Encode, Decode)]
+/// #[ssz(struct_behaviour = "transparent")]
+/// pub struct AccountId(RawAccountId);
+///
+/// impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
+/// ```
+#[macro_export]
+macro_rules! impl_ssz_transparent_byte_array_wrapper {
+    ($wrapper:ty, $len:expr) => {
+        // Custom DecodeView implementation for byte array wrapper
+        impl<'a> ::ssz::view::DecodeView<'a> for $wrapper {
+            fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ::ssz::DecodeError> {
+                let array: [u8; $len] =
+                    bytes
+                        .try_into()
+                        .map_err(|_| ::ssz::DecodeError::InvalidByteLength {
+                            len: bytes.len(),
+                            expected: $len,
+                        })?;
+                Ok(Self(array))
+            }
+        }
+
+        // SszTypeInfo implementation for transparent wrapper
+        impl ::ssz::view::SszTypeInfo for $wrapper {
+            fn is_ssz_fixed_len() -> bool {
+                true
+            }
+
+            fn ssz_fixed_len() -> usize {
+                $len
+            }
+        }
+
+        // Manual TreeHash implementation for transparent wrapper
+        impl<H: ::tree_hash::TreeHashDigest> ::tree_hash::TreeHash<H> for $wrapper {
+            fn tree_hash_type() -> ::tree_hash::TreeHashType {
+                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_type()
+            }
+
+            fn tree_hash_packed_encoding(&self) -> ::tree_hash::PackedEncoding {
+                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
+            }
+
+            fn tree_hash_packing_factor() -> usize {
+                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_packing_factor()
+            }
+
+            fn tree_hash_root(&self) -> H::Output {
+                <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -477,5 +807,179 @@ mod tests {
         let decoded: TestBuf20 =
             bincode::deserialize(&encoded).expect("bincode deserialization failed");
         assert_eq!(buf, decoded);
+    }
+
+    // Test the SSZ transparent wrapper macros
+    use ssz::{Decode, Encode};
+    use ssz_derive::{Decode, Encode};
+
+    use crate::buf::Buf32;
+
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Encode, Decode)]
+    #[ssz(struct_behaviour = "transparent")]
+    struct TestBuf32Wrapper(Buf32);
+
+    crate::impl_ssz_transparent_buf32_wrapper_copy!(TestBuf32Wrapper);
+
+    #[test]
+    fn test_ssz_transparent_wrapper_roundtrip() {
+        let data = [42u8; 32];
+        let wrapper = TestBuf32Wrapper(Buf32::new(data));
+
+        // Test SSZ encoding/decoding
+        let encoded = wrapper.as_ssz_bytes();
+        let decoded = TestBuf32Wrapper::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(wrapper, decoded);
+    }
+
+    #[test]
+    fn test_ssz_transparent_wrapper_tree_hash() {
+        use tree_hash::{Sha256Hasher, TreeHash};
+
+        let data = [42u8; 32];
+        let wrapper = TestBuf32Wrapper(Buf32::new(data));
+        let inner = Buf32::new(data);
+
+        // TreeHash should be the same as inner type (transparent)
+        let wrapper_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&wrapper);
+        let inner_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&inner);
+        assert_eq!(wrapper_hash, inner_hash);
+    }
+
+    #[test]
+    fn test_ssz_transparent_wrapper_to_owned() {
+        use ssz_types::view::ToOwnedSsz;
+
+        let data = [42u8; 32];
+        let wrapper = TestBuf32Wrapper(Buf32::new(data));
+
+        // ToOwnedSsz should return a copy
+        let owned = ToOwnedSsz::to_owned(&wrapper);
+        assert_eq!(wrapper, owned);
+    }
+
+    // Test the Borsh-via-SSZ macro
+    #[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
+    struct TestBorshViaSsz {
+        value: u64,
+        data: Vec<u8>,
+    }
+
+    crate::impl_borsh_via_ssz!(TestBorshViaSsz);
+
+    #[test]
+    fn test_borsh_via_ssz_roundtrip() {
+        use borsh::{BorshDeserialize, BorshSerialize};
+
+        let original = TestBorshViaSsz {
+            value: 42,
+            data: vec![1, 2, 3, 4, 5],
+        };
+
+        // Test Borsh serialization roundtrip
+        let mut buffer = Vec::new();
+        original.serialize(&mut buffer).unwrap();
+
+        let decoded = TestBorshViaSsz::deserialize_reader(&mut buffer.as_slice()).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_borsh_via_ssz_nested() {
+        use borsh::{BorshDeserialize, BorshSerialize};
+
+        // Test that our length-prefixed approach works when nested
+        #[derive(Clone, Debug, Eq, PartialEq)]
+        struct Container {
+            first: TestBorshViaSsz,
+            second: TestBorshViaSsz,
+        }
+
+        impl borsh::BorshSerialize for Container {
+            fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+                self.first.serialize(writer)?;
+                self.second.serialize(writer)?;
+                Ok(())
+            }
+        }
+
+        impl borsh::BorshDeserialize for Container {
+            fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+                let first = TestBorshViaSsz::deserialize_reader(reader)?;
+                let second = TestBorshViaSsz::deserialize_reader(reader)?;
+                Ok(Container { first, second })
+            }
+        }
+
+        let container = Container {
+            first: TestBorshViaSsz {
+                value: 100,
+                data: vec![1, 2, 3],
+            },
+            second: TestBorshViaSsz {
+                value: 200,
+                data: vec![4, 5, 6, 7],
+            },
+        };
+
+        // Serialize and deserialize
+        let mut buffer = Vec::new();
+        container.serialize(&mut buffer).unwrap();
+
+        let decoded = Container::deserialize_reader(&mut buffer.as_slice()).unwrap();
+        assert_eq!(container.first, decoded.first);
+        assert_eq!(container.second, decoded.second);
+    }
+
+    // Test the fixed-size Borsh-via-SSZ macro
+    #[test]
+    fn test_borsh_via_ssz_fixed() {
+        use borsh::{BorshDeserialize, BorshSerialize};
+
+        use crate::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
+
+        // Test OLBlockCommitment - should be 40 bytes, no length prefix
+        let commitment = OLBlockCommitment::new(12345, OLBlockId::from(Buf32::from([42u8; 32])));
+
+        let mut buffer = Vec::new();
+        commitment.serialize(&mut buffer).unwrap();
+
+        // Should be exactly 40 bytes (8 for slot + 32 for blkid), no length prefix
+        assert_eq!(buffer.len(), 40, "OLBlockCommitment should be 40 bytes");
+
+        // First 8 bytes should be the slot in little-endian
+        let slot_bytes = 12345u64.to_le_bytes();
+        assert_eq!(&buffer[0..8], &slot_bytes, "First 8 bytes should be slot");
+
+        // Next 32 bytes should be the blkid
+        assert_eq!(&buffer[8..40], &[42u8; 32], "Next 32 bytes should be blkid");
+
+        // Test deserialization
+        let decoded = OLBlockCommitment::deserialize_reader(&mut buffer.as_slice()).unwrap();
+        assert_eq!(decoded.slot(), 12345);
+        assert_eq!(decoded.blkid().as_ref(), &[42u8; 32]);
+
+        // Test EpochCommitment - should be 44 bytes, no length prefix
+        let epoch_commitment =
+            EpochCommitment::new(5, 100, OLBlockId::from(Buf32::from([99u8; 32])));
+
+        let mut buffer2 = Vec::new();
+        epoch_commitment.serialize(&mut buffer2).unwrap();
+
+        // Should be exactly 44 bytes (4 for epoch + 8 for slot + 32 for blkid), no length prefix
+        assert_eq!(buffer2.len(), 44, "EpochCommitment should be 44 bytes");
+
+        // Verify no length prefix by checking first 4 bytes are the epoch, not a length
+        let epoch_bytes = 5u32.to_le_bytes();
+        assert_eq!(
+            &buffer2[0..4],
+            &epoch_bytes,
+            "First 4 bytes should be epoch"
+        );
+
+        // Test deserialization
+        let decoded2 = EpochCommitment::deserialize_reader(&mut buffer2.as_slice()).unwrap();
+        assert_eq!(decoded2.epoch(), 5);
+        assert_eq!(decoded2.last_slot(), 100);
     }
 }

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use bitcoin::BlockHash;
+use strata_identifiers::Epoch;
 use strata_l1tx::filter::types::TxFilterConfig;
 
 /// State we use in various parts of the reader.
@@ -19,7 +20,7 @@ pub(crate) struct ReaderState {
     filter_config: TxFilterConfig,
 
     /// Current epoch.
-    epoch: u64,
+    epoch: Epoch,
 }
 
 impl ReaderState {
@@ -30,7 +31,7 @@ impl ReaderState {
         max_depth: usize,
         recent_blocks: VecDeque<BlockHash>,
         filter_config: TxFilterConfig,
-        epoch: u64,
+        epoch: Epoch,
     ) -> Self {
         assert!(!recent_blocks.is_empty());
         Self {
@@ -46,7 +47,7 @@ impl ReaderState {
         self.next_height
     }
 
-    pub(crate) fn epoch(&self) -> u64 {
+    pub(crate) fn epoch(&self) -> Epoch {
         self.epoch
     }
 

@@ -1,13 +1,13 @@
 use bitcoin::Block;
+use strata_identifiers::{Epoch, L1BlockCommitment};
 use strata_l1tx::messages::RelevantTxEntry;
-use strata_primitives::l1::L1BlockCommitment;
 
 /// L1 events that we observe and want the persistence task to work on.
 #[derive(Clone, Debug)]
 pub(crate) enum L1Event {
     /// Data that contains block number, block and relevant transactions, and also the epoch whose
     /// rules are applied to.
-    BlockData(BlockData, u64),
+    BlockData(BlockData, Epoch),
 
     /// Revert to the provided block height
     RevertTo(L1BlockCommitment),

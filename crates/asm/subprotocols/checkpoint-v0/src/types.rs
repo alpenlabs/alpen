@@ -8,6 +8,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_checkpoint_types::Checkpoint;
+use strata_identifiers::Epoch;
 use strata_predicate::PredicateKey;
 use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
 
@@ -24,7 +25,7 @@ pub struct CheckpointV0VerifierState {
     pub last_checkpoint_l1_height: u64,
 
     /// Current epoch we've verified up to
-    pub current_verified_epoch: u64,
+    pub current_verified_epoch: Epoch,
 
     /// Credential rule governing signature verification
     pub cred_rule: CredRule,
@@ -72,12 +73,12 @@ impl CheckpointV0VerifierState {
     }
 
     /// Get the latest verified epoch
-    pub fn current_epoch(&self) -> u64 {
+    pub fn current_epoch(&self) -> Epoch {
         self.current_verified_epoch
     }
 
     /// Get the epoch value we expect for the next checkpoint.
-    pub fn expected_next_epoch(&self) -> u64 {
+    pub fn expected_next_epoch(&self) -> Epoch {
         match &self.last_checkpoint {
             Some(_) => self.current_verified_epoch + 1,
             None => 0,
@@ -94,7 +95,7 @@ impl CheckpointV0VerifierState {
     ///
     /// # Returns
     /// `true` if the epoch can be accepted, `false` otherwise
-    pub fn can_accept_epoch(&self, epoch: u64) -> bool {
+    pub fn can_accept_epoch(&self, epoch: Epoch) -> bool {
         epoch == self.expected_next_epoch()
     }
 

@@ -8,6 +8,7 @@ use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
+use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use tracing::*;
 
@@ -90,7 +91,7 @@ fn process_checkpoint_log(
 fn update_client_state_with_checkpoint(
     state: &mut CsmWorkerState,
     new_checkpoint: L1Checkpoint,
-    epoch: u64,
+    epoch: Epoch,
 ) -> anyhow::Result<()> {
     // Get the current client state
     let cur_state = state.cur_state.as_ref();
@@ -379,31 +380,31 @@ mod tests {
         // Create 3 sequential checkpoints with increasing epochs
         let mut arbgen = ArbitraryGenerator::new();
 
-        for epoch in 1u64..=3u64 {
+        for epoch in 1u32..=3u32 {
             // Create L1 block commitment for this checkpoint
             let asm_block = L1BlockCommitment::new(
-                Height::from_consensus(100 + epoch as u32).unwrap(),
+                Height::from_consensus(100 + epoch).unwrap(),
                 arbgen.generate(),
             );
             state.last_asm_block = Some(asm_block);
 
             // Create L2 block range
             let l2_start = L2BlockCommitment::new(
-                (epoch - 1) * 10,
+                ((epoch - 1) * 10) as u64,
                 L2BlockId::from(Buf32::from([epoch as u8; 32])),
             );
             let l2_end = L2BlockCommitment::new(
-                epoch * 10,
+                (epoch * 10) as u64,
                 L2BlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
             );
 
             // Create L1 block range
             let l1_start = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch as u32 - 1).unwrap(),
+                Height::from_consensus(90 + epoch - 1).unwrap(),
                 arbgen.generate(),
             );
             let l1_end = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch as u32).unwrap(),
+                Height::from_consensus(90 + epoch).unwrap(),
                 arbgen.generate(),
             );
 
@@ -453,7 +454,7 @@ mod tests {
             // Verify checkpoint was stored in database
             let stored_checkpoint = storage
                 .checkpoint()
-                .get_checkpoint_blocking(epoch)
+                .get_checkpoint_blocking(epoch as u64)
                 .expect("Failed to query checkpoint database");
             assert!(
                 stored_checkpoint.is_some(),
@@ -478,10 +479,10 @@ mod tests {
         }
 
         // After processing 3 checkpoints, verify we have all of them in the database
-        for epoch in 1u64..=3u64 {
+        for epoch in 1u32..=3u32 {
             let stored_checkpoint = storage
                 .checkpoint()
-                .get_checkpoint_blocking(epoch)
+                .get_checkpoint_blocking(epoch as u64)
                 .expect("Failed to query checkpoint database");
             assert!(
                 stored_checkpoint.is_some(),
