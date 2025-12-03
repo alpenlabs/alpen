@@ -36,7 +36,7 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
                 witness: Witness::from_slice(&[vec![0u8; 64]]),
             },
             TxIn {
-                previous_output: info.second_input_outpoint().0, // stake connector we validate
+                previous_output: info.second_inpoint().0, // stake connector we validate
                 script_sig: ScriptBuf::new(),
                 sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
                 witness: Witness::from_slice(&[vec![0u8; 64]]),
