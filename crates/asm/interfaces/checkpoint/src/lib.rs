@@ -5,9 +5,6 @@ use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
 
 /// Incoming messages that the checkpoint v0 subprotocol can receive from other subprotocols.
-///
-/// These messages are primarily emitted by the administration subprotocol to enact
-/// configuration updates that originate from governance actions.
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub enum CheckpointIncomingMsg {
     /// Update the Schnorr public key used to verify sequencer signatures embedded in checkpoints.
@@ -25,3 +22,4 @@ impl InterprotoMsg for CheckpointIncomingMsg {
         self
     }
 }
+

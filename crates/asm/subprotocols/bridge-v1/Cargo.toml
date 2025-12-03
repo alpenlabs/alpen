@@ -16,6 +16,7 @@ serde.workspace = true
 thiserror.workspace = true
 
 strata-asm-common.workspace = true
+strata-asm-bridge-interface.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
 strata-bridge-types.workspace = true

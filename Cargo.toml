@@ -11,6 +11,8 @@ members = [
   "crates/alpen-ee/ol_tracker",
   "crates/asm/common",
   "crates/asm/logs",
+  "crates/asm/interfaces/bridge",
+  "crates/asm/interfaces/checkpoint",
   "crates/asm/stf",
   "crates/asm/manifest-types",
   "crates/asm/moho-program",
@@ -158,6 +160,8 @@ alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff" }
 strata-acct-types = { path = "crates/acct-types" }
 strata-asm-common = { path = "crates/asm/common" }
+strata-asm-bridge-interface = { path = "crates/asm/interfaces/bridge" }
+strata-asm-checkpoint-interface = { path = "crates/asm/interfaces/checkpoint" }
 strata-asm-logs = { path = "crates/asm/logs" }
 strata-asm-manifest-types = { path = "crates/asm/manifest-types" }
 strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }

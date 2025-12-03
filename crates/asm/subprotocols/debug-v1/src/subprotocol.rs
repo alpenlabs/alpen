@@ -7,7 +7,7 @@ use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
     TxInputRef, VerifiedAuxData, logging,
 };
-use strata_asm_proto_bridge_v1::BridgeIncomingMsg;
+use strata_asm_bridge_interface::BridgeIncomingMsg;
 
 use crate::{
     constants::DEBUG_SUBPROTOCOL_ID,

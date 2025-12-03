@@ -1,0 +1,16 @@
+[package]
+name = "strata-asm-bridge-interface"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+arbitrary.workspace = true
+borsh.workspace = true
+serde.workspace = true
+
+strata-asm-common.workspace = true
+strata-asm-txs-bridge-v1.workspace = true
+strata-primitives.workspace = true

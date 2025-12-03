@@ -1,5 +1,6 @@
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_bridge_interface::WithdrawOutput;
 use strata_asm_txs_bridge_v1::{
     deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
     errors::Mismatch,
@@ -14,7 +15,7 @@ use crate::{
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
-        withdrawal::{OperatorClaimUnlock, WithdrawOutput, WithdrawalCommand},
+        withdrawal::{OperatorClaimUnlock, WithdrawalCommand},
     },
 };
 
@@ -379,9 +380,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::state::{
-        assignment::AssignmentEntry, config::BridgeV1Config, withdrawal::WithdrawOutput,
-    };
+    use crate::state::{assignment::AssignmentEntry, config::BridgeV1Config};
 
     /// Helper function to create test operator keys
     ///

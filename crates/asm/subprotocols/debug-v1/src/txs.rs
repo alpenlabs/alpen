@@ -4,7 +4,7 @@
 //! injection of test data into the ASM for testing purposes.
 
 use strata_asm_common::TxInputRef;
-use strata_asm_proto_bridge_v1::WithdrawOutput;
+use strata_asm_bridge_interface::WithdrawOutput;
 use strata_l1_txfmt::TxType;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
