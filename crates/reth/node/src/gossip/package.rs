@@ -183,51 +183,80 @@ impl AlpenGossipPackage {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
-    fn test_header() -> Header {
-        Header::default()
+    /// Strategy for generating arbitrary headers.
+    /// For now, we use a default header since Header doesn't implement Arbitrary.
+    /// In the future, this could be extended to generate headers with various fields.
+    fn header_strategy() -> impl Strategy<Value = Header> {
+        Just(Header::default())
     }
 
-    fn test_signature() -> Buf64 {
-        Buf64::from([0xab; 64])
+    /// Strategy for generating arbitrary Buf32 values.
+    fn buf32_strategy() -> impl Strategy<Value = Buf32> {
+        prop::array::uniform32(0u8..).prop_map(Buf32::from)
     }
 
-    #[test]
-    fn test_message_new() {
-        let header = test_header();
-        let seq_no = 42u64;
-
-        let msg = AlpenGossipMessage::new(header.clone(), seq_no);
-
-        assert_eq!(msg.header(), &header);
-        assert_eq!(msg.seq_no(), seq_no);
+    /// Strategy for generating arbitrary Buf64 values.
+    fn buf64_strategy() -> impl Strategy<Value = Buf64> {
+        prop::collection::vec(0u8.., 64).prop_map(|vec| {
+            let mut arr = [0u8; 64];
+            arr.copy_from_slice(&vec);
+            Buf64::from(arr)
+        })
     }
 
-    #[test]
-    fn test_message_encode_decode_roundtrip() {
-        let header = test_header();
-        let seq_no = 123u64;
+    proptest! {
+        #[test]
+        fn test_message_encode_decode_roundtrip(
+            header in header_strategy(),
+            seq_no in any::<u64>()
+        ) {
+            let original = AlpenGossipMessage::new(header, seq_no);
+            let encoded = original.encode();
+            let decoded = AlpenGossipMessage::try_decode(&mut &encoded[..])
+                .expect("decode should succeed");
+            prop_assert_eq!(original, decoded);
+        }
 
-        let original = AlpenGossipMessage::new(header, seq_no);
-        let encoded = original.encode();
+        #[test]
+        fn test_message_encode_deterministic(
+            header in header_strategy(),
+            seq_no in any::<u64>()
+        ) {
+            let msg = AlpenGossipMessage::new(header, seq_no);
+            let encoded1 = msg.encode();
+            let encoded2 = msg.encode();
+            prop_assert_eq!(encoded1, encoded2, "encoding should be deterministic");
+        }
 
-        let decoded =
-            AlpenGossipMessage::try_decode(&mut &encoded[..]).expect("decode should succeed");
+        #[test]
+        fn test_message_getters(
+            header in header_strategy(),
+            seq_no in any::<u64>()
+        ) {
+            let msg = AlpenGossipMessage::new(header.clone(), seq_no);
+            prop_assert_eq!(msg.header(), &header);
+            prop_assert_eq!(msg.seq_no(), seq_no);
+        }
 
-        assert_eq!(original, decoded);
+        #[test]
+        fn test_message_different_seq_no_different_encoding(
+            header in header_strategy(),
+            seq_no1 in any::<u64>(),
+            seq_no2 in any::<u64>()
+        ) {
+            prop_assume!(seq_no1 != seq_no2);
+            let msg1 = AlpenGossipMessage::new(header.clone(), seq_no1);
+            let msg2 = AlpenGossipMessage::new(header, seq_no2);
+            prop_assert_ne!(msg1.encode(), msg2.encode());
+        }
     }
 
     #[test]
     fn test_message_try_decode_empty_buffer() {
-        let empty: &[u8] = &[];
-        let result = AlpenGossipMessage::try_decode(&mut &empty[..]);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("buffer is empty"));
-    }
-
-    #[test]
-    fn test_message_decode_empty_buffer_returns_none() {
         let empty: &[u8] = &[];
         let result = AlpenGossipMessage::try_decode(&mut &empty[..]);
         assert!(result.is_err());
@@ -252,7 +281,7 @@ mod tests {
         // Header is RLP encoded, so we need to find where it ends
         let header_only = {
             let mut buf = BytesMut::new();
-            test_header().encode(&mut buf);
+            Header::default().encode(&mut buf);
             buf
         };
 
@@ -268,92 +297,48 @@ mod tests {
             .contains("buffer too short for sequence number"));
     }
 
-    #[test]
-    fn test_message_getters() {
-        let header = test_header();
-        let seq_no = 999u64;
-
-        let msg = AlpenGossipMessage::new(header.clone(), seq_no);
-
-        assert_eq!(msg.header(), &header);
-        assert_eq!(msg.seq_no(), 999);
-    }
-
-    #[test]
-    fn test_message_encode_deterministic() {
-        let header = test_header();
-        let seq_no = 42u64;
-
-        let msg = AlpenGossipMessage::new(header, seq_no);
-
-        let encoded1 = msg.encode();
-        let encoded2 = msg.encode();
-
-        assert_eq!(encoded1, encoded2, "encoding should be deterministic");
-    }
-
-    #[test]
-    fn test_message_different_seq_no_different_encoding() {
-        let header = test_header();
-
-        let msg1 = AlpenGossipMessage::new(header.clone(), 1);
-        let msg2 = AlpenGossipMessage::new(header, 2);
-
-        assert_ne!(msg1.encode(), msg2.encode());
-    }
-
-    #[test]
-    fn test_message_roundtrip_with_various_seq_numbers() {
-        for seq_no in [0u64, 1, 100, u64::MAX / 2, u64::MAX] {
-            let msg = AlpenGossipMessage::new(test_header(), seq_no);
-            let encoded = msg.encode();
-            let decoded =
-                AlpenGossipMessage::try_decode(&mut &encoded[..]).expect("decode should succeed");
-            assert_eq!(msg, decoded, "roundtrip failed for seq_no={seq_no}");
+    proptest! {
+        #[test]
+        fn test_package_encode_decode_roundtrip(
+            header in header_strategy(),
+            seq_no in any::<u64>(),
+            public_key in buf32_strategy(),
+            signature in buf64_strategy()
+        ) {
+            let message = AlpenGossipMessage::new(header, seq_no);
+            let original = AlpenGossipPackage::new(message, public_key, signature);
+            let encoded = original.encode();
+            let decoded = AlpenGossipPackage::try_decode(&mut &encoded[..])
+                .expect("decode should succeed");
+            prop_assert_eq!(original, decoded);
         }
-    }
 
-    fn test_public_key() -> Buf32 {
-        Buf32::from([2_u8; 32])
-    }
+        #[test]
+        fn test_package_getters(
+            header in header_strategy(),
+            seq_no in any::<u64>(),
+            public_key in buf32_strategy(),
+            signature in buf64_strategy()
+        ) {
+            let message = AlpenGossipMessage::new(header, seq_no);
+            let pkg = AlpenGossipPackage::new(message.clone(), public_key, signature);
+            prop_assert_eq!(pkg.message(), &message);
+            prop_assert_eq!(pkg.public_key(), &public_key);
+            prop_assert_eq!(pkg.signature(), &signature);
+        }
 
-    #[test]
-    fn test_package_new() {
-        let message = AlpenGossipMessage::new(test_header(), 42u64);
-        let public_key = test_public_key();
-        let signature = test_signature();
-
-        let pkg = AlpenGossipPackage::new(message.clone(), public_key, signature);
-
-        assert_eq!(pkg.message(), &message);
-        assert_eq!(pkg.public_key(), &test_public_key());
-        assert_eq!(pkg.signature(), &test_signature());
-    }
-
-    #[test]
-    fn test_package_getters() {
-        let message = AlpenGossipMessage::new(test_header(), 999u64);
-        let public_key = Buf32::from([0x12; 32]);
-        let signature = Buf64::from([0x34; 64]);
-
-        let pkg = AlpenGossipPackage::new(message, public_key, signature);
-
-        assert_eq!(pkg.public_key(), &Buf32::from([0x12; 32]));
-        assert_eq!(pkg.signature(), &Buf64::from([0x34; 64]));
-    }
-
-    #[test]
-    fn test_package_encode_decode_roundtrip() {
-        let message = AlpenGossipMessage::new(test_header(), 42u64);
-        let public_key = test_public_key();
-        let signature = test_signature();
-
-        let original = AlpenGossipPackage::new(message, public_key, signature);
-        let encoded = original.encode();
-
-        let decoded =
-            AlpenGossipPackage::try_decode(&mut &encoded[..]).expect("decode should succeed");
-
-        assert_eq!(original, decoded);
+        #[test]
+        fn test_package_encode_deterministic(
+            header in header_strategy(),
+            seq_no in any::<u64>(),
+            public_key in buf32_strategy(),
+            signature in buf64_strategy()
+        ) {
+            let message = AlpenGossipMessage::new(header, seq_no);
+            let pkg = AlpenGossipPackage::new(message, public_key, signature);
+            let encoded1 = pkg.encode();
+            let encoded2 = pkg.encode();
+            prop_assert_eq!(encoded1, encoded2, "encoding should be deterministic");
+        }
     }
 }
