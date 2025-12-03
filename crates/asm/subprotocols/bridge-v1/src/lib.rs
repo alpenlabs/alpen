@@ -27,5 +27,5 @@ mod subprotocol;
 
 pub use errors::*;
 pub use state::{BridgeV1Config, BridgeV1State};
-pub use subprotocol::BridgeV1Subproto;
 pub use strata_asm_bridge_interface::{BridgeIncomingMsg, WithdrawOutput};
+pub use subprotocol::BridgeV1Subproto;

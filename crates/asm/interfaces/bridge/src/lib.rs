@@ -64,4 +64,3 @@ impl InterprotoMsg for BridgeIncomingMsg {
         self
     }
 }
-
