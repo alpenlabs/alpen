@@ -6975,7 +6975,7 @@ source = "git+https://github.com/alpenlabs/moho#274f1b9a9b3961a650c19de2e1b45ae6
 dependencies = [
  "borsh",
  "hex",
- "sha2 0.10.9",
+ "sha2",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -11288,7 +11288,7 @@ dependencies = [
  "opentelemetry_sdk 0.31.0",
  "tracing",
  "tracing-opentelemetry 0.32.0",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "url",
 ]
 
@@ -13473,7 +13473,7 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "proptest",
- "sha2 0.10.9",
+ "sha2",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -13782,7 +13782,7 @@ dependencies = [
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "ssz",
  "ssz_derive",
  "strata-checkpoint-types",
@@ -14010,8 +14010,8 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber 0.3.20",
+ "tracing-opentelemetry 0.27.0",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -14390,7 +14390,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "ssz",
  "ssz_derive",
  "strata-codec",
@@ -14471,7 +14471,7 @@ dependencies = [
  "borsh",
  "digest 0.10.7",
  "serde",
- "sha2 0.10.9",
+ "sha2",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -16100,7 +16100,7 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
- "tracing-subscriber 0.3.20",
+ "tracing-subscriber 0.3.22",
  "web-time",
 ]
 
@@ -16150,7 +16150,7 @@ version = "0.8.3"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.3#f16bea1f0c7925296e8a4c82d358bd1bb9fe71d8"
 dependencies = [
  "digest 0.10.7",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "ssz",
  "ssz_primitives",
