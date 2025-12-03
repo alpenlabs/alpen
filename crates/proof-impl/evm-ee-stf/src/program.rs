@@ -3,9 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use zkaleido::{
-    ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
-};
+use zkaleido::{ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
 use crate::{
@@ -49,8 +47,6 @@ impl ZkVmProgram for EvmEeProgram {
         H::extract_borsh_public_output(public_values)
     }
 }
-
-impl ZkVmProgramPerf for EvmEeProgram {}
 
 impl EvmEeProgram {
     pub fn native_host() -> NativeHost {

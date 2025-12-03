@@ -6,7 +6,7 @@ use std::{
 use strata_checkpoint_types::BatchTransition;
 use zkaleido::{
     AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
-    ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
+    ZkVmInputResult, ZkVmProgram, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -57,8 +57,6 @@ impl ZkVmProgram for CheckpointProgram {
         H::extract_borsh_public_output(public_values)
     }
 }
-
-impl ZkVmProgramPerf for CheckpointProgram {}
 
 impl CheckpointProgram {
     pub fn native_host() -> NativeHost {
