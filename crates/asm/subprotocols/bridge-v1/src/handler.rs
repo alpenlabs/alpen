@@ -1,7 +1,9 @@
-use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer};
+use bitcoin::ScriptBuf;
+use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
 
 use crate::{
+    SlashValidationError,
     errors::BridgeSubprotocolError,
     parser::{ParsedDepositTx, ParsedTx},
     state::BridgeV1State,
@@ -13,10 +15,13 @@ use crate::{
 /// - **Deposit**: Processes the deposit transaction without emitting logs
 /// - **WithdrawalFulfillment**: Processes the withdrawal and emits a withdrawal processed log via
 ///   the relayer to notify other components of the processed withdrawal
+/// - **Slash**: Validates the stake connector is locked to N/N multisig and processes slashing
 ///
 /// # Arguments
 /// * `state` - Mutable reference to the bridge state to be updated
 /// * `parsed_tx` - The parsed transaction to handle
+/// * `nn_script` - The expected N/N multisig locking script for validation
+/// * `verified_aux_data` - Auxiliary data containing referenced transaction outputs
 /// * `relayer` - The message relayer used for emitting logs
 ///
 /// # Returns
@@ -25,6 +30,8 @@ use crate::{
 pub(crate) fn handle_parsed_tx<'t>(
     state: &mut BridgeV1State,
     parsed_tx: ParsedTx<'t>,
+    nn_script: &ScriptBuf,
+    verified_aux_data: &VerifiedAuxData,
     relayer: &mut impl MsgRelayer,
 ) -> Result<(), BridgeSubprotocolError> {
     match parsed_tx {
@@ -42,8 +49,17 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
-        ParsedTx::Slash(_info) => {
-            // TODO: Implement slash transaction handling
+        ParsedTx::Slash(info) => {
+            // Validate that the stake connector (second input) is locked to the expected N/N
+            // multisig script. This ensures this is a valid slash transaction that was presigned by
+            // N/N and not some arbitrary transaction posted by someone else.
+            let stake_connector_script = &verified_aux_data
+                .get_bitcoin_txout(info.second_inpoint().outpoint())?
+                .script_pubkey;
+            if stake_connector_script != nn_script {
+                return Err(SlashValidationError::InvalidStakeConnectorScript.into());
+            }
+            // TODO: Implement slash transaction handling in the state
             todo!("handle slash")
         }
     }
@@ -56,8 +72,8 @@ pub(crate) fn handle_parsed_tx<'t>(
 ///
 /// - **Deposit transactions**: No auxiliary data required
 /// - **Withdrawal fulfillment transactions**: No auxiliary data required
-/// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced in
-///   the slash proof to enable verification of operator double-signing
+/// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced in the slash
+///   proof to enable verification of operator double-signing
 ///
 /// # Parameters
 ///
