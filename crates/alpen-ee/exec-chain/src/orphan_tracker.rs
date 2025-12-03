@@ -101,3 +101,161 @@ impl OrphanTracker {
         removed
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strata_identifiers::Buf32;
+
+    fn hash_from_u8(value: u8) -> Hash {
+        Hash::from(Buf32::new([value; 32]))
+    }
+
+    fn make_block(blocknum: u64, blockhash: Hash, parent: Hash) -> BlockEntry {
+        BlockEntry {
+            blocknum,
+            blockhash,
+            parent,
+        }
+    }
+
+    #[test]
+    fn test_insert_and_has_block() {
+        let mut tracker = OrphanTracker::new_empty();
+        let block = make_block(1, hash_from_u8(1), hash_from_u8(0));
+
+        tracker.insert(block);
+
+        assert!(tracker.has_block(&hash_from_u8(1)));
+        assert!(!tracker.has_block(&hash_from_u8(2)));
+    }
+
+    #[test]
+    fn test_take_children_empty() {
+        let mut tracker = OrphanTracker::new_empty();
+        let children = tracker.take_children(&hash_from_u8(0));
+
+        assert!(children.is_empty());
+    }
+
+    #[test]
+    fn test_take_children_single() {
+        let mut tracker = OrphanTracker::new_empty();
+        let block = make_block(1, hash_from_u8(1), hash_from_u8(0));
+
+        tracker.insert(block);
+
+        let children = tracker.take_children(&hash_from_u8(0));
+
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].blockhash, hash_from_u8(1));
+        assert!(!tracker.has_block(&hash_from_u8(1)));
+    }
+
+    #[test]
+    fn test_take_children_multiple() {
+        //     0
+        //   / | \
+        //  1  2  3
+        let mut tracker = OrphanTracker::new_empty();
+
+        tracker.insert(make_block(1, hash_from_u8(1), hash_from_u8(0)));
+        tracker.insert(make_block(1, hash_from_u8(2), hash_from_u8(0)));
+        tracker.insert(make_block(1, hash_from_u8(3), hash_from_u8(0)));
+
+        let children = tracker.take_children(&hash_from_u8(0));
+
+        assert_eq!(children.len(), 3);
+        assert!(!tracker.has_block(&hash_from_u8(1)));
+        assert!(!tracker.has_block(&hash_from_u8(2)));
+        assert!(!tracker.has_block(&hash_from_u8(3)));
+    }
+
+    #[test]
+    fn test_take_children_removes_only_direct_children() {
+        //   0
+        //   |
+        //   1
+        //   |
+        //   2
+        let mut tracker = OrphanTracker::new_empty();
+
+        tracker.insert(make_block(1, hash_from_u8(1), hash_from_u8(0)));
+        tracker.insert(make_block(2, hash_from_u8(2), hash_from_u8(1)));
+
+        let children = tracker.take_children(&hash_from_u8(0));
+
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].blockhash, hash_from_u8(1));
+
+        // Block 2 should still be in the tracker (it's a child of 1, not 0)
+        assert!(tracker.has_block(&hash_from_u8(2)));
+    }
+
+    #[test]
+    fn test_purge_by_height() {
+        let mut tracker = OrphanTracker::new_empty();
+
+        tracker.insert(make_block(1, hash_from_u8(1), hash_from_u8(0)));
+        tracker.insert(make_block(2, hash_from_u8(2), hash_from_u8(1)));
+        tracker.insert(make_block(3, hash_from_u8(3), hash_from_u8(2)));
+        tracker.insert(make_block(4, hash_from_u8(4), hash_from_u8(3)));
+
+        let removed = tracker.purge_by_height(2);
+
+        assert_eq!(removed.len(), 2);
+        assert!(removed.contains(&hash_from_u8(1)));
+        assert!(removed.contains(&hash_from_u8(2)));
+
+        assert!(!tracker.has_block(&hash_from_u8(1)));
+        assert!(!tracker.has_block(&hash_from_u8(2)));
+        assert!(tracker.has_block(&hash_from_u8(3)));
+        assert!(tracker.has_block(&hash_from_u8(4)));
+    }
+
+    #[test]
+    fn test_purge_by_height_empty() {
+        let mut tracker = OrphanTracker::new_empty();
+
+        tracker.insert(make_block(5, hash_from_u8(5), hash_from_u8(4)));
+        tracker.insert(make_block(6, hash_from_u8(6), hash_from_u8(5)));
+
+        let removed = tracker.purge_by_height(3);
+
+        assert!(removed.is_empty());
+        assert!(tracker.has_block(&hash_from_u8(5)));
+        assert!(tracker.has_block(&hash_from_u8(6)));
+    }
+
+    #[test]
+    fn test_multiple_orphan_chains() {
+        //   0       5
+        //   |       |
+        //   1       6
+        //   |
+        //   2
+        let mut tracker = OrphanTracker::new_empty();
+
+        tracker.insert(make_block(1, hash_from_u8(1), hash_from_u8(0)));
+        tracker.insert(make_block(2, hash_from_u8(2), hash_from_u8(1)));
+        tracker.insert(make_block(6, hash_from_u8(6), hash_from_u8(5)));
+
+        // Take children of 0
+        let children_0 = tracker.take_children(&hash_from_u8(0));
+        assert_eq!(children_0.len(), 1);
+        assert_eq!(children_0[0].blockhash, hash_from_u8(1));
+
+        // Block 2 and 6 should still be there
+        assert!(tracker.has_block(&hash_from_u8(2)));
+        assert!(tracker.has_block(&hash_from_u8(6)));
+
+        // Take children of 5
+        let children_5 = tracker.take_children(&hash_from_u8(5));
+        assert_eq!(children_5.len(), 1);
+        assert_eq!(children_5[0].blockhash, hash_from_u8(6));
+
+        // Only block 2 should remain
+        assert!(tracker.has_block(&hash_from_u8(2)));
+        assert!(!tracker.has_block(&hash_from_u8(6)));
+    }
+}

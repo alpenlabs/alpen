@@ -1203,6 +1203,7 @@ dependencies = [
  "strata-acct-types",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
+ "strata-ee-chain-types",
  "strata-identifiers",
  "strata-snark-acct-types",
  "thiserror 2.0.17",

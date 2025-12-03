@@ -21,4 +21,5 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-ee-chain-types.workspace = true
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
