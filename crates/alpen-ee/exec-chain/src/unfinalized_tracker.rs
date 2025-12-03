@@ -75,8 +75,8 @@ impl UnfinalizedTracker {
     /// Returns the result of the attachment attempt, updating tips and best block if successful.
     pub(crate) fn attach_block(&mut self, block: BlockEntry) -> AttachBlockRes {
         // 1. Is it an existing block ?
-        let block_hash = block.blockhash;
-        if self.blocks.contains_key(&block_hash) {
+        let blockhash = block.blockhash;
+        if self.blocks.contains_key(&blockhash) {
             return AttachBlockRes::ExistingBlock;
         }
 
@@ -89,9 +89,9 @@ impl UnfinalizedTracker {
         // 3. Does it extend an existing tip ?
         let parent_blockhash = block.parent;
         if self.tips.contains_key(&parent_blockhash) {
-            self.blocks.insert(block_hash, block);
+            self.blocks.insert(blockhash, block);
             self.tips.remove(&parent_blockhash);
-            self.tips.insert(block_hash, block_height);
+            self.tips.insert(blockhash, block_height);
 
             (self.best.hash, self.best.height) = self.compute_best_tip();
             return AttachBlockRes::Ok(self.best.hash);
@@ -99,8 +99,8 @@ impl UnfinalizedTracker {
 
         // 4. does it create a new tip ?
         if self.blocks.contains_key(&parent_blockhash) {
-            self.blocks.insert(block_hash, block);
-            self.tips.insert(block_hash, block_height);
+            self.blocks.insert(blockhash, block);
+            self.tips.insert(blockhash, block_height);
 
             (self.best.hash, self.best.height) = self.compute_best_tip();
             return AttachBlockRes::Ok(self.best.hash);
@@ -112,13 +112,8 @@ impl UnfinalizedTracker {
 
     /// Finds the tip with the highest block height.
     fn compute_best_tip(&self) -> (Hash, u64) {
-        let height = self
-            .blocks
-            .get(&self.best.hash)
-            .expect("entry must exist")
-            .blocknum;
         let (hash, height) = self.tips.iter().fold(
-            (&self.best.hash, &height),
+            (&self.best.hash, &self.best.height),
             |(a_hash, a_height), (b_hash, b_height)| {
                 if b_height > a_height {
                     (b_hash, b_height)
@@ -499,7 +494,11 @@ mod tests {
         let mut tracker = UnfinalizedTracker::new_empty(finalized);
 
         for i in 1..=5 {
-            tracker.attach_block(make_block(i, hash_from_u8(i as u8), hash_from_u8((i - 1) as u8)));
+            tracker.attach_block(make_block(
+                i,
+                hash_from_u8(i as u8),
+                hash_from_u8((i - 1) as u8),
+            ));
         }
 
         let report = tracker.prune_finalized(hash_from_u8(4)).unwrap();

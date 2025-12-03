@@ -78,11 +78,11 @@ impl ExecChainState {
     fn check_orphan_blocks(&mut self, mut tip: Hash) -> Hash {
         let mut attachable_blocks: VecDeque<_> = self.orphans.take_children(&tip).into();
         while let Some(block) = attachable_blocks.pop_front() {
-            let block_hash = block.blockhash;
+            let blockhash = block.blockhash;
             match self.unfinalized.attach_block(block) {
                 AttachBlockRes::Ok(best) => {
                     tip = best;
-                    attachable_blocks.append(&mut self.orphans.take_children(&block_hash).into());
+                    attachable_blocks.append(&mut self.orphans.take_children(&blockhash).into());
                 }
                 AttachBlockRes::ExistingBlock => {
                     // shouldnt happen but safe to ignore
