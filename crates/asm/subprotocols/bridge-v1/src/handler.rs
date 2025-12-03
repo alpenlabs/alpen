@@ -1,4 +1,4 @@
-use strata_asm_common::{AsmLogEntry, MsgRelayer};
+use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer};
 use strata_asm_logs::NewExportEntry;
 
 use crate::{
@@ -45,6 +45,35 @@ pub(crate) fn handle_parsed_tx<'t>(
         ParsedTx::Slash(_info) => {
             // TODO: Implement slash transaction handling
             todo!("handle slash")
+        }
+    }
+}
+
+/// Pre-processes a parsed transaction to collect auxiliary data requests.
+///
+/// This function inspects the transaction type and requests any additional data needed
+/// for full verification during the main processing phase. Currently handles:
+///
+/// - **Deposit transactions**: No auxiliary data required
+/// - **Withdrawal fulfillment transactions**: No auxiliary data required
+/// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced in
+///   the slash proof to enable verification of operator double-signing
+///
+/// # Parameters
+///
+/// - `parsed_tx` - The parsed transaction to pre-process
+/// - `_state` - Current bridge state (unused, reserved for future use)
+/// - `collector` - Collector for accumulating auxiliary data requests
+pub(crate) fn preprocess_parsed_tx<'t>(
+    parsed_tx: ParsedTx<'t>,
+    _state: &BridgeV1State,
+    collector: &mut AuxRequestCollector,
+) {
+    match parsed_tx {
+        ParsedTx::Deposit(_) => {}
+        ParsedTx::WithdrawalFulfillment(_) => {}
+        ParsedTx::Slash(info) => {
+            collector.request_bitcoin_tx(info.second_inpoint().0.txid);
         }
     }
 }
