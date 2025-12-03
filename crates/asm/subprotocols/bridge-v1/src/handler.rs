@@ -42,5 +42,9 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
+        ParsedTx::Slash(_info) => {
+            // TODO: Implement slash transaction handling
+            todo!("handle slash")
+        }
     }
 }
