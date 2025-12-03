@@ -59,8 +59,11 @@ pub(crate) fn handle_parsed_tx<'t>(
             if stake_connector_script != nn_script {
                 return Err(SlashValidationError::InvalidStakeConnectorScript.into());
             }
-            // TODO: Implement slash transaction handling in the state
-            todo!("handle slash")
+
+            // Remove the slashed operator
+            state.remove_operator(info.header_aux().operator_idx());
+
+            Ok(())
         }
     }
 }

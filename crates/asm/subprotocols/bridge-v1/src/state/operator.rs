@@ -240,35 +240,61 @@ impl OperatorTable {
         &self.active_operators
     }
 
-    /// Updates the active status for multiple operators, inserts new operators,
-    /// and recalculates the aggregated key.
-    ///
-    /// # Parameters
-    ///
-    /// - `updates` - Slice of (operator_index, is_active) pairs for existing operators
-    /// - `inserts` - Slice of new operator MuSig2 public keys to insert (marked as active by
-    ///   default)
+    /// Atomically applies membership changes by adding new operators and removing existing ones,
+    /// then recalculates the aggregated key.
     ///
     /// # Processing Order
     ///
-    /// Inserts are processed before updates. If an operator index appears in both parameters,
-    /// the update will override the insert's `is_active` value.
+    /// Additions are processed before removals. If an operator index appears in both parameters,
+    /// the removal will override the addition's `is_active` value.
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - The updates would result in no active operators
+    /// - The changes would result in no active operators
     /// - Sequential operator insertion fails (bitmap index management error)
     /// - `next_idx` overflows `u32::MAX` when inserting new operators (since operator indices are
     ///   never reused, this limits the total number of unique operators that can ever be registered
     ///   to `u32::MAX` or 4,294,967,295 over the bridge's lifetime)
-    pub fn update_multisig_and_recalc_key(
+    pub fn apply_membership_changes(
         &mut self,
-        updates: &[(OperatorIdx, bool)],
-        inserts: &[EvenPublicKey],
+        add_members: &[EvenPublicKey],
+        remove_members: &[OperatorIdx],
     ) {
-        // Handle inserts first
-        for musig2_pk in inserts {
+        self.add_operators(add_members);
+        self.remove_operators(remove_members);
+
+        if !remove_members.is_empty() || !add_members.is_empty() {
+            self.recalculate_aggregated_key();
+        }
+    }
+
+    /// Adds new operators to the table and marks them as active.
+    ///
+    /// # Duplicate Keys
+    ///
+    /// Duplicate public keys are explicitly allowed. Per [BIP-327]:
+    ///
+    /// > The same individual public key is allowed to occur more than once in the input of KeyAgg
+    /// > and KeySort. This is by design: All algorithms in this proposal handle multiple signers
+    /// > who (claim to) have identical individual public keys properly, and applications are not
+    /// > required to check for duplicate individual public keys. In fact, applications are
+    /// > recommended to omit checks for duplicate individual public keys in order to simplify
+    /// > error handling.
+    ///
+    /// [BIP-327]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#public-key-aggregation
+    ///
+    /// In this implementation, only the administration subprotocol can add new members.
+    /// If the admin subprotocol chooses to add duplicate operators, we assume they have
+    /// a valid reason (e.g., weighted voting or specific trust arrangements) and allow it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - Sequential operator insertion fails (bitmap index management error)
+    /// - `next_idx` overflows `u32::MAX`
+    fn add_operators(&mut self, operators: &[EvenPublicKey]) {
+        for musig2_pk in operators {
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
@@ -285,9 +311,11 @@ impl OperatorTable {
 
             self.next_idx += 1;
         }
+    }
 
-        // Handle updates by modifying the bitmap directly
-        for &(idx, is_active) in updates {
+    /// Deactivates existing operators by their indices.
+    fn remove_operators(&mut self, indices: &[OperatorIdx]) {
+        for &idx in indices {
             // Only update if the operator exists
             if self
                 .operators
@@ -298,32 +326,35 @@ impl OperatorTable {
                 // For existing operators, we can set their status directly
                 if (idx as usize) < self.active_operators.len() {
                     self.active_operators
-                        .try_set(idx, is_active)
+                        .try_set(idx, false)
                         .expect("Setting existing operator status should succeed");
                 }
             }
         }
+    }
 
-        if !updates.is_empty() || !inserts.is_empty() {
-            // Recalculate aggregated key based on active operators
-            let active_keys: Vec<Buf32> = self
-                .active_operators
-                .active_indices()
-                .filter_map(|op| {
-                    self.get_operator(op).map(|entry| {
-                        Buf32::from(entry.musig2_pk().x_only_public_key().0.serialize())
-                    })
-                })
-                .collect();
+    /// Recalculates the aggregated key based on currently active operators.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no active operators.
+    fn recalculate_aggregated_key(&mut self) {
+        let active_keys: Vec<Buf32> = self
+            .active_operators
+            .active_indices()
+            .filter_map(|op| {
+                self.get_operator(op)
+                    .map(|entry| Buf32::from(entry.musig2_pk().x_only_public_key().0.serialize()))
+            })
+            .collect();
 
-            if active_keys.is_empty() {
-                panic!("Cannot have empty multisig - at least one operator must be active");
-            }
-
-            self.agg_key = aggregate_schnorr_keys(active_keys.iter())
-                .expect("Failed to generate aggregated key")
-                .into();
+        if active_keys.is_empty() {
+            panic!("Cannot have empty multisig - at least one operator must be active");
         }
+
+        self.agg_key = aggregate_schnorr_keys(active_keys.iter())
+            .expect("Failed to generate aggregated key")
+            .into();
     }
 }
 
@@ -380,7 +411,7 @@ mod tests {
         let mut table = OperatorTable::from_operator_list(&initial_operators);
 
         let new_operators = create_test_operator_pubkeys(2);
-        table.update_multisig_and_recalc_key(&[], &new_operators);
+        table.apply_membership_changes(&new_operators, &[]);
 
         assert_eq!(table.len(), 3);
         assert_eq!(table.next_idx, 3);
@@ -406,18 +437,18 @@ mod tests {
         assert!(table.is_in_current_multisig(2));
 
         // Update multiple operators at once
-        let updates = vec![(0, false), (2, false)];
-        table.update_multisig_and_recalc_key(&updates, &[]);
+        let removals = vec![0, 2];
+        table.apply_membership_changes(&[], &removals);
         assert!(!table.is_in_current_multisig(0));
         assert!(table.is_in_current_multisig(1)); // unchanged
         assert!(!table.is_in_current_multisig(2));
 
-        // Test with non-existent operator
-        let updates = vec![(0, true), (99, false)]; // 99 doesn't exist
-        table.update_multisig_and_recalc_key(&updates, &[]);
+        // Test re-adding operator 0
+        let additions = vec![0];
+        table.apply_membership_changes(&[], &additions);
 
-        // Only existing operator should be updated
-        assert!(table.is_in_current_multisig(0));
+        // Operator 0 should remain inactive (it was already added)
+        assert!(!table.is_in_current_multisig(0));
     }
 
     #[test]
@@ -430,7 +461,7 @@ mod tests {
         assert_eq!(active_indices, vec![0, 1, 2]);
 
         // Mark operator 1 as inactive
-        table.update_multisig_and_recalc_key(&[(1, false)], &[]);
+        table.apply_membership_changes(&[], &[1]);
 
         // Now only operators 0 and 2 should be active
         let active_indices: Vec<_> = table.current_multisig().active_indices().collect();
