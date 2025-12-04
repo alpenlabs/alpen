@@ -13,6 +13,7 @@ use crate::{
     constants::BRIDGE_GATEWAY_ACCT_ID,
     context::BasicExecContext,
     errors::{ExecError, ExecResult},
+    output::AuxAccumulationCtx,
 };
 
 /// Processes the manifests from a block, which is part of the epoch sealing
@@ -22,7 +23,7 @@ use crate::{
 pub fn process_block_manifests<S: StateAccessor>(
     state: &mut S,
     mf_cont: &OLL1ManifestContainer,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     let terminating_epoch = state.l1_view().cur_epoch();
 
@@ -51,7 +52,7 @@ fn process_asm_manifest<S: StateAccessor>(
     state: &mut S,
     real_height: L1Height,
     mf: &AsmManifest,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     let estate = state.l1_view();
 
@@ -62,6 +63,7 @@ fn process_asm_manifest<S: StateAccessor>(
 
     // 2. Accept the manifest into the ASM MMR.
     state.l1_view_mut().append_manifest(real_height, mf.clone());
+    context.aux_accumulator().append_asm_manifest(mf);
 
     Ok(())
 }
@@ -70,7 +72,7 @@ fn process_asm_log<S: StateAccessor>(
     state: &mut S,
     log: &AsmLogEntry,
     real_height: L1Height,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // Try to parse the log as an SPS-52 message.
     let Some(msg) = log.try_as_msg() else {
@@ -107,7 +109,7 @@ fn process_asm_log<S: StateAccessor>(
 fn process_deposit_intent_log<S: StateAccessor>(
     state: &mut S,
     data: &DepositIntentLogData,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // Convert the account serial to account ID.
     let Some(dest_id) = state.find_account_id_by_serial(data.dest_acct_serial())? else {
@@ -142,7 +144,7 @@ fn process_deposit_intent_log<S: StateAccessor>(
 fn process_checkpoint_ack_log<S: StateAccessor>(
     state: &mut S,
     data: &CheckpointAckLogData,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // Update the L1 view state with the acknowledged epoch.
     //

@@ -19,7 +19,7 @@ use crate::{
     },
     errors::{ExecError, ExecResult},
     manifest_processing,
-    output::ExecOutputBuffer,
+    output::{ExecAuxAccumulator, ExecOutputBuffer},
     transaction_processing,
 };
 
@@ -168,7 +168,8 @@ pub fn verify_block<S: StateAccessor>(
 
     // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
-    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
+    let aux_accumulator = ExecAuxAccumulator::new();
+    let basic_ctx = BasicExecContext::new(block_info, &output_buffer, &aux_accumulator);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header.as_ref());
     if let Some(tx_segment) = body.tx_segment() {
         transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;
@@ -347,7 +348,8 @@ pub fn verify_epoch_with_diff<S: StateAccessor, D: DaScheme<S>>(
 
     // 3. As if it were the last block of an epoch, call process_block_manifests.
     let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
-    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+    let aux_accumulator = ExecAuxAccumulator::new();
+    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output, &aux_accumulator);
     manifest_processing::process_block_manifests(state, manifests, &term_ctx)?;
 
     // 4. Verify the final state root.

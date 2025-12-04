@@ -14,7 +14,7 @@ use crate::{
     constants::SEQUENCER_ACCT_ID,
     context::{BasicExecContext, BlockContext, TxExecContext},
     errors::{ExecError, ExecResult},
-    output::OutputCtx,
+    output::{AuxAccumulationCtx, OutputCtx},
 };
 
 /// Process a block's transaction segment.
@@ -23,7 +23,7 @@ use crate::{
 pub fn process_block_tx_segment<S: StateAccessor>(
     state: &mut S,
     tx_seg: &OLTxSegment,
-    context: &TxExecContext<'_>,
+    context: &TxExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     for tx in tx_seg.txs() {
         process_single_tx(state, tx, context)?;
@@ -39,7 +39,7 @@ pub fn process_block_tx_segment<S: StateAccessor>(
 pub fn process_single_tx<S: StateAccessor>(
     state: &mut S,
     tx: &OLTransaction,
-    context: &TxExecContext<'_>,
+    context: &TxExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // 1. Check the transaction's attachments.
     if !check_tx_attachments(tx.attachment(), &context.to_block_context()) {
@@ -103,7 +103,7 @@ fn process_update_tx<S: StateAccessor>(
     target: &AccountId,
     mut astate: S::AccountState,
     update: &SnarkAccountUpdateContainer,
-    context: &TxExecContext<'_>,
+    context: &TxExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // 1. Make sure it's a snark account.
     let AccountTypeState::Snark(mut sastate) = astate.get_type_state()? else {
@@ -175,7 +175,7 @@ fn apply_interactions<S: StateAccessor>(
     state: &mut S,
     source: AccountId,
     fx_buf: AcctInteractionBuffer,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // Send the messages off to each of the targets.
     for m in fx_buf.messages {
