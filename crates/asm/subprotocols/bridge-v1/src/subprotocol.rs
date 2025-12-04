@@ -75,10 +75,13 @@ impl Subprotocol for BridgeV1Subproto {
             match parse_tx(tx) {
                 Ok(parsed_tx) => {
                     preprocess_parsed_tx(parsed_tx, state, collector);
-                    info!(tx_id = %tx.tx().compute_txid(), "Successfully pre-processed tx");
                 }
                 Err(e) => {
-                    error!(tx_id = %tx.tx().compute_txid(), error = %e, "Failed to process tx")
+                    error!(
+                        txid = %tx.tx().compute_txid(),
+                        error = %e,
+                        "Failed to pre-process tx"
+                    )
                 }
             }
         }

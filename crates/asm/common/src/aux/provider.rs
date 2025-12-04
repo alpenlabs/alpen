@@ -136,23 +136,17 @@ impl VerifiedAuxData {
 
     /// Returns the transaction output for the given outpoint.
     ///
-    /// # Invariants
-    ///
-    /// This method assumes the outpoint references a valid output index. Since outpoints
-    /// come from verified on-chain Bitcoin transactions, the `vout` index is guaranteed
-    /// to be valid. If this invariant is violated (indicating a bug), the method will
-    /// panic when indexing the output array.
-    ///
     /// # Errors
     ///
     /// Returns `AuxError::BitcoinTxNotFound` if the transaction is not found.
     pub fn get_bitcoin_txout(&self, outpoint: &OutPoint) -> AuxResult<&TxOut> {
-        let txid = outpoint.txid;
-        let tx = self
-            .txs
-            .get(&outpoint.txid)
-            .ok_or(AuxError::BitcoinTxNotFound { txid })?;
-        Ok(&tx.output[outpoint.vout as usize])
+        let tx = self.get_bitcoin_tx(outpoint.txid)?;
+        tx.output
+            .get(outpoint.vout as usize)
+            .ok_or(AuxError::BitcoinTxOutNotFound {
+                txid: outpoint.txid,
+                vout: outpoint.vout,
+            })
     }
 
     /// Gets a verified manifest hash by MMR index.
