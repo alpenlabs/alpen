@@ -1213,6 +1213,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-genesis"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-common",
+ "alpen-ee-config",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-identifiers",
+]
+
+[[package]]
 name = "alpen-ee-ol-tracker"
 version = "0.3.0-alpha.1"
 dependencies = [

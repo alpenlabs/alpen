@@ -9,6 +9,7 @@ members = [
   "crates/alpen-ee/config",
   "crates/alpen-ee/database",
   "crates/alpen-ee/engine",
+  "crates/alpen-ee/genesis",
   "crates/alpen-ee/ol_tracker",
   "crates/asm/common",
   "crates/asm/logs",
@@ -153,6 +154,7 @@ alpen-ee-config = { path = "crates/alpen-ee/config" }
 alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }
 alpen-ee-engine = { path = "crates/alpen-ee/engine" }
 alpen-ee-exec-chain = { path = "crates/alpen-ee/exec-chain" }
+alpen-ee-genesis = { path = "crates/alpen-ee/genesis" }
 alpen-ee-ol-tracker = { path = "crates/alpen-ee/ol_tracker" }
 alpen-reth-db = { path = "crates/reth/db" }
 alpen-reth-evm = { path = "crates/reth/evm" }
