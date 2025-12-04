@@ -1,18 +1,22 @@
 //! Trait definitions for low level database interfaces.  This borrows some of
 //! its naming conventions from reth.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
+use strata_acct_types::AccountId;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
+use strata_identifiers::OLTxId;
 use strata_ol_chain_types::L2BlockBundle;
+use strata_ol_chain_types_new::OLTransaction;
 use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
+use strata_snark_acct_types::{MessageEntry, MessageEntryProof};
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -35,6 +39,8 @@ pub trait DatabaseBackend: Send + Sync {
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
+    fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
+    fn snark_account_message_db(&self) -> Arc<impl SnarkAccountMessageDatabase>;
 }
 
 /// Database interface to control our view of ASM state.
@@ -350,4 +356,96 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
+}
+
+/// Database interface for snark account message entries and proofs.
+///
+/// This trait provides access to message entries and their accumulator proofs
+/// stored in the snark account message accumulator storage. Message entries are
+/// indexed by account ID and message index within that account's inbox MMR.
+///
+/// This is used by block assembly to fetch accumulator proofs just-in-time
+/// when constructing blocks with SnarkAccountUpdate transactions.
+pub trait SnarkAccountMessageDatabase: Send + Sync + 'static {
+    /// Retrieve a message entry by account ID and index.
+    ///
+    /// Returns None if the message entry doesn't exist.
+    fn get_message_entry(
+        &self,
+        account_id: AccountId,
+        index: u64,
+    ) -> DbResult<Option<MessageEntry>>;
+
+    /// Retrieve a message entry proof by account ID and index.
+    ///
+    /// Returns None if the proof doesn't exist.
+    fn get_message_proof(
+        &self,
+        account_id: AccountId,
+        index: u64,
+    ) -> DbResult<Option<MessageEntryProof>>;
+
+    /// Store a message entry.
+    ///
+    /// Used for persisting message entries to accumulator storage.
+    fn put_message_entry(
+        &self,
+        account_id: AccountId,
+        index: u64,
+        entry: MessageEntry,
+    ) -> DbResult<()>;
+
+    /// Store a message entry proof.
+    ///
+    /// Used for persisting accumulator proofs to storage for later retrieval
+    /// during block assembly.
+    fn put_message_proof(
+        &self,
+        account_id: AccountId,
+        index: u64,
+        proof: MessageEntryProof,
+    ) -> DbResult<()>;
+}
+
+/// Database interface for OL mempool persistence.
+///
+/// Provides durable storage for mempool transactions across restarts.
+/// The mempool layer maintains in-memory indices for ordering and uses
+/// this trait for persistence only.
+///
+/// Transactions are stored as structured `OLTransaction` types (not blobs).
+/// Metadata (entry_slot, entry_time, size_bytes) is maintained in-memory
+/// by the mempool layer and is not stored.
+pub trait MempoolDatabase: Send + Sync + 'static {
+    /// Store a transaction.
+    fn put_tx_entry(&self, txid: &OLTxId, tx: &OLTransaction) -> DbResult<()>;
+
+    /// Retrieve a transaction by ID.
+    ///
+    /// Returns None if the transaction doesn't exist.
+    fn get_tx_entry(&self, txid: &OLTxId) -> DbResult<Option<OLTransaction>>;
+
+    /// Retrieve multiple transactions by their IDs (batch operation).
+    ///
+    /// More efficient than calling get_tx_entry multiple times.
+    /// Returns a map of txid -> transaction for transactions that exist.
+    /// Missing transactions are simply not included in the result.
+    fn get_tx_entries(&self, txids: &[OLTxId]) -> DbResult<HashMap<OLTxId, OLTransaction>>;
+
+    /// Remove a transaction from storage.
+    ///
+    /// Returns Ok(()) even if the transaction doesn't exist.
+    fn del_tx_entry(&self, txid: &OLTxId) -> DbResult<()>;
+
+    /// Remove multiple transactions from storage (batch operation).
+    ///
+    /// More efficient than calling del_tx_entry multiple times.
+    /// Returns Ok(()) even if some transactions don't exist.
+    fn del_tx_entries(&self, txids: &[OLTxId]) -> DbResult<()>;
+
+    /// Get all transaction IDs currently in storage.
+    ///
+    /// Used during mempool initialization to restore state after restart.
+    /// The order of IDs is unspecified.
+    fn get_all_tx_ids(&self) -> DbResult<Vec<OLTxId>>;
 }

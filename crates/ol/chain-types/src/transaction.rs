@@ -2,14 +2,15 @@ use std::fmt;
 
 use int_enum::IntEnum;
 use strata_acct_types::{AccountId, VarVec};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
 use strata_codec_utils::CodecSsz;
+use strata_identifiers::{OLTxId, hash::raw};
 use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 use crate::Slot;
 
 /// Represents a single transaction within a block.
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, PartialEq, Codec)]
 pub struct OLTransaction {
     /// Any extra data associated with the transaction.
     extra: TransactionAttachment,
@@ -34,11 +35,20 @@ impl OLTransaction {
     pub fn type_id(&self) -> TxTypeId {
         self.payload().type_id()
     }
+
+    /// Computes the transaction ID by hashing the transaction's Codec encoding.
+    ///
+    /// This is used by the mempool to identify transactions and for deduplication.
+    /// The computation matches the pattern used for block IDs (`OLBlockHeader::compute_blkid()`).
+    pub fn compute_txid(&self) -> OLTxId {
+        let encoded = encode_to_vec(self).expect("transaction: encoding should succeed");
+        let hash = raw(&encoded);
+        OLTxId::from(hash)
+    }
 }
 
 /// The actual payload of the transaction.
-// TODO probably convert these from being struct-like variants
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[expect(
     clippy::large_enum_variant,
     reason = "will be converted to SSZ soon anyways"
@@ -91,7 +101,7 @@ impl Codec for TransactionPayload {
 /// Additional constraints that we can place on a transaction.
 ///
 /// This isn't *that* useful for now, but will be in the future.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TransactionAttachment {
     min_slot: Option<Slot>,
     max_slot: Option<Slot>,
@@ -182,7 +192,7 @@ impl fmt::Display for TxTypeId {
 }
 
 /// "Generic Account Message" tx payload.
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, Codec, PartialEq)]
 pub struct GamTxPayload {
     target: AccountId,
     payload: VarVec<u8>,
@@ -203,7 +213,7 @@ impl GamTxPayload {
 }
 
 /// Snark account update payload.
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, Codec, PartialEq)]
 pub struct SnarkAccountUpdateTxPayload {
     target: AccountId,
     update_container: CodecSsz<SnarkAccountUpdateContainer>,

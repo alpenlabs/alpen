@@ -1,4 +1,5 @@
 //! Update message types.
+use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::ssz_generated::ssz::{
     accumulators::*, messages::*, outputs::UpdateOutputs, state::ProofState, update::*,
@@ -174,6 +175,28 @@ impl SnarkAccountUpdate {
             base_update: self,
             accumulator_proofs: proofs,
         }
+    }
+}
+
+// TODO: Replace with proper SSZ serialization when available.
+// This is a temporary stub to allow compilation for mempool database implementation.
+// SnarkAccountUpdate serialization is not currently needed in practice as mempool
+// tests only use GenericAccountMessage variant.
+impl BorshSerialize for SnarkAccountUpdate {
+    fn serialize<W: std::io::Write>(&self, _writer: &mut W) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "SnarkAccountUpdate Borsh serialization not yet implemented - use SSZ when available",
+        ))
+    }
+}
+
+impl BorshDeserialize for SnarkAccountUpdate {
+    fn deserialize_reader<R: std::io::Read>(_reader: &mut R) -> std::io::Result<Self> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "SnarkAccountUpdate Borsh deserialization not yet implemented - use SSZ when available",
+        ))
     }
 }
 
