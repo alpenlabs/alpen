@@ -70,6 +70,15 @@ impl OperatorEntry {
     }
 }
 
+/// Builds a P2TR script for the provided aggregated operator key.
+fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptBuf {
+    BitcoinScriptBuf::from(ScriptBuf::new_p2tr(
+        SECP256K1,
+        agg_key.to_xonly_public_key(),
+        None,
+    ))
+}
+
 /// Table for managing registered bridge operators.
 ///
 /// This table maintains all registered operators with efficient lookup and insertion
@@ -129,23 +138,9 @@ pub struct OperatorTable {
 
     /// Historical N/N multisig scripts from previous operator set configurations.
     ///
-    /// This vector tracks all previous P2TR scripts that were used when the operator set
-    /// changed (due to slashing or unstaking). These historical scripts are necessary to validate
-    /// slash transactions that reference stake connectors from previous operator configurations.
-    ///
-    /// # Use Case
-    ///
-    /// When multiple operators are slashed in sequence:
-    /// 1. First slash: Validated against current N/N multisig script, operator removed, new script
-    ///    computed
-    /// 2. Second slash: Must be validated against the previous N/N multisig script (before first
-    ///    slash) because the stake connector was created when that operator set was active
-    ///
-    /// Without historical scripts, we could only validate the most recent slash, making subsequent
-    /// slashes from the same original operator set appear invalid.
-    ///
-    /// By storing the ScriptBuf directly instead of just keys, we avoid recomputing P2TR scripts
-    /// during validation, improving performance.
+    /// This vector tracks all P2TR scripts that represented the bridge across membership changes
+    /// due to operator entries/exits. By storing the ScriptBuf directly instead of just keys, we
+    /// avoid recomputing P2TR scripts during validation, improving performance.
     historical_nn_scripts: Vec<BitcoinScriptBuf>,
 }
 
@@ -185,7 +180,7 @@ impl OperatorTable {
         let bitmap = OperatorBitmap::new_with_size(entries.len(), true);
 
         // Compute the initial N/N script
-        let initial_nn_script = Self::build_nn_script(&agg_operator_key);
+        let initial_nn_script = build_nn_script(&agg_operator_key);
 
         Self {
             next_idx: entries.len() as OperatorIdx,
@@ -319,7 +314,7 @@ impl OperatorTable {
         if !remove_members.is_empty() || !add_members.is_empty() {
             self.recalculate_aggregated_key();
             self.historical_nn_scripts
-                .push(Self::build_nn_script(&self.agg_key));
+                .push(build_nn_script(&self.agg_key));
         }
     }
 
@@ -409,15 +404,6 @@ impl OperatorTable {
         self.agg_key = aggregate_schnorr_keys(active_keys.iter())
             .expect("Failed to generate aggregated key")
             .into();
-    }
-
-    /// Builds a P2TR script for the provided aggregated operator key.
-    fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptBuf {
-        BitcoinScriptBuf::from(ScriptBuf::new_p2tr(
-            SECP256K1,
-            agg_key.to_xonly_public_key(),
-            None,
-        ))
     }
 }
 

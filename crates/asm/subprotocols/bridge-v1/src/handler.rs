@@ -14,8 +14,8 @@ use crate::{
 /// - **Deposit**: Processes the deposit transaction without emitting logs
 /// - **WithdrawalFulfillment**: Processes the withdrawal and emits a withdrawal processed log via
 ///   the relayer to notify other components of the processed withdrawal
-/// - **Slash**: Validates the stake connector is locked to any valid N/N multisig (current or
-///   historical) and processes slashing
+/// - **Slash**: Processes slash transactions after validating the stake connector is locked to any
+///   valid N/N multisig.
 ///
 /// # Arguments
 /// * `state` - Mutable reference to the bridge state to be updated
@@ -48,16 +48,8 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
         ParsedTx::Slash(info) => {
-            // Validate that the stake connector (second input) is locked to a valid N/N
-            // multisig script from any historical configuration.
-            //
-            // This ensures this is a valid slash transaction that was presigned by an N/N
-            // multisig set and not some arbitrary transaction posted by someone else.
-            //
-            // We check against all historical scripts (which includes the current one)
-            // because when multiple operators are slashed in sequence, the second slash
-            // will reference a stake connector from the operator set configuration before
-            // the first slash occurred.
+            // Validate that the stake connector (second input) is locked to a known N/N multisig
+            // script from any recorded configuration.
             let stake_connector_script = &verified_aux_data
                 .get_bitcoin_txout(info.second_inpoint().outpoint())?
                 .script_pubkey;
