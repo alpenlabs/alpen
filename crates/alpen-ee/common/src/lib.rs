@@ -16,7 +16,7 @@ pub use traits::{
 #[cfg(feature = "test-utils")]
 pub use traits::{
     ol_client::MockOlClient,
-    storage::{MockExecBlockStorage, MockStorage},
+    storage::{tests as storage_test_fns, MockExecBlockStorage, MockStorage},
 };
 pub use types::{
     consensus_heads::ConsensusHeads,
