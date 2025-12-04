@@ -2,9 +2,13 @@
 
 use bitcoin::absolute;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
+use strata_asm_manifest_types::AsmManifest;
 use strata_codec::{Codec, encode_to_vec};
-use strata_identifiers::{Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockId, Slot, hash::raw};
-use strata_ledger_types::{AccountTypeState, EpochCommitment, StateAccessor};
+use strata_identifiers::{
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot,
+    hash::raw,
+};
+use strata_ledger_types::{AccountTypeState, IStateAccessor};
 
 use crate::{
     account::{AccountState, NativeAccountTypeState},
@@ -56,26 +60,58 @@ impl OLState {
     }
 }
 
-impl StateAccessor for OLState {
-    type GlobalState = GlobalState;
-    type L1ViewState = EpochalState;
+impl IStateAccessor for OLState {
     type AccountState = AccountState;
 
-    fn global(&self) -> &Self::GlobalState {
-        &self.global
+    // ===== Global state methods =====
+
+    fn cur_slot(&self) -> u64 {
+        self.global.get_cur_slot()
     }
 
-    fn global_mut(&mut self) -> &mut Self::GlobalState {
-        &mut self.global
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.global.set_cur_slot(slot);
     }
 
-    fn l1_view(&self) -> &Self::L1ViewState {
-        &self.epoch
+    // ===== Epochal state methods =====
+
+    fn cur_epoch(&self) -> u32 {
+        self.epoch.cur_epoch()
     }
 
-    fn l1_view_mut(&mut self) -> &mut Self::L1ViewState {
-        &mut self.epoch
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.epoch.set_cur_epoch(epoch);
     }
+
+    fn last_l1_blkid(&self) -> &L1BlockId {
+        self.epoch.last_l1_blkid()
+    }
+
+    fn last_l1_height(&self) -> L1Height {
+        self.epoch.last_l1_height()
+    }
+
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+        self.epoch.append_manifest(height, mf);
+    }
+
+    fn asm_recorded_epoch(&self) -> &EpochCommitment {
+        self.epoch.asm_recorded_epoch()
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.epoch.set_asm_recorded_epoch(epoch);
+    }
+
+    fn total_ledger_balance(&self) -> BitcoinAmount {
+        self.epoch.total_ledger_balance()
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.epoch.set_total_ledger_balance(amt);
+    }
+
+    // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
         Ok(self.ledger.get_account_state(&id).is_some())

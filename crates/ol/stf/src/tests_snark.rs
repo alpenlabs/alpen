@@ -1,24 +1,20 @@
 //! Test for snark account deposit and withdrawal
 
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, Mmr64, MsgPayload, VarVec};
+use strata_acct_types::{BitcoinAmount, Hash, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_manifest_types::DepositIntentLogData;
-use strata_identifiers::{AccountSerial, Buf32, L1BlockId, SubjectId, WtxidsRoot};
-use strata_ledger_types::{
-    AccountTypeState, IAccountState, IGlobalState, IL1ViewState, ISnarkAccountState, StateAccessor,
-};
+use strata_identifiers::{Buf32, SubjectId, WtxidsRoot};
+use strata_ledger_types::*;
 use strata_msg_fmt::Msg;
 use strata_ol_chain_types_new::{
-    GamTxPayload, OLL1ManifestContainer, OLLog, OLTransaction, OLTxSegment,
     SimpleWithdrawalIntentLogData, SnarkAccountUpdateLogData, SnarkAccountUpdateTxPayload,
-    TransactionAttachment, TransactionPayload, *,
+    TransactionPayload,
 };
-use strata_ol_msg_types::{WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
+use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
 use strata_ol_state_types::{NativeSnarkAccountState, OLState};
 use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, MessageEntry, OutputMessage, ProofState, Seqno,
-    SnarkAccountUpdate, SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData,
-    UpdateOutputs,
+    LedgerRefProofs, LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate,
+    SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
 };
 
 use crate::{

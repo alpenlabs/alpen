@@ -3,7 +3,7 @@
 use strata_acct_types::{AccountId, AcctError, MsgPayload};
 use strata_codec::encode_to_vec;
 use strata_ledger_types::{
-    AccountTypeState, Coin, IAccountState, ISnarkAccountState, StateAccessor,
+    AccountTypeState, Coin, IAccountState, ISnarkAccountState, IStateAccessor,
 };
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
@@ -22,7 +22,7 @@ use crate::{
 ///
 /// This takes a [`EpochContext`] because messages can be issued both in regular
 /// block processing and at epoch sealing.
-pub(crate) fn process_message<S: StateAccessor>(
+pub(crate) fn process_message<S: IStateAccessor>(
     state: &mut S,
     sender: AccountId,
     target: AccountId,
@@ -76,7 +76,7 @@ pub(crate) fn process_message<S: StateAccessor>(
     Ok(())
 }
 
-fn handle_bridge_gateway_message<S: StateAccessor>(
+fn handle_bridge_gateway_message<S: IStateAccessor>(
     state: &mut S,
     sender: AccountId,
     payload: MsgPayload,
@@ -120,7 +120,7 @@ fn handle_bridge_gateway_message<S: StateAccessor>(
     Ok(())
 }
 
-fn handle_snark_account_message<S: StateAccessor>(
+fn handle_snark_account_message<S: IStateAccessor>(
     state: &mut S,
     mut sastate: &mut <S::AccountState as IAccountState>::SnarkAccountState,
     sender: AccountId,
