@@ -1,6 +1,5 @@
 //! Common traits and types for Alpen execution environment components.
 
-#![expect(unused_crate_dependencies, reason = "wip")]
 pub(crate) mod traits;
 pub(crate) mod types;
 
@@ -16,7 +15,9 @@ pub use traits::{
 #[cfg(feature = "test-utils")]
 pub use traits::{
     ol_client::MockOlClient,
-    storage::{tests as storage_test_fns, MockExecBlockStorage, MockStorage},
+    storage::{
+        exec_block_storage_test_fns, tests as storage_test_fns, MockExecBlockStorage, MockStorage,
+    },
 };
 pub use types::{
     consensus_heads::ConsensusHeads,

@@ -162,6 +162,11 @@ impl ExecBlockStorage for EeNodeStorage {
     async fn get_block_payload(&self, hash: Hash) -> Result<Option<Vec<u8>>, StorageError> {
         unimplemented!()
     }
+
+    /// Delete a single block and its payload by hash.
+    async fn delete_exec_block(&self, hash: Hash) -> Result<(), StorageError> {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
