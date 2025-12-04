@@ -495,7 +495,7 @@ dependencies = [
  "lru 0.13.0",
  "parking_lot 0.12.5",
  "pin-project",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -564,7 +564,7 @@ dependencies = [
  "alloy-transport-ws",
  "futures",
  "pin-project",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde",
  "serde_json",
  "tokio",
@@ -905,7 +905,7 @@ checksum = "4198a1ee82e562cab85e7f3d5921aab725d9bd154b6ad5017f82df1695877c97"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde_json",
  "tower 0.5.2",
  "tracing",
@@ -1029,7 +1029,7 @@ dependencies = [
  "keyring",
  "make_buf",
  "rand_core 0.6.4",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde",
  "sha2",
  "shrex",
@@ -1397,7 +1397,7 @@ dependencies = [
  "hex",
  "jsonrpsee",
  "jsonrpsee-types",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reth-chainspec",
  "reth-evm",
  "reth-node-api",
@@ -2839,7 +2839,7 @@ dependencies = [
  "base64 0.22.1",
  "bitcoin",
  "hex-conservative",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
@@ -3104,9 +3104,9 @@ dependencies = [
 
 [[package]]
 name = "camino"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "276a59bf2b2c967788139340c9f0c5b12d7fd6630315c15c217e559de85d2609"
+checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 dependencies = [
  "serde_core",
 ]
@@ -4434,20 +4434,6 @@ name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
-
-[[package]]
-name = "downloader"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ac1e888d6830712d565b2f3a974be3200be9296bc1b03db8251a4cbf18a4a34"
-dependencies = [
- "digest 0.10.7",
- "futures",
- "rand 0.8.5",
- "reqwest 0.12.25",
- "thiserror 1.0.69",
- "tokio",
-]
 
 [[package]]
 name = "dunce"
@@ -7575,7 +7561,7 @@ dependencies = [
  "bytes",
  "http 1.4.0",
  "opentelemetry 0.31.0",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
 ]
 
 [[package]]
@@ -7608,7 +7594,7 @@ dependencies = [
  "opentelemetry-proto 0.31.0",
  "opentelemetry_sdk 0.31.0",
  "prost 0.14.1",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "thiserror 2.0.17",
  "tokio",
  "tonic 0.14.2",
@@ -8993,9 +8979,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.25"
+version = "0.12.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6eff9328d40131d43bd911d42d79eb6a47312002a4daefc9e37f17e74a7701a"
+checksum = "3b4c14b2d9afca6a60277086b0cc6a6ae0b568f6f7916c943a8cdc79f8be240f"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -9046,7 +9032,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "http 1.4.0",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde",
  "thiserror 1.0.69",
  "tower-service",
@@ -9167,7 +9153,7 @@ dependencies = [
  "itertools 0.14.0",
  "lz4",
  "ratatui",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reth-chainspec",
  "reth-cli",
  "reth-cli-runner",
@@ -9331,7 +9317,7 @@ dependencies = [
  "derive_more 2.1.0",
  "eyre",
  "futures",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reth-node-api",
  "reth-primitives-traits",
  "reth-tracing",
@@ -9741,7 +9727,7 @@ dependencies = [
  "bytes",
  "eyre",
  "futures-util",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reth-fs-util",
  "sha2",
  "tokio",
@@ -10171,7 +10157,7 @@ source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5
 dependencies = [
  "futures-util",
  "if-addrs",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde_with",
  "thiserror 2.0.17",
  "tokio",
@@ -10569,7 +10555,7 @@ dependencies = [
  "metrics-process",
  "metrics-util",
  "procfs 0.17.0",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reth-metrics",
  "reth-tasks",
  "tokio",
@@ -11051,7 +11037,7 @@ dependencies = [
  "jsonrpsee-types",
  "metrics",
  "rand 0.9.2",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reth-chain-state",
  "reth-chainspec",
  "reth-errors",
@@ -11121,7 +11107,7 @@ dependencies = [
  "itertools 0.14.0",
  "num-traits",
  "rayon",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reth-codecs",
  "reth-config",
  "reth-consensus",
@@ -12898,9 +12884,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-build"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7bcc9e463a19749f6080f69ee6410aadda0576115d60bed68d2ebc2d8af3fe4"
+checksum = "c6c620b00f468a4eeb6050d5641d971b35aa623d2142ecb55d02fd64840c5f02"
 dependencies = [
  "anyhow",
  "cargo_metadata 0.18.1",
@@ -12912,9 +12898,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-core-executor"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb8bc70057a88164e479e367e2f83f7e7fba52d66acfbeef3b2174dc98c3627"
+checksum = "ca2363566d0d4213d0ffd93cfcc1a5e413e2af8682213d3e65b90ac0af5623e3"
 dependencies = [
  "bincode",
  "bytemuck",
@@ -12955,9 +12941,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-core-machine"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe446bea36feb189af83cda6ea5420150e877764e2ed4ab4cb2ee5cd3e20355c"
+checksum = "1bd3ff75c100e24b89a7b513e082ec3e040c4c9f1cd779b6ba475c5bdc1aa7ad"
 dependencies = [
  "bincode",
  "cbindgen",
@@ -13011,9 +12997,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-cuda"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae79f89725c6e21dadb62be31a1c218292f5489559a848faf533419c722a3b3b"
+checksum = "e7d3b98d9dd20856176aa7048e2da05d0c3e497f500ea8590292ffbd25002ec1"
 dependencies = [
  "bincode",
  "ctrlc",
@@ -13028,9 +13014,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-curves"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a7ce14c504360349f3eda564a0c9de286c35e1dfbcc979921a3384db02ae82"
+checksum = "b7a5dc6007e0c1f35afe334e45531e17b8b347fdf73f6e7786ef5c1bc2218e30"
 dependencies = [
  "cfg-if",
  "dashu",
@@ -13050,9 +13036,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-derive"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1144840e0b75e988f3b8d24ffd015bc5fd76599f7864bfd994f3eaf2eb261a"
+checksum = "83a1ed8d5acbb6cea056401791e79ca3cba7c7d5e17d0d44cd60e117f16b11ca"
 dependencies = [
  "quote",
  "syn 1.0.109",
@@ -13060,18 +13046,18 @@ dependencies = [
 
 [[package]]
 name = "sp1-helper"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91ae2e3edfe237410b707d267ad5f05fd2d92c6fd18c596f9398d9e2fd5e2573"
+checksum = "4dc4b527a1b43186b447e7c48e4c51db86a3b0e6eb1df73544cc6769594eced9"
 dependencies = [
  "sp1-build",
 ]
 
 [[package]]
 name = "sp1-lib"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb1a9935d58cb1dcd757a1b10d727090f5b718f1f03b512d48f0c1952e6ead00"
+checksum = "b73b8ff343f2405d5935440e56b7aba5cee6d87303f0051974cbd6f5de502f57"
 dependencies = [
  "bincode",
  "elliptic-curve",
@@ -13081,9 +13067,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-primitives"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7d2a6187e394c30097ea7a975a4832f172918690dc89a979f0fad67422d3a8b"
+checksum = "7e69a03098f827102c54c31a5e57280eb45b2c085de433b3f702e4f9e3ec1641"
 dependencies = [
  "bincode",
  "blake3",
@@ -13101,15 +13087,14 @@ dependencies = [
 
 [[package]]
 name = "sp1-prover"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfc62e3139fdb1671067987f78ca85a24ea34dbc2f61dbbe3f92b9739e7aa2b9"
+checksum = "b66f439f716cfc44c38d2aea975f1c4a9ed2cc40074ca7e4df8a37a3ff3795eb"
 dependencies = [
  "anyhow",
  "bincode",
  "clap",
  "dirs 5.0.1",
- "downloader",
  "enum-map",
  "eyre",
  "hashbrown 0.14.5",
@@ -13126,6 +13111,7 @@ dependencies = [
  "p3-symmetric",
  "p3-util",
  "rayon",
+ "reqwest 0.12.26",
  "serde",
  "serde_json",
  "serial_test",
@@ -13147,9 +13133,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-circuit"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44f16af7722bb0f7adabbfc0e60b7fe71ca546959d251c450afb79daaa589c56"
+checksum = "9c4a3739e84f154becfc7d2a57d23c825ac83313feec64569b86090395c33fab"
 dependencies = [
  "hashbrown 0.14.5",
  "itertools 0.13.0",
@@ -13182,9 +13168,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-compiler"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c83564beb23361e0b93d64f3b8d4a503eac8ced246648f727d44b0827165014"
+checksum = "06aa784cfdc5c979da22ad6c36fe393e9005b6b57702fa9bdd041f112ead5ec5"
 dependencies = [
  "backtrace",
  "itertools 0.13.0",
@@ -13204,9 +13190,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-core"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c209fa6e384ff56ea7761ccc65426da08516d72ae55b6d8e4021b58bd4022f8"
+checksum = "5be0db07b18f95f4e04f63f7f12a6547efd10601e2ce180aaf7868aa1bd98257"
 dependencies = [
  "backtrace",
  "cbindgen",
@@ -13247,9 +13233,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-derive"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8ca2e82fea312a406f4ad4cba1a11812da4cea806607c56ec1670fd55b2ea6"
+checksum = "1b190465c0c0377f3cacfac2d0ac8a630adf8e1bfac8416be593753bfa4f668e"
 dependencies = [
  "quote",
  "syn 1.0.109",
@@ -13257,9 +13243,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-gnark-ffi"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e146d24ce91c08e36b270a73de9817b9847e759a3d66923b009c67f24a3b9b2"
+checksum = "933ef703fb1c7a25e987a76ad705e60bb53730469766363b771baf3082a50fa0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -13283,9 +13269,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-sdk"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9655067dcadba91f01491729cc78a60ad3a5ffaaf9adab817502f729ddb3761"
+checksum = "ed3ae8bc52d12e8fbfdb10c4c8ce7651af04b63d390c152e6ce43d7744bbaf6f"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -13311,7 +13297,7 @@ dependencies = [
  "p3-field",
  "p3-fri",
  "prost 0.13.5",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "reqwest-middleware",
  "rustls 0.23.31",
  "serde",
@@ -13336,9 +13322,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-stark"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40477690a0bb6d7102322947407439a8f1d05aecd535f0081db05e9a31f808f2"
+checksum = "0e99d1cc89ba28fc95736afb1e6ad22b9eb689e95a1dbb29cf0e9d1fa4fc2a5c"
 dependencies = [
  "arrayref",
  "hashbrown 0.14.5",
@@ -13370,9 +13356,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-verifier"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f95bd323fde5d19116873b29e5f8e20da371466d70185732bbfd3511ca0fd31"
+checksum = "1904bbb3c2d16a7a11db32900f468149bc66253825e222f2db76f64fb8ffd1ab"
 dependencies = [
  "blake3",
  "cfg-if",
@@ -13917,7 +13903,7 @@ dependencies = [
  "hex",
  "musig2",
  "rand 0.8.5",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "strata-asm-types",
  "strata-checkpoint-types",
  "strata-config",
@@ -14573,7 +14559,7 @@ name = "strata-ledger-types"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-asm-common",
+ "strata-asm-manifest-types",
  "strata-identifiers",
  "strata-snark-acct-types",
 ]
@@ -14725,6 +14711,7 @@ dependencies = [
  "bitcoin",
  "ssz",
  "strata-acct-types",
+ "strata-asm-manifest-types",
  "strata-codec",
  "strata-codec-utils",
  "strata-identifiers",
@@ -14939,7 +14926,7 @@ dependencies = [
  "anyhow",
  "clap",
  "num-format",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde_json",
  "sp1-sdk",
  "strata-proofimpl-checkpoint",
@@ -16377,7 +16364,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.8.1",
  "prost 0.13.5",
- "reqwest 0.12.25",
+ "reqwest 0.12.26",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

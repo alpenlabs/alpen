@@ -1,38 +1,64 @@
-use strata_acct_types::{AccountId, AccountSerial, AcctResult};
-use strata_identifiers::Buf32;
+use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount};
+use strata_asm_manifest_types::AsmManifest;
+use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
-use crate::{
-    account::{AccountTypeState, IAccountState},
-    global_state::IGlobalState,
-    l1vs::IL1ViewState,
-};
+use crate::account::{AccountTypeState, IAccountState};
 
 /// Opaque interface for manipulating the chainstate, for all of the parts
 /// directly under the toplevel state.
 ///
 /// This exists because we want to make this generic across the various
 /// different contexts we'll be manipulating state.
-pub trait StateAccessor {
-    /// Type representing the global chainstate.
-    type GlobalState: IGlobalState;
-
-    /// Type representing L1 view state.
-    type L1ViewState: IL1ViewState;
-
+pub trait IStateAccessor {
     /// Type representing a ledger account's state.
     type AccountState: IAccountState;
 
-    /// Gets a ref to the global state.
-    fn global(&self) -> &Self::GlobalState;
+    // ===== Global state methods =====
 
-    /// Gets a mut ref to the global state.
-    fn global_mut(&mut self) -> &mut Self::GlobalState;
+    /// Gets the current slot.
+    fn cur_slot(&self) -> u64;
 
-    /// Gets a ref to the L1 view state.
-    fn l1_view(&self) -> &Self::L1ViewState;
+    /// Sets the current slot.
+    fn set_cur_slot(&mut self, slot: u64);
 
-    /// Gets a mut ref to the L1 view state.
-    fn l1_view_mut(&mut self) -> &mut Self::L1ViewState;
+    // ===== Epochal state methods =====
+    // (formerly "L1 view state")
+
+    /// Gets the current epoch.
+    fn cur_epoch(&self) -> u32;
+
+    /// Sets the current epoch.
+    fn set_cur_epoch(&mut self, epoch: u32);
+
+    /// Last L1 block ID.
+    fn last_l1_blkid(&self) -> &L1BlockId;
+
+    /// Last L1 block height.
+    fn last_l1_height(&self) -> L1Height;
+
+    /// Appends a new ASM manifest to the accumulator, also updating the last L1
+    /// block height and other fields.
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest);
+
+    /// Gets the field for the epoch that the ASM considers to be valid.
+    ///
+    /// This is our perspective of the perspective of the last block's ASM
+    /// manifest we've accepted.
+    fn asm_recorded_epoch(&self) -> &EpochCommitment;
+
+    /// Sets the field for the epoch that the ASM considers to be finalized.
+    ///
+    /// This is our perspective of the perspective of the last block's ASM
+    /// manifest we've accepted.
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment);
+
+    /// Gets the total OL ledger balance.
+    fn total_ledger_balance(&self) -> BitcoinAmount;
+
+    /// Sets the total OL ledger balance.
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount);
+
+    // ===== Account methods =====
 
     /// Checks if an account exists.
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;

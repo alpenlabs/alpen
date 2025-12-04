@@ -20,7 +20,7 @@
 //! ever actually directly accessed.  Below it, there are two parts:
 //!
 //! * A "global" state that is treated using the DA framework directly.
-//! * A "L1 view" state that is only updated in the sealing phase and isn't included in DA.
+//! * An "epochal" state that is only updated in the sealing phase and isn't included in DA.
 //! * An "accounts" table, which are selectively loaded.
 //!
 //! These parts are committed to in the toplevel state, which is updated later
@@ -28,16 +28,12 @@
 
 mod account;
 mod coin;
-mod global_state;
-mod l1vs;
 mod state_accessor;
 
 pub use account::{AccountTypeState, IAccountState, ISnarkAccountState, ISnarkAccountStateExt};
 pub use coin::Coin;
-pub use global_state::IGlobalState;
-pub use l1vs::IL1ViewState;
-pub use state_accessor::StateAccessor;
+pub use state_accessor::IStateAccessor;
 
 // transitional crap
-#[rustfmt::skip]
-pub use l1vs::{AsmManifest, EpochCommitment, L1BlockId, L1Height};
+pub use strata_asm_manifest_types::AsmManifest;
+pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};

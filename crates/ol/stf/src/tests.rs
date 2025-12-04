@@ -3,11 +3,8 @@
 use strata_acct_types::{AccountId, VarVec};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
-use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
-use strata_ol_chain_types_new::{
-    GamTxPayload, OLL1ManifestContainer, OLTransaction, OLTxSegment, TransactionAttachment,
-    TransactionPayload, *,
-};
+use strata_ledger_types::IStateAccessor;
+use strata_ol_chain_types_new::*;
 use strata_ol_state_types::OLState;
 
 use crate::{
@@ -31,8 +28,8 @@ fn test_genesis_block_processing() {
     let mut state = OLState::new_genesis();
 
     // Verify initial state
-    assert_eq!(state.l1_view().cur_epoch(), 0);
-    assert_eq!(state.global_mut().cur_slot(), 0);
+    assert_eq!(state.cur_epoch(), 0);
+    assert_eq!(state.cur_slot(), 0);
 
     // Process genesis block (with manifest to make it terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -449,24 +446,24 @@ fn test_process_chain_with_multiple_epochs() {
                 headers[i - 1].epoch()
             );
 
-            // The L1 view state's epoch equals the block's epoch at this point
+            // The epochal state's epoch equals the block's epoch at this point
             assert_eq!(
-                verify_state.l1_view().cur_epoch(),
+                verify_state.cur_epoch(),
                 headers[i].epoch(),
-                "L1 view state should match block epoch after epoch transition"
+                "Epochal state should match block epoch after epoch transition"
             );
         }
     }
 
     // Final verification - ensure the verify_state matches the assembly state
     assert_eq!(
-        state.l1_view().cur_epoch(),
-        verify_state.l1_view().cur_epoch(),
+        state.cur_epoch(),
+        verify_state.cur_epoch(),
         "Assembly and verification states should have same epoch"
     );
     assert_eq!(
-        state.global_mut().cur_slot(),
-        verify_state.global_mut().cur_slot(),
+        state.cur_slot(),
+        verify_state.cur_slot(),
         "Assembly and verification states should have same slot"
     );
 
