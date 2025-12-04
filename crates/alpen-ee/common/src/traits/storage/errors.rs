@@ -23,6 +23,10 @@ pub enum StorageError {
     #[error("deserialization error: {0}")]
     Deserialization(String),
 
+    /// Attempted to delete a block that is in the finalized chain.
+    #[error("cannot delete finalized block: {0}")]
+    CannotDeleteFinalizedBlock(String),
+
     /// Other unspecified error.
     #[error(transparent)]
     Other(#[from] eyre::Error),

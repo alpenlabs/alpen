@@ -8,4 +8,4 @@ pub use account::{OLBlockOrSlot, Storage};
 pub use errors::StorageError;
 pub use exec_block::ExecBlockStorage;
 #[cfg(feature = "test-utils")]
-pub use exec_block::MockExecBlockStorage;
+pub use exec_block::{exec_block_storage_test_fns, MockExecBlockStorage};
