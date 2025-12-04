@@ -46,7 +46,6 @@ pub struct WithdrawalCommand {
 
 impl WithdrawalCommand {
     /// Creates a new withdrawal command with the specified output and operator fee.
-    #[must_use]
     pub fn new(output: WithdrawOutput, operator_fee: BitcoinAmount) -> Self {
         Self {
             output,

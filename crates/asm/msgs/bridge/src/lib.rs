@@ -34,7 +34,6 @@ pub struct WithdrawOutput {
 
 impl WithdrawOutput {
     /// Creates a new withdrawal output with the specified destination and amount.
-    #[must_use]
     pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
         Self { destination, amt }
     }
