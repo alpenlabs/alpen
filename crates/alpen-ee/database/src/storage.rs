@@ -163,3 +163,29 @@ impl ExecBlockStorage for EeNodeStorage {
         unimplemented!()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use alpen_ee_common::storage_tests;
+    use strata_db_store_sled::SledDbConfig;
+    use typed_sled::SledDb;
+
+    use super::*;
+    use crate::sleddb::EeNodeDBSled;
+
+    fn setup_storage() -> EeNodeStorage {
+        // Create a temporary sled database
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = SledDb::new(db).unwrap();
+        let config = SledDbConfig::test();
+
+        let ee_node_db = EeNodeDBSled::new(Arc::new(sled_db), config).unwrap();
+        let pool = threadpool::ThreadPool::new(4);
+
+        EeNodeStorage::new(pool, Arc::new(ee_node_db))
+    }
+
+    storage_tests!(setup_storage());
+}

@@ -221,20 +221,3 @@ impl EeNodeDb for EeNodeDBSled {
         todo!()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::database::ee_node_db_tests;
-
-    fn setup_db() -> EeNodeDBSled {
-        // Create a temporary sled database
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let sled_db = SledDb::new(db).unwrap();
-        let config = SledDbConfig::test();
-
-        EeNodeDBSled::new(Arc::new(sled_db), config).unwrap()
-    }
-
-    ee_node_db_tests!(setup_db());
-}
