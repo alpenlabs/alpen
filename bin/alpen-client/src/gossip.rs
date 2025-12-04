@@ -22,9 +22,12 @@ pub(crate) struct GossipConfig {
     /// Sequencer's public key for signature validation.
     pub sequencer_pubkey: Buf32,
 
+    /// Whether the local node should produce and sign gossip messages.
+    pub sequencer_enabled: bool,
+
     /// Sequencer's private key for signing (only in sequencer mode).
     #[cfg(feature = "sequencer")]
-    pub sequencer_privkey: Buf32,
+    pub sequencer_privkey: Option<Buf32>,
 }
 
 /// Handles a gossip event (connection established/closed or package received).
@@ -196,6 +199,10 @@ fn broadcast_new_block(
     connections: &HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
     config: &GossipConfig,
 ) {
+    if !config.sequencer_enabled {
+        return;
+    }
+
     info!(
         target: "alpen-gossip",
         block_hash = ?tip.hash_slow(),
@@ -206,6 +213,14 @@ fn broadcast_new_block(
 
     #[cfg(feature = "sequencer")]
     {
+        let Some(sequencer_privkey) = config.sequencer_privkey else {
+            error!(
+                target: "alpen-gossip",
+                "Sequencer mode enabled but no private key configured; skipping broadcast"
+            );
+            return;
+        };
+
         let msg = AlpenGossipMessage::new(
             tip.clone(),
             // NOTE: we use the block number as the sequence number
@@ -213,7 +228,7 @@ fn broadcast_new_block(
             //       provides monotonic, unique sequence numbers for gossip messages.
             tip.number,
         );
-        let pkg = msg.into_package(config.sequencer_pubkey, config.sequencer_privkey);
+        let pkg = msg.into_package(config.sequencer_pubkey, sequencer_privkey);
 
         for (peer_id, sender) in connections {
             if sender

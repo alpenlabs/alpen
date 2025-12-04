@@ -29,7 +29,7 @@ use strata_acct_types::AccountId;
 use strata_identifiers::{CredRule, OLBlockId};
 use strata_primitives::buf::Buf32;
 use tokio::sync::{broadcast, mpsc};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     genesis::ee_genesis_block_info,
@@ -149,22 +149,40 @@ fn main() {
                     let state_events = node.provider.subscribe_to_canonical_state();
 
                     // Parse sequencer private key from environment variable (only in sequencer mode)
-                    #[cfg(feature = "sequencer")]
                     let gossip_config = {
-                        let privkey_str = env::var("SEQUENCER_PRIVATE_KEY")
-                            .map_err(|_| eyre::eyre!("SEQUENCER_PRIVATE_KEY environment variable is required when sequencer feature is enabled"))?;
-                        let sequencer_privkey = privkey_str
-                            .parse::<Buf32>()
-                            .map_err(|e| eyre::eyre!("Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}"))?;
-                        GossipConfig {
-                            sequencer_pubkey: ext.sequencer_pubkey,
-                            sequencer_privkey,
-                        }
-                    };
+                        #[cfg(feature = "sequencer")]
+                        {
+                            let sequencer_privkey = if ext.sequencer {
+                                let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
+                                    eyre::eyre!(
+                                        "SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer"
+                                    )
+                                })?;
+                                Some(
+                                    privkey_str.parse::<Buf32>().map_err(|e| {
+                                        eyre::eyre!(
+                                            "Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}"
+                                        )
+                                    })?,
+                                )
+                            } else {
+                                None
+                            };
 
-                    #[cfg(not(feature = "sequencer"))]
-                    let gossip_config = GossipConfig {
-                        sequencer_pubkey: ext.sequencer_pubkey,
+                            GossipConfig {
+                                sequencer_pubkey: ext.sequencer_pubkey,
+                                sequencer_enabled: ext.sequencer,
+                                sequencer_privkey,
+                            }
+                        }
+
+                        #[cfg(not(feature = "sequencer"))]
+                        {
+                            GossipConfig {
+                                sequencer_pubkey: ext.sequencer_pubkey,
+                                sequencer_enabled: false,
+                            }
+                        }
                     };
 
                     let gossip_task = create_gossip_task(gossip_rx, state_events, preconf_tx, gossip_config);
@@ -224,6 +242,11 @@ pub struct AdditionalConfig {
     #[arg(long, required = false)]
     pub db_retry_count: Option<u16>,
 
+    /// Run the node as a sequencer. Requires the `sequencer` feature and a
+    /// `SEQUENCER_PRIVATE_KEY` environment variable.
+    #[arg(long, default_value_t = false)]
+    pub sequencer: bool,
+
     /// Sequencer's public key (hex-encoded, 32 bytes) for signature validation.
     #[arg(long, required = true, value_parser = parse_buf32)]
     pub sequencer_pubkey: Buf32,
@@ -249,6 +272,14 @@ where
 
     let _guard = command.ext.logs.init_tracing()?;
     info!(target: "reth::cli", cmd = %command.ext.logs.log_file_directory, "Initialized tracing, debug log directory");
+
+    if command.ext.sequencer && !cfg!(feature = "sequencer") {
+        error!(
+            target: "alpen-client",
+            "Sequencer flag enabled but binary built without `sequencer` feature. Rebuild with default features or enable the `sequencer` feature."
+        );
+        eyre::bail!("sequencer feature not enabled at compile time");
+    }
 
     let runner = CliRunner::try_default_runtime()?;
     runner.run_command_until_exit(|ctx| {
