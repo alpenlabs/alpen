@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
 use strata_codec::encode_to_vec;
-use strata_ledger_types::{AccountTypeState, IAccountState, ISnarkAccountState, StateAccessor};
+use strata_ledger_types::{AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
     OLLog, OLTransaction, OLTxSegment, SnarkAccountUpdateLogData, TransactionAttachment,
     TransactionPayload,
@@ -20,7 +20,7 @@ use crate::{
 /// Process a block's transaction segment.
 ///
 /// This is called for every block.
-pub fn process_block_tx_segment<S: StateAccessor>(
+pub fn process_block_tx_segment<S: IStateAccessor>(
     state: &mut S,
     tx_seg: &OLTxSegment,
     context: &TxExecContext<'_>,
@@ -36,7 +36,7 @@ pub fn process_block_tx_segment<S: StateAccessor>(
 ///
 /// This can also be used in mempool logic for trying to figure out if we can
 /// apply a tx into a block.
-pub fn process_single_tx<S: StateAccessor>(
+pub fn process_single_tx<S: IStateAccessor>(
     state: &mut S,
     tx: &OLTransaction,
     context: &TxExecContext<'_>,
@@ -98,7 +98,7 @@ impl AcctInteractionBuffer {
     }
 }
 
-fn process_update_tx<S: StateAccessor>(
+fn process_update_tx<S: IStateAccessor>(
     state: &mut S,
     target: &AccountId,
     mut astate: S::AccountState,
@@ -171,7 +171,7 @@ fn process_update_tx<S: StateAccessor>(
     Ok(())
 }
 
-fn apply_interactions<S: StateAccessor>(
+fn apply_interactions<S: IStateAccessor>(
     state: &mut S,
     source: AccountId,
     fx_buf: AcctInteractionBuffer,

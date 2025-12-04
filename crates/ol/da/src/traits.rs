@@ -1,12 +1,12 @@
 //! DA traits.
 
 use strata_codec::Codec;
-use strata_ledger_types::StateAccessor;
+use strata_ledger_types::IStateAccessor;
 
 use crate::errors::DaResult;
 
 /// Defines a DA scheme for some state accessor.
-pub trait DaScheme<S: StateAccessor> {
+pub trait DaScheme<S: IStateAccessor> {
     /// The encoded diff structure.
     type Diff: Codec;
 

@@ -4,9 +4,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, Hash, Mmr64, MsgPayload, VarVe
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_manifest_types::DepositIntentLogData;
 use strata_identifiers::{AccountSerial, Buf32, L1BlockId, SubjectId};
-use strata_ledger_types::{
-    AccountTypeState, IAccountState, IGlobalState, IL1ViewState, ISnarkAccountState, StateAccessor,
-};
+use strata_ledger_types::{AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_msg_fmt::Msg;
 use strata_ol_chain_types_new::{
     GamTxPayload, OLL1ManifestContainer, OLLog, OLTransaction, OLTxSegment,
