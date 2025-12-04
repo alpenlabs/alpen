@@ -105,7 +105,7 @@ impl ExecChainState {
                     attachable_blocks.append(&mut self.orphans.take_children(&blockhash).into());
                 }
                 AttachBlockRes::ExistingBlock => {
-                    // shouldnt happen but safe to ignore
+                    // shouldn't happen but safe to ignore
                     warn!("unexpected existing block");
                 }
                 AttachBlockRes::OrphanBlock(_) => unreachable!(),

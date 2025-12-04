@@ -35,7 +35,7 @@ pub enum DbError {
     #[error("Finalized exec block expected to be present")]
     FinalizedExecChainEmpty,
 
-    /// Exec block is missng.
+    /// Exec block is missing.
     #[error("Exec block expected to be present; blockhahs = {0:?}")]
     MissingExecBlock(Hash),
 
