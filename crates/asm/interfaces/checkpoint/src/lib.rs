@@ -1,3 +1,9 @@
+//! Inter-protocol message types for the checkpoint subprotocol.
+//!
+//! This crate exposes the incoming message enum consumed by checkpoint-v0 so other
+//! subprotocols can send configuration updates without depending on the checkpoint
+//! implementation crate.
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_proto_checkpoint_txs::CHECKPOINT_V0_SUBPROTOCOL_ID;

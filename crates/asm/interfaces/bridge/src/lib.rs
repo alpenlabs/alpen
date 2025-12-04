@@ -1,3 +1,9 @@
+//! Inter-protocol message types for the bridge subprotocol.
+//!
+//! This crate exposes the incoming bridge messages and shared withdrawal output
+//! payload so other subprotocols can dispatch withdrawals without pulling in the
+//! bridge implementation crate.
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
