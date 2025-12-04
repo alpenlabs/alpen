@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use strata_acct_types::AccountId;
-use strata_identifiers::Buf32;
 use strata_ledger_types::AsmManifest;
 use strata_snark_acct_types::MessageEntry;
 

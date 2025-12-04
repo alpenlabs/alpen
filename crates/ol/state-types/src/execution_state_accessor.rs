@@ -1,5 +1,5 @@
 /// ExecutionStateAccessor wraps a base StateAccessor and tracks all modifications
-/// using a WriteBatch (Copy-on-Write overlay) and auxiliary data.
+/// using a WriteBatch (Copy-on-Write overlay).
 ///
 /// This enables:
 /// - In-memory modification tracking over a potentially DB-backed base state
@@ -12,10 +12,7 @@ use strata_acct_types::{AccountId, AccountSerial, AcctResult};
 use strata_identifiers::Buf32;
 use strata_ledger_types::{AccountTypeState, StateAccessor};
 
-use crate::{
-    AccountState, EpochalState, GlobalState,
-    writebatch::{ExecutionAuxiliaryData, WriteBatch},
-};
+use crate::{AccountState, EpochalState, GlobalState, writebatch::WriteBatch};
 
 /// Wraps a StateAccessor to track modifications during block execution
 #[derive(Debug)]
@@ -25,9 +22,6 @@ pub struct ExecutionStateAccessor<S: StateAccessor> {
 
     /// Copy-on-Write overlay for modifications (consensus-critical state)
     write_batch: WriteBatch,
-
-    /// Auxiliary data for database persistence (non-consensus)
-    aux: ExecutionAuxiliaryData,
 }
 
 impl<
@@ -43,13 +37,12 @@ impl<
         Self {
             base,
             write_batch: WriteBatch::new(),
-            aux: ExecutionAuxiliaryData::default(),
         }
     }
 
-    /// Finalize execution and extract the WriteBatch, auxiliary data, and base state
-    pub fn finalize(self) -> (WriteBatch, ExecutionAuxiliaryData, S) {
-        (self.write_batch, self.aux, self.base)
+    /// Finalize execution and extract the WriteBatch and base state
+    pub fn finalize(self) -> (WriteBatch, S) {
+        (self.write_batch, self.base)
     }
 
     /// Get reference to the base state accessor
@@ -60,11 +53,6 @@ impl<
     /// Get reference to the current WriteBatch
     pub fn write_batch(&self) -> &WriteBatch {
         &self.write_batch
-    }
-
-    /// Get reference to the auxiliary data
-    pub fn aux(&self) -> &ExecutionAuxiliaryData {
-        &self.aux
     }
 }
 
@@ -231,7 +219,7 @@ mod tests {
         assert_eq!(exec_accessor.global().get_cur_slot(), 42);
 
         // Base state should be unchanged after finalize
-        let (batch, _aux, base) = exec_accessor.finalize();
+        let (batch, base) = exec_accessor.finalize();
         assert_eq!(*base.global(), original_global);
         assert!(batch.global_state().is_some());
     }
@@ -268,7 +256,7 @@ mod tests {
         assert_eq!(balance, BitcoinAmount::from(100));
 
         // Finalize and check
-        let (batch, _aux, base) = exec_accessor.finalize();
+        let (batch, base) = exec_accessor.finalize();
 
         // Base should have original balance (0)
         let base_balance = base.get_account_state(acct_id).unwrap().unwrap().balance();
@@ -300,7 +288,7 @@ mod tests {
         let acct = exec_accessor.get_account_state(acct_id).unwrap().unwrap();
         assert_eq!(acct.balance(), BitcoinAmount::from(0));
 
-        let (batch, _aux, _base) = exec_accessor.finalize();
+        let (batch, _base) = exec_accessor.finalize();
 
         // Batch should be empty (no modifications)
         assert!(!batch.has_account(&acct_id));
@@ -319,7 +307,7 @@ mod tests {
             add_balance(&mut accessor, acct_id, i * 10);
         }
 
-        let (batch, _, _) = accessor.finalize();
+        let (batch, _) = accessor.finalize();
 
         assert_eq!(batch.modified_accounts_count(), 1);
         assert_eq!(
@@ -345,7 +333,7 @@ mod tests {
             .balance();
         assert_eq!(balance, BitcoinAmount::from(100));
 
-        let (batch, _, base_after) = accessor.finalize();
+        let (batch, base_after) = accessor.finalize();
 
         // Base unchanged, overlay has modification
         assert_eq!(
@@ -373,7 +361,7 @@ mod tests {
             add_balance(&mut accessor, *id, (i as u64 + 1) * 100);
         }
 
-        let (batch, _, _) = accessor.finalize();
+        let (batch, _) = accessor.finalize();
 
         assert_eq!(batch.modified_accounts_count(), 3);
         for (i, id) in ids.iter().enumerate() {
@@ -388,7 +376,7 @@ mod tests {
     fn test_empty_accessor_empty_batch() {
         let base = OLState::new_genesis();
         let accessor = ExecutionStateAccessor::new(base);
-        let (batch, _, _) = accessor.finalize();
+        let (batch, _) = accessor.finalize();
 
         assert_eq!(batch.modified_accounts_count(), 0);
         assert!(batch.global_state().is_none());
@@ -404,7 +392,7 @@ mod tests {
             accessor.global_mut().set_cur_slot(slot);
         }
 
-        let (batch, _, _) = accessor.finalize();
+        let (batch, _) = accessor.finalize();
         assert_eq!(batch.global_state().unwrap().get_cur_slot(), 30);
     }
 
@@ -417,7 +405,7 @@ mod tests {
             accessor.l1_view_mut().set_cur_epoch(epoch);
         }
 
-        let (batch, _, _) = accessor.finalize();
+        let (batch, _) = accessor.finalize();
         // Verify final epoch was set (can't read directly without getter)
         assert!(batch.epochal_state().is_some());
     }
@@ -432,7 +420,7 @@ mod tests {
         assert!(accessor.get_account_state(fake_id).unwrap().is_none());
         assert!(accessor.get_account_state_mut(fake_id).unwrap().is_none());
 
-        let (batch, _, _) = accessor.finalize();
+        let (batch, _) = accessor.finalize();
         assert_eq!(batch.modified_accounts_count(), 0);
     }
 }
