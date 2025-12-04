@@ -30,10 +30,10 @@ define_table_without_codec!(
 impl_borsh_value_codec!(ExecBlocksAtHeightSchema, Vec<Hash>);
 
 define_table_without_codec!(
-    /// Canonical finalized chain
-    (ExecBlockCanonicalSchema) u64 => Hash
+    /// Canonical finalized chain by height
+    (ExecBlockFinalizedSchema) u64 => Hash
 );
-impl_borsh_value_codec!(ExecBlockCanonicalSchema, Hash);
+impl_borsh_value_codec!(ExecBlockFinalizedSchema, Hash);
 
 define_table_with_default_codec!(
     /// ExecBlock payloads

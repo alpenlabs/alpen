@@ -6,7 +6,6 @@ use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_generic};
 
 use crate::{error::DbError, DbResult};
 
-#[expect(unused, reason = "wip")]
 /// Database interface for EE node account state management.
 pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Stores EE account state for a given OL block commitment.
@@ -30,6 +29,9 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 
     /// Save block data and payload for a given block hash
     fn save_exec_block(&self, block: ExecBlockRecord, payload: Vec<u8>) -> DbResult<()>;
+
+    /// Insert first block to local view of canonical finalized chain (ie. genesis block)
+    fn init_finalized_chain(&self, hash: Hash) -> DbResult<()>;
 
     /// Extend local view of canonical chain with specified block hash
     fn extend_finalized_chain(&self, hash: Hash) -> DbResult<()>;
@@ -55,6 +57,9 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 
     /// Get block payload for a specified block, if it exists.
     fn get_block_payload(&self, hash: Hash) -> DbResult<Option<Vec<u8>>>;
+
+    /// Delete a single block and its payload by hash.
+    fn delete_exec_block(&self, hash: Hash) -> DbResult<()>;
 }
 
 pub(crate) mod ops {
@@ -69,6 +74,7 @@ pub(crate) mod ops {
             best_ee_account_state() => Option<EeAccountStateAtBlock>;
 
             save_exec_block(block: ExecBlockRecord, payload: Vec<u8>) => ();
+            init_finalized_chain(hash: Hash) => ();
             extend_finalized_chain(hash: Hash) => ();
             revert_finalized_chain(to_height: u64) => ();
             prune_block_data(to_height: u64) => ();
@@ -77,6 +83,7 @@ pub(crate) mod ops {
             get_unfinalized_blocks() => Vec<Hash>;
             get_exec_block(hash: Hash) => Option<ExecBlockRecord>;
             get_block_payload(hash: Hash) => Option<Vec<u8>>;
+            delete_exec_block(hash: Hash) => ();
         }
     }
 }
