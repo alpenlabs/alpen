@@ -34,7 +34,7 @@ impl PayloadBuildAttributes {
     }
 }
 
-/// Desribes an incoming deposit that should be minted.
+/// Describes an incoming deposit that should be minted.
 #[derive(Debug, Clone)]
 pub struct DepositInfo {
     /// Deposit index.
