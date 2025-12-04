@@ -9,8 +9,8 @@ workspace = true
 [dependencies]
 # ASM dependencies
 borsh.workspace = true
-strata-asm-bridge-interface.workspace = true
-strata-asm-checkpoint-interface.workspace = true
+strata-asm-bridge-msgs.workspace = true
+strata-asm-checkpoint-msgs.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true

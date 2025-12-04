@@ -7,7 +7,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_asm_bridge_interface::WithdrawOutput;
+use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_bridge_types::OperatorIdx;
 use strata_codec::{Codec, encode_to_vec};
 use strata_primitives::{

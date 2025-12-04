@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-checkpoint-interface"
+name = "strata-asm-checkpoint-msgs"
 version = "0.1.0"
 edition = "2024"
 

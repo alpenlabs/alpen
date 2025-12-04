@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-bridge-interface"
+name = "strata-asm-bridge-msgs"
 version = "0.1.0"
 edition = "2024"
 

@@ -16,7 +16,7 @@ strata-asm-logs.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
-# Bridge subprotocol interface for inter-protocol messaging
-strata-asm-bridge-interface.workspace = true
+# Bridge subprotocol messages for inter-protocol messaging
+strata-asm-bridge-msgs.workspace = true
 
 [dev-dependencies]

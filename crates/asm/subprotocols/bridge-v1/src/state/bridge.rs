@@ -1,6 +1,6 @@
 use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_bridge_interface::WithdrawOutput;
+use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_txs_bridge_v1::{
     deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
     errors::Mismatch,

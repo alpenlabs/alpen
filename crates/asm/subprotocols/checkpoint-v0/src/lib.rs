@@ -35,7 +35,7 @@ mod verification;
 
 // Public re-exports
 pub use error::{CheckpointV0Error, CheckpointV0Result};
-pub use strata_asm_checkpoint_interface::CheckpointIncomingMsg;
+pub use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 pub use subprotocol::{CheckpointV0Params, CheckpointV0Subproto};
 pub use types::{CheckpointV0VerificationParams, CheckpointV0VerifierState};
 // Re-export verification functions for testing and integration

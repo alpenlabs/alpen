@@ -6,8 +6,8 @@
 //! NOTE: This implementation bridges the legacy checkpoint payload format with the new SPS-50
 //! envelope layout so we can reuse existing verification logic while moving toward SPS-62.
 
-use strata_asm_bridge_interface::{BridgeIncomingMsg, WithdrawOutput};
-use strata_asm_checkpoint_interface::CheckpointIncomingMsg;
+use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
+use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     VerifiedAuxData, logging,

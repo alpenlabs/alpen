@@ -3,7 +3,7 @@
 //! This module implements parsing for debug transaction types that allow
 //! injection of test data into the ASM for testing purposes.
 
-use strata_asm_bridge_interface::WithdrawOutput;
+use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::TxInputRef;
 use strata_l1_txfmt::TxType;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
