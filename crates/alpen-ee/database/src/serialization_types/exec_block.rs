@@ -10,7 +10,7 @@ use super::account_state::DBEeAccountState;
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBExecBlockRecord {
-    blocknum: u64,
+    pub(crate) blocknum: u64,
     parent_blockhash: Hash,
     timestamp_ms: u64,
     ol_block: OLBlockCommitment,

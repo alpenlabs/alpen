@@ -1,5 +1,6 @@
 use alpen_ee_common::StorageError;
 use sled::transaction::TransactionError;
+use strata_acct_types::Hash;
 use strata_identifiers::OLBlockId;
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
@@ -29,6 +30,30 @@ pub enum DbError {
     /// Account state is missing for the given block.
     #[error("Account state expected to be present; block_id = {0}")]
     MissingAccountState(OLBlockId),
+
+    /// Finalized chain is empty.
+    #[error("Finalized exec block expected to be present")]
+    FinalizedExecChainEmpty,
+
+    /// Exec block is missng.
+    #[error("Exec block expected to be present; blockhahs = {0:?}")]
+    MissingExecBlock(Hash),
+
+    #[error("Expected exec block finalized chain to be empty")]
+    ExecFinalizedChainNotEmpty,
+
+    #[error("Provided block does not extend chain; {0:?}")]
+    ExecBlockDoesNotExtendChain(Hash),
+
+    #[error("Txn conflict: expected finalized height {0} to be empty")]
+    TxnExpectEmptyFinalized(u64),
+
+    #[error("Txn conflict: expected finalized height {0} to be {1:?}")]
+    TxnExpectFinalized(u64, Hash),
+
+    /// Attempted to delete a finalized block.
+    #[error("Cannot delete finalized block: {0:?}")]
+    CannotDeleteFinalizedBlock(Hash),
 
     /// Database operation error.
     #[error("Database: {0}")]
@@ -78,6 +103,9 @@ impl From<DbError> for StorageError {
                 attempted_slot: got,
                 last_slot: expected,
             },
+            DbError::CannotDeleteFinalizedBlock(hash) => {
+                StorageError::CannotDeleteFinalizedBlock(format!("{:?}", hash))
+            }
             e => StorageError::database(e.to_string()),
         }
     }

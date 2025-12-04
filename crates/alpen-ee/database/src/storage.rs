@@ -104,7 +104,6 @@ impl Storage for EeNodeStorage {
     }
 }
 
-#[expect(unused_variables, reason = "wip")]
 #[async_trait]
 impl ExecBlockStorage for EeNodeStorage {
     /// Save block data and payload for a given block hash
@@ -113,59 +112,90 @@ impl ExecBlockStorage for EeNodeStorage {
         block: ExecBlockRecord,
         payload: Vec<u8>,
     ) -> Result<(), StorageError> {
-        unimplemented!()
+        self.ops
+            .save_exec_block_async(block, payload)
+            .await
+            .map_err(Into::into)
     }
 
     /// Insert first block to local view of canonical finalized chain (ie. genesis block)
-    ///
-    /// If finalized chain is not empty, this will check that block 0 is expected genesis hash.
     async fn init_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
-        unimplemented!()
+        self.ops
+            .init_finalized_chain_async(hash)
+            .await
+            .map_err(Into::into)
     }
 
     /// Extend local view of canonical chain with specified block hash
     async fn extend_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
-        unimplemented!()
+        self.ops
+            .extend_finalized_chain_async(hash)
+            .await
+            .map_err(Into::into)
     }
 
     /// Revert local view of canonical chain to specified height
     async fn revert_finalized_chain(&self, to_height: u64) -> Result<(), StorageError> {
-        unimplemented!()
+        self.ops
+            .revert_finalized_chain_async(to_height)
+            .await
+            .map_err(Into::into)
     }
 
     /// Remove all block data below specified height
     async fn prune_block_data(&self, to_height: u64) -> Result<(), StorageError> {
-        unimplemented!()
+        self.ops
+            .prune_block_data_async(to_height)
+            .await
+            .map_err(Into::into)
     }
 
     /// Get exec block for the highest blocknum available in the local view of canonical chain.
     async fn best_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError> {
-        unimplemented!()
+        self.ops
+            .best_finalized_block_async()
+            .await
+            .map_err(Into::into)
     }
 
     /// Get height of block if it exists in local view of canonical chain.
     async fn get_finalized_height(&self, hash: Hash) -> Result<Option<u64>, StorageError> {
-        unimplemented!()
+        self.ops
+            .get_finalized_height_async(hash)
+            .await
+            .map_err(Into::into)
     }
 
     /// Get all blocks in db with height > finalized height
     async fn get_unfinalized_blocks(&self) -> Result<Vec<Hash>, StorageError> {
-        unimplemented!()
+        self.ops
+            .get_unfinalized_blocks_async()
+            .await
+            .map_err(Into::into)
     }
 
     /// Get block data for a specified block, if it exits.
     async fn get_exec_block(&self, hash: Hash) -> Result<Option<ExecBlockRecord>, StorageError> {
-        unimplemented!()
+        self.ops
+            .get_exec_block_async(hash)
+            .await
+            .map_err(Into::into)
     }
 
     /// Get block payload for a specified block, if it exists.
     async fn get_block_payload(&self, hash: Hash) -> Result<Option<Vec<u8>>, StorageError> {
-        unimplemented!()
+        self.ops
+            .get_block_payload_async(hash)
+            .await
+            .map_err(Into::into)
     }
 
     /// Delete a single block and its payload by hash.
     async fn delete_exec_block(&self, hash: Hash) -> Result<(), StorageError> {
-        unimplemented!()
+        self.ops
+            .delete_exec_block_async(hash)
+            .await
+            .map_err(Into::into)
     }
 }
 
@@ -173,7 +203,7 @@ impl ExecBlockStorage for EeNodeStorage {
 mod tests {
     use std::sync::Arc;
 
-    use alpen_ee_common::storage_tests;
+    use alpen_ee_common::{exec_block_storage_tests, storage_tests};
     use strata_db_store_sled::SledDbConfig;
     use typed_sled::SledDb;
 
@@ -193,4 +223,5 @@ mod tests {
     }
 
     storage_tests!(setup_storage());
+    exec_block_storage_tests!(setup_storage());
 }
