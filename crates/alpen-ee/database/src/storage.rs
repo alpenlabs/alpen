@@ -116,6 +116,13 @@ impl ExecBlockStorage for EeNodeStorage {
         unimplemented!()
     }
 
+    /// Insert first block to local view of canonical finalized chain (ie. genesis block)
+    ///
+    /// If finalized chain is not empty, this will check that block 0 is expected genesis hash.
+    async fn init_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
+        unimplemented!()
+    }
+
     /// Extend local view of canonical chain with specified block hash
     async fn extend_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
         unimplemented!()
