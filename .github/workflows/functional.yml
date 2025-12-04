@@ -129,7 +129,7 @@ jobs:
         if: steps.funcTestsRun1.outcome == 'failure'
         continue-on-error: true
         env:
-          RUST_LOG: "trace,hyper=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
+          RUST_LOG: "trace,sled=warn,hyper=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
           NO_COLOR: "1"
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
