@@ -23,10 +23,6 @@ pub struct WriteBatch {
 
     /// Epochal state override. None means use base state.
     pub(crate) epochal_state: Option<EpochalState>,
-
-    /// Final state root after all changes.
-    /// This should be computed after all modifications are complete.
-    pub(crate) ledger_state_root: Option<Buf32>,
 }
 
 impl WriteBatch {
@@ -61,8 +57,8 @@ impl WriteBatch {
     }
 
     /// Get mutable global state, creating if needed
-    pub fn global_state_mut_or_insert(&mut self, base: GlobalState) -> &mut GlobalState {
-        self.global_state.get_or_insert(base)
+    pub fn global_state_mut_or_insert(&mut self, base: &GlobalState) -> &mut GlobalState {
+        self.global_state.get_or_insert_with(|| base.clone())
     }
 
     /// Get epochal state if overridden
@@ -71,18 +67,8 @@ impl WriteBatch {
     }
 
     /// Get mutable epochal state, creating if needed
-    pub fn epochal_state_mut_or_insert(&mut self, base: EpochalState) -> &mut EpochalState {
-        self.epochal_state.get_or_insert(base)
-    }
-
-    /// Set the final ledger state root
-    pub fn set_ledger_state_root(&mut self, root: Buf32) {
-        self.ledger_state_root = Some(root);
-    }
-
-    /// Get the ledger state root
-    pub fn ledger_state_root(&self) -> Option<Buf32> {
-        self.ledger_state_root
+    pub fn epochal_state_mut_or_insert(&mut self, base: &EpochalState) -> &mut EpochalState {
+        self.epochal_state.get_or_insert_with(|| base.clone())
     }
 
     /// Get the number of modified accounts
