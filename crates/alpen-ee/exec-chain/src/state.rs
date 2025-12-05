@@ -166,7 +166,7 @@ pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
     storage: Arc<TStorage>,
 ) -> Result<ExecChainState, ExecChainStateError> {
     // Note: This function is expected to be run after
-    // `alpen_ee_genesis::handle_finalized_exec_genesis` which ensures there is atleast genesis
+    // `alpen_ee_genesis::handle_finalized_exec_genesis` which ensures there is at least genesis
     // block written to the db if it was originally empty.
     // If the db is still empty at this point, something really unexpected has happened, and we
     // cannot continue normal execution.
