@@ -8,7 +8,7 @@ use serde::Serialize;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
 use strata_primitives::{
@@ -20,7 +20,7 @@ use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
     chainstate::ChainstateDatabase,
-    types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
+    types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry, MempoolTxData},
     DbResult,
 };
 
@@ -38,6 +38,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
+    fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
 }
 
 /// Database interface to control our view of ASM state.
@@ -479,4 +480,28 @@ pub trait OLStateDatabase: Send + Sync + 'static {
 
     /// Deletes an OL write batch for a given block commitment.
     fn del_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<()>;
+}
+
+/// Database interface for OL mempool transactions.
+///
+/// Stores transactions as opaque bytes with ordering metadata.
+/// Does not validate or parse transaction format.
+pub trait MempoolDatabase: Send + Sync + 'static {
+    /// Store a transaction in the mempool.
+    ///
+    /// Does not validate that txid matches the transaction bytes.
+    fn put_tx(&self, data: MempoolTxData) -> DbResult<()>;
+
+    /// Get a transaction by its ID.
+    ///
+    /// Returns transaction data if found.
+    fn get_tx(&self, txid: OLTxId) -> DbResult<Option<MempoolTxData>>;
+
+    /// Get all transactions in the mempool.
+    fn get_all_txs(&self) -> DbResult<Vec<MempoolTxData>>;
+
+    /// Delete a transaction from the mempool.
+    ///
+    /// Returns true if the transaction existed and was deleted, false otherwise.
+    fn del_tx(&self, txid: OLTxId) -> DbResult<bool>;
 }

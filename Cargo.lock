@@ -14263,6 +14263,8 @@ dependencies = [
  "bincode",
  "borsh",
  "sled",
+ "ssz",
+ "ssz_derive",
  "ssz_types",
  "strata-asm-common",
  "strata-asm-types",
