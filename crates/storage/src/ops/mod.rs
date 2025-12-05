@@ -6,6 +6,7 @@ pub mod global_mmr;
 pub mod l1;
 pub mod l1tx_broadcast;
 pub mod l2;
+pub mod mempool;
 pub mod ol;
 pub mod ol_state;
 pub mod writer;
