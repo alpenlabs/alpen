@@ -12,31 +12,31 @@ pub use tracing::{debug, error, info, trace, warn};
 #[cfg(target_os = "zkvm")]
 #[macro_export]
 macro_rules! error {
-    ($($arg:tt)*) => {{ let _ = format_args!($($arg)*); }}
+    ($($tt:tt)*) => {{}};
 }
 
 #[cfg(target_os = "zkvm")]
 #[macro_export]
 macro_rules! warn {
-    ($($arg:tt)*) => {{ let _ = format_args!($($arg)*); }}
+    ($($tt:tt)*) => {{}};
 }
 
 #[cfg(target_os = "zkvm")]
 #[macro_export]
 macro_rules! info {
-    ($($arg:tt)*) => {{ let _ = format_args!($($arg)*); }}
+    ($($tt:tt)*) => {{}};
 }
 
 #[cfg(target_os = "zkvm")]
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => {{ let _ = format_args!($($arg)*); }}
+    ($($tt:tt)*) => {{}};
 }
 
 #[cfg(target_os = "zkvm")]
 #[macro_export]
 macro_rules! trace {
-    ($($arg:tt)*) => {{ let _ = format_args!($($arg)*); }}
+    ($($tt:tt)*) => {{}};
 }
 
 // Re-export the macros for zkVM builds so they can be used with the same syntax
