@@ -14658,7 +14658,14 @@ dependencies = [
 name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
+ "proptest",
+ "ssz",
+ "ssz_derive",
+ "strata-acct-types",
+ "strata-db-types",
  "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-snark-acct-types",
  "thiserror 2.0.17",
 ]
 
