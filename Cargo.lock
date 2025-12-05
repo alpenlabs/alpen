@@ -1180,7 +1180,6 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
- "strata-snark-acct-types",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
