@@ -12,5 +12,6 @@ pub use engine::{AlpenEngineTypes, AlpenEngineValidator};
 pub use node::AlpenEthereumNode;
 pub use payload::{
     AlpenBuiltPayload, AlpenExecutionPayloadEnvelopeV2, AlpenExecutionPayloadEnvelopeV4,
-    AlpenPayloadAttributes, ExecutionPayloadEnvelopeV2, ExecutionPayloadFieldV2,
+    AlpenPayloadAttributes, AlpenPayloadBuilderAttributes, ExecutionPayloadEnvelopeV2,
+    ExecutionPayloadFieldV2,
 };

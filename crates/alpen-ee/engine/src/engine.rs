@@ -22,7 +22,9 @@ impl AlpenRethExecEngine {
 }
 
 #[async_trait]
-impl ExecutionEngine<AlpenBuiltPayload> for AlpenRethExecEngine {
+impl ExecutionEngine for AlpenRethExecEngine {
+    type TEnginePayload = AlpenBuiltPayload;
+
     async fn submit_payload(&self, payload: AlpenBuiltPayload) -> Result<(), ExecutionEngineError> {
         self.beacon_engine_handle
             .new_payload(AlpenEngineTypes::block_to_payload(

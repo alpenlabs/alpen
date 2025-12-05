@@ -1,10 +1,14 @@
 use alloy_primitives::{Address, B256};
 use strata_acct_types::BitcoinAmount;
 
+/// Inputs to control evm block builder.
 #[derive(Debug, Clone)]
 pub struct PayloadBuildAttributes {
+    /// blockhash of parent block for new block.
     parent: B256,
+    /// timestamp of the new block.
     timestamp: u64,
+    /// deposits to be included in the new block.
     deposits: Vec<DepositInfo>,
 }
 
@@ -30,10 +34,14 @@ impl PayloadBuildAttributes {
     }
 }
 
+/// Describes an incoming deposit that should be minted.
 #[derive(Debug, Clone)]
 pub struct DepositInfo {
+    /// Deposit index.
     index: u64,
+    /// Address inside evm chain where the deposit should be minted to.
     address: Address,
+    /// Amount that has been deposited.
     amount: BitcoinAmount,
 }
 
