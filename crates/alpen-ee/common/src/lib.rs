@@ -1,7 +1,8 @@
 //! Common traits and types for Alpen execution environment components.
 
-pub(crate) mod traits;
-pub(crate) mod types;
+mod traits;
+mod types;
+mod utils;
 
 pub use traits::{
     engine::{ExecutionEngine, ExecutionEngineError},
@@ -26,3 +27,4 @@ pub use types::{
     ol_chain_status::OlChainStatus,
     payload_builder::{DepositInfo, PayloadBuildAttributes},
 };
+pub use utils::conversions::sats_to_gwei;
