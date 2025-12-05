@@ -3,7 +3,7 @@ use rand::{rngs::OsRng, RngCore};
 use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use strata_identifiers::Buf32;
 
-use crate::{multisig::aggregate_schnorr_keys, schnorr::EvenSecretKey};
+use crate::{musig2::aggregate_schnorr_keys, schnorr::EvenSecretKey};
 
 /// Creates a MuSig2 signature from multiple operators.
 ///
@@ -125,13 +125,9 @@ pub fn create_agg_pubkey_from_privkeys(operators_privkeys: &[EvenSecretKey]) -> 
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        hashes::Hash,
-        key::TapTweak,
-        secp256k1::{Secp256k1, SecretKey},
-        TapNodeHash,
-    };
+    use bitcoin::{hashes::Hash, key::TapTweak, secp256k1::Secp256k1, TapNodeHash};
     use rand::rngs::OsRng;
+    use secp256k1::SecretKey;
 
     use super::*;
 
@@ -149,7 +145,11 @@ mod tests {
 
         // Generate test private keys for 3 operators
         let operator_privkeys: Vec<EvenSecretKey> = (0..3)
-            .map(|_| EvenSecretKey::from(SecretKey::new(&mut OsRng)))
+            .map(|_| {
+                let mut sk_bytes = [0u8; 32];
+                OsRng.fill_bytes(&mut sk_bytes);
+                EvenSecretKey::from(SecretKey::from_slice(&sk_bytes).unwrap())
+            })
             .collect();
 
         // Test without tweak
