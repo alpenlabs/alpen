@@ -25,8 +25,15 @@ thiserror.workspace = true
 proptest.workspace = true
 strata-test-utils-ssz.workspace = true
 
+[dependencies.proptest]
+optional = true
+workspace = true
+
 [build-dependencies]
 ssz_codegen.workspace = true
+
+[features]
+test-utils = ["dep:proptest"]
 
 [lints]
 workspace = true
