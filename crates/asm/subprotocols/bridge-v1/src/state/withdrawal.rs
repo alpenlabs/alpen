@@ -7,6 +7,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_bridge_types::OperatorIdx;
 use strata_codec::{Codec, encode_to_vec};
 use strata_primitives::{
@@ -68,44 +69,6 @@ impl WithdrawalCommand {
     /// which equals the withdrawal amount minus the operator fee.
     pub fn net_amount(&self) -> BitcoinAmount {
         self.output.amt().saturating_sub(self.operator_fee)
-    }
-}
-
-/// Bitcoin output specification for a withdrawal operation.
-///
-/// Each withdrawal output specifies a destination address (as a Bitcoin descriptor)
-/// and the amount to be sent. This structure provides all information needed by
-/// operators to construct the appropriate Bitcoin transaction output.
-///
-/// # Bitcoin Descriptors
-///
-/// The destination uses Bitcoin Output Script Descriptors (BOSD) which provide
-/// a standardized way to specify Bitcoin addresses and locking conditions.
-#[derive(
-    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
-)]
-pub struct WithdrawOutput {
-    /// Bitcoin Output Script Descriptor specifying the destination address.
-    pub destination: Descriptor,
-
-    /// Amount to withdraw (in satoshis).
-    pub amt: BitcoinAmount,
-}
-
-impl WithdrawOutput {
-    /// Creates a new withdrawal output with the specified destination and amount.
-    pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
-        Self { destination, amt }
-    }
-
-    /// Returns a reference to the destination descriptor.
-    pub fn destination(&self) -> &Descriptor {
-        &self.destination
-    }
-
-    /// Returns the withdrawal amount.
-    pub fn amt(&self) -> BitcoinAmount {
-        self.amt
     }
 }
 

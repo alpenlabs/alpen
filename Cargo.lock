@@ -13541,6 +13541,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-bridge-msgs"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "serde",
+ "strata-asm-common",
+ "strata-asm-txs-bridge-v1",
+ "strata-primitives",
+]
+
+[[package]]
+name = "strata-asm-checkpoint-msgs"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "strata-asm-common",
+ "strata-asm-proto-checkpoint-txs",
+ "strata-predicate",
+ "strata-primitives",
+]
+
+[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
@@ -13618,8 +13641,8 @@ dependencies = [
  "bitvec",
  "borsh",
  "rand 0.8.5",
+ "strata-asm-checkpoint-msgs",
  "strata-asm-common",
- "strata-asm-proto-checkpoint-v0",
  "strata-asm-txs-admin",
  "strata-crypto",
  "strata-predicate",
@@ -13640,6 +13663,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "secp256k1 0.29.1",
  "serde",
+ "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-txs-bridge-v1",
@@ -13671,9 +13695,10 @@ name = "strata-asm-proto-checkpoint-v0"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "strata-asm-bridge-msgs",
+ "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types",
  "strata-identifiers",
@@ -13703,9 +13728,9 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "serde",
+ "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-proto-bridge-v1",
  "strata-l1-txfmt",
  "strata-primitives",
  "thiserror 2.0.17",

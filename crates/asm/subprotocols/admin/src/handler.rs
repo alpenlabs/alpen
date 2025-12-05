@@ -1,8 +1,8 @@
+use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
     MsgRelayer,
     logging::{error, info},
 };
-use strata_asm_proto_checkpoint_v0::CheckpointIncomingMsg;
 use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction};
 use strata_crypto::multisig::SchnorrMultisigSignature;
 use strata_predicate::PredicateKey;
@@ -180,8 +180,8 @@ mod tests {
     use bitcoin::secp256k1::{SECP256K1, SecretKey};
     use bitvec::prelude::*;
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
+    use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
-    use strata_asm_proto_checkpoint_v0::CheckpointIncomingMsg;
     use strata_asm_txs_admin::{
         actions::{
             CancelAction, MultisigAction, UpdateAction,
