@@ -35,7 +35,7 @@ pub fn build_genesis_exec_block_package(params: &AlpenEeParams) -> ExecBlockPack
     )
 }
 
-pub fn buid_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, Vec<u8>) {
+pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, Vec<u8>) {
     let genesis_package = build_genesis_exec_block_package(params);
     let genesis_account_state = build_genesis_ee_account_state(params);
     let genesis_ol_block =
@@ -58,7 +58,7 @@ pub async fn handle_finalized_exec_genesis<TStorage: ExecBlockStorage>(
     storage: Arc<TStorage>,
 ) -> eyre::Result<()> {
     let genesis_ee_blockhash = config.params().genesis_blockhash().into();
-    let (genesis_block, genesis_block_payload) = buid_genesis_exec_block(config.params());
+    let (genesis_block, genesis_block_payload) = build_genesis_exec_block(config.params());
 
     // If exists, does not overwrite
     storage
