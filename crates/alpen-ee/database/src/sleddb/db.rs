@@ -200,13 +200,18 @@ impl EeNodeDb for EeNodeDBSled {
                         payload_tree.insert(&hash, &payload)?;
                     }
 
-                    // Always update blocks by height to handle the case where this hash
-                    // wasn't tracked at this height yet (though this should be rare)
+                    // Update blocks by height.
                     let mut hashes_at_height =
                         blocks_by_height_tree.get(&height)?.unwrap_or_default();
+                    // dedupe, just in case
                     if !hashes_at_height.contains(&hash) {
                         hashes_at_height.push(hash);
                         blocks_by_height_tree.insert(&height, &hashes_at_height)?;
+                    } else {
+                        // Block was absent in `exec_block_tree`, but its hash was tracked in `exec_blocks_by_height_tree`.
+                        // The db state is inconsistent, although this particular case is harmless.
+                        // Log this inconsistency for further investigation anyway.
+                        warn!(blockhash = ?hash, "Inconsistent DB state; blockhash present exec_blocks_by_height_tree without corresponding entry in exec_block_tree");
                     }
 
                     Ok(())
