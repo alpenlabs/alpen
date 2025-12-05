@@ -278,7 +278,7 @@ pub mod exec_block_storage_test_fns {
         let package = create_package(block_hash, block_hash);
         let account_state = create_account_state(block_hash);
         let ol_block = create_ol_block(ol_slot, blocknum as u8);
-        let timestamp_ms = 1000000 + blocknum * 1000;
+        let timestamp_ms = 1_000_000 + blocknum * 1_000;
 
         ExecBlockRecord::new(
             package,
