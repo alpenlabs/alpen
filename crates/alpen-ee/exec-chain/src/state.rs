@@ -22,6 +22,9 @@ pub enum ExecChainStateError {
     /// Block not found
     #[error("missing expected block: {0:?}")]
     MissingBlock(Hash),
+    /// exec finalized chain should not be empty
+    #[error("expected exec finalized chain genesis block to be present")]
+    MissingGenesisBlock,
     /// Storage error
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -162,10 +165,15 @@ impl ExecChainState {
 pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
     storage: Arc<TStorage>,
 ) -> Result<ExecChainState, ExecChainStateError> {
+    // Note: This function is expected to be run after
+    // `alpen_ee_genesis::handle_finalized_exec_genesis` which ensures there is atleast genesis
+    // block written to the db if it was originally empty.
+    // If the db is still empty at this point, something really unexpected has happened, and we
+    // cannot continue normal execution.
     let last_finalized_block = storage
         .best_finalized_block()
         .await?
-        .expect("cannot be empty");
+        .ok_or(ExecChainStateError::MissingGenesisBlock)?;
 
     let mut state = ExecChainState::new_empty(last_finalized_block);
 
