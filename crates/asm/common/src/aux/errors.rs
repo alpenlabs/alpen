@@ -52,7 +52,6 @@ pub enum AuxError {
         vout: u32,
     },
 
-    /// Bitcoin transaction not found by txid.
     /// Manifest hash not found at the given MMR index.
     #[error("manifest hash not found at index {index}")]
     ManifestHashNotFound {

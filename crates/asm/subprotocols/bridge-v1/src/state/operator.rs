@@ -311,8 +311,9 @@ impl OperatorTable {
         self.add_operators(add_members);
         self.remove_operators(remove_members);
 
-        if !remove_members.is_empty() || !add_members.is_empty() {
-            self.recalculate_aggregated_key();
+        let did_change = !remove_members.is_empty() || !add_members.is_empty();
+        if did_change {
+            self.calculate_aggregated_key();
             self.historical_nn_scripts
                 .push(build_nn_script(&self.agg_key));
         }
@@ -382,12 +383,12 @@ impl OperatorTable {
         }
     }
 
-    /// Recalculates the aggregated key based on currently active operators.
+    /// Calculates the aggregated key based on currently active operators.
     ///
     /// # Panics
     ///
     /// Panics if there are no active operators.
-    fn recalculate_aggregated_key(&mut self) {
+    fn calculate_aggregated_key(&mut self) {
         let active_keys: Vec<Buf32> = self
             .active_operators
             .active_indices()
