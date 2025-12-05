@@ -13474,6 +13474,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "strata"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argh",
+ "bitcoin",
+ "bitcoind-async-client",
+ "format_serde_error",
+ "jsonrpsee",
+ "serde_json",
+ "strata-asm-worker",
+ "strata-common",
+ "strata-config",
+ "strata-consensus-logic",
+ "strata-csm-types",
+ "strata-csm-worker",
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-params",
+ "strata-service",
+ "strata-status",
+ "strata-storage",
+ "strata-tasks",
+ "thiserror 2.0.17",
+ "threadpool",
+ "tokio",
+ "toml 0.5.11",
+ "tracing",
+]
+
+[[package]]
 name = "strata-acct-types"
 version = "0.1.0"
 dependencies = [
