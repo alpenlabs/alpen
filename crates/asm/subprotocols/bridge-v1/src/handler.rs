@@ -48,13 +48,12 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
         ParsedTx::Slash(info) => {
-            // Validate that the stake connector (second input) is locked to a known N/N multisig
-            // script from any recorded configuration.
             let stake_connector_script = &verified_aux_data
                 .get_bitcoin_txout(info.second_inpoint().outpoint())?
                 .script_pubkey;
 
-            // Validate against any historical N/N script (includes current configuration)
+            // Validate that the stake connector (second input) is locked to a known N/N multisig
+            // script from any recorded configuration.
             if !state
                 .operators()
                 .historical_nn_scripts()
