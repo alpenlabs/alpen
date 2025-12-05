@@ -7,6 +7,15 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
+ssz_derive.workspace = true
+strata-acct-types.workspace = true
+strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
+strata-snark-acct-types.workspace = true
 
 thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
