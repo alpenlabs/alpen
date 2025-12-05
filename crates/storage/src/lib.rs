@@ -10,8 +10,8 @@ use std::sync::Arc;
 use anyhow::Context;
 pub use managers::{
     asm::AsmStateManager, chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
-    client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager, mmr::MmrManager,
-    ol_state::OLStateManager,
+    client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
+    mempool::MempoolDbManager, mmr::MmrManager, ol_state::OLStateManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_types::traits::DatabaseBackend;
@@ -36,6 +36,7 @@ pub struct NodeStorage {
     checkpoint_manager: Arc<CheckpointDbManager>,
 
     mmr_manager: Arc<MmrManager>,
+    mempool_db_manager: Arc<MempoolDbManager>,
     ol_state_manager: Arc<OLStateManager>,
 }
 
@@ -49,6 +50,7 @@ impl Clone for NodeStorage {
             client_state_manager: self.client_state_manager.clone(),
             checkpoint_manager: self.checkpoint_manager.clone(),
             mmr_manager: self.mmr_manager.clone(),
+            mempool_db_manager: self.mempool_db_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
         }
     }
@@ -83,6 +85,10 @@ impl NodeStorage {
         &self.mmr_manager
     }
 
+    pub fn mempool(&self) -> &Arc<MempoolDbManager> {
+        &self.mempool_db_manager
+    }
+
     pub fn ol_state(&self) -> &Arc<OLStateManager> {
         &self.ol_state_manager
     }
@@ -102,6 +108,7 @@ pub fn create_node_storage(
     let client_state_db = db.client_state_db();
     let checkpoint_db = db.checkpoint_db();
     let mmr_db = db.mmr_db();
+    let mempool_db = db.mempool_db();
     let ol_state_db = db.ol_state_db();
 
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
@@ -116,6 +123,7 @@ pub fn create_node_storage(
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     let mmr_manager = Arc::new(MmrManager::new(pool.clone(), mmr_db));
+    let mempool_db_manager = Arc::new(MempoolDbManager::new(pool.clone(), mempool_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db));
 
     Ok(NodeStorage {
@@ -126,6 +134,7 @@ pub fn create_node_storage(
         client_state_manager,
         checkpoint_manager,
         mmr_manager,
+        mempool_db_manager,
         ol_state_manager,
     })
 }
