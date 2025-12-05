@@ -2,7 +2,8 @@ use alloy_eips::eip4895::Withdrawal;
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::{ForkchoiceState, PayloadAttributes};
 use alpen_ee_common::{
-    ExecutionEngine, ExecutionEngineError, PayloadBuildAttributes, PayloadBuilderEngine,
+    sats_to_gwei, ExecutionEngine, ExecutionEngineError, PayloadBuildAttributes,
+    PayloadBuilderEngine,
 };
 use alpen_ee_engine::AlpenRethExecEngine;
 use alpen_reth_evm::constants::COINBASE_ADDRESS;
@@ -97,9 +98,4 @@ impl PayloadBuilderEngine for AlpenRethPayloadEngine {
 
         Ok(payload)
     }
-}
-
-fn sats_to_gwei(sats: u64) -> Option<u64> {
-    // 1 BTC = 10^8 sats = 10^9 gwei
-    sats.checked_mul(10)
 }
