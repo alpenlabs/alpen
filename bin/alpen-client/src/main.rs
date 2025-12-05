@@ -1,9 +1,10 @@
 //! Reth node for the Alpen codebase.
 
 mod genesis;
+mod gossip;
 mod ol_client;
 
-use std::sync::Arc;
+use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::traits::ol_client::chain_status_checked;
@@ -11,27 +12,37 @@ use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OlTrackerBuilder};
-use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
+use alpen_reth_node::{
+    args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
+};
 use clap::Parser;
 use ol_client::DummyOlClient;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
+use reth_cli_util::sigsegv_handler;
+use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
+use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
 use strata_identifiers::{CredRule, OLBlockId};
-use tokio::sync::broadcast;
-use tracing::info;
+use strata_primitives::buf::Buf32;
+use tokio::sync::{broadcast, mpsc};
+use tracing::{error, info};
 
-use crate::genesis::ee_genesis_block_info;
+use crate::{
+    genesis::ee_genesis_block_info,
+    gossip::{create_gossip_task, GossipConfig},
+};
 
 fn main() {
-    reth_cli_util::sigsegv_handler::install();
+    sigsegv_handler::install();
 
     // Enable backtraces unless a RUST_BACKTRACE value has already been explicitly provided.
-    if std::env::var_os("RUST_BACKTRACE").is_none() {
-        std::env::set_var("RUST_BACKTRACE", "1");
+    if env::var_os("RUST_BACKTRACE").is_none() {
+        // SAFETY: fine to set this in a non-async context.
+        unsafe { env::set_var("RUST_BACKTRACE", "1") };
     }
 
     let mut command = NodeCommand::<AlpenChainSpecParser, AdditionalConfig>::parse();
@@ -95,8 +106,29 @@ fn main() {
                 ))
                 .expect("ol tracker state initialization should not fail");
 
+            // Create gossip channel before building the node so we can register it early
+            let (gossip_tx, gossip_rx) = mpsc::unbounded_channel();
+
+            // Create preconf channel for p2p head block gossip -> engine control integration
+            // This channel sends block hashes received from peers to the engine control task
+            let (preconf_tx, preconf_rx) = broadcast::channel(16);
+
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
+                .on_component_initialized({
+                    let gossip_tx = gossip_tx.clone();
+                    move |node| {
+                        // Add the custom RLPx subprotocol before node fully starts
+                        // See: crates/reth/node/src/gossip/
+                        let handler =
+                            AlpenGossipProtocolHandler::new(AlpenGossipState::new(gossip_tx));
+                        node.components
+                            .network
+                            .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
+                        info!(target: "alpen-gossip", "Registered Alpen gossip RLPx subprotocol");
+                        Ok(())
+                    }
+                })
                 .on_node_started(move |node| {
                     let (ol_tracker, ol_tracker_task) = OlTrackerBuilder::new(
                         ol_tracker_state,
@@ -106,9 +138,6 @@ fn main() {
                     )
                     .build();
 
-                    // TODO: p2p head block gossip
-                    let (_preconf_tx, preconf_rx) = broadcast::channel(1);
-
                     let engine_control_task = create_engine_control_task(
                         preconf_rx,
                         ol_tracker.consensus_watcher(),
@@ -116,10 +145,54 @@ fn main() {
                         AlpenRethExecEngine::new(node.beacon_engine_handle.clone()),
                     );
 
+                    // Subscribe to canonical state notifications for broadcasting new blocks
+                    let state_events = node.provider.subscribe_to_canonical_state();
+
+                    // Parse sequencer private key from environment variable (only in sequencer mode)
+                    let gossip_config = {
+                        #[cfg(feature = "sequencer")]
+                        {
+                            let sequencer_privkey = if ext.sequencer {
+                                let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
+                                    eyre::eyre!(
+                                        "SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer"
+                                    )
+                                })?;
+                                Some(
+                                    privkey_str.parse::<Buf32>().map_err(|e| {
+                                        eyre::eyre!(
+                                            "Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}"
+                                        )
+                                    })?,
+                                )
+                            } else {
+                                None
+                            };
+
+                            GossipConfig {
+                                sequencer_pubkey: ext.sequencer_pubkey,
+                                sequencer_enabled: ext.sequencer,
+                                sequencer_privkey,
+                            }
+                        }
+
+                        #[cfg(not(feature = "sequencer"))]
+                        {
+                            GossipConfig {
+                                sequencer_pubkey: ext.sequencer_pubkey,
+                                sequencer_enabled: false,
+                            }
+                        }
+                    };
+
+                    let gossip_task = create_gossip_task(gossip_rx, state_events, preconf_tx, gossip_config);
+
                     node.task_executor
                         .spawn_critical("ol_tracker_task", ol_tracker_task);
                     node.task_executor
                         .spawn_critical("engine_control", engine_control_task);
+                    node.task_executor
+                        .spawn_critical("gossip_task", gossip_task);
 
                     // sequencer specific tasks
                     // TODO: block assembly
@@ -135,7 +208,7 @@ fn main() {
         },
     ) {
         eprintln!("Error: {err:?}");
-        std::process::exit(1);
+        process::exit(1);
     }
 }
 
@@ -168,6 +241,15 @@ pub struct AdditionalConfig {
 
     #[arg(long, required = false)]
     pub db_retry_count: Option<u16>,
+
+    /// Run the node as a sequencer. Requires the `sequencer` feature and a
+    /// `SEQUENCER_PRIVATE_KEY` environment variable.
+    #[arg(long, default_value_t = false)]
+    pub sequencer: bool,
+
+    /// Sequencer's public key (hex-encoded, 32 bytes) for signature validation.
+    #[arg(long, required = true, value_parser = parse_buf32)]
+    pub sequencer_pubkey: Buf32,
 }
 
 /// Run node with logging
@@ -191,6 +273,14 @@ where
     let _guard = command.ext.logs.init_tracing()?;
     info!(target: "reth::cli", cmd = %command.ext.logs.log_file_directory, "Initialized tracing, debug log directory");
 
+    if command.ext.sequencer && !cfg!(feature = "sequencer") {
+        error!(
+            target: "alpen-client",
+            "Sequencer flag enabled but binary built without `sequencer` feature. Rebuild with default features or enable the `sequencer` feature."
+        );
+        eyre::bail!("sequencer feature not enabled at compile time");
+    }
+
     let runner = CliRunner::try_default_runtime()?;
     runner.run_command_until_exit(|ctx| {
         command.execute(
@@ -200,4 +290,10 @@ where
     })?;
 
     Ok(())
+}
+
+/// Parse a hex-encoded string into a [`Buf32`].
+fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
+    s.parse::<Buf32>()
+        .map_err(|e| eyre::eyre!("Failed to parse hex string as Buf32: {e}"))
 }

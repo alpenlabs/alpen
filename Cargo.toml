@@ -324,6 +324,7 @@ reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-engine-local = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-errors = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
+reth-eth-wire = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-ethereum-engine-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-ethereum-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-ethereum-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
@@ -332,7 +333,9 @@ reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-exex = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
+reth-network = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-network-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
+reth-network-p2p = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-node-core = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
@@ -440,6 +443,7 @@ terrors = "0.3.0"
 thiserror = "2.0.11"
 threadpool = "1.8"
 tokio = { version = "1.37", features = ["full"] }
+tokio-stream = "0.1.17"
 toml = "0.5"
 tower = "0.5"
 tracing = "0.1"
