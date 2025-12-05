@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use strata_csm_types::ClientState;
+use strata_identifiers::Epoch;
 use strata_params::Params;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
@@ -31,7 +32,7 @@ pub struct CsmWorkerState {
     pub(crate) last_asm_block: Option<L1BlockCommitment>,
 
     /// Last epoch we processed a checkpoint for.
-    pub(crate) last_processed_epoch: Option<u64>,
+    pub(crate) last_processed_epoch: Option<Epoch>,
 
     /// Status channel for publishing state updates.
     pub(crate) status_channel: StatusChannel,

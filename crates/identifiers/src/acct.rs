@@ -1,5 +1,6 @@
 use std::fmt;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -17,10 +18,8 @@ type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
 #[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, Serialize, Deserialize,
+    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode, Serialize, Deserialize,
 )]
-#[repr(transparent)]
-#[ssz(struct_behaviour = "transparent")]
 pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
@@ -69,45 +68,28 @@ impl fmt::Display for AccountId {
     }
 }
 
-// Manual TreeHash implementation for transparent wrapper
-impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for AccountId {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        <RawAccountId as tree_hash::TreeHash<H>>::tree_hash_type()
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        <RawAccountId as tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        <RawAccountId as tree_hash::TreeHash<H>>::tree_hash_packing_factor()
-    }
-
-    fn tree_hash_root(&self) -> H::Output {
-        <RawAccountId as tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
-    }
-}
-
-// Manual DecodeView implementation for transparent wrapper
-impl<'a> ssz::view::DecodeView<'a> for AccountId {
-    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
-        let array: [u8; ACCT_ID_LEN] =
-            bytes
-                .try_into()
-                .map_err(|_| ssz::DecodeError::InvalidByteLength {
-                    len: bytes.len(),
-                    expected: ACCT_ID_LEN,
-                })?;
-        Ok(Self(array))
-    }
-}
+impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
 
 type RawAccountSerial = u32;
 
+/// Size of RawAccountSerial (u32) in bytes
+const RAW_ACCOUNT_SERIAL_LEN: usize = std::mem::size_of::<RawAccountSerial>();
+
 /// Incrementally assigned account serial number.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
-#[repr(transparent)]
-#[ssz(struct_behaviour = "transparent")]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Decode,
+    Encode,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 pub struct AccountSerial(RawAccountSerial);
 
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
@@ -155,39 +137,25 @@ impl fmt::Display for AccountSerial {
     }
 }
 
-// Manual TreeHash implementation for transparent wrapper
-impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for AccountSerial {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        <RawAccountSerial as tree_hash::TreeHash<H>>::tree_hash_type()
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        <RawAccountSerial as tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        <RawAccountSerial as tree_hash::TreeHash<H>>::tree_hash_packing_factor()
-    }
-
-    fn tree_hash_root(&self) -> H::Output {
-        <RawAccountSerial as tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
-    }
-}
-
-// Manual DecodeView implementation for transparent wrapper
-impl<'a> ssz::view::DecodeView<'a> for AccountSerial {
-    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
-        let inner = <RawAccountSerial as ssz::view::DecodeView<'a>>::from_ssz_bytes(bytes)?;
-        Ok(Self(inner))
-    }
-}
+crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial, RAW_ACCOUNT_SERIAL_LEN);
 
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
-#[repr(transparent)]
-#[ssz(struct_behaviour = "transparent")]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Decode,
+    Encode,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 pub struct SubjectId(RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
@@ -201,38 +169,7 @@ impl fmt::Display for SubjectId {
     }
 }
 
-// Manual TreeHash implementation for transparent wrapper
-impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for SubjectId {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        <RawSubjectId as tree_hash::TreeHash<H>>::tree_hash_type()
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        <RawSubjectId as tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        <RawSubjectId as tree_hash::TreeHash<H>>::tree_hash_packing_factor()
-    }
-
-    fn tree_hash_root(&self) -> H::Output {
-        <RawSubjectId as tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
-    }
-}
-
-// Manual DecodeView implementation for transparent wrapper
-impl<'a> ssz::view::DecodeView<'a> for SubjectId {
-    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
-        let array: [u8; SUBJ_ID_LEN] =
-            bytes
-                .try_into()
-                .map_err(|_| ssz::DecodeError::InvalidByteLength {
-                    len: bytes.len(),
-                    expected: SUBJ_ID_LEN,
-                })?;
-        Ok(Self(array))
-    }
-}
+crate::impl_ssz_transparent_byte_array_wrapper!(SubjectId, 32);
 
 /// Raw primitive version of an account ID.  Defined here for convenience.
 pub type RawAccountTypeId = u16;

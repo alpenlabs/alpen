@@ -102,7 +102,7 @@ mod tests {
     use super::*;
     use crate::{cli::OutputFormat, output::helpers::output_to};
 
-    fn create_test_epoch_commitment(epoch: u64, last_slot: u64) -> EpochCommitment {
+    fn create_test_epoch_commitment(epoch: u32, last_slot: u64) -> EpochCommitment {
         let block_id = L2BlockId::from(Buf32::from([0x12; 32]));
         EpochCommitment::new(epoch, last_slot, block_id)
     }

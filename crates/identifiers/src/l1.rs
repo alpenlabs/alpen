@@ -1,4 +1,4 @@
-use std::{fmt, io, str};
+use std::{fmt, str};
 
 #[cfg(feature = "bitcoin")]
 use arbitrary::Error as ArbitraryError;
@@ -9,9 +9,15 @@ pub(crate) use bitcoin::{BlockHash, absolute};
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "bitcoin")]
+use serde::{Deserializer, Serializer, de, ser};
+use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
+// Use generated type when bitcoin feature is not enabled
+#[cfg(not(feature = "bitcoin"))]
+use crate::ssz_generated::ssz::commitments::L1BlockCommitment;
 use crate::{buf::Buf32, hash::sha256d};
 
 /// The bitcoin block height
@@ -35,6 +41,8 @@ pub type L1Height = u32;
     BorshDeserialize,
     Deserialize,
     Serialize,
+    Encode,
+    Decode,
 )]
 pub struct L1BlockId(Buf32);
 
@@ -76,6 +84,9 @@ impl AsRef<[u8; 32]> for L1BlockId {
     }
 }
 
+// Manual TreeHash implementation for transparent wrapper
+crate::impl_ssz_transparent_buf32_wrapper!(L1BlockId);
+
 #[cfg(feature = "bitcoin")]
 impl From<BlockHash> for L1BlockId {
     fn from(value: BlockHash) -> Self {
@@ -91,74 +102,128 @@ impl From<L1BlockId> for BlockHash {
     }
 }
 
+/// Witness transaction ID merkle root from a Bitcoin block.
+///
+/// This is the merkle root of all witness transaction IDs (wtxids) in a block.
+/// Used instead of the regular transaction merkle root to include witness data
+/// for complete transaction verification and malleability protection.
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Default,
+    Arbitrary,
+    BorshSerialize,
+    BorshDeserialize,
+    Deserialize,
+    Serialize,
+    Encode,
+    Decode,
+)]
+pub struct WtxidsRoot(Buf32);
+
+// Implement standard wrapper traits (Debug, Display, From, AsRef, Codec)
+crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
+
+// Manual TreeHash implementation for transparent wrapper
+crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
+
 /// L1 Block commitment with block height and ID.
 ///
-/// Note: Height is stored as u32 internally in Bitcoin's consensus format,
-/// but we serialize/deserialize using a custom implementation to maintain
-/// backwards compatibility with existing data (stored as u64).
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+/// When bitcoin feature is enabled, uses absolute::Height internally.
+/// When disabled, the generated SSZ type (with u32) is used instead.
+#[cfg(feature = "bitcoin")]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct L1BlockCommitment {
-    #[cfg(feature = "bitcoin")]
     height: absolute::Height,
-    #[cfg(not(feature = "bitcoin"))]
-    height: u64,
     blkid: L1BlockId,
 }
 
+// Manual SSZ implementation for bitcoin feature (since absolute::Height doesn't impl Encode/Decode)
 #[cfg(feature = "bitcoin")]
-impl Arbitrary<'_> for L1BlockCommitment {
-    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
-        // Heights must be less than 500_000_000 (LOCK_TIME_THRESHOLD)
-        let h = u32::arbitrary(u)? % 500_000_000;
-        let height =
-            absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)?;
-        let blkid = L1BlockId::arbitrary(u)?;
-        Ok(Self { height, blkid })
+impl ssz::Encode for L1BlockCommitment {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        4 + 32 // u32 + Buf32
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        let height_u32 = self.height.to_consensus_u32();
+        height_u32.ssz_append(buf);
+        self.blkid.ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        Self::ssz_fixed_len()
     }
 }
 
-#[cfg(not(feature = "bitcoin"))]
-impl Arbitrary<'_> for L1BlockCommitment {
-    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
-        let height = u64::arbitrary(u)?;
-        let blkid = L1BlockId::arbitrary(u)?;
-        Ok(Self { height, blkid })
+#[cfg(feature = "bitcoin")]
+impl ssz::Decode for L1BlockCommitment {
+    fn is_ssz_fixed_len() -> bool {
+        true
     }
-}
 
-// Custom Borsh serialization to maintain backward compatibility with u64 storage
-impl BorshSerialize for L1BlockCommitment {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize height as u64 for backward compatibility
-        #[cfg(feature = "bitcoin")]
-        let height_u64 = self.height.to_consensus_u32() as u64;
-        #[cfg(not(feature = "bitcoin"))]
-        let height_u64 = self.height;
-
-        BorshSerialize::serialize(&height_u64, writer)?;
-        BorshSerialize::serialize(&self.blkid, writer)?;
-        Ok(())
+    fn ssz_fixed_len() -> usize {
+        4 + 32 // u32 + Buf32
     }
-}
 
-impl BorshDeserialize for L1BlockCommitment {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let height_u64 = u64::deserialize_reader(reader)?;
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        if bytes.len() != Self::ssz_fixed_len() {
+            return Err(ssz::DecodeError::InvalidByteLength {
+                len: bytes.len(),
+                expected: Self::ssz_fixed_len(),
+            });
+        }
 
-        #[cfg(feature = "bitcoin")]
-        let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("invalid block height {height_u64}: {e}"),
-            )
+        let height_u32 = u32::from_ssz_bytes(&bytes[0..4])?;
+        let height = absolute::Height::from_consensus(height_u32).map_err(|_| {
+            ssz::DecodeError::BytesInvalid(format!("Invalid height: {}", height_u32))
         })?;
-        #[cfg(not(feature = "bitcoin"))]
-        let height = height_u64;
+        let blkid = L1BlockId::from_ssz_bytes(&bytes[4..36])?;
 
-        let blkid = L1BlockId::deserialize_reader(reader)?;
         Ok(Self { height, blkid })
     }
 }
+
+// Manual TreeHash implementation for bitcoin feature
+#[cfg(feature = "bitcoin")]
+impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for L1BlockCommitment {
+    fn tree_hash_type() -> tree_hash::TreeHashType {
+        tree_hash::TreeHashType::Container
+    }
+
+    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
+        unreachable!("Struct should never be packed.")
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        unreachable!("Struct should never be packed.")
+    }
+
+    fn tree_hash_root(&self) -> H::Output {
+        use tree_hash::TreeHash;
+        let height_u32 = self.height.to_consensus_u32();
+        let mut hasher = tree_hash::MerkleHasher::<H>::with_leaves(2);
+        hasher
+            .write(TreeHash::<H>::tree_hash_root(&height_u32).as_ref())
+            .expect("should not apply too many leaves");
+        hasher
+            .write(TreeHash::<H>::tree_hash_root(&self.blkid).as_ref())
+            .expect("should not apply too many leaves");
+        hasher.finish().expect("should not have a remaining buffer")
+    }
+}
+
+// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
+crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
 
 impl Codec for L1BlockCommitment {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
@@ -180,7 +245,7 @@ impl Codec for L1BlockCommitment {
         let height = absolute::Height::from_consensus(height_u64 as u32)
             .map_err(|_| CodecError::MalformedField("L1BlockCommitment.height"))?;
         #[cfg(not(feature = "bitcoin"))]
-        let height = height_u64;
+        let height = height_u64 as u32;
 
         let blkid = L1BlockId::decode(dec)?;
         Ok(Self { height, blkid })
@@ -188,6 +253,7 @@ impl Codec for L1BlockCommitment {
 }
 
 // Custom serde implementation to maintain backward compatibility with u64 JSON
+#[cfg(feature = "bitcoin")]
 impl Serialize for L1BlockCommitment {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -195,18 +261,14 @@ impl Serialize for L1BlockCommitment {
     {
         use ser::SerializeStruct;
         let mut state = serializer.serialize_struct("L1BlockCommitment", 2)?;
-
-        #[cfg(feature = "bitcoin")]
         let height_u64 = self.height.to_consensus_u32() as u64;
-        #[cfg(not(feature = "bitcoin"))]
-        let height_u64 = self.height;
-
         state.serialize_field("height", &height_u64)?;
         state.serialize_field("blkid", &self.blkid)?;
         state.end()
     }
 }
 
+#[cfg(feature = "bitcoin")]
 impl<'de> Deserialize<'de> for L1BlockCommitment {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -246,12 +308,9 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
                 let height_u64 = height.ok_or_else(|| de::Error::missing_field("height"))?;
                 let blkid = blkid.ok_or_else(|| de::Error::missing_field("blkid"))?;
 
-                #[cfg(feature = "bitcoin")]
                 let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
                     de::Error::custom(format!("invalid block height {}: {}", height_u64, e))
                 })?;
-                #[cfg(not(feature = "bitcoin"))]
-                let height = height_u64;
 
                 Ok(L1BlockCommitment { height, blkid })
             }
@@ -268,12 +327,9 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(1, &self))?;
 
-                #[cfg(feature = "bitcoin")]
                 let height = absolute::Height::from_consensus(height_u64 as u32).map_err(|e| {
                     de::Error::custom(format!("invalid block height {}: {}", height_u64, e))
                 })?;
-                #[cfg(not(feature = "bitcoin"))]
-                let height = height_u64;
 
                 Ok(L1BlockCommitment { height, blkid })
             }
@@ -331,21 +387,6 @@ impl fmt::Display for L1BlockCommitment {
     }
 }
 
-impl fmt::Debug for L1BlockCommitment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[cfg(feature = "bitcoin")]
-        let height_display = self.height.to_consensus_u32();
-        #[cfg(not(feature = "bitcoin"))]
-        let height_display = self.height;
-
-        write!(
-            f,
-            "L1BlockCommitment(height={}, blkid={:?})",
-            height_display, self.blkid
-        )
-    }
-}
-
 impl L1BlockCommitment {
     /// Create a new L1 block commitment from a u64 height.
     ///
@@ -359,7 +400,10 @@ impl L1BlockCommitment {
         }
         #[cfg(not(feature = "bitcoin"))]
         {
-            Some(Self { height, blkid })
+            Some(Self {
+                height: height as u32,
+                blkid,
+            })
         }
     }
 
@@ -371,7 +415,7 @@ impl L1BlockCommitment {
         }
         #[cfg(not(feature = "bitcoin"))]
         {
-            self.height
+            self.height as u64
         }
     }
 
@@ -398,6 +442,18 @@ impl L1BlockCommitment {
     }
 }
 
+#[cfg(feature = "bitcoin")]
+impl Arbitrary<'_> for L1BlockCommitment {
+    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
+        // Heights must be less than 500_000_000 (LOCK_TIME_THRESHOLD)
+        let h = u32::arbitrary(u)? % 500_000_000;
+        let height =
+            absolute::Height::from_consensus(h).map_err(|_| ArbitraryError::IncorrectFormat)?;
+        let blkid = L1BlockId::arbitrary(u)?;
+        Ok(Self { height, blkid })
+    }
+}
+
 #[cfg(not(feature = "bitcoin"))]
 impl L1BlockCommitment {
     /// Create a new L1 block commitment.
@@ -405,13 +461,37 @@ impl L1BlockCommitment {
     /// # Arguments
     /// * `height` - The block height
     /// * `blkid` - The block ID
-    pub fn new(height: u64, blkid: L1BlockId) -> Self {
+    pub fn new(height: u32, blkid: L1BlockId) -> Self {
         Self { height, blkid }
     }
 
     /// Get the block height.
-    pub fn height(&self) -> u64 {
+    pub fn height(&self) -> u32 {
         self.height
+    }
+}
+
+#[cfg(not(feature = "bitcoin"))]
+impl Arbitrary<'_> for L1BlockCommitment {
+    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
+        let height = u32::arbitrary(u)?;
+        let blkid = L1BlockId::arbitrary(u)?;
+        Ok(Self { height, blkid })
+    }
+}
+
+// Ord/PartialOrd for non-bitcoin (SSZ-generated) case
+#[cfg(not(feature = "bitcoin"))]
+impl Ord for L1BlockCommitment {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.height(), self.blkid()).cmp(&(other.height(), other.blkid()))
+    }
+}
+
+#[cfg(not(feature = "bitcoin"))]
+impl PartialOrd for L1BlockCommitment {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -438,5 +518,66 @@ impl fmt::Display for L1BlockId {
         // SAFETY: hex encoding always produces valid UTF-8
         let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
         f.write_str(hex_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+
+    mod l1_block_id {
+        use super::*;
+
+        ssz_proptest!(
+            L1BlockId,
+            any::<[u8; 32]>().prop_map(Buf32::from),
+            transparent_wrapper_of(Buf32, from)
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let zero = L1BlockId::from(Buf32::zero());
+            let encoded = zero.as_ssz_bytes();
+            let decoded = L1BlockId::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(zero, decoded);
+        }
+    }
+
+    mod l1_block_commitment {
+        use super::*;
+
+        ssz_proptest!(
+            L1BlockCommitment,
+            (any::<u32>(), any::<[u8; 32]>()).prop_map(|(height, blkid)| {
+                #[cfg(feature = "bitcoin")]
+                {
+                    let h = height % 500_000_000;
+                    let height = absolute::Height::from_consensus(h).unwrap();
+                    L1BlockCommitment::new(height, L1BlockId::from(Buf32::from(blkid)))
+                }
+                #[cfg(not(feature = "bitcoin"))]
+                {
+                    L1BlockCommitment::new(height, L1BlockId::from(Buf32::from(blkid)))
+                }
+            })
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            #[cfg(feature = "bitcoin")]
+            let commitment =
+                L1BlockCommitment::new(absolute::Height::ZERO, L1BlockId::from(Buf32::zero()));
+            #[cfg(not(feature = "bitcoin"))]
+            let commitment = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
+
+            let encoded = commitment.as_ssz_bytes();
+            let decoded = L1BlockCommitment::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(commitment.height_u64(), decoded.height_u64());
+            assert_eq!(commitment.blkid(), decoded.blkid());
+        }
     }
 }

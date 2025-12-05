@@ -249,7 +249,7 @@ pub struct RpcCheckpointInfo {
 impl From<BatchInfo> for RpcCheckpointInfo {
     fn from(value: BatchInfo) -> Self {
         Self {
-            idx: value.epoch,
+            idx: value.epoch as u64,
             l1_range: value.l1_range,
             l2_range: value.l2_range,
             l1_reference: None,

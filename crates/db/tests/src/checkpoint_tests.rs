@@ -17,7 +17,7 @@ pub fn test_insert_summary_single(db: &impl CheckpointDatabase) {
     assert_eq!(stored, summary);
 
     let commitments = db
-        .get_epoch_commitments_at(commitment.epoch())
+        .get_epoch_commitments_at(commitment.epoch() as u64)
         .expect("test: get at epoch");
 
     assert_eq!(commitments.as_slice(), &[commitment]);
@@ -63,7 +63,7 @@ pub fn test_insert_summary_multiple(db: &impl CheckpointDatabase) {
     commitments.sort();
 
     let mut stored_commitments = db
-        .get_epoch_commitments_at(epoch)
+        .get_epoch_commitments_at(epoch as u64)
         .expect("test: get at epoch");
     stored_commitments.sort();
 

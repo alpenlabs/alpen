@@ -1,0 +1,11 @@
+MAX_LOG_DATA_BYTES = 1 << 12
+
+### A wrapper around raw bytes that provides typed access to ASM log entries.
+###
+### AsmLogEntry encapsulates raw log data as bytes, providing a consistent interface
+### for storing and retrieving different types of ASM log events. The raw bytes can
+### optionally be interpreted as an SPS-52 message with type information.
+#~# derive: Serialize, Deserialize
+class AsmLogEntry(Container):
+    ### Raw log data bytes (can be SPS-52 messages or arbitrary data)
+    data: List[uint8, MAX_LOG_DATA_BYTES]

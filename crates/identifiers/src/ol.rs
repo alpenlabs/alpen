@@ -4,9 +4,13 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
-use crate::buf::Buf32;
+use crate::{buf::Buf32, ssz_generated::ssz::commitments::OLBlockCommitment};
+
+pub type Slot = u64;
+pub type Epoch = u32;
 
 /// ID of an OL (Orchestration Layer) block, usually the hash of its root header.
 #[derive(
@@ -23,10 +27,15 @@ use crate::buf::Buf32;
     BorshDeserialize,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct OLBlockId(Buf32);
 
 impl_buf_wrapper!(OLBlockId, Buf32, 32);
+
+// Manual TreeHash implementation for transparent wrapper
+impl_ssz_transparent_buf32_wrapper!(OLBlockId);
 
 impl OLBlockId {
     /// Returns a dummy blkid that is all zeroes.
@@ -43,28 +52,8 @@ impl OLBlockId {
 /// Alias for backward compatibility
 pub type L2BlockId = OLBlockId;
 
-/// Commits to a specific block at some slot.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
-)]
-pub struct OLBlockCommitment {
-    slot: u64,
-    blkid: OLBlockId,
-}
-
-impl OLBlockCommitment {
-    pub fn new(slot: u64, blkid: OLBlockId) -> Self {
+impl crate::OLBlockCommitment {
+    pub fn new(slot: Slot, blkid: OLBlockId) -> Self {
         Self { slot, blkid }
     }
 
@@ -72,7 +61,7 @@ impl OLBlockCommitment {
         Self::new(0, OLBlockId::from(Buf32::zero()))
     }
 
-    pub fn slot(&self) -> u64 {
+    pub fn slot(&self) -> Slot {
         self.slot
     }
 
@@ -124,13 +113,27 @@ impl Codec for OLBlockCommitment {
     }
 }
 
-impl fmt::Debug for OLBlockCommitment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "OLBlockCommitment(slot={}, blkid={:?})",
-            self.slot, self.blkid
-        )
+// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
+crate::impl_borsh_via_ssz_fixed!(OLBlockCommitment);
+
+impl<'a> arbitrary::Arbitrary<'a> for OLBlockCommitment {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            slot: u.arbitrary()?,
+            blkid: u.arbitrary()?,
+        })
+    }
+}
+
+impl Ord for OLBlockCommitment {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.slot, &self.blkid).cmp(&(other.slot, &other.blkid))
+    }
+}
+
+impl PartialOrd for OLBlockCommitment {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -152,7 +155,76 @@ pub type L2BlockCommitment = OLBlockCommitment;
     BorshDeserialize,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct OLTxId(Buf32);
 
 impl_buf_wrapper!(OLTxId, Buf32, 32);
+
+crate::impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+
+    mod ol_block_id {
+        use super::*;
+
+        ssz_proptest!(
+            OLBlockId,
+            any::<[u8; 32]>().prop_map(Buf32::from),
+            transparent_wrapper_of(Buf32, from)
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let zero = OLBlockId::from(Buf32::zero());
+            let encoded = zero.as_ssz_bytes();
+            let decoded = OLBlockId::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(zero, decoded);
+        }
+    }
+
+    mod ol_block_commitment {
+        use super::*;
+
+        ssz_proptest!(
+            OLBlockCommitment,
+            (any::<u64>(), any::<[u8; 32]>()).prop_map(|(slot, blkid)| {
+                OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from(blkid)))
+            })
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let commitment = OLBlockCommitment::new(0, OLBlockId::from(Buf32::zero()));
+            let encoded = commitment.as_ssz_bytes();
+            let decoded = OLBlockCommitment::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(commitment.slot(), decoded.slot());
+            assert_eq!(commitment.blkid(), decoded.blkid());
+        }
+    }
+
+    mod ol_tx_id {
+        use super::*;
+
+        ssz_proptest!(
+            OLTxId,
+            any::<[u8; 32]>().prop_map(Buf32::from),
+            transparent_wrapper_of(Buf32, from)
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let zero = OLTxId::from(Buf32::zero());
+            let encoded = zero.as_ssz_bytes();
+            let decoded = OLTxId::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(zero, decoded);
+        }
+    }
+}

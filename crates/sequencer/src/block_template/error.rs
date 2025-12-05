@@ -1,6 +1,7 @@
 use strata_chaintsn::errors::TsnError;
 use strata_db_types::DbError;
 use strata_eectl::errors::EngineError;
+use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
 use thiserror::Error;
 
@@ -42,7 +43,7 @@ pub enum BlockAssemblyError {
     // This probably shouldn't happen, it would suggest the database is
     // misbehaving.
     #[error("missing expected state checkpoint at {0}")]
-    MissingCheckpoint(u64),
+    MissingCheckpoint(Epoch),
 
     #[error("L1 block {0} missing from database")]
     MissingL1BlockHeight(u64),

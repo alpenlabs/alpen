@@ -25,7 +25,7 @@ impl Service for CsmWorkerService {
     fn get_status(state: &Self::State) -> Self::Status {
         CsmWorkerStatus {
             cur_block: state.last_asm_block,
-            last_processed_epoch: state.last_processed_epoch,
+            last_processed_epoch: state.last_processed_epoch.map(|e| e as u64),
         }
     }
 }

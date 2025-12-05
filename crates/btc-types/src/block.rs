@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
+use strata_identifiers::{Buf32, Epoch, L1BlockCommitment, L1BlockId};
 
 use crate::{L1HeaderRecord, L1Tx};
 
@@ -55,14 +55,14 @@ pub struct L1BlockManifest {
     txs: Vec<L1Tx>,
 
     /// Epoch, which was used to generate this manifest.
-    epoch: u64,
+    epoch: Epoch,
 
     /// Block height.
     height: u64,
 }
 
 impl L1BlockManifest {
-    pub fn new(record: L1HeaderRecord, txs: Vec<L1Tx>, epoch: u64, height: u64) -> Self {
+    pub fn new(record: L1HeaderRecord, txs: Vec<L1Tx>, epoch: Epoch, height: u64) -> Self {
         Self {
             record,
             txs,
@@ -83,7 +83,7 @@ impl L1BlockManifest {
         &self.txs
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 

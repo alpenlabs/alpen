@@ -20,10 +20,10 @@ pub(crate) fn construct_checkpoint_proof_public_parameters(
     let prev_epoch_summary = &state.verified_checkpoint;
 
     let new_batch_info = checkpoint.batch_info();
-    let epoch = new_batch_info.epoch() as u32;
+    let epoch = new_batch_info.epoch();
 
     // Validate epoch progression
-    let expected_epoch = (prev_epoch_summary.epoch() + 1) as u32;
+    let expected_epoch = prev_epoch_summary.epoch() + 1;
     if epoch != expected_epoch {
         return Err(CoreError::InvalidEpoch {
             expected: expected_epoch,

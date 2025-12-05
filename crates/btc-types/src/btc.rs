@@ -24,7 +24,7 @@ use secp256k1::SECP256K1;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_identifiers::Buf32;
+use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
 
 use crate::ParseError;
 
@@ -250,8 +250,10 @@ impl BorshDeserialize for BitcoinAddress {
     Encode,
     Decode,
 )]
-#[ssz(struct_behaviour = "transparent")]
 pub struct BitcoinAmount(u64);
+
+/// Size of u64 in bytes
+const BITCOIN_AMOUNT_LEN: usize = std::mem::size_of::<u64>();
 
 impl Display for BitcoinAmount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -307,32 +309,7 @@ impl Codec for BitcoinAmount {
     }
 }
 
-// Manual TreeHash implementation for transparent wrapper
-impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for BitcoinAmount {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        <u64 as tree_hash::TreeHash<H>>::tree_hash_type()
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        <u64 as tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.0)
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        <u64 as tree_hash::TreeHash<H>>::tree_hash_packing_factor()
-    }
-
-    fn tree_hash_root(&self) -> H::Output {
-        <u64 as tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
-    }
-}
-
-// Manual DecodeView implementation for transparent wrapper
-impl<'a> ssz::view::DecodeView<'a> for BitcoinAmount {
-    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
-        let inner = <u64 as ssz::view::DecodeView<'a>>::from_ssz_bytes(bytes)?;
-        Ok(Self(inner))
-    }
-}
+impl_ssz_transparent_wrapper!(BitcoinAmount, u64, BITCOIN_AMOUNT_LEN);
 
 impl BitcoinAmount {
     // The zero amount.

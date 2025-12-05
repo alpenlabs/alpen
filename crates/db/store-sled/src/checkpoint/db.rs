@@ -19,7 +19,7 @@ define_sled_database!(
 
 impl CheckpointDatabase for CheckpointDBSled {
     fn insert_epoch_summary(&self, summary: EpochSummary) -> DbResult<()> {
-        let epoch_idx = summary.epoch();
+        let epoch_idx = summary.epoch() as u64;
         let commitment = summary.get_epoch_commitment();
         let terminal = summary.terminal();
 
@@ -36,7 +36,7 @@ impl CheckpointDatabase for CheckpointDBSled {
     }
 
     fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>> {
-        let Some(mut summaries) = self.epoch_summary_tree.get(&epoch.epoch())? else {
+        let Some(mut summaries) = self.epoch_summary_tree.get(&(epoch.epoch() as u64))? else {
             return Ok(None);
         };
 
@@ -95,7 +95,7 @@ impl CheckpointDatabase for CheckpointDBSled {
     }
 
     fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool> {
-        let epoch_idx = epoch.epoch();
+        let epoch_idx = epoch.epoch() as u64;
         let terminal = epoch.to_block_commitment();
 
         let Some(mut summaries) = self.epoch_summary_tree.get(&epoch_idx)? else {

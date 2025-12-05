@@ -88,7 +88,7 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
     }
 
     let output = ClStfOutput {
-        epoch,
+        epoch: epoch as u64,
         initial_chainstate_root,
         final_chainstate_root,
     };

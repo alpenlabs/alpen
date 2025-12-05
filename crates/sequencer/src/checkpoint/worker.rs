@@ -97,7 +97,7 @@ pub fn checkpoint_worker(
                 params.rollup(),
             )?;
 
-            last_saved_epoch = epoch;
+            last_saved_epoch = epoch as u64;
         }
     }
     Ok(())
@@ -136,7 +136,7 @@ fn find_ready_checkpoints(
         // This function should be passed the last accepted checkpoint and this should be the
         // commitment that continues the last checkpoint.
         let ec = commitments[0];
-        if ckman.get_checkpoint_blocking(ec.epoch())?.is_none() {
+        if ckman.get_checkpoint_blocking(ec.epoch() as u64)?.is_none() {
             trace!(epoch = %i, "found epoch ready to checkpoint");
             epochs.push(ec);
         }
@@ -157,7 +157,7 @@ fn handle_ready_epoch(
     info!(%epoch, ?new_l1, "preparing checkpoint data");
 
     // REALLY make sure we don't already have checkpoint for the epoch.
-    if ckhandle.get_checkpoint_blocking(epoch)?.is_some() {
+    if ckhandle.get_checkpoint_blocking(epoch as u64)?.is_some() {
         warn!(%epoch, "already have checkpoint for epoch, aborting preparation");
         return Ok(());
     }
@@ -187,7 +187,7 @@ fn handle_ready_epoch(
     // else save a pending proof checkpoint entry
     debug!(%epoch, "saving unproven checkpoint");
     let entry = CheckpointEntry::new_pending_proof(cpd.info, cpd.tsn, &cpd.chainstate);
-    if let Err(e) = ckhandle.put_checkpoint_and_notify_blocking(epoch, entry) {
+    if let Err(e) = ckhandle.put_checkpoint_and_notify_blocking(epoch as u64, entry) {
         warn!(%epoch, err = %e, "failed to save checkpoint");
     }
 

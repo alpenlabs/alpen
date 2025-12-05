@@ -115,10 +115,12 @@ impl<'b> BlockExecInput<'b> {
 
     /// Constructs a new instance by getting refs from a block's body.
     pub fn from_body(body: &'b OLBlockBody) -> Self {
-        Self::new(
-            body.tx_segment(),
-            body.l1_update().map(|u| u.manifest_cont()),
-        )
+        // tx_segment is optional in the body, but BlockExecInput requires it.
+        // Blocks without transactions should have an empty tx_segment, not None.
+        let tx_segment = body
+            .tx_segment()
+            .expect("block body should have tx_segment for execution");
+        Self::new(tx_segment, body.l1_update().map(|u| u.manifest_cont()))
     }
 
     /// Returns the transaction segment.
@@ -168,7 +170,9 @@ pub fn verify_block<S: StateAccessor>(
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header.as_ref());
-    transaction_processing::process_block_tx_segment(state, body.tx_segment(), &tx_ctx)?;
+    if let Some(tx_segment) = body.tx_segment() {
+        transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;
+    }
 
     // 4. Check the state root.
     // - if it not a terminal, then check against the header state root
@@ -507,7 +511,10 @@ mod tests {
     fn test_verify_block_structure_happy_path() {
         // Create a body and compute its root
         let tx_segment = OLTxSegment::new(vec![]);
-        let body = OLBlockBody::new(tx_segment, None);
+        let body = OLBlockBody::new(
+            tx_segment.expect("tx segment should be within limits"),
+            None,
+        );
         let body_root = body.compute_hash_commitment();
 
         // Create header with matching body root
@@ -529,7 +536,10 @@ mod tests {
     fn test_verify_block_structure_mismatch() {
         // Create a body
         let tx_segment = OLTxSegment::new(vec![]);
-        let body = OLBlockBody::new(tx_segment, None);
+        let body = OLBlockBody::new(
+            tx_segment.expect("tx segment should be within limits"),
+            None,
+        );
 
         // Create header with wrong body root
         let header = OLBlockHeader::new(

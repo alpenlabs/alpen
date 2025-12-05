@@ -1,0 +1,46 @@
+import strata_acct_types
+import strata_identifiers
+import strata_snark_acct_types
+
+MAX_TX_PAYLOAD_LEN = 1 << 16
+
+### Additional constraints that we can place on a transaction.
+#~# derive: Default
+class TransactionAttachment(StableContainer[16]):
+    ### Minimum slot for inclusion
+    min_slot: Optional[strata_identifiers.Slot]
+
+    ### Maximum slot for inclusion
+    max_slot: Optional[strata_identifiers.Slot]
+
+### Generic account message payload.
+class GamTxPayload(Container):
+    ### Target account ID
+    target: strata_acct_types.AccountId
+
+    ### Message payload bytes
+    payload: List[uint8, MAX_TX_PAYLOAD_LEN]
+
+### Snark account update payload.
+class SnarkAccountUpdateTxPayload(Container):
+    ### Target account ID
+    target: strata_acct_types.AccountId
+
+    ### Snark account update data
+    #~# external_kind: container
+    update_container: strata_snark_acct_types.SnarkAccountUpdateContainer
+
+### Type aliases for union variant names
+GenericAccountMessage = GamTxPayload
+SnarkAccountUpdate = SnarkAccountUpdateTxPayload
+
+### Transaction payload union.
+TransactionPayload = Union[GenericAccountMessage, SnarkAccountUpdate]
+
+### Transaction container.
+class OLTransaction(Container):
+    ### Transaction payload (enum variant)
+    payload: TransactionPayload
+
+    ### Additional transaction metadata
+    attachment: TransactionAttachment

@@ -133,7 +133,7 @@ mod tests {
         L1BlockId::from(Buf32::from([0x34; 32]))
     }
 
-    fn create_test_epoch_commitment(epoch: u64, last_slot: u64) -> EpochCommitment {
+    fn create_test_epoch_commitment(epoch: u32, last_slot: u64) -> EpochCommitment {
         let block_id = create_test_block_id();
         EpochCommitment::new(epoch, last_slot, block_id)
     }
