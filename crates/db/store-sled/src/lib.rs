@@ -88,7 +88,7 @@ impl SledBackend {
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db.clone(), config_ref.clone())?);
-        let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config_ref.clone())?);
+        let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
             l1_db,
