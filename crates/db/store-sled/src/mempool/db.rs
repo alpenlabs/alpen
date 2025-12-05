@@ -49,3 +49,14 @@ impl MempoolDatabase for MempoolDBSled {
         Ok(existed)
     }
 }
+
+#[cfg(feature = "test_utils")]
+#[cfg(test)]
+mod tests {
+    use strata_db_tests::mempool_db_tests;
+
+    use super::*;
+    use crate::sled_db_test_setup;
+
+    sled_db_test_setup!(MempoolDBSled, mempool_db_tests);
+}
