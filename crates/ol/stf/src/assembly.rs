@@ -10,11 +10,11 @@ use strata_ol_chain_types_new::{
 };
 
 use crate::{
-    chain_processing,
+    NoopAuxAccumulator, chain_processing,
     context::{BasicExecContext, BlockContext, TxExecContext},
     errors::ExecResult,
     manifest_processing,
-    output::{ExecOutputBuffer, OutputCtx},
+    output::{ExecAuxAccumulator, ExecOutputBuffer, OutputCtx},
     transaction_processing,
     verification::{BlockExecInput, BlockPostStateCommitments},
 };
@@ -102,7 +102,9 @@ pub fn execute_block_inputs<S: StateAccessor>(
     chain_processing::process_block_start(state, &block_context)?;
 
     // 3. Call process_block_tx_segment for every block as usual.
-    let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);
+    let aux_accumulator = NoopAuxAccumulator; // no need to accumulate anything during block
+    // execution
+    let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output, &aux_accumulator);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     transaction_processing::process_block_tx_segment(
         state,
