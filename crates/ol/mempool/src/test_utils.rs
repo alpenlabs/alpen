@@ -1,6 +1,7 @@
 //! Test utilities for mempool tests.
 
 use proptest::{
+    arbitrary,
     strategy::{Strategy, ValueTree},
     test_runner::TestRunner,
 };
@@ -13,7 +14,7 @@ use crate::types::{OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction, OLMe
 /// Create a test account ID using proptest strategy.
 pub(crate) fn create_test_account_id() -> AccountId {
     let mut runner = TestRunner::default();
-    proptest::arbitrary::any::<[u8; 32]>()
+    arbitrary::any::<[u8; 32]>()
         .new_tree(&mut runner)
         .unwrap()
         .current()
