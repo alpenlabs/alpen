@@ -14724,6 +14724,7 @@ dependencies = [
  "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-state-types",
+ "strata-service",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
 ]

@@ -3,12 +3,14 @@
 //! Stores pending OL transactions (GenericAccountMessage and SnarkAccountUpdate
 //! without accumulator proofs) before they are included in blocks.
 
+mod command;
 mod error;
 #[cfg(test)]
 mod test_utils;
 mod types;
 mod validation;
 
+pub use command::MempoolCommand;
 pub use error::OLMempoolError;
 pub use types::{
     DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE, MempoolOrderingKey, OLMempoolConfig,
