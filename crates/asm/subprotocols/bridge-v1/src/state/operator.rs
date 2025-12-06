@@ -1,6 +1,7 @@
 //! Bridge Operator Management
 //!
 //! This module contains types and tables for managing bridge operators
+use std::collections::HashSet;
 
 use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -154,9 +155,12 @@ impl OperatorTable {
     ///
     /// - `entries` - Slice of [`EvenPublicKey`] containing MuSig2 keys
     ///
-    /// # Returns
+    /// # Duplicates
     ///
-    /// A new [`OperatorTable`] with operators indexed 0, 1, 2, etc.
+    /// Duplicate public keys in `entries` are silently deduplicated.
+    ///
+    /// **Note**: Deduplication is performed using a `HashSet`, so the order of operators
+    /// (and their assigned indices) is **not guaranteed** to match the input order.
     ///
     /// # Panics
     ///
@@ -167,8 +171,12 @@ impl OperatorTable {
                 "Cannot create operator table with empty entries - at least one operator is required"
             );
         }
+
+        // Use a HashSet to deduplicate operator keys.
+        let operators: HashSet<EvenPublicKey> = entries.iter().cloned().collect();
+
         let agg_operator_key: BitcoinXOnlyPublicKey = aggregate_schnorr_keys(
-            entries
+            operators
                 .iter()
                 .map(|pk| Buf32::from(pk.x_only_public_key().0.serialize()))
                 .collect::<Vec<_>>()
@@ -176,16 +184,17 @@ impl OperatorTable {
         )
         .unwrap()
         .into();
+
         // Create bitmap with all initial operators as active (0, 1, 2, ..., n-1)
-        let bitmap = OperatorBitmap::new_with_size(entries.len(), true);
+        let bitmap = OperatorBitmap::new_with_size(operators.len(), true);
 
         // Compute the initial N/N script
         let initial_nn_script = build_nn_script(&agg_operator_key);
 
         Self {
-            next_idx: entries.len() as OperatorIdx,
+            next_idx: operators.len() as OperatorIdx,
             operators: SortedVec::new_unchecked(
-                entries
+                operators
                     .iter()
                     .enumerate()
                     .map(|(i, pk)| OperatorEntry {
@@ -323,20 +332,8 @@ impl OperatorTable {
     ///
     /// # Duplicate Keys
     ///
-    /// Duplicate public keys are explicitly allowed. Per [BIP-327]:
-    ///
-    /// > The same individual public key is allowed to occur more than once in the input of KeyAgg
-    /// > and KeySort. This is by design: All algorithms in this proposal handle multiple signers
-    /// > who (claim to) have identical individual public keys properly, and applications are not
-    /// > required to check for duplicate individual public keys. In fact, applications are
-    /// > recommended to omit checks for duplicate individual public keys in order to simplify
-    /// > error handling.
-    ///
-    /// [BIP-327]: https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#public-key-aggregation
-    ///
-    /// In this implementation, only the administration subprotocol can add new members.
-    /// If the admin subprotocol chooses to add duplicate operators, we assume they have
-    /// a valid reason (e.g., weighted voting or specific trust arrangements) and allow it.
+    /// Duplicate public keys are **NOT** allowed. If an operator already exists in the table,
+    /// the duplicate addition is ignored, and the existing operator remains unaffected.
     ///
     /// # Panics
     ///
@@ -345,6 +342,13 @@ impl OperatorTable {
     /// - `next_idx` overflows `u32::MAX`
     fn add_operators(&mut self, operators: &[EvenPublicKey]) {
         for musig2_pk in operators {
+            // Check if it already exists in the table (which handles both existing operators
+            // and internal duplicates in the input list, as the first occurrence is added)
+            if self.operators.iter().any(|op| op.musig2_pk() == musig2_pk) {
+                eprintln!("Skipping duplicate operator: {:?}", musig2_pk);
+                continue;
+            }
+
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
@@ -446,12 +450,19 @@ mod tests {
         assert!(!table.is_empty());
         assert_eq!(table.next_idx, 3);
 
-        // Verify operators are correctly indexed and stored
-        for (i, op_pk) in operators.iter().enumerate() {
-            let entry = table.get_operator(i as u32).unwrap();
-            assert_eq!(entry.idx(), i as u32);
-            assert_eq!(entry.musig2_pk(), op_pk);
-            assert!(table.is_in_current_multisig(i as u32));
+        // Verify all operators are present in the table
+        // Note: Indices may not match input order due to HashSet deduplication
+        for op_pk in &operators {
+            let found = table
+                .operators()
+                .iter()
+                .any(|entry| entry.musig2_pk() == op_pk);
+            assert!(found, "Operator {:?} not found in table", op_pk);
+        }
+
+        // precise index check is no longer valid as order is not guaranteed
+        for entry in table.operators() {
+            assert!(table.is_in_current_multisig(entry.idx()));
         }
     }
 
@@ -474,6 +485,48 @@ mod tests {
             assert_eq!(entry.musig2_pk(), op_pk);
             assert!(table.is_in_current_multisig(idx));
         }
+    }
+
+    #[test]
+    fn test_operator_table_insert_duplicate() {
+        let initial_operators = create_test_operator_pubkeys(1);
+        let mut table = OperatorTable::from_operator_list(&initial_operators);
+
+        // Try to add the same operator again - should be silently ignored
+        table.apply_membership_changes(&initial_operators, &[]);
+
+        // Check that state hasn't changed (still 1 operator)
+        assert_eq!(table.len(), 1);
+        assert_eq!(table.next_idx, 1);
+    }
+
+    #[test]
+    fn test_operator_table_create_with_duplicate_deduplicates() {
+        let mut operators = create_test_operator_pubkeys(2);
+        operators[1] = operators[0]; // Duplicate key
+
+        let table = OperatorTable::from_operator_list(&operators);
+
+        // Should have deduplicated to just 1 operator
+        assert_eq!(table.len(), 1);
+        assert_eq!(table.next_idx, 1);
+        assert_eq!(*table.get_operator(0).unwrap().musig2_pk(), operators[0]);
+    }
+
+    #[test]
+    fn test_operator_table_add_internal_duplicates() {
+        let initial_operators = create_test_operator_pubkeys(1);
+        let mut table = OperatorTable::from_operator_list(&initial_operators);
+
+        let new_operators = create_test_operator_pubkeys(1);
+        // Try to add the same new operator twice in the same batch
+        let duplicates = vec![new_operators[0], new_operators[0]];
+
+        table.apply_membership_changes(&duplicates, &[]);
+
+        // Should have only added one new operator
+        assert_eq!(table.len(), 2);
+        assert_eq!(table.next_idx, 2);
     }
 
     #[test]
