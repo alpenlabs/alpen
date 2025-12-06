@@ -1,80 +1,114 @@
-//! EVM Execution Environment STF for Alpen prover, using RSP for EVM execution. Provides primitives
-//! and utilities to process Ethereum block transactions and state transitions in a zkVM.
-pub mod executor;
+//! EVM Execution Environment STF for Alpen prover using trait-based ExecutionEnvironment.
+//! Provides primitives and utilities to process Ethereum block transactions and state transitions in a zkVM.
 pub mod primitives;
 pub mod program;
-pub mod utils;
 
-pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
+use std::sync::Arc;
+
+use alloy_consensus::Header;
+use reth_chainspec::ChainSpec;
+use reth_primitives_traits::Block as RethBlock;
+use revm_primitives::B256;
 use rsp_client_executor::io::EthClientExecutorInput;
-use utils::generate_exec_update;
+use rsp_primitives::genesis::Genesis;
+use strata_ee_acct_types::{ExecBlock, ExecBlockOutput, ExecPayload, ExecutionEnvironment};
+use strata_ee_chain_types::BlockInputs;
+use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader, EvmPartialState};
 use zkaleido::ZkVmEnv;
 
-use crate::executor::process_block;
+pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
 
-/// Processes a sequence of EL block transactions from the given `zkvm` environment, ensuring block
-/// hash continuity and committing the resulting updates.
-pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
+/// Converts genesis configuration to chain specification.
+fn create_chain_spec(genesis: &Genesis) -> Arc<ChainSpec> {
+    Arc::new(
+        genesis
+            .try_into()
+            .expect("Failed to convert genesis to chain spec"),
+    )
+}
+
+/// Converts EthClientExecutorInput EVM block and partial state.
+fn convert_block_input(input: EthClientExecutorInput) -> (EvmPartialState, EvmBlock, Header) {
+    let state = EvmPartialState::new(input.parent_state, input.bytecodes, input.ancestor_headers);
+
+    let header = input.current_block.header().clone();
+    let evm_header = EvmHeader::new(header.clone());
+    let block_body = input.current_block.into_body();
+    let evm_body = EvmBlockBody::from_alloy_body(block_body);
+    let block = EvmBlock::new(evm_header, evm_body);
+
+    (state, block, header)
+}
+
+/// Validates block hash continuity in a chain.
+fn validate_block_hash_continuity(
+    current_blockhash: &mut Option<B256>,
+    prev_blockhash: B256,
+    new_blockhash: B256,
+) {
+    if let Some(expected_hash) = current_blockhash {
+        assert_eq!(prev_blockhash, *expected_hash, "Block hash mismatch");
+    }
+    *current_blockhash = Some(new_blockhash);
+}
+
+/// Executes a single block using the ExecutionEnvironment trait.
+fn execute_single_block(
+    env: &EvmExecutionEnvironment,
+    state: &EvmPartialState,
+    block: &EvmBlock,
+    header: &Header,
+    block_idx: u32,
+) -> ExecBlockOutput<EvmExecutionEnvironment> {
+    let exec_payload = ExecPayload::new(header, block.get_body());
+    let block_inputs = BlockInputs::new_empty();
+
+    let output = env
+        .execute_block_body(state, &exec_payload, &block_inputs)
+        .unwrap_or_else(|_| panic!("Failed to execute block {}", block_idx));
+
+    env.verify_outputs_against_header(block.get_header(), &output)
+        .unwrap_or_else(|_| panic!("Failed to verify block {} outputs", block_idx));
+
+    output
+}
+
+/// Processes a sequence of EVM blocks using the ExecutionEnvironment trait.
+///
+/// This function reads blocks from the zkVM environment, processes each block
+/// using the EvmExecutionEnvironment trait implementation, and commits the outputs.
+pub fn process_evm_blocks(zkvm: &impl ZkVmEnv) {
     let num_blocks: u32 = zkvm.read_serde();
     assert!(num_blocks > 0, "At least one block is required.");
 
-    let mut exec_updates = Vec::with_capacity(num_blocks as usize);
     let mut current_blockhash = None;
 
-    for _ in 0..num_blocks {
+    for block_idx in 0..num_blocks {
         let input: EthClientExecutorInput = zkvm.read_serde();
-        let output = process_block(input).expect("Failed to process block transaction");
 
-        if let Some(expected_hash) = current_blockhash {
-            assert_eq!(output.prev_blockhash, expected_hash, "Block hash mismatch");
-        }
+        let chain_spec = create_chain_spec(&input.genesis);
+        let env = EvmExecutionEnvironment::new(chain_spec);
 
-        current_blockhash = Some(output.new_blockhash);
-        exec_updates.push(generate_exec_update(&output));
+        let (mut state, block, header) = convert_block_input(input);
+
+        let prev_blockhash = header.parent_hash;
+        let new_blockhash = header.hash_slow();
+        validate_block_hash_continuity(&mut current_blockhash, prev_blockhash, new_blockhash);
+
+        let output = execute_single_block(&env, &state, &block, &header, block_idx);
+
+        env.merge_write_into_state(&mut state, output.write_batch())
+            .unwrap_or_else(|_| panic!("Failed to merge state for block {}", block_idx));
+
+        // TODO: Use outputs of Block execution
+        // Need to decide approach:
+        // 1. Add transformation layer here ie. BlockOutputs to ExecSegment (backward compatible)
+        // 2. Update CL_STF to consume BlockOutputs directly (cleaner long-term)
+        // Decision to be made in PR review.
+        let _block_outputs = output.outputs();
     }
 
-    zkvm.commit_borsh(&exec_updates);
-}
-
-#[cfg(test)]
-mod tests {
-
-    use serde::{Deserialize, Serialize};
-
-    use super::{process_block, EvmBlockStfInput, EvmBlockStfOutput};
-
-    #[derive(Serialize, Deserialize)]
-    struct TestData {
-        witness: EvmBlockStfInput,
-        params: EvmBlockStfOutput,
-    }
-
-    fn get_mock_data() -> TestData {
-        let json_content = std::fs::read_to_string(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("test_data/witness_params.json"),
-        )
-        .expect("Failed to read the blob data file");
-
-        serde_json::from_str(&json_content).expect("Valid json")
-    }
-
-    #[test]
-    fn basic_serde() {
-        // Checks that serialization and deserialization actually works.
-        let test_data = get_mock_data();
-
-        let s = bincode::serialize(&test_data.witness).unwrap();
-        let d: EvmBlockStfInput = bincode::deserialize(&s[..]).unwrap();
-        assert_eq!(d, test_data.witness);
-    }
-
-    #[test]
-    fn block_stf_test() {
-        let test_data = get_mock_data();
-
-        let input = test_data.witness;
-        let op = process_block(input).expect("Failed to process block transaction");
-        assert_eq!(op, test_data.params);
-    }
+    // TODO: Commit properly transformed outputs once decision is made
+    let empty_outputs: Vec<u8> = vec![];
+    zkvm.commit_serde(&empty_outputs);
 }

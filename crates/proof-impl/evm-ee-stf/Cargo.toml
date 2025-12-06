@@ -7,28 +7,32 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-alpen-reth-evm.workspace = true
-alpen-reth-primitives.workspace = true
-strata-bridge-types.workspace = true
-strata-ol-chain-types.workspace = true
-strata-primitives.workspace = true
-strata-state.workspace = true
+# Trait-based execution dependencies
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-evm-ee.workspace = true
+
+# ZkVM integration
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
-alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
-alloy-eips.workspace = true
+# Reth dependencies for block types
 reth-chainspec.workspace = true
-reth-evm-ethereum.workspace = true
-reth-primitives.workspace = true
-
-reth-evm.workspace = true
 reth-primitives-traits.workspace = true
-reth-trie.workspace = true
-revm.workspace = true
-revm-primitives.workspace = true
+
+# Input compatibility (RSP format)
 rsp-client-executor.workspace = true
+
+# Serialization
 serde.workspace = true
+
+# Keep for primitives module (old types still exported for compatibility)
+alpen-reth-primitives.workspace = true
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
+revm-primitives.workspace = true
+rsp-primitives.workspace = true
+strata-ol-chain-types.workspace = true
 
 
 [dev-dependencies]
