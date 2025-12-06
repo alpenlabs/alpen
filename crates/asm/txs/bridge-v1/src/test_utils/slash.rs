@@ -4,7 +4,7 @@ use strata_l1_txfmt::{ParseConfig, TagData};
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, SLASH_TX_TYPE},
-    slash::SlashInfo,
+    slash::{SlashInfo, SlashTxHeaderAux},
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
 };
 
@@ -35,22 +35,21 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
 /// Returns a tuple `(stake_tx, slash_tx)` where `slash_tx` correctly spends
 /// the stake output from `stake_tx`.
 pub fn create_connected_stake_and_slash_txs(
-    info: &SlashInfo,
+    header_aux: &SlashTxHeaderAux,
     nn_script: ScriptBuf,
 ) -> (Transaction, Transaction) {
-    // 1. Create the base slash transaction using the provided metadata.
-    let mut slash_tx = create_test_slash_tx(info);
-
-    // 2. Create a dummy "stake transaction" to act as the funding source. This simulates the N-of-N
+    // 1. Create a dummy "stake transaction" to act as the funding source. This simulates the N-of-N
     //    multisig UTXO that the slash transaction spends. We explicitly set the script_pubkey to
     //    `nn_script` so that any validation logic checks pass.
     let mut stake_tx = create_dummy_tx(1, 1);
     stake_tx.output[0].script_pubkey = nn_script;
 
-    // 3. Link the slash transaction's stake input to the stake transaction's output. The slash
-    //    parser expects input index 1 to be the stake connector. This creates a valid spending
-    //    chain for testing full validation flows.
-    slash_tx.input[1].previous_output = OutPoint::new(stake_tx.compute_txid(), 0);
+    // 2. Create the base slash transaction using the provided metadata.
+    let slash_info = SlashInfo::new(
+        header_aux.clone(),
+        OutPoint::new(stake_tx.compute_txid(), 0).into(),
+    );
+    let slash_tx = create_test_slash_tx(&slash_info);
 
     (stake_tx, slash_tx)
 }

@@ -98,3 +98,62 @@ pub(crate) fn preprocess_parsed_tx<'t>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_asm_common::{AsmCompactMmr, AsmMmr, AuxData, VerifiedAuxData};
+    use strata_asm_txs_bridge_v1::{
+        slash::{SlashTxHeaderAux, parse_slash_tx},
+        test_utils::{create_connected_stake_and_slash_txs, parse_tx},
+    };
+    use strata_btc_types::RawBitcoinTx;
+
+    use super::handle_parsed_tx;
+    use crate::{
+        parser::ParsedTx,
+        test_utils::{MockMsgRelayer, create_test_state},
+    };
+
+    #[test]
+    fn test_handle_slash_tx_success() {
+        // 1. Setup Bridge State
+        let (mut state, _) = create_test_state();
+
+        // 2. Prepare Slash Info and Transactions
+        // We act as if the first operator (index 0) is being slashed.
+        let operator_idx = 0;
+        let slash_header = SlashTxHeaderAux::new(operator_idx);
+
+        // We need the N-of-N script to create a valid stake transaction that the slash tx spends.
+        let nn_script = state.operators().current_nn_script().clone();
+
+        let (stake_tx, slash_tx) = create_connected_stake_and_slash_txs(&slash_header, nn_script);
+
+        // 3. Prepare ParsedTx
+        // We need to re-parse the slash tx to get the correct SlashInfo with updated input
+        // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
+        let slash_tx_input = parse_tx(&slash_tx);
+        let parsed_slash_info = parse_slash_tx(&slash_tx_input).expect("Should parse slash tx");
+        let parsed_tx = ParsedTx::Slash(parsed_slash_info);
+
+        // 4. Prepare VerifiedAuxData containing the stake transaction
+        let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();
+        let aux_data = AuxData::new(vec![], vec![raw_stake_tx]);
+        let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
+        let compact_mmr: AsmCompactMmr = mmr.into();
+        let verified_aux_data =
+            VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
+
+        // 5. Handle the transaction
+        let mut relayer = MockMsgRelayer;
+        let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
+
+        assert!(result.is_ok(), "Handle parsed tx should succeed");
+
+        // 6. Verify the operator is removed
+        assert!(
+            !state.operators().is_in_current_multisig(operator_idx),
+            "Operator should be removed"
+        );
+    }
+}
