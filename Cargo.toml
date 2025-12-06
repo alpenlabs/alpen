@@ -117,6 +117,7 @@ members = [
 
   # integration tests
   "tests",
+  "crates/asm/tests",
   "bin/strata-test-cli",
 
   # benchmarks

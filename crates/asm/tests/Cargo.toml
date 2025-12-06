@@ -1,0 +1,25 @@
+[package]
+name = "strata-asm-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+bitcoin.workspace = true
+strata-asm-common.workspace = true
+strata-asm-worker.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+strata-btc-types.workspace = true
+strata-asm-types.workspace = true
+strata-params.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+bitcoind-async-client.workspace = true
+strata-test-utils-l2.workspace = true
+strata-identifiers.workspace = true
+corepc-node = { version = "0.8.0", features = ["29_0"] }

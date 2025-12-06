@@ -24,13 +24,13 @@ pub struct AsmWorkerServiceState<W> {
     pub(crate) context: W,
 
     /// Whether the service is initialized.
-    pub(crate) initialized: bool,
+    pub initialized: bool,
 
     /// Current ASM state.
-    pub(crate) anchor: Option<AsmState>,
+    pub anchor: Option<AsmState>,
 
     /// Current anchor block.
-    pub(crate) blkid: Option<L1BlockCommitment>,
+    pub blkid: Option<L1BlockCommitment>,
 
     /// ASM spec for ASM STF.
     asm_spec: StrataAsmSpec,
@@ -38,7 +38,7 @@ pub struct AsmWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
-    pub(crate) fn new(context: W, params: Arc<Params>) -> Self {
+    pub fn new(context: W, params: Arc<Params>) -> Self {
         let asm_spec = StrataAsmSpec::from_params(params.rollup());
         Self {
             params,
@@ -53,7 +53,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// Loads and sets the latest anchor state.
     ///
     /// If there are no anchor states yet, creates and stores genesis one beforehand.
-    pub(crate) fn load_latest_or_create_genesis(&mut self) -> WorkerResult<()> {
+    pub fn load_latest_or_create_genesis(&mut self) -> WorkerResult<()> {
         match self.context.get_latest_asm_state()? {
             Some((blkid, state)) => {
                 self.update_anchor_state(state, blkid);
@@ -88,7 +88,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// Returns the actual ASM STF results: a Bitcoin block is applied onto current anchor state.
     ///
     /// A caller is responsible for ensuring the current anchor is a parent of a passed block.
-    pub(crate) fn transition(&self, block: &Block) -> WorkerResult<AsmStfOutput> {
+    pub fn transition(&self, block: &Block) -> WorkerResult<AsmStfOutput> {
         let cur_state = self.anchor.as_ref().expect("state should be set before");
 
         // Pre process transition next block against current anchor state.

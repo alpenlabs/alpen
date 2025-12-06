@@ -13777,6 +13777,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitcoin",
+ "bitcoind-async-client",
+ "corepc-node",
+ "strata-asm-common",
+ "strata-asm-types",
+ "strata-asm-worker",
+ "strata-btc-types",
+ "strata-identifiers",
+ "strata-params",
+ "strata-primitives",
+ "strata-state",
+ "strata-test-utils-l2",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.22",
+]
+
+[[package]]
 name = "strata-asm-txs-admin"
 version = "0.1.0"
 dependencies = [
