@@ -26,6 +26,9 @@ mod parser;
 mod state;
 mod subprotocol;
 
+#[cfg(test)]
+mod test_utils;
+
 pub use errors::*;
 pub use msgs::BridgeIncomingMsg;
 pub use state::{BridgeV1Config, BridgeV1State, withdrawal::WithdrawOutput};
