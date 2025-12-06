@@ -1,0 +1,31 @@
+[package]
+name = "strata-asm-txs-bridge-v1-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+strata-asm-txs-bridge-v1 = { path = ".." }
+
+# Additional dependencies needed for fuzzing
+bitcoin = { version = "0.32.6", features = ["serde"] }
+strata-asm-common = { path = "../../../../asm/common" }
+strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
+strata-primitives = { path = "../../../../primitives" }
+strata-codec = { git = "https://github.com/alpenlabs/strata-common" }
+arbitrary = { version = "1.3.2", features = ["derive"] }
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "parse_deposit"
+path = "fuzz_targets/parse_deposit.rs"
+test = false
+doc = false
+bench = false
