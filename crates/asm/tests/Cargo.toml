@@ -17,9 +17,10 @@ strata-params.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-
-[dev-dependencies]
+hex.workspace = true
 bitcoind-async-client.workspace = true
 strata-test-utils-l2.workspace = true
 strata-identifiers.workspace = true
 corepc-node = { version = "0.8.0", features = ["29_0"] }
+
+[dev-dependencies]

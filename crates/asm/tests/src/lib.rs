@@ -1,8 +1,5 @@
-#[cfg(test)]
 mod context;
-#[cfg(test)]
 mod setup;
-#[cfg(test)]
 mod utils;
 
 #[cfg(test)]
@@ -48,5 +45,53 @@ mod tests {
                 panic!("Transition failed: {:?}", e);
             }
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_submit_transaction() {
+        use crate::utils::{get_bitcoind_and_client, mine_blocks};
+
+        // Setup
+        let (node, client) = get_bitcoind_and_client();
+
+        // Mine some blocks to fund the wallet (need 101+ for coinbase maturity)
+        let _ = mine_blocks(&node, &client, 101, None).await.unwrap();
+
+        // Create and fund a simple transaction using wallet RPC
+        let recipient_addr = client.get_new_address().await.unwrap();
+        let amount = bitcoin::Amount::from_sat(50_000);
+
+        // Use sendtoaddress to create a transaction (simpler than raw tx construction)
+        let txid_wrapper = node
+            .client
+            .send_to_address(&recipient_addr, amount)
+            .unwrap();
+        let txid = txid_wrapper.0;
+
+        println!("Transaction created with txid: {}", txid);
+
+        // Mine a block to confirm it
+        let _ = mine_blocks(&node, &client, 1, None).await.unwrap();
+
+        // Verify the transaction is in a block
+        let blockchain_info = client.get_blockchain_info().await.unwrap();
+        let block_hash: bitcoin::BlockHash = blockchain_info.best_block_hash.parse().unwrap();
+        let block = client.get_block(&block_hash).await.unwrap();
+
+        // Check that our transaction is in the block
+        let txid_str = txid.to_string();
+        let txid_bitcoin: bitcoin::Txid = txid_str.parse().unwrap();
+        let tx_found = block
+            .txdata
+            .iter()
+            .any(|tx| tx.compute_txid() == txid_bitcoin);
+
+        assert!(
+            tx_found,
+            "Transaction {} should be included in block {}",
+            txid, block_hash
+        );
+
+        println!("✓ Transaction confirmed in block {}", block_hash);
     }
 }

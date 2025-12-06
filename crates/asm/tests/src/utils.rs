@@ -79,3 +79,39 @@ pub async fn get_genesis_l1_view(
         last_11_timestamps, // simplified: ensure median < tip time by making history older
     })
 }
+
+/// Helper to fund, sign, and broadcast a transaction.
+pub async fn submit_transaction(
+    bitcoind: &Node,
+    client: &Client,
+    tx: bitcoin::Transaction,
+) -> anyhow::Result<bitcoin::Txid> {
+    // 1. Fund
+    let funded_result = bitcoind.client.fund_raw_transaction(&tx)?;
+    let funded_tx_bytes = hex::decode(&funded_result.hex)?;
+    let funded_tx: bitcoin::Transaction =
+        bitcoin::consensus::encode::deserialize(&funded_tx_bytes)?;
+
+    // 2. Sign
+    let signed_result = bitcoind
+        .client
+        .sign_raw_transaction_with_wallet(&funded_tx)?;
+    if !signed_result.complete {
+        return Err(anyhow::anyhow!("Failed to sign transaction completely"));
+    }
+    let signed_tx_bytes = hex::decode(&signed_result.hex)?;
+    let signed_tx: bitcoin::Transaction =
+        bitcoin::consensus::encode::deserialize(&signed_tx_bytes)?;
+
+    // 3. Broadcast
+    // returns SendRawTransaction newtype wrapper around Txid
+    let txid_wrapper = bitcoind.client.send_raw_transaction(&signed_tx)?;
+    let core_txid = txid_wrapper.0; // Extract inner Txid
+    let txid_str = core_txid.to_string();
+    let txid: bitcoin::Txid = txid_str.parse()?;
+
+    // 4. Mine a block to confirm
+    let _ = mine_blocks(bitcoind, client, 1, None).await?;
+
+    Ok(txid)
+}

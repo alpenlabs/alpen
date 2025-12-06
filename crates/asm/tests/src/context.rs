@@ -54,7 +54,7 @@ impl WorkerContext for MockWorkerContext {
         self.asm_states
             .lock()
             .unwrap()
-            .insert(blockid.clone(), state.clone());
+            .insert(*blockid, state.clone());
         *self.latest_asm_state.lock().unwrap() = Some((*blockid, state.clone()));
         Ok(())
     }
