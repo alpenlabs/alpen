@@ -24,7 +24,7 @@ impl SlashInfo {
         &self.header_aux
     }
 
-    pub fn second_input_outpoint(&self) -> &BitcoinOutPoint {
+    pub fn second_inpoint(&self) -> &BitcoinOutPoint {
         &self.second_inpoint
     }
 }

@@ -5,7 +5,8 @@
 
 use bitcoin::absolute;
 use strata_asm_common::{
-    AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData,
     logging::{error, info},
 };
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
@@ -15,7 +16,7 @@ use strata_primitives::{
 };
 
 use crate::{
-    handler::handle_parsed_tx,
+    handler::{handle_parsed_tx, preprocess_parsed_tx},
     msgs::BridgeIncomingMsg,
     parser::parse_tx,
     state::{BridgeV1Config, BridgeV1State},
@@ -40,6 +41,50 @@ impl Subprotocol for BridgeV1Subproto {
 
     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
         Ok(BridgeV1State::new(params))
+    }
+
+    /// Pre-processes transactions to collect auxiliary data requests.
+    ///
+    /// This function runs before the main transaction processing to identify and request
+    /// any auxiliary data needed for verification. For Bridge V1, this primarily handles:
+    ///
+    /// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced in the
+    ///   slash proof to enable verification of operator misbehavior
+    ///
+    /// The collected auxiliary data is then fetched and verified before being passed to
+    /// the main `process_txs` function for full transaction processing.
+    ///
+    /// # Parameters
+    ///
+    /// - `state` - Current bridge state (used for context during preprocessing)
+    /// - `txs` - Array of transaction input references to pre-process
+    /// - `collector` - Collector for accumulating auxiliary data requests
+    /// - `_anchor_pre` - Current anchor state (unused in Bridge V1)
+    /// - `_params` - Bridge configuration parameters (unused in Bridge V1)
+    fn pre_process_txs(
+        state: &Self::State,
+        txs: &[TxInputRef<'_>],
+        collector: &mut AuxRequestCollector,
+        _anchor_pre: &AnchorState,
+        _params: &Self::Params,
+    ) {
+        // Pre-Process each transaction
+        for tx in txs {
+            // Parse transaction to extract structured data, then handle the preprocess transaction
+            // to get the auxiliary requests
+            match parse_tx(tx) {
+                Ok(parsed_tx) => {
+                    preprocess_parsed_tx(parsed_tx, state, collector);
+                }
+                Err(e) => {
+                    error!(
+                        txid = %tx.tx().compute_txid(),
+                        error = %e,
+                        "Failed to pre-process tx"
+                    )
+                }
+            }
+        }
     }
 
     /// Processes transactions for the Bridge V1 subprotocol and handles expired assignment
@@ -86,7 +131,7 @@ impl Subprotocol for BridgeV1Subproto {
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
-        _verified_aux_data: &VerifiedAuxData,
+        verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
@@ -94,7 +139,9 @@ impl Subprotocol for BridgeV1Subproto {
         for tx in txs {
             // Parse transaction to extract structured data (deposit/withdrawal info)
             // then handle the parsed transaction to update state and emit events
-            match parse_tx(tx).and_then(|parsed_tx| handle_parsed_tx(state, parsed_tx, relayer)) {
+            match parse_tx(tx).and_then(|parsed_tx| {
+                handle_parsed_tx(state, parsed_tx, verified_aux_data, relayer)
+            }) {
                 // `tx_id` is computed inside macro, because logging is compiled to noop in ZkVM
                 Ok(()) => info!(tx_id = %tx.tx().compute_txid(), "Successfully processed tx"),
                 Err(e) => {

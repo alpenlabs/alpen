@@ -1,8 +1,10 @@
 use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
+use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
+    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, SlashTxParseError,
+    WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
@@ -22,6 +24,15 @@ pub enum BridgeSubprotocolError {
 
     #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxProcess(#[from] WithdrawalValidationError),
+
+    #[error("failed to parse slash tx")]
+    SlashTxParse(#[from] SlashTxParseError),
+
+    #[error("failed to validate slash tx")]
+    SlashTxValidation(#[from] SlashValidationError),
+
+    #[error("failed to get proper aux data")]
+    Aux(#[from] AuxError),
 
     #[error("unsupported tx type {0}")]
     UnsupportedTxType(TxType),
@@ -73,6 +84,13 @@ pub enum WithdrawalValidationError {
     /// Withdrawal destination doesn't match assignment destination
     #[error("Withdrawal destination mismatch {0}")]
     DestinationMismatch(Mismatch<ScriptBuf>),
+}
+
+#[derive(Debug, Error)]
+pub enum SlashValidationError {
+    /// Stake connector input is not locked to the expected N/N multisig script
+    #[error("stake connector not locked to N/N multisig script")]
+    InvalidStakeConnectorScript,
 }
 
 /// Errors that can occur when processing withdrawal commands.
