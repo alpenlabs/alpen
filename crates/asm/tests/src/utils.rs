@@ -2,11 +2,13 @@ use std::env;
 
 use bitcoin::{
     absolute,
+    absolute::LockTime,
     block::Header,
-    consensus::encode,
-    secp256k1::{Keypair, Message, Secp256k1},
+    secp256k1::{Keypair, Message, Parity, PublicKey, Secp256k1, SecretKey},
     sighash::{Prevouts, SighashCache},
-    Address, Amount, TapSighashType, Transaction, Txid,
+    transaction::Version,
+    Address, Amount, OutPoint, ScriptBuf, Sequence, TapSighashType, Transaction, TxIn, TxOut, Txid,
+    Witness, XOnlyPublicKey,
 };
 use bitcoind_async_client::{
     traits::{Reader, Wallet},
@@ -88,36 +90,83 @@ pub async fn get_genesis_l1_view(
     })
 }
 
-/// Helper to fund, sign, and broadcast a transaction.
-pub async fn submit_transaction(
+/// Derive a P2TR address from a secret key.
+fn derive_p2tr_address(secret_key: &EvenSecretKey) -> (Address, Keypair, XOnlyPublicKey) {
+    let secp = Secp256k1::new();
+    let keypair = Keypair::from_secret_key(&secp, secret_key.as_ref());
+    let (internal_key, _parity) = XOnlyPublicKey::from_keypair(&keypair);
+    let p2tr_address = bitcoin::Address::p2tr(&secp, internal_key, None, bitcoin::Network::Regtest);
+    (p2tr_address, keypair, internal_key)
+}
+
+/// Create and confirm a funding UTXO locked to the given address.
+///
+/// # Returns
+/// A tuple of (funding_txid, prev_vout, prev_output)
+async fn create_funding_utxo(
     bitcoind: &Node,
     client: &Client,
-    mut tx: Transaction,
-) -> anyhow::Result<Txid> {
-    // 1. Fund
-    let funded_result = bitcoind.client.fund_raw_transaction(&tx)?;
-    let funded_tx_bytes = hex::decode(&funded_result.hex)?;
-    tx = encode::deserialize(&funded_tx_bytes)?;
+    address: &Address,
+    amount: Amount,
+) -> anyhow::Result<(bitcoin::Txid, u32, bitcoin::TxOut)> {
+    // Fund the address using the wallet
+    let funding_txid_str = bitcoind
+        .client
+        .send_to_address(address, amount)?
+        .0
+        .to_string();
+    let funding_txid: bitcoin::Txid = funding_txid_str.parse()?;
 
-    // 2. Sign
-    let signed_result = bitcoind.client.sign_raw_transaction_with_wallet(&tx)?;
-    if !signed_result.complete {
-        return Err(anyhow::anyhow!("Failed to sign transaction completely"));
-    }
-    let signed_tx_bytes = hex::decode(&signed_result.hex)?;
-    tx = encode::deserialize(&signed_tx_bytes)?;
+    // Get the funding transaction BEFORE mining (while it's still in mempool)
+    let funding_tx_result = client
+        .get_raw_transaction_verbosity_zero(&funding_txid)
+        .await?;
+    let funding_tx = funding_tx_result
+        .transaction()
+        .map_err(|e| anyhow::anyhow!("Failed to decode funding transaction: {}", e))?;
 
-    // 3. Broadcast
-    // returns SendRawTransaction newtype wrapper around Txid
-    let txid_wrapper = bitcoind.client.send_raw_transaction(&tx)?;
-    let core_txid = txid_wrapper.0; // Extract inner Txid
-    let txid_str = core_txid.to_string();
-    let txid: Txid = txid_str.parse()?;
-
-    // 4. Mine a block to confirm
+    // Mine a block to confirm the funding transaction
     let _ = mine_blocks(bitcoind, client, 1, None).await?;
 
-    Ok(txid)
+    // Find the output that pays to our address
+    let (prev_vout, prev_output) = funding_tx
+        .output
+        .iter()
+        .enumerate()
+        .find(|(_, output)| output.script_pubkey == address.script_pubkey())
+        .map(|(idx, output)| (idx as u32, output.clone()))
+        .ok_or_else(|| anyhow::anyhow!("Could not find output in funding transaction"))?;
+
+    Ok((funding_txid, prev_vout, prev_output))
+}
+
+/// Sign a transaction with a taproot key-spend signature.
+fn sign_taproot_transaction(
+    tx: &Transaction,
+    keypair: &Keypair,
+    internal_key: &XOnlyPublicKey,
+    prev_output: &TxOut,
+) -> anyhow::Result<bitcoin::secp256k1::schnorr::Signature> {
+    let secp = Secp256k1::new();
+
+    // Apply BIP341 taproot tweak
+    use bitcoin::taproot::TapTweakHash;
+    let tweak = TapTweakHash::from_key_and_tweak(*internal_key, None);
+    let tweaked_keypair = keypair.add_xonly_tweak(&secp, &tweak.to_scalar())?;
+
+    let prevouts = vec![prev_output.clone()];
+    let prevouts_ref = Prevouts::All(&prevouts);
+    let mut sighash_cache = SighashCache::new(tx);
+    let sighash = sighash_cache.taproot_key_spend_signature_hash(
+        0,
+        &prevouts_ref,
+        TapSighashType::Default,
+    )?;
+
+    let msg = Message::from_digest_slice(sighash.as_ref())?;
+    let signature = secp.sign_schnorr(&msg, &tweaked_keypair);
+
+    Ok(signature)
 }
 
 /// Helper to sign and broadcast a transaction using a specific private key.
@@ -143,59 +192,21 @@ pub async fn submit_transaction_with_key(
     secret_key: &EvenSecretKey,
     mut tx: Transaction,
 ) -> anyhow::Result<bitcoin::Txid> {
-    use bitcoin::{
-        absolute::LockTime, transaction::Version, OutPoint, ScriptBuf, Sequence, TxIn, Witness,
-        XOnlyPublicKey,
-    };
-
     if tx.output.is_empty() {
         return Err(anyhow::anyhow!("Transaction must have at least one output"));
     }
 
-    let secp = Secp256k1::new();
+    // Derive P2TR address from secret key
+    let (p2tr_address, keypair, internal_key) = derive_p2tr_address(secret_key);
 
-    // Get the keypair from the secret key
-    let keypair = Keypair::from_secret_key(&secp, secret_key.as_ref());
-    let (internal_key, _parity) = XOnlyPublicKey::from_keypair(&keypair);
-
-    // Create a P2TR address from the internal key (no script tree for key-path spending)
-    let p2tr_address = bitcoin::Address::p2tr(&secp, internal_key, None, bitcoin::Network::Regtest);
-
-    // Calculate total output value
+    // Calculate funding amount
     let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();
-
-    // Estimate fee: P2TR input (1 input, ~57 vbytes) + outputs + overhead
-    // Using conservative estimate: ~150 vbytes * 1 sat/vbyte = 150 sats
     let estimated_fee = 1000u64; // Conservative estimate in sats
     let funding_amount = Amount::from_sat(total_output_value + estimated_fee);
 
-    // Fund the P2TR address using the wallet
-    let funding_txid_str = bitcoind
-        .client
-        .send_to_address(&p2tr_address, funding_amount)?
-        .0
-        .to_string();
-    let funding_txid: bitcoin::Txid = funding_txid_str.parse()?;
-
-    // Get the funding transaction BEFORE mining (while it's still in mempool)
-    let funding_tx_result = client
-        .get_raw_transaction_verbosity_zero(&funding_txid)
-        .await?;
-    let funding_tx = funding_tx_result
-        .transaction()
-        .map_err(|e| anyhow::anyhow!("Failed to decode funding transaction: {}", e))?;
-
-    // Mine a block to confirm the funding transaction
-    let _ = mine_blocks(bitcoind, client, 1, None).await?;
-
-    // Find the output that pays to our P2TR address
-    let (prev_vout, prev_output) = funding_tx
-        .output
-        .iter()
-        .enumerate()
-        .find(|(_, output)| output.script_pubkey == p2tr_address.script_pubkey())
-        .map(|(idx, output)| (idx as u32, output.clone()))
-        .ok_or_else(|| anyhow::anyhow!("Could not find P2TR output in funding transaction"))?;
+    // Create and confirm funding UTXO
+    let (funding_txid, prev_vout, prev_output) =
+        create_funding_utxo(bitcoind, client, &p2tr_address, funding_amount).await?;
 
     // Add input to the transaction
     tx.input = vec![TxIn {
@@ -209,23 +220,8 @@ pub async fn submit_transaction_with_key(
     tx.version = Version::TWO;
     tx.lock_time = LockTime::ZERO;
 
-    // Sign the transaction with the tweaked key
-    // When using Address::p2tr() with None for merkle_root, it applies BIP341 taproot tweak
-    use bitcoin::taproot::TapTweakHash;
-    let tweak = TapTweakHash::from_key_and_tweak(internal_key, None);
-    let tweaked_keypair = keypair.add_xonly_tweak(&secp, &tweak.to_scalar())?;
-
-    let prevouts = vec![prev_output];
-    let prevouts_ref = Prevouts::All(&prevouts);
-    let mut sighash_cache = SighashCache::new(&tx);
-    let sighash = sighash_cache.taproot_key_spend_signature_hash(
-        0,
-        &prevouts_ref,
-        TapSighashType::Default,
-    )?;
-
-    let msg = Message::from_digest_slice(sighash.as_ref())?;
-    let signature = secp.sign_schnorr(&msg, &tweaked_keypair);
+    // Sign the transaction
+    let signature = sign_taproot_transaction(&tx, &keypair, &internal_key, &prev_output)?;
 
     // Add the signature to the witness (Taproot key-spend signatures are 64 bytes, no sighash type
     // appended for Default)
