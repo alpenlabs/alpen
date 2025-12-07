@@ -46,21 +46,7 @@ impl Subprotocol for BridgeV1Subproto {
     /// Pre-processes transactions to collect auxiliary data requests.
     ///
     /// This function runs before the main transaction processing to identify and request
-    /// any auxiliary data needed for verification. For Bridge V1, this primarily handles:
-    ///
-    /// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced in the
-    ///   slash proof to enable verification of operator misbehavior
-    ///
-    /// The collected auxiliary data is then fetched and verified before being passed to
-    /// the main `process_txs` function for full transaction processing.
-    ///
-    /// # Parameters
-    ///
-    /// - `state` - Current bridge state (used for context during preprocessing)
-    /// - `txs` - Array of transaction input references to pre-process
-    /// - `collector` - Collector for accumulating auxiliary data requests
-    /// - `_anchor_pre` - Current anchor state (unused in Bridge V1)
-    /// - `_params` - Bridge configuration parameters (unused in Bridge V1)
+    /// any auxiliary data needed for verification.
     fn pre_process_txs(
         state: &Self::State,
         txs: &[TxInputRef<'_>],
