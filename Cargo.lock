@@ -13676,7 +13676,6 @@ dependencies = [
  "strata-btc-types",
  "strata-codec",
  "strata-crypto",
- "strata-l1-txfmt",
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.17",

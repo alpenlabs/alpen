@@ -1,12 +1,8 @@
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
+use strata_asm_txs_bridge_v1::parser::{ParsedDepositTx, ParsedTx};
 
-use crate::{
-    SlashValidationError,
-    errors::BridgeSubprotocolError,
-    parser::{ParsedDepositTx, ParsedTx},
-    state::BridgeV1State,
-};
+use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
 
 /// Handles parsed transactions and update the bridge state accordingly.
 ///
@@ -124,16 +120,14 @@ pub(crate) fn preprocess_parsed_tx<'t>(
 mod tests {
     use strata_asm_common::{AsmCompactMmr, AsmMmr, AuxData, VerifiedAuxData};
     use strata_asm_txs_bridge_v1::{
+        parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
         test_utils::{create_connected_stake_and_slash_txs, parse_tx},
     };
     use strata_btc_types::RawBitcoinTx;
 
     use super::handle_parsed_tx;
-    use crate::{
-        parser::ParsedTx,
-        test_utils::{MockMsgRelayer, create_test_state},
-    };
+    use crate::test_utils::{MockMsgRelayer, create_test_state};
 
     #[test]
     fn test_handle_slash_tx_success() {

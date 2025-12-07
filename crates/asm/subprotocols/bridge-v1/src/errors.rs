@@ -3,18 +3,16 @@ use std::fmt::Debug;
 use bitcoin::ScriptBuf;
 use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, SlashTxParseError,
-    UnstakeTxParseError, WithdrawalParseError,
+    BridgeTxParseError, DepositOutputError, DrtSignatureError, Mismatch, WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
-use strata_l1_txfmt::TxType;
 use strata_primitives::l1::BitcoinAmount;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BridgeSubprotocolError {
-    #[error("failed to parse deposit tx")]
-    DepositTxParse(#[from] DepositTxParseError),
+    #[error("failed to parse bridge tx")]
+    BridgeTxParseError(#[from] BridgeTxParseError),
 
     #[error("failed to process deposit tx")]
     DepositTxProcess(#[from] DepositValidationError),
@@ -25,23 +23,14 @@ pub enum BridgeSubprotocolError {
     #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxProcess(#[from] WithdrawalValidationError),
 
-    #[error("failed to parse slash tx")]
-    SlashTxParse(#[from] SlashTxParseError),
-
     #[error("failed to validate slash tx")]
     SlashTxValidation(#[from] SlashValidationError),
-
-    #[error("failed to parse unstake tx")]
-    UnstakeTxParse(#[from] UnstakeTxParseError),
 
     #[error("failed to validate slash tx")]
     UnstakeTxValidation(#[from] UnstakeValidationError),
 
     #[error("failed to get proper aux data")]
     Aux(#[from] AuxError),
-
-    #[error("unsupported tx type {0}")]
-    UnsupportedTxType(TxType),
 }
 
 /// Errors that can occur when validating deposit transactions at the subprotocol level.

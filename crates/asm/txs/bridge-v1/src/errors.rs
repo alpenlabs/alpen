@@ -1,9 +1,29 @@
 use std::fmt::Debug;
 
 use strata_codec::CodecError;
+use strata_l1_txfmt::TxType;
 use thiserror::Error;
 
 use crate::deposit_request::MIN_DRT_AUX_DATA_LEN;
+
+/// Errors that can occur when parsing bridge transaction
+#[derive(Debug, Error)]
+pub enum BridgeTxParseError {
+    #[error("failed to parse deposit tx")]
+    DepositTxParse(#[from] DepositTxParseError),
+
+    #[error("failed to parse withdrawal fulfillment tx")]
+    WithdrawalTxParse(#[from] WithdrawalParseError),
+
+    #[error("failed to parse slash tx")]
+    SlashTxParse(#[from] SlashTxParseError),
+
+    #[error("failed to parse unstake tx")]
+    UnstakeTxParse(#[from] UnstakeTxParseError),
+
+    #[error("unsupported tx type {0}")]
+    UnsupportedTxType(TxType),
+}
 
 /// A generic "expected vs got" error.
 #[derive(Debug, Error, Clone)]
