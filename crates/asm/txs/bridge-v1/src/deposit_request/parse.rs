@@ -6,10 +6,15 @@
 
 use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
-use strata_l1_txfmt::ParseConfig;
+use strata_codec::decode_buf_exact;
+use strata_l1_txfmt::{ParseConfig, extract_tx_magic_and_tag};
 use strata_primitives::l1::DepositRequestInfo;
 
-use crate::{constants::DEPOSIT_REQUEST_TX_TYPE, errors::DepositRequestParseError};
+use crate::{
+    constants::DEPOSIT_REQUEST_TX_TYPE,
+    deposit_request::{aux::DrtHeaderAux, info::DrtInfo},
+    errors::DepositRequestParseError,
+};
 
 const RECOVERY_PK_LEN: usize = 32;
 
@@ -83,6 +88,18 @@ pub fn parse_drt_from_tx(
 
     let tx_input = TxInputRef::new(tx, tag_data);
     parse_drt(&tx_input)
+}
+
+pub fn parse_drt_new(tx: &Transaction) -> Result<DrtInfo, DepositRequestParseError> {
+    let (_, tag) = extract_tx_magic_and_tag(tx).unwrap();
+    let header_aux: DrtHeaderAux = decode_buf_exact(tag.aux_data()).unwrap();
+
+    let drt_output = tx
+        .output
+        .get(1)
+        .ok_or(DepositRequestParseError::MissingDRTOutput)?;
+    let amt = drt_output.value.into();
+    Ok(DrtInfo::new(header_aux, amt))
 }
 
 #[cfg(test)]
@@ -262,5 +279,49 @@ mod tests {
         let tx_input_32 = parse_tx(&tx_32);
         let result_32 = parse_drt(&tx_input_32).unwrap();
         assert_eq!(result_32.address.len(), 32);
+    }
+
+    #[test]
+    fn test_parse_drt_new_ignores_magic_and_reads_output1_amount() {
+        let recovery_pk = [0xAA; 32];
+        let ee_address = [0xBB; 20];
+        let amount_sats = 123_456;
+
+        // Build aux_data
+        let mut aux_data = Vec::new();
+        aux_data.extend_from_slice(&recovery_pk);
+        aux_data.extend_from_slice(&ee_address);
+
+        // Use a custom magic so legacy parser would fail if it checked value
+        let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data).unwrap();
+        let sps_50_script = ParseConfig::new([9, 9, 9, 9])
+            .encode_script_buf(&td.as_ref())
+            .unwrap();
+
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![
+                TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: sps_50_script,
+                },
+                TxOut {
+                    value: Amount::from_sat(amount_sats),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            ],
+        };
+
+        let info = parse_drt_new(&tx).expect("should parse without matching magic bytes");
+        assert_eq!(info.header_aux().recovery_pk, recovery_pk);
+        assert_eq!(info.header_aux().ee_address, ee_address.to_vec());
+        assert_eq!(info.amt().to_sat(), amount_sats);
     }
 }
