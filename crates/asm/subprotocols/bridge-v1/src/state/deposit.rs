@@ -7,10 +7,7 @@
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::{
-    l1::{BitcoinAmount, BitcoinOutPoint},
-    sorted_vec::SortedVec,
-};
+use strata_primitives::{l1::BitcoinAmount, sorted_vec::SortedVec};
 
 use crate::{errors::DepositValidationError, state::bitmap::OperatorBitmap};
 
@@ -45,9 +42,6 @@ pub struct DepositEntry {
     /// Unique deposit identifier assigned by the bridge and provided in the deposit transaction.
     deposit_idx: u32,
 
-    /// Bitcoin UTXO reference (transaction hash + output index).
-    output: BitcoinOutPoint,
-
     /// Historical set of operators that formed the N/N multisig for this deposit.
     ///
     /// This preserves the specific operators who controlled the multisig when the
@@ -79,7 +73,6 @@ impl DepositEntry {
     /// # Parameters
     ///
     /// - `idx` - Unique deposit identifier
-    /// - `output` - Bitcoin UTXO reference
     /// - `operators` - Historical set of operators that form the N/N multisig (must be non-empty)
     /// - `amt` - Amount of Bitcoin locked in the deposit
     ///
@@ -94,7 +87,6 @@ impl DepositEntry {
     /// Each deposit must have at least one notary operator.
     pub fn new(
         idx: u32,
-        output: BitcoinOutPoint,
         notary_operators: OperatorBitmap,
         amt: BitcoinAmount,
     ) -> Result<Self, DepositValidationError> {
@@ -104,7 +96,6 @@ impl DepositEntry {
 
         Ok(Self {
             deposit_idx: idx,
-            output,
             notary_operators,
             amt,
         })
@@ -113,11 +104,6 @@ impl DepositEntry {
     /// Returns the unique deposit identifier.
     pub fn idx(&self) -> u32 {
         self.deposit_idx
-    }
-
-    /// Returns a reference to the Bitcoin UTXO being tracked.
-    pub fn output(&self) -> &BitcoinOutPoint {
-        &self.output
     }
 
     /// Returns the reference to the bitmap of historical set of operators that formed the N/N
@@ -137,9 +123,6 @@ impl<'a> Arbitrary<'a> for DepositEntry {
         // Generate a random deposit index
         let deposit_idx: u32 = u.arbitrary()?;
 
-        // Generate a random Bitcoin UTXO reference
-        let output: BitcoinOutPoint = u.arbitrary()?;
-
         // Create OperatorBitmap directly by setting sequential operators as active
         let notary_operators = u.arbitrary()?;
 
@@ -147,7 +130,7 @@ impl<'a> Arbitrary<'a> for DepositEntry {
         let amount: BitcoinAmount = u.arbitrary()?;
 
         // Create the DepositEntry - this should not fail since we ensure operators is non-empty
-        Self::new(deposit_idx, output, notary_operators, amount)
+        Self::new(deposit_idx, notary_operators, amount)
             .map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
@@ -299,11 +282,10 @@ mod tests {
 
     #[test]
     fn test_deposit_entry_new_empty_operators() {
-        let output: BitcoinOutPoint = ArbitraryGenerator::new().generate();
         let operators = OperatorBitmap::new_empty();
         let amount = BitcoinAmount::from_sat(1_000_000);
 
-        let result = DepositEntry::new(1, output, operators, amount);
+        let result = DepositEntry::new(1, operators, amount);
         assert!(matches!(
             result,
             Err(DepositValidationError::EmptyOperators)
