@@ -77,14 +77,9 @@ pub(crate) fn handle_parsed_tx<'t>(
 ///
 /// - **Deposit transactions**: No auxiliary data required
 /// - **Withdrawal fulfillment transactions**: No auxiliary data required
-/// - **Slash transactions**: Requests the conflicting Bitcoin transaction referenced in the slash
-///   proof to enable verification of operator double-signing
-///
-/// # Parameters
-///
-/// - `parsed_tx` - The parsed transaction to pre-process
-/// - `_state` - Current bridge state (unused, reserved for future use)
-/// - `collector` - Collector for accumulating auxiliary data requests
+/// - **Slash transactions**: Requests the Bitcoin transaction spent by the stake connector (second
+///   input). We need this information to verify the stake connector is locked to a known N/N
+///   multisig.
 pub(crate) fn preprocess_parsed_tx<'t>(
     parsed_tx: ParsedTx<'t>,
     _state: &BridgeV1State,
