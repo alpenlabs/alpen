@@ -1,10 +1,16 @@
-use bitcoin::{secp256k1::Secp256k1, Amount};
+use bitcoin::{
+    absolute::LockTime, secp256k1::Secp256k1, transaction::Version, Amount, BlockHash, Transaction,
+    TxOut,
+};
 use bitcoind_async_client::traits::{Reader, Wallet};
 use strata_crypto::EvenSecretKey;
 
 use crate::{
     setup::setup_env,
-    utils::{get_bitcoind_and_client, mine_blocks, submit_transaction_with_key},
+    utils::{
+        get_bitcoind_and_client, mine_blocks, submit_transaction_with_key,
+        submit_transaction_with_keys,
+    },
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -62,35 +68,26 @@ async fn test_submit_transaction_with_key() {
     // Create the transaction with desired outputs
     let output_amount = Amount::from_sat(50_000);
     let recipient_address = client.get_new_address().await.unwrap();
-    let tx = bitcoin::Transaction {
-        version: bitcoin::transaction::Version::TWO,
-        lock_time: bitcoin::absolute::LockTime::ZERO,
+    let tx = Transaction {
+        version: Version::TWO,
+        lock_time: LockTime::ZERO,
         input: vec![], // Will be populated by submit_transaction_with_key
-        output: vec![bitcoin::TxOut {
+        output: vec![TxOut {
             value: output_amount,
             script_pubkey: recipient_address.script_pubkey(),
         }],
     };
 
-    println!(
-        "Creating transaction with {} sat output",
-        output_amount.to_sat()
-    );
-
     // Submit the transaction using the new function
-    let result = submit_transaction_with_key(&node, &client, &even_secret_key, tx).await;
-    assert!(
-        result.is_ok(),
-        "Failed to submit transaction: {:?}",
-        result.err()
-    );
-
-    let txid = result.unwrap();
+    let txid = submit_transaction_with_key(&node, &client, &even_secret_key, tx)
+        .await
+        .unwrap();
     println!("Transaction submitted with txid: {}", txid);
+    _ = mine_blocks(&node, &client, 1, None).await;
 
     // Verify the transaction is confirmed
     let blockchain_info = client.get_blockchain_info().await.unwrap();
-    let block_hash: bitcoin::BlockHash = blockchain_info.best_block_hash.parse().unwrap();
+    let block_hash: BlockHash = blockchain_info.best_block_hash.parse().unwrap();
     let block = client.get_block(&block_hash).await.unwrap();
 
     // Check that our transaction is in the block
@@ -103,4 +100,81 @@ async fn test_submit_transaction_with_key() {
     );
 
     println!("✓ Transaction confirmed in block {}", block_hash);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_transaction_with_keys_musig2() {
+    // Setup
+    let (node, client) = get_bitcoind_and_client();
+
+    // Mine some blocks to fund the wallet (need 101+ for coinbase maturity)
+    let _ = mine_blocks(&node, &client, 101, None).await.unwrap();
+
+    // Generate multiple random keypairs for MuSig2
+    let secp = Secp256k1::new();
+    let num_signers = 3;
+    let secret_keys: Vec<EvenSecretKey> = (0..num_signers)
+        .map(|_| {
+            let (sk, _pk) = secp.generate_keypair(&mut rand::thread_rng());
+            EvenSecretKey::from(sk)
+        })
+        .collect();
+
+    println!("Created {} secret keys for MuSig2 aggregation", num_signers);
+
+    // Create the transaction with desired outputs
+    let output_amount = Amount::from_sat(75_000);
+    let recipient_address = client.get_new_address().await.unwrap();
+    let tx = Transaction {
+        version: Version::TWO,
+        lock_time: LockTime::ZERO,
+        input: vec![], // Will be populated by submit_transaction_with_keys
+        output: vec![TxOut {
+            value: output_amount,
+            script_pubkey: recipient_address.script_pubkey(),
+        }],
+    };
+
+    // Submit the transaction using MuSig2 aggregation
+    let txid = submit_transaction_with_keys(&node, &client, &secret_keys, tx)
+        .await
+        .unwrap();
+    println!("MuSig2 transaction submitted with txid: {}", txid);
+    _ = mine_blocks(&node, &client, 1, None).await;
+
+    // Verify the transaction is confirmed
+    let blockchain_info = client.get_blockchain_info().await.unwrap();
+    let block_hash: BlockHash = blockchain_info.best_block_hash.parse().unwrap();
+    let block = client.get_block(&block_hash).await.unwrap();
+
+    // Check that our transaction is in the block
+    let tx_found = block.txdata.iter().any(|tx| tx.compute_txid() == txid);
+
+    assert!(
+        tx_found,
+        "MuSig2 transaction {} should be included in block {}",
+        txid, block_hash
+    );
+
+    println!("✓ MuSig2 transaction confirmed in block {}", block_hash);
+
+    // Verify the transaction has the correct witness structure
+    let confirmed_tx = block
+        .txdata
+        .iter()
+        .find(|tx| tx.compute_txid() == txid)
+        .unwrap();
+
+    assert_eq!(
+        confirmed_tx.input.len(),
+        1,
+        "Transaction should have exactly 1 input"
+    );
+
+    let witness = &confirmed_tx.input[0].witness;
+    assert_eq!(
+        witness.len(),
+        1,
+        "Taproot key-spend witness should have exactly 1 element (the signature)"
+    );
 }

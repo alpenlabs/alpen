@@ -4,19 +4,24 @@ use bitcoin::{
     absolute,
     absolute::LockTime,
     block::Header,
-    secp256k1::{Keypair, Message, Parity, PublicKey, Secp256k1, SecretKey},
+    secp256k1::{schnorr::Signature, Keypair, Message, PublicKey, Secp256k1},
     sighash::{Prevouts, SighashCache},
+    taproot::TapTweakHash,
     transaction::Version,
-    Address, Amount, OutPoint, ScriptBuf, Sequence, TapSighashType, Transaction, TxIn, TxOut, Txid,
-    Witness, XOnlyPublicKey,
+    Address, Amount, BlockHash, Network, OutPoint, ScriptBuf, Sequence, TapSighashType,
+    Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
 use bitcoind_async_client::{
     traits::{Reader, Wallet},
     Client,
 };
 use corepc_node::Node;
+use musig2::KeyAggContext;
 use strata_btc_types::GenesisL1View;
-use strata_crypto::EvenSecretKey;
+use strata_crypto::{
+    test_utils::schnorr::{create_musig2_signature, Musig2Tweak},
+    EvenSecretKey,
+};
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
 
 /// Get the authentication credentials for a given `bitcoind` instance.
@@ -46,7 +51,7 @@ pub async fn mine_blocks(
     client: &Client,
     count: usize,
     address: Option<Address>,
-) -> anyhow::Result<Vec<bitcoin::BlockHash>> {
+) -> anyhow::Result<Vec<BlockHash>> {
     let coinbase_address = match address {
         Some(address) => address,
         None => client.get_new_address().await?,
@@ -57,7 +62,7 @@ pub async fn mine_blocks(
         .generate_to_address(count as _, &coinbase_address)?
         .0
         .iter()
-        .map(|hash: &String| hash.parse::<bitcoin::BlockHash>())
+        .map(|hash: &String| hash.parse::<BlockHash>())
         .collect::<Result<Vec<_>, _>>()?;
     Ok(block_hashes)
 }
@@ -65,7 +70,7 @@ pub async fn mine_blocks(
 /// Helper to construct `GenesisL1View` from a block hash using the client.
 pub async fn get_genesis_l1_view(
     client: &Client,
-    hash: &bitcoin::BlockHash,
+    hash: &BlockHash,
 ) -> anyhow::Result<GenesisL1View> {
     let header: Header = client.get_block_header(hash).await?;
     let height = client.get_block_height(hash).await?;
@@ -95,7 +100,7 @@ fn derive_p2tr_address(secret_key: &EvenSecretKey) -> (Address, Keypair, XOnlyPu
     let secp = Secp256k1::new();
     let keypair = Keypair::from_secret_key(&secp, secret_key.as_ref());
     let (internal_key, _parity) = XOnlyPublicKey::from_keypair(&keypair);
-    let p2tr_address = bitcoin::Address::p2tr(&secp, internal_key, None, bitcoin::Network::Regtest);
+    let p2tr_address = Address::p2tr(&secp, internal_key, None, Network::Regtest);
     (p2tr_address, keypair, internal_key)
 }
 
@@ -108,14 +113,14 @@ async fn create_funding_utxo(
     client: &Client,
     address: &Address,
     amount: Amount,
-) -> anyhow::Result<(bitcoin::Txid, u32, bitcoin::TxOut)> {
+) -> anyhow::Result<(Txid, u32, TxOut)> {
     // Fund the address using the wallet
     let funding_txid_str = bitcoind
         .client
         .send_to_address(address, amount)?
         .0
         .to_string();
-    let funding_txid: bitcoin::Txid = funding_txid_str.parse()?;
+    let funding_txid: Txid = funding_txid_str.parse()?;
 
     // Get the funding transaction BEFORE mining (while it's still in mempool)
     let funding_tx_result = client
@@ -124,9 +129,6 @@ async fn create_funding_utxo(
     let funding_tx = funding_tx_result
         .transaction()
         .map_err(|e| anyhow::anyhow!("Failed to decode funding transaction: {}", e))?;
-
-    // Mine a block to confirm the funding transaction
-    let _ = mine_blocks(bitcoind, client, 1, None).await?;
 
     // Find the output that pays to our address
     let (prev_vout, prev_output) = funding_tx
@@ -146,11 +148,10 @@ fn sign_taproot_transaction(
     keypair: &Keypair,
     internal_key: &XOnlyPublicKey,
     prev_output: &TxOut,
-) -> anyhow::Result<bitcoin::secp256k1::schnorr::Signature> {
+) -> anyhow::Result<Signature> {
     let secp = Secp256k1::new();
 
     // Apply BIP341 taproot tweak
-    use bitcoin::taproot::TapTweakHash;
     let tweak = TapTweakHash::from_key_and_tweak(*internal_key, None);
     let tweaked_keypair = keypair.add_xonly_tweak(&secp, &tweak.to_scalar())?;
 
@@ -191,7 +192,7 @@ pub async fn submit_transaction_with_key(
     client: &Client,
     secret_key: &EvenSecretKey,
     mut tx: Transaction,
-) -> anyhow::Result<bitcoin::Txid> {
+) -> anyhow::Result<Txid> {
     if tx.output.is_empty() {
         return Err(anyhow::anyhow!("Transaction must have at least one output"));
     }
@@ -233,8 +234,137 @@ pub async fn submit_transaction_with_key(
     let txid_str = core_txid.to_string();
     let txid: Txid = txid_str.parse()?;
 
-    // Mine a block to confirm
-    let _ = mine_blocks(bitcoind, client, 1, None).await?;
+    Ok(txid)
+}
+
+/// Derive a MuSig2 aggregated P2TR address from multiple secret keys.
+///
+/// # Returns
+/// A tuple of (address, aggregated_internal_key)
+fn derive_musig2_p2tr_address(
+    secret_keys: &[EvenSecretKey],
+) -> anyhow::Result<(Address, XOnlyPublicKey)> {
+    if secret_keys.is_empty() {
+        return Err(anyhow::anyhow!("At least one secret key is required"));
+    }
+
+    let secp = Secp256k1::new();
+
+    // Extract public keys for MuSig2 aggregation
+    // We convert secret keys directly to PublicKey to preserve parity
+    let pubkeys: Vec<PublicKey> = secret_keys
+        .iter()
+        .map(|sk| PublicKey::from_secret_key(&secp, sk))
+        .collect();
+
+    // Create MuSig2 key aggregation context (untweaked)
+    let key_agg_ctx = KeyAggContext::new(pubkeys)?;
+    let aggregated_pubkey_untweaked: PublicKey = key_agg_ctx.aggregated_pubkey_untweaked();
+    let aggregated_internal_key = aggregated_pubkey_untweaked.x_only_public_key().0;
+
+    // Create P2TR address from the aggregated key
+    let p2tr_address = Address::p2tr(&secp, aggregated_internal_key, None, Network::Regtest);
+
+    Ok((p2tr_address, aggregated_internal_key))
+}
+
+/// Sign a transaction with MuSig2 aggregated signature.
+///
+/// # Returns
+/// The aggregated Schnorr signature
+fn sign_musig2_transaction(
+    tx: &Transaction,
+    secret_keys: &[EvenSecretKey],
+    _internal_key: &XOnlyPublicKey,
+    prev_output: &TxOut,
+) -> anyhow::Result<Signature> {
+    // Calculate sighash
+    let prevouts = vec![prev_output.clone()];
+    let prevouts_ref = Prevouts::All(&prevouts);
+    let mut sighash_cache = SighashCache::new(tx);
+    let sighash = sighash_cache.taproot_key_spend_signature_hash(
+        0,
+        &prevouts_ref,
+        TapSighashType::Default,
+    )?;
+
+    // Taproot key-path spend without a script tree uses the standard tweak with an empty merkle
+    // root. Musig2 helper applies that tweak when using the TaprootKeySpend variant.
+    let sighash_bytes: &[u8; 32] = sighash.as_ref();
+    let compact_sig =
+        create_musig2_signature(secret_keys, sighash_bytes, Musig2Tweak::TaprootKeySpend);
+
+    // Convert CompactSignature to bitcoin::secp256k1::schnorr::Signature
+    let sig = Signature::from_slice(&compact_sig.serialize())?;
+
+    Ok(sig)
+}
+
+/// Helper to sign and broadcast a transaction using multiple secret keys with MuSig2 aggregation.
+///
+/// This function creates funding UTXOs locked to a P2TR address derived from MuSig2 aggregated
+/// public keys, then creates a transaction spending from those UTXOs to the specified outputs
+/// using MuSig2 signature aggregation.
+///
+/// # Arguments
+/// * `bitcoind` - The bitcoind node
+/// * `client` - The RPC client
+/// * `secret_keys` - Slice of secret keys to aggregate for signing
+/// * `mut tx` - The transaction to sign and broadcast (inputs will be added, fee will be
+///   calculated)
+///
+/// # Returns
+/// The txid of the signed and broadcast transaction
+pub async fn submit_transaction_with_keys(
+    bitcoind: &Node,
+    client: &Client,
+    secret_keys: &[EvenSecretKey],
+    mut tx: Transaction,
+) -> anyhow::Result<Txid> {
+    if tx.output.is_empty() {
+        return Err(anyhow::anyhow!("Transaction must have at least one output"));
+    }
+
+    if secret_keys.is_empty() {
+        return Err(anyhow::anyhow!("At least one secret key is required"));
+    }
+
+    // Derive MuSig2 aggregated P2TR address
+    let (p2tr_address, aggregated_internal_key) = derive_musig2_p2tr_address(secret_keys)?;
+
+    // Calculate funding amount
+    let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();
+    let estimated_fee = 1000u64; // Conservative estimate in sats
+    let funding_amount = Amount::from_sat(total_output_value + estimated_fee);
+
+    // Create and confirm funding UTXO
+    let (funding_txid, prev_vout, prev_output) =
+        create_funding_utxo(bitcoind, client, &p2tr_address, funding_amount).await?;
+
+    // Add input to the transaction
+    tx.input = vec![TxIn {
+        previous_output: OutPoint::new(funding_txid, prev_vout),
+        script_sig: ScriptBuf::default(),
+        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        witness: Witness::new(),
+    }];
+
+    // Ensure transaction has proper version and locktime
+    tx.version = Version::TWO;
+    tx.lock_time = LockTime::ZERO;
+
+    // Sign the transaction with MuSig2
+    let signature =
+        sign_musig2_transaction(&tx, secret_keys, &aggregated_internal_key, &prev_output)?;
+
+    // Add the aggregated signature to the witness
+    tx.input[0].witness.push(signature.as_ref());
+
+    // Broadcast the transaction
+    let txid_wrapper = bitcoind.client.send_raw_transaction(&tx)?;
+    let core_txid = txid_wrapper.0;
+    let txid_str = core_txid.to_string();
+    let txid: Txid = txid_str.parse()?;
 
     Ok(txid)
 }

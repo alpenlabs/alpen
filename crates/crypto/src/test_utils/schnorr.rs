@@ -5,6 +5,17 @@ use strata_identifiers::Buf32;
 
 use crate::{musig2::aggregate_schnorr_keys, schnorr::EvenSecretKey};
 
+/// How to tweak the aggregated MuSig2 key when creating a signature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Musig2Tweak {
+    /// Do not apply any tweak (non-taproot signing paths).
+    None,
+    /// Apply the standard taproot tweak for a key-path spend with no script tree.
+    TaprootKeySpend,
+    /// Apply a taproot tweak committing to the provided merkle root.
+    TaprootScript([u8; 32]),
+}
+
 /// Creates a MuSig2 signature from multiple operators.
 ///
 /// This function simulates the MuSig2 signing process where multiple operators
@@ -20,7 +31,7 @@ use crate::{musig2::aggregate_schnorr_keys, schnorr::EvenSecretKey};
 pub fn create_musig2_signature(
     signer_secretkeys: &[EvenSecretKey],
     message: &[u8; 32],
-    tweak: Option<[u8; 32]>,
+    tweak: Musig2Tweak,
 ) -> musig2::CompactSignature {
     let secp = Secp256k1::new();
 
@@ -39,11 +50,15 @@ pub fn create_musig2_signature(
             .expect("failed to create KeyAggContext");
 
     // Apply tweak if provided (for taproot spending)
-    if let Some(tweak) = tweak {
-        key_agg_ctx = key_agg_ctx
-            .with_taproot_tweak(&tweak)
-            .expect("Failed to apply taproot tweak to key aggregation context");
-    }
+    key_agg_ctx = match tweak {
+        Musig2Tweak::None => key_agg_ctx,
+        Musig2Tweak::TaprootKeySpend => key_agg_ctx
+            .with_unspendable_taproot_tweak()
+            .expect("Failed to apply taproot tweak to key aggregation context"),
+        Musig2Tweak::TaprootScript(merkle_root) => key_agg_ctx
+            .with_taproot_tweak(&merkle_root)
+            .expect("Failed to apply taproot tweak to key aggregation context"),
+    };
 
     let mut first_rounds = Vec::new();
     let mut public_nonces = Vec::new();
@@ -153,10 +168,11 @@ mod tests {
             .collect();
 
         // Test without tweak
-        let signature_no_tweak = create_musig2_signature(&operator_privkeys, &message, None);
+        let signature_no_tweak =
+            create_musig2_signature(&operator_privkeys, &message, Musig2Tweak::None);
 
         let signature_with_tweak =
-            create_musig2_signature(&operator_privkeys, &message, Some(tweak));
+            create_musig2_signature(&operator_privkeys, &message, Musig2Tweak::TaprootScript(tweak));
 
         // Signatures should be different due to different tweaks
         assert_ne!(

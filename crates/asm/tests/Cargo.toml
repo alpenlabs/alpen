@@ -10,11 +10,12 @@ bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 corepc-node = { version = "0.8.0", features = ["29_0"] }
 hex.workspace = true
+musig2.workspace = true
 strata-asm-common.workspace = true
 strata-asm-types.workspace = true
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
-strata-crypto.workspace = true
+strata-crypto = { workspace = true, features = ["test-utils"] }
 strata-identifiers.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true

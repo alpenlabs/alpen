@@ -13,7 +13,7 @@ use bitcoin::{
 use strata_codec::encode_to_vec;
 use strata_crypto::{
     EvenSecretKey,
-    test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature},
+    test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature, Musig2Tweak},
 };
 use strata_l1_txfmt::{ParseConfig, TagData, TagDataRef};
 
@@ -81,8 +81,11 @@ pub fn create_test_deposit_tx(
         .unwrap();
 
     let msg = sighash.to_byte_array();
-    let signature =
-        create_musig2_signature(operators_privkeys, &msg, Some(merkle_root.to_byte_array()));
+    let signature = create_musig2_signature(
+        operators_privkeys,
+        &msg,
+        Musig2Tweak::TaprootScript(merkle_root.to_byte_array()),
+    );
 
     Transaction {
         version: unsigned_tx.version,

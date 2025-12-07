@@ -13786,6 +13786,7 @@ dependencies = [
  "bitcoind-async-client",
  "corepc-node",
  "hex",
+ "musig2",
  "rand 0.8.5",
  "strata-asm-common",
  "strata-asm-types",
