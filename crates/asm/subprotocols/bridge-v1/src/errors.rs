@@ -4,7 +4,7 @@ use bitcoin::ScriptBuf;
 use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{
     DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, SlashTxParseError,
-    WithdrawalParseError,
+    UnstakeTxParseError, WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
@@ -30,6 +30,12 @@ pub enum BridgeSubprotocolError {
 
     #[error("failed to validate slash tx")]
     SlashTxValidation(#[from] SlashValidationError),
+
+    #[error("failed to parse unstake tx")]
+    UnstakeTxParse(#[from] UnstakeTxParseError),
+
+    #[error("failed to validate slash tx")]
+    UnstakeTxValidation(#[from] UnstakeValidationError),
 
     #[error("failed to get proper aux data")]
     Aux(#[from] AuxError),
@@ -88,6 +94,13 @@ pub enum WithdrawalValidationError {
 
 #[derive(Debug, Error)]
 pub enum SlashValidationError {
+    /// Stake connector input is not locked to the expected N/N multisig script
+    #[error("stake connector not locked to N/N multisig script")]
+    InvalidStakeConnectorScript,
+}
+
+#[derive(Debug, Error)]
+pub enum UnstakeValidationError {
     /// Stake connector input is not locked to the expected N/N multisig script
     #[error("stake connector not locked to N/N multisig script")]
     InvalidStakeConnectorScript,

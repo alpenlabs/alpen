@@ -1,9 +1,10 @@
 use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
 use strata_asm_txs_bridge_v1::{
-    constants::{DEPOSIT_TX_TYPE, SLASH_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
+    constants::{DEPOSIT_TX_TYPE, SLASH_TX_TYPE, UNSTAKE_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
     deposit::{DepositInfo, parse_deposit_tx},
     slash::{SlashInfo, parse_slash_tx},
+    unstake::{UnstakeInfo, parse_unstake_tx},
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, parse_withdrawal_fulfillment_tx},
 };
 
@@ -25,6 +26,8 @@ pub(crate) enum ParsedTx<'t> {
     WithdrawalFulfillment(WithdrawalFulfillmentInfo),
     /// A slash transaction that penalizes a misbehaving operator
     Slash(SlashInfo),
+    /// An unstake transaction to exit from the bridge
+    Unstake(UnstakeInfo),
 }
 
 /// Parses a transaction into a structured format based on its type.
@@ -62,6 +65,10 @@ pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, Bridg
         SLASH_TX_TYPE => {
             let info = parse_slash_tx(tx)?;
             Ok(ParsedTx::Slash(info))
+        }
+        UNSTAKE_TX_TYPE => {
+            let info = parse_unstake_tx(tx)?;
+            Ok(ParsedTx::Unstake(info))
         }
         unsupported_type => Err(BridgeSubprotocolError::UnsupportedTxType(unsupported_type)),
     }

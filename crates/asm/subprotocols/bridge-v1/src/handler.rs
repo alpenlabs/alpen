@@ -67,6 +67,26 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
+        ParsedTx::Unstake(info) => {
+            let stake_connector_script = &verified_aux_data
+                .get_bitcoin_txout(info.second_inpoint().outpoint())?
+                .script_pubkey;
+
+            // Validate that the stake connector (second input) is locked to a known N/N multisig
+            // script from any recorded configuration.
+            if !state
+                .operators()
+                .historical_nn_scripts()
+                .any(|script| script == stake_connector_script)
+            {
+                return Err(SlashValidationError::InvalidStakeConnectorScript.into());
+            };
+
+            // Remove the operator from active set
+            state.remove_operator(info.header_aux().operator_idx());
+
+            Ok(())
+        }
     }
 }
 
@@ -80,6 +100,9 @@ pub(crate) fn handle_parsed_tx<'t>(
 /// - **Slash transactions**: Requests the Bitcoin transaction spent by the stake connector (second
 ///   input). We need this information to verify the stake connector is locked to a known N/N
 ///   multisig.
+/// - **Unstake transactions**: Requests the Bitcoin transaction spent by the stake connector
+///   (second input). We need this information to verify the stake connector is locked to a known
+///   N/N multisig.
 pub(crate) fn preprocess_parsed_tx<'t>(
     parsed_tx: ParsedTx<'t>,
     _state: &BridgeV1State,
@@ -89,6 +112,9 @@ pub(crate) fn preprocess_parsed_tx<'t>(
         ParsedTx::Deposit(_) => {}
         ParsedTx::WithdrawalFulfillment(_) => {}
         ParsedTx::Slash(info) => {
+            collector.request_bitcoin_tx(info.second_inpoint().0.txid);
+        }
+        ParsedTx::Unstake(info) => {
             collector.request_bitcoin_tx(info.second_inpoint().0.txid);
         }
     }
