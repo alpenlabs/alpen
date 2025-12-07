@@ -1,10 +1,7 @@
-use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_txs_bridge_v1::{
-    deposit::{DepositInfo, validate_drt_spending_signature},
-    errors::Mismatch,
-    withdrawal_fulfillment::WithdrawalFulfillmentInfo,
+    deposit::DepositInfo, errors::Mismatch, withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
@@ -113,11 +110,7 @@ impl BridgeV1State {
     /// - The DRT spending signature is invalid or doesn't match the aggregated operator key
     /// - The deposit output lock is incorrect
     /// - A deposit with the same index already exists
-    fn validate_deposit(
-        &self,
-        tx: &Transaction,
-        info: &DepositInfo,
-    ) -> Result<(), DepositValidationError> {
+    fn validate_deposit(&self, info: &DepositInfo) -> Result<(), DepositValidationError> {
         // Verify the deposit amount matches the bridge's expected amount
         if info.amt().to_sat() != self.denomination.to_sat() {
             return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
@@ -125,14 +118,6 @@ impl BridgeV1State {
                 got: info.amt().to_sat(),
             }));
         }
-
-        // Validate the DRT spending signature against the aggregated operator key
-        validate_drt_spending_signature(
-            tx,
-            info.header_aux().drt_tapscript_merkle_root(),
-            self.operators().agg_key(),
-            info.amt().into(),
-        )?;
 
         // Verify this deposit index hasn't been used before
         if self
@@ -171,13 +156,9 @@ impl BridgeV1State {
     /// - The deposit amount is zero or negative
     /// - The internal key doesn't match the current aggregated operator key
     /// - The deposit index already exists in the deposits table
-    pub fn process_deposit_tx(
-        &mut self,
-        tx: &Transaction,
-        info: &DepositInfo,
-    ) -> Result<(), DepositValidationError> {
+    pub fn process_deposit_tx(&mut self, info: &DepositInfo) -> Result<(), DepositValidationError> {
         // Validate the deposit first
-        self.validate_deposit(tx, info)?;
+        self.validate_deposit(info)?;
         let notary_operators = self.operators.current_multisig().clone();
         let entry = DepositEntry::new(
             info.header_aux().deposit_idx(),
@@ -378,7 +359,7 @@ impl BridgeV1State {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_txs_bridge_v1::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
+    use strata_asm_txs_bridge_v1::deposit::DepositInfo;
     use strata_primitives::{bitcoin_bosd::Descriptor, l1::L1BlockCommitment};
     use strata_test_utils::ArbitraryGenerator;
 
@@ -394,15 +375,13 @@ mod tests {
     /// successfully and stored in the deposits table with the correct information.
     #[test]
     fn test_process_deposit_tx_success() {
-        let (mut bridge_state, privkeys) = create_test_state();
+        let (mut bridge_state, _) = create_test_state();
         for i in 0..5 {
             let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
             deposit_info.set_amt(bridge_state.denomination);
 
-            let deposit_tx = create_test_deposit_tx(&deposit_info, &privkeys);
-
             // Process the deposit
-            let result = bridge_state.process_deposit_tx(&deposit_tx, &deposit_info);
+            let result = bridge_state.process_deposit_tx(&deposit_info);
             assert!(
                 result.is_ok(),
                 "Valid deposit should be processed successfully"
@@ -428,14 +407,10 @@ mod tests {
     /// denomination are rejected with the appropriate error type.
     #[test]
     fn test_process_deposit_tx_invalid_amount() {
-        let (mut bridge_state, privkeys) = create_test_state();
+        let (mut bridge_state, _) = create_test_state();
         let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
 
-        let tx = create_test_deposit_tx(&deposit_info, &privkeys);
-
-        let err = bridge_state
-            .process_deposit_tx(&tx, &deposit_info)
-            .unwrap_err();
+        let err = bridge_state.process_deposit_tx(&deposit_info).unwrap_err();
         assert!(matches!(
             err,
             DepositValidationError::MismatchDepositAmount(_)
@@ -461,11 +436,8 @@ mod tests {
         deposit_info.set_amt(bridge_state.denomination);
 
         privkeys.pop();
-        let tx = create_test_deposit_tx(&deposit_info, &privkeys);
 
-        let err = bridge_state
-            .process_deposit_tx(&tx, &deposit_info)
-            .unwrap_err();
+        let err = bridge_state.process_deposit_tx(&deposit_info).unwrap_err();
 
         assert!(matches!(err, DepositValidationError::DrtSignature(_)));
 
@@ -480,11 +452,11 @@ mod tests {
     /// from multiple deposits to assignments until no deposits remain.
     #[test]
     fn test_create_withdrawal_assignment_success() {
-        let (mut state, privkeys) = create_test_state();
+        let (mut state, _) = create_test_state();
         let mut arb = ArbitraryGenerator::new();
 
         let count = 4;
-        add_deposits(&mut state, count, &privkeys);
+        add_deposits(&mut state, count);
 
         for i in 0..count {
             let unassigned_deposit_count = state.deposits.len();
@@ -516,11 +488,11 @@ mod tests {
     /// between the deposit amount and withdrawal command amount.
     #[test]
     fn test_create_withdrawal_assignment_failure() {
-        let (mut state, privkeys) = create_test_state();
+        let (mut state, _) = create_test_state();
         let mut arb = ArbitraryGenerator::new();
 
         let count = 1;
-        let deposit = add_deposits(&mut state, count, &privkeys)[0].clone();
+        let deposit = add_deposits(&mut state, count)[0].clone();
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
@@ -543,10 +515,10 @@ mod tests {
     /// corresponding assignments are processed successfully and result in assignment removal.
     #[test]
     fn test_process_withdrawal_fulfillment_tx_success() {
-        let (mut bridge_state, privkeys) = create_test_state();
+        let (mut bridge_state, _) = create_test_state();
 
         let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+        add_deposits_and_assignments(&mut bridge_state, count);
 
         for _ in 0..count {
             let assignment = bridge_state.assignments().assignments().first().unwrap();
@@ -562,11 +534,11 @@ mod tests {
     /// withdrawal destination doesn't match the destination in the assignment.
     #[test]
     fn test_process_withdrawal_fulfillment_tx_destination_mismatch() {
-        let (mut bridge_state, privkeys) = create_test_state();
+        let (mut bridge_state, _) = create_test_state();
         let mut arb = ArbitraryGenerator::new();
 
         let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+        add_deposits_and_assignments(&mut bridge_state, count);
 
         let assignment = bridge_state.assignments().assignments().first().unwrap();
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
@@ -593,11 +565,11 @@ mod tests {
     /// withdrawal amount doesn't match the amount specified in the assignment.
     #[test]
     fn test_process_withdrawal_fulfillment_tx_amount_mismatch() {
-        let (mut bridge_state, privkeys) = create_test_state();
+        let (mut bridge_state, _) = create_test_state();
         let mut arb = ArbitraryGenerator::new();
 
         let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+        add_deposits_and_assignments(&mut bridge_state, count);
 
         let assignment = bridge_state.assignments().assignments().first().unwrap();
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
@@ -621,11 +593,11 @@ mod tests {
     /// referencing a deposit index that doesn't have a corresponding assignment.
     #[test]
     fn test_process_withdrawal_fulfillment_tx_no_assignment_found() {
-        let (mut bridge_state, privkeys) = create_test_state();
+        let (mut bridge_state, _) = create_test_state();
         let mut arb = ArbitraryGenerator::new();
 
         let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
+        add_deposits_and_assignments(&mut bridge_state, count);
 
         let assignment = bridge_state.assignments().assignments().first().unwrap();
         let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);

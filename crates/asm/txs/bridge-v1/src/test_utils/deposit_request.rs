@@ -1,17 +1,11 @@
-use bitcoin::{
-    ScriptBuf, Transaction, XOnlyPublicKey,
-    opcodes::all::{OP_CHECKSIGVERIFY, OP_CSV},
-    script::Builder,
-    secp256k1::Secp256k1,
-    taproot::TaprootBuilder,
-};
+use bitcoin::{Transaction, XOnlyPublicKey};
 use strata_l1_txfmt::{ParseConfig, TagData};
 use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
     BRIDGE_V1_SUBPROTOCOL_ID,
     constants::DEPOSIT_REQUEST_TX_TYPE,
-    deposit_request::DrtHeaderAux,
+    deposit_request::{DrtHeaderAux, create_takeback_taproot_output},
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
 };
 
@@ -37,30 +31,6 @@ pub fn create_test_deposit_request_tx(
         create_takeback_taproot_output(&info.recovery_pk, internal_key, RECOVER_DELAY);
 
     tx
-}
-
-fn create_takeback_taproot_output(
-    recovery_pk: &[u8; 32],
-    internal_key: XOnlyPublicKey,
-    recovery_delay: u32,
-) -> ScriptBuf {
-    let secp = Secp256k1::new();
-
-    let tapscript = Builder::new()
-        .push_slice(recovery_pk)
-        .push_opcode(OP_CHECKSIGVERIFY)
-        .push_int(recovery_delay as i64)
-        .push_opcode(OP_CSV)
-        .into_script();
-
-    let taproot_builder = TaprootBuilder::new()
-        .add_leaf(0, tapscript)
-        .expect("valid tapscript leaf");
-    let spend_info = taproot_builder
-        .finalize(&secp, internal_key)
-        .expect("taproot finalization should succeed");
-
-    ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root())
 }
 
 #[cfg(test)]

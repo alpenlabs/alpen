@@ -1,6 +1,6 @@
 use arbitrary::Arbitrary;
-use bitcoin::{ScriptBuf, TxOut};
-use strata_primitives::l1::{BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut};
+use bitcoin::ScriptBuf;
+use strata_primitives::l1::BitcoinTxOut;
 
 use crate::deposit_request::DrtHeaderAux;
 
@@ -23,5 +23,9 @@ impl DrtInfo {
 
     pub fn header_aux(&self) -> &DrtHeaderAux {
         &self.header_aux
+    }
+
+    pub fn drt_out_script(&self) -> &ScriptBuf {
+        &self.drt_out.inner().script_pubkey
     }
 }

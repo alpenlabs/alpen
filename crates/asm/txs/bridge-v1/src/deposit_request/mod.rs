@@ -38,10 +38,12 @@
 
 pub mod aux;
 mod info;
+mod lock;
 pub mod parse;
 
 pub use aux::DrtHeaderAux;
 pub use info::DrtInfo;
+pub use lock::create_takeback_taproot_output;
 pub use parse::{MIN_DRT_AUX_DATA_LEN, parse_drt, parse_drt_from_tx, parse_drt_new};
 
 pub use crate::errors::{DepositRequestBuildError, DepositRequestParseError};

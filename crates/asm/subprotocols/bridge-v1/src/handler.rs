@@ -1,9 +1,9 @@
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
 use strata_asm_txs_bridge_v1::{
-    deposit_request::{parse_drt, parse_drt_new},
+    deposit_request::{create_takeback_taproot_output, parse_drt_new},
     errors::DepositOutputError,
-    parser::{ParsedDepositTx, ParsedTx},
+    parser::ParsedTx,
 };
 
 use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
@@ -26,16 +26,14 @@ use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV
 /// # Returns
 /// * `Ok(())` if the transaction was processed successfully
 /// * `Err(BridgeSubprotocolError)` if an error occurred during processing
-pub(crate) fn handle_parsed_tx<'t>(
+pub(crate) fn handle_parsed_tx(
     state: &mut BridgeV1State,
-    parsed_tx: ParsedTx<'t>,
+    parsed_tx: ParsedTx,
     verified_aux_data: &VerifiedAuxData,
     relayer: &mut impl MsgRelayer,
 ) -> Result<(), BridgeSubprotocolError> {
     match parsed_tx {
-        ParsedTx::Deposit(parsed_deposit_tx) => {
-            let ParsedDepositTx { tx, info } = parsed_deposit_tx;
-
+        ParsedTx::Deposit(info) => {
             if info.locked_script() != state.operators().current_nn_script() {
                 return Err(DepositValidationError::DepositOutput(
                     DepositOutputError::WrongOutputLock,
@@ -43,9 +41,17 @@ pub(crate) fn handle_parsed_tx<'t>(
             }
 
             let drt = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
-            let drt_header_aux = parse_drt_new(drt).unwrap().header_aux();
+            let drt_info = parse_drt_new(drt).unwrap();
 
-            state.process_deposit_tx(tx, &info)?;
+            let expected_script = create_takeback_taproot_output(
+                drt_info.header_aux().recovery_pk(),
+                state.operators().agg_key().to_xonly_public_key(),
+                100,
+            );
+
+            assert_eq!(drt_info.drt_out_script(), &expected_script); // FIXME:PG
+
+            state.process_deposit_tx(&info)?;
             Ok(())
         }
         ParsedTx::WithdrawalFulfillment(info) => {
@@ -90,8 +96,11 @@ pub(crate) fn handle_parsed_tx<'t>(
 /// - **Slash transactions**: Requests the Bitcoin transaction spent by the stake connector (second
 ///   input). We need this information to verify the stake connector is locked to a known N/N
 ///   multisig.
-pub(crate) fn preprocess_parsed_tx<'t>(
-    parsed_tx: ParsedTx<'t>,
+/// - **Unstake transactions**: Requests the Bitcoin transaction spent by the stake connector
+///   (second input). We need this information to verify the stake connector is locked to a known
+///   N/N multisig.
+pub(crate) fn preprocess_parsed_tx(
+    parsed_tx: ParsedTx,
     _state: &BridgeV1State,
     collector: &mut AuxRequestCollector,
 ) {

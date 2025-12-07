@@ -150,14 +150,6 @@ mod tests {
         (operators_pubkey, operators_privkeys)
     }
 
-    // Helper function to create a test transaction and return both tx and aggregated pubkey
-    fn create_test_tx_with_agg_pubkey() -> (Transaction, BitcoinXOnlyPublicKey) {
-        let (operators_pubkey, operators_privkeys) = create_test_operators();
-        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-        let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
-        (tx, operators_pubkey)
-    }
-
     #[test]
     fn test_validate_drt_spending_signature_no_witness() {
         let (operators_pubkey, operators_privkeys) = create_test_operators();
