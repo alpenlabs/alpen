@@ -2,6 +2,7 @@
 
 use arbitrary::{Arbitrary, Unstructured};
 use bitcoin::XOnlyPublicKey;
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
 use crate::{
@@ -9,19 +10,17 @@ use crate::{
     errors::DepositRequestBuildError,
 };
 
-/// Metadata for creating deposit request transactions
+/// Auxiliary data in the SPS-50 header for bridge v1 deposit request transactions.
 ///
-/// Contains the information needed to create the OP_RETURN output for
-/// a deposit request transaction following the SPS-50 specification.
-///
-/// SPS-50 format: \[MAGIC\]\[SUBPROTOCOL_ID\]\[TX_TYPE\]\[RECOVERY_PK (32)\]\[EE_ADDRESS\]
+/// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
+/// and tx_type fields in the OP_RETURN output at position 0.
 #[derive(Debug, Clone)]
-pub struct DepositRequestAuxData {
+pub struct DrtHeaderAux {
     pub recovery_pk: [u8; 32],
     pub ee_address: Vec<u8>,
 }
 
-impl<'a> Arbitrary<'a> for DepositRequestAuxData {
+impl<'a> Arbitrary<'a> for DrtHeaderAux {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let recovery_pk = <[u8; 32]>::arbitrary(u)?;
         // Generate address between 20 and 64 bytes (reasonable range for EE addresses)
@@ -30,14 +29,40 @@ impl<'a> Arbitrary<'a> for DepositRequestAuxData {
             .map(|_| u8::arbitrary(u))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(DepositRequestAuxData {
+        Ok(DrtHeaderAux {
             recovery_pk,
             ee_address,
         })
     }
 }
 
-impl DepositRequestAuxData {
+impl Codec for DrtHeaderAux {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.recovery_pk.encode(enc)?;
+        enc.write_buf(&self.ee_address)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let recovery_pk = <[u8; 32]>::decode(dec)?;
+
+        // Read remaining bytes as address - we need to read from a buffer
+        // Since Decoder doesn't provide a way to read all remaining bytes,
+        // this decode assumes the input has already been sized correctly
+        let mut ee_address = Vec::new();
+        // Try to read bytes until we hit end of buffer
+        while let Ok(byte) = dec.read_arr::<1>() {
+            ee_address.push(byte[0]);
+        }
+
+        Ok(DrtHeaderAux {
+            recovery_pk,
+            ee_address,
+        })
+    }
+}
+
+impl DrtHeaderAux {
     /// Creates new deposit request metadata
     pub fn new(recovery_pk: XOnlyPublicKey, ee_address: Vec<u8>) -> Self {
         Self {
@@ -93,7 +118,7 @@ mod tests {
     #[test]
     fn test_deposit_request_metadata_creation() {
         let mut arb = ArbitraryGenerator::new();
-        let metadata: DepositRequestAuxData = arb.generate();
+        let metadata: DrtHeaderAux = arb.generate();
 
         // Verify accessors work
         assert_eq!(metadata.recovery_pk().len(), 32);
@@ -103,7 +128,7 @@ mod tests {
     #[test]
     fn test_op_return_data_format() {
         let mut arb = ArbitraryGenerator::new();
-        let metadata: DepositRequestAuxData = arb.generate();
+        let metadata: DrtHeaderAux = arb.generate();
         let magic: [u8; 4] = arb.generate();
 
         let op_return_data = metadata.op_return_data(magic).unwrap();
@@ -135,7 +160,7 @@ mod tests {
         let magic: [u8; 4] = arb.generate();
 
         // Test with 20-byte address (EVM standard)
-        let metadata_20 = DepositRequestAuxData {
+        let metadata_20 = DrtHeaderAux {
             recovery_pk: arb.generate(),
             ee_address: vec![0x06; 20],
         };
@@ -145,7 +170,7 @@ mod tests {
         );
 
         // Test with 32-byte address (different EE)
-        let metadata_32 = DepositRequestAuxData {
+        let metadata_32 = DrtHeaderAux {
             recovery_pk: arb.generate(),
             ee_address: vec![0x07; 32],
         };

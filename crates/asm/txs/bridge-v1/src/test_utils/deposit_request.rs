@@ -11,12 +11,12 @@ use strata_primitives::constants::RECOVER_DELAY;
 use crate::{
     BRIDGE_V1_SUBPROTOCOL_ID,
     constants::DEPOSIT_REQUEST_TX_TYPE,
-    deposit_request::DepositRequestAuxData,
+    deposit_request::DrtHeaderAux,
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
 };
 
 pub fn create_test_deposit_request_tx(
-    info: DepositRequestAuxData,
+    info: DrtHeaderAux,
     internal_key: XOnlyPublicKey,
 ) -> Transaction {
     let mut tx = create_dummy_tx(1, 2);
@@ -33,7 +33,8 @@ pub fn create_test_deposit_request_tx(
 
     tx.output[0].script_pubkey = data;
 
-    tx.output[1].script_pubkey = create_takeback_taproot_output(&info.recovery_pk, internal_key);
+    tx.output[1].script_pubkey =
+        create_takeback_taproot_output(&info.recovery_pk, internal_key, RECOVER_DELAY);
 
     tx
 }
@@ -41,13 +42,14 @@ pub fn create_test_deposit_request_tx(
 fn create_takeback_taproot_output(
     recovery_pk: &[u8; 32],
     internal_key: XOnlyPublicKey,
+    recovery_delay: u32,
 ) -> ScriptBuf {
     let secp = Secp256k1::new();
 
     let tapscript = Builder::new()
         .push_slice(recovery_pk)
         .push_opcode(OP_CHECKSIGVERIFY)
-        .push_int(RECOVER_DELAY as i64)
+        .push_int(recovery_delay as i64)
         .push_opcode(OP_CSV)
         .into_script();
 
@@ -75,7 +77,7 @@ mod tests {
 
     #[test]
     fn sets_takeback_output_to_taproot_script() {
-        let info = DepositRequestAuxData {
+        let info = DrtHeaderAux {
             recovery_pk: [0x02; 32],
             ee_address: vec![0xAB; 20],
         };
@@ -85,7 +87,8 @@ mod tests {
 
         let tx = create_test_deposit_request_tx(info.clone(), internal_key);
 
-        let expected_script = create_takeback_taproot_output(&info.recovery_pk, internal_key);
+        let expected_script =
+            create_takeback_taproot_output(&info.recovery_pk, internal_key, RECOVER_DELAY);
         assert_eq!(
             tx.output[1].script_pubkey, expected_script,
             "DRT output[1] should be the taproot takeback output"
@@ -94,7 +97,7 @@ mod tests {
 
     #[test]
     fn op_return_contains_expected_tagged_data() {
-        let info = DepositRequestAuxData {
+        let info = DrtHeaderAux {
             recovery_pk: [0x05; 32],
             ee_address: vec![0xCD; 32],
         };

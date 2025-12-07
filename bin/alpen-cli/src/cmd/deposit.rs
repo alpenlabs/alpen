@@ -15,7 +15,7 @@ use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
-use strata_asm_txs_bridge_v1::deposit_request::DepositRequestAuxData;
+use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_primitives::crypto::even_kp;
 
@@ -125,8 +125,7 @@ pub async fn deposit(
     log_fee_rate(&fee_rate);
 
     // Construct the DRT metadata using the canonical builder
-    let drt_metadata =
-        DepositRequestAuxData::new(recovery_public_key, alpen_address.as_slice().to_vec());
+    let drt_metadata = DrtHeaderAux::new(recovery_public_key, alpen_address.as_slice().to_vec());
 
     // Convert to PushBytes (ensures length ≤ 80 bytes)
     let magic_bytes: [u8; 4] = settings
