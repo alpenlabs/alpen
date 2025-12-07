@@ -17,8 +17,8 @@ use crate::{
 /// SPS-50 format: \[MAGIC\]\[SUBPROTOCOL_ID\]\[TX_TYPE\]\[RECOVERY_PK (32)\]\[EE_ADDRESS\]
 #[derive(Debug, Clone)]
 pub struct DepositRequestAuxData {
-    recovery_pk: [u8; 32],
-    ee_address: Vec<u8>,
+    pub recovery_pk: [u8; 32],
+    pub ee_address: Vec<u8>,
 }
 
 impl<'a> Arbitrary<'a> for DepositRequestAuxData {

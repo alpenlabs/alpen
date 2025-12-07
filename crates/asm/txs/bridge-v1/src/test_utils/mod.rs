@@ -1,5 +1,6 @@
 mod commit;
 mod deposit;
+mod deposit_request;
 mod slash;
 mod utils;
 mod withdrawal_fulfillment;
