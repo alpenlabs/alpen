@@ -1,0 +1,15 @@
+[package]
+name = "strata-asm-checkpoint-msgs"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+borsh.workspace = true
+
+strata-asm-common.workspace = true
+strata-asm-proto-checkpoint-txs.workspace = true
+strata-predicate.workspace = true
+strata-primitives.workspace = true

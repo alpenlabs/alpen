@@ -4,6 +4,7 @@
 //! with the Strata Anchor State Machine (ASM).
 
 use bitcoin::absolute;
+use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
     AnchorState, AsmError, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
     logging::{error, info},
@@ -16,7 +17,6 @@ use strata_primitives::{
 
 use crate::{
     handler::handle_parsed_tx,
-    msgs::BridgeIncomingMsg,
     parser::parse_tx,
     state::{BridgeV1Config, BridgeV1State},
 };
