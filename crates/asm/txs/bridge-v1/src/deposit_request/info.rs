@@ -1,5 +1,6 @@
 use arbitrary::Arbitrary;
-use strata_primitives::l1::BitcoinAmount;
+use bitcoin::{ScriptBuf, TxOut};
+use strata_primitives::l1::{BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut};
 
 use crate::deposit_request::DrtHeaderAux;
 
@@ -8,19 +9,19 @@ use crate::deposit_request::DrtHeaderAux;
 pub struct DrtInfo {
     /// SPS-50 auxiliary data from the transaction tag.
     header_aux: DrtHeaderAux,
-    amt: BitcoinAmount,
+
+    drt_out: BitcoinTxOut,
 }
 
 impl DrtInfo {
-    pub fn new(header_aux: DrtHeaderAux, amt: BitcoinAmount) -> Self {
-        Self { header_aux, amt }
+    pub fn new(header_aux: DrtHeaderAux, drt_out: BitcoinTxOut) -> Self {
+        Self {
+            header_aux,
+            drt_out,
+        }
     }
 
     pub fn header_aux(&self) -> &DrtHeaderAux {
         &self.header_aux
-    }
-
-    pub fn amt(&self) -> BitcoinAmount {
-        self.amt
     }
 }

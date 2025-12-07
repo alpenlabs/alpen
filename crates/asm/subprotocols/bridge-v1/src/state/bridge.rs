@@ -2,7 +2,7 @@ use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_txs_bridge_v1::{
-    deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
+    deposit::{DepositInfo, validate_drt_spending_signature},
     errors::Mismatch,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
@@ -133,9 +133,6 @@ impl BridgeV1State {
             self.operators().agg_key(),
             info.amt().into(),
         )?;
-
-        // Ensure the deposit output is properly locked to the aggregated operator key
-        validate_deposit_output_lock(tx, self.operators().agg_key())?;
 
         // Verify this deposit index hasn't been used before
         if self

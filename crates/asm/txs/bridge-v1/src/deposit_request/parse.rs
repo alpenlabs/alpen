@@ -97,9 +97,9 @@ pub fn parse_drt_new(tx: &Transaction) -> Result<DrtInfo, DepositRequestParseErr
     let drt_output = tx
         .output
         .get(1)
-        .ok_or(DepositRequestParseError::MissingDRTOutput)?;
-    let amt = drt_output.value.into();
-    Ok(DrtInfo::new(header_aux, amt))
+        .ok_or(DepositRequestParseError::MissingDRTOutput)?
+        .clone();
+    Ok(DrtInfo::new(header_aux, drt_output.into()))
 }
 
 #[cfg(test)]
@@ -322,6 +322,5 @@ mod tests {
         let info = parse_drt_new(&tx).expect("should parse without matching magic bytes");
         assert_eq!(info.header_aux().recovery_pk, recovery_pk);
         assert_eq!(info.header_aux().ee_address, ee_address.to_vec());
-        assert_eq!(info.amt().to_sat(), amount_sats);
     }
 }

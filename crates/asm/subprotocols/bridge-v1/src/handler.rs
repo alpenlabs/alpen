@@ -1,12 +1,12 @@
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
-
-use crate::{
-    SlashValidationError,
-    errors::BridgeSubprotocolError,
+use strata_asm_txs_bridge_v1::{
+    deposit_request::{parse_drt, parse_drt_new},
+    errors::DepositOutputError,
     parser::{ParsedDepositTx, ParsedTx},
-    state::BridgeV1State,
 };
+
+use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
 
 /// Handles parsed transactions and update the bridge state accordingly.
 ///
@@ -35,6 +35,16 @@ pub(crate) fn handle_parsed_tx<'t>(
     match parsed_tx {
         ParsedTx::Deposit(parsed_deposit_tx) => {
             let ParsedDepositTx { tx, info } = parsed_deposit_tx;
+
+            if info.locked_script() != state.operators().current_nn_script() {
+                return Err(DepositValidationError::DepositOutput(
+                    DepositOutputError::WrongOutputLock,
+                ))?;
+            }
+
+            let drt = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
+            let drt_header_aux = parse_drt_new(drt).unwrap().header_aux();
+
             state.process_deposit_tx(tx, &info)?;
             Ok(())
         }

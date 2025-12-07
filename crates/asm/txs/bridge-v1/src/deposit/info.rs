@@ -1,5 +1,6 @@
 use arbitrary::Arbitrary;
-use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint};
+use bitcoin::{OutPoint, ScriptBuf, TxOut};
+use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint, BitcoinTxOut};
 
 use crate::deposit::aux::DepositTxHeaderAux;
 
@@ -10,23 +11,31 @@ pub struct DepositInfo {
     header_aux: DepositTxHeaderAux,
 
     /// The amount of Bitcoin deposited.
-    amt: BitcoinAmount,
+    deposit_out: BitcoinTxOut,
 
     /// The outpoint of the deposit transaction.
     outpoint: BitcoinOutPoint,
+
+    drt_inpoint: BitcoinOutPoint,
 }
 
 impl DepositInfo {
     pub fn new(
         header_aux: DepositTxHeaderAux,
-        amt: BitcoinAmount,
+        deposit_out: BitcoinTxOut,
         outpoint: BitcoinOutPoint,
+        drt_inpoint: BitcoinOutPoint,
     ) -> Self {
         Self {
             header_aux,
-            amt,
+            deposit_out,
             outpoint,
+            drt_inpoint,
         }
+    }
+
+    pub fn drt_inpoint(&self) -> &OutPoint {
+        &self.drt_inpoint.0
     }
 
     pub fn header_aux(&self) -> &DepositTxHeaderAux {
@@ -39,12 +48,20 @@ impl DepositInfo {
     }
 
     pub fn amt(&self) -> BitcoinAmount {
-        self.amt
+        TxOut::from(self.deposit_out.clone()).value.into()
+    }
+
+    pub fn locked_script(&self) -> &ScriptBuf {
+        &self.deposit_out.inner().script_pubkey
     }
 
     #[cfg(feature = "test-utils")]
     pub fn set_amt(&mut self, amt: BitcoinAmount) {
-        self.amt = amt;
+        let new_tx_out = TxOut {
+            script_pubkey: self.locked_script().clone(),
+            value: amt.into(),
+        };
+        self.deposit_out = new_tx_out.into()
     }
 
     pub fn outpoint(&self) -> BitcoinOutPoint {

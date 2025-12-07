@@ -8,10 +8,7 @@ use bitcoin::{
 use secp256k1::Message;
 use strata_primitives::l1::BitcoinXOnlyPublicKey;
 
-use crate::{
-    deposit::DEPOSIT_OUTPUT_INDEX,
-    errors::{DepositOutputError, DrtSignatureError},
-};
+use crate::errors::DrtSignatureError;
 
 /// Validates that the DRT spending signature in the deposit transaction is valid.
 ///
@@ -108,50 +105,6 @@ pub fn validate_drt_spending_signature(
     Ok(())
 }
 
-/// Validates that the deposit output is locked to the N/N aggregated operator key.
-///
-/// This function verifies that the deposit output at `DEPOSIT_OUTPUT_INDEX` is a P2TR
-/// output locked to the provided aggregated operator public key with no merkle root
-/// (key-spend only). This ensures the deposited funds can only be spent by the N/N
-/// operator set.
-///
-/// # Parameters
-///
-/// - `tx` - The deposit transaction to validate
-/// - `operators_agg_pubkey` - The aggregated operator public key that should control the deposit
-///
-/// # Returns
-///
-/// - `Ok(())` - If the deposit output is properly locked to the operator key
-/// - `Err(DepositOutputError)` - If the output is missing, has wrong script type, or wrong key
-pub fn validate_deposit_output_lock(
-    tx: &Transaction,
-    operators_agg_pubkey: &BitcoinXOnlyPublicKey,
-) -> Result<(), DepositOutputError> {
-    // Get the deposit output at the expected index.
-    let deposit_output =
-        tx.output
-            .get(DEPOSIT_OUTPUT_INDEX)
-            .ok_or(DepositOutputError::MissingDepositOutput(
-                DEPOSIT_OUTPUT_INDEX,
-            ))?;
-
-    // Extract the internal key from the P2TR script
-    let secp = secp256k1::SECP256K1;
-    let operators_pubkey = XOnlyPublicKey::from_slice(operators_agg_pubkey.inner().as_bytes())
-        .map_err(|_| DepositOutputError::InvalidOperatorKey)?;
-
-    // Create expected P2TR script with no merkle root (key-spend only)
-    let expected_script = ScriptBuf::new_p2tr(secp, operators_pubkey, None);
-
-    // Verify the deposit output script matches the expected P2TR script
-    if deposit_output.script_pubkey != expected_script {
-        return Err(DepositOutputError::WrongOutputLock);
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use bitcoin::{
@@ -203,46 +156,6 @@ mod tests {
         let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
         let tx = create_test_deposit_tx(&deposit_info, &operators_privkeys);
         (tx, operators_pubkey)
-    }
-
-    #[test]
-    fn test_validate_deposit_output_lock_success() {
-        let (tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
-
-        // This should succeed
-        let result = validate_deposit_output_lock(&tx, &operators_pubkey);
-        assert!(
-            result.is_ok(),
-            "Valid deposit output lock should pass validation"
-        );
-    }
-
-    #[test]
-    fn test_validate_deposit_output_lock_missing_output() {
-        let (mut tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
-
-        // Remove the deposit output (keep only OP_RETURN at index 0)
-        tx.output.truncate(1);
-
-        // This should return MissingDepositOutput error since we removed the deposit output
-        let err = validate_deposit_output_lock(&tx, &operators_pubkey).unwrap_err();
-        assert!(matches!(
-            err,
-            DepositOutputError::MissingDepositOutput(DEPOSIT_OUTPUT_INDEX)
-        ));
-    }
-
-    #[test]
-    fn test_validate_deposit_output_lock_wrong_script() {
-        use bitcoin::ScriptBuf;
-
-        let (mut tx, operators_pubkey) = create_test_tx_with_agg_pubkey();
-
-        // Mutate the deposit output to have wrong script (empty script instead of P2TR)
-        tx.output[1].script_pubkey = ScriptBuf::new();
-
-        let err = validate_deposit_output_lock(&tx, &operators_pubkey).unwrap_err();
-        assert!(matches!(err, DepositOutputError::WrongOutputLock));
     }
 
     #[test]

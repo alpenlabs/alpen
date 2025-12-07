@@ -1,8 +1,7 @@
 use bitcoin::{Block, Transaction};
 use strata_asm_stf::group_txs_by_subprotocol;
 use strata_asm_txs_bridge_v1::{
-    deposit::{parse_deposit_tx, validate_deposit_output_lock},
-    withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
+    deposit::parse_deposit_tx, withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
     BRIDGE_V1_SUBPROTOCOL_ID,
 };
 use strata_asm_types::{DepositInfo, DepositSpendInfo, WithdrawalFulfillmentInfo};
@@ -70,14 +69,7 @@ fn index_tx<V: TxVisitor>(
             if let Ok(dp) =
                 parse_deposit_tx(&tx_input).map(convert_bridge_v1_deposit_to_protocol_deposit)
             {
-                if validate_deposit_output_lock(
-                    tx_input.tx(),
-                    &filter_config.deposit_config.operators_pubkey,
-                )
-                .is_ok()
-                {
-                    visitor.visit_deposit(dp);
-                }
+                visitor.visit_deposit(dp);
             }
 
             if let Ok(bridge_v1_withdrawal) = parse_withdrawal_fulfillment_tx(&tx_input) {

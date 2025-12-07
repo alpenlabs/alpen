@@ -28,7 +28,9 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
         .tx()
         .output
         .get(DEPOSIT_OUTPUT_INDEX)
-        .ok_or(DepositTxParseError::MissingDepositOutput)?;
+        .ok_or(DepositTxParseError::MissingDepositOutput)?
+        .clone()
+        .into();
 
     // Create outpoint reference for the deposit output
     let deposit_outpoint = BitcoinOutPoint::from(OutPoint {
@@ -36,10 +38,13 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
         vout: DEPOSIT_OUTPUT_INDEX as u32,
     });
 
+    let inpoint = tx_input.tx().input[0].previous_output.into();
+
     // Construct the validated deposit information
     Ok(DepositInfo::new(
         header_aux,
-        deposit_output.value.into(),
+        deposit_output,
+        inpoint,
         deposit_outpoint,
     ))
 }

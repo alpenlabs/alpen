@@ -14527,7 +14527,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#6948fecf9c56669c0ec776ff9bb485f904ae163f"
+source = "git+https://github.com/alpenlabs/strata-common?branch=feat%2Fparse-tx-without-config#80a0a87428dfa0bef503ae2fa1921633b1d1c6bb"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.17",
