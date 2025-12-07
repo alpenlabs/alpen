@@ -142,3 +142,14 @@ pub enum SlashTxParseError {
     #[error("Missing input at index {0}")]
     MissingInput(usize),
 }
+
+/// Errors that can occur when parsing unstake transaction.
+#[derive(Debug, Error)]
+pub enum UnstakeTxParseError {
+    /// The auxiliary data in the unstake transaction is invalid
+    #[error("Invalid auxiliary data")]
+    InvalidAuxiliaryData(#[from] CodecError),
+
+    #[error("Missing input at index {0}")]
+    MissingInput(usize),
+}

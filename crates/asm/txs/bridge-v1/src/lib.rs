@@ -12,6 +12,7 @@ pub mod deposit;
 pub mod deposit_request;
 pub mod errors;
 pub mod slash;
+pub mod unstake;
 pub mod withdrawal_fulfillment;
 
 pub use constants::BRIDGE_V1_SUBPROTOCOL_ID;
