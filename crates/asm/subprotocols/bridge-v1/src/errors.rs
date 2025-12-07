@@ -3,8 +3,7 @@ use std::fmt::Debug;
 use bitcoin::ScriptBuf;
 use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{
-    DepositOutputError, DepositTxParseError, DrtSignatureError, Mismatch, SlashTxParseError,
-    WithdrawalParseError,
+    BridgeTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;
@@ -48,9 +47,9 @@ pub enum DepositValidationError {
     #[error("DRT spending signature validation failed")]
     DrtSignature(#[from] DrtSignatureError),
 
-    /// Deposit output lock validation failed.
-    #[error("Deposit output lock validation failed")]
-    DepositOutput(#[from] DepositOutputError),
+    /// The deposit output is not locked to the expected aggregated operator key.
+    #[error("Deposit output is not locked to the aggregated operator key")]
+    WrongOutputLock,
 
     /// The deposit amount does not match the expected amount for this bridge configuration.
     #[error("Invalid deposit amount")]
@@ -65,6 +64,10 @@ pub enum DepositValidationError {
     /// Each deposit must have at least one notary operator.
     #[error("Cannot create deposit entry with empty operators.")]
     EmptyOperators,
+
+    /// The DRT output script does not match the expected locking script.
+    #[error("DRT output script mismatch")]
+    DrtOutputScriptMismatch(Mismatch<ScriptBuf>),
 }
 
 /// Errors that can occur when validating withdrawal fulfillment transactions.

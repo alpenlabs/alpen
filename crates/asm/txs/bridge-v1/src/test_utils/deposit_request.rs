@@ -5,7 +5,7 @@ use strata_primitives::constants::RECOVER_DELAY;
 use crate::{
     BRIDGE_V1_SUBPROTOCOL_ID,
     constants::DEPOSIT_REQUEST_TX_TYPE,
-    deposit_request::{DrtHeaderAux, create_takeback_taproot_output},
+    deposit_request::{DrtHeaderAux, create_deposit_request_locking_script},
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
 };
 
@@ -28,7 +28,7 @@ pub fn create_test_deposit_request_tx(
     tx.output[0].script_pubkey = data;
 
     tx.output[1].script_pubkey =
-        create_takeback_taproot_output(&info.recovery_pk, internal_key, RECOVER_DELAY);
+        create_deposit_request_locking_script(&info.recovery_pk, internal_key, RECOVER_DELAY);
 
     tx
 }
@@ -58,7 +58,7 @@ mod tests {
         let tx = create_test_deposit_request_tx(info.clone(), internal_key);
 
         let expected_script =
-            create_takeback_taproot_output(&info.recovery_pk, internal_key, RECOVER_DELAY);
+            create_deposit_request_locking_script(&info.recovery_pk, internal_key, RECOVER_DELAY);
         assert_eq!(
             tx.output[1].script_pubkey, expected_script,
             "DRT output[1] should be the taproot takeback output"

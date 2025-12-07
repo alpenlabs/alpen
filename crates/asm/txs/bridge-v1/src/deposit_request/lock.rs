@@ -6,7 +6,36 @@ use bitcoin::{
     taproot::TaprootBuilder,
 };
 
-pub fn create_takeback_taproot_output(
+/// Creates the locking script for the Deposit Request Transaction (DRT) output.
+///
+/// This function constructs a P2TR (Pay-to-Taproot) locking script with two spending paths:
+///
+/// 1. **N/N multisig path (internal key)**: Allows the bridge operators to create a valid Deposit
+///    Transaction by spending this output.
+///
+/// 2. **Recovery path (tapscript)**: Allows the depositor to reclaim their funds after a timeout
+///    period if the bridge operators fail to process the deposit.
+///
+/// # Parameters
+///
+/// * `recovery_pk` - The depositor's x-only public key (32 bytes) for the recovery path. The
+///   depositor can use the corresponding secret key to reclaim funds after the timeout if deposit
+///   transaction is not created.
+///
+/// * `internal_key` - The N/N multisig aggregated public key for the cooperative spending path.
+///   This represents the bridge operators' ability to create the Deposit Transaction.
+///
+/// * `recovery_delay` - The number of blocks that must pass before the depositor can use the
+///   recovery path. This period should be sufficient for bridge operators to process the deposit.
+///
+/// # Returns
+///
+/// A `ScriptBuf` containing the P2TR locking script to be used in the DRT output.
+///
+/// # Panics
+///
+/// Panics if taproot finalization fails, which should not occur with valid inputs.
+pub fn create_deposit_request_locking_script(
     recovery_pk: &[u8; 32],
     internal_key: XOnlyPublicKey,
     recovery_delay: u32,
