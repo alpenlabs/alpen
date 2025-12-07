@@ -12,7 +12,6 @@ use crate::{
     utils::{get_bitcoind_and_client, get_genesis_l1_view, mine_blocks},
 };
 
-#[allow(dead_code)]
 pub struct TestEnv {
     pub _node: Node, // Keep node alive
     pub client: Arc<Client>,
