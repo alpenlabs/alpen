@@ -1,0 +1,29 @@
+[project]
+name = "strata-functional-tests"
+version = "0.1.0"
+description = "Functional test suite for Strata"
+requires-python = ">=3.10"
+
+dependencies = [
+  "flexitest",
+  "requests>=2.31.0",
+  "bitcoinlib>=0.6.15",
+  "toml>=0.10.2",
+]
+
+[dependency-groups]
+dev = ["ruff==0.14.5", "ty>=0.0.1a20,<0.0.2"]
+
+[tool.uv]
+
+[tool.uv.sources]
+flexitest = { git = "https://codeberg.org/treyd/flexitest.git" }
+
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]                  # Line too long (handled by formatter)
