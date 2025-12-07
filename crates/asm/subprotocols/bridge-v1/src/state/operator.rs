@@ -1,7 +1,6 @@
 //! Bridge Operator Management
 //!
 //! This module contains types and tables for managing bridge operators
-use std::collections::HashSet;
 
 use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -146,67 +145,43 @@ pub struct OperatorTable {
 }
 
 impl OperatorTable {
-    /// Constructs an operator table from a list of operator public keys.
+    /// Bootstraps an operator table with an initial active operator set.
     ///
-    /// This method is used during initialization to populate the table with a known set of
-    /// operators. Indices are assigned sequentially starting from 0.
+    /// Every provided key is added and marked active, skipping any duplicates. The aggregated
+    /// MuSig2 key and the first N/N script are computed via the normal membership change flow so
+    /// script history starts with this initial configuration.
+    ///
+    /// Indices are assigned sequentially starting from 0.
     ///
     /// # Parameters
     ///
-    /// - `entries` - Slice of [`EvenPublicKey`] containing MuSig2 keys
-    ///
-    /// # Duplicates
-    ///
-    /// Duplicate public keys in `entries` are silently deduplicated.
-    ///
-    /// **Note**: Deduplication is performed using a `HashSet`, so the order of operators
-    /// (and their assigned indices) is **not guaranteed** to match the input order.
+    /// - `operators` - Initial set of [`EvenPublicKey`] MuSig2 keys. Duplicate keys are ignored.
     ///
     /// # Panics
     ///
-    /// Panics if `entries` is empty. At least one operator is required.
-    pub fn from_operator_list(entries: &[EvenPublicKey]) -> Self {
-        if entries.is_empty() {
+    /// Panics if `operators` is empty. At least one operator is required.
+    pub fn from_operator_list(operators: &[EvenPublicKey]) -> Self {
+        if operators.is_empty() {
             panic!(
                 "Cannot create operator table with empty entries - at least one operator is required"
             );
         }
 
-        // Use a HashSet to deduplicate operator keys.
-        let operators: HashSet<EvenPublicKey> = entries.iter().cloned().collect();
+        // Placeholder so the table is fully initialized before we compute the real aggregated key.
+        let placeholder_agg_key = BitcoinXOnlyPublicKey::new([1u8; 32].into()).unwrap();
 
-        let agg_operator_key: BitcoinXOnlyPublicKey = aggregate_schnorr_keys(
-            operators
-                .iter()
-                .map(|pk| Buf32::from(pk.x_only_public_key().0.serialize()))
-                .collect::<Vec<_>>()
-                .iter(),
-        )
-        .unwrap()
-        .into();
+        let mut table = Self {
+            next_idx: 0,
+            operators: SortedVec::new_empty(),
+            active_operators: OperatorBitmap::new_empty(),
+            agg_key: placeholder_agg_key,
+            historical_nn_scripts: Vec::new(),
+        };
 
-        // Create bitmap with all initial operators as active (0, 1, 2, ..., n-1)
-        let bitmap = OperatorBitmap::new_with_size(operators.len(), true);
+        // Reuse membership change flow to handle deduplication and seed script history.
+        table.apply_membership_changes(operators, &[]);
 
-        // Compute the initial N/N script
-        let initial_nn_script = build_nn_script(&agg_operator_key);
-
-        Self {
-            next_idx: operators.len() as OperatorIdx,
-            operators: SortedVec::new_unchecked(
-                operators
-                    .iter()
-                    .enumerate()
-                    .map(|(i, pk)| OperatorEntry {
-                        idx: i as OperatorIdx,
-                        musig2_pk: *pk,
-                    })
-                    .collect(),
-            ),
-            active_operators: bitmap,
-            agg_key: agg_operator_key,
-            historical_nn_scripts: vec![initial_nn_script],
-        }
+        table
     }
 
     /// Returns the number of registered operators.
