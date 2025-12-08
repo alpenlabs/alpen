@@ -2,10 +2,31 @@
 //!
 //! Resolves auxiliary data requests from subprotocols during pre-processing phase.
 //! Fetches Bitcoin transactions and historical manifest hashes with MMR proofs.
+//!
+//! ## Implementation Status
+//!
+//! ### Manifest Hash Resolution ✅
+//!
+//! Fully implemented with on-demand MMR proof generation:
+//! - Maps L1 block heights to MMR indices using genesis offset
+//! - Fetches manifest hashes from fast lookup storage
+//! - Generates MMR proofs using `SledMmrDb`
+//! - Converts `MerkleProofB32` (SSZ type) to `MerkleProof<Hash32>` (ASM type)
+//!
+//! ### Bitcoin Transaction Resolution ⚠️
+//!
+//! Bitcoin transaction fetching requires transaction indexing infrastructure (see
+//! aux-resolver-blockers.md). Currently returns `WorkerError::BitcoinTxNotFound`.
 
-use strata_asm_common::{AuxData, AuxRequests, ManifestHashRange, VerifiableManifestHash};
+use std::sync::Arc;
+
+use strata_asm_common::{
+    AsmMerkleProof, AuxData, AuxRequests, Hash32, ManifestHashRange, VerifiableManifestHash,
+};
 use strata_btc_types::BitcoinTxid;
+use strata_params::Params;
 use strata_primitives::prelude::*;
+use strata_storage::mmr_db::MmrDatabase;
 use tracing::*;
 
 use crate::{WorkerContext, WorkerError, WorkerResult};
@@ -18,11 +39,12 @@ use crate::{WorkerContext, WorkerError, WorkerResult};
 ///
 /// The resolver currently has limited implementation:
 /// - Bitcoin transaction fetching requires tx indexing (not yet implemented)
-/// - MMR proof generation for historical positions requires proof storage (not yet implemented)
+/// - MMR proof generation uses the SledMmrDb for on-demand proof generation
 pub struct AuxDataResolver<'a> {
-    /// Worker context for accessing ASM state
-    #[allow(dead_code)]
+    /// Worker context for accessing ASM state and MMR database
     context: &'a dyn WorkerContext,
+    /// Rollup parameters for genesis height calculation
+    params: Arc<Params>,
 }
 
 impl<'a> AuxDataResolver<'a> {
@@ -30,9 +52,10 @@ impl<'a> AuxDataResolver<'a> {
     ///
     /// # Arguments
     ///
-    /// * `context` - Worker context for ASM state access
-    pub fn new(context: &'a dyn WorkerContext) -> Self {
-        Self { context }
+    /// * `context` - Worker context for ASM state access and MMR database
+    /// * `params` - Rollup parameters (needed for genesis height)
+    pub fn new(context: &'a dyn WorkerContext, params: Arc<Params>) -> Self {
+        Self { context, params }
     }
 
     /// Resolves all auxiliary data requests from subprotocols.
@@ -137,7 +160,10 @@ impl<'a> AuxDataResolver<'a> {
         // 2. Use Bitcoin client's getrawtransaction RPC
         // 3. Have subprotocols provide block hints with their tx requests
 
-        warn!(?_txid, "Bitcoin transaction lookup not yet fully implemented - would need tx indexing or block hints");
+        warn!(
+            ?_txid,
+            "Bitcoin transaction lookup not yet fully implemented - would need tx indexing or block hints"
+        );
 
         // Temporary: Return error indicating this needs implementation
         Err(WorkerError::BitcoinTxNotFound(_txid.clone()))
@@ -145,8 +171,8 @@ impl<'a> AuxDataResolver<'a> {
 
     /// Resolves historical manifest hashes with MMR proofs.
     ///
-    /// For each height range, fetches the historical ASM states, extracts manifest hashes,
-    /// and generates MMR proofs from the current MMR root.
+    /// For each height range, fetches the stored manifest hashes and generates
+    /// MMR proofs using the SledMmrDb implementation.
     ///
     /// # Arguments
     ///
@@ -159,9 +185,10 @@ impl<'a> AuxDataResolver<'a> {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Current ASM state cannot be fetched
-    /// - Any historical ASM state is missing
+    /// - Genesis height calculation fails
+    /// - Any manifest hash cannot be fetched from storage
     /// - MMR proof generation fails
+    /// - Requested height is before genesis
     fn resolve_manifest_hashes(
         &self,
         ranges: &[ManifestHashRange],
@@ -172,34 +199,96 @@ impl<'a> AuxDataResolver<'a> {
 
         debug!(count = ranges.len(), "Resolving manifest hash ranges");
 
-        // TODO: MMR proof generation for historical positions
-        //
-        // ISSUE: The current CompactMmr only stores peaks and doesn't support generating
-        // proofs for arbitrary historical positions. To properly implement this, we need:
-        //
-        // 1. Store MMR proofs when manifest hashes are added to the MMR (during STF execution)
-        // 2. Persist these proofs in the database alongside ASM states
-        // 3. Retrieve stored proofs here instead of generating them
-        //
-        // Alternative approaches:
-        // - Use a full MMR implementation that maintains enough data for proof generation
-        // - Reconstruct the MMR state at each historical position (expensive)
-        // - Pre-compute and cache proofs for common historical queries
-        //
-        // For now, this returns Unimplemented error.
+        let genesis_height = self
+            .params
+            .rollup()
+            .genesis_l1_view
+            .height()
+            .to_consensus_u32() as u64;
 
-        warn!(
-            "Manifest hash resolution with MMR proofs not yet fully implemented - requires proof storage/retrieval system"
+        // Get MMR database for proof generation
+        let mmr_db = self.context.get_mmr_database()?;
+
+        let mut resolved = Vec::new();
+
+        for range in ranges {
+            let start_height = range.start_height();
+            let end_height = range.end_height();
+
+            // Validate range is not before genesis
+            if end_height < genesis_height {
+                warn!(
+                    start = start_height,
+                    end = end_height,
+                    genesis = genesis_height,
+                    "Requested manifest hash range before genesis"
+                );
+                return Err(WorkerError::InvalidHeightRange {
+                    start: start_height,
+                    end: end_height,
+                });
+            }
+
+            // Calculate MMR indices from L1 heights
+            // MMR index 0 = genesis height, index 1 = genesis + 1, etc.
+            let start_index = start_height.saturating_sub(genesis_height);
+            let end_index = end_height - genesis_height;
+
+            debug!(
+                start_height,
+                end_height, start_index, end_index, "Resolving manifest hash range"
+            );
+
+            for mmr_index in start_index..=end_index {
+                // Fetch manifest hash from storage
+                let manifest_hash: [u8; 32] = self
+                    .context
+                    .get_manifest_hash(mmr_index)?
+                    .ok_or(WorkerError::ManifestHashNotFound { index: mmr_index })?;
+
+                // Generate MMR proof for this index
+                let proof_b32 = mmr_db.generate_proof(mmr_index).map_err(|e| {
+                    error!(?e, index = mmr_index, "Failed to generate MMR proof");
+                    WorkerError::MmrProofFailed { index: mmr_index }
+                })?;
+
+                // Convert MerkleProofB32 to MerkleProof<Hash32> (AsmMerkleProof)
+                // Both types contain the same data: index and cohashes
+                // Extract from MerkleProofB32 and reconstruct as MerkleProof<Hash32>
+                let cohashes: Vec<[u8; 32]> = proof_b32.cohashes();
+                let index = proof_b32.index();
+                let asm_proof = AsmMerkleProof::from_cohashes(cohashes, index);
+
+                let hash = Hash32::from(manifest_hash);
+                resolved.push(VerifiableManifestHash::new(hash, asm_proof));
+
+                trace!(
+                    index = mmr_index,
+                    height = genesis_height + mmr_index,
+                    "Resolved manifest hash with proof"
+                );
+            }
+        }
+
+        debug!(
+            resolved_count = resolved.len(),
+            "Successfully resolved manifest hashes with MMR proofs"
         );
 
-        Err(WorkerError::Unimplemented)
+        Ok(resolved)
+    }
+}
+
+impl<'a> std::fmt::Debug for AuxDataResolver<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuxDataResolver")
+            .field("params", &self.params)
+            .finish_non_exhaustive()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // TODO: Add tests once we have mock implementations
     // - test_resolve_empty_requests
     // - test_resolve_bitcoin_txs

@@ -44,6 +44,12 @@ pub enum WorkerError {
     #[error("Invalid manifest hash range: start={start}, end={end}")]
     InvalidManifestRange { start: u64, end: u64 },
 
+    #[error("Invalid L1 height range: start={start}, end={end}")]
+    InvalidHeightRange { start: u64, end: u64 },
+
+    #[error("Manifest hash not found for MMR index {index}")]
+    ManifestHashNotFound { index: u64 },
+
     #[error("MMR proof generation failed for index {index}")]
     MmrProofFailed { index: u64 },
 }
