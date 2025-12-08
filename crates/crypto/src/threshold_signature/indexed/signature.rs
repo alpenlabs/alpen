@@ -1,10 +1,12 @@
 //! Signature types for threshold signing.
 
+use std::collections::HashSet;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use super::ThresholdSignatureError;
 
-/// An individual ECDSA signature with its signer index.
+/// An ECDSA signature with its signer index.
 ///
 /// The signature is in recoverable format (65 bytes): `header || r || s`.
 ///
@@ -82,7 +84,7 @@ impl IndexedSignature {
 
 /// A set of indexed ECDSA signatures for threshold verification.
 ///
-/// Signatures are sorted by index and must not contain duplicates.
+/// Signatures are guaranteed duplicate-free.
 #[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize)]
 pub struct SignatureSet {
     /// Sorted signatures by index, no duplicates.
@@ -92,17 +94,12 @@ pub struct SignatureSet {
 impl SignatureSet {
     /// Create a new signature set from a vector of indexed signatures.
     ///
-    /// The signatures will be sorted by index and checked for duplicates.
-    pub fn new(mut signatures: Vec<IndexedSignature>) -> Result<Self, ThresholdSignatureError> {
-        // Sort by index
-        signatures.sort_by_key(|s| s.index);
-
-        // Check for duplicate indices
-        for window in signatures.windows(2) {
-            if window[0].index == window[1].index {
-                return Err(ThresholdSignatureError::DuplicateSignerIndex(
-                    window[0].index,
-                ));
+    /// The signatures will be checked for duplicates.
+    pub fn new(signatures: Vec<IndexedSignature>) -> Result<Self, ThresholdSignatureError> {
+        let mut seen = HashSet::new();
+        for sig in &signatures {
+            if !seen.insert(sig.index) {
+                return Err(ThresholdSignatureError::DuplicateSignerIndex(sig.index));
             }
         }
 
@@ -158,10 +155,9 @@ mod tests {
         let sigs = vec![make_sig(2), make_sig(0), make_sig(1)];
         let set = SignatureSet::new(sigs).unwrap();
 
-        // Should be sorted
-        assert_eq!(set.signatures()[0].index(), 0);
-        assert_eq!(set.signatures()[1].index(), 1);
-        assert_eq!(set.signatures()[2].index(), 2);
+        assert_eq!(set.signatures()[0].index(), 2);
+        assert_eq!(set.signatures()[1].index(), 0);
+        assert_eq!(set.signatures()[2].index(), 1);
     }
 
     #[test]

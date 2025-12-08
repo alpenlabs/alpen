@@ -6,7 +6,7 @@ use strata_crypto::threshold_signature::{
 use strata_primitives::roles::Role;
 
 /// Manages threshold signature operations for a given role and key set, with replay protection via
-/// a seqno.
+/// a sequence number.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct MultisigAuthority {
     /// The role of this threshold signature authority.
@@ -43,10 +43,10 @@ impl MultisigAuthority {
     }
 
     /// Verifies a set of ECDSA signatures against a threshold configuration.
-    ///
-    /// This function is intentionally ECDSA-specific as part of the hardware wallet
-    /// compatibility design (BIP-137 format support). A trait-based abstraction
-    /// could be added in the future if multiple signature schemes are needed.
+    //
+    // This function is intentionally ECDSA-specific as part of the hardware wallet
+    // compatibility design (BIP-137 format support). A trait-based abstraction
+    // could be added in the future if multiple signature schemes are needed.
     pub fn verify_action_signature(
         &self,
         action: &MultisigAction,

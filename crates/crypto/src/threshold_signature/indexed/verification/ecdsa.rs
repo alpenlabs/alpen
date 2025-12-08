@@ -36,8 +36,9 @@ fn normalize_recovery_id(header: u8) -> Result<i32, ThresholdSignatureError> {
 
 /// Verifies each ECDSA signature in the set against the corresponding public key.
 ///
-/// This function performs the actual ECDSA signature recovery and verification.
-/// It assumes the SignatureSet has already been validated for duplicates.
+/// This function recovers a public key from each ECDSA signature, then checks it
+/// against the configured key for that index. The `SignatureSet` is already
+/// deduped.
 ///
 /// # Hardware Wallet Compatibility
 /// Supports signatures from hardware wallets (Ledger/Trezor) that use BIP-137 format
@@ -77,8 +78,8 @@ pub(super) fn verify_ecdsa_signatures(
             RecoverableSignature::from_compact(&indexed_sig.compact(), recovery_id)
                 .map_err(|_| ThresholdSignatureError::InvalidSignatureFormat)?;
 
-        // Hardware wallets emit recoverable signatures (with a header). Recover first so we
-        // honor the header and then compare to the configured public key.
+        // Hardware wallets emit recoverable signatures with headers; recover the pubkey
+        // (honoring the header) and compare to the configured public key.
         let recovered_pubkey = SECP256K1
             .recover_ecdsa(&message, &recoverable_sig)
             .map_err(|_| ThresholdSignatureError::InvalidSignature {

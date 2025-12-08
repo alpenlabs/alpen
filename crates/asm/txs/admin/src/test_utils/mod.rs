@@ -22,7 +22,7 @@ use crate::{
     actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::SignedPayload,
 };
 
-/// Creates an ECDSA recoverable signature for a message hash.
+/// Creates an ECDSA signature with recoverable public key for a message hash.
 ///
 /// Returns a 65-byte signature in the format: recovery_id || r || s
 pub fn sign_ecdsa_recoverable(message_hash: &[u8; 32], secret_key: &SecretKey) -> [u8; 65] {
