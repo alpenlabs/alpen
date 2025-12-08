@@ -87,10 +87,23 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             info!(%block_id, "ASM transition attempt");
             match state.transition(block) {
                 Ok(asm_stf_out) => {
+                    // Extract manifest and compute its hash
+                    let manifest_hash = asm_stf_out.manifest.compute_hash();
+
+                    // Append manifest hash to MMR database
+                    let leaf_index = state.context.append_manifest_to_mmr(manifest_hash)?;
+
+                    // Store manifest hash for fast lookup by aux resolver
+                    state
+                        .context
+                        .store_manifest_hash(leaf_index, manifest_hash)?;
+
                     let new_state = AsmState::from_output(asm_stf_out);
                     // Store and update anchor.
                     state.context.store_anchor_state(block_id, &new_state)?;
                     state.update_anchor_state(new_state, *block_id);
+
+                    info!(%block_id, leaf_index, "MMR updated with manifest");
                 }
                 Err(e) => {
                     error!(%e, "ASM transition error");
