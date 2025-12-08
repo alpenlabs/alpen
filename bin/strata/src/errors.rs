@@ -3,6 +3,7 @@
 use std::io;
 
 use format_serde_error::SerdeError;
+use strata_db_types::DbError;
 use strata_params::ParamsError;
 use thiserror::Error;
 
@@ -43,6 +44,9 @@ pub(crate) enum InitError {
 
     #[error("missing initial client state in database")]
     MissingInitialState,
+
+    #[error("database: {0}")]
+    Database(#[from] DbError),
 }
 
 #[derive(Debug, Error)]

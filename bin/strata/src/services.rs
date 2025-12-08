@@ -29,6 +29,7 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
     // TODO: Start other tasks like l1writer, mempool, broadcaster, fcm, btcio reader, etc. all as
     // service, returning the monitors.
     Ok(RunContext {
+        runtime: nodectx.runtime,
         config: nodectx.config,
         params: nodectx.params,
         task_manager: nodectx.task_manager,

@@ -4,14 +4,20 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
-use strata_common::logging::{self, LoggerConfig, get_otlp_url_from_env};
+use strata_common::{
+    logging,
+    logging::{self, LoggerConfig, get_otlp_url_from_env},
+};
+use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types as _;
+use strata_primitives::L1BlockCommitment;
 use tokio::runtime::Handle;
 use tracing::info;
 
 use crate::{
     args::Args,
     context::{NodeContext, init_node_context},
+    errors::InitError,
     services::{start_rpc, start_services},
 };
 
