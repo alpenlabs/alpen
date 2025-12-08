@@ -123,7 +123,6 @@ impl MempoolServiceState {
     ///
     /// Deserializes and validates each transaction. Invalid transactions are skipped and
     /// removed from the database.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used by later commit"))]
     pub(crate) async fn load_from_db(&mut self) -> OLMempoolResult<()> {
         let mut all_txs = self.ctx.storage.mempool().get_all_txs()?;
 
@@ -193,7 +192,6 @@ impl MempoolServiceState {
     }
 
     /// Handle submit transaction command.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used by later commit"))]
     pub(crate) async fn handle_submit_transaction(
         &mut self,
         tx: Box<OLMempoolTransaction>,
@@ -204,7 +202,6 @@ impl MempoolServiceState {
     }
 
     /// Handle get transactions command (returns transactions in priority order).
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used by later commit"))]
     pub(crate) async fn handle_get_transactions(
         &mut self,
         limit: usize,
@@ -225,7 +222,6 @@ impl MempoolServiceState {
     }
 
     /// Handle remove transactions command.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used by later commit"))]
     pub(crate) fn handle_remove_transactions(
         &mut self,
         txs: Vec<(OLTxId, crate::MempoolTxRemovalReason)>,
@@ -239,9 +235,8 @@ impl MempoolServiceState {
     }
 
     /// Get mempool statistics.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used by later commit"))]
-    pub(crate) fn stats(&self) -> OLMempoolStats {
-        self.stats.clone()
+    pub(crate) fn stats(&self) -> &OLMempoolStats {
+        &self.stats
     }
 
     /// Check mempool capacity limits before adding a transaction.
@@ -744,7 +739,6 @@ impl MempoolServiceState {
     /// 1. Load state for new tip and update state accessor
     /// 2. Walk backwards from new tip to current tip via parent links
     /// 3. Process all blocks in chronological order (oldest to newest)
-    #[expect(dead_code, reason = "will be used by later commit")]
     pub(crate) async fn handle_chain_update(
         &mut self,
         new_tip: OLBlockCommitment,
@@ -812,7 +806,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH, MempoolTxRemovalReason,
+        DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH,
+        MempoolTxRemovalReason,
         test_utils::{
             create_test_account_id_with, create_test_attachment_with_slots,
             create_test_block_commitment, create_test_context, create_test_generic_tx_with_size,
@@ -830,6 +825,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -857,6 +853,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -883,6 +880,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -920,6 +918,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -975,6 +974,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1013,6 +1013,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1059,6 +1060,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1085,6 +1087,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1123,6 +1126,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1159,6 +1163,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1182,6 +1187,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1240,6 +1246,7 @@ mod tests {
             max_tx_size: 10_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1288,6 +1295,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1336,6 +1344,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1386,6 +1395,7 @@ mod tests {
             max_tx_size: 50,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context_tiny = Arc::new(create_test_context(config_tiny));
         setup_test_state_for_tip(&context_tiny.storage, tip2).await;
@@ -1415,6 +1425,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1492,6 +1503,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1559,6 +1571,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1613,6 +1626,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1690,6 +1704,7 @@ mod tests {
             max_tx_size,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1745,6 +1760,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1779,6 +1795,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1809,6 +1826,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1841,6 +1859,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1890,6 +1909,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1939,6 +1959,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -1980,6 +2001,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -2014,6 +2036,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -2048,6 +2071,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
@@ -2082,6 +2106,7 @@ mod tests {
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
         let context = Arc::new(create_test_context(config));
         setup_test_state_for_tip(&context.storage, tip).await;
