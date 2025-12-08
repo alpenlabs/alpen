@@ -1,7 +1,7 @@
-use alpen_ee_common::{OLChainStatus, OLClient, OLClientError};
+use alpen_ee_common::{OLChainStatus, OLClient, OLClientError, OLEpochSummary};
 use async_trait::async_trait;
-use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-use strata_snark_acct_types::UpdateInputData;
+use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
+use strata_primitives::EpochCommitment;
 
 #[derive(Debug, Default)]
 pub(crate) struct DummyOLClient {}
@@ -11,33 +11,18 @@ impl OLClient for DummyOLClient {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
         Ok(OLChainStatus {
             latest: OLBlockCommitment::null(),
-            confirmed: OLBlockCommitment::null(),
-            finalized: OLBlockCommitment::null(),
+            confirmed: EpochCommitment::null(),
+            finalized: EpochCommitment::null(),
         })
     }
 
-    async fn block_commitments_in_range(
-        &self,
-        start_slot: u64,
-        end_slot: u64,
-    ) -> Result<Vec<OLBlockCommitment>, OLClientError> {
-        if end_slot < start_slot {
-            return Err(OLClientError::InvalidSlotRange {
-                start_slot,
-                end_slot,
-            });
-        }
-
-        Ok((start_slot..=end_slot)
-            .map(slot_to_block_commitment)
-            .collect())
-    }
-
-    async fn get_update_operations_for_blocks(
-        &self,
-        blocks: Vec<OLBlockId>,
-    ) -> Result<Vec<Vec<UpdateInputData>>, OLClientError> {
-        Ok((blocks.iter().map(|_| vec![])).collect())
+    async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError> {
+        let commitment = EpochCommitment::new(
+            epoch,
+            epoch as u64,
+            slot_to_block_commitment(epoch as u64).blkid,
+        );
+        Ok(OLEpochSummary::new(commitment, commitment, vec![]))
     }
 }
 

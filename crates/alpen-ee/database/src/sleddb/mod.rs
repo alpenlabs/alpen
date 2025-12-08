@@ -5,6 +5,6 @@ mod schema;
 pub(crate) use db::EeNodeDBSled;
 pub(crate) use init::init_db;
 pub(crate) use schema::{
-    AccountStateAtOLBlockSchema, ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
-    ExecBlocksAtHeightSchema, OLBlockAtSlotSchema,
+    AccountStateAtOLEpochSchema, ExecBlockFinalizedSchema, ExecBlockPayloadSchema, ExecBlockSchema,
+    ExecBlocksAtHeightSchema, OLBlockAtEpochSchema,
 };

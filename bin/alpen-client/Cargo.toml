@@ -26,7 +26,6 @@ alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
-strata-snark-acct-types.workspace = true
 
 alloy-eips.workspace = true
 alloy-primitives.workspace = true

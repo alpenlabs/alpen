@@ -27,6 +27,4 @@ reth-node-builder.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
 mockall.workspace = true
-strata-primitives.workspace = true

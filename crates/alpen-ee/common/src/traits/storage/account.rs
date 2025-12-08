@@ -1,34 +1,34 @@
 use async_trait::async_trait;
 use strata_ee_acct_types::EeAccountState;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_identifiers::{EpochCommitment, OLBlockId};
 
 use super::StorageError;
-use crate::EeAccountStateAtBlock;
+use crate::EeAccountStateAtEpoch;
 
 /// Identifies an OL block either by block ID or slot number.
 #[derive(Debug)]
-pub enum OLBlockOrSlot {
+pub enum OLBlockOrEpoch {
     /// Identifies by block ID.
-    Block(OLBlockId),
+    TerminalBlock(OLBlockId),
     /// Identifies by slot number.
-    Slot(u64),
+    Epoch(u32),
 }
 
-impl From<OLBlockId> for OLBlockOrSlot {
+impl From<OLBlockId> for OLBlockOrEpoch {
     fn from(value: OLBlockId) -> Self {
-        Self::Block(value)
+        Self::TerminalBlock(value)
     }
 }
 
-impl From<&OLBlockId> for OLBlockOrSlot {
+impl From<&OLBlockId> for OLBlockOrEpoch {
     fn from(value: &OLBlockId) -> Self {
-        Self::Block(*value)
+        Self::TerminalBlock(*value)
     }
 }
 
-impl From<u64> for OLBlockOrSlot {
-    fn from(value: u64) -> Self {
-        OLBlockOrSlot::Slot(value)
+impl From<u32> for OLBlockOrEpoch {
+    fn from(value: u32) -> Self {
+        OLBlockOrEpoch::Epoch(value)
     }
 }
 
@@ -39,21 +39,21 @@ pub trait Storage {
     /// Get EE account internal state corresponding to a given OL slot.
     async fn ee_account_state(
         &self,
-        block_or_slot: OLBlockOrSlot,
-    ) -> Result<Option<EeAccountStateAtBlock>, StorageError>;
+        block_or_epoch: OLBlockOrEpoch,
+    ) -> Result<Option<EeAccountStateAtEpoch>, StorageError>;
 
-    /// Get EE account internal state for the highest slot available.
-    async fn best_ee_account_state(&self) -> Result<Option<EeAccountStateAtBlock>, StorageError>;
+    /// Get EE account internal state for the highest epoch available.
+    async fn best_ee_account_state(&self) -> Result<Option<EeAccountStateAtEpoch>, StorageError>;
 
     /// Store EE account internal state for next slot.
     async fn store_ee_account_state(
         &self,
-        ol_block: &OLBlockCommitment,
+        ol_epoch: &EpochCommitment,
         ee_account_state: &EeAccountState,
     ) -> Result<(), StorageError>;
 
-    /// Remove stored EE internal account state for slots > `to_slot`.
-    async fn rollback_ee_account_state(&self, to_slot: u64) -> Result<(), StorageError>;
+    /// Remove stored EE internal account state for epochs > `to_epoch`.
+    async fn rollback_ee_account_state(&self, to_epoch: u32) -> Result<(), StorageError>;
 }
 
 /// Macro to instantiate all Storage tests for a given storage setup.
@@ -109,7 +109,7 @@ macro_rules! storage_tests {
 pub mod tests {
     use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
-    use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
+    use strata_identifiers::{Buf32, EpochCommitment, OLBlockId};
 
     use super::*;
 
@@ -124,9 +124,10 @@ pub mod tests {
     /// Test storing and retrieving EE account state.
     pub async fn test_store_and_get_ee_account_state(storage: &impl Storage) {
         // Create test data
+        let epoch = 1u32;
         let slot = 100u64;
         let block_id = create_test_block_id(1);
-        let ol_block = OLBlockCommitment::new(slot, block_id);
+        let ol_block = EpochCommitment::new(epoch, slot, block_id);
         let ee_account_state = create_test_ee_account_state();
 
         // Store the account state
@@ -137,125 +138,132 @@ pub mod tests {
 
         // Retrieve by block ID
         let retrieved = storage
-            .ee_account_state(OLBlockOrSlot::Block(block_id))
+            .ee_account_state(OLBlockOrEpoch::TerminalBlock(block_id))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(retrieved.ol_block(), &ol_block);
+        assert_eq!(retrieved.epoch_commitment(), &ol_block);
         assert_eq!(retrieved.ee_state(), &ee_account_state);
 
         // Retrieve by slot
-        let retrieved_by_slot = storage
-            .ee_account_state(OLBlockOrSlot::Slot(slot))
+        let retrieved_by_epoch = storage
+            .ee_account_state(OLBlockOrEpoch::Epoch(epoch))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(retrieved_by_slot.ol_block().blkid(), &block_id);
+        assert_eq!(
+            retrieved_by_epoch.epoch_commitment().last_blkid(),
+            &block_id
+        );
 
         // Retrieve best state
         let best = storage.best_ee_account_state().await.unwrap().unwrap();
-        assert_eq!(best.ol_block(), &ol_block);
+        assert_eq!(best.epoch_commitment(), &ol_block);
         assert_eq!(best.ee_state(), &ee_account_state);
     }
 
-    /// Test sequential slot enforcement.
+    /// Test sequential epoch enforcement.
     pub async fn test_sequential_slots(storage: &impl Storage) {
-        // First write should succeed at any slot
+        // First write should succeed at any epoch
+        let epoch1 = 1u32;
         let slot1 = 100u64;
         let block_id1 = create_test_block_id(1);
-        let ol_block1 = OLBlockCommitment::new(slot1, block_id1);
+        let ol_epoch1 = EpochCommitment::new(epoch1, slot1, block_id1);
         let ee_account_state1 = create_test_ee_account_state();
 
         storage
-            .store_ee_account_state(&ol_block1, &ee_account_state1)
+            .store_ee_account_state(&ol_epoch1, &ee_account_state1)
             .await
             .unwrap();
 
-        // Next write must be at slot1 + 1
-        let slot2 = slot1 + 1;
+        // Next write must be at epoch1 + 1
+        let epoch2 = epoch1 + 1;
+        let slot2 = slot1 + 10;
         let block_id2 = create_test_block_id(2);
-        let ol_block2 = OLBlockCommitment::new(slot2, block_id2);
+        let ol_epoch2 = EpochCommitment::new(epoch2, slot2, block_id2);
         let ee_account_state2 = create_test_ee_account_state();
 
         storage
-            .store_ee_account_state(&ol_block2, &ee_account_state2)
+            .store_ee_account_state(&ol_epoch2, &ee_account_state2)
             .await
             .unwrap();
 
-        // Writing to a non-sequential slot should fail
-        let slot_skip = slot2 + 2; // Skip slot2 + 1
+        // Writing to a non-sequential epoch should fail
+        let epoch_skip = epoch2 + 2; // Skip epoch2 + 1
+        let slot_skip = slot2 + 10;
         let block_id_skip = create_test_block_id(3);
-        let ol_block_skip = OLBlockCommitment::new(slot_skip, block_id_skip);
+        let ol_epoch_skip = EpochCommitment::new(epoch_skip, slot_skip, block_id_skip);
         let ee_account_state_skip = create_test_ee_account_state();
 
         let result = storage
-            .store_ee_account_state(&ol_block_skip, &ee_account_state_skip)
+            .store_ee_account_state(&ol_epoch_skip, &ee_account_state_skip)
             .await;
         assert!(result.is_err());
     }
 
-    /// Test null block rejection.
+    /// Test null epoch rejection.
     pub async fn test_null_block_rejected(storage: &impl Storage) {
-        let null_block = OLBlockCommitment::null();
+        let null_epoch = EpochCommitment::null();
         let ee_account_state = create_test_ee_account_state();
 
         let result = storage
-            .store_ee_account_state(&null_block, &ee_account_state)
+            .store_ee_account_state(&null_epoch, &ee_account_state)
             .await;
         assert!(result.is_err());
-        // The underlying database layer should reject null blocks
+        // The underlying database layer should reject null epochs
     }
 
     /// Test rollback functionality.
     pub async fn test_rollback_ee_account_state(storage: &impl Storage) {
         // Create a sequence of states
-        let slots = [100u64, 101, 102, 103, 104];
+        let epochs = [1u32, 2, 3, 4, 5];
         let mut block_ids = Vec::new();
 
-        for slot in slots {
-            let block_id = create_test_block_id(slot as u8);
+        for (i, epoch) in epochs.iter().enumerate() {
+            let slot = 100u64 + (i as u64 * 10);
+            let block_id = create_test_block_id(*epoch as u8);
             block_ids.push(block_id);
-            let ol_block = OLBlockCommitment::new(slot, block_id);
+            let ol_epoch = EpochCommitment::new(*epoch, slot, block_id);
             let ee_account_state = create_test_ee_account_state();
 
             storage
-                .store_ee_account_state(&ol_block, &ee_account_state)
+                .store_ee_account_state(&ol_epoch, &ee_account_state)
                 .await
                 .unwrap();
         }
 
-        // Rollback to slot 101
-        storage.rollback_ee_account_state(101).await.unwrap();
+        // Rollback to epoch 2
+        storage.rollback_ee_account_state(2).await.unwrap();
 
-        // Slots 100 and 101 should still exist
+        // Epochs 1 and 2 should still exist
         assert!(storage
-            .ee_account_state(OLBlockOrSlot::Slot(100))
+            .ee_account_state(OLBlockOrEpoch::Epoch(1))
             .await
             .unwrap()
             .is_some());
         assert!(storage
-            .ee_account_state(OLBlockOrSlot::Slot(101))
+            .ee_account_state(OLBlockOrEpoch::Epoch(2))
             .await
             .unwrap()
             .is_some());
 
-        // Slots 102, 103, 104 should be gone (StateNotFound error expected)
+        // Epochs 3, 4, 5 should be gone (StateNotFound error expected)
         assert!(matches!(
-            storage.ee_account_state(OLBlockOrSlot::Slot(102)).await,
-            Err(StorageError::StateNotFound(102))
+            storage.ee_account_state(OLBlockOrEpoch::Epoch(3)).await,
+            Err(StorageError::StateNotFound(3))
         ));
         assert!(matches!(
-            storage.ee_account_state(OLBlockOrSlot::Slot(103)).await,
-            Err(StorageError::StateNotFound(103))
+            storage.ee_account_state(OLBlockOrEpoch::Epoch(4)).await,
+            Err(StorageError::StateNotFound(4))
         ));
         assert!(matches!(
-            storage.ee_account_state(OLBlockOrSlot::Slot(104)).await,
-            Err(StorageError::StateNotFound(104))
+            storage.ee_account_state(OLBlockOrEpoch::Epoch(5)).await,
+            Err(StorageError::StateNotFound(5))
         ));
 
-        // Best state should be at slot 101
+        // Best state should be at epoch 2
         let best = storage.best_ee_account_state().await.unwrap().unwrap();
-        assert_eq!(best.ol_block().slot(), 101);
+        assert_eq!(best.epoch_commitment().epoch(), 2);
     }
 
     /// Test empty storage behavior.
@@ -267,14 +275,14 @@ pub mod tests {
         // Getting non-existent block ID should return None
         let block_id = create_test_block_id(1);
         let state = storage
-            .ee_account_state(OLBlockOrSlot::Block(block_id))
+            .ee_account_state(OLBlockOrEpoch::TerminalBlock(block_id))
             .await
             .unwrap();
         assert!(state.is_none());
 
         // Getting non-existent slot should return StateNotFound error
         assert!(matches!(
-            storage.ee_account_state(OLBlockOrSlot::Slot(999)).await,
+            storage.ee_account_state(OLBlockOrEpoch::Epoch(999)).await,
             Err(StorageError::StateNotFound(999))
         ));
     }
@@ -288,38 +296,41 @@ pub mod tests {
 
     /// Test multiple sequential writes and retrieval.
     pub async fn test_sequential_writes_and_retrieval(storage: &impl Storage) {
-        let num_blocks = 10;
-        let start_slot = 200u64;
+        let num_epochs = 10;
+        let start_epoch = 1u32;
 
-        // Write multiple sequential blocks
-        for i in 0..num_blocks {
-            let slot = start_slot + i;
+        // Write multiple sequential epochs
+        for i in 0..num_epochs {
+            let epoch = start_epoch + i;
+            let slot = 200u64 + (i as u64 * 10);
             let block_id = create_test_block_id(i as u8);
-            let ol_block = OLBlockCommitment::new(slot, block_id);
+            let ol_epoch = EpochCommitment::new(epoch, slot, block_id);
             let ee_account_state = create_test_ee_account_state();
 
             storage
-                .store_ee_account_state(&ol_block, &ee_account_state)
+                .store_ee_account_state(&ol_epoch, &ee_account_state)
                 .await
                 .unwrap();
         }
 
-        // Verify all blocks can be retrieved
-        for i in 0..num_blocks {
-            let slot = start_slot + i;
+        // Verify all epochs can be retrieved
+        for i in 0..num_epochs {
+            let epoch = start_epoch + i;
+            let expected_slot = 200u64 + (i as u64 * 10);
             let expected_block_id = create_test_block_id(i as u8);
 
             let state = storage
-                .ee_account_state(OLBlockOrSlot::Slot(slot))
+                .ee_account_state(OLBlockOrEpoch::Epoch(epoch))
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(state.ol_block().slot(), slot);
-            assert_eq!(state.ol_block().blkid(), &expected_block_id);
+            assert_eq!(state.epoch_commitment().epoch(), epoch);
+            assert_eq!(state.epoch_commitment().last_slot(), expected_slot);
+            assert_eq!(state.epoch_commitment().last_blkid(), &expected_block_id);
         }
 
         // Best state should be the last one
         let best = storage.best_ee_account_state().await.unwrap().unwrap();
-        assert_eq!(best.ol_block().slot(), start_slot + num_blocks - 1);
+        assert_eq!(best.epoch_commitment().epoch(), start_epoch + num_epochs - 1);
     }
 }

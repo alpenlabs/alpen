@@ -1077,7 +1077,6 @@ dependencies = [
  "strata-acct-types",
  "strata-identifiers",
  "strata-primitives",
- "strata-snark-acct-types",
  "tokio",
  "tracing",
 ]
@@ -1116,10 +1115,8 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
- "strata-primitives",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
- "tokio",
 ]
 
 [[package]]

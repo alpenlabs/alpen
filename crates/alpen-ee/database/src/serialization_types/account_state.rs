@@ -4,21 +4,23 @@ use strata_ee_acct_types::{EeAccountState, PendingFinclEntry, PendingInputEntry}
 use strata_ee_chain_types::SubjectDepositData;
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
-pub(crate) struct DBAccountStateAtSlot {
+pub(crate) struct DBAccountStateAtEpoch {
+    epoch: u32,
     slot: u64,
     account_state: DBEeAccountState,
 }
 
-impl DBAccountStateAtSlot {
-    pub(crate) fn from_parts(slot: u64, account_state: DBEeAccountState) -> Self {
+impl DBAccountStateAtEpoch {
+    pub(crate) fn from_parts(epoch: u32, slot: u64, account_state: DBEeAccountState) -> Self {
         Self {
+            epoch,
             slot,
             account_state,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (u64, DBEeAccountState) {
-        (self.slot, self.account_state)
+    pub(crate) fn into_parts(self) -> (u32, u64, DBEeAccountState) {
+        (self.epoch, self.slot, self.account_state)
     }
 }
 

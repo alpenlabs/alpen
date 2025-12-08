@@ -73,6 +73,7 @@ fn main() {
                 genesis_info.blockhash(),
                 genesis_info.stateroot(),
                 0,
+                0,
                 OLBlockId::null(), // TODO
             );
 

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{
-    EeAccountStateAtBlock, ExecBlockRecord, ExecBlockStorage, OLBlockOrSlot, Storage, StorageError,
+    EeAccountStateAtEpoch, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_storage_common::cache::CacheTable;
 use threadpool::ThreadPool;
 
@@ -22,8 +22,8 @@ use crate::{
 )]
 pub struct EeNodeStorage {
     ops: ops::EeNodeOps,
-    blockid_cache: CacheTable<u64, Option<OLBlockId>, DbError>,
-    account_state_cache: CacheTable<OLBlockId, Option<EeAccountStateAtBlock>, DbError>,
+    blockid_cache: CacheTable<u32, Option<OLBlockId>, DbError>,
+    account_state_cache: CacheTable<OLBlockId, Option<EeAccountStateAtEpoch>, DbError>,
 }
 
 impl EeNodeStorage {
@@ -42,18 +42,18 @@ impl EeNodeStorage {
 
 #[async_trait]
 impl Storage for EeNodeStorage {
-    /// Get EE account internal state corresponding to a given OL slot.
+    /// Get EE account internal state corresponding to a given OL epoch.
     async fn ee_account_state(
         &self,
-        block_or_slot: OLBlockOrSlot,
-    ) -> Result<Option<EeAccountStateAtBlock>, StorageError> {
-        let block_id = match block_or_slot {
-            OLBlockOrSlot::Block(block_id) => block_id,
-            OLBlockOrSlot::Slot(slot) => self
+        block_or_epoch: OLBlockOrEpoch,
+    ) -> Result<Option<EeAccountStateAtEpoch>, StorageError> {
+        let block_id = match block_or_epoch {
+            OLBlockOrEpoch::TerminalBlock(block_id) => block_id,
+            OLBlockOrEpoch::Epoch(epoch) => self
                 .blockid_cache
-                .get_or_fetch(&slot, || self.ops.get_ol_blockid_chan(slot))
+                .get_or_fetch(&epoch, || self.ops.get_ol_blockid_chan(epoch))
                 .await?
-                .ok_or(StorageError::StateNotFound(slot))?,
+                .ok_or(StorageError::StateNotFound(epoch.into()))?,
         };
 
         self.account_state_cache
@@ -62,40 +62,40 @@ impl Storage for EeNodeStorage {
             .map_err(Into::into)
     }
 
-    /// Get EE account internal state for the highest slot available.
-    async fn best_ee_account_state(&self) -> Result<Option<EeAccountStateAtBlock>, StorageError> {
+    /// Get EE account internal state for the highest epoch available.
+    async fn best_ee_account_state(&self) -> Result<Option<EeAccountStateAtEpoch>, StorageError> {
         self.ops
             .best_ee_account_state_async()
             .await
             .map_err(Into::into)
     }
 
-    /// Store EE account internal state for next slot.
+    /// Store EE account internal state for next epoch.
     async fn store_ee_account_state(
         &self,
-        ol_block: &OLBlockCommitment,
+        ol_epoch: &EpochCommitment,
         ee_account_state: &EeAccountState,
     ) -> Result<(), StorageError> {
         self.ops
-            .store_ee_account_state_async(*ol_block, ee_account_state.clone())
+            .store_ee_account_state_async(*ol_epoch, ee_account_state.clone())
             .await?;
         // insertion successful
         // existing cache entries at this location should be purged
         // in case old `None` values are present in them
-        self.blockid_cache.purge_async(&ol_block.slot()).await;
-        self.account_state_cache.purge_async(ol_block.blkid()).await;
+        self.blockid_cache.purge_async(&ol_epoch.epoch()).await;
+        self.account_state_cache.purge_async(ol_epoch.last_blkid()).await;
 
         Ok(())
     }
 
-    /// Remove stored EE internal account state for slots > `to_slot`.
-    async fn rollback_ee_account_state(&self, to_slot: u64) -> Result<(), StorageError> {
-        self.ops.rollback_ee_account_state_async(to_slot).await?;
+    /// Remove stored EE internal account state for epochs > `to_epoch`.
+    async fn rollback_ee_account_state(&self, to_epoch: u32) -> Result<(), StorageError> {
+        self.ops.rollback_ee_account_state_async(to_epoch).await?;
 
         // rollback successful
-        // now purge existing entries for slots > to_slot
+        // now purge existing entries for epochs > to_epoch
         self.blockid_cache
-            .purge_if_async(|slot| *slot > to_slot)
+            .purge_if_async(|epoch| *epoch > to_epoch)
             .await;
         // purge everything instead of checking individual block_ids
         self.account_state_cache.async_clear().await;
