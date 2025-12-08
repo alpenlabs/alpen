@@ -191,8 +191,52 @@ mod tests {
     }
 
     #[test]
+    fn test_min_slot_boundary() {
+        // min_slot == current_slot should be valid
+        let tx = create_test_generic_tx_with_slots(Some(100), None);
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let account_state = HashMap::new();
+
+        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_max_slot_boundary() {
+        // max_slot == current_slot should be valid (not expired yet)
+        let tx = create_test_generic_tx_with_slots(None, Some(100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let account_state = HashMap::new();
+
+        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_max_slot_one_after_current() {
+        // max_slot == current_slot + 1 should be valid
+        let tx = create_test_generic_tx_with_slots(None, Some(101));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let account_state = HashMap::new();
+
+        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_slot_bounds_valid() {
         let tx = create_test_generic_tx_with_slots(Some(50), Some(150)); // min < current < max
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let account_state = HashMap::new();
+
+        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validation_with_valid_transaction() {
+        // Test that validation works with a normal valid transaction
+        let tx = create_test_generic_tx_with_slots(Some(50), Some(150));
         let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
         let account_state = HashMap::new();
 

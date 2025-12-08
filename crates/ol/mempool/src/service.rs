@@ -1,9 +1,12 @@
 //! Mempool service implementation.
 
 use serde::Serialize;
+use strata_identifiers::OLBlockCommitment;
 use strata_service::{AsyncService, Response, Service};
 
-use crate::{MempoolCommand, state::MempoolServiceState, types::OLMempoolStats};
+use crate::{
+    MempoolCommand, builder::MempoolInputMessage, state::MempoolServiceState, types::OLMempoolStats,
+};
 
 /// Service status for mempool.
 #[derive(Debug, Clone, Serialize)]
@@ -13,12 +16,11 @@ pub struct MempoolServiceStatus {
 
 /// Mempool service that processes commands.
 #[derive(Debug)]
-#[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
 pub(crate) struct MempoolService;
 
 impl Service for MempoolService {
     type State = MempoolServiceState;
-    type Msg = MempoolCommand;
+    type Msg = MempoolInputMessage;
     type Status = MempoolServiceStatus;
 
     fn get_status(state: &Self::State) -> Self::Status {
@@ -35,19 +37,27 @@ impl AsyncService for MempoolService {
 
     async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
         match input {
-            MempoolCommand::SubmitTransaction { tx, completion } => {
-                let result = state.handle_submit_transaction(tx.clone()).await;
-                completion.send(result).await;
-            }
+            MempoolInputMessage::Command(cmd) => match cmd {
+                MempoolCommand::SubmitTransaction { tx, completion } => {
+                    let result = state.handle_submit_transaction(tx.clone()).await;
+                    completion.send(result).await;
+                }
 
-            MempoolCommand::GetTransactions { completion, limit } => {
-                let result = state.handle_get_transactions(*limit).await;
-                completion.send(result).await;
-            }
+                MempoolCommand::GetTransactions { completion, limit } => {
+                    let result = state.handle_get_transactions(*limit).await;
+                    completion.send(result).await;
+                }
 
-            MempoolCommand::RemoveTransactions { txs, completion } => {
-                let result = state.handle_remove_transactions(txs.clone());
-                completion.send(result).await;
+                MempoolCommand::RemoveTransactions { txs, completion } => {
+                    let result = state.handle_remove_transactions(txs.clone());
+                    completion.send(result).await;
+                }
+            },
+
+            MempoolInputMessage::ChainUpdate(update) => {
+                let new_tip = update.new_status().tip;
+                let ol_tip = OLBlockCommitment::new(new_tip.slot(), *new_tip.blkid());
+                state.handle_chain_update(ol_tip).await?;
             }
         }
 
@@ -93,7 +103,7 @@ mod tests {
             completion,
         };
 
-        MempoolService::process_input(&mut state, &command)
+        MempoolService::process_input(&mut state, &MempoolInputMessage::Command(command))
             .await
             .expect("Should process command");
 
@@ -135,7 +145,7 @@ mod tests {
                     limit,
                 };
 
-                MempoolService::process_input(&mut state, &command)
+                MempoolService::process_input(&mut state, &MempoolInputMessage::Command(command))
                     .await
                     .expect("Should process command");
 
@@ -175,7 +185,7 @@ mod tests {
             completion,
         };
 
-        MempoolService::process_input(&mut state, &command)
+        MempoolService::process_input(&mut state, &MempoolInputMessage::Command(command))
             .await
             .expect("Should process command");
 

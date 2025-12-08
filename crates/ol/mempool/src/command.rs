@@ -2,6 +2,7 @@
 
 use strata_identifiers::OLTxId;
 use strata_service::CommandCompletionSender;
+use tokio::sync::oneshot;
 
 use crate::{MempoolTxRemovalReason, OLMempoolResult, types::OLMempoolTransaction};
 
@@ -49,4 +50,12 @@ pub enum MempoolCommand {
         /// Completion sender for the result.
         completion: CommandCompletionSender<RemoveTransactionsResult>,
     },
+}
+
+/// Helper function to create a completion channel pair.
+///
+/// Returns (CommandCompletionSender, Receiver) for command-response pattern.
+pub(crate) fn create_completion<T>() -> (CommandCompletionSender<T>, oneshot::Receiver<T>) {
+    let (tx, rx) = oneshot::channel();
+    (CommandCompletionSender::new(tx), rx)
 }

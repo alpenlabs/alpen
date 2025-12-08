@@ -264,7 +264,6 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
         .unwrap()
         .current();
 
-    // Create operation with specific seq_no
     let operation = UpdateOperationData::new(
         seq_no,
         full_payload
@@ -371,4 +370,20 @@ pub(crate) async fn get_ol_state_for_tip(
         .await
         .expect("Should get state from storage")
         .expect("State should exist")
+}
+
+/// Create a test generic account message transaction for a specific account.
+/// Uses an attachment without slot restrictions (min_slot=None, max_slot=None).
+/// Uses a unique random payload to ensure unique transaction IDs.
+pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLMempoolTransaction {
+    let attachment = create_test_attachment_with_slots(None, None);
+    let target = create_test_account_id_with(account_id);
+    // Use random payload with account_id prefix to ensure unique transaction IDs
+    let mut runner = TestRunner::default();
+    let payload_strategy = prop::collection::vec(any::<u8>(), 10..100);
+    let mut payload = payload_strategy.new_tree(&mut runner).unwrap().current();
+    // Prepend account_id to make it deterministic per account
+    payload.insert(0, account_id);
+    OLMempoolTransaction::new_generic_account_message(target, payload, attachment)
+        .expect("Should create transaction")
 }
