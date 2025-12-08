@@ -14714,7 +14714,9 @@ dependencies = [
 name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "proptest",
+ "serde",
  "ssz",
  "ssz_derive",
  "ssz_types",

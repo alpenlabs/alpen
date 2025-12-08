@@ -6,6 +6,7 @@
 mod command;
 mod error;
 mod ordering;
+mod service;
 mod state;
 #[cfg(test)]
 mod test_utils;

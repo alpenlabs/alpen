@@ -20,10 +20,12 @@ strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-storage.workspace = true
 
+anyhow.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 strata-db-store-sled.workspace = true
 threadpool.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync"] }

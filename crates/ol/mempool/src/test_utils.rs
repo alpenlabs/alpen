@@ -177,8 +177,21 @@ pub(crate) fn create_test_snark_tx() -> OLMempoolTransaction {
 }
 
 /// Create a test generic account message transaction.
+/// Uses an attachment without slot restrictions (min_slot=None, max_slot=None).
 pub(crate) fn create_test_generic_tx() -> OLMempoolTransaction {
-    create_test_mempool_tx(create_test_generic_payload())
+    let attachment = create_test_attachment_with_slots(None, None);
+    let payload = create_test_generic_payload();
+    match payload {
+        OLMempoolTxPayload::GenericAccountMessage(gam_payload) => {
+            OLMempoolTransaction::new_generic_account_message(
+                *gam_payload.target(),
+                gam_payload.payload().to_vec(),
+                attachment,
+            )
+            .expect("Should create transaction")
+        }
+        _ => panic!("Expected GenericAccountMessage"),
+    }
 }
 
 /// Create a test generic account message transaction with attachment.
@@ -213,6 +226,7 @@ pub(crate) fn create_test_generic_tx_with_size(
 
 /// Create a test transaction with a specific target account ID.
 /// Uses the ID byte to create different account IDs, but the update content is randomly generated.
+/// Uses an attachment without slot restrictions (min_slot=None, max_slot=None).
 pub(crate) fn create_test_tx_with_id(id: u8) -> OLMempoolTransaction {
     let attachment = create_test_attachment_with_slots(None, None);
     OLMempoolTransaction::new_snark_account_update(
@@ -227,10 +241,20 @@ pub(crate) fn create_test_snark_tx_with_seq_no(
     account_id: u8,
     seq_no: u64,
 ) -> OLMempoolTransaction {
+    create_test_snark_tx_with_seq_no_and_slots(account_id, seq_no, None, None)
+}
+
+/// Create a test snark transaction with a specific seq_no and slot bounds.
+pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
+    account_id: u8,
+    seq_no: u64,
+    min_slot: Option<u64>,
+    max_slot: Option<u64>,
+) -> OLMempoolTransaction {
     let mut runner = TestRunner::default();
 
-    // Use valid attachment (no slot bounds) for tests
-    let attachment = create_test_attachment_with_slots(None, None);
+    // Use attachment with specified slot bounds
+    let attachment = create_test_attachment_with_slots(min_slot, max_slot);
 
     let full_payload = ol_test_utils::snark_account_update_tx_payload_strategy()
         .new_tree(&mut runner)
@@ -281,32 +305,12 @@ pub(crate) fn create_test_snark_tx_with_seq_no(
     )
 }
 
-/// Create a test mempool context with specified limits.
-pub(crate) fn create_test_context(max_tx_count: usize, max_tx_size: usize) -> MempoolContext {
-    let pool = ThreadPool::new(1);
-
-    // Create a minimal test storage using a test sled database
-    // In real usage, this would be a full NodeStorage with all managers
-    // For tests, we create a minimal storage since validation isn't called yet
-    let test_db = get_test_sled_backend();
-    let test_storage =
-        Arc::new(create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"));
-
-    let config = OLMempoolConfig {
-        max_tx_count,
-        max_tx_size,
-        max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
-    };
-
-    MempoolContext {
-        config: config.clone(),
-        storage: test_storage,
-        ordering_strategy: Arc::new(FifoOrderingStrategy),
-        validator: Arc::new(BasicTransactionValidator::new(config)),
-    }
-}
-
-/// Set up test OLState with Snark accounts for testing.
+/// Set up a genesis state in the database for the given tip.
+/// This is needed for tests that require state accessor.
+/// Creates Snark accounts for common test account IDs (0-255) to allow
+/// SnarkAccountUpdate transactions to pass validation.
+/// Also creates empty accounts for any account IDs that GenericAccountMessage
+/// transactions might use (they just need accounts to exist).
 pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlockCommitment) {
     let mut state = OLState::new_genesis();
 
@@ -336,7 +340,47 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
         .expect("Failed to set up test state");
 }
 
-/// Create a test mempool context with state pre-initialized at the given tip.
+/// Create a test mempool context with specified limits.
+pub(crate) fn create_test_context(max_tx_count: usize, max_tx_size: usize) -> MempoolContext {
+    let pool = ThreadPool::new(1);
+
+    // Create a minimal test storage using a test sled database
+    // In real usage, this would be a full NodeStorage with all managers
+    // For tests, we create a minimal storage since validation isn't called yet
+    let test_db = get_test_sled_backend();
+    let test_storage =
+        Arc::new(create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"));
+
+    let config = OLMempoolConfig {
+        max_tx_count,
+        max_tx_size,
+        max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+    };
+
+    MempoolContext {
+        config: config.clone(),
+        storage: test_storage,
+        ordering_strategy: Arc::new(FifoOrderingStrategy),
+        validator: Arc::new(BasicTransactionValidator::new(config)),
+    }
+}
+
+/// Create a test mempool context with default limits and set up state for the tip, wrapped in Arc.
+/// Used by service tests which expect Arc<MempoolContext> and need state accessor.
+/// This function is async-safe and can be used in tokio tests.
+pub(crate) async fn create_test_context_arc_with_state(
+    tip: OLBlockCommitment,
+) -> Arc<MempoolContext> {
+    let ctx = create_test_context(crate::DEFAULT_MAX_TX_COUNT, crate::DEFAULT_MAX_TX_SIZE);
+
+    // Set up test state (now async)
+    setup_test_state_for_tip(&ctx.storage, tip).await;
+
+    Arc::new(ctx)
+}
+
+/// Create a test mempool context and set up genesis state for the given tip.
+/// This is a convenience function for tests that need state accessor.
 pub(crate) async fn create_test_context_with_state(
     max_tx_count: usize,
     max_tx_size: usize,

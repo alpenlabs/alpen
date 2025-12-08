@@ -5,7 +5,9 @@ use std::{
     sync::Arc,
 };
 
-use strata_acct_types::AccountId;
+use ssz::Decode;
+use ssz_types::Optional;
+use strata_acct_types::{AccountId, AccountTypeId};
 use strata_db_types::types::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
@@ -19,13 +21,12 @@ use crate::{
     ordering::{FifoOrderingStrategy, OrderingStrategy},
     types::{
         MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-        OLMempoolTransaction,
+        OLMempoolTransaction, OLMempoolTxPayload,
     },
     validation::{BasicTransactionValidator, TransactionValidator},
 };
 
 /// Immutable context for mempool service (shared via Arc).
-/// Used in tests and will be used in service implementation.
 pub(crate) struct MempoolContext {
     /// Mempool configuration.
     pub(crate) config: OLMempoolConfig,
@@ -43,7 +44,18 @@ pub(crate) struct MempoolContext {
     pub(crate) validator: Arc<dyn TransactionValidator>,
 }
 
+impl std::fmt::Debug for MempoolContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MempoolContext")
+            .field("storage", &"<NodeStorage>")
+            .field("config", &self.config)
+            .field("ordering_strategy", &"<OrderingStrategy>")
+            .finish()
+    }
+}
+
 /// Mutable state for mempool service (owned by service task).
+#[derive(Debug)]
 pub(crate) struct MempoolState {
     /// In-memory entries indexed by transaction ID.
     entries: HashMap<OLTxId, MempoolEntry>,
@@ -56,7 +68,7 @@ pub(crate) struct MempoolState {
     /// Next insertion ID for deterministic ordering.
     next_insertion_id: u64,
 
-    /// Current chain tip (block ID + slot).
+    /// Current chain tip (slot + block ID) for timestamping, expiry, and reorg handling.
     current_tip: OLBlockCommitment,
 
     /// Track expected sequence number per account (for gap detection).
@@ -74,9 +86,10 @@ pub(crate) struct MempoolState {
 impl MempoolState {
     /// Create new mempool state.
     ///
-    /// State accessor will be fetched lazily when needed via get_or_fetch_state_accessor.
-    /// This avoids blocking calls in async contexts.
+    /// Initializes the state accessor for the given tip.
     pub(crate) fn new(current_tip: OLBlockCommitment) -> Self {
+        // State accessor will be fetched lazily when needed via get_or_fetch_state_accessor
+        // This avoids blocking calls in async contexts
         let state_accessor = None;
 
         Self {
@@ -147,7 +160,7 @@ impl MempoolState {
         }
 
         // Get or create StateAccessor for current tip
-        let state_accessor = self.ensure_state_accessor(ctx).await?;
+        let state_accessor = self.get_or_fetch_state_accessor(ctx).await?;
 
         // Validate transaction using state accessor
         ctx.validator
@@ -232,30 +245,124 @@ impl MempoolState {
         Ok(txid)
     }
 
-    /// Get up to `limit` transactions in priority order.
+    /// Get all transactions in priority order, filtering out transactions with gaps.
     ///
-    /// Returns (txid, transaction) pairs.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "used in tests and will be used in service implementation"
-        )
-    )]
-    pub(crate) fn get_transactions(
-        &self,
-        limit: usize,
+    /// For SnarkAccountUpdate transactions, only returns transactions that are ready
+    /// (no gaps in sequence numbers before them). GenericAccountMessage transactions
+    /// are always included (no sequence number requirements).
+    ///
+    /// Returns (txid, transaction) pairs in priority order.
+    ///
+    /// Used by `handle_best_transactions()` for block assembly.
+    pub(crate) async fn get_all_transactions(
+        &mut self,
+        ctx: &MempoolContext,
     ) -> OLMempoolResult<Vec<(OLTxId, OLMempoolTransaction)>> {
-        let mut result = Vec::with_capacity(limit.min(self.entries.len()));
+        // Get state accessor (cached or fetched)
+        let state_accessor = self.get_or_fetch_state_accessor(ctx).await?;
 
-        // Iterate ordering index (BTreeMap sorted by priority)
+        // Step 1: Group transactions by account and collect seq_nos
+        // For SnarkAccountUpdate: group by account, collect seq_nos
+        // For GenericAccountMessage: always include (no seq_no requirements)
+        let mut account_seq_nos: HashMap<AccountId, HashSet<u64>> = HashMap::new();
+        let mut snark_txs: Vec<(AccountId, u64, OLTxId, OLMempoolTransaction)> = Vec::new();
+        let mut gam_txs: Vec<(OLTxId, OLMempoolTransaction)> = Vec::new();
+
         for txid in self.ordering_index.values() {
-            if result.len() >= limit {
-                return Ok(result);
+            if let Some(entry) = self.entries.get(txid) {
+                match entry.tx.payload() {
+                    OLMempoolTxPayload::SnarkAccountUpdate(payload) => {
+                        let account = *payload.target();
+                        let seq_no = payload.base_update.operation().seq_no();
+                        account_seq_nos.entry(account).or_default().insert(seq_no);
+                        snark_txs.push((account, seq_no, *txid, entry.tx.clone()));
+                    }
+                    OLMempoolTxPayload::GenericAccountMessage(_) => {
+                        // GenericAccountMessage transactions have no seq_no requirements
+                        gam_txs.push((*txid, entry.tx.clone()));
+                    }
+                }
+            }
+        }
+
+        // Step 2: For each account with SnarkAccountUpdate transactions, find the first gap
+        // and only include transactions before the first gap
+        let mut ready_txs: Vec<(OLTxId, OLMempoolTransaction)> = Vec::new();
+
+        // First, add all GenericAccountMessage transactions (no gap checking needed)
+        ready_txs.extend(gam_txs);
+
+        // Group SnarkAccountUpdate transactions by account for gap checking
+        let mut account_txs: HashMap<AccountId, Vec<(u64, OLTxId, OLMempoolTransaction)>> =
+            HashMap::new();
+        for (account, seq_no, txid, tx) in snark_txs {
+            account_txs
+                .entry(account)
+                .or_default()
+                .push((seq_no, txid, tx));
+        }
+
+        // For each account, check for gaps and only include ready transactions
+        for (account, txs) in account_txs {
+            // Get current account seq_no from state
+            let current_seq_no = match state_accessor.get_account_state(account) {
+                Ok(Some(account_state)) => {
+                    if account_state.ty() == AccountTypeId::Snark {
+                        match account_state.as_snark_account() {
+                            Ok(snark_state) => *snark_state.seqno().inner(),
+                            Err(_) => {
+                                // Not a snark account, skip all transactions for this account
+                                continue;
+                            }
+                        }
+                    } else {
+                        // Not a snark account, skip all transactions for this account
+                        continue;
+                    }
+                }
+                Ok(None) => {
+                    // Account doesn't exist, skip all transactions for this account
+                    continue;
+                }
+                Err(_e) => {
+                    // Error accessing state, skip all transactions for this account
+                    continue;
+                }
+            };
+
+            // Get all seq_nos in mempool for this account
+            let seq_nos_in_mempool = account_seq_nos.get(&account).cloned().unwrap_or_default();
+
+            // Find the first gap (first missing seq_no starting from current_seq_no + 1)
+            let mut first_gap: Option<u64> = None;
+            let mut expected_seq_no = current_seq_no + 1;
+
+            // Check for gaps up to the maximum seq_no in mempool
+            if let Some(&max_seq_no) = seq_nos_in_mempool.iter().max() {
+                while expected_seq_no <= max_seq_no {
+                    if !seq_nos_in_mempool.contains(&expected_seq_no) {
+                        first_gap = Some(expected_seq_no);
+                        break;
+                    }
+                    expected_seq_no += 1;
+                }
             }
 
-            if let Some(entry) = self.entries.get(txid) {
-                result.push((*txid, entry.tx.clone()));
+            // Only include transactions with seq_no < first_gap (or all if no gap)
+            let max_ready_seq_no = first_gap.unwrap_or(u64::MAX);
+            for (seq_no, txid, tx) in txs {
+                if seq_no < max_ready_seq_no {
+                    ready_txs.push((txid, tx));
+                }
+            }
+        }
+
+        // Step 3: Sort by priority to maintain ordering
+        // We need to re-sort because we filtered, but we want to maintain priority order
+        let mut result: Vec<(OLTxId, OLMempoolTransaction)> = Vec::with_capacity(ready_txs.len());
+        for txid in self.ordering_index.values() {
+            if let Some((_, tx)) = ready_txs.iter().find(|(tid, _)| tid == txid) {
+                result.push((*txid, tx.clone()));
             }
         }
 
@@ -385,25 +492,11 @@ impl MempoolState {
     }
 
     /// Check if a transaction exists in the mempool.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "used in tests and will be used in service implementation"
-        )
-    )]
     pub(crate) fn contains(&self, id: &OLTxId) -> bool {
         self.entries.contains_key(id)
     }
 
     /// Get mempool statistics.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "used in tests and will be used in service implementation"
-        )
-    )]
     pub(crate) fn stats(&self) -> OLMempoolStats {
         self.stats.clone()
     }
@@ -411,7 +504,7 @@ impl MempoolState {
     /// Update the current chain tip and clear cached state accessor.
     ///
     /// When the tip changes, the cached state accessor is invalidated and will be
-    /// fetched lazily when needed via `ensure_state_accessor()`.
+    /// fetched lazily when needed via `get_or_fetch_state_accessor()`.
     pub(crate) fn set_current_tip(&mut self, tip: OLBlockCommitment) {
         if self.current_tip != tip {
             self.current_tip = tip;
@@ -420,18 +513,48 @@ impl MempoolState {
         }
     }
 
-    /// Get current chain tip.
-    #[expect(dead_code, reason = "will be used in service implementation")]
-    pub(crate) fn current_tip(&self) -> OLBlockCommitment {
-        self.current_tip
+    /// Get current tip.
+    pub(crate) fn current_tip(&self) -> &OLBlockCommitment {
+        &self.current_tip
     }
 
-    /// Ensures state accessor is available for the current tip, fetching and caching it if needed.
+    /// Remove expired transactions based on current tip slot.
     ///
-    /// This method is used by both `set_current_tip` (when we want to eagerly fetch)
-    /// and other methods that need the state accessor. It caches the result to avoid
+    /// Removes transactions where max_slot <= current_tip.slot.
+    /// Returns the count of removed transactions.
+    pub(crate) fn remove_expired_transactions(
+        &mut self,
+        ctx: &MempoolContext,
+    ) -> OLMempoolResult<usize> {
+        let mut expired_txids = Vec::new();
+        let current_slot = self.current_tip.slot();
+
+        // Collect expired transaction IDs
+        for (txid, entry) in &self.entries {
+            if let Optional::Some(max_slot) = entry.tx.attachment.max_slot
+                && current_slot >= max_slot
+            {
+                expired_txids.push(*txid);
+            }
+        }
+
+        // Remove expired transactions
+        if !expired_txids.is_empty() {
+            self.remove_transactions(ctx, &expired_txids)?;
+        }
+
+        Ok(expired_txids.len())
+    }
+
+    /// Gets the state accessor for the current tip, returning cached value or fetching if needed.
+    ///
+    /// This method is used by methods that need the state accessor (e.g., `add_transaction`,
+    /// `get_all_transactions`, `handle_chain_update`). It caches the result to avoid
     /// repeated database lookups.
-    async fn ensure_state_accessor(
+    ///
+    /// Note: `set_current_tip` clears the cached accessor but does not call this method.
+    /// The accessor is fetched lazily when needed.
+    async fn get_or_fetch_state_accessor(
         &mut self,
         ctx: &MempoolContext,
     ) -> OLMempoolResult<Arc<OLState>> {
@@ -440,7 +563,7 @@ impl MempoolState {
             return Ok(accessor.clone());
         }
 
-        // Fetch state accessor for current tip (async)
+        // Fetch state accessor for current tip using async API
         let accessor = ctx
             .storage
             .ol_state()
@@ -858,10 +981,6 @@ impl MempoolState {
     /// 2. Revalidates all pending transactions against the new state
     /// 3. Removes invalid transactions
     /// 4. Returns the count of removed transactions
-    #[expect(
-        dead_code,
-        reason = "used in tests and will be used in service implementation"
-    )]
     pub(crate) async fn handle_chain_update(
         &mut self,
         ctx: &MempoolContext,
@@ -913,26 +1032,24 @@ impl MempoolState {
         // Update tip and clear cached state accessor
         self.set_current_tip(new_tip);
 
-        // Ensure state accessor is available
-        let state_accessor = self.ensure_state_accessor(ctx).await?;
+        // Remove expired transactions (based on max_slot)
+        let expired_count = self.remove_expired_transactions(ctx)?;
+
+        // Get state accessor (cached or fetched)
+        let state_accessor = self.get_or_fetch_state_accessor(ctx).await?;
 
         // Handle based on whether it's a reorg or new block
-        if is_reorg {
+        let removed_count = if is_reorg {
             self.handle_reorg(ctx, old_tip, new_tip, &state_accessor)
-                .await
+                .await?
         } else {
-            self.handle_new_block(ctx, new_tip, &state_accessor).await
-        }
+            self.handle_new_block(ctx, new_tip, &state_accessor).await?
+        };
+
+        Ok(removed_count + expired_count)
     }
 
     /// Load all transactions from database on startup.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "used in tests and will be used in service implementation"
-        )
-    )]
     pub(crate) fn load_from_db(&mut self, ctx: &MempoolContext) -> OLMempoolResult<()> {
         let all_txs = ctx.storage.mempool().get_all_txs()?;
 
@@ -978,29 +1095,134 @@ impl MempoolState {
 }
 
 /// Combined state for the service (context + mutable state).
-#[expect(dead_code, reason = "will be used in service implementation")]
+#[derive(Debug)]
 pub(crate) struct MempoolServiceState {
-    pub(crate) ctx: Arc<MempoolContext>,
-    pub(crate) state: MempoolState,
+    ctx: Arc<MempoolContext>,
+    state: MempoolState,
 }
 
 impl MempoolServiceState {
     /// Create new mempool service state.
-    #[expect(dead_code, reason = "will be used in service implementation")]
-    pub(crate) fn new(ctx: Arc<MempoolContext>, current_tip: OLBlockCommitment) -> Self {
+    #[expect(dead_code, reason = "will be used via builder")]
+    pub(crate) fn new(
+        config: OLMempoolConfig,
+        storage: Arc<NodeStorage>,
+        current_tip: OLBlockCommitment,
+    ) -> Self {
+        let ctx = Arc::new(MempoolContext::new(config, storage));
+        Self::new_with_context(ctx, current_tip)
+    }
+
+    /// Create new mempool service state with an existing context.
+    /// Used for testing.
+    pub(crate) fn new_with_context(
+        ctx: Arc<MempoolContext>,
+        current_tip: OLBlockCommitment,
+    ) -> Self {
         Self {
             ctx: ctx.clone(),
             state: MempoolState::new(current_tip),
         }
     }
+
+    /// Load existing transactions from database.
+    #[expect(dead_code, reason = "will be used via builder")]
+    pub(crate) fn load_from_db(&mut self) -> OLMempoolResult<()> {
+        self.state.load_from_db(&self.ctx)
+    }
+
+    /// Set the current tip (called when chain progresses).
+    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
+    pub(crate) fn set_current_tip(&mut self, tip: OLBlockCommitment) {
+        self.state.set_current_tip(tip);
+    }
+
+    /// Get the current tip.
+    #[expect(dead_code, reason = "will be used via builder")]
+    pub(crate) fn current_tip(&self) -> &OLBlockCommitment {
+        self.state.current_tip()
+    }
+
+    /// Handle submit transaction command.
+    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
+    pub(crate) async fn handle_submit_transaction(
+        &mut self,
+        tx_bytes: Vec<u8>,
+    ) -> OLMempoolResult<OLTxId> {
+        // Deserialize transaction from SSZ bytes
+        let tx = OLMempoolTransaction::from_ssz_bytes(&tx_bytes)
+            .map_err(|e| OLMempoolError::Serialization(format!("SSZ decode error: {:?}", e)))?;
+
+        // Compute transaction ID
+        let txid = tx.compute_txid();
+
+        // Add to mempool
+        self.state.add_transaction(&self.ctx, tx).await?;
+
+        Ok(txid)
+    }
+
+    /// Handle best transactions command (returns all transactions in priority order).
+    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
+    pub(crate) async fn handle_best_transactions(
+        &mut self,
+    ) -> OLMempoolResult<Vec<(OLTxId, OLMempoolTransaction)>> {
+        self.state.get_all_transactions(&self.ctx).await
+    }
+
+    /// Handle remove transactions command.
+    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
+    pub(crate) fn handle_remove_transactions(
+        &mut self,
+        ids: Vec<OLTxId>,
+    ) -> OLMempoolResult<Vec<OLTxId>> {
+        let mut removed = Vec::new();
+
+        for id in ids {
+            // remove_transactions expects a slice, but we're removing one at a time
+            match self.state.remove_transactions(&self.ctx, &[id]) {
+                Ok(_) => removed.push(id),
+                Err(_e) => {
+                    // Database error - continue with other removals
+                }
+            }
+        }
+
+        Ok(removed)
+    }
+
+    /// Handle chain update command.
+    ///
+    /// Delegates to MempoolState::handle_chain_update which handles:
+    /// - Updating tip and state accessor
+    /// - Detecting reorgs vs new blocks
+    /// - Removing transactions from new chain blocks
+    /// - Re-adding transactions from rolled-back blocks (for reorgs)
+    /// - Revalidating all transactions
+    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
+    pub(crate) async fn handle_chain_update(
+        &mut self,
+        new_tip: OLBlockCommitment,
+    ) -> OLMempoolResult<usize> {
+        // Delegate to MempoolState which handles state accessor updates, reorgs, and revalidation
+        self.state.handle_chain_update(&self.ctx, new_tip).await
+    }
+
+    /// Check if transaction exists in mempool.
+    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
+    pub(crate) fn contains(&self, id: &OLTxId) -> bool {
+        self.state.contains(id)
+    }
+
+    /// Get mempool statistics.
+    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
+    pub(crate) fn stats(&self) -> OLMempoolStats {
+        self.state.stats()
+    }
 }
 
 impl MempoolContext {
     /// Create a new mempool context with FIFO ordering strategy.
-    #[expect(
-        dead_code,
-        reason = "used in tests and will be used in service implementation"
-    )]
     pub(crate) fn new(config: OLMempoolConfig, storage: Arc<NodeStorage>) -> Self {
         let validator_config = config.clone();
         Self {
@@ -1024,8 +1246,9 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        create_test_block_commitment, create_test_context, create_test_context_with_state,
-        create_test_snark_tx_with_seq_no, create_test_tx_with_id,
+        create_test_account_id_with, create_test_attachment_with_slots,
+        create_test_block_commitment, create_test_context_with_state,
+        create_test_snark_tx_with_seq_no, create_test_tx_with_id, setup_test_state_for_tip,
     };
 
     #[tokio::test]
@@ -1067,11 +1290,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_transactions_fifo_order() {
-        use crate::test_utils::{
-            create_test_account_id_with, create_test_attachment_with_slots,
-            create_test_snark_tx_with_seq_no, setup_test_state_for_tip,
-        };
-
         let tip = create_test_block_commitment(100);
         let ctx = create_test_context_with_state(10, 1_000_000, tip).await;
         let mut state = MempoolState::new(tip);
@@ -1115,7 +1333,13 @@ mod tests {
         state.add_transaction(&ctx, gam3).await.unwrap();
 
         // GAM transactions should be ordered by slot (100 < 101 < 102)
-        let txs = state.get_transactions(3).unwrap();
+        let txs: Vec<_> = state
+            .get_all_transactions(&ctx)
+            .await
+            .unwrap()
+            .into_iter()
+            .take(3)
+            .collect();
         assert_eq!(txs.len(), 3);
         assert_eq!(txs[0].1.target(), gam1_target);
         assert_eq!(txs[1].1.target(), gam2_target);
@@ -1143,7 +1367,13 @@ mod tests {
         state.add_transaction(&ctx, snark3).await.unwrap();
 
         // SnarkAccountUpdate transactions should be ordered by seq_no (0 < 1 < 2)
-        let txs = state.get_transactions(3).unwrap();
+        let txs: Vec<_> = state
+            .get_all_transactions(&ctx)
+            .await
+            .unwrap()
+            .into_iter()
+            .take(3)
+            .collect();
         assert_eq!(txs.len(), 3);
         // All transactions target same account, should be in seq_no order
         let tx1_seq = txs[0].1.base_update().unwrap().operation().seq_no();
@@ -1196,7 +1426,13 @@ mod tests {
 
         // All three GAM transactions at same slot (100)
         // Should be ordered by insertion_id (FIFO order)
-        let txs = state.get_transactions(3).unwrap();
+        let txs: Vec<_> = state
+            .get_all_transactions(&ctx)
+            .await
+            .unwrap()
+            .into_iter()
+            .take(3)
+            .collect();
         assert_eq!(txs.len(), 3);
         assert_eq!(txs[0].1.target(), gam1_target); // First inserted
         assert_eq!(txs[1].1.target(), gam2_target); // Second inserted
@@ -1226,7 +1462,13 @@ mod tests {
 
         // All three transactions have seq_no=0 but different accounts
         // Should be ordered by insertion_id (FIFO order)
-        let txs = state.get_transactions(3).unwrap();
+        let txs: Vec<_> = state
+            .get_all_transactions(&ctx)
+            .await
+            .unwrap()
+            .into_iter()
+            .take(3)
+            .collect();
         assert_eq!(txs.len(), 3);
         assert_eq!(txs[0].1.target(), tx1_target); // First inserted
         assert_eq!(txs[1].1.target(), tx2_target); // Second inserted
@@ -1306,8 +1548,60 @@ mod tests {
         }
 
         // Request only 3
-        let txs = state.get_transactions(3).unwrap();
+        let txs: Vec<_> = state
+            .get_all_transactions(&ctx)
+            .await
+            .unwrap()
+            .into_iter()
+            .take(3)
+            .collect();
         assert_eq!(txs.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_snark_priority_ordering() {
+        let tip = create_test_block_commitment(100);
+        let ctx = create_test_context_with_state(10, 1_000_000, tip).await;
+        let mut state = MempoolState::new(tip);
+
+        // Create snark updates with sequential seq_nos: 0, 1, 2
+        // Account 1 has seq_no=0 in state, so transactions should start at seq_no=0
+        // Testing that transactions are ordered by seq_no, not by slot
+        let snark1 = create_test_snark_tx_with_seq_no(1, 0);
+        let snark1_target = snark1.target();
+
+        let snark2 = create_test_snark_tx_with_seq_no(1, 1);
+        let snark2_target = snark2.target();
+
+        let snark3 = create_test_snark_tx_with_seq_no(1, 2);
+        let snark3_target = snark3.target();
+
+        // Add in order: seq_no 0, 1, 2 (at slots 100, 101, 102)
+        state.set_current_tip(create_test_block_commitment(100));
+        state.add_transaction(&ctx, snark1).await.unwrap();
+
+        let tip101 = create_test_block_commitment(101);
+        setup_test_state_for_tip(&ctx.storage, tip101).await;
+        state.set_current_tip(tip101);
+        state.add_transaction(&ctx, snark2).await.unwrap();
+
+        let tip102 = create_test_block_commitment(102);
+        setup_test_state_for_tip(&ctx.storage, tip102).await;
+        state.set_current_tip(tip102);
+        state.add_transaction(&ctx, snark3).await.unwrap();
+
+        // SnarkAccountUpdate transactions should be ordered by seq_no (1 < 2 < 3), NOT slot
+        let txs: Vec<_> = state
+            .get_all_transactions(&ctx)
+            .await
+            .unwrap()
+            .into_iter()
+            .take(3)
+            .collect();
+        assert_eq!(txs.len(), 3);
+        assert_eq!(txs[0].1.target(), snark1_target); // seq_no 0
+        assert_eq!(txs[1].1.target(), snark2_target); // seq_no 1
+        assert_eq!(txs[2].1.target(), snark3_target); // seq_no 2
     }
 
     #[tokio::test]
@@ -1335,10 +1629,11 @@ mod tests {
         assert_eq!(state.stats().mempool_size(), 1);
     }
 
-    #[test]
-    fn test_remove_nonexistent_transaction() {
-        let ctx = create_test_context(10, 1_000_000);
-        let mut state = MempoolState::new(create_test_block_commitment(100));
+    #[tokio::test]
+    async fn test_remove_nonexistent_transaction() {
+        let tip = create_test_block_commitment(100);
+        let ctx = create_test_context_with_state(10, 1_000_000, tip).await;
+        let mut state = MempoolState::new(tip);
 
         // Remove transaction that doesn't exist - should succeed with empty result
         let fake_txid = OLTxId::from(Buf32::from([0u8; 32]));
