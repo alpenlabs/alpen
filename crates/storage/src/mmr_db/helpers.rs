@@ -206,6 +206,10 @@ pub(super) fn get_peaks(mmr_size: u64) -> Vec<u64> {
 ///
 /// * `pos` - Node position to check
 /// * `mmr_size` - Current MMR size
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "Used in tests, utility for MMR operations")
+)]
 pub(super) fn is_peak(pos: u64, mmr_size: u64) -> bool {
     get_peaks(mmr_size).contains(&pos)
 }
