@@ -55,6 +55,8 @@ impl RpcOLChainStatus {
 pub struct RpcAccountEpochSummary {
     /// The epoch commitment.
     epoch_commitment: EpochCommitment,
+    /// Previous epoch commitment.
+    prev_epoch_commitment: EpochCommitment,
     /// Final balance at the end of the epoch(sats).
     final_balance: u64,
     /// Final sequence number at the end of the epoch.
@@ -73,6 +75,7 @@ impl RpcAccountEpochSummary {
     /// Creates a new [`RpcAccountEpochSummary`].
     pub fn new(
         epoch_commitment: EpochCommitment,
+        prev_epoch_commitment: EpochCommitment,
         final_balance: u64,
         final_seq_no: u64,
         final_next_input_idx: u64,
@@ -81,6 +84,7 @@ impl RpcAccountEpochSummary {
     ) -> Self {
         Self {
             epoch_commitment,
+            prev_epoch_commitment,
             final_balance,
             final_seq_no,
             final_next_input_idx,
@@ -92,6 +96,11 @@ impl RpcAccountEpochSummary {
     /// Returns the epoch commitment.
     pub fn epoch_commitment(&self) -> &EpochCommitment {
         &self.epoch_commitment
+    }
+
+    /// Returns the previous epoch commitment.
+    pub fn prev_epoch_commitment(&self) -> &EpochCommitment {
+        &self.prev_epoch_commitment
     }
 
     /// Returns the final balance.
