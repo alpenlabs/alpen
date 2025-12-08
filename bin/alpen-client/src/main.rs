@@ -117,7 +117,6 @@ fn main() {
             // This channel sends block hashes received from peers to the engine control task
             let (preconf_tx, preconf_rx) = watch::channel(best_ee_blockhash);
 
-
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
                 .on_component_initialized({
