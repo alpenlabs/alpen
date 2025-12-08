@@ -28,9 +28,9 @@
 //!     - Auxiliary data (4 bytes):
 //!         - Operator index (4 bytes, encoded using [`strata_codec::Codec`] which uses big-endian)
 //!
-//! Additional outputs distribute the stake to watchtowers (e.g., change), but ASM skips validating
-//! them because correctness is assumed to be enforced during presigning and they spend from the
-//! same N/N multisig.
+//! Additional outputs distribute the stake to watchtowers, but ASM skips validating them because
+//! correctness is assumed to be enforced during presigning as they spend from the same N/N
+//! multisig.
 
 mod aux;
 mod info;

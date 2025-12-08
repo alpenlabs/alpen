@@ -6,6 +6,7 @@ use strata_asm_txs_bridge_v1::{
     errors::Mismatch,
     withdrawal_fulfillment::WithdrawalFulfillmentInfo,
 };
+use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
@@ -80,6 +81,11 @@ impl BridgeV1State {
     /// Returns a reference to the assignments table.
     pub fn assignments(&self) -> &AssignmentTable {
         &self.assignments
+    }
+
+    /// Returns the deposit denomination.
+    pub fn denomination(&self) -> &BitcoinAmount {
+        &self.denomination
     }
 
     /// Validates a deposit transaction and info against bridge state requirements.
@@ -362,148 +368,29 @@ impl BridgeV1State {
             operator_idx: removed_assignment.current_assignee(),
         })
     }
+
+    /// Removes an operator from the active multisig by deactivating them.
+    ///
+    /// # Panics
+    ///
+    /// Panics if removing this operator would result in no active operators remaining.
+    pub fn remove_operator(&mut self, operator_idx: OperatorIdx) {
+        self.operators
+            .apply_membership_changes(&[], &[operator_idx]);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use rand::Rng;
-    use strata_asm_txs_bridge_v1::{
-        deposit::DepositInfo, test_utils::create_test_deposit_tx,
-        withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux,
-    };
-    use strata_crypto::{EvenSecretKey, schnorr::EvenPublicKey};
-    use strata_primitives::{
-        bitcoin_bosd::Descriptor,
-        l1::{BitcoinAmount, L1BlockCommitment},
-    };
+    use strata_asm_txs_bridge_v1::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
+    use strata_primitives::{bitcoin_bosd::Descriptor, l1::L1BlockCommitment};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::state::{assignment::AssignmentEntry, config::BridgeV1Config};
-
-    /// Helper function to create test operator keys
-    ///
-    /// Creates between 2 and 5 test operators with random secret keys and converts them to the
-    /// OperatorPubkeys format required by BridgeV1Config. Returns both the private
-    /// keys (for signing test transactions) and public keys (for state configuration).
-    ///
-    /// # Returns
-    ///
-    /// - `Vec<EvenSecretKey>` - Private keys for creating test transactions
-    /// - `Vec<EvenPublicKey>` - MuSig2 public keys for bridge configuration
-    fn create_test_operators() -> (Vec<EvenSecretKey>, Vec<EvenPublicKey>) {
-        let secp = Secp256k1::new();
-        let mut rng = secp256k1::rand::thread_rng();
-        let num_operators = rng.gen_range(2..=5);
-
-        // Generate random operator keys
-        let operators_privkeys: Vec<EvenSecretKey> = (0..num_operators)
-            .map(|_| SecretKey::new(&mut rng).into())
-            .collect();
-
-        // Create operator MuSig2 public keys for config
-        let operator_pubkeys: Vec<EvenPublicKey> = operators_privkeys
-            .iter()
-            .map(|sk| {
-                let pk = PublicKey::from_secret_key(&secp, sk);
-                EvenPublicKey::from(pk)
-            })
-            .collect();
-
-        (operators_privkeys, operator_pubkeys)
-    }
-
-    fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
-        let (privkeys, operators) = create_test_operators();
-        let denomination = BitcoinAmount::from_sat(1_000_000);
-        let config = BridgeV1Config {
-            denomination,
-            operators,
-            assignment_duration: 144, // ~24 hours
-            operator_fee: BitcoinAmount::from_sat(100_000),
-        };
-        let bridge_state = BridgeV1State::new(&config);
-        (bridge_state, privkeys)
-    }
-
-    /// Helper function to add multiple test deposits to the bridge state.
-    ///
-    /// Creates the specified number of deposits with randomly generated deposit info,
-    /// but ensures each deposit uses the bridge's expected denomination amount.
-    /// Each deposit is processed through the full validation pipeline.
-    ///
-    /// # Parameters
-    ///
-    /// - `state` - Mutable reference to the bridge state to add deposits to
-    /// - `count` - Number of deposits to create and add
-    /// - `privkeys` - Private keys used to sign the deposit transactions
-    fn add_deposits(
-        state: &mut BridgeV1State,
-        count: usize,
-        privkeys: &[EvenSecretKey],
-    ) -> Vec<DepositInfo> {
-        let mut arb = ArbitraryGenerator::new();
-        let mut infos = Vec::new();
-        for _ in 0..count {
-            let mut info: DepositInfo = arb.generate();
-            info.set_amt(state.denomination);
-            let tx = create_test_deposit_tx(&info, privkeys);
-            state.process_deposit_tx(&tx, &info).unwrap();
-            infos.push(info);
-        }
-        infos
-    }
-
-    /// Helper function to add deposits and immediately create withdrawal assignments.
-    ///
-    /// This is a convenience function that combines deposit creation with assignment
-    /// creation. For each deposit added, it creates a corresponding withdrawal command
-    /// and assignment. This simulates a complete deposit-to-assignment flow for testing.
-    ///
-    /// # Parameters
-    ///
-    /// - `state` - Mutable reference to the bridge state
-    /// - `count` - Number of deposit-assignment pairs to create
-    /// - `privkeys` - Private keys used to sign the deposit transactions
-    fn add_deposits_and_assignments(
-        state: &mut BridgeV1State,
-        count: usize,
-        privkeys: &[EvenSecretKey],
-    ) {
-        add_deposits(state, count, privkeys);
-        let mut arb = ArbitraryGenerator::new();
-        for _ in 0..count {
-            let l1blk: L1BlockCommitment = arb.generate();
-            let mut output: WithdrawOutput = arb.generate();
-            output.amt = state.denomination;
-            state.create_withdrawal_assignment(&output, &l1blk).unwrap();
-        }
-    }
-
-    /// Helper function to create withdrawal info that matches an existing assignment.
-    ///
-    /// Extracts all the necessary information from an assignment entry to create
-    /// a WithdrawalInfo struct that would pass validation. This is used in tests
-    /// to create valid withdrawal fulfillment transactions.
-    ///
-    /// # Parameters
-    ///
-    /// - `assignment` - The assignment entry to extract information from
-    ///
-    /// # Returns
-    ///
-    /// A WithdrawalInfo struct with matching operator, deposit, and withdrawal details
-    fn create_withdrawal_info_from_assignment(
-        assignment: &AssignmentEntry,
-    ) -> WithdrawalFulfillmentInfo {
-        let header_aux = WithdrawalFulfillmentTxHeaderAux::new(assignment.deposit_idx());
-        WithdrawalFulfillmentInfo::new(
-            header_aux,
-            assignment.withdrawal_command().destination().to_script(),
-            assignment.withdrawal_command().net_amount(),
-        )
-    }
+    use crate::test_utils::{
+        add_deposits, add_deposits_and_assignments, create_test_state,
+        create_withdrawal_info_from_assignment,
+    };
 
     /// Test successful deposit transaction processing.
     ///
