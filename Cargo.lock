@@ -14675,16 +14675,27 @@ dependencies = [
 name = "strata-ol-mempool"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "proptest",
+ "serde",
  "ssz",
  "ssz_derive",
+ "ssz_types",
  "strata-acct-types",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ledger-types",
  "strata-ol-chain-types-new",
+ "strata-ol-state-types",
+ "strata-ol-stf",
  "strata-service",
  "strata-snark-acct-types",
+ "strata-storage",
  "thiserror 2.0.17",
+ "threadpool",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -19,6 +19,10 @@ pub const DEFAULT_MAX_TX_SIZE: usize = 1024 * 1024; // 1 MB
 /// Default maximum total size of all transactions in mempool (bytes).
 pub const DEFAULT_MAX_MEMPOOL_BYTES: usize = 1024 * 1024 * 1024; // 1 GB
 
+/// Default maximum reorg depth for finding common ancestor.
+/// OL chain doesn't expect reorgs, so this is a safety limit.
+pub const DEFAULT_MAX_REORG_DEPTH: u64 = 50;
+
 /// Configuration for the OL mempool.
 #[derive(Clone, Debug)]
 pub struct OLMempoolConfig {
@@ -30,6 +34,10 @@ pub struct OLMempoolConfig {
 
     /// Maximum total size of all transactions in mempool (bytes).
     pub max_mempool_bytes: usize,
+
+    /// Maximum reorg depth for finding common ancestor during reorg handling.
+    /// OL chain doesn't expect reorgs, so this is a safety limit to prevent infinite loops.
+    pub max_reorg_depth: u64,
 }
 
 impl Default for OLMempoolConfig {
@@ -38,6 +46,7 @@ impl Default for OLMempoolConfig {
             max_tx_count: DEFAULT_MAX_TX_COUNT,
             max_tx_size: DEFAULT_MAX_TX_SIZE,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
         }
     }
 }
@@ -238,6 +247,18 @@ pub enum MempoolOrderingKey {
 }
 
 impl MempoolOrderingKey {
+    /// Create ordering key for a transaction with the given timestamp_micros.
+    pub(crate) fn for_transaction(tx: &OLMempoolTransaction, timestamp_micros: u64) -> Self {
+        match tx.payload() {
+            OLMempoolTxPayload::SnarkAccountUpdate(payload) => Self::Snark {
+                account_id: *payload.target(),
+                seq_no: payload.base_update().operation().seq_no(),
+                timestamp_micros,
+            },
+            OLMempoolTxPayload::GenericAccountMessage(_) => Self::Gam { timestamp_micros },
+        }
+    }
+
     /// Get the timestamp from this ordering key.
     pub fn timestamp_micros(&self) -> u64 {
         match self {
@@ -312,7 +333,6 @@ impl Ord for MempoolOrderingKey {
 ///
 /// This is used internally by the mempool implementation and not exposed in the public API.
 #[derive(Clone, Debug)]
-#[expect(dead_code, reason = "will be used in mempool implementation")]
 pub(crate) struct MempoolEntry {
     /// The transaction data.
     pub(crate) tx: OLMempoolTransaction,
@@ -326,10 +346,6 @@ pub(crate) struct MempoolEntry {
 
 impl MempoolEntry {
     /// Create a new mempool entry.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "will be used in mempool implementation")
-    )]
     pub(crate) fn new(
         tx: OLMempoolTransaction,
         ordering_key: MempoolOrderingKey,
@@ -344,7 +360,7 @@ impl MempoolEntry {
 }
 
 /// Statistics about the mempool state.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct OLMempoolStats {
     /// Current number of transactions in the mempool.
     pub(crate) mempool_size: usize,
@@ -414,7 +430,7 @@ impl OLMempoolStats {
 ///
 /// This represents the different types of rejections that can occur.
 /// Note: This does not include non-rejection errors like Database or Serialization.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum OLMempoolRejectReason {
     /// Rejected due to mempool size limit exceeded.
     MempoolFull,
@@ -496,7 +512,7 @@ pub enum MempoolTxRemovalReason {
 /// iterate, extend, and work with programmatically.
 ///
 /// See [`OLMempoolRejectReason::from_error`] for converting errors to rejection reasons.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct OLMempoolRejectCounts {
     counts: BTreeMap<OLMempoolRejectReason, u64>,
 }

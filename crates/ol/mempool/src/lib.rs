@@ -5,16 +5,21 @@
 
 mod command;
 mod error;
+mod service;
+mod state;
 #[cfg(test)]
 mod test_utils;
 mod types;
+mod validation;
 
 pub use command::MempoolCommand;
 pub use error::OLMempoolError;
+pub use service::MempoolServiceStatus;
 pub use types::{
-    DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE, MempoolOrderingKey,
-    MempoolTxRemovalReason, OLMempoolConfig, OLMempoolRejectCounts, OLMempoolRejectReason,
-    OLMempoolSnarkAcctUpdateTxPayload, OLMempoolStats, OLMempoolTransaction, OLMempoolTxPayload,
+    DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH, DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE,
+    MempoolOrderingKey, MempoolTxRemovalReason, OLMempoolConfig, OLMempoolRejectCounts,
+    OLMempoolRejectReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolStats, OLMempoolTransaction,
+    OLMempoolTxPayload,
 };
 
 pub type OLMempoolResult<T> = Result<T, OLMempoolError>;

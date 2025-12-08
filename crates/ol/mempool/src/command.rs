@@ -34,7 +34,7 @@ pub enum MempoolCommand {
     GetTransactions {
         /// Maximum number of transactions to return.
         limit: usize,
-        /// Completion sender for vector of (txid, transaction) tuples.
+        /// Completion sender for the result.
         completion: CommandCompletionSender<GetTransactionsResult>,
     },
 
