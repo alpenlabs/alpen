@@ -73,7 +73,7 @@ impl InMemoryMmrDb {
     }
 
     /// Get a node hash by position
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Kept for potential debugging use")]
     fn get_node(&self, pos: u64) -> Option<&Hash> {
         self.nodes.get(&pos)
     }

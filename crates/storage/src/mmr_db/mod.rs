@@ -31,7 +31,9 @@
 
 mod helpers;
 mod memory;
+mod sled;
 mod types;
 
 pub use memory::InMemoryMmrDb;
+pub use sled::SledMmrDb;
 pub use types::{MmrDatabase, MmrDbError, MmrDbResult};

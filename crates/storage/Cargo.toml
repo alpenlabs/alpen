@@ -20,9 +20,14 @@ strata-storage-common.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
+borsh.workspace = true
 futures.workspace = true
+sled.workspace = true
 ssz_types.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
