@@ -2,13 +2,22 @@ use strata_db_types::{DbResult, traits::*};
 use strata_primitives::l1::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 
-use super::schemas::{AsmLogSchema, AsmStateSchema};
+use super::schemas::{
+    AsmLogSchema, AsmManifestHashSchema, AsmMmrMetaSchema, AsmMmrNodeSchema, AsmStateSchema,
+};
 use crate::define_sled_database;
 
 define_sled_database!(
+    #[expect(
+        dead_code,
+        reason = "MMR trees accessed directly via raw sled DB in storage layer"
+    )]
     pub struct AsmDBSled {
         asm_state_tree: AsmStateSchema,
         asm_log_tree: AsmLogSchema,
+        mmr_node_tree: AsmMmrNodeSchema,
+        mmr_meta_tree: AsmMmrMetaSchema,
+        manifest_hash_tree: AsmManifestHashSchema,
     }
 );
 
@@ -82,6 +91,15 @@ impl AsmDatabase for AsmDBSled {
         }
 
         Ok(result)
+    }
+
+    fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> DbResult<()> {
+        self.manifest_hash_tree.insert(&index, &hash)?;
+        Ok(())
+    }
+
+    fn get_manifest_hash(&self, index: u64) -> DbResult<Option<[u8; 32]>> {
+        Ok(self.manifest_hash_tree.get(&index)?)
     }
 }
 
