@@ -387,12 +387,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        state::withdrawal::WithdrawOutput,
-        test_utils::{
-            add_deposits, add_deposits_and_assignments, create_test_state,
-            create_withdrawal_info_from_assignment,
-        },
+    use crate::test_utils::{
+        add_deposits, add_deposits_and_assignments, create_test_state,
+        create_withdrawal_info_from_assignment,
     };
 
     /// Test successful deposit transaction processing.

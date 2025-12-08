@@ -13,9 +13,7 @@ use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use strata_test_utils::ArbitraryGenerator;
 
 use super::*;
-use crate::state::{
-    assignment::AssignmentEntry, config::BridgeV1Config, withdrawal::WithdrawOutput,
-};
+use crate::state::{assignment::AssignmentEntry, config::BridgeV1Config};
 
 /// A Mock MsgRelayer that does nothing.
 ///
