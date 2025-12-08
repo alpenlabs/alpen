@@ -148,7 +148,7 @@ where
 
     debug!(%epoch, %duty_id, %sig, "signed checkpoint");
 
-    rpc.complete_checkpoint_signature(duty.inner().batch_info().epoch(), HexBytes64(sig.0))
+    rpc.complete_checkpoint_signature(duty.inner().batch_info().epoch() as u64, HexBytes64(sig.0))
         .await
         .map_err(DutyExecError::CompleteCheckpoint)?;
 

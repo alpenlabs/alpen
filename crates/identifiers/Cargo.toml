@@ -20,17 +20,23 @@ serde.workspace = true
 sha2.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
+ssz_types = { workspace = true, features = ["serde"] }
 tree_hash.workspace = true
+tree_hash_derive.workspace = true
 zeroize.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [dev-dependencies]
 strata-test-utils-ssz.workspace = true
+ssz_types.workspace = true
 
 bitcoin.workspace = true
+bincode.workspace = true
 proptest.workspace = true
 rand.workspace = true
 serde_json.workspace = true
-bincode.workspace = true
 
 [features]
 default = ["bitcoin"]

@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use strata_identifiers::Epoch;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, prelude::*};
 
@@ -34,7 +35,7 @@ impl ChainSyncStatus {
         self.finalized_epoch.last_blkid()
     }
 
-    pub fn cur_epoch(&self) -> u64 {
+    pub fn cur_epoch(&self) -> Epoch {
         self.prev_epoch.epoch() + 1
     }
 }
@@ -79,7 +80,7 @@ impl ChainSyncStatusUpdate {
     }
 
     /// Returns the current epoch.
-    pub fn cur_epoch(&self) -> u64 {
+    pub fn cur_epoch(&self) -> Epoch {
         self.new_status().cur_epoch()
     }
 }

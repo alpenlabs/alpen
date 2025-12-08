@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_identifiers::Buf32;
+use strata_identifiers::{Buf32, Epoch};
 
 /// Contains transition information in a batch checkpoint, verified by the proof
 #[derive(
@@ -18,7 +18,7 @@ use strata_identifiers::Buf32;
 )]
 pub struct BatchTransition {
     /// Epoch
-    pub epoch: u64,
+    pub epoch: Epoch,
 
     /// Transition commitment for `Chainstate`
     pub chainstate_transition: ChainstateRootTransition,

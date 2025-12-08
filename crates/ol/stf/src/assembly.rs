@@ -153,7 +153,7 @@ impl BlockComponents {
     /// Create new empty block components.
     pub fn new_empty() -> Self {
         Self {
-            tx_segment: OLTxSegment::new(Vec::new()),
+            tx_segment: OLTxSegment::new(Vec::new()).expect("empty tx segment should succeed"),
             manifest_container: None,
         }
     }
@@ -162,10 +162,10 @@ impl BlockComponents {
     pub fn new_txs(payloads: Vec<TransactionPayload>) -> Self {
         let txs = payloads
             .into_iter()
-            .map(|p| OLTransaction::new(TransactionAttachment::default(), p))
+            .map(|p| OLTransaction::new(p, TransactionAttachment::default()))
             .collect();
         Self {
-            tx_segment: OLTxSegment::new(txs),
+            tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),
             manifest_container: None,
         }
     }
@@ -173,8 +173,10 @@ impl BlockComponents {
     /// Create terminal block components from manifests.
     pub fn new_manifests(manifests: Vec<AsmManifest>) -> Self {
         Self {
-            tx_segment: OLTxSegment::new(Vec::new()),
-            manifest_container: Some(OLL1ManifestContainer::new(manifests)),
+            tx_segment: OLTxSegment::new(Vec::new()).expect("empty tx segment should succeed"),
+            manifest_container: Some(
+                OLL1ManifestContainer::new(manifests).expect("manifests should be within limits"),
+            ),
         }
     }
 

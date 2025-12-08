@@ -1,7 +1,7 @@
 use bitcoin::{consensus::serialize, hashes::Hash, Block};
 use bitcoind_async_client::traits::Reader;
 use strata_asm_types::{generate_l1_tx, L1BlockManifest, L1HeaderRecord, L1Tx};
-use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
+use strata_identifiers::{Buf32, Epoch, L1BlockCommitment};
 use strata_state::BlockSubmitter;
 use tracing::*;
 
@@ -43,7 +43,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
 async fn handle_blockdata<R: Reader>(
     ctx: &ReaderContext<R>,
     blockdata: BlockData,
-    epoch: u64,
+    epoch: Epoch,
 ) -> anyhow::Result<Option<L1BlockCommitment>> {
     let ReaderContext {
         params, storage, ..
@@ -82,7 +82,7 @@ async fn handle_blockdata<R: Reader>(
 fn generate_block_manifest(
     block: &Block,
     txs: Vec<L1Tx>,
-    epoch: u64,
+    epoch: Epoch,
     height: u64,
 ) -> L1BlockManifest {
     let blockid = block.block_hash().into();

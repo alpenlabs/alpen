@@ -131,3 +131,14 @@ pub enum CommitParseError {
     #[error("Missing N/N output at index 1")]
     MissingNnOutput,
 }
+
+/// Errors that can occur when parsing slash transaction.
+#[derive(Debug, Error)]
+pub enum SlashTxParseError {
+    /// The auxiliary data in the slash transaction is invalid
+    #[error("Invalid auxiliary data")]
+    InvalidAuxiliaryData(#[from] CodecError),
+
+    #[error("Missing input at index {0}")]
+    MissingInput(usize),
+}

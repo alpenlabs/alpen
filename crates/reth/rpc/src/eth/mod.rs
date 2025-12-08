@@ -16,21 +16,19 @@ use std::{
 
 use alloy_network::Ethereum;
 use alloy_primitives::U256;
+use reth_chainspec::{EthereumHardforks, Hardforks};
 use reth_evm::ConfigureEvm;
 use reth_node_api::{FullNodeComponents, FullNodeTypes, HeaderTy, NodeTypes};
 use reth_node_builder::rpc::{EthApiBuilder, EthApiCtx};
-use reth_provider::{BlockReader, ChainSpecProvider, ProviderHeader, ProviderTx};
-use reth_rpc::{
-    eth::{core::EthApiInner, DevSigner},
-    RpcTypes,
-};
+use reth_provider::{BlockReader, ChainSpecProvider, ProviderHeader};
+use reth_rpc::{eth::core::EthApiInner, RpcTypes};
 use reth_rpc_eth_api::{
     helpers::{
-        pending_block::BuildPendingEnv, spec::SignersForApi, AddDevSigners, EthApiSpec, EthFees,
-        EthState, LoadFee, LoadPendingBlock, LoadState, SpawnBlocking, Trace,
+        pending_block::BuildPendingEnv, EthApiSpec, EthFees, EthState, LoadFee, LoadPendingBlock,
+        LoadState, SpawnBlocking, Trace,
     },
     EthApiTypes, FromEvmError, FullEthApiServer, RpcConvert, RpcConverter, RpcNodeCore,
-    RpcNodeCoreExt, SignableTxRequest,
+    RpcNodeCoreExt,
 };
 use reth_rpc_eth_types::{
     receipt::EthReceiptConverter, EthApiError, EthStateCache, FeeHistoryCache, GasPriceOracle,
@@ -151,17 +149,9 @@ where
     N: RpcNodeCore,
     Rpc: RpcConvert<Primitives = N::Primitives>,
 {
-    type Transaction = ProviderTx<Self::Provider>;
-    type Rpc = Rpc::Network;
-
     #[inline]
     fn starting_block(&self) -> U256 {
         self.inner.eth_api.starting_block()
-    }
-
-    #[inline]
-    fn signers(&self) -> &SignersForApi<Self> {
-        self.inner.eth_api.signers()
     }
 }
 
@@ -237,18 +227,6 @@ where
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives>,
 {
-}
-
-impl<N, Rpc> AddDevSigners for AlpenEthApi<N, Rpc>
-where
-    N: RpcNodeCore,
-    Rpc: RpcConvert<
-        Network: RpcTypes<TransactionRequest: SignableTxRequest<ProviderTx<N::Provider>>>,
-    >,
-{
-    fn with_dev_accounts(&self) {
-        *self.inner.eth_api.signers().write() = DevSigner::random_signers(20)
-    }
 }
 
 impl<N: RpcNodeCore, Rpc: RpcConvert> fmt::Debug for AlpenEthApi<N, Rpc> {
@@ -337,11 +315,14 @@ pub type AlpenRpcConvert<N, NetworkT> = RpcConverter<
 
 impl<N, NetworkT> EthApiBuilder<N> for AlpenEthApiBuilder<NetworkT>
 where
-    N: FullNodeComponents<Evm: ConfigureEvm<NextBlockEnvCtx: BuildPendingEnv<HeaderTy<N::Types>>>>,
+    N: FullNodeComponents<
+        Types: NodeTypes<ChainSpec: Hardforks + EthereumHardforks>,
+        Evm: ConfigureEvm<NextBlockEnvCtx: BuildPendingEnv<HeaderTy<N::Types>>>,
+    >,
     NetworkT: RpcTypes,
     AlpenRpcConvert<N, NetworkT>: RpcConvert<Network = NetworkT>,
     AlpenEthApi<N, AlpenRpcConvert<N, NetworkT>>:
-        FullEthApiServer<Provider = N::Provider, Pool = N::Pool> + AddDevSigners,
+        FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
 {
     type EthApi = AlpenEthApi<N, AlpenRpcConvert<N, NetworkT>>;
 

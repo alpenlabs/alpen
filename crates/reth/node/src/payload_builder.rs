@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_consensus::Transaction;
-use alpen_reth_evm::{collect_withdrawal_intents, evm::AlpenEvmFactory};
+use alpen_reth_evm::{evm::AlpenEvmFactory, extract_withdrawal_intents};
 use alpen_reth_primitives::WithdrawalIntent;
 use reth_basic_payload_builder::*;
 use reth_chainspec::{ChainSpec, ChainSpecProvider, EthChainSpec, EthereumHardforks};
@@ -317,9 +317,8 @@ where
     // collect receipts from the executed transactions
     let receipts: Vec<Receipt> = execution_result.receipts;
     let txns: Vec<TransactionSigned> = block.body().transactions().cloned().collect();
-    let tx_receipt_pairs = txns.iter().zip(receipts.iter());
     let withdrawal_intents: Vec<WithdrawalIntent> =
-        collect_withdrawal_intents(tx_receipt_pairs).collect();
+        extract_withdrawal_intents(&txns, &receipts).collect();
 
     let strata_payload = AlpenBuiltPayload::new(eth_payload, withdrawal_intents);
 

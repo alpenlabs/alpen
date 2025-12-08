@@ -78,7 +78,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     let (sections, logs) = manager.export_sections_and_logs();
     let manifest = AsmManifest::new(
         *pow_state.last_verified_block.blkid(),
-        input.wtxids_root,
+        input.wtxids_root.into(),
         logs,
     );
 

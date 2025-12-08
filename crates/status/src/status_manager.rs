@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use strata_bridge_types::{DepositsTable, OperatorTable};
 use strata_csm_types::{CheckpointState, ClientState, L1Checkpoint, L1Status};
+use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::l1::L1BlockCommitment;
@@ -121,7 +122,7 @@ impl StatusChannel {
     }
 
     /// Gets the current chain tip epoch, if present.
-    pub fn get_cur_chain_epoch(&self) -> Option<u64> {
+    pub fn get_cur_chain_epoch(&self) -> Option<Epoch> {
         self.receiver.chs.borrow().as_ref().map(|ch| ch.cur_epoch())
     }
 

@@ -348,7 +348,7 @@ impl StrataApiServer for StrataRpcImpl {
         slot: u64,
         terminal: L2BlockId,
     ) -> RpcResult<Option<EpochSummary>> {
-        let commitment = EpochCommitment::new(epoch, slot, terminal);
+        let commitment = EpochCommitment::new(epoch as u32, slot, terminal);
         let summary = self
             .storage
             .checkpoint()
@@ -461,7 +461,7 @@ impl StrataApiServer for StrataRpcImpl {
         Ok(RpcSyncStatus {
             tip_height: css.tip_slot(),
             tip_block_id: *css.tip_blkid(),
-            cur_epoch: css.cur_epoch(),
+            cur_epoch: css.cur_epoch() as u64,
             prev_epoch: css.prev_epoch,
             observed_finalized_epoch: *cssu.new_tl_chainstate().finalized_epoch(),
             safe_l1_block: css.safe_l1,
@@ -575,7 +575,7 @@ impl StrataApiServer for StrataRpcImpl {
             let (client_state, _) = self.get_cur_states().await?;
             Ok(client_state
                 .get_last_checkpoint()
-                .map(|checkpoint| checkpoint.batch_info.epoch()))
+                .map(|checkpoint| checkpoint.batch_info.epoch() as u64))
         } else {
             // get latest checkpoint index from d
             let idx = self
@@ -955,7 +955,7 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
                 Ok(Some(RpcChainState {
                     tip_blkid: blkid,
                     tip_slot: chs.chain_tip_slot(),
-                    cur_epoch: chs.cur_epoch(),
+                    cur_epoch: chs.cur_epoch() as u64,
                 }))
             }
             None => Ok(None),

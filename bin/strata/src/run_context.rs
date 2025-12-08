@@ -1,0 +1,23 @@
+//! Runtime context holding handles to running services.
+
+use std::sync::Arc;
+
+use strata_asm_worker::AsmWorkerHandle;
+use strata_config::Config;
+use strata_csm_worker::CsmWorkerStatus;
+use strata_params::Params;
+use strata_service::ServiceMonitor;
+use strata_tasks::{TaskExecutor, TaskManager};
+
+/// Holds handles and monitors for all running services.
+#[expect(unused, reason = "will be used later")]
+pub(crate) struct RunContext {
+    // Common items.
+    pub executor: TaskExecutor,
+    pub task_manager: TaskManager,
+    pub params: Arc<Params>,
+    pub config: Config,
+    // Service handles
+    pub asm_handle: AsmWorkerHandle,
+    pub csm_monitor: ServiceMonitor<CsmWorkerStatus>,
+}

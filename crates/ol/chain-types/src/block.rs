@@ -1,21 +1,21 @@
+//! Block-related types for OL chain.
+
+use ssz::Encode;
+use ssz_types::VariableList;
 use strata_asm_common::AsmManifest;
-use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec, encode_to_vec};
-use strata_identifiers::{Buf32, Buf64, L1BlockId, OLBlockId, hash::raw};
+use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot, hash::raw};
 
 use crate::{
     block_flags::BlockFlags,
-    common::{Epoch, Slot},
-    transaction::OLTransaction,
+    error::ChainTypesError,
+    ssz_generated::ssz::{
+        block::{
+            MAX_SEALING_MANIFEST_COUNT, MAX_TXS_PER_BLOCK, OLBlock, OLBlockBody, OLBlockCredential,
+            OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTxSegment, SignedOLBlockHeader,
+        },
+        transaction::OLTransaction,
+    },
 };
-
-/// Fully constructed and signed orchestration layer block.
-///
-/// The internal hashes should all be consistent.
-#[derive(Clone, Debug)]
-pub struct OLBlock {
-    signed_header: SignedOLBlockHeader,
-    body: OLBlockBody,
-}
 
 impl OLBlock {
     pub fn new(signed_header: SignedOLBlockHeader, body: OLBlockBody) -> Self {
@@ -32,7 +32,7 @@ impl OLBlock {
     /// Returns the executionally-relevant block header inside the signed header
     /// structure.
     pub fn header(&self) -> &OLBlockHeader {
-        self.signed_header.header()
+        &self.signed_header.header
     }
 
     pub fn body(&self) -> &OLBlockBody {
@@ -40,16 +40,14 @@ impl OLBlock {
     }
 }
 
-/// OL block header with signature.
-#[derive(Clone, Debug)]
-pub struct SignedOLBlockHeader {
-    header: OLBlockHeader,
-    signature: Buf64,
-}
-
 impl SignedOLBlockHeader {
     pub fn new(header: OLBlockHeader, signature: Buf64) -> Self {
-        Self { header, signature }
+        Self {
+            header,
+            credential: OLBlockCredential {
+                schnorr_sig: Some(signature).into(),
+            },
+        }
     }
 
     pub fn header(&self) -> &OLBlockHeader {
@@ -59,47 +57,12 @@ impl SignedOLBlockHeader {
     /// This MUST be a schnorr signature over the `Codec`-encoded `header`.
     ///
     /// This is not currently checked anywhere.
-    pub fn signature(&self) -> &Buf64 {
-        &self.signature
+    pub fn signature(&self) -> Option<&Buf64> {
+        match &self.credential.schnorr_sig {
+            ssz_types::Optional::Some(s) => Some(s),
+            ssz_types::Optional::None => None,
+        }
     }
-}
-
-/// OL block header.
-///
-/// This should not be directly used itself during execution, it has hash fields
-/// that are computed from execution, so this is what we use as an input to
-/// validation.
-#[derive(Clone, Debug, Codec)]
-pub struct OLBlockHeader {
-    /// The timestamp the block was created at.
-    timestamp: u64,
-
-    /// Flags used for better signalling.
-    ///
-    /// This was added so that we can look at a header and know if it a terminal
-    /// without having to examine the body to see if the body had an L1 update
-    /// or not.  I suggested this a while ago but we dismissed it as probably
-    /// unnecessary, but it really does help simplifying a lot of checks, so I'm
-    /// adding it now.
-    flags: BlockFlags,
-
-    /// Slot the block was created for.
-    slot: Slot,
-
-    /// Epoch the block was created in.
-    epoch: Epoch,
-
-    /// Parent block id.
-    parent_blkid: OLBlockId,
-
-    /// Root of the block body.
-    body_root: Buf32,
-
-    /// The state root resulting after the block execution.
-    state_root: Buf32,
-
-    /// Root of the block logs.
-    logs_root: Buf32,
 }
 
 impl OLBlockHeader {
@@ -135,10 +98,10 @@ impl OLBlockHeader {
     }
 
     pub fn is_terminal(&self) -> bool {
-        self.flags.is_terminal()
+        self.flags().is_terminal()
     }
 
-    pub fn slot(&self) -> u64 {
+    pub fn slot(&self) -> Slot {
         self.slot
     }
 
@@ -147,7 +110,7 @@ impl OLBlockHeader {
         self.slot() == 0
     }
 
-    pub fn epoch(&self) -> u32 {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 
@@ -167,31 +130,19 @@ impl OLBlockHeader {
         &self.logs_root
     }
 
-    /// Computes the block ID by hashing the header's Codec encoding.
+    /// Computes the block ID by hashing the header's SSZ encoding.
     pub fn compute_blkid(&self) -> OLBlockId {
-        let encoded = encode_to_vec(self).expect("block: header encoding should succeed");
+        let encoded = self.as_ssz_bytes();
         let hash = raw(&encoded);
         OLBlockId::from(hash)
     }
 }
 
-/// OL block body containing transactions and l1 updates
-#[derive(Clone, Debug)]
-pub struct OLBlockBody {
-    /// The transactions contained in an OL block.
-    tx_segment: OLTxSegment,
-
-    /// Updates from L1.
-    ///
-    /// This is only set in terminal blocks.
-    l1_update: Option<OLL1Update>,
-}
-
 impl OLBlockBody {
     pub fn new(tx_segment: OLTxSegment, l1_update: Option<OLL1Update>) -> Self {
         Self {
-            tx_segment,
-            l1_update,
+            tx_segment: Some(tx_segment).into(),
+            l1_update: l1_update.into(),
         }
     }
 
@@ -202,20 +153,26 @@ impl OLBlockBody {
 
     // TODO convert to builder?
     pub fn set_l1_update(&mut self, l1_update: OLL1Update) {
-        self.l1_update = Some(l1_update);
+        self.l1_update = Some(l1_update).into();
     }
 
-    pub fn tx_segment(&self) -> &OLTxSegment {
-        &self.tx_segment
+    pub fn tx_segment(&self) -> Option<&OLTxSegment> {
+        match &self.tx_segment {
+            ssz_types::Optional::Some(tx) => Some(tx),
+            ssz_types::Optional::None => None,
+        }
     }
 
     pub fn l1_update(&self) -> Option<&OLL1Update> {
-        self.l1_update.as_ref()
+        match &self.l1_update {
+            ssz_types::Optional::Some(update) => Some(update),
+            ssz_types::Optional::None => None,
+        }
     }
 
     /// Computes the hash commitment of this block body.
     pub fn compute_hash_commitment(&self) -> Buf32 {
-        let encoded = encode_to_vec(self).expect("block: block body encoding should succeed");
+        let encoded = self.as_ssz_bytes();
         raw(&encoded)
     }
 
@@ -226,64 +183,20 @@ impl OLBlockBody {
     }
 }
 
-impl Codec for OLBlockBody {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.tx_segment.encode(enc)?;
-        // Encode Option as bool (is_some) followed by value if present
-        match &self.l1_update {
-            Some(update) => {
-                true.encode(enc)?;
-                update.encode(enc)?;
-            }
-            None => {
-                false.encode(enc)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let tx_segment = OLTxSegment::decode(dec)?;
-        let l1_update = if bool::decode(dec)? {
-            Some(OLL1Update::decode(dec)?)
-        } else {
-            None
-        };
-
-        Ok(Self {
-            tx_segment,
-            l1_update,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Codec)]
-pub struct OLTxSegment {
-    /// Transactions in the segment.
-    txs: VarVec<OLTransaction>,
-    // Add other attributes.
-}
-
 impl OLTxSegment {
-    pub fn new(txs: Vec<OLTransaction>) -> Self {
-        Self {
-            txs: VarVec::from_vec(txs).expect("block: too many txs"),
-        }
+    pub fn new(txs: Vec<OLTransaction>) -> Result<Self, ChainTypesError> {
+        let provided = txs.len();
+        Ok(Self {
+            txs: VariableList::new(txs).map_err(|_| ChainTypesError::TooManyTransactions {
+                provided,
+                max: MAX_TXS_PER_BLOCK as usize,
+            })?,
+        })
     }
 
     pub fn txs(&self) -> &[OLTransaction] {
         &self.txs
     }
-}
-
-/// Represents an update from L1.
-#[derive(Clone, Debug, Codec)]
-pub struct OLL1Update {
-    /// The state root before applying updates from L1.
-    preseal_state_root: Buf32,
-
-    /// The manifests we extend the chain with.
-    manifest_cont: OLL1ManifestContainer,
 }
 
 impl OLL1Update {
@@ -303,15 +216,17 @@ impl OLL1Update {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct OLL1ManifestContainer {
-    /// Manifests building on top of previous l1 height to the new l1 height.
-    manifests: Vec<AsmManifest>,
-}
-
 impl OLL1ManifestContainer {
-    pub fn new(manifests: Vec<AsmManifest>) -> Self {
-        Self { manifests }
+    pub fn new(manifests: Vec<AsmManifest>) -> Result<Self, ChainTypesError> {
+        let provided = manifests.len();
+        Ok(Self {
+            manifests: VariableList::new(manifests).map_err(|_| {
+                ChainTypesError::TooManyManifests {
+                    provided,
+                    max: MAX_SEALING_MANIFEST_COUNT as usize,
+                }
+            })?,
+        })
     }
 
     pub fn manifests(&self) -> &[AsmManifest] {
@@ -319,53 +234,235 @@ impl OLL1ManifestContainer {
     }
 }
 
-// TODO rewrite this Codec impl by giving AsmManifest a Codec impl and converting to using VarVec
-impl Codec for OLL1ManifestContainer {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Encode Vec as length followed by elements
-        (self.manifests.len() as u64).encode(enc)?;
-        for manifest in &self.manifests {
-            // Encode each manifest field directly
-            manifest.blkid.encode(enc)?;
-            manifest.wtxids_root.encode(enc)?;
-            // Encode logs as length + elements
-            (manifest.logs.len() as u64).encode(enc)?;
-            for log in &manifest.logs {
-                // We need to encode AsmLogEntry - let's encode it as bytes for now
-                let bytes = borsh::to_vec(log)
-                    .map_err(|_| CodecError::InvalidVariant("Failed to serialize AsmLogEntry"))?;
-                (bytes.len() as u64).encode(enc)?;
-                for byte in bytes {
-                    byte.encode(enc)?;
-                }
-            }
-        }
-        Ok(())
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot};
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use crate::{
+        block_flags::BlockFlags,
+        ssz_generated::ssz::block::{
+            OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLL1ManifestContainer,
+            OLL1Update, OLTxSegment, SignedOLBlockHeader,
+        },
+        test_utils::{buf32_strategy, ol_transaction_strategy},
+    };
+
+    fn buf64_strategy() -> impl Strategy<Value = Buf64> {
+        any::<[u8; 64]>().prop_map(Buf64::from)
     }
 
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let len = u64::decode(dec)? as usize;
-        let mut manifests = Vec::with_capacity(len);
-        for _ in 0..len {
-            // Decode each manifest field
-            let blkid = L1BlockId::decode(dec)?;
-            let wtxids_root = Buf32::decode(dec)?;
-            // Decode logs
-            let logs_len = u64::decode(dec)? as usize;
-            let mut logs = Vec::with_capacity(logs_len);
-            for _ in 0..logs_len {
-                // Decode AsmLogEntry from bytes
-                let byte_len = u64::decode(dec)? as usize;
-                let mut bytes = Vec::with_capacity(byte_len);
-                for _ in 0..byte_len {
-                    bytes.push(u8::decode(dec)?);
-                }
-                let log = borsh::from_slice(&bytes)
-                    .map_err(|_| CodecError::InvalidVariant("Failed to deserialize AsmLogEntry"))?;
-                logs.push(log);
+    fn ol_block_id_strategy() -> impl Strategy<Value = OLBlockId> {
+        buf32_strategy().prop_map(OLBlockId::from)
+    }
+
+    fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
+        prop::collection::vec(ol_transaction_strategy(), 0..10)
+            .prop_map(|txs| OLTxSegment { txs: txs.into() })
+    }
+
+    fn l1_update_strategy() -> impl Strategy<Value = Option<OLL1Update>> {
+        prop::option::of(buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
+            preseal_state_root,
+            manifest_cont:
+                OLL1ManifestContainer::new(vec![]).expect("empty manifest should succeed"),
+        }))
+    }
+
+    fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeader> {
+        (
+            any::<u64>(),
+            any::<u16>().prop_map(BlockFlags::from),
+            any::<Slot>(),
+            any::<Epoch>(),
+            ol_block_id_strategy(),
+            buf32_strategy(),
+            buf32_strategy(),
+            buf32_strategy(),
+        )
+            .prop_map(
+                |(
+                    timestamp,
+                    flags,
+                    slot,
+                    epoch,
+                    parent_blkid,
+                    body_root,
+                    state_root,
+                    logs_root,
+                )| {
+                    OLBlockHeader {
+                        timestamp,
+                        flags,
+                        slot,
+                        epoch,
+                        parent_blkid,
+                        body_root,
+                        state_root,
+                        logs_root,
+                    }
+                },
+            )
+    }
+
+    fn signed_ol_block_header_strategy() -> impl Strategy<Value = SignedOLBlockHeader> {
+        (ol_block_header_strategy(), buf64_strategy()).prop_map(|(header, signature)| {
+            SignedOLBlockHeader {
+                header,
+                credential: OLBlockCredential {
+                    schnorr_sig: Some(signature).into(),
+                },
             }
-            manifests.push(AsmManifest::new(blkid, wtxids_root, logs));
+        })
+    }
+
+    fn ol_block_body_strategy() -> impl Strategy<Value = OLBlockBody> {
+        (ol_tx_segment_strategy(), l1_update_strategy()).prop_map(|(tx_segment, l1_update)| {
+            OLBlockBody {
+                tx_segment: Some(tx_segment).into(),
+                l1_update: l1_update.into(),
+            }
+        })
+    }
+
+    fn ol_block_strategy() -> impl Strategy<Value = OLBlock> {
+        (signed_ol_block_header_strategy(), ol_block_body_strategy()).prop_map(
+            |(signed_header, body)| OLBlock {
+                signed_header,
+                body,
+            },
+        )
+    }
+
+    mod ol_tx_segment {
+        use super::*;
+
+        ssz_proptest!(OLTxSegment, ol_tx_segment_strategy());
+
+        #[test]
+        fn test_empty_segment() {
+            let segment = OLTxSegment { txs: vec![].into() };
+            let encoded = segment.as_ssz_bytes();
+            let decoded = OLTxSegment::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(segment, decoded);
         }
-        Ok(Self { manifests })
+    }
+
+    mod l1_update {
+        use super::*;
+
+        fn l1_update_non_option_strategy() -> impl Strategy<Value = OLL1Update> {
+            buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
+                preseal_state_root,
+                manifest_cont: OLL1ManifestContainer::new(vec![])
+                    .expect("empty manifest should succeed"),
+            })
+        }
+
+        ssz_proptest!(OLL1Update, l1_update_non_option_strategy());
+
+        #[test]
+        fn test_zero_height() {
+            let update = OLL1Update {
+                preseal_state_root: Buf32::zero(),
+                manifest_cont: OLL1ManifestContainer::new(vec![])
+                    .expect("empty manifest should succeed"),
+            };
+            let encoded = update.as_ssz_bytes();
+            let decoded = OLL1Update::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(update, decoded);
+        }
+    }
+
+    mod ol_block_header {
+        use super::*;
+
+        ssz_proptest!(OLBlockHeader, ol_block_header_strategy());
+
+        #[test]
+        fn test_genesis_header() {
+            let header = OLBlockHeader {
+                timestamp: 0,
+                flags: BlockFlags::from(0),
+                slot: 0,
+                epoch: 0,
+                parent_blkid: OLBlockId::from(Buf32::zero()),
+                body_root: Buf32::zero(),
+                state_root: Buf32::zero(),
+                logs_root: Buf32::zero(),
+            };
+            let encoded = header.as_ssz_bytes();
+            let decoded = OLBlockHeader::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(header, decoded);
+        }
+    }
+
+    mod signed_ol_block_header {
+        use super::*;
+
+        ssz_proptest!(SignedOLBlockHeader, signed_ol_block_header_strategy());
+    }
+
+    mod ol_block_body {
+        use super::*;
+
+        ssz_proptest!(OLBlockBody, ol_block_body_strategy());
+
+        #[test]
+        fn test_empty_body() {
+            let body = OLBlockBody {
+                tx_segment: Some(OLTxSegment { txs: vec![].into() }).into(),
+                l1_update: Some(OLL1Update {
+                    preseal_state_root: Buf32::zero(),
+                    manifest_cont: OLL1ManifestContainer::new(vec![])
+                        .expect("empty manifest should succeed"),
+                })
+                .into(),
+            };
+            let encoded = body.as_ssz_bytes();
+            let decoded = OLBlockBody::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(body, decoded);
+        }
+    }
+
+    mod ol_block {
+        use super::*;
+
+        ssz_proptest!(OLBlock, ol_block_strategy());
+
+        #[test]
+        fn test_minimal_block() {
+            let block = OLBlock {
+                signed_header: SignedOLBlockHeader {
+                    header: OLBlockHeader {
+                        timestamp: 0,
+                        flags: BlockFlags::from(0),
+                        slot: 0,
+                        epoch: 0,
+                        parent_blkid: OLBlockId::from(Buf32::zero()),
+                        body_root: Buf32::zero(),
+                        state_root: Buf32::zero(),
+                        logs_root: Buf32::zero(),
+                    },
+                    credential: OLBlockCredential {
+                        schnorr_sig: Some(Buf64::zero()).into(),
+                    },
+                },
+                body: OLBlockBody {
+                    tx_segment: Some(OLTxSegment { txs: vec![].into() }).into(),
+                    l1_update: Some(OLL1Update {
+                        preseal_state_root: Buf32::zero(),
+                        manifest_cont: OLL1ManifestContainer::new(vec![])
+                            .expect("empty manifest should succeed"),
+                    })
+                    .into(),
+                },
+            };
+            let encoded = block.as_ssz_bytes();
+            let decoded = OLBlock::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(block, decoded);
+        }
     }
 }

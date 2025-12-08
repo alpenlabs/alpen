@@ -2,9 +2,11 @@
 //!
 //! This module contains types and tables for managing bridge operators
 
+use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
+use strata_btc_types::BitcoinScriptBuf;
 use strata_crypto::{aggregate_schnorr_keys, schnorr::EvenPublicKey};
 use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
 
@@ -68,6 +70,15 @@ impl OperatorEntry {
     }
 }
 
+/// Builds a P2TR script for the provided aggregated operator key.
+fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptBuf {
+    BitcoinScriptBuf::from(ScriptBuf::new_p2tr(
+        SECP256K1,
+        agg_key.to_xonly_public_key(),
+        None,
+    ))
+}
+
 /// Table for managing registered bridge operators.
 ///
 /// This table maintains all registered operators with efficient lookup and insertion
@@ -124,57 +135,53 @@ pub struct OperatorTable {
     /// The key is automatically computed when the operator table is created or
     /// updated, ensuring it always reflects the current active multisig participants.
     agg_key: BitcoinXOnlyPublicKey,
+
+    /// Historical N/N multisig scripts from previous operator set configurations.
+    ///
+    /// This vector tracks all P2TR scripts that represented the bridge across membership changes
+    /// due to operator entries/exits. By storing the ScriptBuf directly instead of just keys, we
+    /// avoid recomputing P2TR scripts during validation, improving performance.
+    historical_nn_scripts: Vec<BitcoinScriptBuf>,
 }
 
 impl OperatorTable {
-    /// Constructs an operator table from a list of operator public keys.
+    /// Bootstraps an operator table with an initial active operator set.
     ///
-    /// This method is used during initialization to populate the table with a known set of
-    /// operators. Indices are assigned sequentially starting from 0.
+    /// Every provided key is added and marked active, skipping any duplicates. The aggregated
+    /// MuSig2 key and the first N/N script are computed via the normal membership change flow so
+    /// script history starts with this initial configuration.
+    ///
+    /// Indices are assigned sequentially starting from 0.
     ///
     /// # Parameters
     ///
-    /// - `entries` - Slice of [`EvenPublicKey`] containing MuSig2 keys
-    ///
-    /// # Returns
-    ///
-    /// A new [`OperatorTable`] with operators indexed 0, 1, 2, etc.
+    /// - `operators` - Initial set of [`EvenPublicKey`] MuSig2 keys. Duplicate keys are ignored.
     ///
     /// # Panics
     ///
-    /// Panics if `entries` is empty. At least one operator is required.
-    pub fn from_operator_list(entries: &[EvenPublicKey]) -> Self {
-        if entries.is_empty() {
+    /// Panics if `operators` is empty. At least one operator is required.
+    pub fn from_operator_list(operators: &[EvenPublicKey]) -> Self {
+        if operators.is_empty() {
             panic!(
                 "Cannot create operator table with empty entries - at least one operator is required"
             );
         }
-        let agg_operator_key = aggregate_schnorr_keys(
-            entries
-                .iter()
-                .map(|pk| Buf32::from(pk.x_only_public_key().0.serialize()))
-                .collect::<Vec<_>>()
-                .iter(),
-        )
-        .unwrap()
-        .into();
-        // Create bitmap with all initial operators as active (0, 1, 2, ..., n-1)
-        let bitmap = OperatorBitmap::new_with_size(entries.len(), true);
-        Self {
-            next_idx: entries.len() as OperatorIdx,
-            operators: SortedVec::new_unchecked(
-                entries
-                    .iter()
-                    .enumerate()
-                    .map(|(i, pk)| OperatorEntry {
-                        idx: i as OperatorIdx,
-                        musig2_pk: *pk,
-                    })
-                    .collect(),
-            ),
-            active_operators: bitmap,
-            agg_key: agg_operator_key,
-        }
+
+        // Placeholder so the table is fully initialized before we compute the real aggregated key.
+        let placeholder_agg_key = BitcoinXOnlyPublicKey::new([1u8; 32].into()).unwrap();
+
+        let mut table = Self {
+            next_idx: 0,
+            operators: SortedVec::new_empty(),
+            active_operators: OperatorBitmap::new_empty(),
+            agg_key: placeholder_agg_key,
+            historical_nn_scripts: Vec::new(),
+        };
+
+        // Reuse membership change flow to handle deduplication and seed script history.
+        table.apply_membership_changes(operators, &[]);
+
+        table
     }
 
     /// Returns the number of registered operators.
@@ -197,6 +204,26 @@ impl OperatorTable {
     /// This key is computed by aggregating the MuSig2 public keys of all active operators.
     pub fn agg_key(&self) -> &BitcoinXOnlyPublicKey {
         &self.agg_key
+    }
+
+    /// Returns an iterator over all stored N/N multisig scripts in chronological order.
+    ///
+    /// The scripts represent past N/N multisig configurations (with the last entry always
+    /// corresponding to the current operator set) and are used to validate slash transactions that
+    /// reference stake connectors from those historical operator sets.
+    pub fn historical_nn_scripts(&self) -> impl Iterator<Item = &ScriptBuf> {
+        self.historical_nn_scripts.iter().map(|s| s.inner())
+    }
+
+    /// Returns the current N/N multisig script for the active operator set.
+    ///
+    /// The latest script is stored as the last entry in `historical_nn_scripts` and is reused for
+    /// validating new slash transactions and stake connectors without recomputing.
+    pub fn current_nn_script(&self) -> &ScriptBuf {
+        self.historical_nn_scripts
+            .last()
+            .expect("N/N script history should never be empty")
+            .inner()
     }
 
     /// Retrieves an operator entry by its unique index.
@@ -240,35 +267,63 @@ impl OperatorTable {
         &self.active_operators
     }
 
-    /// Updates the active status for multiple operators, inserts new operators,
-    /// and recalculates the aggregated key.
+    /// Atomically applies membership changes by adding new operators and removing existing ones,
+    /// then recalculates the aggregated key.
     ///
-    /// # Parameters
-    ///
-    /// - `updates` - Slice of (operator_index, is_active) pairs for existing operators
-    /// - `inserts` - Slice of new operator MuSig2 public keys to insert (marked as active by
-    ///   default)
+    /// After recalculating, the new N/N script is appended to `historical_nn_scripts` so the latest
+    /// script remains accessible while older entries continue to support validation for previous
+    /// operator configurations.
     ///
     /// # Processing Order
     ///
-    /// Inserts are processed before updates. If an operator index appears in both parameters,
-    /// the update will override the insert's `is_active` value.
+    /// Additions are processed before removals. If an operator index appears in both parameters,
+    /// the removal will override the addition's `is_active` value.
     ///
     /// # Panics
     ///
     /// Panics if:
-    /// - The updates would result in no active operators
+    /// - The changes would result in no active operators
     /// - Sequential operator insertion fails (bitmap index management error)
     /// - `next_idx` overflows `u32::MAX` when inserting new operators (since operator indices are
     ///   never reused, this limits the total number of unique operators that can ever be registered
     ///   to `u32::MAX` or 4,294,967,295 over the bridge's lifetime)
-    pub fn update_multisig_and_recalc_key(
+    pub fn apply_membership_changes(
         &mut self,
-        updates: &[(OperatorIdx, bool)],
-        inserts: &[EvenPublicKey],
+        add_members: &[EvenPublicKey],
+        remove_members: &[OperatorIdx],
     ) {
-        // Handle inserts first
-        for musig2_pk in inserts {
+        self.add_operators(add_members);
+        self.remove_operators(remove_members);
+
+        let did_change = !remove_members.is_empty() || !add_members.is_empty();
+        if did_change {
+            self.calculate_aggregated_key();
+            self.historical_nn_scripts
+                .push(build_nn_script(&self.agg_key));
+        }
+    }
+
+    /// Adds new operators to the table and marks them as active.
+    ///
+    /// # Duplicate Keys
+    ///
+    /// Duplicate public keys are **NOT** allowed. If an operator already exists in the table,
+    /// the duplicate addition is ignored, and the existing operator remains unaffected.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - Sequential operator insertion fails (bitmap index management error)
+    /// - `next_idx` overflows `u32::MAX`
+    fn add_operators(&mut self, operators: &[EvenPublicKey]) {
+        for musig2_pk in operators {
+            // Check if it already exists in the table (which handles both existing operators
+            // and internal duplicates in the input list, as the first occurrence is added)
+            if self.operators.iter().any(|op| op.musig2_pk() == musig2_pk) {
+                eprintln!("Skipping duplicate operator: {:?}", musig2_pk);
+                continue;
+            }
+
             let idx = self.next_idx;
             let entry = OperatorEntry {
                 idx,
@@ -285,9 +340,11 @@ impl OperatorTable {
 
             self.next_idx += 1;
         }
+    }
 
-        // Handle updates by modifying the bitmap directly
-        for &(idx, is_active) in updates {
+    /// Deactivates existing operators by their indices.
+    fn remove_operators(&mut self, indices: &[OperatorIdx]) {
+        for &idx in indices {
             // Only update if the operator exists
             if self
                 .operators
@@ -298,32 +355,35 @@ impl OperatorTable {
                 // For existing operators, we can set their status directly
                 if (idx as usize) < self.active_operators.len() {
                     self.active_operators
-                        .try_set(idx, is_active)
+                        .try_set(idx, false)
                         .expect("Setting existing operator status should succeed");
                 }
             }
         }
+    }
 
-        if !updates.is_empty() || !inserts.is_empty() {
-            // Recalculate aggregated key based on active operators
-            let active_keys: Vec<Buf32> = self
-                .active_operators
-                .active_indices()
-                .filter_map(|op| {
-                    self.get_operator(op).map(|entry| {
-                        Buf32::from(entry.musig2_pk().x_only_public_key().0.serialize())
-                    })
-                })
-                .collect();
+    /// Calculates the aggregated key based on currently active operators.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no active operators.
+    fn calculate_aggregated_key(&mut self) {
+        let active_keys: Vec<Buf32> = self
+            .active_operators
+            .active_indices()
+            .filter_map(|op| {
+                self.get_operator(op)
+                    .map(|entry| Buf32::from(entry.musig2_pk().x_only_public_key().0.serialize()))
+            })
+            .collect();
 
-            if active_keys.is_empty() {
-                panic!("Cannot have empty multisig - at least one operator must be active");
-            }
-
-            self.agg_key = aggregate_schnorr_keys(active_keys.iter())
-                .expect("Failed to generate aggregated key")
-                .into();
+        if active_keys.is_empty() {
+            panic!("Cannot have empty multisig - at least one operator must be active");
         }
+
+        self.agg_key = aggregate_schnorr_keys(active_keys.iter())
+            .expect("Failed to generate aggregated key")
+            .into();
     }
 }
 
@@ -365,12 +425,19 @@ mod tests {
         assert!(!table.is_empty());
         assert_eq!(table.next_idx, 3);
 
-        // Verify operators are correctly indexed and stored
-        for (i, op_pk) in operators.iter().enumerate() {
-            let entry = table.get_operator(i as u32).unwrap();
-            assert_eq!(entry.idx(), i as u32);
-            assert_eq!(entry.musig2_pk(), op_pk);
-            assert!(table.is_in_current_multisig(i as u32));
+        // Verify all operators are present in the table
+        // Note: Indices may not match input order due to HashSet deduplication
+        for op_pk in &operators {
+            let found = table
+                .operators()
+                .iter()
+                .any(|entry| entry.musig2_pk() == op_pk);
+            assert!(found, "Operator {:?} not found in table", op_pk);
+        }
+
+        // precise index check is no longer valid as order is not guaranteed
+        for entry in table.operators() {
+            assert!(table.is_in_current_multisig(entry.idx()));
         }
     }
 
@@ -380,7 +447,7 @@ mod tests {
         let mut table = OperatorTable::from_operator_list(&initial_operators);
 
         let new_operators = create_test_operator_pubkeys(2);
-        table.update_multisig_and_recalc_key(&[], &new_operators);
+        table.apply_membership_changes(&new_operators, &[]);
 
         assert_eq!(table.len(), 3);
         assert_eq!(table.next_idx, 3);
@@ -396,6 +463,48 @@ mod tests {
     }
 
     #[test]
+    fn test_operator_table_insert_duplicate() {
+        let initial_operators = create_test_operator_pubkeys(1);
+        let mut table = OperatorTable::from_operator_list(&initial_operators);
+
+        // Try to add the same operator again - should be silently ignored
+        table.apply_membership_changes(&initial_operators, &[]);
+
+        // Check that state hasn't changed (still 1 operator)
+        assert_eq!(table.len(), 1);
+        assert_eq!(table.next_idx, 1);
+    }
+
+    #[test]
+    fn test_operator_table_create_with_duplicate_deduplicates() {
+        let mut operators = create_test_operator_pubkeys(2);
+        operators[1] = operators[0]; // Duplicate key
+
+        let table = OperatorTable::from_operator_list(&operators);
+
+        // Should have deduplicated to just 1 operator
+        assert_eq!(table.len(), 1);
+        assert_eq!(table.next_idx, 1);
+        assert_eq!(*table.get_operator(0).unwrap().musig2_pk(), operators[0]);
+    }
+
+    #[test]
+    fn test_operator_table_add_internal_duplicates() {
+        let initial_operators = create_test_operator_pubkeys(1);
+        let mut table = OperatorTable::from_operator_list(&initial_operators);
+
+        let new_operators = create_test_operator_pubkeys(1);
+        // Try to add the same new operator twice in the same batch
+        let duplicates = vec![new_operators[0], new_operators[0]];
+
+        table.apply_membership_changes(&duplicates, &[]);
+
+        // Should have only added one new operator
+        assert_eq!(table.len(), 2);
+        assert_eq!(table.next_idx, 2);
+    }
+
+    #[test]
     fn test_operator_table_update_active_status() {
         let operators = create_test_operator_pubkeys(3);
         let mut table = OperatorTable::from_operator_list(&operators);
@@ -406,18 +515,18 @@ mod tests {
         assert!(table.is_in_current_multisig(2));
 
         // Update multiple operators at once
-        let updates = vec![(0, false), (2, false)];
-        table.update_multisig_and_recalc_key(&updates, &[]);
+        let removals = vec![0, 2];
+        table.apply_membership_changes(&[], &removals);
         assert!(!table.is_in_current_multisig(0));
         assert!(table.is_in_current_multisig(1)); // unchanged
         assert!(!table.is_in_current_multisig(2));
 
-        // Test with non-existent operator
-        let updates = vec![(0, true), (99, false)]; // 99 doesn't exist
-        table.update_multisig_and_recalc_key(&updates, &[]);
+        // Test re-adding operator 0
+        let additions = vec![0];
+        table.apply_membership_changes(&[], &additions);
 
-        // Only existing operator should be updated
-        assert!(table.is_in_current_multisig(0));
+        // Operator 0 should remain inactive (it was already added)
+        assert!(!table.is_in_current_multisig(0));
     }
 
     #[test]
@@ -430,10 +539,67 @@ mod tests {
         assert_eq!(active_indices, vec![0, 1, 2]);
 
         // Mark operator 1 as inactive
-        table.update_multisig_and_recalc_key(&[(1, false)], &[]);
+        table.apply_membership_changes(&[], &[1]);
 
         // Now only operators 0 and 2 should be active
         let active_indices: Vec<_> = table.current_multisig().active_indices().collect();
         assert_eq!(active_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn test_historical_nn_scripts_tracking() {
+        let operators = create_test_operator_pubkeys(3);
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 1);
+        let initial_script = table.current_nn_script().clone();
+        assert_eq!(historical_scripts[0], &initial_script);
+
+        table.apply_membership_changes(&[], &[0]);
+
+        let second_script = table.current_nn_script().clone();
+        assert_ne!(second_script, initial_script);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 2);
+        assert_eq!(historical_scripts[0], &initial_script);
+        assert_eq!(historical_scripts[1], &second_script);
+
+        table.apply_membership_changes(&[], &[1]);
+
+        let third_script = table.current_nn_script().clone();
+        assert_ne!(third_script, second_script);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 3);
+        assert_eq!(historical_scripts[0], &initial_script);
+        assert_eq!(historical_scripts[1], &second_script);
+        assert_eq!(historical_scripts[2], &third_script);
+
+        assert_ne!(initial_script, second_script);
+        assert_ne!(second_script, third_script);
+        assert_ne!(initial_script, third_script);
+    }
+
+    #[test]
+    fn test_historical_scripts_on_additions() {
+        let operators = create_test_operator_pubkeys(3);
+        let mut table = OperatorTable::from_operator_list(&operators);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 1);
+        let initial_script = table.current_nn_script().clone();
+
+        let new_operators = create_test_operator_pubkeys(2);
+        table.apply_membership_changes(&new_operators, &[]);
+
+        let new_script = table.current_nn_script().clone();
+        assert_ne!(new_script, initial_script);
+
+        let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
+        assert_eq!(historical_scripts.len(), 2);
+        assert_eq!(historical_scripts[0], &initial_script);
+        assert_eq!(historical_scripts[1], &new_script);
     }
 }

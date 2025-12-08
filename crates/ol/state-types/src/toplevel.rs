@@ -3,7 +3,7 @@
 use bitcoin::absolute;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
 use strata_codec::{Codec, encode_to_vec};
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, OLBlockId, hash::raw};
+use strata_identifiers::{Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockId, Slot, hash::raw};
 use strata_ledger_types::{AccountTypeState, EpochCommitment, StateAccessor};
 
 use crate::{
@@ -39,11 +39,11 @@ impl OLState {
     }
 
     /// Create a state with specified epoch and slot for testing.
-    pub fn new_at(epoch: u64, slot: u64) -> Self {
+    pub fn new_at(epoch: Epoch, slot: Slot) -> Self {
         Self {
             epoch: EpochalState::new(
                 BitcoinAmount::from(0),
-                epoch as u32,
+                epoch,
                 L1BlockCommitment::new(
                     absolute::Height::from_consensus(0).unwrap(),
                     L1BlockId::from(Buf32::zero()),

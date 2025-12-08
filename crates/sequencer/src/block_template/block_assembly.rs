@@ -147,7 +147,7 @@ pub fn prepare_block(
 
     let body = L2BlockBody::new(l1_seg, exec_seg);
     let fake_stateroot = Buf32::zero();
-    let fake_header = L2BlockHeader::new(slot, epoch, ts, prev_blkid, &body, fake_stateroot);
+    let fake_header = L2BlockHeader::new(slot, epoch as u64, ts, prev_blkid, &body, fake_stateroot);
 
     // Execute the block to compute the new state root, then assemble the real header.
     // TODO do something with the write batch?  to prepare it in the database?
@@ -156,7 +156,7 @@ pub fn prepare_block(
     // FIXME: invalid stateroot. Remove l2blockid from ChainState or stateroot from L2Block header.
     let new_state_root = post_state.compute_state_root();
 
-    let header = L2BlockHeader::new(slot, epoch, ts, prev_blkid, &body, new_state_root);
+    let header = L2BlockHeader::new(slot, epoch as u64, ts, prev_blkid, &body, new_state_root);
 
     Ok((header, body, block_acc))
 }
@@ -208,7 +208,7 @@ fn prepare_l1_segment(
         let prev_epoch = prev_chstate.prev_epoch().epoch();
         // previous checkpoint entry should exist in db
         let checkpoint = ckptman
-            .get_checkpoint_blocking(prev_epoch)?
+            .get_checkpoint_blocking(prev_epoch as u64)?
             .ok_or(Error::MissingCheckpoint(prev_epoch))?
             .checkpoint;
 

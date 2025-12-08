@@ -3,6 +3,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::{DepositsTable, OperatorTable, WithdrawalIntent};
+use strata_identifiers::Epoch;
 use strata_primitives::{
     buf::Buf32,
     epoch::EpochCommitment,
@@ -33,7 +34,7 @@ pub struct Chainstate {
     ///
     /// Immediately after genesis, this is 0, so the first checkpoint batch is
     /// checkpoint 0, moving us into checkpoint period 1.
-    pub(crate) cur_epoch: u64,
+    pub(crate) cur_epoch: Epoch,
 
     /// The immediately preceding epoch.
     ///
@@ -102,7 +103,7 @@ impl Chainstate {
         &mut self.l1_state
     }
 
-    pub fn cur_epoch(&self) -> u64 {
+    pub fn cur_epoch(&self) -> Epoch {
         self.cur_epoch
     }
 
@@ -175,7 +176,7 @@ impl Chainstate {
 #[derive(Debug, BorshSerialize, BorshDeserialize, Clone, Copy)]
 pub struct HashedChainState {
     pub prev_block: Buf32,
-    pub cur_epoch: u64,
+    pub cur_epoch: Epoch,
     pub prev_epoch: Buf32,
     pub l1_state_hash: Buf32,
     pub pending_withdraws_hash: Buf32,

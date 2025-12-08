@@ -3,7 +3,9 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, L2BlockCommitment, L2BlockId};
+use strata_identifiers::{
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment, L2BlockId, Slot,
+};
 
 /// Summary generated when we accept the last block of an epoch.
 ///
@@ -25,7 +27,7 @@ pub struct EpochSummary {
     /// The epoch number.
     ///
     /// These are always sequential.
-    epoch: u64,
+    epoch: Epoch,
 
     /// The last block of the checkpoint.
     terminal: L2BlockCommitment,
@@ -49,7 +51,7 @@ pub struct EpochSummary {
 impl EpochSummary {
     /// Creates a new instance.
     pub fn new(
-        epoch: u64,
+        epoch: Epoch,
         terminal: L2BlockCommitment,
         prev_terminal: L2BlockCommitment,
         new_l1: L1BlockCommitment,
@@ -64,7 +66,7 @@ impl EpochSummary {
         }
     }
 
-    pub fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 
@@ -128,7 +130,7 @@ impl EpochSummary {
 )]
 pub struct BatchInfo {
     /// Checkpoint epoch
-    pub epoch: u64,
+    pub epoch: Epoch,
 
     /// L1 block range(inclusive) the checkpoint covers
     pub l1_range: (L1BlockCommitment, L1BlockCommitment),
@@ -145,7 +147,7 @@ impl fmt::Display for BatchInfo {
 
 impl BatchInfo {
     pub fn new(
-        checkpoint_idx: u64,
+        checkpoint_idx: Epoch,
         l1_range: (L1BlockCommitment, L1BlockCommitment),
         l2_range: (L2BlockCommitment, L2BlockCommitment),
     ) -> Self {
@@ -157,7 +159,7 @@ impl BatchInfo {
     }
 
     /// Geets the epoch index.
-    pub fn epoch(&self) -> u64 {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 
@@ -182,7 +184,7 @@ impl BatchInfo {
     }
 
     /// Check is whether the L2 slot is covered by the checkpoint
-    pub fn includes_l2_block(&self, slot: u64) -> bool {
+    pub fn includes_l2_block(&self, slot: Slot) -> bool {
         let (_, last_l2_commitment) = self.l2_range;
         if slot <= last_l2_commitment.slot() {
             return true;

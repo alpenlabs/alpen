@@ -13,7 +13,7 @@ use jsonrpsee::{
 use jsonrpsee_http_client::RpcService;
 #[cfg(test)]
 use mockall::automock;
-use reth_primitives::Receipt;
+use reth_primitives::{Receipt, TransactionSigned};
 use reth_rpc_api::{EngineApiClient, EthApiClient};
 use reth_rpc_layer::{AuthClientLayer, AuthClientService};
 use revm_primitives::alloy_primitives::{BlockHash, B256};
@@ -114,6 +114,7 @@ impl EngineRpc for EngineRpcClient {
             RpcBlock<alloy_rpc_types::Transaction>,
             Receipt,
             Header,
+            TransactionSigned,
         >>::block_by_hash(&self.client, block_hash, false)
         .await
     }

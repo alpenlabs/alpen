@@ -49,9 +49,10 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{args::Args, helpers::*};
+use crate::{args::Args, el_sync::sync_chainstate_to_el, helpers::*};
 
 mod args;
+mod el_sync;
 mod errors;
 mod helpers;
 mod network;
@@ -289,6 +290,28 @@ fn do_startup_checks(
         }
         Err(client_error) => {
             anyhow::bail!("could not connect to bitcoin, err = {}", client_error);
+        }
+    }
+
+    // Check that tip L2 block exists (and engine can be connected to)
+    let tip_check_res = retry_with_backoff(
+        "engine_check_block_exists",
+        DEFAULT_ENGINE_CALL_MAX_RETRIES,
+        &ExponentialBackoff::default(),
+        || engine.check_block_exists(L2BlockRef::Id(tip_blockid)),
+    );
+    match tip_check_res {
+        Ok(true) => {
+            info!("startup: last l2 block is synced")
+        }
+        Ok(false) => {
+            // Current chain tip tip block is not known by the EL.
+            warn!(%tip_blockid, "missing expected EVM block");
+            sync_chainstate_to_el(storage, engine)?;
+        }
+        Err(error) => {
+            // Likely network issue
+            anyhow::bail!("could not connect to exec engine, err = {}", error);
         }
     }
 

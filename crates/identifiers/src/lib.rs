@@ -17,14 +17,34 @@ pub use acct::{
 };
 pub use buf::{Buf20, Buf32, Buf64};
 pub use cred_rule::CredRule;
-pub use epoch::EpochCommitment;
 pub use exec::{
     EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, create_evm_extra_payload,
 };
-pub use l1::{BitcoinBlockHeight, L1BlockCommitment, L1BlockId, L1Height};
-pub use ol::{L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId};
+pub use l1::{BitcoinBlockHeight, L1BlockId, L1Height, WtxidsRoot};
+pub use ol::{Epoch, L2BlockCommitment, L2BlockId, OLBlockId, OLTxId, Slot};
 
 // Re-export for macro use
 #[doc(hidden)]
 #[rustfmt::skip]
 pub use strata_codec;
+
+/// SSZ-generated types for serialization and merkleization.
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    reason = "generated code"
+)]
+pub mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
+// Re-export generated commitment types
+#[cfg(feature = "bitcoin")]
+pub use l1::L1BlockCommitment;
+#[cfg(not(feature = "bitcoin"))]
+pub use ssz_generated::ssz::commitments::L1BlockCommitment;
+pub use ssz_generated::ssz::commitments::{
+    EpochCommitment, EpochCommitmentRef, L1BlockCommitmentRef, OLBlockCommitment,
+    OLBlockCommitmentRef,
+};

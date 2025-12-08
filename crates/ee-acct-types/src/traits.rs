@@ -86,14 +86,6 @@ pub trait ExecutionEnvironment: Sized {
         inputs: &BlockInputs,
     ) -> EnvResult<ExecBlockOutput<Self>>;
 
-    /// Completes a header for an exec payload using the exec outputs.  This can
-    /// be assembled into a final block.
-    fn complete_header(
-        &self,
-        exec_payload: &ExecPayload<'_, Self::Block>,
-        output: &ExecBlockOutput<Self>,
-    ) -> EnvResult<<Self::Block as ExecBlock>::Header>;
-
     /// Performs any additional checks needed from the block outputs against the
     /// header.
     fn verify_outputs_against_header(
@@ -103,9 +95,28 @@ pub trait ExecutionEnvironment: Sized {
     ) -> EnvResult<()>;
 
     /// Applies a pending write batch into the partial state.
+    // NOTE: should this be moved to BlockAssembler?
     fn merge_write_into_state(
         &self,
         state: &mut Self::PartialState,
         wb: &Self::WriteBatch,
     ) -> EnvResult<()>;
+}
+
+/// Block assembly trait for constructing complete headers from execution outputs.
+///
+/// This trait is separate from ExecutionEnvironment because header completion
+/// is only needed when building new blocks, not when verifying existing blocks.
+/// The ExecutionEnvironment trait focuses on proof-related operations.
+pub trait BlockAssembler: ExecutionEnvironment {
+    /// Constructs a complete header from header intrinsics and execution outputs.
+    ///
+    /// This combines the header intrinsics (parent hash, timestamp, etc.) with
+    /// the computed commitments from execution (state root, logs bloom, etc.)
+    /// to produce a complete block header.
+    fn complete_header(
+        &self,
+        exec_payload: &ExecPayload<'_, Self::Block>,
+        output: &ExecBlockOutput<Self>,
+    ) -> EnvResult<<Self::Block as ExecBlock>::Header>;
 }

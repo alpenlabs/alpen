@@ -36,11 +36,20 @@ pub enum AuxError {
         source: bitcoin::consensus::encode::Error,
     },
 
-    /// Bitcoin transaction not found by txid.
+    /// Bitcoin transaction not found.
     #[error("Bitcoin transaction not found: {txid:?}")]
     BitcoinTxNotFound {
         /// The requested txid
         txid: Txid,
+    },
+
+    /// Bitcoin [`TxOut`](bitcoin::TxOut) not found.
+    #[error("Bitcoin transaction out not found for {txid:?}: {vout:?}")]
+    BitcoinTxOutNotFound {
+        /// The requested txid
+        txid: Txid,
+        /// The requested vout
+        vout: u32,
     },
 
     /// Manifest hash not found at the given MMR index.

@@ -8,11 +8,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition};
-use strata_primitives::{
-    buf::Buf32,
-    epoch::EpochCommitment,
-    l1::{L1BlockCommitment, L1BlockId},
-};
+use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -72,11 +68,11 @@ impl ClientState {
     }
 
     /// Gets the next epoch we expect to be confirmed.
-    pub fn get_next_expected_epoch_conf(&self) -> u64 {
+    pub fn get_next_expected_epoch_conf(&self) -> Epoch {
         self.last_seen_checkpoint
             .as_ref()
             .map(|ck| ck.batch_info.get_epoch_commitment().epoch() + 1)
-            .unwrap_or(0u64)
+            .unwrap_or(0u32)
     }
 }
 

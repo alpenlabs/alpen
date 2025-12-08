@@ -11,6 +11,7 @@ alpen-reth-primitives.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
 
+alloy-consensus.workspace = true
 alloy-sol-types.workspace = true
 reth-evm.workspace = true
 reth-primitives.workspace = true

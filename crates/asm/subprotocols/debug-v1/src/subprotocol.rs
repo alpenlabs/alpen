@@ -3,11 +3,11 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
+use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
     TxInputRef, VerifiedAuxData, logging,
 };
-use strata_asm_proto_bridge_v1::BridgeIncomingMsg;
 
 use crate::{
     constants::DEBUG_SUBPROTOCOL_ID,

@@ -51,3 +51,4 @@ pub mod sorted_vec;
 pub mod utils;
 
 pub use bitcoin_bosd;
+pub use serde_helpers::serde_hex_bytes::*;

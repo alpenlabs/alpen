@@ -7,14 +7,17 @@
 
 #![cfg_attr(test, expect(unused_crate_dependencies, reason = "test weirdness"))]
 
+mod block_assembly;
 mod exec_processing;
 mod private_input;
 mod update_processing;
 mod verification_state;
 
+pub use block_assembly::apply_input_messages;
 pub use private_input::SharedPrivateInput;
 pub use update_processing::{
-    apply_update_operation_unconditionally, verify_and_apply_update_operation,
+    MsgData, MsgMeta, apply_final_update_changes, apply_update_operation_unconditionally,
+    verify_and_apply_update_operation,
 };
 
 // Builder utils

@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use bitcoin::{Transaction, Txid};
+use bitcoin::{OutPoint, Transaction, TxOut, Txid};
 use strata_btc_types::RawBitcoinTx;
 use strata_merkle::CompactMmr64;
 
@@ -132,6 +132,21 @@ impl VerifiedAuxData {
         self.txs
             .get(&txid)
             .ok_or(AuxError::BitcoinTxNotFound { txid })
+    }
+
+    /// Returns the transaction output for the given outpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AuxError::BitcoinTxNotFound` if the transaction is not found.
+    pub fn get_bitcoin_txout(&self, outpoint: &OutPoint) -> AuxResult<&TxOut> {
+        let tx = self.get_bitcoin_tx(outpoint.txid)?;
+        tx.output
+            .get(outpoint.vout as usize)
+            .ok_or(AuxError::BitcoinTxOutNotFound {
+                txid: outpoint.txid,
+                vout: outpoint.vout,
+            })
     }
 
     /// Gets a verified manifest hash by MMR index.

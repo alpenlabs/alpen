@@ -72,7 +72,7 @@ async fn extract_batch_duties(
 
     let mut duties = Vec::new();
 
-    for i in first_epoch_idx..=last_checkpoint_idx {
+    for i in (first_epoch_idx as u64)..=last_checkpoint_idx {
         let Some(ckpt) = checkpoint_handle.get_checkpoint(i).await? else {
             error!(ckpt = %i, "database told us we had checkpoint but it was missing, moving on");
             break;

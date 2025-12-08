@@ -21,12 +21,14 @@
 
 mod errors;
 mod handler;
-mod msgs;
 mod parser;
 mod state;
 mod subprotocol;
 
+#[cfg(test)]
+mod test_utils;
+
 pub use errors::*;
-pub use msgs::BridgeIncomingMsg;
-pub use state::{BridgeV1Config, BridgeV1State, withdrawal::WithdrawOutput};
+pub use state::{BridgeV1Config, BridgeV1State};
+pub use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
 pub use subprotocol::BridgeV1Subproto;

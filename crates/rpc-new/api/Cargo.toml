@@ -1,0 +1,16 @@
+[package]
+edition = "2021"
+name = "strata-rpc-api-new"
+version = "0.1.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-identifiers.workspace = true
+strata-rpc-types-new.workspace = true
+
+jsonrpsee = { workspace = true, features = ["server", "macros"] }
+
+[features]
+client = ["jsonrpsee/client"]

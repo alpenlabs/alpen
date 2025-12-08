@@ -14,6 +14,9 @@ const DEFAULT_P2P_PORT: u16 = 8543;
 /// Default value for `datadir` in [`ClientConfig`].
 const DEFAULT_DATADIR: &str = "strata-data";
 
+/// Default DB retry delay in ms.
+const DEFAULT_DB_RETRY_DELAY: u64 = 200;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -43,6 +46,10 @@ pub struct ClientConfig {
     /// For optimistic transactions, how many times to retry if a write fails.
     pub db_retry_count: u16,
 
+    /// Db retry delay in ms.
+    #[serde(default = "default_db_retry_delay")]
+    pub db_retry_delay_ms: u64,
+
     /// If sequencer tasks should run or not. Default to false.
     #[serde(default)]
     pub is_sequencer: bool,
@@ -58,6 +65,10 @@ fn default_rpc_port() -> u16 {
 
 fn default_datadir() -> PathBuf {
     DEFAULT_DATADIR.into()
+}
+
+fn default_db_retry_delay() -> u64 {
+    DEFAULT_DB_RETRY_DELAY
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

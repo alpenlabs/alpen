@@ -9,7 +9,7 @@
 
 use strata_asm_common::logging;
 use strata_checkpoint_types::{
-    verify_signed_checkpoint_sig, BatchTransition, Checkpoint, SignedCheckpoint,
+    BatchTransition, Checkpoint, SignedCheckpoint, verify_signed_checkpoint_sig,
 };
 
 use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};

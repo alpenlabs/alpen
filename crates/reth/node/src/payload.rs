@@ -10,7 +10,6 @@ use alloy_rpc_types::{
     Withdrawal,
 };
 use alpen_reth_primitives::WithdrawalIntent;
-use reth_chain_state::ExecutedBlockWithTrieUpdates;
 use reth_ethereum_engine_primitives::BuiltPayloadConversionError;
 use reth_node_api::{BuiltPayload, PayloadAttributes, PayloadBuilderAttributes};
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
@@ -132,6 +131,10 @@ impl AlpenBuiltPayload {
             withdrawal_intents,
         }
     }
+
+    pub fn withdrawal_intents(&self) -> &[WithdrawalIntent] {
+        &self.withdrawal_intents
+    }
 }
 
 impl BuiltPayload for AlpenBuiltPayload {
@@ -143,10 +146,6 @@ impl BuiltPayload for AlpenBuiltPayload {
 
     fn fees(&self) -> U256 {
         self.inner.fees()
-    }
-
-    fn executed_block(&self) -> Option<ExecutedBlockWithTrieUpdates<Self::Primitives>> {
-        self.inner.executed_block().clone()
     }
 
     fn requests(&self) -> Option<Requests> {

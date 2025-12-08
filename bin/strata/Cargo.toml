@@ -1,0 +1,35 @@
+[package]
+name = "strata"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-asm-worker.workspace = true
+strata-common.workspace = true
+strata-config.workspace = true
+strata-consensus-logic.workspace = true
+strata-csm-types.workspace = true
+strata-csm-worker.workspace = true
+strata-db-store-sled.workspace = true
+strata-db-types.workspace = true
+strata-params.workspace = true
+strata-service.workspace = true
+strata-status.workspace = true
+strata-storage.workspace = true
+strata-tasks.workspace = true
+
+anyhow.workspace = true
+argh.workspace = true
+bitcoin.workspace = true
+bitcoind-async-client.workspace = true
+format_serde_error.workspace = true
+jsonrpsee = { workspace = true, features = ["server", "macros"] }
+serde_json.workspace = true
+thiserror.workspace = true
+threadpool.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

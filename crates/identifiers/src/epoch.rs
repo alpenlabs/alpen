@@ -15,44 +15,18 @@
 
 use std::fmt;
 
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
-use serde::{Deserialize, Serialize};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 use crate::{
+    Epoch, Slot,
     buf::Buf32,
-    ol::{OLBlockCommitment, OLBlockId},
+    ol::OLBlockId,
+    ssz_generated::ssz::commitments::{EpochCommitment, OLBlockCommitment},
 };
 
-// TODO convert to u32
-type RawEpoch = u64;
-
-/// Commits to a particular epoch by the last block and slot.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
-)]
-pub struct EpochCommitment {
-    epoch: RawEpoch,
-    last_slot: u64,
-    last_blkid: OLBlockId,
-    // TODO convert to using OLBlockCommitment?
-}
-
 impl EpochCommitment {
-    pub fn new(epoch: RawEpoch, last_slot: u64, last_blkid: OLBlockId) -> Self {
+    pub fn new(epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId) -> Self {
         Self {
             epoch,
             last_slot,
@@ -62,7 +36,7 @@ impl EpochCommitment {
 
     /// Creates a new instance given the terminal block of an epoch and the
     /// epoch index.
-    pub fn from_terminal(epoch: RawEpoch, block: OLBlockCommitment) -> Self {
+    pub fn from_terminal(epoch: Epoch, block: OLBlockCommitment) -> Self {
         Self::new(epoch, block.slot(), *block.blkid())
     }
 
@@ -71,11 +45,11 @@ impl EpochCommitment {
         Self::new(0, 0, OLBlockId::from(Buf32::zero()))
     }
 
-    pub fn epoch(&self) -> RawEpoch {
+    pub fn epoch(&self) -> Epoch {
         self.epoch
     }
 
-    pub fn last_slot(&self) -> u64 {
+    pub fn last_slot(&self) -> Slot {
         self.last_slot
     }
 
@@ -104,7 +78,7 @@ impl Codec for EpochCommitment {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let epoch = u64::decode(dec)?;
+        let epoch = u32::decode(dec)?;
         let last_slot = u64::decode(dec)?;
         let last_blkid = OLBlockId::decode(dec)?;
         Ok(Self {
@@ -140,14 +114,63 @@ impl fmt::Display for EpochCommitment {
     }
 }
 
-impl fmt::Debug for EpochCommitment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "EpochCommitment(epoch={}, last_slot={}, last_blkid={:?})",
-            self.epoch(),
-            self.last_slot(),
-            self.last_blkid()
-        )
+// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
+crate::impl_borsh_via_ssz_fixed!(EpochCommitment);
+
+impl<'a> arbitrary::Arbitrary<'a> for EpochCommitment {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            epoch: u.arbitrary()?,
+            last_slot: u.arbitrary()?,
+            last_blkid: u.arbitrary()?,
+        })
+    }
+}
+
+impl Ord for EpochCommitment {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.epoch, self.last_slot, &self.last_blkid).cmp(&(
+            other.epoch,
+            other.last_slot,
+            &other.last_blkid,
+        ))
+    }
+}
+
+impl PartialOrd for EpochCommitment {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+
+    mod epoch_commitment {
+        use super::*;
+
+        ssz_proptest!(
+            EpochCommitment,
+            (any::<u32>(), any::<u64>(), any::<[u8; 32]>()).prop_map(
+                |(epoch, last_slot, blkid)| {
+                    EpochCommitment::new(epoch, last_slot, OLBlockId::from(Buf32::from(blkid)))
+                }
+            )
+        );
+
+        #[test]
+        fn test_zero_ssz() {
+            let commitment = EpochCommitment::null();
+            let encoded = commitment.as_ssz_bytes();
+            let decoded = EpochCommitment::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(commitment.epoch(), decoded.epoch());
+            assert_eq!(commitment.last_slot(), decoded.last_slot());
+            assert_eq!(commitment.last_blkid(), decoded.last_blkid());
+        }
     }
 }

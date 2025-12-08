@@ -3,6 +3,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::Checkpoint;
+use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -23,7 +24,7 @@ pub enum Expiry {
     BlockIdFinalized(L2BlockId),
 
     /// Duty expires after a specific checkpoint is finalized on bitcoin
-    CheckpointIdxFinalized(u64),
+    CheckpointIdxFinalized(Epoch),
 }
 
 /// Unique identifier for a duty.

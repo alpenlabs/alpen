@@ -4,7 +4,7 @@
 
 use strata_acct_types::AccountId;
 use strata_asm_common::AsmManifest;
-use strata_identifiers::{Buf32, L1BlockId};
+use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
 use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
 use strata_ol_chain_types_new::OLBlockHeader;
 use strata_ol_state_types::OLState;
@@ -61,7 +61,7 @@ pub fn build_empty_chain(
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis_manifest = AsmManifest::new(
         L1BlockId::from(Buf32::from([0u8; 32])),
-        Buf32::from([0u8; 32]),
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
     );
     let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
@@ -85,7 +85,7 @@ pub fn build_empty_chain(
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
                 L1BlockId::from(Buf32::from([0u8; 32])),
-                Buf32::from([0u8; 32]),
+                WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
             );
             BlockComponents::new_manifests(vec![dummy_manifest])
