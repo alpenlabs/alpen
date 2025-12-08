@@ -19,6 +19,8 @@ pub struct AsmWorkerCtx {
     bitcoin_client: Arc<Client>,
     l1man: Arc<L1BlockManager>,
     asmman: Arc<AsmStateManager>,
+    /// Lazily initialized MMR database (created on first use)
+    mmr_db: std::sync::Mutex<Option<strata_storage::mmr_db::SledMmrDb>>,
 }
 
 impl AsmWorkerCtx {
@@ -33,7 +35,25 @@ impl AsmWorkerCtx {
             bitcoin_client,
             l1man,
             asmman,
+            mmr_db: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Gets or initializes the MMR database
+    fn get_mmr_db(&self) -> WorkerResult<strata_storage::mmr_db::SledMmrDb> {
+        let mut mmr_db_lock = self.mmr_db.lock().map_err(|_| WorkerError::DbError)?;
+
+        if mmr_db_lock.is_none() {
+            // Initialize MMR database on first use
+            let db = self
+                .asmman
+                .create_mmr_database()
+                .map_err(|_| WorkerError::DbError)?;
+            *mmr_db_lock = Some(db);
+        }
+
+        // Clone the database (it's Arc-based internally via sled trees)
+        mmr_db_lock.as_ref().cloned().ok_or(WorkerError::DbError)
     }
 }
 
@@ -75,6 +95,55 @@ impl WorkerContext for AsmWorkerCtx {
         self.handle
             .block_on(self.bitcoin_client.network())
             .map_err(|_| WorkerError::BtcClient)
+    }
+
+    fn get_bitcoin_tx(&self, txid: &strata_btc_types::BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
+        use bitcoind_async_client::traits::Reader;
+
+        // Convert BitcoinTxid to bitcoin::Txid
+        let bitcoin_txid = txid.inner();
+
+        // Fetch raw transaction hex from Bitcoin client
+        let raw_tx_hex = self
+            .handle
+            .block_on(
+                self.bitcoin_client
+                    .get_raw_transaction_verbosity_zero(&bitcoin_txid),
+            )
+            .map_err(|e| {
+                tracing::warn!(?txid, ?e, "Failed to fetch Bitcoin transaction");
+                WorkerError::BitcoinTxNotFound(txid.clone())
+            })?;
+
+        // Decode hex string to bytes
+        let tx_bytes = hex::decode(raw_tx_hex.0).map_err(|e| {
+            tracing::error!(?txid, ?e, "Failed to decode transaction hex");
+            WorkerError::BitcoinTxNotFound(txid.clone())
+        })?;
+
+        Ok(RawBitcoinTx::from_raw_bytes(tx_bytes))
+    }
+
+    fn append_manifest_to_mmr(&self, manifest_hash: [u8; 32]) -> WorkerResult<u64> {
+        let mut mmr_db = self.get_mmr_db()?;
+        use strata_storage::mmr_db::MmrDatabase;
+        mmr_db
+            .append_leaf(manifest_hash)
+            .map_err(|_| WorkerError::DbError)
+    }
+
+    fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> WorkerResult<()> {
+        self.asmman
+            .store_manifest_hash(index, hash)
+            .map_err(conv_db_err)
+    }
+
+    fn get_mmr_database(&self) -> WorkerResult<strata_storage::mmr_db::SledMmrDb> {
+        self.get_mmr_db()
+    }
+
+    fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>> {
+        self.asmman.get_manifest_hash(index).map_err(conv_db_err)
     }
 }
 
