@@ -5,6 +5,7 @@
 
 mod command;
 mod error;
+mod ordering;
 #[cfg(test)]
 mod test_utils;
 mod types;

@@ -14,7 +14,7 @@ use strata_ol_chain_types_new::{TransactionAttachment, test_utils as ol_test_uti
 use strata_ol_state_types::{NativeSnarkAccountState, OLState};
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate};
 
-use crate::types::OLMempoolTransaction;
+use crate::{OLMempoolTransaction, OLMempoolTxPayload};
 
 /// Create a test account ID using proptest strategy.
 pub(crate) fn create_test_account_id() -> AccountId {
@@ -66,7 +66,50 @@ pub(crate) fn create_test_block_commitment(slot: u64) -> OLBlockCommitment {
     OLBlockCommitment::new(slot, OLBlockId::from(Buf32::new(bytes)))
 }
 
-/// Create a test OLState for validation tests.
+/// Create a test snark account update payload.
+pub(crate) fn create_test_snark_payload() -> OLMempoolTxPayload {
+    use crate::OLMempoolSnarkAcctUpdateTxPayload;
+
+    OLMempoolTxPayload::SnarkAccountUpdate(OLMempoolSnarkAcctUpdateTxPayload {
+        target: create_test_account_id(),
+        base_update: create_test_snark_update(),
+    })
+}
+
+/// Create a test generic account message payload.
+pub(crate) fn create_test_generic_payload() -> OLMempoolTxPayload {
+    let mut runner = TestRunner::default();
+    let gam_payload = ol_test_utils::gam_tx_payload_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+
+    OLMempoolTxPayload::GenericAccountMessage(gam_payload)
+}
+
+/// Create a test mempool transaction with the specified payload.
+pub(crate) fn create_test_mempool_tx(payload: OLMempoolTxPayload) -> OLMempoolTransaction {
+    let attachment = create_test_attachment();
+    match payload {
+        OLMempoolTxPayload::SnarkAccountUpdate(snark_payload) => {
+            OLMempoolTransaction::new_snark_account_update(
+                snark_payload.target,
+                snark_payload.base_update,
+                attachment,
+            )
+        }
+        OLMempoolTxPayload::GenericAccountMessage(gam_payload) => {
+            OLMempoolTransaction::new_generic_account_message(
+                *gam_payload.target(),
+                gam_payload.payload().to_vec(),
+                attachment,
+            )
+            .expect("Failed to create generic account message transaction")
+        }
+    }
+}
+
+/// Create a test OLState with an empty account for the given account ID.
 ///
 /// Returns a genesis state with an empty account for the given account ID.
 /// This allows generic account message transactions to pass account existence checks.
@@ -108,6 +151,16 @@ pub(crate) fn create_test_ol_state_with_snark_account(
         .unwrap();
 
     state
+}
+
+/// Create a test snark account update transaction.
+pub(crate) fn create_test_snark_tx() -> OLMempoolTransaction {
+    create_test_mempool_tx(create_test_snark_payload())
+}
+
+/// Create a test generic account message transaction.
+pub(crate) fn create_test_generic_tx() -> OLMempoolTransaction {
+    create_test_mempool_tx(create_test_generic_payload())
 }
 
 /// Create a test generic account message transaction.

@@ -225,7 +225,7 @@ impl MempoolOrderingKey {
 ///
 /// This is used internally by the mempool implementation and not exposed in the public API.
 #[derive(Clone, Debug)]
-#[expect(dead_code, reason = "will be used in mempool implementation")]
+#[expect(dead_code, reason = "will be used in state management")]
 pub(crate) struct MempoolEntry {
     /// The transaction data.
     pub(crate) tx: OLMempoolTransaction,
@@ -239,7 +239,10 @@ pub(crate) struct MempoolEntry {
 
 impl MempoolEntry {
     /// Create a new mempool entry.
-    #[expect(dead_code, reason = "will be used in mempool implementation")]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "will be used in state management")
+    )]
     pub(crate) fn new(
         tx: OLMempoolTransaction,
         ordering_key: MempoolOrderingKey,
