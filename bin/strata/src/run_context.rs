@@ -7,6 +7,8 @@ use strata_config::Config;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
+use strata_status::StatusChannel;
+use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::runtime::Runtime;
 
@@ -22,4 +24,7 @@ pub(crate) struct RunContext {
     // Service handles
     pub asm_handle: AsmWorkerHandle,
     pub csm_monitor: ServiceMonitor<CsmWorkerStatus>,
+    // RPC dependencies
+    pub storage: Arc<NodeStorage>,
+    pub status_channel: Arc<StatusChannel>,
 }

@@ -20,6 +20,7 @@ mod config;
 mod context;
 mod errors;
 mod init_db;
+mod rpc;
 mod run_context;
 mod services;
 
