@@ -7,15 +7,16 @@ mod utils;
 pub use traits::{
     engine::{ExecutionEngine, ExecutionEngineError},
     ol_client::{
-        block_commitments_in_range_checked, chain_status_checked,
-        get_update_operations_for_blocks_checked, OLClient, OLClientError,
+        block_commitments_in_range_checked, chain_status_checked, get_inbox_messages_checked,
+        get_update_operations_for_blocks_checked, OLBlockData, OLClient, OLClientError,
+        SequencerOLClient,
     },
     payload_builder::{EnginePayload, PayloadBuilderEngine},
     storage::{ExecBlockStorage, OLBlockOrSlot, Storage, StorageError},
 };
 #[cfg(feature = "test-utils")]
 pub use traits::{
-    ol_client::MockOLClient,
+    ol_client::{MockOLClient, MockSequencerOLClient},
     storage::{
         exec_block_storage_test_fns, tests as storage_test_fns, MockExecBlockStorage, MockStorage,
     },

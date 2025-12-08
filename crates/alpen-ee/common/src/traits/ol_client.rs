@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_snark_acct_types::UpdateInputData;
+use strata_snark_acct_types::{MessageEntry, SnarkAccountUpdate, UpdateInputData};
 use thiserror::Error;
 
 use crate::OLChainStatus;
@@ -115,6 +115,50 @@ pub async fn get_update_operations_for_blocks_checked(
     Ok(res)
 }
 
+#[derive(Debug)]
+pub struct OLBlockData {
+    pub commitment: OLBlockCommitment,
+    pub inbox_messages: Vec<MessageEntry>,
+}
+
+#[cfg_attr(feature = "test-utils", mockall::automock)]
+#[async_trait]
+pub trait SequencerOLClient {
+    async fn chain_status(&self) -> Result<OLChainStatus, OLClientError>;
+
+    async fn get_inbox_messages(
+        &self,
+        min_slot: u64,
+        max_slot: u64,
+    ) -> Result<Vec<OLBlockData>, OLClientError>;
+
+    async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError>;
+}
+
+pub async fn get_inbox_messages_checked(
+    client: &impl SequencerOLClient,
+    min_slot: u64,
+    max_slot: u64,
+) -> Result<Vec<OLBlockData>, OLClientError> {
+    if max_slot < min_slot {
+        return Err(OLClientError::InvalidSlotRange {
+            start_slot: min_slot,
+            end_slot: max_slot,
+        });
+    }
+
+    let expected_len = (max_slot - min_slot + 1) as usize;
+    let res = client.get_inbox_messages(min_slot, max_slot).await?;
+    if res.len() != expected_len {
+        return Err(OLClientError::UnexpectedInboxMessageCount {
+            expected: expected_len,
+            actual: res.len(),
+        });
+    }
+
+    Ok(res)
+}
+
 /// Errors that can occur when interacting with the OL client.
 #[derive(Debug, Error)]
 pub enum OLClientError {
@@ -131,6 +175,10 @@ pub enum OLClientError {
     /// Received a different number of operation lists than expected.
     #[error("unexpected operation count: expected {expected} operation lists, got {actual}")]
     UnexpectedOperationCount { expected: usize, actual: usize },
+
+    /// Received a different number of operation lists than expected.
+    #[error("unexpected inbox message count: expected {expected} message lists, got {actual}")]
+    UnexpectedInboxMessageCount { expected: usize, actual: usize },
 
     /// Chain status slots are not in the correct order (latest >= confirmed >= finalized).
     #[error("unexpected chain status slot order: {latest} >= {confirmed} >= {finalized}")]
