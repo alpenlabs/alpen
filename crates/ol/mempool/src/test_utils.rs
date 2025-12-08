@@ -1,10 +1,13 @@
 //! Test utilities for mempool tests.
 
+use std::sync::Arc;
+
 use proptest::{
     strategy::{Strategy, ValueTree},
     test_runner::TestRunner,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, Hash};
+use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{
     AccountTypeState as LedgerAccountTypeState, IAccountStateMut, ISnarkAccountStateMut,
@@ -12,9 +15,17 @@ use strata_ledger_types::{
 };
 use strata_ol_chain_types_new::{TransactionAttachment, test_utils as ol_test_utils};
 use strata_ol_state_types::{NativeSnarkAccountState, OLState};
-use strata_snark_acct_types::{Seqno, SnarkAccountUpdate};
+use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
+use strata_storage::{NodeStorage, create_node_storage};
+use threadpool::ThreadPool;
 
-use crate::{OLMempoolTransaction, OLMempoolTxPayload};
+use crate::{
+    OLMempoolTransaction, OLMempoolTxPayload,
+    ordering::FifoOrderingStrategy,
+    state::MempoolContext,
+    types::{DEFAULT_MAX_REORG_DEPTH, OLMempoolConfig},
+    validation::BasicTransactionValidator,
+};
 
 /// Create a test account ID using proptest strategy.
 pub(crate) fn create_test_account_id() -> AccountId {
@@ -24,6 +35,13 @@ pub(crate) fn create_test_account_id() -> AccountId {
         .unwrap()
         .current()
         .into()
+}
+
+/// Create a test account ID with a specific ID byte for deterministic testing.
+pub(crate) fn create_test_account_id_with(id: u8) -> AccountId {
+    let mut bytes = [0u8; 32];
+    bytes[0] = id;
+    AccountId::new(bytes)
 }
 
 /// Create a test transaction attachment using proptest strategy.
@@ -163,7 +181,7 @@ pub(crate) fn create_test_generic_tx() -> OLMempoolTransaction {
     create_test_mempool_tx(create_test_generic_payload())
 }
 
-/// Create a test generic account message transaction.
+/// Create a test generic account message transaction with attachment.
 pub(crate) fn create_test_generic_tx_with_attachment(
     attachment: TransactionAttachment,
 ) -> OLMempoolTransaction {
@@ -191,4 +209,140 @@ pub(crate) fn create_test_generic_tx_with_size(
     let payload = vec![0u8; size];
     OLMempoolTransaction::new_generic_account_message(target, payload, attachment)
         .expect("Should create transaction")
+}
+
+/// Create a test transaction with a specific target account ID.
+/// Uses the ID byte to create different account IDs, but the update content is randomly generated.
+pub(crate) fn create_test_tx_with_id(id: u8) -> OLMempoolTransaction {
+    let attachment = create_test_attachment_with_slots(None, None);
+    OLMempoolTransaction::new_snark_account_update(
+        create_test_account_id_with(id),
+        create_test_snark_update(),
+        attachment,
+    )
+}
+
+/// Create a test snark transaction with a specific seq_no for deterministic ordering tests.
+pub(crate) fn create_test_snark_tx_with_seq_no(
+    account_id: u8,
+    seq_no: u64,
+) -> OLMempoolTransaction {
+    let mut runner = TestRunner::default();
+
+    // Use valid attachment (no slot bounds) for tests
+    let attachment = create_test_attachment_with_slots(None, None);
+
+    let full_payload = ol_test_utils::snark_account_update_tx_payload_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+
+    // Create operation with specific seq_no
+    let operation = UpdateOperationData::new(
+        seq_no,
+        full_payload
+            .update_container
+            .base_update
+            .operation
+            .new_state(),
+        full_payload
+            .update_container
+            .base_update
+            .operation
+            .processed_messages()
+            .to_vec(),
+        full_payload
+            .update_container
+            .base_update
+            .operation
+            .ledger_refs()
+            .clone(),
+        full_payload
+            .update_container
+            .base_update
+            .operation
+            .outputs()
+            .clone(),
+        full_payload
+            .update_container
+            .base_update
+            .operation
+            .extra_data()
+            .to_vec(),
+    );
+
+    let mut update = full_payload.update_container.base_update;
+    update.operation = operation;
+
+    OLMempoolTransaction::new_snark_account_update(
+        create_test_account_id_with(account_id),
+        update,
+        attachment,
+    )
+}
+
+/// Create a test mempool context with specified limits.
+pub(crate) fn create_test_context(max_tx_count: usize, max_tx_size: usize) -> MempoolContext {
+    let pool = ThreadPool::new(1);
+
+    // Create a minimal test storage using a test sled database
+    // In real usage, this would be a full NodeStorage with all managers
+    // For tests, we create a minimal storage since validation isn't called yet
+    let test_db = get_test_sled_backend();
+    let test_storage =
+        Arc::new(create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"));
+
+    let config = OLMempoolConfig {
+        max_tx_count,
+        max_tx_size,
+        max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+    };
+
+    MempoolContext {
+        config: config.clone(),
+        storage: test_storage,
+        ordering_strategy: Arc::new(FifoOrderingStrategy),
+        validator: Arc::new(BasicTransactionValidator::new(config)),
+    }
+}
+
+/// Set up test OLState with Snark accounts for testing.
+pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlockCommitment) {
+    let mut state = OLState::new_genesis();
+
+    // Create Snark accounts for common test account IDs (0-255)
+    // Most tests use SnarkAccountUpdate transactions which require Snark accounts
+    for id_byte in 0..=255u8 {
+        let account_id = create_test_account_id_with(id_byte);
+        let snark_state = NativeSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from(0),
+            LedgerAccountTypeState::Snark(snark_state),
+        );
+        // Ignore errors if account already exists
+        if state.create_new_account(account_id, new_acct).is_ok() {
+            // Set initial seq_no to 0 for new Snark accounts
+            let _ = state.update_account(account_id, |account| {
+                let snark_account = account.as_snark_account_mut().unwrap();
+                snark_account.set_proof_state_directly(Hash::from([0u8; 32]), 0, Seqno::from(0));
+            });
+        }
+    }
+
+    storage
+        .ol_state()
+        .put_toplevel_ol_state_async(tip, state)
+        .await
+        .expect("Failed to set up test state");
+}
+
+/// Create a test mempool context with state pre-initialized at the given tip.
+pub(crate) async fn create_test_context_with_state(
+    max_tx_count: usize,
+    max_tx_size: usize,
+    tip: OLBlockCommitment,
+) -> MempoolContext {
+    let ctx = create_test_context(max_tx_count, max_tx_size);
+    setup_test_state_for_tip(&ctx.storage, tip).await;
+    ctx
 }

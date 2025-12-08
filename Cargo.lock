@@ -14719,6 +14719,7 @@ dependencies = [
  "ssz_derive",
  "ssz_types",
  "strata-acct-types",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-ledger-types",
@@ -14726,7 +14727,10 @@ dependencies = [
  "strata-ol-state-types",
  "strata-service",
  "strata-snark-acct-types",
+ "strata-storage",
  "thiserror 2.0.17",
+ "threadpool",
+ "tokio",
 ]
 
 [[package]]

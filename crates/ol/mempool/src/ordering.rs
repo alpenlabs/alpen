@@ -6,10 +6,6 @@ use crate::types::{MempoolEntry, OLMempoolTxPayload};
 ///
 /// Different strategies can be implemented (FIFO, fee-based, account-based, etc.)
 /// to determine transaction priority.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "will be used in state management")
-)]
 pub(crate) trait OrderingStrategy: Send + Sync + 'static {
     /// Compute the priority value for a transaction.
     ///
@@ -32,10 +28,6 @@ pub(crate) trait OrderingStrategy: Send + Sync + 'static {
 ///
 /// This ensures unique priorities and FIFO ordering within same primary key.
 #[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "will be used in state management")
-)]
 pub(crate) struct FifoOrderingStrategy;
 
 impl OrderingStrategy for FifoOrderingStrategy {

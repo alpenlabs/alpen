@@ -55,6 +55,10 @@ pub enum OLMempoolError {
         account_seq_no: u64,
     },
 
+    /// Sequence number gap detected (expected sequential order).
+    #[error("sequence number gap: expected {expected}, got {actual}")]
+    SequenceNumberGap { expected: u64, actual: u64 },
+
     /// Account state access error (from StateAccessor).
     #[error("account state access error: {0}")]
     AccountStateAccess(String),

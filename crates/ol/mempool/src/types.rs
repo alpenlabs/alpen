@@ -16,6 +16,10 @@ pub const DEFAULT_MAX_TX_COUNT: usize = 10_000;
 /// Default maximum size of a single transaction in bytes.
 pub const DEFAULT_MAX_TX_SIZE: usize = 1024 * 1024; // 1 MB
 
+/// Default maximum reorg depth for finding common ancestor.
+/// OL chain doesn't expect reorgs, so this is a safety limit.
+pub const DEFAULT_MAX_REORG_DEPTH: u64 = 50;
+
 /// Configuration for the OL mempool.
 #[derive(Clone, Debug)]
 pub struct OLMempoolConfig {
@@ -24,6 +28,10 @@ pub struct OLMempoolConfig {
 
     /// Maximum size of a single transaction in bytes.
     pub max_tx_size: usize,
+
+    /// Maximum reorg depth for finding common ancestor during reorg handling.
+    /// OL chain doesn't expect reorgs, so this is a safety limit to prevent infinite loops.
+    pub max_reorg_depth: u64,
 }
 
 impl Default for OLMempoolConfig {
@@ -31,6 +39,7 @@ impl Default for OLMempoolConfig {
         Self {
             max_tx_count: DEFAULT_MAX_TX_COUNT,
             max_tx_size: DEFAULT_MAX_TX_SIZE,
+            max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
         }
     }
 }
@@ -225,7 +234,6 @@ impl MempoolOrderingKey {
 ///
 /// This is used internally by the mempool implementation and not exposed in the public API.
 #[derive(Clone, Debug)]
-#[expect(dead_code, reason = "will be used in state management")]
 pub(crate) struct MempoolEntry {
     /// The transaction data.
     pub(crate) tx: OLMempoolTransaction,
@@ -239,10 +247,6 @@ pub(crate) struct MempoolEntry {
 
 impl MempoolEntry {
     /// Create a new mempool entry.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "will be used in state management")
-    )]
     pub(crate) fn new(
         tx: OLMempoolTransaction,
         ordering_key: MempoolOrderingKey,
@@ -353,6 +357,9 @@ pub enum OLMempoolRejectReason {
 
     /// Rejected due to invalid sequence number (transaction seq_no < account current seq_no).
     InvalidSequenceNumber,
+
+    /// Rejected due to sequence number gap (expected sequential order).
+    SequenceNumberGap,
 }
 
 impl OLMempoolRejectReason {
@@ -377,6 +384,7 @@ impl OLMempoolRejectReason {
             OLMempoolError::AccountDoesNotExist { .. } => Some(Self::AccountDoesNotExist),
             OLMempoolError::AccountTypeMismatch { .. } => Some(Self::AccountTypeMismatch),
             OLMempoolError::InvalidSequenceNumber { .. } => Some(Self::InvalidSequenceNumber),
+            OLMempoolError::SequenceNumberGap { .. } => Some(Self::SequenceNumberGap),
             OLMempoolError::TransactionNotFound(_)
             | OLMempoolError::Database(_)
             | OLMempoolError::Serialization(_)

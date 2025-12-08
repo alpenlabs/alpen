@@ -6,6 +6,7 @@
 mod command;
 mod error;
 mod ordering;
+mod state;
 #[cfg(test)]
 mod test_utils;
 mod types;
@@ -14,9 +15,9 @@ mod validation;
 pub use command::MempoolCommand;
 pub use error::OLMempoolError;
 pub use types::{
-    DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE, MempoolOrderingKey, OLMempoolConfig,
-    OLMempoolRejectCounts, OLMempoolRejectReason, OLMempoolSnarkAcctUpdateTxPayload,
-    OLMempoolStats, OLMempoolTransaction, OLMempoolTxPayload,
+    DEFAULT_MAX_REORG_DEPTH, DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE, MempoolOrderingKey,
+    OLMempoolConfig, OLMempoolRejectCounts, OLMempoolRejectReason,
+    OLMempoolSnarkAcctUpdateTxPayload, OLMempoolStats, OLMempoolTransaction, OLMempoolTxPayload,
 };
 pub use validation::{BasicTransactionValidator, TransactionValidator};
 
