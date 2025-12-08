@@ -13501,6 +13501,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argh",
+ "async-trait",
  "bitcoin",
  "bitcoind-async-client",
  "format_serde_error",
@@ -13514,7 +13515,10 @@ dependencies = [
  "strata-csm-worker",
  "strata-db-store-sled",
  "strata-db-types",
+ "strata-identifiers",
  "strata-params",
+ "strata-rpc-api-new",
+ "strata-rpc-types-new",
  "strata-service",
  "strata-status",
  "strata-storage",
