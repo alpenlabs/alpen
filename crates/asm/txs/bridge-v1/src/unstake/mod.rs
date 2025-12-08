@@ -5,18 +5,11 @@
 //!
 //! ## Unstake Transaction Structure
 //!
-//! An unstake transaction is posted by an operator if they want to exit from the bridge and have
-//! their staked fund back.
+//! An unstake transaction is posted by an operator if it wants to exit from bridge duties and
+//! have its staked funds back.
 //!
 //! ### Inputs
-//! - 1. **Unstaking Intent connector**: Locked to the N-of-N multisig with a relative timelock
-//! - 2. **Stake connector**: Locked to the N-of-N multisig..
-//!
-//! Only the stake connector is validated. The unstaking intent connector carries a relative
-//! timelock that is enforced on-chain, but the bridge subprotocol does not store the timelock that
-//! is used, so ASM cannot verify it and skips validation of that input. This is sufficient because
-//! the transaction is identified by its SPS-50 type; a different transaction that merely spends a
-//! pure N-of-N input would fail the type check.
+//! - 1. **Stake connector**: Locked to the N-of-N multisig and hashlock.
 //!
 //! ### Outputs
 //!

@@ -12,7 +12,7 @@ use crate::{
 pub fn create_test_unstake_tx(info: &UnstakeInfo) -> Transaction {
     // Create a dummy tx with two inputs (placeholder at index 0, stake connector at index 1) and a
     // single output.
-    let mut tx = create_dummy_tx(2, 1);
+    let mut tx = create_dummy_tx(1, 3);
 
     // Encode auxiliary data and construct SPS 50 op_return script
     let aux_data = encode_to_vec(info.header_aux()).unwrap();

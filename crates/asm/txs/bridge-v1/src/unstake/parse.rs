@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Index of the stake connector input.
-pub const STAKE_INPUT_INDEX: usize = 1;
+pub const STAKE_INPUT_INDEX: usize = 0;
 
 /// Parse an unstake transaction to extract [`UnstakeInfo`].
 ///
