@@ -105,3 +105,46 @@ where
         checkpoint_manager,
     })
 }
+
+/// Creates node storage from Sled backend with MMR database support
+///
+/// This function uses the raw sled database to create an AsmStateManager
+/// with MMR database capabilities for proof generation.
+pub fn create_node_storage_with_sled(
+    db: Arc<impl DatabaseBackend + 'static>,
+    raw_db: Arc<sled::Db>,
+    pool: threadpool::ThreadPool,
+) -> anyhow::Result<NodeStorage> {
+    // Extract database references first to ensure they live long enough
+    let asm_db = db.asm_db();
+    let l1_db = db.l1_db();
+    let l2_db = db.l2_db();
+    let chainstate_db = db.chain_state_db();
+    let client_state_db = db.client_state_db();
+    let checkpoint_db = db.checkpoint_db();
+
+    // Create ASM manager with raw database for MMR support
+    let asm_manager = Arc::new(AsmStateManager::new_with_raw_db(
+        pool.clone(),
+        asm_db,
+        raw_db,
+    ));
+    let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
+    let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), l2_db));
+    let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
+
+    let client_state_manager = Arc::new(
+        ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?,
+    );
+
+    let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
+
+    Ok(NodeStorage {
+        asm_state_manager: asm_manager,
+        l1_block_manager,
+        l2_block_manager,
+        chainstate_manager,
+        client_state_manager,
+        checkpoint_manager,
+    })
+}
