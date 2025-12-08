@@ -13501,6 +13501,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-params",
+ "strata-primitives",
  "strata-service",
  "strata-status",
  "strata-storage",

@@ -6,8 +6,9 @@ use bitcoin::Network;
 use bitcoind_async_client::Client;
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
-use strata_csm_types::L1Status;
+use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_params::{Params, RollupParams, SyncParams};
+use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
 use strata_tasks::{TaskExecutor, TaskManager};
@@ -50,6 +51,9 @@ pub(crate) fn init_node_context(args: Args) -> Result<NodeContext, InitError> {
         create_node_storage(db, pool.clone())
             .map_err(|e| InitError::StorageCreation(e.to_string()))?,
     );
+
+    // Init client state
+    init_client_state(&storage, params.as_ref())?;
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
@@ -168,4 +172,26 @@ fn init_status_channel(storage: &NodeStorage) -> Result<Arc<StatusChannel>, Init
     };
 
     Ok(StatusChannel::new(cur_state, cur_block, l1_status, None).into())
+}
+
+fn init_client_state(
+    storage: &NodeStorage,
+    params: &Params,
+) -> Result<(L1BlockCommitment, ClientState), InitError> {
+    let csman = storage.client_state();
+    let recent_state = csman
+        .fetch_most_recent_state()
+        .map_err(|e| InitError::StorageCreation(e.to_string()))?;
+
+    match recent_state {
+        None => {
+            // Create and insert init state into db.
+            let init_state = ClientState::default();
+            let l1blk = params.rollup().genesis_l1_view.blk;
+            let update = ClientUpdateOutput::new_state(init_state.clone());
+            csman.put_update_blocking(&l1blk, update.clone())?;
+            Ok((l1blk, init_state))
+        }
+        Some(recent_state) => Ok(recent_state),
+    }
 }
