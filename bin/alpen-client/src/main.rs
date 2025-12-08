@@ -3,11 +3,12 @@
 mod genesis;
 mod gossip;
 mod ol_client;
+mod payload_builder;
 
 use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
-use alpen_ee_common::traits::ol_client::chain_status_checked;
+use alpen_ee_common::chain_status_checked;
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
@@ -34,6 +35,7 @@ use tracing::{error, info};
 use crate::{
     genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
+    payload_builder::AlpenRethPayloadEngine,
 };
 
 fn main() {
@@ -195,6 +197,11 @@ fn main() {
                         .spawn_critical("gossip_task", gossip_task);
 
                     // sequencer specific tasks
+                    let _payload_engine = AlpenRethPayloadEngine::new(
+                        node.payload_builder_handle.clone(),
+                        node.beacon_engine_handle.clone(),
+                    );
+
                     // TODO: block assembly
                     // TODO: batch assembly
                     // TODO: proof generation

@@ -136,9 +136,7 @@ async fn effective_account_state(
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{
-        traits::storage::MockStorage, OLBlockOrSlot, OlChainStatus, StorageError,
-    };
+    use alpen_ee_common::{MockStorage, OLBlockOrSlot, OlChainStatus, StorageError};
     use strata_acct_types::Hash;
     use strata_identifiers::Buf32;
 

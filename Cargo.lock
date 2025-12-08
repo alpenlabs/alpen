@@ -1048,13 +1048,16 @@ dependencies = [
 name = "alpen-client"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-eips",
  "alloy-primitives",
+ "alloy-rpc-types-engine",
  "alpen-chainspec",
  "alpen-ee-common",
  "alpen-ee-config",
  "alpen-ee-database",
  "alpen-ee-engine",
  "alpen-ee-ol-tracker",
+ "alpen-reth-evm",
  "alpen-reth-node",
  "async-trait",
  "clap",
@@ -1068,6 +1071,7 @@ dependencies = [
  "reth-network-api",
  "reth-node-builder",
  "reth-node-core",
+ "reth-payload-builder",
  "reth-primitives",
  "reth-provider",
  "strata-acct-types",
@@ -1084,10 +1088,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
- "alpen-reth-node",
  "bitcoin-bosd",
  "eyre",
- "reth-node-api",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-runtime",
@@ -1103,44 +1105,21 @@ dependencies = [
 name = "alpen-ee-common"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types-engine",
- "alpen-chainspec",
- "alpen-reth-evm",
  "alpen-reth-node",
- "anyhow",
  "async-trait",
- "bincode",
- "borsh",
- "clap",
  "eyre",
  "mockall",
- "reth-chainspec",
- "reth-cli-commands",
- "reth-cli-runner",
- "reth-cli-util",
- "reth-db",
  "reth-node-builder",
- "reth-node-core",
- "reth-payload-builder",
- "reth-provider",
- "sled",
  "strata-acct-types",
- "strata-db-store-sled",
- "strata-ee-acct-runtime",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
  "strata-primitives",
  "strata-snark-acct-types",
- "strata-storage-common",
- "tempfile",
  "thiserror 2.0.17",
- "threadpool",
  "tokio",
- "tracing",
- "typed-sled",
 ]
 
 [[package]]
@@ -1161,12 +1140,12 @@ dependencies = [
  "borsh",
  "eyre",
  "sled",
+ "ssz",
  "strata-acct-types",
  "strata-db-store-sled",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
- "strata-primitives",
  "strata-storage-common",
  "thiserror 2.0.17",
  "threadpool",
@@ -1189,6 +1168,34 @@ dependencies = [
  "strata-acct-types",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "alpen-ee-exec-chain"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-common",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-identifiers",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "alpen-ee-genesis"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-common",
+ "alpen-ee-config",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-identifiers",
 ]
 
 [[package]]

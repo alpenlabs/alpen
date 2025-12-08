@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{EeAccountStateAtBlock, OLBlockOrSlot, Storage, StorageError};
+use alpen_ee_common::{
+    EeAccountStateAtBlock, ExecBlockRecord, ExecBlockStorage, OLBlockOrSlot, Storage, StorageError,
+};
 use async_trait::async_trait;
+use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_storage_common::cache::CacheTable;
@@ -99,4 +102,126 @@ impl Storage for EeNodeStorage {
 
         Ok(())
     }
+}
+
+#[async_trait]
+impl ExecBlockStorage for EeNodeStorage {
+    /// Save block data and payload for a given block hash
+    async fn save_exec_block(
+        &self,
+        block: ExecBlockRecord,
+        payload: Vec<u8>,
+    ) -> Result<(), StorageError> {
+        self.ops
+            .save_exec_block_async(block, payload)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Insert first block to local view of canonical finalized chain (ie. genesis block)
+    async fn init_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
+        self.ops
+            .init_finalized_chain_async(hash)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Extend local view of canonical chain with specified block hash
+    async fn extend_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
+        self.ops
+            .extend_finalized_chain_async(hash)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Revert local view of canonical chain to specified height
+    async fn revert_finalized_chain(&self, to_height: u64) -> Result<(), StorageError> {
+        self.ops
+            .revert_finalized_chain_async(to_height)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Remove all block data below specified height
+    async fn prune_block_data(&self, to_height: u64) -> Result<(), StorageError> {
+        self.ops
+            .prune_block_data_async(to_height)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Get exec block for the highest blocknum available in the local view of canonical chain.
+    async fn best_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError> {
+        self.ops
+            .best_finalized_block_async()
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Get height of block if it exists in local view of canonical chain.
+    async fn get_finalized_height(&self, hash: Hash) -> Result<Option<u64>, StorageError> {
+        self.ops
+            .get_finalized_height_async(hash)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Get all blocks in db with height > finalized height
+    async fn get_unfinalized_blocks(&self) -> Result<Vec<Hash>, StorageError> {
+        self.ops
+            .get_unfinalized_blocks_async()
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Get block data for a specified block, if it exits.
+    async fn get_exec_block(&self, hash: Hash) -> Result<Option<ExecBlockRecord>, StorageError> {
+        self.ops
+            .get_exec_block_async(hash)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Get block payload for a specified block, if it exists.
+    async fn get_block_payload(&self, hash: Hash) -> Result<Option<Vec<u8>>, StorageError> {
+        self.ops
+            .get_block_payload_async(hash)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Delete a single block and its payload by hash.
+    async fn delete_exec_block(&self, hash: Hash) -> Result<(), StorageError> {
+        self.ops
+            .delete_exec_block_async(hash)
+            .await
+            .map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use alpen_ee_common::{exec_block_storage_tests, storage_tests};
+    use strata_db_store_sled::SledDbConfig;
+    use typed_sled::SledDb;
+
+    use super::*;
+    use crate::sleddb::EeNodeDBSled;
+
+    fn setup_storage() -> EeNodeStorage {
+        // Create a temporary sled database
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = SledDb::new(db).unwrap();
+        let config = SledDbConfig::test();
+
+        let ee_node_db = EeNodeDBSled::new(Arc::new(sled_db), config).unwrap();
+        let pool = threadpool::ThreadPool::new(4);
+
+        EeNodeStorage::new(pool, Arc::new(ee_node_db))
+    }
+
+    storage_tests!(setup_storage());
+    exec_block_storage_tests!(setup_storage());
 }

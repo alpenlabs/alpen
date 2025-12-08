@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 alpen-ee-common.workspace = true
-alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-ee-acct-runtime.workspace = true
@@ -21,7 +20,6 @@ strata-snark-acct-types.workspace = true
 alloy-primitives.workspace = true
 bitcoin-bosd.workspace = true
 eyre.workspace = true
-reth-node-api.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

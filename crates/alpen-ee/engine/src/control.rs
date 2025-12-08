@@ -56,11 +56,7 @@ fn forkchoice_state_from_consensus<N: NodeTypesWithDB + ProviderNodeTypes>(
 }
 
 /// Takes chain updates from OL and sequencer/p2p and updates the chain in engine (reth).
-async fn engine_control_task_inner<
-    N: NodeTypesWithDB + ProviderNodeTypes,
-    E: ExecutionEngine<P>,
-    P: Send,
->(
+async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: ExecutionEngine>(
     mut preconf_rx: broadcast::Receiver<Hash>,
     mut consensus_rx: watch::Receiver<ConsensusHeads>,
     provider: BlockchainProvider<N>,
@@ -126,11 +122,7 @@ async fn engine_control_task_inner<
 }
 
 /// Creates an engine control task that processes chain updates from OL and sequencer.
-pub fn create_engine_control_task<
-    N: NodeTypesWithDB + ProviderNodeTypes,
-    E: ExecutionEngine<P>,
-    P: Send,
->(
+pub fn create_engine_control_task<N: NodeTypesWithDB + ProviderNodeTypes, E: ExecutionEngine>(
     preconf_rx: broadcast::Receiver<Hash>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
     provider: BlockchainProvider<N>,

@@ -19,6 +19,7 @@ async-trait.workspace = true
 borsh.workspace = true
 eyre.workspace = true
 sled.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
@@ -26,5 +27,4 @@ tracing.workspace = true
 typed-sled.workspace = true
 
 [dev-dependencies]
-strata-primitives.workspace = true
 alpen-ee-common = { workspace = true, features = ["test-utils"] }

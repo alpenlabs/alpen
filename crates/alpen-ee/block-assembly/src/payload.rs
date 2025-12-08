@@ -1,22 +1,20 @@
 use std::num::NonZero;
 
 use alloy_primitives::{Address, B256};
-use alpen_ee_common::{DepositInfo, PayloadBuildAttributes, PayloadBuilderEngine};
-use alpen_reth_node::AlpenBuiltPayload;
-use reth_node_api::BuiltPayload;
+use alpen_ee_common::{DepositInfo, EnginePayload, PayloadBuildAttributes, PayloadBuilderEngine};
 use strata_acct_types::Hash;
 use strata_ee_acct_types::{EeAccountState, PendingInputEntry, UpdateExtraData};
 use tracing::debug;
 
 /// Builds the block payload.
 /// All EE <-> EVM conversions should be contained inside here.
-pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine<AlpenBuiltPayload>>(
+pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
     account_state: &mut EeAccountState,
     parent_exec_blkid: Hash,
     timestamp_ms: u64,
     max_deposits_per_block: NonZero<u8>,
     payload_builder: &E,
-) -> eyre::Result<(AlpenBuiltPayload, UpdateExtraData)> {
+) -> eyre::Result<(E::TEnginePayload, UpdateExtraData)> {
     let parent = B256::from_slice(&parent_exec_blkid);
     let timestamp_sec = timestamp_ms / 1000;
 
@@ -52,11 +50,10 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine<AlpenBuiltPayload
         .build_payload(PayloadBuildAttributes::new(parent, timestamp_sec, deposits))
         .await?;
 
-    let new_blockhash = payload.block().hash();
-    debug!(%new_blockhash, "payload build complete");
+    let new_blockhash = payload.blockhash();
+    debug!(?new_blockhash, "payload build complete");
 
-    let new_tip_blkid = new_blockhash.0;
-    let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs, processed_fincls);
+    let extra_data = UpdateExtraData::new(new_blockhash, processed_inputs, processed_fincls);
 
     Ok((payload, extra_data))
 }

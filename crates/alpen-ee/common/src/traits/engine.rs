@@ -5,9 +5,14 @@ use thiserror::Error;
 /// Interface for interacting with an execution engine that processes payloads
 /// and tracks consensus state. Typically wraps an Engine API-compliant client.
 #[async_trait]
-pub trait ExecutionEngine<TEnginePayload> {
+pub trait ExecutionEngine {
+    type TEnginePayload;
+
     /// Submits an execution payload to the engine for processing.
-    async fn submit_payload(&self, payload: TEnginePayload) -> Result<(), ExecutionEngineError>;
+    async fn submit_payload(
+        &self,
+        payload: Self::TEnginePayload,
+    ) -> Result<(), ExecutionEngineError>;
 
     /// Updates the engine's fork choice state (head, safe, and finalized blocks).
     async fn update_consensus_state(
