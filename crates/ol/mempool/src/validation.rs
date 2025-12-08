@@ -174,7 +174,7 @@ mod tests {
         let config = OLMempoolConfig {
             max_tx_count: 100,
             max_tx_size: 100,
-            max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            ..Default::default()
         };
         let validator = BasicTransactionValidator::new(config);
         let current_tip = create_test_block_commitment(100);
@@ -199,7 +199,7 @@ mod tests {
         let config = OLMempoolConfig {
             max_tx_count: 100,
             max_tx_size: 1000,
-            max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            ..Default::default()
         };
         let validator = BasicTransactionValidator::new(config);
         let current_tip = create_test_block_commitment(100);
@@ -220,7 +220,7 @@ mod tests {
         let config = OLMempoolConfig {
             max_tx_count: 100,
             max_tx_size: 200,
-            max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            ..Default::default()
         };
         let _validator = BasicTransactionValidator::new(config);
         let current_tip = create_test_block_commitment(100);
@@ -237,7 +237,7 @@ mod tests {
         let config_at_limit = OLMempoolConfig {
             max_tx_count: 100,
             max_tx_size: tx_size,
-            max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            ..Default::default()
         };
         let validator_at_limit = BasicTransactionValidator::new(config_at_limit);
 
@@ -412,6 +412,7 @@ mod tests {
             max_tx_count: 100,
             max_tx_size: 100,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            ..Default::default()
         };
         let validator = BasicTransactionValidator::new(config);
         let current_tip = create_test_block_commitment(100);

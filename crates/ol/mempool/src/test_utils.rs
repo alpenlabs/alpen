@@ -23,7 +23,10 @@ use crate::{
     OLMempoolTransaction, OLMempoolTxPayload,
     ordering::FifoOrderingStrategy,
     state::MempoolContext,
-    types::{DEFAULT_MAX_REORG_DEPTH, OLMempoolConfig},
+    types::{
+        DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_REORG_DEPTH, DEFAULT_MAX_TX_COUNT,
+        DEFAULT_MAX_TX_SIZE, OLMempoolConfig,
+    },
     validation::BasicTransactionValidator,
 };
 
@@ -341,7 +344,11 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
 }
 
 /// Create a test mempool context with specified limits.
-pub(crate) fn create_test_context(max_tx_count: usize, max_tx_size: usize) -> MempoolContext {
+pub(crate) fn create_test_context_with_limits(
+    max_tx_count: usize,
+    max_tx_size: usize,
+    command_buffer_size: usize,
+) -> MempoolContext {
     let pool = ThreadPool::new(1);
 
     // Create a minimal test storage using a test sled database
@@ -355,6 +362,7 @@ pub(crate) fn create_test_context(max_tx_count: usize, max_tx_size: usize) -> Me
         max_tx_count,
         max_tx_size,
         max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+        command_buffer_size,
     };
 
     MempoolContext {
@@ -371,7 +379,11 @@ pub(crate) fn create_test_context(max_tx_count: usize, max_tx_size: usize) -> Me
 pub(crate) async fn create_test_context_arc_with_state(
     tip: OLBlockCommitment,
 ) -> Arc<MempoolContext> {
-    let ctx = create_test_context(crate::DEFAULT_MAX_TX_COUNT, crate::DEFAULT_MAX_TX_SIZE);
+    let ctx = create_test_context_with_limits(
+        DEFAULT_MAX_TX_COUNT,
+        DEFAULT_MAX_TX_SIZE,
+        DEFAULT_COMMAND_BUFFER_SIZE,
+    );
 
     // Set up test state (now async)
     setup_test_state_for_tip(&ctx.storage, tip).await;
@@ -386,7 +398,8 @@ pub(crate) async fn create_test_context_with_state(
     max_tx_size: usize,
     tip: OLBlockCommitment,
 ) -> MempoolContext {
-    let ctx = create_test_context(max_tx_count, max_tx_size);
+    let ctx =
+        create_test_context_with_limits(max_tx_count, max_tx_size, DEFAULT_COMMAND_BUFFER_SIZE);
     setup_test_state_for_tip(&ctx.storage, tip).await;
     ctx
 }

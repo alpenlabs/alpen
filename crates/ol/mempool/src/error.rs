@@ -70,4 +70,8 @@ pub enum OLMempoolError {
     /// Serialization/deserialization error.
     #[error("serialization error: {0}")]
     Serialization(String),
+
+    /// Mempool service is closed or unavailable.
+    #[error("mempool service unavailable: {0}")]
+    ServiceClosed(String),
 }

@@ -6,7 +6,6 @@ use std::{
 };
 
 use ssz::Decode;
-use ssz_types::Optional;
 use strata_acct_types::{AccountId, AccountTypeId};
 use strata_db_types::types::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
@@ -47,9 +46,9 @@ pub(crate) struct MempoolContext {
 impl std::fmt::Debug for MempoolContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MempoolContext")
-            .field("storage", &"<NodeStorage>")
             .field("config", &self.config)
             .field("ordering_strategy", &"<OrderingStrategy>")
+            .field("storage", &"<NodeStorage>")
             .finish()
     }
 }
@@ -531,7 +530,7 @@ impl MempoolState {
 
         // Collect expired transaction IDs
         for (txid, entry) in &self.entries {
-            if let Optional::Some(max_slot) = entry.tx.attachment.max_slot
+            if let Some(max_slot) = entry.tx.attachment.max_slot()
                 && current_slot >= max_slot
             {
                 expired_txids.push(*txid);
@@ -1126,7 +1125,6 @@ impl MempoolServiceState {
     }
 
     /// Load existing transactions from database.
-    #[expect(dead_code, reason = "will be used via builder")]
     pub(crate) fn load_from_db(&mut self) -> OLMempoolResult<()> {
         self.state.load_from_db(&self.ctx)
     }
@@ -1144,7 +1142,6 @@ impl MempoolServiceState {
     }
 
     /// Handle submit transaction command.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
     pub(crate) async fn handle_submit_transaction(
         &mut self,
         tx_bytes: Vec<u8>,
@@ -1163,7 +1160,6 @@ impl MempoolServiceState {
     }
 
     /// Handle best transactions command (returns all transactions in priority order).
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
     pub(crate) async fn handle_best_transactions(
         &mut self,
     ) -> OLMempoolResult<Vec<(OLTxId, OLMempoolTransaction)>> {
@@ -1171,7 +1167,6 @@ impl MempoolServiceState {
     }
 
     /// Handle remove transactions command.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
     pub(crate) fn handle_remove_transactions(
         &mut self,
         ids: Vec<OLTxId>,
@@ -1199,7 +1194,6 @@ impl MempoolServiceState {
     /// - Removing transactions from new chain blocks
     /// - Re-adding transactions from rolled-back blocks (for reorgs)
     /// - Revalidating all transactions
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
     pub(crate) async fn handle_chain_update(
         &mut self,
         new_tip: OLBlockCommitment,
@@ -1209,13 +1203,11 @@ impl MempoolServiceState {
     }
 
     /// Check if transaction exists in mempool.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
     pub(crate) fn contains(&self, id: &OLTxId) -> bool {
         self.state.contains(id)
     }
 
     /// Get mempool statistics.
-    #[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
     pub(crate) fn stats(&self) -> OLMempoolStats {
         self.state.stats()
     }

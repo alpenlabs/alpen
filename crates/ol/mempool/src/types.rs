@@ -20,6 +20,9 @@ pub const DEFAULT_MAX_TX_SIZE: usize = 1024 * 1024; // 1 MB
 /// OL chain doesn't expect reorgs, so this is a safety limit.
 pub const DEFAULT_MAX_REORG_DEPTH: u64 = 50;
 
+/// Default command channel buffer size.
+pub const DEFAULT_COMMAND_BUFFER_SIZE: usize = 1000;
+
 /// Configuration for the OL mempool.
 #[derive(Clone, Debug)]
 pub struct OLMempoolConfig {
@@ -32,6 +35,9 @@ pub struct OLMempoolConfig {
     /// Maximum reorg depth for finding common ancestor during reorg handling.
     /// OL chain doesn't expect reorgs, so this is a safety limit to prevent infinite loops.
     pub max_reorg_depth: u64,
+
+    /// Command channel buffer size.
+    pub command_buffer_size: usize,
 }
 
 impl Default for OLMempoolConfig {
@@ -40,6 +46,7 @@ impl Default for OLMempoolConfig {
             max_tx_count: DEFAULT_MAX_TX_COUNT,
             max_tx_size: DEFAULT_MAX_TX_SIZE,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
+            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         }
     }
 }
@@ -388,7 +395,8 @@ impl OLMempoolRejectReason {
             OLMempoolError::TransactionNotFound(_)
             | OLMempoolError::Database(_)
             | OLMempoolError::Serialization(_)
-            | OLMempoolError::AccountStateAccess(_) => None,
+            | OLMempoolError::AccountStateAccess(_)
+            | OLMempoolError::ServiceClosed(_) => None,
         }
     }
 }

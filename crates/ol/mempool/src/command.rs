@@ -76,3 +76,14 @@ pub enum MempoolCommand {
         completion: CommandCompletionSender<OLMempoolResult<usize>>,
     },
 }
+
+/// Helper function to create a completion channel pair.
+///
+/// Returns (CommandCompletionSender, Receiver) for command-response pattern.
+pub(crate) fn create_completion<T>() -> (
+    CommandCompletionSender<T>,
+    tokio::sync::oneshot::Receiver<T>,
+) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    (CommandCompletionSender::new(tx), rx)
+}

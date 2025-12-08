@@ -6,7 +6,6 @@ use crate::{MempoolCommand, state::MempoolServiceState};
 
 /// Mempool service that processes commands.
 #[derive(Debug)]
-#[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
 pub(crate) struct MempoolService;
 
 impl Service for MempoolService {
@@ -69,8 +68,7 @@ impl AsyncService for MempoolService {
 
 /// Service status for mempool.
 #[derive(Debug, Clone, serde::Serialize)]
-#[cfg_attr(not(test), expect(dead_code, reason = "will be used via builder"))]
-pub(crate) struct MempoolServiceStatus;
+pub struct MempoolServiceStatus;
 
 #[cfg(test)]
 mod tests {
