@@ -9,10 +9,7 @@ use reth_provider::{
     BlockHashReader, BlockNumReader, ProviderResult,
 };
 use strata_acct_types::Hash;
-use tokio::{
-    select,
-    sync::{broadcast, watch},
-};
+use tokio::{select, sync::watch};
 use tracing::{error, warn};
 
 /// Check if `blockhash` is in canonical chain provided by [`BlockchainProvider`].
@@ -57,7 +54,7 @@ fn forkchoice_state_from_consensus<N: NodeTypesWithDB + ProviderNodeTypes>(
 
 /// Takes chain updates from OL and sequencer/p2p and updates the chain in engine (reth).
 async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: ExecutionEngine>(
-    mut preconf_rx: broadcast::Receiver<Hash>,
+    mut preconf_rx: watch::Receiver<Hash>,
     mut consensus_rx: watch::Receiver<ConsensusHeads>,
     provider: BlockchainProvider<N>,
     engine: E,
@@ -90,21 +87,15 @@ async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: Ex
                     continue;
                 }
             }
-            res = preconf_rx.recv() => {
-                let next_head_block_hash = match res {
-                    Ok(hash) => B256::from_slice(&hash),
-                    Err(broadcast::error::RecvError::Closed) => {
-                        // tx dropped; exit task
-                        warn!("preconf_rx channel closed; exiting");
-                        return;
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        warn!("preconf_rx channel lagged; ignoring");
-                        continue;
-                    }
-                };
-
+            res = preconf_rx.changed() => {
+                if res.is_err() {
+                    // tx dropped; exit task
+                    warn!("preconf_rx channel closed; exiting");
+                    return;
+                }
                 // got head block from sequencer / p2p
+                let hash = *preconf_rx.borrow_and_update();
+                let next_head_block_hash = B256::from_slice(&hash);
 
                 let update = ForkchoiceState {
                     head_block_hash: next_head_block_hash,
@@ -123,7 +114,7 @@ async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: Ex
 
 /// Creates an engine control task that processes chain updates from OL and sequencer.
 pub fn create_engine_control_task<N: NodeTypesWithDB + ProviderNodeTypes, E: ExecutionEngine>(
-    preconf_rx: broadcast::Receiver<Hash>,
+    preconf_rx: watch::Receiver<Hash>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
     provider: BlockchainProvider<N>,
     engine_control: E,

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use alpen_ee_common::{ConsensusHeads, ExecBlockRecord, ExecBlockStorage, StorageError};
 use strata_acct_types::Hash;
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tracing::error;
 
 use crate::state::{ExecChainState, ExecChainStateError};
@@ -49,14 +49,14 @@ pub(crate) enum Message {
 pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
     mut evt_rx: mpsc::Receiver<Message>,
     mut state: ExecChainState,
-    mut preconf_head_tx: mpsc::Sender<Hash>,
+    preconf_head_tx: watch::Sender<Hash>,
     storage: Arc<TStorage>,
 ) {
     while let Some(evt) = evt_rx.recv().await {
         match evt {
             Message::Query(query) => handle_query(&mut state, query).await,
             Message::NewBlock(hash) => {
-                match handle_new_block(&mut state, hash, storage.as_ref(), &mut preconf_head_tx)
+                match handle_new_block(&mut state, hash, storage.as_ref(), &preconf_head_tx)
                     .await
                 {
                     Err(ChainTrackerError::PreconfChannelClosed) => {
@@ -70,7 +70,7 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
                 }
             }
             Message::OLConsensusUpdate(status) => {
-                match handle_ol_update(&mut state, status, storage.as_ref(), &mut preconf_head_tx)
+                match handle_ol_update(&mut state, status, storage.as_ref(), &preconf_head_tx)
                     .await
                 {
                     Err(ChainTrackerError::PreconfChannelClosed) => {
@@ -103,7 +103,7 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     hash: Hash,
     storage: &TStorage,
-    preconf_tx: &mut mpsc::Sender<Hash>,
+    preconf_tx: &watch::Sender<Hash>,
 ) -> Result<(), ChainTrackerError> {
     // Get block from storage
     let record = storage
@@ -117,7 +117,6 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     if new_best != prev_best {
         preconf_tx
             .send(new_best)
-            .await
             .map_err(|_| ChainTrackerError::PreconfChannelClosed)?;
     }
 
@@ -131,7 +130,7 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     status: ConsensusHeads,
     storage: &TStorage,
-    preconf_tx: &mut mpsc::Sender<Hash>,
+    preconf_tx: &watch::Sender<Hash>,
 ) -> Result<(), ChainTrackerError> {
     // we only care about reorgs on the finalized state
     let finalized = *status.finalized();
@@ -157,7 +156,6 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
             // finalization has triggered a reorg of the tip
             preconf_tx
                 .send(new_best)
-                .await
                 .map_err(|_| ChainTrackerError::PreconfChannelClosed)?;
         }
 

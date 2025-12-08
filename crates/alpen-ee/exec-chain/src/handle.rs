@@ -50,7 +50,7 @@ impl ExecChainHandle {
 /// Creates the execution chain tracker task and handle for interacting with it.
 pub fn build_exec_chain_task<TStorage: ExecBlockStorage>(
     state: ExecChainState,
-    preconf_head_tx: mpsc::Sender<Hash>,
+    preconf_head_tx: watch::Sender<Hash>,
     storage: Arc<TStorage>,
 ) -> (ExecChainHandle, impl Future<Output = ()>) {
     let (msg_tx, msg_rx) = mpsc::channel(64);

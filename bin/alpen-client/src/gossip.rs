@@ -12,7 +12,7 @@ use strata_acct_types::Hash;
 use strata_primitives::buf::Buf32;
 use tokio::{
     select,
-    sync::{broadcast, mpsc},
+    sync::{broadcast, mpsc, watch},
 };
 use tracing::{debug, error, info, warn};
 
@@ -35,7 +35,7 @@ fn handle_gossip_event(
     event: AlpenGossipEvent,
     connections: &mut HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
     highest_seq_no: &mut u64,
-    preconf_tx: &broadcast::Sender<Hash>,
+    preconf_tx: &watch::Sender<Hash>,
     config: &GossipConfig,
 ) -> bool {
     match event {
@@ -79,7 +79,7 @@ fn handle_gossip_package(
     package: AlpenGossipPackage,
     connections: &HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
     highest_seq_no: &mut u64,
-    preconf_tx: &broadcast::Sender<Hash>,
+    preconf_tx: &watch::Sender<Hash>,
     config: &GossipConfig,
 ) -> bool {
     // Validate signature before processing
@@ -255,7 +255,7 @@ fn broadcast_new_block(
 pub(crate) async fn create_gossip_task(
     mut gossip_rx: mpsc::UnboundedReceiver<AlpenGossipEvent>,
     mut state_events: broadcast::Receiver<CanonStateNotification>,
-    preconf_tx: broadcast::Sender<Hash>,
+    preconf_tx: watch::Sender<Hash>,
     config: GossipConfig,
 ) {
     let mut connections: HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>> =

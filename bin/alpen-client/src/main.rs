@@ -29,7 +29,7 @@ use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
 use strata_identifiers::{CredRule, OLBlockId};
 use strata_primitives::buf::Buf32;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
 
 use crate::{
@@ -108,12 +108,15 @@ fn main() {
                 ))
                 .expect("ol tracker state initialization should not fail");
 
+            let best_ee_blockhash = ol_tracker_state.best_ee_state().last_exec_blkid();
+
             // Create gossip channel before building the node so we can register it early
             let (gossip_tx, gossip_rx) = mpsc::unbounded_channel();
 
             // Create preconf channel for p2p head block gossip -> engine control integration
             // This channel sends block hashes received from peers to the engine control task
-            let (preconf_tx, preconf_rx) = broadcast::channel(16);
+            let (preconf_tx, preconf_rx) = watch::channel(best_ee_blockhash);
+
 
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
