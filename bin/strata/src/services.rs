@@ -1,12 +1,13 @@
 //! Service spawning and lifecycle management.
 
-use jsonrpsee::{RpcModule, types::ErrorObjectOwned};
+use anyhow::{Result, anyhow};
+use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
 
 use crate::{context::NodeContext, run_context::RunContext};
 
 /// Just simply starts services. This can later be extended to service registry pattern.
-pub(crate) fn start_services(nodectx: NodeContext) -> anyhow::Result<RunContext> {
+pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
     // Start Asm worker
     let asm_handle = spawn_asm_worker(
         &nodectx.executor,
@@ -37,7 +38,7 @@ pub(crate) fn start_services(nodectx: NodeContext) -> anyhow::Result<RunContext>
     })
 }
 
-pub(crate) fn start_rpc(runctx: &RunContext) -> anyhow::Result<()> {
+pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     let rpc_host = runctx.config.client.rpc_host.clone();
     let rpc_port = runctx.config.client.rpc_port;
     runctx
@@ -46,23 +47,16 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn spawn_rpc(rpc_host: String, rpc_port: u16) -> anyhow::Result<()> {
+async fn spawn_rpc(rpc_host: String, rpc_port: u16) -> Result<()> {
     let mut module = RpcModule::new(());
     let _ = module.register_method("strata_protocolVersion", |_, _, _ctx| {
         Ok::<u32, ErrorObjectOwned>(1)
     });
 
-    let rpc_server = jsonrpsee::server::ServerBuilder::new()
+    let rpc_server = ServerBuilder::new()
         .build(format!("{rpc_host}:{rpc_port}"))
         .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to build RPC server on {}:{}: {}",
-                rpc_host,
-                rpc_port,
-                e
-            )
-        })?;
+        .map_err(|e| anyhow!("Failed to build RPC server on {rpc_host}:{rpc_port}: {e}"))?;
 
     let rpc_handle = rpc_server.start(module);
 
