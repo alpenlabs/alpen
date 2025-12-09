@@ -6,9 +6,8 @@ use anyhow::{Result, anyhow};
 use argh::from_env;
 use strata_common::{
     logging,
-    logging::{self, LoggerConfig, get_otlp_url_from_env},
+    logging::{LoggerConfig, get_otlp_url_from_env},
 };
-use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types as _;
 use tokio::runtime::Handle;
 use tracing::info;

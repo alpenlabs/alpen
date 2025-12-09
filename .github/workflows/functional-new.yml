@@ -38,21 +38,21 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
         with:
-          working-directory: functional-tests
+          working-directory: functional-tests-new
           activate-environment: true
           enable-cache: true
-          cache-suffix: "functional-tests"
+          cache-suffix: "functional-tests-new"
 
       - name: Check formatting
-        working-directory: functional-tests
+        working-directory: functional-tests-new
         run: uv run ruff format --check
 
       - name: Lint
-        working-directory: functional-tests
+        working-directory: functional-tests-new
         run: uv run ruff check
 
   run:
-    name: Run functional tests
+    name: Run new functional tests
     runs-on: ubuntu-latest
     needs: extract-rust-version
     timeout-minutes: 60
@@ -86,10 +86,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
         with:
-          working-directory: functional-tests
+          working-directory: functional-tests-new
           activate-environment: true
           enable-cache: true
-          cache-suffix: "functional-tests"
+          cache-suffix: "functional-tests-new"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
@@ -123,7 +123,7 @@ jobs:
           NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
           export PATH="$NEWPATH:$PATH"
           which strata-client
-          cd functional-tests && uv run python entry.py
+          cd functional-tests-new && uv run python entry.py
 
       - name: Generate combined coverage lcov
         id: genFunctionalLcov
@@ -143,18 +143,18 @@ jobs:
           path: lcov.functional.info
 
       - name: Zip log files on failure
-        if: steps.funcTestsRun2.outcome == 'failure'
+        if: steps.funcTestsRun.outcome == 'failure'
         # Create a zip archive (logs.zip) that includes only service.log files,
-        # preserving the folder structure starting from functional-tests/_dd
+        # preserving the folder structure starting from functional-tests-new/_dd
         # NOTE: Entire _dd ends up hundreds of MBs, so keep only logs (still huge...).
         run: |
           # service logs
-          find functional-tests/_dd -type f -name "service.log" | zip -@ logs.zip
+          find functional-tests-new/_dd -type f -name "service.log" | zip -@ logs.zip
           # functional test logs
-          zip -r logs.zip functional-tests/_dd -i '*/logs/*.log'
+          zip -r logs.zip functional-tests-new/_dd -i '*/logs/*.log'
 
       - name: Upload logs as build artifact on failure
-        if: steps.funcTestsRun2.outcome == 'failure'
+        if: steps.funcTestsRun.outcome == 'failure'
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v4
         with:
           name: fntest_dd
@@ -164,7 +164,7 @@ jobs:
           compression-level: 0 # already compressed
 
       - name: Fail job if functional tests fail
-        if: steps.funcTestsRun2.outcome == 'failure'
+        if: steps.funcTestsRun.outcome == 'failure'
         run: |
           echo "Functional tests failed"
           exit 1

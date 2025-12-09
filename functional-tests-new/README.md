@@ -38,9 +38,9 @@ Clean, simple functional test suite for Strata.
 ## Structure
 
 ```
-lib/          Core library (service, RPC, waiting)
+common/       Core library (service, RPC, waiting)
 factories/    Service factories
-env/          Environment configs
+envconfigs/   Environment configs
 tests/        Test files
 ```
 
@@ -48,7 +48,8 @@ tests/        Test files
 
 ```python
 import flexitest
-from tests.base import BaseTest
+from common.base_test import BaseTest
+from common.config import ServiceType
 
 @flexitest.register
 class TestExample(BaseTest):
@@ -56,12 +57,12 @@ class TestExample(BaseTest):
         ctx.set_env("basic")  # Use basic environment
 
     def run(self) -> bool:
-        # If you need access to runcontext
-        _ctx = self.runctx
+        # Access to runcontext is available via self.runctx
+        # (set automatically by BaseTest.main)
 
-        # Get services
-        bitcoin = self.get_service("bitcoin")
-        strata = self.get_service("strata")
+        # Get services using ServiceType enum
+        bitcoin = self.get_service(ServiceType.Bitcoin)
+        strata = self.get_service(ServiceType.Strata)
 
         # Create RPC clients
         btc_rpc = bitcoin.create_rpc()
@@ -96,19 +97,22 @@ wait_until(condition, error_with="Custom error", timeout=30, step=0.5)
 ### RPC Calls
 
 ```python
-# Attribute style
+# Attribute style (uses __getattr__ for dynamic method dispatch)
 version = rpc.strata_protocolVersion()
 balance = rpc.eth_getBalance("0x123...", "latest")
 
 # Explicit style
 version = rpc.call("strata_protocolVersion")
+balance = rpc.call("eth_getBalance", "0x123...", "latest")
 ```
 
 ### Service Access
 
 ```python
-# Get service from context
-bitcoin = ctx.get_service("bitcoin")
+from common.config import ServiceType
+
+# Get service from test (uses self.runctx internally)
+bitcoin = self.get_service(ServiceType.Bitcoin)
 
 # Access properties
 rpc_port = bitcoin.get_prop("rpc_port")
@@ -123,15 +127,25 @@ rpc = bitcoin.create_rpc()
 Environments define which services to start:
 
 ```python
-# env/configs.py
-class BasicEnv(flexitest.EnvConfig):
-    def init(self, ctx):
-        bitcoin = bitcoin_factory.create_regtest()
+# envconfigs/basic.py
+from common.config import ServiceType
+
+class BasicEnvConfig(flexitest.EnvConfig):
+    def init(self, ectx: flexitest.EnvContext):
+        btc_factory = ectx.get_factory(ServiceType.Bitcoin)
+        strata_factory = ectx.get_factory(ServiceType.Strata)
+
+        # Start Bitcoin
+        bitcoin = btc_factory.create_regtest()
+        bitcoin.wait_for_ready(timeout=10)
+
+        # Start Strata
         strata = strata_factory.create_node(...)
+        strata.wait_for_ready(timeout=10)
 
         return flexitest.LiveEnv({
-            "bitcoin": bitcoin,
-            "strata": strata,
+            ServiceType.Bitcoin: bitcoin,
+            ServiceType.Strata: strata,
         })
 ```
 
@@ -148,14 +162,33 @@ Factories create services. They should be dumb - just build command and start pr
 
 ```python
 # factories/bitcoin.py
+from common.services import BitcoinServiceWrapper, BitcoinServiceProps
+
 class BitcoinFactory(flexitest.Factory):
     @flexitest.with_ectx("ctx")
-    def create_regtest(self, ctx):
-        # Build command
-        cmd = ["bitcoind", "-regtest", ...]
+    def create_regtest(self, **kwargs):
+        ctx: flexitest.EnvContext = kwargs["ctx"]
 
-        # Create service using flexitest's ProcService
-        svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
+        # Set up service directories and ports
+        datadir = ctx.make_service_dir(ServiceType.Bitcoin)
+        rpc_port = self.next_port()
+        logfile = os.path.join(datadir, "service.log")
+
+        # Build command
+        cmd = ["bitcoind", "-regtest", f"-rpcport={rpc_port}", ...]
+
+        # Create props (validated by dataclass)
+        props = BitcoinServiceProps(
+            rpc_port=rpc_port,
+            rpc_url=f"http://localhost:{rpc_port}",
+            datadir=datadir,
+        )
+
+        # Create service wrapper with RPC factory
+        svc = BitcoinServiceWrapper(
+            props, cmd, stdout=logfile,
+            rpc_factory=lambda: BitcoindClient(...)
+        )
         svc.start()
         return svc
 ```
@@ -218,10 +251,13 @@ Logs are in test data directory:
 
 ```
 _dd/
-  <test_name>/
-    bitcoin/service.log
-    strata/service.log
+  <test_run_id>/        # Unique ID for each test run
+    <env_name>/         # Environment name (e.g., "basic")
+      bitcoin/service.log
+      <strata_service>/service.log  # e.g., strata_sequencer
 ```
+
+Example: `_dd/9-13-wpbec/basic/bitcoin/service.log`
 
 ### Test Logs
 
