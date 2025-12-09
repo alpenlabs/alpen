@@ -40,7 +40,7 @@ pub enum DbError {
     MissingExecBlock(Hash),
 
     #[error("Expected exec block finalized chain to be empty")]
-    ExecFinalizedChainNotEmpty,
+    FinalizedExecChainGenesisBlockMismatch,
 
     #[error("Provided block does not extend chain; {0:?}")]
     ExecBlockDoesNotExtendChain(Hash),

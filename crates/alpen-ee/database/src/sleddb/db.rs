@@ -226,14 +226,14 @@ impl EeNodeDb for EeNodeDBSled {
     }
 
     fn init_finalized_chain(&self, hash: Hash) -> DbResult<()> {
-        // 1. Check if chain is already initialized with the same hash (idempotent case)
-        if let Some((height, existing_hash)) = self.exec_block_finalized_tree.last()? {
-            if height == 0 && existing_hash == hash {
+        // 1. Check if chain is already initialized (check genesis at height 0)
+        if let Some(existing_genesis_hash) = self.exec_block_finalized_tree.get(&0)? {
+            if existing_genesis_hash == hash {
                 // Already initialized with the same genesis block - idempotent success
                 return Ok(());
             }
-            // Chain is already initialized with a different block
-            return Err(DbError::ExecFinalizedChainNotEmpty);
+            // Chain is already initialized with a different genesis block
+            return Err(DbError::FinalizedExecChainGenesisBlockMismatch);
         }
 
         // 2. Check that the requested block exists.

@@ -119,6 +119,20 @@ macro_rules! exec_block_storage_tests {
         }
 
         #[tokio::test]
+        async fn test_init_finalized_chain_different_genesis() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_init_finalized_chain_different_genesis(&storage)
+                .await;
+        }
+
+        #[tokio::test]
+        async fn test_init_finalized_chain_after_extend() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_init_finalized_chain_after_extend(&storage)
+                .await;
+        }
+
+        #[tokio::test]
         async fn test_extend_finalized_chain() {
             let storage = $setup_expr;
             $crate::exec_block_storage_test_fns::test_extend_finalized_chain(&storage).await;
@@ -397,6 +411,63 @@ pub mod exec_block_storage_test_fns {
         // Should fail because block doesn't exist
         let result = storage.init_finalized_chain(missing_hash).await;
         assert!(result.is_err());
+    }
+
+    /// Test initializing finalized chain with a different genesis hash after already initialized
+    pub async fn test_init_finalized_chain_different_genesis(storage: &impl ExecBlockStorage) {
+        let genesis_hash_a = hash_from_u8(0);
+        let genesis_hash_b = hash_from_u8(1);
+
+        // Create two different genesis blocks
+        let genesis_block_a = create_exec_block(0, Hash::default(), genesis_hash_a, 0);
+        let genesis_block_b = create_exec_block(0, Hash::default(), genesis_hash_b, 0);
+
+        // Save both blocks
+        storage
+            .save_exec_block(genesis_block_a, vec![])
+            .await
+            .unwrap();
+        storage
+            .save_exec_block(genesis_block_b, vec![])
+            .await
+            .unwrap();
+
+        // Initialize with first genesis
+        storage.init_finalized_chain(genesis_hash_a).await.unwrap();
+
+        // Try to initialize with different genesis - should fail
+        let result = storage.init_finalized_chain(genesis_hash_b).await;
+        assert!(result.is_err());
+    }
+
+    /// Test initializing finalized chain after chain has been extended beyond genesis.
+    /// Should succeed (idempotent) if the genesis hash matches, making no changes.
+    pub async fn test_init_finalized_chain_after_extend(storage: &impl ExecBlockStorage) {
+        let genesis_hash = hash_from_u8(0);
+        let block1_hash = hash_from_u8(1);
+
+        // Create genesis and block 1
+        let genesis_block = create_exec_block(0, Hash::default(), genesis_hash, 0);
+        let block1 = create_exec_block(1, genesis_hash, block1_hash, 1);
+
+        // Save both blocks
+        storage
+            .save_exec_block(genesis_block, vec![])
+            .await
+            .unwrap();
+        storage.save_exec_block(block1, vec![]).await.unwrap();
+
+        // Initialize and extend chain
+        storage.init_finalized_chain(genesis_hash).await.unwrap();
+        storage.extend_finalized_chain(block1_hash).await.unwrap();
+
+        // Try to init again with same genesis - should succeed (idempotent)
+        storage.init_finalized_chain(genesis_hash).await.unwrap();
+
+        // Chain should still be at block 1 (no changes made)
+        let best = storage.best_finalized_block().await.unwrap().unwrap();
+        assert_eq!(best.blockhash(), block1_hash);
+        assert_eq!(best.blocknum(), 1);
     }
 
     /// Test extending finalized chain
