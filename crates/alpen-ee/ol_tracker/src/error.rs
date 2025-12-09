@@ -24,8 +24,8 @@ pub enum OLTrackerError {
     /// No common fork point found between local chain and OL chain.
     /// This is a FATAL error indicating complete chain divergence.
     /// Recovery requires manual intervention: wipe DB and resync from genesis.
-    #[error("no fork point found back to genesis slot {genesis_slot}")]
-    NoForkPointFound { genesis_slot: u64 },
+    #[error("no fork point found back to genesis epoch {genesis_epoch}")]
+    NoForkPointFound { genesis_epoch: u64 },
 
     /// Expected block data is missing from storage (potentially recoverable)
     #[error("missing expected block: {block_id}")]
@@ -60,14 +60,14 @@ impl OLTrackerError {
     /// Creates a detailed panic message for non-recoverable errors.
     pub fn panic_message(&self) -> String {
         match self {
-            OLTrackerError::NoForkPointFound { genesis_slot } => {
+            OLTrackerError::NoForkPointFound { genesis_epoch } => {
                 format!(
                     "FATAL: OL tracker cannot recover - no common fork point found.\n\
                      \n\
                      The local chain has completely diverged from the OL chain.\n\
                      No common ancestor exists between local state and OL chain history\n\
-                     going back to genesis slot {}.",
-                    genesis_slot
+                     going back to genesis epoch {}.",
+                    genesis_epoch
                 )
             }
             _ => format!("FATAL: Unexpected non-recoverable error: {}", self),
