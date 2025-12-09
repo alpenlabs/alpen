@@ -4,8 +4,7 @@ from typing import cast
 
 import flexitest
 
-from common.config import BitcoindConfig
-from common.constants import ServiceType
+from common.config import BitcoindConfig, ServiceType
 from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
 

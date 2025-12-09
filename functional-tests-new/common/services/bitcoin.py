@@ -2,7 +2,7 @@
 Bitcoin service wrapper with Bitcoin-specific health checks.
 """
 
-from common.service import ServiceWrapper
+from common.services.base import ServiceWrapper
 
 
 class BitcoinServiceWrapper(ServiceWrapper):

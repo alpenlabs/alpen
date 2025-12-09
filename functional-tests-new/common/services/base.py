@@ -110,11 +110,11 @@ class ServiceWrapper(flexitest.service.ProcService, Generic[Rpc]):
             interval: Time between health checks in seconds
 
         Raises:
-            TimeoutError: If service doesn't become ready within timeout
+            AssertionError: If service doesn't become ready within timeout
         """
         wait_until(
             self.check_health,
+            error_with=f"Service '{self._name}' not ready",
             timeout=timeout,
-            interval=interval,
-            error_msg=f"Service '{self._name}' not ready",
+            step=interval,
         )

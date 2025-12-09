@@ -3,8 +3,7 @@
 import flexitest
 
 from common.base_test import BaseTest
-from common.constants import ServiceType
-from common.strata_service import StrataServiceWrapper
+from common.config import ServiceType
 
 
 # NOTE: this is redundant and is just for setting up the func tests infra. Remove later.

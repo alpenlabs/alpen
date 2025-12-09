@@ -14,7 +14,7 @@ venv/
 ENV/
 
 # Test data
-_test_data/
+_dd/
 *.log
 
 # IDE

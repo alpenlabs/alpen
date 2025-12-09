@@ -8,12 +8,9 @@ from pathlib import Path
 
 import flexitest
 
-from common.config import BitcoindConfig, ClientConfig, StrataConfig
-from common.constants import ServiceType
-from common.params import RollupParams
+from common.config import BitcoindConfig, ClientConfig, RollupParams, ServiceType, StrataConfig
 from common.rpc import JsonRpcClient
-from common.service_props import StrataServiceProps
-from common.strata_service import StrataServiceWrapper
+from common.services import StrataServiceProps, StrataServiceWrapper
 
 
 class StrataFactory(flexitest.Factory):

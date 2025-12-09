@@ -3,56 +3,60 @@ Waiting utilities for test synchronization.
 """
 
 import logging
+import math
 import time
 from collections.abc import Callable
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
 
 def wait_until(
-    condition: Callable[[], bool],
+    fn: Callable[[], Any],
+    error_with: str = "Timed out",
     timeout: int = 30,
-    interval: float = 0.5,
-    error_msg: str = "Timeout waiting for condition",
-) -> None:
+    step: float = 0.5,
+):
     """
-    Wait until a condition function returns True.
-
-    Args:
-        condition: Function that returns True when condition is met
-        timeout: Maximum time to wait in seconds
-        interval: Time to wait between checks in seconds
-        error_msg: Error message to raise if timeout is reached
-
-    Raises:
-        TimeoutError: If condition is not met within timeout
-
-    Usage:
-        wait_until(lambda: service.is_ready(), timeout=30)
-        wait_until(lambda: rpc.strata_protocolVersion() == 1, timeout=10)
+    Wait until a function call returns truth value, given time step, and timeout.
+    This function waits until function call returns truth value at the interval of step seconds.
     """
-    start = time.time()
-    last_exception: Exception | None = None
-    attempts = 0
-
-    while time.time() - start < timeout:
-        attempts += 1
+    for _ in range(math.ceil(timeout / step)):
         try:
-            if condition():
-                elapsed = time.time() - start
-                logger.debug(f"Condition met after {elapsed:.2f}s ({attempts} attempts)")
+            if fn():
                 return
         except Exception as e:
-            last_exception = e
-            logger.debug(f"Condition check failed (attempt {attempts}): {e}")
+            ety = type(e)
+            logging.warning(f"caught exception {ety}, will still wait for timeout: {e}")
+        time.sleep(step)
+    raise AssertionError(error_with)
 
-        time.sleep(interval)
 
-    elapsed = time.time() - start
-    msg = f"{error_msg} (timeout={timeout}s, elapsed={elapsed:.2f}s, attempts={attempts})"
+T = TypeVar("T")
 
-    if last_exception:
-        msg += f"\nLast exception: {type(last_exception).__name__}: {last_exception}"
 
-    logger.error(msg)
-    raise TimeoutError(msg)
+def wait_until_with_value(
+    fn: Callable[..., T],
+    predicate: Callable[[T], bool],
+    error_with: str = "Timed out",
+    timeout: int = 5,
+    step: float = 0.5,
+    debug=False,
+) -> T:
+    """
+    Similar to `wait_until` but this returns the value of the function.
+    This also takes another predicate which acts on the function value and returns a bool
+    """
+    for _ in range(math.ceil(timeout / step)):
+        try:
+            r = fn()
+            if debug:
+                print("Waiting.. current value:", r)
+            if predicate(r):
+                return r
+        except Exception as e:
+            ety = type(e)
+            logging.warning(f"caught exception {ety}, will still wait for timeout: {e}")
+
+        time.sleep(step)
+    raise AssertionError(error_with)
