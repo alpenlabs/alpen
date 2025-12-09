@@ -14,14 +14,25 @@ Clean, simple functional test suite for Strata.
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
 # Run all tests
 ./run_tests.sh
 
-# Run specific test
-python entry.py -t test_node_basic
+# Run specific test(s)
+./run_tests.sh -t test_node_version
+./run_tests.sh -t test_foo test_bar
+
+# Run test group (directory-based)
+./run_tests.sh -g bridge
+./run_tests.sh -g prover bridge
+
+# List available tests
+./run_tests.sh --list
+
+# Keep-alive mode for debugging (starts env and waits, no tests run)
+./run_tests.sh --keep-alive basic
+
+# Get help
+./run_tests.sh --help
 ```
 
 ## Structure
@@ -44,7 +55,7 @@ class TestExample(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")  # Use basic environment
 
-    def run(self:
+    def run(self) -> bool:
         # If you need access to runcontext
         _ctx = self.runctx
 
@@ -149,6 +160,56 @@ class BitcoinFactory(flexitest.Factory):
         return svc
 ```
 
+## Running Tests
+
+### Test Selection
+
+Tests can be filtered by name or group (directory structure):
+
+```bash
+# Run all tests
+./run_tests.sh
+
+# Run specific tests by name (without .py extension)
+./run_tests.sh -t test_node_version
+./run_tests.sh -t test_foo test_bar test_baz
+
+# Run tests by group (subdirectory under tests/)
+# Example: tests/bridge/test_deposit.py is in group "bridge"
+./run_tests.sh -g bridge
+./run_tests.sh -g prover bridge sync
+
+# Combine filters (tests OR groups)
+./run_tests.sh -t test_node_version -g bridge
+
+# List all available tests and groups
+./run_tests.sh --list
+```
+
+### Keep-Alive Mode
+
+For debugging, start an environment and keep it running:
+
+```bash
+./run_tests.sh --keep-alive basic
+```
+
+This starts all services in the "basic" environment and keeps them alive until you press Ctrl+C. **No tests are run** - this is purely for debugging. Useful for:
+- Manual testing via RPC
+- Inspecting service state
+- Debugging service startup issues
+
+Service connection info will be printed on startup.
+
+### Disabling Tests
+
+To temporarily disable flaky or WIP tests, add them to `disabled_tests()` in `entry.py`:
+
+```python
+def disabled_tests() -> frozenset[str]:
+    return frozenset(["test_flaky", "test_wip"])
+```
+
 ## Debugging
 
 ### Service Logs
@@ -172,6 +233,11 @@ self.debug("Debug info")
 self.error("Error occurred")
 ```
 
+Set log level with environment variable:
+```bash
+LOG_LEVEL=DEBUG ./run_tests.sh
+```
+
 ### Common Issues
 
 **RPC not ready**: Increase timeout or check service logs
@@ -181,4 +247,4 @@ self.wait_for_rpc_ready(rpc, timeout=60)
 
 **Service crashed**: Check `service.log` in datadir
 
-**Timeout errors**: Check `error_msg` in exception for last error
+**Timeout errors**: Check exception message for last error and attempt count
