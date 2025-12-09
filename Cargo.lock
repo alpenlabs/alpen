@@ -1077,6 +1077,7 @@ dependencies = [
  "strata-acct-types",
  "strata-identifiers",
  "strata-primitives",
+ "strata-snark-acct-types",
  "tokio",
  "tracing",
 ]
