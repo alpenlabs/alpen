@@ -5,6 +5,7 @@ set shell := ["bash", "-c"]
 git_tag := `git describe --tags --abbrev=0 2>/dev/null || echo "no-tag"`
 build_path := "target"
 functional_tests_dir := "functional-tests"
+new_functional_tests_dir := "functional-tests"
 functional_tests_datadir := "_dd"
 docker_dir := "docker"
 docker_datadir := ".data"
@@ -160,6 +161,7 @@ activate-uv: ensure-uv
 [group('functional-tests')]
 clean-dd:
     rm -rf {{functional_tests_dir}}/{{functional_tests_datadir}} 2>/dev/null || true
+    rm -rf {{new_functional_tests_dir}}/{{functional_tests_datadir}} 2>/dev/null || true
 
 # cargo clean
 [group('functional-tests')]
@@ -175,6 +177,7 @@ clean-docker-data:
 [group('functional-tests')]
 clean-uv:
     cd {{functional_tests_dir}} && rm -rf .venv 2>/dev/null || true
+    cd {{new_functional_tests_dir}} && rm -rf .venv 2>/dev/null || true
 
 # Clean functional tests directory, cargo clean, clean docker data, clean uv virtual environment
 [group('functional-tests')]
@@ -195,6 +198,7 @@ docker-down:
 [group('functional-tests')]
 test-functional: ensure-uv activate-uv clean-dd
     cd {{functional_tests_dir}} && ./run_test.sh
+    cd {{new_functional_tests_dir}} && ./run_tests.sh
 
 # Check formatting issues but do not fix automatically
 [group('code-quality')]
@@ -220,11 +224,13 @@ fmt-toml: ensure-taplo
 [group('code-quality')]
 fmt-check-func-tests: ensure-uv activate-uv
     cd {{functional_tests_dir}} && uv run ruff format --check
+    cd {{new_functional_tests_dir}} && uv run ruff format --check
 
 # Apply formatting of python files inside `test` directory
 [group('code-quality')]
 fmt-func-tests: ensure-uv activate-uv
     cd {{functional_tests_dir}} && uv run ruff format
+    cd {{new_functional_tests_dir}} && uv run ruff format
 
 # Checks for lint issues in the workspace
 [group('code-quality')]
@@ -275,6 +281,7 @@ lint-check-toml: ensure-taplo
 [group('code-quality')]
 lint-check-func-tests: ensure-uv activate-uv
     cd {{functional_tests_dir}} && uv run ruff check
+    cd {{new_functional_tests_dir}} && uv run ruff check
 
 # Lints shell scripts
 [group('code-quality')]
@@ -292,6 +299,7 @@ lint-check-style:
 [group('code-quality')]
 lint-fix-func-tests: ensure-uv activate-uv
     cd {{functional_tests_dir}} && uv run ruff check --fix
+    cd {{new_functional_tests_dir}} && uv run ruff check --fix
 
 # Runs all lints and checks for issues without trying to fix them
 [group('code-quality')]
