@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{Storage, ConsensusHeads, OLChainStatus, OLClient};
+use alpen_ee_common::{ConsensusHeads, OLFinalizedStatus, OLClient, Storage};
 use alpen_ee_config::AlpenEeParams;
 use tokio::sync::watch;
 
@@ -14,13 +14,13 @@ const DEFAULT_POLL_WAIT_MS: u64 = 100;
 /// Handle for accessing OL tracker state updates.
 #[derive(Debug)]
 pub struct OLTrackerHandle {
-    ol_status_rx: watch::Receiver<OLChainStatus>,
+    ol_status_rx: watch::Receiver<OLFinalizedStatus>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
 }
 
 impl OLTrackerHandle {
     /// Returns a watcher for EE account state updates.
-    pub fn ol_status_watcher(&self) -> watch::Receiver<OLChainStatus> {
+    pub fn ol_status_watcher(&self) -> watch::Receiver<OLFinalizedStatus> {
         self.ol_status_rx.clone()
     }
 

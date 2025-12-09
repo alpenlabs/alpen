@@ -348,7 +348,7 @@ mod tests {
         use std::sync::Arc;
 
         use alloy_primitives::B256;
-        use alpen_ee_common::ConsensusHeads;
+        use alpen_ee_common::{ConsensusHeads, OLFinalizedStatus};
         use alpen_ee_config::AlpenEeParams;
         use strata_acct_types::AccountId;
         use tokio::sync::watch;
@@ -373,10 +373,9 @@ mod tests {
             ol_client: MockOLClient,
             genesis_epoch: u32,
         ) -> OLTrackerCtx<MockStorage, MockOLClient> {
-            let (ol_status_tx, _) = watch::channel(OLChainStatus {
-                latest: make_block_commitment(0, 0),
-                confirmed: make_epoch_commitment(0, 0, 0),
-                finalized: make_epoch_commitment(0, 0, 0),
+            let (ol_status_tx, _) = watch::channel(OLFinalizedStatus {
+                ol_block: make_block_commitment(0, 0),
+                last_ee_block: [0; 32],
             });
             let (consensus_tx, _) = watch::channel(ConsensusHeads {
                 confirmed: [0; 32],

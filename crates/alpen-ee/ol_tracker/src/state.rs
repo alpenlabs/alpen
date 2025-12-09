@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{ConsensusHeads, EeAccountStateAtEpoch, OLChainStatus, Storage};
+use alpen_ee_common::{
+    ConsensusHeads, EeAccountStateAtEpoch, OLFinalizedStatus, OLChainStatus, Storage,
+};
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::EpochCommitment;
 
@@ -45,11 +47,10 @@ impl OLTrackerState {
     /// Returns the OL chain status based on local state.
     /// This tracks the tips of the local view of the OL chain, which is expected to be available in
     /// local database.
-    pub fn get_ol_status(&self) -> OLChainStatus {
-        OLChainStatus {
-            latest: self.confirmed.epoch_commitment().to_block_commitment(),
-            confirmed: *self.confirmed.epoch_commitment(),
-            finalized: *self.finalized.epoch_commitment(),
+    pub fn get_ol_status(&self) -> OLFinalizedStatus {
+        OLFinalizedStatus {
+            ol_block: self.finalized.epoch_commitment().to_block_commitment(),
+            last_ee_block: self.finalized.last_exec_blkid(),
         }
     }
 }

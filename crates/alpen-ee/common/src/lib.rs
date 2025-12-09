@@ -25,7 +25,7 @@ pub use types::{
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::ExecBlockRecord,
     ol_account_epoch_summary::OLEpochSummary,
-    ol_chain_status::OLChainStatus,
+    ol_chain_status::{OLFinalizedStatus, OLChainStatus},
     payload_builder::{DepositInfo, PayloadBuildAttributes},
 };
 pub use utils::conversions::sats_to_gwei;
