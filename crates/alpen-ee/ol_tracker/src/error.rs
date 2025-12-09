@@ -31,6 +31,10 @@ pub enum OLTrackerError {
     #[error("missing expected block: {block_id}")]
     MissingBlock { block_id: String },
 
+    /// Storage should not be empty during init
+    #[error("expected to have genesis epoch data in storage")]
+    MissingGenesisEpoch,
+
     /// Generic error for unexpected conditions (may be recoverable depending on cause)
     #[error("{0}")]
     Other(String),
@@ -42,6 +46,7 @@ impl OLTrackerError {
         match self {
             // Non-recoverable: requires manual intervention
             OLTrackerError::NoForkPointFound { .. } => false,
+            OLTrackerError::MissingGenesisEpoch => false,
 
             // All others are potentially recoverable
             OLTrackerError::Storage(_)

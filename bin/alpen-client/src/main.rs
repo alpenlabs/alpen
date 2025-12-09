@@ -102,11 +102,7 @@ fn main() {
             let ol_tracker_state = builder
                 .task_executor()
                 .handle()
-                .block_on(init_ol_tracker_state(
-                    config.clone(),
-                    ol_chain_status,
-                    storage.clone(),
-                ))
+                .block_on(init_ol_tracker_state(ol_chain_status, storage.clone()))
                 .expect("ol tracker state initialization should not fail");
 
             let best_ee_blockhash = ol_tracker_state.best_ee_state().last_exec_blkid();

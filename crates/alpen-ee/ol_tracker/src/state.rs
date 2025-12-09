@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{ConsensusHeads, EeAccountStateAtEpoch, OLChainStatus, Storage};
-use alpen_ee_config::AlpenEeConfig;
-use strata_acct_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::EpochCommitment;
-use tracing::warn;
 
 use crate::error::{OLTrackerError, Result};
 
@@ -59,7 +56,6 @@ impl OLTrackerState {
 
 /// Initialized [`OLTrackerState`] from storage
 pub async fn init_ol_tracker_state<TStorage>(
-    config: Arc<AlpenEeConfig>,
     ol_chain_status: OLChainStatus,
     storage: Arc<TStorage>,
 ) -> Result<OLTrackerState>
@@ -67,31 +63,8 @@ where
     TStorage: Storage,
 {
     let Some(best_state) = storage.best_ee_account_state().await? else {
-        // nothing in storage, so initialize using genesis config
-
-        warn!("ee state not found; create using genesis config");
-        let genesis_state = EeAccountState::new(
-            *config.params().genesis_blockhash().as_ref(),
-            BitcoinAmount::zero(),
-            vec![],
-            vec![],
-        );
-        let genesis_ol_epoch = EpochCommitment::new(
-            config.params().genesis_ol_epoch(),
-            config.params().genesis_ol_slot(),
-            config.params().genesis_ol_blockid(),
-        );
-        // persist genesis state
-        storage
-            .store_ee_account_state(&genesis_ol_epoch, &genesis_state)
-            .await?;
-
-        let block_account_state = EeAccountStateAtEpoch::new(genesis_ol_epoch, genesis_state);
-
-        return Ok(OLTrackerState {
-            confirmed: block_account_state.clone(),
-            finalized: block_account_state,
-        });
+        // nothing in storage, expected atleast genesis epoch info to be present
+        return Err(OLTrackerError::MissingGenesisEpoch);
     };
 
     build_tracker_state(best_state, &ol_chain_status, storage.as_ref()).await
@@ -273,7 +246,6 @@ mod tests {
             assert!(matches!(error, OLTrackerError::Storage(_)));
             assert!(error.to_string().contains("database connection failed"));
         }
-
     }
 
     mod build_tracker_state_tests {
@@ -418,6 +390,5 @@ mod tests {
             assert!(error.to_string().contains("confirmed state"));
             assert!(error.to_string().contains("disk error"));
         }
-
     }
 }

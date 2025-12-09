@@ -1,4 +1,3 @@
-#![allow(unused_crate_dependencies, reason = "wip")]
 //! Tracks and manages the ol chain state for Alpen execution environment.
 
 mod ctx;

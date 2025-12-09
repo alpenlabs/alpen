@@ -1193,6 +1193,7 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
+ "tracing",
 ]
 
 [[package]]

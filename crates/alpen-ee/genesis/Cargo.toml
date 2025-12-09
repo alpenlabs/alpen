@@ -15,5 +15,6 @@ strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 
 eyre.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
