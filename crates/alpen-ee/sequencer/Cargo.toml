@@ -1,0 +1,26 @@
+[package]
+edition = "2021"
+name = "alpen-ee-sequencer"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-block-assembly.workspace = true
+alpen-ee-common.workspace = true
+alpen-ee-config.workspace = true
+alpen-ee-exec-chain.workspace = true
+strata-acct-types.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
+strata-identifiers.workspace = true
+strata-snark-acct-types.workspace = true
+
+eyre.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+alpen-ee-common = { workspace = true, features = ["test-utils"] }

@@ -1215,6 +1215,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-sequencer"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-block-assembly",
+ "alpen-ee-common",
+ "alpen-ee-config",
+ "alpen-ee-exec-chain",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "alpen-reth"
 version = "0.3.0-alpha.1"
 dependencies = [
