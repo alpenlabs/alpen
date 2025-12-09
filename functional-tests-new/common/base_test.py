@@ -4,15 +4,16 @@ Base test class with common utilities.
 
 import logging
 from collections.abc import Callable
-from typing import Literal, cast, overload
+from typing import Literal, overload
 
 import flexitest
 
-from common.bitcoin_service import BitcoinServiceWrapper
-from common.constants import ServiceType
+from common.config import ServiceType
 from common.rpc import JsonRpcClient
-from common.service import ServiceWrapper
-from common.strata_service import StrataServiceWrapper
+from common.services import (
+    BitcoinServiceWrapper,
+    StrataServiceWrapper,
+)
 from common.wait import wait_until
 
 
@@ -80,7 +81,7 @@ class BaseTest(flexitest.Test):
             self.wait_for(lambda: service.is_ready())
             self.wait_for(lambda: rpc.strata_protocolVersion() == 1, timeout=10)
         """
-        wait_until(condition, timeout=timeout, interval=interval, error_msg=error_msg)
+        wait_until(condition, error_with=error_msg, timeout=timeout, step=interval)
 
     def wait_for_rpc_ready(
         self,

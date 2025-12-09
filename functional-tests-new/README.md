@@ -79,7 +79,7 @@ self.wait_for_rpc_ready(rpc, method="strata_protocolVersion")
 
 # Custom wait
 from common.wait import wait_until
-wait_until(condition, timeout=30, error_msg="Custom error")
+wait_until(condition, error_with="Custom error", timeout=30, step=0.5)
 ```
 
 ### RPC Calls
@@ -156,7 +156,7 @@ class BitcoinFactory(flexitest.Factory):
 Logs are in test data directory:
 
 ```
-_test_data/
+_dd/
   <test_name>/
     bitcoin/service.log
     strata/service.log

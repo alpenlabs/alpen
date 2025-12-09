@@ -15,8 +15,7 @@ import sys
 
 import flexitest
 
-# Import constants
-from common.constants import ServiceType
+from common.config import ServiceType
 
 # Import environments
 from envconfigs.basic import BasicEnvConfig
@@ -74,7 +73,7 @@ def main(argv: list[str]) -> int:
 
     # Set up test runtime
     root_dir = os.path.dirname(os.path.abspath(__file__))
-    datadir = flexitest.create_datadir_in_workspace(os.path.join(root_dir, "_test_data"))
+    datadir = flexitest.create_datadir_in_workspace(os.path.join(root_dir, "_dd"))
     runtime = flexitest.TestRuntime(global_envs, datadir, factories)
 
     # Discover tests

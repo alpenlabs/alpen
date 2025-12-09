@@ -9,9 +9,8 @@ import os
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
-from common.bitcoin_service import BitcoinServiceWrapper
-from common.constants import ServiceType
-from common.service_props import BitcoinServiceProps
+from common.config import ServiceType
+from common.services import BitcoinServiceProps, BitcoinServiceWrapper
 
 
 class BitcoinFactory(flexitest.Factory):

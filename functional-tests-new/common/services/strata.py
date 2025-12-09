@@ -3,7 +3,7 @@ Strata service wrapper with Strata-specific health checks.
 """
 
 from common.rpc import JsonRpcClient
-from common.service import ServiceWrapper
+from common.services.base import ServiceWrapper
 
 
 class StrataServiceWrapper(ServiceWrapper[JsonRpcClient]):
