@@ -5,7 +5,7 @@ set shell := ["bash", "-c"]
 git_tag := `git describe --tags --abbrev=0 2>/dev/null || echo "no-tag"`
 build_path := "target"
 functional_tests_dir := "functional-tests"
-new_functional_tests_dir := "functional-tests"
+new_functional_tests_dir := "functional-tests-new"
 functional_tests_datadir := "_dd"
 docker_dir := "docker"
 docker_datadir := ".data"

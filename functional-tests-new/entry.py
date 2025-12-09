@@ -3,15 +3,18 @@
 Functional test runner.
 
 Usage:
-    ./entry.py                    # Run all tests
-    ./entry.py -t test_node       # Run specific test
-    ./entry.py -g bridge          # Run test group
+    ./entry.py                          # Run all tests
+    ./entry.py -t test_node_version     # Run specific test
+    ./entry.py -g bridge                # Run test group (directory-based)
+    ./entry.py -e basic                 # Keep-alive mode for debugging
+    ./entry.py --list                   # List all tests
 """
 
 import argparse
 import logging
 import os
 import sys
+import types
 
 import flexitest
 
@@ -23,6 +26,17 @@ from envconfigs.basic import BasicEnvConfig
 # Import factories
 from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
+
+KEEP_ALIVE_TEST_NAME = "KeepAliveEnvTest"
+
+
+def disabled_tests() -> frozenset[str]:
+    """
+    Tests to disable (e.g., flaky tests, work-in-progress).
+
+    Returns test names without .py extension.
+    """
+    return frozenset(["keepalive_stub_test"])
 
 
 def setup_logging() -> None:
@@ -39,26 +53,193 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="entry.py",
         description="Run functional tests",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                          Run all tests
+  %(prog)s -t test_node_version     Run specific test
+  %(prog)s -t test_foo test_bar     Run multiple tests
+  %(prog)s -g bridge                Run all tests in bridge/ directory
+  %(prog)s -g prover bridge         Run tests in multiple groups
+  %(prog)s --keep-alive basic       Start 'basic' env and keep it alive (no tests run)
+  %(prog)s --list                   List all available tests
+        """,
     )
     parser.add_argument(
         "-t",
-        "--test",
+        "--tests",
         nargs="*",
-        help="Run specific test(s)",
+        help="Run specific test(s) by name",
     )
     parser.add_argument(
         "-g",
-        "--group",
+        "--groups",
         nargs="*",
-        help="Run test group(s)",
+        help="Run test group(s) - tests organized by directory structure",
+    )
+    parser.add_argument(
+        "--keep-alive",
+        metavar="ENV",
+        help="Keep-alive mode: start ENV and keep it running (for debugging). Does NOT run tests.",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all available tests and exit",
     )
     return parser.parse_args(argv[1:])
+
+
+def filter_tests(
+    args: argparse.Namespace, modules: dict[str, str], test_dir: str
+) -> dict[str, str]:
+    """
+    Filter test modules based on command line arguments.
+
+    Args:
+        args: Parsed command line arguments
+        modules: Dict mapping test names to file paths
+        test_dir: Root test directory path
+
+    Returns:
+        Filtered dict of test names to paths
+    """
+    arg_groups = frozenset(args.groups or [])
+    # Extract filenames without .py extension
+    arg_tests = frozenset([t.removesuffix(".py") for t in (args.tests or [])])
+    disabled = disabled_tests()
+
+    filtered = {}
+    for test_name, test_path in modules.items():
+        # Extract directory structure for grouping
+        test_path_parts = os.path.normpath(test_path).split(os.sep)
+
+        # Find the index of the test directory in the path
+        try:
+            test_dir_idx = next(
+                i for i, part in enumerate(test_path_parts) if part == os.path.basename(test_dir)
+            )
+        except StopIteration:
+            # If test_dir not in path, skip this test
+            continue
+
+        # Everything between test_dir and the file is a group
+        test_groups = frozenset(test_path_parts[test_dir_idx + 1 : -1])
+
+        # Filtering logic:
+        # 1. Skip disabled tests
+        if test_name in disabled:
+            continue
+
+        # 2. If specific tests requested, only include those
+        if arg_tests and test_name not in arg_tests:
+            continue
+
+        # 3. If groups requested, only include tests in those groups
+        if arg_groups and not (arg_groups & test_groups):
+            continue
+
+        filtered[test_name] = test_path
+
+    return filtered
+
+
+def list_tests(modules: dict[str, str], test_dir: str) -> None:
+    """
+    List all available tests with their groups.
+
+    Args:
+        modules: Dict mapping test names to file paths
+        test_dir: Root test directory path
+    """
+    disabled = disabled_tests()
+
+    # Group tests by directory
+    grouped_tests: dict[str, list[str]] = {}
+    ungrouped_tests: list[str] = []
+
+    for test_name, test_path in sorted(modules.items()):
+        test_path_parts = os.path.normpath(test_path).split(os.sep)
+
+        try:
+            test_dir_idx = next(
+                i for i, part in enumerate(test_path_parts) if part == os.path.basename(test_dir)
+            )
+        except StopIteration:
+            continue
+
+        groups = test_path_parts[test_dir_idx + 1 : -1]
+
+        if groups:
+            group_key = "/".join(groups)
+            if group_key not in grouped_tests:
+                grouped_tests[group_key] = []
+            status = " (disabled)" if test_name in disabled else ""
+            grouped_tests[group_key].append(f"  - {test_name}{status}")
+        else:
+            status = " (disabled)" if test_name in disabled else ""
+            ungrouped_tests.append(f"  - {test_name}{status}")
+
+    print("\nAvailable tests:")
+    print("=" * 60)
+
+    if ungrouped_tests:
+        print("\nRoot tests:")
+        for test in ungrouped_tests:
+            print(test)
+
+    for group, tests in sorted(grouped_tests.items()):
+        print(f"\nGroup: {group}")
+        for test in tests:
+            print(test)
+
+    print(f"\nTotal: {len(modules)} tests")
+    if disabled:
+        print(f"Disabled: {len(disabled)} tests")
+    print()
+
+
+def load_keepalive_test(env_name: str, test_dir: str) -> type:
+    """
+    Load keep-alive test with dynamic environment substitution.
+
+    Args:
+        env_name: Name of the environment to start
+        test_dir: Root test directory path
+
+    Returns:
+        Test class that will start env and wait indefinitely
+    """
+    stub_path = os.path.join(test_dir, "keepalive_stub_test.py")
+
+    # Read template file
+    with open(stub_path) as f:
+        test_code = f.read()
+
+    # Replace environment placeholder
+    test_code = test_code.replace("{ENV}", env_name)
+
+    # Load as module
+    module = types.ModuleType("__keepalive_dynamic_test__")
+    exec(test_code, module.__dict__)
+    sys.modules["__keepalive_dynamic_test__"] = module
+
+    return getattr(module, KEEP_ALIVE_TEST_NAME)
 
 
 def main(argv: list[str]) -> int:
     """Main entry point."""
     args = parse_args(argv)
     setup_logging()
+
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    test_dir = os.path.join(root_dir, "tests")
+
+    # Handle --list mode
+    if args.list:
+        modules = flexitest.runtime.scan_dir_for_modules(test_dir)
+        list_tests(modules, test_dir)
+        return 0
 
     # Create factories
     factories: dict[ServiceType, flexitest.Factory] = {
@@ -72,25 +253,34 @@ def main(argv: list[str]) -> int:
     }
 
     # Set up test runtime
-    root_dir = os.path.dirname(os.path.abspath(__file__))
     datadir = flexitest.create_datadir_in_workspace(os.path.join(root_dir, "_dd"))
     runtime = flexitest.TestRuntime(global_envs, datadir, factories)
 
-    # Discover tests
-    test_dir = os.path.join(root_dir, "tests")
-    modules = flexitest.runtime.scan_dir_for_modules(test_dir)
+    # Handle keep-alive mode
+    if args.keep_alive:
+        if args.keep_alive not in global_envs:
+            print(f"Error: Unknown environment '{args.keep_alive}'")
+            print(f"Available environments: {', '.join(global_envs.keys())}")
+            return 1
 
-    # TODO: Add test filtering based on args.test and args.group
-    # For now, args.test and args.group are parsed but ignored
-    if args.test or args.group:
-        print(
-            "Warning: Test filtering (--test, --group) is not yet implemented. Running all tests."
-        )
+        test_class = load_keepalive_test(args.keep_alive, test_dir)
+        runtime.prepare_test(KEEP_ALIVE_TEST_NAME, test_class)
+        tests = [KEEP_ALIVE_TEST_NAME]
+    else:
+        # Discover and filter tests
+        modules = flexitest.runtime.scan_dir_for_modules(test_dir)
+        filtered_modules = filter_tests(args, modules, test_dir)
 
-    tests = flexitest.runtime.load_candidate_modules(modules)
+        if not filtered_modules:
+            print("No tests matched the specified filters.")
+            if args.tests or args.groups:
+                print("\nUse --list to see available tests and groups.")
+            return 1
+
+        tests = flexitest.runtime.load_candidate_modules(filtered_modules)
+        runtime.prepare_registered_tests()
 
     # Run tests
-    runtime.prepare_registered_tests()
     results = runtime.run_tests(tests)
 
     # Save and display results
