@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{
-    EeAccountStateAtEpoch, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
+    EeAccountStateAtEpoch, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch,
+    Storage, StorageError,
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
@@ -83,7 +84,9 @@ impl Storage for EeNodeStorage {
         // existing cache entries at this location should be purged
         // in case old `None` values are present in them
         self.blockid_cache.purge_async(&ol_epoch.epoch()).await;
-        self.account_state_cache.purge_async(ol_epoch.last_blkid()).await;
+        self.account_state_cache
+            .purge_async(ol_epoch.last_blkid())
+            .await;
 
         Ok(())
     }
@@ -110,10 +113,10 @@ impl ExecBlockStorage for EeNodeStorage {
     async fn save_exec_block(
         &self,
         block: ExecBlockRecord,
-        payload: Vec<u8>,
+        payload: ExecBlockPayload,
     ) -> Result<(), StorageError> {
         self.ops
-            .save_exec_block_async(block, payload)
+            .save_exec_block_async(block, payload.to_bytes())
             .await
             .map_err(Into::into)
     }
@@ -183,10 +186,14 @@ impl ExecBlockStorage for EeNodeStorage {
     }
 
     /// Get block payload for a specified block, if it exists.
-    async fn get_block_payload(&self, hash: Hash) -> Result<Option<Vec<u8>>, StorageError> {
+    async fn get_block_payload(
+        &self,
+        hash: Hash,
+    ) -> Result<Option<ExecBlockPayload>, StorageError> {
         self.ops
             .get_block_payload_async(hash)
             .await
+            .map(|maybe_bytes| maybe_bytes.map(ExecBlockPayload::from_bytes))
             .map_err(Into::into)
     }
 

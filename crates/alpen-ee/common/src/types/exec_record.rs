@@ -87,3 +87,17 @@ impl ExecBlockRecord {
         (self.package, self.account_state)
     }
 }
+
+/// Wrapper for exec block payloads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecBlockPayload(Vec<u8>);
+
+impl ExecBlockPayload {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
+    pub fn to_bytes(self) -> Vec<u8> {
+        self.0
+    }
+}

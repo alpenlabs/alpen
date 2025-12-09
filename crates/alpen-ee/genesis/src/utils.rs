@@ -1,4 +1,4 @@
-use alpen_ee_common::ExecBlockRecord;
+use alpen_ee_common::{ExecBlockPayload, ExecBlockRecord};
 use alpen_ee_config::AlpenEeParams;
 use strata_acct_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
@@ -30,7 +30,7 @@ pub fn build_genesis_exec_block_package(params: &AlpenEeParams) -> ExecBlockPack
     )
 }
 
-pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, Vec<u8>) {
+pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, ExecBlockPayload) {
     let genesis_package = build_genesis_exec_block_package(params);
     let genesis_account_state = build_genesis_ee_account_state(params);
     let genesis_ol_block =
@@ -51,7 +51,7 @@ pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, Vec
         genesis_block_timestamp_ms,
         genesis_parent_blockhash,
     );
-    let payload = Vec::new();
+    let payload = ExecBlockPayload::from_bytes(Vec::new());
 
     (block, payload)
 }

@@ -1,6 +1,6 @@
 use std::num::NonZero;
 
-use alpen_ee_common::{EnginePayload, PayloadBuilderEngine};
+use alpen_ee_common::{EnginePayload, ExecBlockPayload, PayloadBuilderEngine};
 use strata_acct_types::{AccountId, Hash};
 use strata_ee_acct_runtime::{apply_final_update_changes, apply_input_messages};
 use strata_ee_acct_types::EeAccountState;
@@ -33,7 +33,7 @@ pub struct BlockAssemblyOutputs {
     /// Block package representing the OL inputs and outputs for this block.
     pub package: ExecBlockPackage,
     /// Block payload including full exec block body.
-    pub payload: Vec<u8>,
+    pub payload: ExecBlockPayload,
     /// EeAccountState after applying the new block.
     pub account_state: EeAccountState,
 }
@@ -73,7 +73,7 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
 
     Ok(BlockAssemblyOutputs {
         package,
-        payload: payload.to_bytes(),
+        payload: ExecBlockPayload::from_bytes(payload.to_bytes()),
         account_state,
     })
 }
