@@ -13,10 +13,12 @@
 //! - Generates MMR proofs using `SledMmrDb`
 //! - Converts `MerkleProofB32` (SSZ type) to `MerkleProof<Hash32>` (ASM type)
 //!
-//! ### Bitcoin Transaction Resolution ⚠️
+//! ### Bitcoin Transaction Resolution ✅
 //!
-//! Bitcoin transaction fetching requires transaction indexing infrastructure (see
-//! aux-resolver-blockers.md). Currently returns `WorkerError::BitcoinTxNotFound`.
+//! Fully implemented using Bitcoin client's `getrawtransaction` RPC:
+//! - Fetches raw transaction data by txid from Bitcoin node
+//! - Requires Bitcoin node with transaction indexing enabled (`txindex=1`)
+//! - Returns `WorkerError::BitcoinTxNotFound` if transaction not found
 
 use std::sync::Arc;
 
@@ -37,9 +39,9 @@ use crate::{WorkerContext, WorkerError, WorkerResult};
 /// 1. Bitcoin transactions by txid
 /// 2. Historical manifest hashes with MMR proofs
 ///
-/// The resolver currently has limited implementation:
-/// - Bitcoin transaction fetching requires tx indexing (not yet implemented)
-/// - MMR proof generation uses the SledMmrDb for on-demand proof generation
+/// Both resolution types are fully implemented:
+/// - Bitcoin transaction fetching via Bitcoin RPC (requires txindex=1)
+/// - MMR proof generation using SledMmrDb for on-demand proof generation
 pub struct AuxDataResolver<'a> {
     /// Worker context for accessing ASM state and MMR database
     context: &'a dyn WorkerContext,
@@ -103,7 +105,9 @@ impl<'a> AuxDataResolver<'a> {
 
     /// Resolves Bitcoin transactions by their txids.
     ///
-    /// Fetches raw transaction data from the Bitcoin client for each requested txid.
+    /// Fetches raw transaction data from the Bitcoin client for each requested txid
+    /// using the `getrawtransaction` RPC. Requires the Bitcoin node to have transaction
+    /// indexing enabled (`txindex=1` in bitcoin.conf).
     ///
     /// # Arguments
     ///
@@ -116,6 +120,10 @@ impl<'a> AuxDataResolver<'a> {
     /// # Errors
     ///
     /// Returns `WorkerError::BitcoinTxNotFound` if any transaction cannot be fetched.
+    /// This can happen if:
+    /// - The transaction does not exist
+    /// - The Bitcoin node does not have txindex enabled
+    /// - There's a network or RPC communication error
     fn resolve_bitcoin_txs(&self, txids: &[BitcoinTxid]) -> WorkerResult<Vec<RawBitcoinTx>> {
         if txids.is_empty() {
             return Ok(Vec::new());
@@ -123,50 +131,13 @@ impl<'a> AuxDataResolver<'a> {
 
         debug!(count = txids.len(), "Resolving Bitcoin transactions");
 
-        let mut resolved_txs = Vec::with_capacity(txids.len());
-
-        for txid in txids {
-            trace!(?txid, "Fetching Bitcoin transaction");
-
-            // Fetch transaction from Bitcoin client
-            // Note: bitcoind_async_client::Reader doesn't have get_raw_transaction yet,
-            // so we'll need to get the block and find the transaction
-            let raw_tx = self.fetch_bitcoin_tx(txid)?;
-
-            resolved_txs.push(raw_tx);
-        }
-
-        Ok(resolved_txs)
-    }
-
-    /// Fetches a single Bitcoin transaction by txid.
-    ///
-    /// Currently implemented by searching through blocks. This can be optimized
-    /// once the Bitcoin client supports direct transaction lookup.
-    ///
-    /// # Arguments
-    ///
-    /// * `txid` - Transaction ID to fetch
-    ///
-    /// # Errors
-    ///
-    /// Returns `WorkerError::BitcoinTxNotFound` if the transaction cannot be found.
-    fn fetch_bitcoin_tx(&self, _txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
-        // TODO: Once bitcoind_async_client supports get_raw_transaction, use that directly.
-        // For now, we need to find which block contains this transaction.
-        //
-        // This is a placeholder implementation. In production, we would either:
-        // 1. Have a transaction index in the L1 manager
-        // 2. Use Bitcoin client's getrawtransaction RPC
-        // 3. Have subprotocols provide block hints with their tx requests
-
-        warn!(
-            ?_txid,
-            "Bitcoin transaction lookup not yet fully implemented - would need tx indexing or block hints"
-        );
-
-        // Temporary: Return error indicating this needs implementation
-        Err(WorkerError::BitcoinTxNotFound(_txid.clone()))
+        txids
+            .iter()
+            .map(|txid| {
+                trace!(?txid, "Fetching Bitcoin transaction");
+                self.context.get_bitcoin_tx(txid)
+            })
+            .collect()
     }
 
     /// Resolves historical manifest hashes with MMR proofs.
