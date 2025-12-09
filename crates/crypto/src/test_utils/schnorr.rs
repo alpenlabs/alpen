@@ -171,8 +171,11 @@ mod tests {
         let signature_no_tweak =
             create_musig2_signature(&operator_privkeys, &message, Musig2Tweak::None);
 
-        let signature_with_tweak =
-            create_musig2_signature(&operator_privkeys, &message, Musig2Tweak::TaprootScript(tweak));
+        let signature_with_tweak = create_musig2_signature(
+            &operator_privkeys,
+            &message,
+            Musig2Tweak::TaprootScript(tweak),
+        );
 
         // Signatures should be different due to different tweaks
         assert_ne!(

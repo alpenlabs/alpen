@@ -65,8 +65,7 @@ pub async fn submit_transaction_with_key(
     tx.lock_time = LockTime::ZERO;
 
     // Sign the transaction
-    let signature =
-        sign_taproot_transaction(&tx, &keypair, &internal_key, &prev_output, 0)?;
+    let signature = sign_taproot_transaction(&tx, &keypair, &internal_key, &prev_output, 0)?;
 
     // Add the signature to the witness (Taproot key-spend signatures are 64 bytes, no sighash type
     // appended for Default)
@@ -175,25 +174,22 @@ pub async fn submit_transaction_with_keys(
                 .output
                 .get(txin.previous_output.vout as usize)
                 .cloned()
-                .ok_or_else(|| anyhow::anyhow!("Prevout not found for {:?}", txin.previous_output))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Prevout not found for {:?}", txin.previous_output)
+                })?;
             prevouts.push(prev_out);
         }
     }
 
     // Sign each input in place using the aggregated MuSig2 key.
     for idx in 0..tx.input.len() {
-        let sig = sign_musig2_transaction(
-            &tx,
-            secret_keys,
-            &aggregated_internal_key,
-            &prevouts,
-            idx,
-        )?;
+        let sig =
+            sign_musig2_transaction(tx, secret_keys, &aggregated_internal_key, &prevouts, idx)?;
         tx.input[idx].witness.push(sig.as_ref());
     }
 
     // Broadcast the transaction
-    let txid_wrapper = bitcoind.client.send_raw_transaction(&tx)?;
+    let txid_wrapper = bitcoind.client.send_raw_transaction(tx)?;
     let core_txid = txid_wrapper.0;
     let txid_str = core_txid.to_string();
     let txid: Txid = txid_str.parse()?;

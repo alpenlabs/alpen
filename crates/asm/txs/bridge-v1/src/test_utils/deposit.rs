@@ -13,7 +13,7 @@ use bitcoin::{
 use strata_codec::encode_to_vec;
 use strata_crypto::{
     EvenSecretKey,
-    test_utils::schnorr::{create_agg_pubkey_from_privkeys, create_musig2_signature, Musig2Tweak},
+    test_utils::schnorr::{Musig2Tweak, create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
 use strata_l1_txfmt::{ParseConfig, TagData, TagDataRef};
 

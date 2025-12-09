@@ -99,7 +99,7 @@ mod tests {
     use strata_asm_common::{AsmCompactMmr, AsmMmr, AuxData, VerifiedAuxData};
     use strata_asm_txs_bridge_v1::{
         slash::{SlashTxHeaderAux, parse_slash_tx},
-        test_utils::{create_connected_stake_and_slash_txs_onchain, parse_tx},
+        test_utils::{create_connected_stake_and_slash_txs, parse_tx},
     };
     use strata_btc_types::RawBitcoinTx;
 
@@ -119,8 +119,7 @@ mod tests {
         let operator_idx = 0;
         let slash_header = SlashTxHeaderAux::new(operator_idx);
 
-        let (stake_tx, slash_tx) =
-            create_connected_stake_and_slash_txs_onchain(&slash_header, &operators);
+        let (stake_tx, slash_tx) = create_connected_stake_and_slash_txs(&slash_header, &operators);
 
         // 3. Prepare ParsedTx
         // We need to re-parse the slash tx to get the correct SlashInfo with updated input

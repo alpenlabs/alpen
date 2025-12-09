@@ -4,10 +4,8 @@ use strata_codec::encode_to_vec;
 use strata_crypto::EvenSecretKey;
 use strata_l1_txfmt::{ParseConfig, TagData};
 use strata_test_utils_btcio::{
-    address::derive_musig2_p2tr_address,
-    get_bitcoind_and_client,
-    mining::mine_blocks_blocking,
-    submit::{self, submit_transaction_with_keys_blocking},
+    address::derive_musig2_p2tr_address, get_bitcoind_and_client, mining::mine_blocks_blocking,
+    submit::submit_transaction_with_keys_blocking,
 };
 
 use crate::{
@@ -43,30 +41,6 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
 /// Returns a tuple `(stake_tx, slash_tx)` where `slash_tx` correctly spends
 /// the stake output from `stake_tx`.
 pub fn create_connected_stake_and_slash_txs(
-    header_aux: &SlashTxHeaderAux,
-    nn_script: ScriptBuf,
-) -> (Transaction, Transaction) {
-    // 1. Create a dummy "stake transaction" to act as the funding source. This simulates the N-of-N
-    //    multisig UTXO that the slash transaction spends. We explicitly set the script_pubkey to
-    //    `nn_script` so that any validation logic checks pass.
-    let mut stake_tx = create_dummy_tx(1, 1);
-    stake_tx.output[0].script_pubkey = nn_script;
-
-    // 2. Create the base slash transaction using the provided metadata.
-    let slash_info = SlashInfo::new(
-        header_aux.clone(),
-        OutPoint::new(stake_tx.compute_txid(), 0).into(),
-    );
-    let slash_tx = create_test_slash_tx(&slash_info);
-
-    (stake_tx, slash_tx)
-}
-
-/// Sets up a connected pair of stake and slash transactions for testing.
-///
-/// Returns a tuple `(stake_tx, slash_tx)` where `slash_tx` correctly spends
-/// the stake output from `stake_tx`.
-pub fn create_connected_stake_and_slash_txs_onchain(
     header_aux: &SlashTxHeaderAux,
     operator_keys: &[EvenSecretKey],
 ) -> (Transaction, Transaction) {

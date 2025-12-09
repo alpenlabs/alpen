@@ -152,9 +152,7 @@ mod tests {
     struct TestEnv {
         pub _node: Node, // Keep node alive
         pub client: Arc<Client>,
-        pub context: MockWorkerContext,
         pub service_state: AsmWorkerServiceState<MockWorkerContext>,
-        pub params: Arc<Params>,
     }
 
     async fn setup_env() -> TestEnv {
@@ -182,10 +180,8 @@ mod tests {
 
         let params = Arc::new(params);
 
-        // 3. Setup Worker Context
+        // 3. Set worker context and initialize service state
         let context = MockWorkerContext::new();
-
-        // 4. Initialize Service State
         let mut service_state = AsmWorkerServiceState::new(context.clone(), params.clone());
 
         // Initialize: this should create genesis state based on our `genesis_l1_view`
@@ -201,9 +197,7 @@ mod tests {
         TestEnv {
             _node: node,
             client,
-            context,
             service_state,
-            params,
         }
     }
 

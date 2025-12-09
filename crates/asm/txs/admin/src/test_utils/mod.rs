@@ -13,10 +13,7 @@ use bitcoin::{
     transaction::Version,
 };
 use rand::{RngCore, rngs::OsRng};
-use strata_crypto::{
-    self,
-    threshold_signature::{IndexedSignature, SignatureSet},
-};
+use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
 use strata_primitives::buf::Buf32;
 
 pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
