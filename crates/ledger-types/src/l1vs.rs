@@ -12,7 +12,7 @@ pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
 /// This is only updated in the sealing phase at epoch boundaries, so it has no
 /// DA footprint.  There will probably also be some extra things in here that
 /// have a similar data path without DA footprint.
-pub trait IL1ViewState {
+pub trait IL1ViewState: Clone {
     /// Gets the current epoch.
     fn cur_epoch(&self) -> u32;
 

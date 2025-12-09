@@ -1,5 +1,5 @@
 /// Abstract global chainstate.
-pub trait IGlobalState: PartialEq + Eq {
+pub trait IGlobalState: Clone + PartialEq + Eq {
     /// Gets the current slot.
     fn cur_slot(&mut self) -> u64;
 

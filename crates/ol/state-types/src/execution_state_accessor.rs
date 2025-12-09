@@ -12,26 +12,31 @@ use strata_acct_types::{AccountId, AccountSerial, AcctResult};
 use strata_identifiers::Buf32;
 use strata_ledger_types::{AccountTypeState, StateAccessor};
 
-use crate::{AccountState, EpochalState, GlobalState, writebatch::WriteBatch};
+use crate::writebatch::WriteBatch;
 
 /// Wraps a StateAccessor to track modifications during block execution
-#[derive(Debug)]
 pub struct ExecutionStateAccessor<S: StateAccessor> {
     /// Base state being wrapped (could be DB-backed, in-memory, etc.)
     base: S,
 
     /// Copy-on-Write overlay for modifications (consensus-critical state)
-    write_batch: WriteBatch,
+    write_batch: WriteBatch<S>,
 }
 
-impl<
-    S: StateAccessor<
-            GlobalState = GlobalState,
-            L1ViewState = EpochalState,
-            AccountState = AccountState,
-        >,
-> ExecutionStateAccessor<S>
+impl<S> std::fmt::Debug for ExecutionStateAccessor<S>
+where
+    S: StateAccessor + std::fmt::Debug,
+    WriteBatch<S>: std::fmt::Debug,
 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionStateAccessor")
+            .field("base", &self.base)
+            .field("write_batch", &self.write_batch)
+            .finish()
+    }
+}
+
+impl<S: StateAccessor> ExecutionStateAccessor<S> {
     /// Create a new ExecutionStateAccessor wrapping a base state accessor
     pub fn new(base: S) -> Self {
         Self {
@@ -41,7 +46,7 @@ impl<
     }
 
     /// Finalize execution and extract the WriteBatch and base state
-    pub fn finalize(self) -> (WriteBatch, S) {
+    pub fn finalize(self) -> (WriteBatch<S>, S) {
         (self.write_batch, self.base)
     }
 
@@ -51,22 +56,15 @@ impl<
     }
 
     /// Get reference to the current WriteBatch
-    pub fn write_batch(&self) -> &WriteBatch {
+    pub fn write_batch(&self) -> &WriteBatch<S> {
         &self.write_batch
     }
 }
 
-impl<
-    S: StateAccessor<
-            GlobalState = GlobalState,
-            L1ViewState = EpochalState,
-            AccountState = AccountState,
-        >,
-> StateAccessor for ExecutionStateAccessor<S>
-{
-    type GlobalState = GlobalState;
-    type L1ViewState = EpochalState;
-    type AccountState = AccountState;
+impl<S: StateAccessor> StateAccessor for ExecutionStateAccessor<S> {
+    type GlobalState = S::GlobalState;
+    type L1ViewState = S::L1ViewState;
+    type AccountState = S::AccountState;
 
     fn global(&self) -> &Self::GlobalState {
         // Check overlay first, fall through to base
