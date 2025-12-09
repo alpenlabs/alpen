@@ -48,9 +48,7 @@ strata-status.workspace = true
 strata-test-utils.workspace = true
 strata-test-utils-l2.workspace = true
 strata-test-utils-tx-indexer.workspace = true
-
-# update bitcoind version in CI to match corepc-node feature
-corepc-node = { version = "0.8.0", features = ["29_0"] }
+strata-test-utils-btcio.workspace = true
 
 [features]
 test_utils = ["dep:musig2"]
