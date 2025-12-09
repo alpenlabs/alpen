@@ -331,6 +331,9 @@ pub mod tests {
 
         // Best state should be the last one
         let best = storage.best_ee_account_state().await.unwrap().unwrap();
-        assert_eq!(best.epoch_commitment().epoch(), start_epoch + num_epochs - 1);
+        assert_eq!(
+            best.epoch_commitment().epoch(),
+            start_epoch + num_epochs - 1
+        );
     }
 }

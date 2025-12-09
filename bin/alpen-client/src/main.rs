@@ -3,16 +3,29 @@
 mod genesis;
 mod gossip;
 mod ol_client;
+#[cfg(feature = "sequencer")]
 mod payload_builder;
 
 use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
-use alpen_ee_common::chain_status_checked;
+use alpen_ee_common::{chain_status_checked, ExecBlockStorage, Storage};
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
+#[cfg(feature = "sequencer")]
+use alpen_ee_exec_chain::{
+    build_exec_chain_consensus_forwarder_task, build_exec_chain_task,
+    init_exec_chain_state_from_storage,
+};
+#[cfg(feature = "sequencer")]
+use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
+use alpen_ee_genesis::ensure_genesis_ee_account_state;
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OLTrackerBuilder};
+#[cfg(feature = "sequencer")]
+use alpen_ee_sequencer::{
+    block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
+};
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
@@ -32,10 +45,11 @@ use strata_primitives::buf::Buf32;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
 
+#[cfg(feature = "sequencer")]
+use crate::payload_builder::AlpenRethPayloadEngine;
 use crate::{
     genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
-    payload_builder::AlpenRethPayloadEngine,
 };
 
 fn main() {
@@ -85,6 +99,10 @@ fn main() {
                 ext.db_retry_count,
             ));
 
+            #[cfg(feature = "sequencer")]
+            let block_builder_config =
+                BlockBuilderConfig::new(1000, 16.try_into().unwrap(), AccountId::zero());
+
             let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())
                 .expect("failed to load alpen database")
                 .into();
@@ -92,20 +110,49 @@ fn main() {
             // TODO: real ol client
             let ol_client = Arc::new(DummyOLClient::default());
 
+            let tokio_handle = builder.task_executor().handle();
+
+            tokio_handle
+                .block_on(ensure_genesis(config.clone(), storage.clone()))
+                .expect("genesis should not fail");
+
             // TODO: startup consistency check
-            let ol_chain_status = builder
-                .task_executor()
-                .handle()
+
+            let ol_chain_status = tokio_handle
                 .block_on(chain_status_checked(ol_client.as_ref()))
                 .expect("cannot fetch OL chain status");
 
-            let ol_tracker_state = builder
-                .task_executor()
-                .handle()
+            let ol_tracker_state = tokio_handle
                 .block_on(init_ol_tracker_state(ol_chain_status, storage.clone()))
                 .expect("ol tracker state initialization should not fail");
 
-            let best_ee_blockhash = ol_tracker_state.best_ee_state().last_exec_blkid();
+            #[cfg(feature = "sequencer")]
+            let ol_chain_tracker_state = tokio_handle
+                .block_on(init_ol_chain_tracker_state(
+                    storage.clone(),
+                    ol_client.clone(),
+                ))
+                .expect("ol chain tracker state initialization should not fail");
+
+            #[cfg(feature = "sequencer")]
+            let exec_chain_state = tokio_handle
+                .block_on(init_exec_chain_state_from_storage(storage.clone()))
+                .expect("exec chain state initialization should not fail");
+
+            let best_ee_blockhash = {
+                #[cfg(feature = "sequencer")]
+                {
+                    if ext.sequencer {
+                        exec_chain_state.tip_blockhash()
+                    } else {
+                        ol_tracker_state.best_ee_state().last_exec_blkid()
+                    }
+                }
+                #[cfg(not(feature = "sequencer"))]
+                {
+                    ol_tracker_state.best_ee_state().last_exec_blkid()
+                }
+            };
 
             // Create gossip channel before building the node so we can register it early
             let (gossip_tx, gossip_rx) = mpsc::unbounded_channel();
@@ -113,6 +160,26 @@ fn main() {
             // Create preconf channel for p2p head block gossip -> engine control integration
             // This channel sends block hashes received from peers to the engine control task
             let (preconf_tx, preconf_rx) = watch::channel(best_ee_blockhash);
+
+            let (ol_tracker, ol_tracker_task) = OLTrackerBuilder::new(
+                ol_tracker_state,
+                config.params().clone(),
+                storage.clone(),
+                ol_client.clone(),
+            )
+            .build();
+
+            #[cfg(feature = "sequencer")]
+            let (exec_chain_handle, exec_chain_task) =
+                build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
+
+            #[cfg(feature = "sequencer")]
+            let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
+                ol_chain_tracker_state,
+                ol_tracker.ol_status_watcher(),
+                ol_client.clone(),
+                storage.clone(),
+            );
 
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
@@ -131,14 +198,6 @@ fn main() {
                     }
                 })
                 .on_node_started(move |node| {
-                    let (ol_tracker, ol_tracker_task) = OLTrackerBuilder::new(
-                        ol_tracker_state,
-                        config.params().clone(),
-                        storage,
-                        ol_client,
-                    )
-                    .build();
-
                     let engine_control_task = create_engine_control_task(
                         preconf_rx,
                         ol_tracker.consensus_watcher(),
@@ -195,16 +254,31 @@ fn main() {
                     node.task_executor
                         .spawn_critical("gossip_task", gossip_task);
 
-                    // sequencer specific tasks
-                    let _payload_engine = AlpenRethPayloadEngine::new(
-                        node.payload_builder_handle.clone(),
-                        node.beacon_engine_handle.clone(),
-                    );
+                    #[cfg(feature = "sequencer")]
+                    if ext.sequencer {
+                        // sequencer specific tasks
+                        let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
+                            node.payload_builder_handle.clone(),
+                            node.beacon_engine_handle.clone(),
+                        ));
 
-                    // TODO: block assembly
-                    // TODO: batch assembly
-                    // TODO: proof generation
-                    // TODO: post update to OL
+                        node.task_executor
+                            .spawn_critical("exec_chain", exec_chain_task);
+                        node.task_executor.spawn_critical(
+                            "exec_chain_consensus_forwarder",
+                            build_exec_chain_consensus_forwarder_task(
+                                exec_chain_handle.clone(),
+                                ol_tracker.consensus_watcher(),
+                            ),
+                        );
+                        node.task_executor.spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
+                        node.task_executor.spawn_critical("block_assembly", block_builder_task(block_builder_config, exec_chain_handle, ol_chain_tracker, payload_engine, storage.clone()));
+
+                        // TODO: batch assembly
+                        // TODO: proof generation
+                        // TODO: post update to OL
+
+                    }
 
                     Ok(())
                 });
@@ -302,4 +376,14 @@ where
 fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
     s.parse::<Buf32>()
         .map_err(|e| eyre::eyre!("Failed to parse hex string as Buf32: {e}"))
+}
+
+async fn ensure_genesis<TStorage: Storage + ExecBlockStorage>(
+    config: Arc<AlpenEeConfig>,
+    storage: Arc<TStorage>,
+) -> eyre::Result<()> {
+    ensure_genesis_ee_account_state(config.clone(), storage.clone()).await?;
+    #[cfg(feature = "sequencer")]
+    ensure_finalized_exec_chain_genesis(config.clone(), storage.clone()).await?;
+    Ok(())
 }

@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use alpen_reth_node::{
-    AlpenGossipCommand, AlpenGossipEvent, AlpenGossipMessage, AlpenGossipPackage,
-};
+#[cfg(feature = "sequencer")]
+use alpen_reth_node::AlpenGossipMessage;
+use alpen_reth_node::{AlpenGossipCommand, AlpenGossipEvent, AlpenGossipPackage};
 use reth_network_api::PeerId;
 use reth_primitives::Header;
 use reth_provider::CanonStateNotification;

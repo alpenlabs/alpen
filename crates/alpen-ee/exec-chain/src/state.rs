@@ -58,12 +58,12 @@ impl ExecChainState {
     }
 
     /// Returns the hash of the current best chain tip.
-    pub(crate) fn tip_blockhash(&self) -> Hash {
+    pub fn tip_blockhash(&self) -> Hash {
         self.unfinalized.best().hash
     }
 
     /// Returns the hash of the current finalized block.
-    pub(crate) fn finalized_blockhash(&self) -> Hash {
+    pub fn finalized_blockhash(&self) -> Hash {
         self.unfinalized.finalized().hash
     }
 

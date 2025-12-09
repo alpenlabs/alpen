@@ -4,9 +4,7 @@ use strata_db_store_sled::{
     impl_borsh_value_codec,
 };
 
-use crate::serialization_types::{
-    DBAccountStateAtEpoch, DBExecBlockRecord, DBOLBlockId,
-};
+use crate::serialization_types::{DBAccountStateAtEpoch, DBExecBlockRecord, DBOLBlockId};
 
 define_table_without_codec!(
     /// store canonical final OL block id at OL epoch

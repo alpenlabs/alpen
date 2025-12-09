@@ -56,9 +56,7 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
         match evt {
             Message::Query(query) => handle_query(&mut state, query).await,
             Message::NewBlock(hash) => {
-                match handle_new_block(&mut state, hash, storage.as_ref(), &preconf_head_tx)
-                    .await
-                {
+                match handle_new_block(&mut state, hash, storage.as_ref(), &preconf_head_tx).await {
                     Err(ChainTrackerError::PreconfChannelClosed) => {
                         error!("preconf head channel closed, exiting task");
                         return;
@@ -70,8 +68,7 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
                 }
             }
             Message::OLConsensusUpdate(status) => {
-                match handle_ol_update(&mut state, status, storage.as_ref(), &preconf_head_tx)
-                    .await
+                match handle_ol_update(&mut state, status, storage.as_ref(), &preconf_head_tx).await
                 {
                     Err(ChainTrackerError::PreconfChannelClosed) => {
                         error!("preconf head channel closed, exiting task");
