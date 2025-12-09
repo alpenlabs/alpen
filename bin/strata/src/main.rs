@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use strata_common::logging;
+use anyhow::{Result, anyhow};
+use argh::from_env;
+use strata_common::logging::{self, LoggerConfig, get_otlp_url_from_env};
 use strata_db_types as _;
 use tokio::runtime::Handle;
 use tracing::info;
@@ -21,11 +23,12 @@ mod init_db;
 mod run_context;
 mod services;
 
-fn main() -> anyhow::Result<()> {
-    let args: Args = argh::from_env();
+fn main() -> Result<()> {
+    let args: Args = from_env();
 
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(args).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let nodectx =
+        init_node_context(args).map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     init_logging(nodectx.executor.handle());
 
@@ -45,16 +48,16 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn do_startup_checks(_ctx: &NodeContext) -> anyhow::Result<()> {
+fn do_startup_checks(_ctx: &NodeContext) -> Result<()> {
     // TODO: things like if bitcoin client is running or not, db consistency checks and any other
     // checks prior to starting services, GENESIS checks etc.
     Ok(())
 }
 
 fn init_logging(rt: &Handle) {
-    let mut lconfig = logging::LoggerConfig::with_base_name("strata-client");
+    let mut lconfig = LoggerConfig::with_base_name("strata-client");
 
-    let otlp_url = logging::get_otlp_url_from_env();
+    let otlp_url = get_otlp_url_from_env();
     if let Some(url) = &otlp_url {
         lconfig.set_otlp_url(url.clone());
     }
