@@ -144,317 +144,280 @@ async fn effective_account_state(
         })
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use alpen_ee_common::{MockStorage, OLBlockOrSlot, OLChainStatus, StorageError};
-//     use strata_acct_types::Hash;
-//     use strata_identifiers::Buf32;
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::{MockStorage, OLBlockOrEpoch, OLChainStatus, StorageError};
 
-//     use super::*;
+    use super::*;
+    use crate::test_utils::*;
 
-//     /// Helper to create a block commitment for testing
-//     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
-//         let mut bytes = [0u8; 32];
-//         bytes[0] = id;
-//         OLBlockCommitment::new(slot, Buf32::new(bytes).into())
-//     }
+    mod effective_account_state_tests {
+        use super::*;
 
-//     /// Helper to create a test state at block
-//     fn make_state_at_block(slot: u64, block_id: u8, exec_blkid: u8) -> EeAccountStateAtBlock {
-//         let block = make_block_commitment(slot, block_id);
-//         let mut exec_bytes = [0u8; 32];
-//         exec_bytes[0] = exec_blkid;
-//         let ee_state = EeAccountState::new(exec_bytes, BitcoinAmount::zero(), vec![], vec![]);
-//         EeAccountStateAtBlock::new(block, ee_state)
-//     }
+        #[tokio::test]
+        async fn test_returns_state_for_local_epoch_when_local_slot_is_lower() {
+            // Scenario: Local epoch has lower slot than OL epoch
+            // Local:    epoch 1 at slot 10 with terminal block ID 101
+            // OL:       epoch 2 at slot 20 with terminal block ID 102
+            // Expected: Returns state for local epoch (terminal block 101)
 
-//     mod effective_account_state_tests {
-//         use super::*;
+            let chain = create_epochs(&[100, 101, 102]);
 
-//         #[tokio::test]
-//         async fn test_returns_state_for_local_block_when_local_slot_is_lower() {
-//             let mut mock_storage = MockStorage::new();
+            let mut mock_storage = MockStorage::new();
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
 
-//             let local = make_block_commitment(100, 1);
-//             let ol = make_block_commitment(105, 2);
+            let local = make_epoch_commitment(1, 10, 101);
+            let ol = make_epoch_commitment(2, 20, 102);
 
-//             let expected_state = make_state_at_block(100, 1, 1);
+            let result = effective_account_state(&local, &ol, &mock_storage)
+                .await
+                .unwrap();
 
-//             // Should query for local block (id=1) since local slot (100) < ol slot (105)
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .withf(|block_or_slot| {
-//                     matches!(block_or_slot, OLBlockOrSlot::Block(id) if id.as_ref()[0] == 1)
-//                 })
-//                 .returning(move |_| Ok(Some(expected_state.clone())));
+            assert_eq!(result.epoch_commitment().epoch(), 1);
+            assert_eq!(result.epoch_commitment().last_blkid().as_ref()[0], 101);
+        }
 
-//             let result = effective_account_state(&local, &ol, &mock_storage)
-//                 .await
-//                 .unwrap();
+        #[tokio::test]
+        async fn test_returns_state_for_ol_epoch_when_ol_slot_is_lower() {
+            // Scenario: OL epoch has lower slot than local epoch
+            // Local:    epoch 2 at slot 20 with terminal block ID 102
+            // OL:       epoch 1 at slot 10 with terminal block ID 101
+            // Expected: Returns state for OL epoch (terminal block 101)
 
-//             assert_eq!(result.ol_slot(), 100);
-//             assert_eq!(result.ol_block().blkid().as_ref()[0], 1);
-//         }
+            let chain = create_epochs(&[100, 101, 102]);
 
-//         #[tokio::test]
-//         async fn test_returns_state_for_ol_block_when_ol_slot_is_lower() {
-//             let mut mock_storage = MockStorage::new();
+            let mut mock_storage = MockStorage::new();
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
 
-//             let local = make_block_commitment(105, 1);
-//             let ol = make_block_commitment(100, 2);
+            let local = make_epoch_commitment(2, 20, 102);
+            let ol = make_epoch_commitment(1, 10, 101);
 
-//             let expected_state = make_state_at_block(100, 2, 2);
+            let result = effective_account_state(&local, &ol, &mock_storage)
+                .await
+                .unwrap();
 
-//             // Should query for ol block (id=2) since ol slot (100) < local slot (105)
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .withf(|block_or_slot| {
-//                     matches!(block_or_slot, OLBlockOrSlot::Block(id) if id.as_ref()[0] == 2)
-//                 })
-//                 .returning(move |_| Ok(Some(expected_state.clone())));
+            assert_eq!(result.epoch_commitment().epoch(), 1);
+            assert_eq!(result.epoch_commitment().last_blkid().as_ref()[0], 101);
+        }
 
-//             let result = effective_account_state(&local, &ol, &mock_storage)
-//                 .await
-//                 .unwrap();
+        #[tokio::test]
+        async fn test_returns_state_for_ol_epoch_when_slots_are_equal() {
+            // Scenario: Local and OL epochs have equal slots
+            // Local:    epoch 1 at slot 10 with terminal block ID 101
+            // OL:       epoch 2 at slot 10 with terminal block ID 102
+            // Expected: Returns state for OL epoch (takes ol when equal)
 
-//             assert_eq!(result.ol_slot(), 100);
-//             assert_eq!(result.ol_block().blkid().as_ref()[0], 2);
-//         }
+            let chain = create_epochs(&[100, 101, 102]);
 
-//         #[tokio::test]
-//         async fn test_returns_state_for_ol_block_when_slots_are_equal() {
-//             let mut mock_storage = MockStorage::new();
+            let mut mock_storage = MockStorage::new();
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
 
-//             let local = make_block_commitment(100, 1);
-//             let ol = make_block_commitment(100, 2);
+            let local = make_epoch_commitment(1, 10, 101);
+            let ol = make_epoch_commitment(2, 10, 102);
 
-//             let expected_state = make_state_at_block(100, 2, 2);
+            let result = effective_account_state(&local, &ol, &mock_storage)
+                .await
+                .unwrap();
 
-//             // Should query for ol block (id=2) since slots are equal (takes ol)
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .withf(|block_or_slot| {
-//                     matches!(block_or_slot, OLBlockOrSlot::Block(id) if id.as_ref()[0] == 2)
-//                 })
-//                 .returning(move |_| Ok(Some(expected_state.clone())));
+            assert_eq!(result.epoch_commitment().epoch(), 2);
+            assert_eq!(result.epoch_commitment().last_blkid().as_ref()[0], 102);
+        }
 
-//             let result = effective_account_state(&local, &ol, &mock_storage)
-//                 .await
-//                 .unwrap();
+        #[tokio::test]
+        async fn test_returns_missing_block_error_when_epoch_not_found() {
+            // Scenario: Storage doesn't have the requested epoch
+            // Local:    epoch 1 at slot 10 with terminal block ID 101
+            // OL:       epoch 2 at slot 20 with terminal block ID 102
+            // Storage:  empty (no epochs stored)
+            // Expected: MissingBlock error
 
-//             assert_eq!(result.ol_slot(), 100);
-//             assert_eq!(result.ol_block().blkid().as_ref()[0], 2);
-//         }
+            let mut mock_storage = MockStorage::new();
 
-//         #[tokio::test]
-//         async fn test_returns_missing_block_error_when_block_not_found() {
-//             let mut mock_storage = MockStorage::new();
+            mock_storage
+                .expect_ee_account_state()
+                .times(1)
+                .returning(|_| Ok(None));
 
-//             let local = make_block_commitment(100, 1);
-//             let ol = make_block_commitment(105, 2);
+            let local = make_epoch_commitment(1, 10, 101);
+            let ol = make_epoch_commitment(2, 20, 102);
 
-//             // Storage returns None - block doesn't exist
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .returning(|_| Ok(None));
+            let result = effective_account_state(&local, &ol, &mock_storage).await;
 
-//             let result = effective_account_state(&local, &ol, &mock_storage).await;
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert!(matches!(error, OLTrackerError::MissingBlock { .. }));
+            assert!(error.to_string().contains("missing expected block"));
+        }
 
-//             assert!(result.is_err());
-//             let error = result.unwrap_err();
-//             assert!(matches!(error, OLTrackerError::MissingBlock { .. }));
-//             assert!(error.to_string().contains("missing expected block"));
-//         }
+        #[tokio::test]
+        async fn test_propagates_storage_error() {
+            // Scenario: Storage returns an error
+            // Local:    epoch 1 at slot 10 with terminal block ID 101
+            // OL:       epoch 2 at slot 20 with terminal block ID 102
+            // Expected: Storage error propagated
 
-//         #[tokio::test]
-//         async fn test_propagates_storage_error() {
-//             let mut mock_storage = MockStorage::new();
+            let mut mock_storage = MockStorage::new();
 
-//             let local = make_block_commitment(100, 1);
-//             let ol = make_block_commitment(105, 2);
+            mock_storage
+                .expect_ee_account_state()
+                .times(1)
+                .returning(|_| Err(StorageError::database("database connection failed")));
 
-//             // Storage returns error
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .returning(|_| Err(StorageError::database("database connection failed")));
+            let local = make_epoch_commitment(1, 10, 101);
+            let ol = make_epoch_commitment(2, 20, 102);
 
-//             let result = effective_account_state(&local, &ol, &mock_storage).await;
+            let result = effective_account_state(&local, &ol, &mock_storage).await;
 
-//             assert!(result.is_err());
-//             let error = result.unwrap_err();
-//             assert!(matches!(error, OLTrackerError::Storage(_)));
-//             assert!(error.to_string().contains("database connection failed"));
-//         }
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert!(matches!(error, OLTrackerError::Storage(_)));
+            assert!(error.to_string().contains("database connection failed"));
+        }
 
-//         #[tokio::test]
-//         async fn test_always_queries_min_slot_block() {
-//             // This test verifies the min slot logic explicitly
-//             let mut mock_storage = MockStorage::new();
+    }
 
-//             // Test case 1: local=50, ol=100 -> should query id=1 (local)
-//             let local1 = make_block_commitment(50, 1);
-//             let ol1 = make_block_commitment(100, 2);
+    mod build_tracker_state_tests {
+        use strata_acct_types::Hash;
 
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .withf(|block_or_slot| {
-//                     matches!(block_or_slot, OLBlockOrSlot::Block(id) if id.as_ref()[0] == 1)
-//                 })
-//                 .returning(|_| Ok(Some(make_state_at_block(50, 1, 1))));
+        use super::*;
 
-//             let result1 = effective_account_state(&local1, &ol1, &mock_storage)
-//                 .await
-//                 .unwrap();
-//             assert_eq!(result1.ol_slot(), 50);
+        #[tokio::test]
+        async fn test_builds_state_successfully() {
+            // Scenario: Build tracker state with valid chain
+            // Local chain: [100, 101, 102, 103, 104, 105] (epochs 0-5)
+            // Best state:  epoch 5 (terminal block 105)
+            // OL status:   latest=epoch 5, confirmed=epoch 4, finalized=epoch 2
+            // Expected:    State built with confirmed=epoch 4, finalized=epoch 2
 
-//             // Test case 2: local=100, ol=50 -> should query id=2 (ol)
-//             let local2 = make_block_commitment(100, 1);
-//             let ol2 = make_block_commitment(50, 2);
+            let chain = create_epochs(&[100, 101, 102, 103, 104, 105]);
+            let best_state = chain[5].clone();
 
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .withf(|block_or_slot| {
-//                     matches!(block_or_slot, OLBlockOrSlot::Block(id) if id.as_ref()[0] == 2)
-//                 })
-//                 .returning(|_| Ok(Some(make_state_at_block(50, 2, 2))));
+            let mut mock_storage = MockStorage::new();
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
 
-//             let result2 = effective_account_state(&local2, &ol2, &mock_storage)
-//                 .await
-//                 .unwrap();
-//             assert_eq!(result2.ol_slot(), 50);
-//         }
-//     }
+            let ol_status = OLChainStatus {
+                latest: make_block_commitment(50, 105),
+                confirmed: make_epoch_commitment(4, 40, 104),
+                finalized: make_epoch_commitment(2, 20, 102),
+            };
 
-//     mod build_tracker_state_tests {
-//         use super::*;
+            let result = build_tracker_state(best_state, &ol_status, &mock_storage)
+                .await
+                .unwrap();
 
-//         #[tokio::test]
-//         async fn test_builds_state_successfully() {
-//             let mut mock_storage = MockStorage::new();
+            assert_eq!(result.best_ol_epoch().epoch(), 4);
 
-//             let best_state = make_state_at_block(110, 1, 1);
-//             let ol_status = OLChainStatus {
-//                 latest: make_block_commitment(110, 1),
-//                 confirmed: make_block_commitment(105, 2),
-//                 finalized: make_block_commitment(100, 3),
-//             };
+            // Verify consensus heads were set correctly
+            let consensus = result.get_consensus_heads();
+            let mut expected_confirmed = [0u8; 32];
+            expected_confirmed[0] = 104;
+            let mut expected_finalized = [0u8; 32];
+            expected_finalized[0] = 102;
 
-//             // Mock responses for confirmed and finalized state queries
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(2)
-//                 .returning(|block_or_slot| match block_or_slot {
-//                     OLBlockOrSlot::Block(id) if id.as_ref()[0] == 2 => {
-//                         Ok(Some(make_state_at_block(105, 2, 2)))
-//                     }
-//                     OLBlockOrSlot::Block(id) if id.as_ref()[0] == 3 => {
-//                         Ok(Some(make_state_at_block(100, 3, 3)))
-//                     }
-//                     _ => Ok(None),
-//                 });
+            assert_eq!(consensus.confirmed, Hash::from(expected_confirmed));
+            assert_eq!(consensus.finalized, Hash::from(expected_finalized));
+        }
 
-//             let result = build_tracker_state(best_state, &ol_status, &mock_storage)
-//                 .await
-//                 .unwrap();
+        #[tokio::test]
+        async fn test_returns_build_state_failed_when_confirmed_missing() {
+            // Scenario: Confirmed epoch is missing from storage
+            // Local chain: empty
+            // Best state:  epoch 5 (terminal block 105)
+            // OL status:   confirmed=epoch 4 (not in storage)
+            // Expected:    BuildStateFailed error for confirmed state
 
-//             assert_eq!(result.best_ol_block().slot(), 110);
+            let mut mock_storage = MockStorage::new();
 
-//             // Verify consensus heads were set correctly
-//             let consensus = result.get_consensus_heads();
-//             let mut expected_confirmed = [0u8; 32];
-//             expected_confirmed[0] = 2;
-//             let mut expected_finalized = [0u8; 32];
-//             expected_finalized[0] = 3;
+            let best_state = make_state_at_epoch(5, 50, 105, 105);
+            let ol_status = OLChainStatus {
+                latest: make_block_commitment(50, 105),
+                confirmed: make_epoch_commitment(4, 40, 104),
+                finalized: make_epoch_commitment(2, 20, 102),
+            };
 
-//             assert_eq!(consensus.confirmed, Hash::from(expected_confirmed));
-//             assert_eq!(consensus.finalized, Hash::from(expected_finalized));
-//         }
+            // Confirmed epoch is missing
+            mock_storage
+                .expect_ee_account_state()
+                .times(1)
+                .returning(|_| Ok(None));
 
-//         #[tokio::test]
-//         async fn test_returns_build_state_failed_when_confirmed_missing() {
-//             let mut mock_storage = MockStorage::new();
+            let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
 
-//             let best_state = make_state_at_block(110, 1, 1);
-//             let ol_status = OLChainStatus {
-//                 latest: make_block_commitment(110, 1),
-//                 confirmed: make_block_commitment(105, 2),
-//                 finalized: make_block_commitment(100, 3),
-//             };
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
+            assert!(error.to_string().contains("confirmed state"));
+        }
 
-//             // Confirmed block is missing
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .returning(|_| Ok(None));
+        #[tokio::test]
+        async fn test_returns_build_state_failed_when_finalized_missing() {
+            // Scenario: Finalized epoch is missing from storage
+            // Local chain: [100, 101, 102, 103, 104, 105] (epochs 0-5)
+            // Best state:  epoch 5 (terminal block 105)
+            // OL status:   confirmed=epoch 4 (exists), finalized=epoch 2 (missing)
+            // Expected:    BuildStateFailed error for finalized state
 
-//             let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
+            let chain = create_epochs(&[100, 101, 102, 103, 104, 105]);
+            let best_state = chain[5].clone();
 
-//             assert!(result.is_err());
-//             let error = result.unwrap_err();
-//             assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
-//             assert!(error.to_string().contains("confirmed state"));
-//         }
+            let mut mock_storage = MockStorage::new();
 
-//         #[tokio::test]
-//         async fn test_returns_build_state_failed_when_finalized_missing() {
-//             let mut mock_storage = MockStorage::new();
+            let ol_status = OLChainStatus {
+                latest: make_block_commitment(50, 105),
+                confirmed: make_epoch_commitment(4, 40, 104),
+                finalized: make_epoch_commitment(2, 20, 102),
+            };
 
-//             let best_state = make_state_at_block(110, 1, 1);
-//             let ol_status = OLChainStatus {
-//                 latest: make_block_commitment(110, 1),
-//                 confirmed: make_block_commitment(105, 2),
-//                 finalized: make_block_commitment(100, 3),
-//             };
+            // First call for confirmed succeeds, second call for finalized returns None
+            let chain_for_mock = chain.clone();
+            mock_storage
+                .expect_ee_account_state()
+                .times(2)
+                .returning(move |block_or_slot| match block_or_slot {
+                    OLBlockOrEpoch::TerminalBlock(id) if id.as_ref()[0] == 104 => {
+                        Ok(Some(chain_for_mock[4].clone()))
+                    }
+                    _ => Ok(None), // finalized is missing
+                });
 
-//             // First call for confirmed succeeds, second call for finalized fails
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(2)
-//                 .returning(|block_or_slot| match block_or_slot {
-//                     OLBlockOrSlot::Block(id) if id.as_ref()[0] == 2 => {
-//                         Ok(Some(make_state_at_block(105, 2, 2)))
-//                     }
-//                     _ => Ok(None), // finalized is missing
-//                 });
+            let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
 
-//             let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
+            assert!(error.to_string().contains("finalized state"));
+        }
 
-//             assert!(result.is_err());
-//             let error = result.unwrap_err();
-//             assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
-//             assert!(error.to_string().contains("finalized state"));
-//         }
+        #[tokio::test]
+        async fn test_propagates_storage_error_in_build() {
+            // Scenario: Storage returns an error during state building
+            // Best state:  epoch 5 (terminal block 105)
+            // OL status:   confirmed=epoch 4, finalized=epoch 2
+            // Expected:    Storage error propagated as BuildStateFailed
 
-//         #[tokio::test]
-//         async fn test_propagates_storage_error_in_build() {
-//             let mut mock_storage = MockStorage::new();
+            let best_state = make_state_at_epoch(5, 50, 105, 105);
+            let ol_status = OLChainStatus {
+                latest: make_block_commitment(50, 105),
+                confirmed: make_epoch_commitment(4, 40, 104),
+                finalized: make_epoch_commitment(2, 20, 102),
+            };
 
-//             let best_state = make_state_at_block(110, 1, 1);
-//             let ol_status = OLChainStatus {
-//                 latest: make_block_commitment(110, 1),
-//                 confirmed: make_block_commitment(105, 2),
-//                 finalized: make_block_commitment(100, 3),
-//             };
+            let mut mock_storage = MockStorage::new();
 
-//             // Storage returns error
-//             mock_storage
-//                 .expect_ee_account_state()
-//                 .times(1)
-//                 .returning(|_| Err(StorageError::database("disk error")));
+            // Storage returns error
+            mock_storage
+                .expect_ee_account_state()
+                .times(1)
+                .returning(|_| Err(StorageError::database("disk error")));
 
-//             let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
+            let result = build_tracker_state(best_state, &ol_status, &mock_storage).await;
 
-//             assert!(result.is_err());
-//             let error = result.unwrap_err();
-//             assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
-//             assert!(error.to_string().contains("confirmed state"));
-//             assert!(error.to_string().contains("disk error"));
-//         }
-//     }
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
+            assert!(error.to_string().contains("confirmed state"));
+            assert!(error.to_string().contains("disk error"));
+        }
+
+    }
+}
