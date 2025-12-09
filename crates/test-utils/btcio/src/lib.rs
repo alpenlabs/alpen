@@ -10,6 +10,7 @@ pub mod funding;
 pub mod mining;
 pub mod signing;
 pub mod submit;
+pub mod utils;
 
 // Re-export commonly used functions
 pub use client::get_bitcoind_and_client;

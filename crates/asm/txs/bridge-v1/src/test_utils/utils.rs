@@ -34,7 +34,7 @@ pub fn create_dummy_tx(num_inputs: usize, num_outputs: usize) -> Transaction {
             previous_output: OutPoint::null(),
             script_sig: ScriptBuf::new(),
             sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-            witness: Witness::from_slice(&[vec![0u8; 64]]),
+            witness: Witness::new(),
         })
         .collect();
 

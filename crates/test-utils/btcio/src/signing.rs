@@ -15,6 +15,7 @@ pub fn sign_taproot_transaction(
     keypair: &Keypair,
     internal_key: &XOnlyPublicKey,
     prev_output: &TxOut,
+    input_index: usize,
 ) -> anyhow::Result<Signature> {
     let secp = Secp256k1::new();
 
@@ -26,7 +27,7 @@ pub fn sign_taproot_transaction(
     let prevouts_ref = Prevouts::All(&prevouts);
     let mut sighash_cache = SighashCache::new(tx);
     let sighash = sighash_cache.taproot_key_spend_signature_hash(
-        0,
+        input_index,
         &prevouts_ref,
         TapSighashType::Default,
     )?;
@@ -45,14 +46,14 @@ pub fn sign_musig2_transaction(
     tx: &Transaction,
     secret_keys: &[EvenSecretKey],
     _internal_key: &XOnlyPublicKey,
-    prev_output: &TxOut,
+    prevouts: &[TxOut],
+    input_index: usize,
 ) -> anyhow::Result<Signature> {
     // Calculate sighash
-    let prevouts = vec![prev_output.clone()];
-    let prevouts_ref = Prevouts::All(&prevouts);
+    let prevouts_ref = Prevouts::All(prevouts);
     let mut sighash_cache = SighashCache::new(tx);
     let sighash = sighash_cache.taproot_key_spend_signature_hash(
-        0,
+        input_index,
         &prevouts_ref,
         TapSighashType::Default,
     )?;

@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-crypto = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
 
 anyhow.workspace = true
 bitcoin = { workspace = true, features = ["rand"] }
@@ -19,4 +20,3 @@ corepc-node = { version = "0.8.0", features = ["29_0"] }
 
 [dev-dependencies]
 rand.workspace = true
-tokio = { workspace = true, features = ["full", "test-util"] }
