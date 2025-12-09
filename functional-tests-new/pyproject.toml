@@ -19,11 +19,37 @@ dev = ["ruff==0.14.5", "ty>=0.0.1a20,<0.0.2"]
 [tool.uv.sources]
 flexitest = { git = "https://codeberg.org/treyd/flexitest.git" }
 
-
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+indent-width = 4
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W"]
-ignore = ["E501"]                  # Line too long (handled by formatter)
+select = [
+  # pycodestyle
+  "E",
+  # Pyflakes
+  "F",
+  # pyupgrade
+  "UP",
+  # flake8-bugbear
+  "B",
+  # flake8-simplify
+  "SIM",
+  # isort
+  "I",
+]
+ignore = [
+  # related to star imports
+  "F405",
+  "F403",
+  # if block stuff
+  "SIM102",
+]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100

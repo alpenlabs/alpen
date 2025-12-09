@@ -44,10 +44,13 @@ class TestExample(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")  # Use basic environment
 
-    def main(self, ctx: flexitest.RunContext):
+    def run(self:
+        # If you need access to runcontext
+        _ctx = self.runctx
+
         # Get services
-        bitcoin = ctx.get_service("bitcoin")
-        strata = ctx.get_service("strata")
+        bitcoin = self.get_service("bitcoin")
+        strata = self.get_service("strata")
 
         # Create RPC clients
         btc_rpc = bitcoin.create_rpc()
@@ -179,16 +182,3 @@ self.wait_for_rpc_ready(rpc, timeout=60)
 **Service crashed**: Check `service.log` in datadir
 
 **Timeout errors**: Check `error_msg` in exception for last error
-
-## TODO
-
-- [ ] Complete StrataFactory (waiting for binary interface)
-- [ ] Add Reth factory if needed
-- [ ] Create more environment configs
-- [ ] Add bridge test helpers
-- [ ] Add more test utilities as needed
-
-## See Also
-
-- `PLAN.md` - Detailed architecture plan
-- Old `functional-tests/` - Previous implementation (for reference only)

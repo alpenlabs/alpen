@@ -4,7 +4,7 @@ Waiting utilities for test synchronization.
 
 import logging
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def wait_until(
         wait_until(lambda: rpc.strata_protocolVersion() == 1, timeout=10)
     """
     start = time.time()
-    last_exception: Optional[Exception] = None
+    last_exception: Exception | None = None
     attempts = 0
 
     while time.time() - start < timeout:
@@ -40,9 +40,7 @@ def wait_until(
         try:
             if condition():
                 elapsed = time.time() - start
-                logger.debug(
-                    f"Condition met after {elapsed:.2f}s ({attempts} attempts)"
-                )
+                logger.debug(f"Condition met after {elapsed:.2f}s ({attempts} attempts)")
                 return
         except Exception as e:
             last_exception = e

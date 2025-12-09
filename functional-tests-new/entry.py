@@ -15,15 +15,18 @@ import sys
 
 import flexitest
 
+# Import constants
+from common.constants import ServiceType
+
+# Import environments
+from envconfigs.basic import BasicEnvConfig
+
 # Import factories
 from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
 
-# Import environments
-from env.configs import BasicEnvConfig
 
-
-def setup_logging():
+def setup_logging() -> None:
     """Configure root logger."""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
@@ -32,7 +35,7 @@ def setup_logging():
     )
 
 
-def parse_args(argv):
+def parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         prog="entry.py",
@@ -53,19 +56,19 @@ def parse_args(argv):
     return parser.parse_args(argv[1:])
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     """Main entry point."""
     args = parse_args(argv)
     setup_logging()
 
     # Create factories
-    factories = {
-        "bitcoin": BitcoinFactory(range(18443, 18543)),
-        "strata": StrataFactory(range(19443, 19543)),
+    factories: dict[ServiceType, flexitest.Factory] = {
+        ServiceType.Bitcoin: BitcoinFactory(range(18443, 18543)),
+        ServiceType.Strata: StrataFactory(range(19443, 19543)),
     }
 
     # Define global environments
-    global_envs = {
+    global_envs: dict[str, flexitest.EnvConfig] = {
         "basic": BasicEnvConfig(pre_generate_blocks=110),
     }
 
@@ -79,6 +82,11 @@ def main(argv):
     modules = flexitest.runtime.scan_dir_for_modules(test_dir)
 
     # TODO: Add test filtering based on args.test and args.group
+    # For now, args.test and args.group are parsed but ignored
+    if args.test or args.group:
+        print(
+            "Warning: Test filtering (--test, --group) is not yet implemented. Running all tests."
+        )
 
     tests = flexitest.runtime.load_candidate_modules(modules)
 
