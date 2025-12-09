@@ -1,5 +1,4 @@
 //! Sequencer specific workers and utils.
-#![allow(unused_crate_dependencies, reason = "wip")]
 
 mod block_builder;
 mod ol_chain_tracker;

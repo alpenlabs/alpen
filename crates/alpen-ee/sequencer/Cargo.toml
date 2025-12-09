@@ -9,16 +9,12 @@ workspace = true
 [dependencies]
 alpen-ee-block-assembly.workspace = true
 alpen-ee-common.workspace = true
-alpen-ee-config.workspace = true
 alpen-ee-exec-chain.workspace = true
 strata-acct-types.workspace = true
-strata-ee-acct-runtime.workspace = true
-strata-ee-acct-types.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
 eyre.workspace = true
-thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

@@ -108,7 +108,7 @@ async fn next_block_target_timestamp(
         .await
         .context("failed to get best exec block")?;
 
-    Ok(last_local_block.timestamp_ms() + config.blocktime_ms)
+    Ok(last_local_block.timestamp_ms() + config.blocktime_ms())
 }
 
 async fn build_next_block(
@@ -144,8 +144,8 @@ async fn build_next_block(
         inbox_messages,
         parent_exec_blkid: parent_blockhash,
         timestamp_ms,
-        max_deposits_per_block: config.max_deposits_per_block,
-        bridge_gateway_account_id: config.bridge_gateway_account_id,
+        max_deposits_per_block: config.max_deposits_per_block(),
+        bridge_gateway_account_id: config.bridge_gateway_account_id(),
     };
 
     let BlockAssemblyOutputs {
