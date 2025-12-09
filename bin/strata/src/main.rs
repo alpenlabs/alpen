@@ -10,14 +10,12 @@ use strata_common::{
 };
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types as _;
-use strata_primitives::L1BlockCommitment;
 use tokio::runtime::Handle;
 use tracing::info;
 
 use crate::{
     args::Args,
     context::{NodeContext, init_node_context},
-    errors::InitError,
     services::{start_rpc, start_services},
 };
 

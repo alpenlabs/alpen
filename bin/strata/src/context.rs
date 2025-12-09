@@ -18,7 +18,6 @@ use tracing::warn;
 use crate::{args::*, config::*, errors::*, init_db};
 
 /// Contains resources needed to run node services.
-#[expect(unused, reason = "will be used later")]
 pub(crate) struct NodeContext {
     pub runtime: Runtime,
     pub config: Config,

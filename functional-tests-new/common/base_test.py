@@ -3,10 +3,16 @@ Base test class with common utilities.
 """
 
 import logging
+from collections.abc import Callable
+from typing import Literal, cast, overload
 
 import flexitest
 
+from common.bitcoin_service import BitcoinServiceWrapper
+from common.constants import ServiceType
 from common.rpc import JsonRpcClient
+from common.service import ServiceWrapper
+from common.strata_service import StrataServiceWrapper
 from common.wait import wait_until
 
 
@@ -35,10 +41,34 @@ class BaseTest(flexitest.Test):
         self.info = self.logger.info
         self.warning = self.logger.warning
         self.error = self.logger.error
+        self.runctx = ctx
+
+    @overload
+    def get_service(self, typ: Literal[ServiceType.Bitcoin]) -> BitcoinServiceWrapper: ...
+
+    @overload
+    def get_service(self, typ: Literal[ServiceType.Strata]) -> StrataServiceWrapper: ...
+
+    def get_service(self, typ: ServiceType):
+        svc = self.runctx.get_service(typ)
+        if svc is None:
+            raise RuntimeError(
+                f"Service '{typ}' not found. Available services: "
+                f"{list(self.runctx.env.services.keys())}"  # type: ignore[union-attr]
+            )
+        return svc
+
+    # Overriding here to have `self.get_service` return a `ServiceWrapper[Rpc]` without boilerplate.
+    def main(self, ctx) -> bool:  # type: ignore[override]
+        self.runctx = ctx
+        return self.run()
+
+    def run(self) -> bool:
+        raise NotImplementedError
 
     def wait_for(
         self,
-        condition,
+        condition: Callable[[], bool],
         timeout: int = 30,
         interval: float = 0.5,
         error_msg: str = "Timeout",

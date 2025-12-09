@@ -5,9 +5,13 @@ Avoids ad-hoc monkey-patching and provides type-safe service abstractions.
 """
 
 import logging
-from typing import Any, Callable, Generic, Optional, TypeVar
+from collections.abc import Callable
+from dataclasses import asdict, is_dataclass
+from typing import Any, Generic, TypeVar
 
 import flexitest
+
+from common.wait import wait_until
 
 Rpc = TypeVar("Rpc")
 
@@ -39,33 +43,33 @@ class ServiceWrapper(flexitest.service.ProcService, Generic[Rpc]):
 
     def __init__(
         self,
-        props: dict[str, Any],
+        props: dict[str, Any] | Any,
         cmd: list[str],
-        stdout: Optional[str] = None,
-        rpc_factory: Optional[Callable[[], Rpc]] = None,
-        name: Optional[str] = None,
+        stdout: str | None = None,
+        rpc_factory: Callable[[], Rpc] | None = None,
+        name: str | None = None,
     ):
         """
         Initialize service wrapper.
 
         Args:
-            props: Service properties (ports, URLs, etc.)
+            props: Service properties (ports, URLs, etc.) - dict or dataclass
             cmd: Command and arguments to execute
             stdout: Path to log file for stdout/stderr
             rpc_factory: Optional factory function to create RPC client
             name: Service name for logging
         """
-        super().__init__(props, cmd, stdout)
+        # Convert dataclass to dict if needed
+        props_dict = asdict(props) if is_dataclass(props) else props  # type: ignore[args-any]
+
+        super().__init__(props_dict, cmd, stdout)
         self._rpc_factory = rpc_factory
         self._name = name or cmd[0]
         self._logger = logging.getLogger(f"service.{self._name}")
 
-    def create_rpc(self) -> Any:
+    def create_rpc(self) -> Rpc:
         """
         Create RPC client for this service.
-
-        Attaches a pre-call hook to check service status before every RPC call
-        (if the client supports _pre_call_hook attribute).
 
         Returns:
             RPC client instance (type depends on rpc_factory)
@@ -80,15 +84,37 @@ class ServiceWrapper(flexitest.service.ProcService, Generic[Rpc]):
             raise RuntimeError("Service is not running")
 
         rpc = self._rpc_factory()
-
-        # Attach status check hook if the RPC client supports it (seqrpc does)
-        if hasattr(rpc, "_pre_call_hook"):
-
-            def _status_check(method: str):
-                if not self.check_status():
-                    self._logger.warning(f"service '{self._name}' crashed before call to {method}")
-                    raise RuntimeError(f"process '{self._name}' crashed")
-
-            rpc._pre_call_hook = _status_check
-
         return rpc
+
+    def check_health(self) -> bool:
+        """
+        Check if service is healthy and ready to accept requests.
+
+        Override this in subclasses to implement service-specific health checks.
+        Default implementation just checks if process is running.
+
+        Returns:
+            True if service is healthy, False otherwise
+        """
+        return self.check_status()
+
+    def wait_for_ready(self, timeout: int = 30, interval: float = 0.5) -> None:
+        """
+        Wait until service is healthy and ready.
+
+        Uses check_health() to determine readiness. Override check_health()
+        in subclasses for service-specific health checks.
+
+        Args:
+            timeout: Maximum time to wait in seconds
+            interval: Time between health checks in seconds
+
+        Raises:
+            TimeoutError: If service doesn't become ready within timeout
+        """
+        wait_until(
+            self.check_health,
+            timeout=timeout,
+            interval=interval,
+            error_msg=f"Service '{self._name}' not ready",
+        )

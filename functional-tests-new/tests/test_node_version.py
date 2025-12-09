@@ -3,7 +3,8 @@
 import flexitest
 
 from common.base_test import BaseTest
-from common.service import ServiceWrapper
+from common.constants import ServiceType
+from common.strata_service import StrataServiceWrapper
 
 
 # NOTE: this is redundant and is just for setting up the func tests infra. Remove later.
@@ -14,11 +15,11 @@ class TestNodeVersion(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 
-    def main(self, ctx: flexitest.RunContext):
+    # The `main()` method implicitly calls this from the base class. The `ctx`
+    # param is abstracted away.
+    def run(self):
         # Get services
-        bitcoin: ServiceWrapper = ctx.get_service("bitcoin")
-        strata: ServiceWrapper = ctx.get_service("strata")
-        print(bitcoin)
+        strata = self.get_service(ServiceType.Strata)
 
         # Create RPC clients
         strata_rpc = strata.create_rpc()

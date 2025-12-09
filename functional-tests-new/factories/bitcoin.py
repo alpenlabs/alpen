@@ -3,12 +3,15 @@ Bitcoin service factory.
 Creates Bitcoin regtest nodes for testing.
 """
 
+import contextlib
 import os
 
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
-from common.service import ServiceWrapper
+from common.bitcoin_service import BitcoinServiceWrapper
+from common.constants import ServiceType
+from common.service_props import BitcoinServiceProps
 
 
 class BitcoinFactory(flexitest.Factory):
@@ -22,7 +25,13 @@ class BitcoinFactory(flexitest.Factory):
     """
 
     def __init__(self, port_range: range):
-        super().__init__(list(port_range))
+        ports = list(port_range)
+        if any(p < 1024 or p > 65535 for p in ports):
+            raise ValueError(
+                f"BitcoinFactory: Port range must be between 1024 and 65535. "
+                f"Got: {port_range.start}-{port_range.stop - 1}"
+            )
+        super().__init__(ports)
 
     @flexitest.with_ectx("ctx")
     def create_regtest(
@@ -30,15 +39,17 @@ class BitcoinFactory(flexitest.Factory):
         rpc_user: str = "user",
         rpc_password: str = "password",
         **kwargs,
-    ) -> ServiceWrapper:
+    ) -> BitcoinServiceWrapper:
         """
         Create a Bitcoin regtest node.
 
         Returns:
             Service with RPC access via .create_rpc()
         """
-        ctx = kwargs["ctx"]  # The `with_ectx` ensures this is available. I don't like this though.
-        datadir = ctx.make_service_dir("bitcoin")
+        # The `with_ectx` ensures this is available. Don't like this though.
+        ctx: flexitest.EnvContext = kwargs["ctx"]
+
+        datadir = ctx.make_service_dir(ServiceType.Bitcoin)
         p2p_port = self.next_port()
         rpc_port = self.next_port()
         logfile = os.path.join(datadir, "service.log")
@@ -60,19 +71,28 @@ class BitcoinFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_user}:{rpc_password}@localhost:{rpc_port}"
 
-        props = {
-            "p2p_port": p2p_port,
-            "rpc_port": rpc_port,
-            "rpc_user": rpc_user,
-            "rpc_url": rpc_url,
-            "rpc_password": rpc_password,
-            "walletname": "testwallet",
-        }
+        props = BitcoinServiceProps(
+            p2p_port=p2p_port,
+            rpc_port=rpc_port,
+            rpc_user=rpc_user,
+            rpc_url=rpc_url,
+            rpc_password=rpc_password,
+            datadir=datadir,
+            walletname="testwallet",
+        )
 
         def make_rpc() -> BitcoindClient:
             return BitcoindClient(base_url=rpc_url, network="regtest")
 
-        svc = ServiceWrapper(props, cmd, stdout=logfile, rpc_factory=make_rpc, name="bitcoin")
-        svc.start()
+        svc = BitcoinServiceWrapper(
+            props, cmd, stdout=logfile, rpc_factory=make_rpc, name=ServiceType.Bitcoin
+        )
+        try:
+            svc.start()
+        except Exception as e:
+            # Ensure cleanup on failure to prevent resource leaks
+            with contextlib.suppress(Exception):
+                svc.stop()
+            raise RuntimeError(f"Failed to start bitcoin service: {e}") from e
 
         return svc

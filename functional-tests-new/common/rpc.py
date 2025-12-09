@@ -2,8 +2,10 @@
 Simple JSON-RPC client.
 """
 
+import json
 import logging
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 import requests
 
@@ -31,7 +33,7 @@ class JsonRpcClient:
         version = rpc.strata_protocolVersion()
     """
 
-    def __init__(self, url: str, name: Optional[str] = None, timeout: int = 30):
+    def __init__(self, url: str, name: str | None = None, timeout: int = 30):
         self.url = url
         self.name = name or url
         self.timeout = timeout
@@ -39,7 +41,7 @@ class JsonRpcClient:
         self.logger = logging.getLogger(f"rpc.{self.name}")
         self.pre_call_hook: Callable[[str], None] = lambda _: None
 
-    def set_pre_call_hook(self, hook=Callable[[str], None]):
+    def set_pre_call_hook(self, hook: Callable[[str], None]):
         self.pre_call_hook = hook
 
     def __getattr__(self, method: str):
@@ -68,6 +70,7 @@ class JsonRpcClient:
             RpcError: If the RPC returns an error
             requests.RequestException: If the HTTP request fails
         """
+        self.pre_call_hook(method)
         self.id_counter += 1
 
         payload = {
@@ -92,13 +95,14 @@ class JsonRpcClient:
 
         try:
             result = resp.json()
-        except ValueError as e:
+        except json.JSONDecodeError as e:
             self.logger.warning(f"Invalid JSON response: {resp.text}")
-            raise RpcError({"code": -1, "message": f"Invalid JSON: {e}"})
+            raise RpcError({"code": -1, "message": f"Invalid JSON: {e}"}) from e
 
         if "error" in result:
-            self.logger.warning(f"RPC error: {result['error']}")
-            raise RpcError(result["error"])
+            error = result.get("error", {})
+            self.logger.warning(f"RPC error: {error}")
+            raise RpcError(error)
 
         return result.get("result")
 

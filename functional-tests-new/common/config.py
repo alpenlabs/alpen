@@ -2,8 +2,9 @@
 Configuration dataclasses for services.
 """
 
+from dataclasses import asdict, dataclass, field
+
 import toml
-from dataclasses import dataclass, field, asdict
 
 
 @dataclass
