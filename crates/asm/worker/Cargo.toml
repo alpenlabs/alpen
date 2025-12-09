@@ -23,3 +23,11 @@ bitcoin.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+strata-test-utils-btcio.workspace = true
+strata-test-utils-l2.workspace = true
+tokio.workspace = true
+bitcoind-async-client.workspace = true
+corepc-node = { version = "0.8.0", features = ["29_0"] }
+async-trait.workspace = true
