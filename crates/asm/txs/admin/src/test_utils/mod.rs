@@ -8,64 +8,75 @@ use bitcoin::{
         all::{OP_CHECKMULTISIG, OP_ENDIF, OP_IF},
     },
     script::PushBytesBuf,
-    secp256k1::{SECP256K1, schnorr::Signature},
+    secp256k1::{Message, SECP256K1, SecretKey, schnorr::Signature},
     taproot::{LeafVersion, TaprootBuilder},
     transaction::Version,
 };
-use bitvec::vec::BitVec;
 use rand::{RngCore, rngs::OsRng};
-use strata_crypto::{
-    EvenSecretKey,
-    multisig::{schemes::SchnorrScheme, signature::AggregatedSignature},
-    test_utils::schnorr::create_musig2_signature,
-};
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
+use strata_primitives::buf::Buf32;
 
 pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
-use crate::{actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID};
+use crate::{
+    actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::SignedPayload,
+};
 
-/// Creates an AggregatedSignature for any MultisigAction.
+/// Creates an ECDSA signature with recoverable public key for a message hash.
 ///
-/// This function generates the required signature for any administration action
+/// Returns a 65-byte signature in the format: recovery_id || r || s
+pub fn sign_ecdsa_recoverable(message_hash: &[u8; 32], secret_key: &SecretKey) -> [u8; 65] {
+    let message = Message::from_digest_slice(message_hash).expect("32 bytes");
+    let sig = SECP256K1.sign_ecdsa_recoverable(&message, secret_key);
+    let (recovery_id, compact) = sig.serialize_compact();
+
+    let mut result = [0u8; 65];
+    result[0] = recovery_id.to_i32() as u8;
+    result[1..65].copy_from_slice(&compact);
+    result
+}
+
+/// Creates a SignatureSet for any MultisigAction.
+///
+/// This function generates the required signatures for any administration action
 /// (Update or Cancel) by computing the sighash from the action and sequence number,
-/// then creating a MuSig2 signature using the provided private keys.
+/// then creating individual ECDSA signatures using the provided private keys.
 ///
 /// # Arguments
-/// * `privkeys` - Private keys of all signers in the multisig config
-/// * `signer_indices` - BitVec indicating which signers are participating in this signature
-/// * `action` - The MultisigAction to sign (Update or Cancel)
-/// * `seqno` - The sequence number for this operation
+/// * `privkeys` - Private keys of all signers in the threshold config
+/// * `signer_indices` - Indices of signers participating in this signature
+/// * `sighash` - The message hash to sign
 ///
 /// # Returns
-/// An AggregatedSignature that can be used to authorize this action
-pub fn create_multisig_signature(
-    privkeys: &[EvenSecretKey],
-    signer_indices: BitVec<u8>,
+/// A SignatureSet that can be used to authorize this action
+pub fn create_signature_set(
+    privkeys: &[SecretKey],
+    signer_indices: &[u8],
     sighash: Buf32,
-) -> AggregatedSignature<SchnorrScheme> {
-    // Extract only the private keys for signers indicated by signer_indices
-    let selected_privkeys: Vec<EvenSecretKey> = signer_indices
-        .iter_ones()
-        .map(|index| privkeys[index])
+) -> SignatureSet {
+    let signatures: Vec<IndexedSignature> = signer_indices
+        .iter()
+        .map(|&index| {
+            let sig = sign_ecdsa_recoverable(&sighash.0, &privkeys[index as usize]);
+            IndexedSignature::new(index, sig)
+        })
         .collect();
 
-    let signature = create_musig2_signature(&selected_privkeys, &sighash.0, None);
-    let signature_buf = Buf64::from(signature.serialize());
-
-    AggregatedSignature::new(signer_indices, signature_buf)
+    SignatureSet::new(signatures).expect("valid signature set")
 }
 
 /// Creates a SPS-50 compliant administration transaction with commit-reveal pattern.
 ///
-/// This function creates only the reveal transaction that contains both the action and signature.
+/// This function creates only the reveal transaction that contains both the action and signatures.
 /// The reveal transaction uses the envelope script format to embed the administration payload
 /// in a way that's compatible with SPS-50.
 ///
+/// The signed payload (action + signatures) is embedded in the witness envelope, while only
+/// the minimal SPS-50 tag (magic bytes, subprotocol ID, tx type) is placed in the OP_RETURN.
+///
 /// # Arguments
-/// * `params` - Network parameters containing rollup configuration
-/// * `privkeys` - Private keys of all signers in the multisig config
-/// * `signer_indices` - BitVec indicating which signers are participating in this signature
+/// * `privkeys` - Private keys of all signers in the threshold config
+/// * `signer_indices` - Indices of signers participating in this signature
 /// * `action` - The MultisigAction to sign and embed (Update or Cancel)
 /// * `seqno` - The sequence number for this operation
 ///
@@ -73,36 +84,30 @@ pub fn create_multisig_signature(
 /// A Bitcoin transaction that serves as the reveal transaction containing the administration
 /// payload
 pub fn create_test_admin_tx(
-    privkeys: &[EvenSecretKey],
-    signer_indices: BitVec<u8>,
+    privkeys: &[SecretKey],
+    signer_indices: &[u8],
     action: &MultisigAction,
     seqno: u64,
 ) -> Transaction {
-    // Compute the signature hash and create the aggregated signature
+    // Compute the signature hash and create the signature set
     let sighash = action.compute_sighash(seqno);
-    let signature = create_multisig_signature(privkeys, signer_indices, sighash);
+    let signature_set = create_signature_set(privkeys, signer_indices, sighash);
 
-    // Create auxiliary data in the expected format for deposit transactions
-    let mut aux_data = Vec::new();
-    aux_data.extend_from_slice(signature.signature().as_bytes()); // 64 bytes
+    // Create the signed payload (action + signatures) for the envelope
+    let signed_payload = SignedPayload::new(action.clone(), signature_set);
+    let envelope_payload = borsh::to_vec(&signed_payload).expect("borsh serialization failed");
 
-    let signer_indices_bytes = signature.signer_indices().to_bitvec().into_vec();
-    aux_data.extend_from_slice(&signer_indices_bytes); // variable length bitset as bytes
-
-    // Create the complete SPS-50 tagged payload
-    // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
+    // Create the minimal SPS-50 tag for OP_RETURN (no aux data needed)
+    // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE]
     let mut tagged_payload = Vec::new();
     tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
     tagged_payload.extend_from_slice(&ADMINISTRATION_SUBPROTOCOL_ID.to_be_bytes()); // 1 byte subprotocol ID
     tagged_payload.extend_from_slice(&[action.tx_type()]); // 1 byte TxType
-    tagged_payload.extend_from_slice(&aux_data); // auxiliary data
-
-    let action_payload = borsh::to_vec(action).expect("borsh verification failed");
 
     // Create a minimal reveal transaction structure
     // This is a simplified version - in practice, this would be created as part of
     // a proper commit-reveal transaction pair using the btcio writer infrastructure
-    create_reveal_transaction_stub(action_payload, tagged_payload)
+    create_reveal_transaction_stub(envelope_payload, tagged_payload)
 }
 
 /// Creates a stub reveal transaction containing the envelope script.
@@ -184,10 +189,14 @@ fn build_envelope_script(payload: &[u8]) -> ScriptBuf {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::secp256k1::{SECP256K1, SecretKey};
+    use std::num::NonZero;
+
+    use bitcoin::secp256k1::{PublicKey, Secp256k1};
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
-    use strata_crypto::multisig::{SchnorrMultisigConfig, verify_multisig};
+    use strata_crypto::threshold_signature::{
+        CompressedPublicKey, ThresholdConfig, verify_threshold_signatures,
+    };
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -195,40 +204,36 @@ mod tests {
     use crate::parser::parse_tx;
 
     #[test]
-    fn test_create_multisig_update_signature() {
+    fn test_create_signature_set() {
         let mut arb = ArbitraryGenerator::new();
         let seqno = 1;
-        let threshold = 2;
+        let threshold = NonZero::new(2).unwrap();
+        let secp = Secp256k1::new();
 
         // Generate test private keys
-        let privkeys: Vec<EvenSecretKey> =
-            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
-        let pubkeys = privkeys
+        let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let pubkeys: Vec<CompressedPublicKey> = privkeys
             .iter()
-            .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
-            .collect::<Vec<Buf32>>();
-        let config = SchnorrMultisigConfig::try_new(pubkeys, threshold).unwrap();
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .collect();
+        let config = ThresholdConfig::try_new(pubkeys, threshold).unwrap();
 
         // Create signer indices (signers 0 and 2)
-        let mut signer_indices = BitVec::<u8>::new();
-        signer_indices.resize(3, false);
-        signer_indices.set(0, true);
-        signer_indices.set(2, true);
+        let signer_indices = [0u8, 2u8];
 
-        // Create a test multisig update
+        // Create a test multisig action
         let action: MultisigAction = arb.generate();
         let sighash = action.compute_sighash(seqno);
 
-        let signature = create_multisig_signature(&privkeys, signer_indices.clone(), sighash);
+        let signature_set = create_signature_set(&privkeys, &signer_indices, sighash);
 
-        // Verify the signature has the expected structure
-        assert_eq!(signature.signer_indices().len(), 3);
-        assert_eq!(signature.signer_indices().count_ones(), 2);
-        assert!(signature.signer_indices()[0]);
-        assert!(!signature.signer_indices()[1]);
-        assert!(signature.signer_indices()[2]);
+        // Verify the signature set has the expected structure
+        assert_eq!(signature_set.len(), 2);
+        let indices: Vec<u8> = signature_set.indices().collect();
+        assert_eq!(indices, vec![0, 2]);
 
-        let res = verify_multisig(&config, &signature, &sighash.0);
+        // Verify the signatures
+        let res = verify_threshold_signatures(&config, signature_set.signatures(), &sighash.0);
         assert!(res.is_ok());
     }
 
@@ -236,19 +241,22 @@ mod tests {
     fn test_admin_tx() {
         let mut arb = ArbitraryGenerator::new();
         let seqno = 1;
-        let threshold = 2;
+        let threshold = NonZero::new(2).unwrap();
+        let secp = Secp256k1::new();
 
         // Generate test private keys
+        let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let pubkeys: Vec<CompressedPublicKey> = privkeys
+            .iter()
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .collect();
+        let config = ThresholdConfig::try_new(pubkeys, threshold).unwrap();
+
         // Create signer indices (signers 0 and 2)
-        let privkeys: Vec<EvenSecretKey> =
-            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
-        let mut signer_indices = BitVec::<u8>::new();
-        signer_indices.resize(3, false);
-        signer_indices.set(0, true);
-        signer_indices.set(2, true);
+        let signer_indices = [0u8, 2u8];
 
         let action: MultisigAction = arb.generate();
-        let tx = create_test_admin_tx(&privkeys, signer_indices, &action, seqno);
+        let tx = create_test_admin_tx(&privkeys, &signer_indices, &action, seqno);
         let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .unwrap();
@@ -257,13 +265,12 @@ mod tests {
         let (p_action, sig) = parse_tx(&tx_input).unwrap();
         assert_eq!(action, p_action);
 
-        let pubkeys = privkeys
-            .iter()
-            .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
-            .collect::<Vec<Buf32>>();
-        let config = SchnorrMultisigConfig::try_new(pubkeys, threshold).unwrap();
-
-        let res = verify_multisig(&config, &sig, &action.compute_sighash(seqno).0);
+        // Verify the signatures
+        let res = verify_threshold_signatures(
+            &config,
+            sig.signatures(),
+            &action.compute_sighash(seqno).0,
+        );
         assert!(res.is_ok());
     }
 }

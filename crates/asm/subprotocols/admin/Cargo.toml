@@ -22,5 +22,4 @@ thiserror.workspace = true
 strata-asm-txs-admin = { workspace = true, features = ["test-utils"] }
 strata-test-utils.workspace = true
 rand.workspace = true
-bitvec.workspace = true
 bitcoin.workspace = true

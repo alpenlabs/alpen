@@ -10,11 +10,10 @@ workspace = true
 strata-identifiers.workspace = true
 
 arbitrary.workspace = true
-bitvec.workspace = true
 borsh.workspace = true
 musig2.workspace = true
 rand = { workspace = true, optional = true }
-secp256k1 = { workspace = true, features = ["global-context"] }
+secp256k1 = { workspace = true, features = ["global-context", "recovery"] }
 thiserror.workspace = true
 
 [target.'cfg(target_os = "zkvm")'.dependencies]
@@ -27,7 +26,6 @@ serde = { workspace = true, optional = true }
 [dev-dependencies]
 bitcoin.workspace = true
 rand.workspace = true
-strata-test-utils.workspace = true
 
 [features]
 default = []

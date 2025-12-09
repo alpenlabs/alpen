@@ -4,7 +4,7 @@ use strata_asm_common::{
     logging::{error, info},
 };
 use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction};
-use strata_crypto::multisig::SchnorrMultisigSignature;
+use strata_crypto::threshold_signature::SignatureSet;
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, roles::ProofType};
 
@@ -81,12 +81,12 @@ pub(crate) fn handle_pending_updates(
     }
 }
 
-/// Processes a multisig action (an admin "change" message) by validating the aggregated signature
+/// Processes a multisig action (an admin "change" message) by validating the signature set
 /// and executing the requested operation.
 ///
 /// This function handles the complete lifecycle of a multisig action:
 /// 1. Determines the required role based on the action type
-/// 2. Validates that the aggregated signature meets the multisig requirements for that role
+/// 2. Validates that the signature set meets the threshold requirements for that role
 /// 3. Processes the action based on its type:
 ///    - `Update`: Queues the action for later execution (except sequencer updates which apply
 ///      immediately)
@@ -99,7 +99,7 @@ pub(crate) fn handle_pending_updates(
 pub(crate) fn handle_action(
     state: &mut AdministrationSubprotoState,
     action: MultisigAction,
-    sig: SchnorrMultisigSignature,
+    sig: SignatureSet,
     current_height: u64,
     relayer: &mut impl MsgRelayer,
     params: &AdministrationSubprotoParams,
@@ -175,10 +175,9 @@ fn relay_checkpoint_predicate(relayer: &mut impl MsgRelayer, key: PredicateKey) 
 
 #[cfg(test)]
 mod tests {
-    use std::any::Any;
+    use std::{any::Any, num::NonZero};
 
-    use bitcoin::secp256k1::{SECP256K1, SecretKey};
-    use bitvec::prelude::*;
+    use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
@@ -187,19 +186,13 @@ mod tests {
             CancelAction, MultisigAction, UpdateAction,
             updates::{predicate::PredicateUpdate, seq::SequencerUpdate},
         },
-        test_utils::create_multisig_signature,
+        test_utils::create_signature_set,
     };
-    use strata_crypto::{
-        EvenSecretKey,
-        multisig::{
-            MultisigError, SchnorrMultisigConfig, SchnorrScheme, signature::AggregatedSignature,
-        },
+    use strata_crypto::threshold_signature::{
+        CompressedPublicKey, SignatureSet, ThresholdConfig, ThresholdSignatureError,
     };
     use strata_predicate::PredicateKey;
-    use strata_primitives::{
-        buf::{Buf32, Buf64},
-        roles::{ProofType, Role},
-    };
+    use strata_primitives::roles::{ProofType, Role};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::{handle_action, handle_pending_updates};
@@ -245,27 +238,25 @@ mod tests {
         }
     }
 
-    fn create_test_params() -> (
-        AdministrationSubprotoParams,
-        Vec<EvenSecretKey>,
-        Vec<EvenSecretKey>,
-    ) {
-        let strata_admin_sks: Vec<EvenSecretKey> =
-            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
-        let strata_admin_pks: Vec<Buf32> = strata_admin_sks
-            .iter()
-            .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
-            .collect();
-        let strata_administrator = SchnorrMultisigConfig::try_new(strata_admin_pks, 2).unwrap();
+    fn create_test_params() -> (AdministrationSubprotoParams, Vec<SecretKey>, Vec<SecretKey>) {
+        let secp = Secp256k1::new();
 
-        let strata_seq_manager_sks: Vec<EvenSecretKey> =
-            (0..3).map(|_| SecretKey::new(&mut OsRng).into()).collect();
-        let strata_seq_manager_pks: Vec<Buf32> = strata_seq_manager_sks
+        let strata_admin_sks: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let strata_admin_pks: Vec<CompressedPublicKey> = strata_admin_sks
             .iter()
-            .map(|sk| sk.x_only_public_key(SECP256K1).0.into())
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .collect();
+        let strata_administrator =
+            ThresholdConfig::try_new(strata_admin_pks, NonZero::new(2).unwrap()).unwrap();
+
+        let strata_seq_manager_sks: Vec<SecretKey> =
+            (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
+        let strata_seq_manager_pks: Vec<CompressedPublicKey> = strata_seq_manager_sks
+            .iter()
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
             .collect();
         let strata_sequencer_manager =
-            SchnorrMultisigConfig::try_new(strata_seq_manager_pks, 2).unwrap();
+            ThresholdConfig::try_new(strata_seq_manager_pks, NonZero::new(2).unwrap()).unwrap();
 
         let config = AdministrationSubprotoParams {
             strata_administrator,
@@ -305,7 +296,7 @@ mod tests {
         let updates = get_strata_administrator_update_actions(5);
 
         // Create signer indices (signers 0 and 2)
-        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
+        let signer_indices = [0u8, 2u8];
 
         for update in updates {
             // Capture initial state before processing the update
@@ -315,11 +306,11 @@ mod tests {
 
             let action = MultisigAction::Update(update.clone());
             let sighash = action.compute_sighash(initial_seq_no);
-            let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+            let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
             handle_action(
                 &mut state,
                 action,
-                multisig,
+                sig_set,
                 current_height,
                 &mut relayer,
                 &params,
@@ -366,16 +357,16 @@ mod tests {
         let update = get_strata_administrator_update_actions(1)[0].clone();
 
         // Create signer indices (signers 0 and 2)
-        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
+        let signer_indices = [0u8, 2u8];
 
         // Create an action and queue that.
         let action = MultisigAction::Update(update.clone());
         let sighash = action.compute_sighash(initial_seq_no);
-        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
         let res = handle_action(
             &mut state,
             action,
-            multisig,
+            sig_set,
             current_height,
             &mut relayer,
             &params,
@@ -385,11 +376,11 @@ mod tests {
         // Try queuing it again with same seq no
         let action = MultisigAction::Update(update.clone());
         let sighash = action.compute_sighash(initial_seq_no);
-        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
         let res = handle_action(
             &mut state,
             action,
-            multisig,
+            sig_set,
             current_height,
             &mut relayer,
             &params,
@@ -397,8 +388,8 @@ mod tests {
         assert!(res.is_err());
         assert!(matches!(
             res,
-            Err(AdministrationError::Multisig(
-                MultisigError::InvalidSignature
+            Err(AdministrationError::ThresholdSignature(
+                ThresholdSignatureError::InvalidSignature { .. }
             ))
         ));
 
@@ -406,19 +397,19 @@ mod tests {
         let seq_no: u64 = ArbitraryGenerator::new().generate();
         let action = MultisigAction::Update(update.clone());
         let sighash = action.compute_sighash(seq_no);
-        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
         let res = handle_action(
             &mut state,
             action,
-            multisig,
+            sig_set,
             current_height,
             &mut relayer,
             &params,
         );
         assert!(matches!(
             res,
-            Err(AdministrationError::Multisig(
-                MultisigError::InvalidSignature
+            Err(AdministrationError::ThresholdSignature(
+                ThresholdSignatureError::InvalidSignature { .. }
             ))
         ));
     }
@@ -442,7 +433,7 @@ mod tests {
         let update_count = updates.len();
 
         // Create signer indices (signers 0 and 2)
-        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
+        let signer_indices = [0u8, 2u8];
 
         for update in updates {
             let update: UpdateAction = update.into();
@@ -453,13 +444,12 @@ mod tests {
 
             let action = MultisigAction::Update(update.clone());
             let sighash = action.compute_sighash(initial_seq_no);
-            let multisig =
-                create_multisig_signature(&seq_manager_sks, signer_indices.clone(), sighash);
+            let sig_set = create_signature_set(&seq_manager_sks, &signer_indices, sighash);
 
             handle_action(
                 &mut state,
                 action,
-                multisig,
+                sig_set,
                 current_height,
                 &mut relayer,
                 &params,
@@ -537,7 +527,7 @@ mod tests {
         let current_height = 1000;
 
         // create signer indices (signers 0 and 2)
-        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
+        let signer_indices = [0u8, 2u8];
 
         // First, queue 5 update actions
         let updates = get_strata_administrator_update_actions(no_of_updates);
@@ -547,12 +537,12 @@ mod tests {
             let update_action = MultisigAction::Update(update);
 
             let sighash = update_action.compute_sighash(seq_no);
-            let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+            let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
             handle_action(
                 &mut state,
                 update_action,
-                multisig,
+                sig_set,
                 current_height,
                 &mut relayer,
                 &params,
@@ -574,12 +564,12 @@ mod tests {
             let initial_queued_len = state.queued().len();
 
             let sighash = cancel_action.compute_sighash(initial_seq_no);
-            let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+            let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
             handle_action(
                 &mut state,
                 cancel_action,
-                multisig,
+                sig_set,
                 current_height,
                 &mut relayer,
                 &params,
@@ -611,7 +601,7 @@ mod tests {
         let (params, _, _) = create_test_params();
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::<CheckpointIncomingMsg>::new();
-        let multisig = AggregatedSignature::<SchnorrScheme>::new(BitVec::new(), Buf64::default());
+        let sig_set = SignatureSet::new(vec![]).unwrap();
         let current_height = 1000;
 
         // Generate a random cancel action (likely targeting a non-existent ID)
@@ -622,7 +612,7 @@ mod tests {
         let res = handle_action(
             &mut state,
             cancel_action,
-            multisig,
+            sig_set,
             current_height,
             &mut relayer,
             &params,
@@ -651,16 +641,16 @@ mod tests {
         let update_action = MultisigAction::Update(update);
 
         // create signer indices (signers 0 and 2)
-        let signer_indices = bitvec![u8, Lsb0; 1, 0, 1];
+        let signer_indices = [0u8, 2u8];
 
         let sighash = update_action.compute_sighash(initial_seq_no);
-        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
         // Queue the update action
         handle_action(
             &mut state,
             update_action,
-            multisig.clone(),
+            sig_set.clone(),
             current_height,
             &mut relayer,
             &params,
@@ -670,11 +660,11 @@ mod tests {
         // Cancel the update action
         let cancel_action = MultisigAction::Cancel(CancelAction::new(update_id));
         let sighash = cancel_action.compute_sighash(initial_seq_no + 1);
-        let multisig = create_multisig_signature(&admin_sks, signer_indices.clone(), sighash);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
         let res = handle_action(
             &mut state,
             cancel_action,
-            multisig.clone(),
+            sig_set.clone(),
             current_height,
             &mut relayer,
             &params,
@@ -686,7 +676,7 @@ mod tests {
         let res = handle_action(
             &mut state,
             cancel_action,
-            multisig.clone(),
+            sig_set.clone(),
             current_height,
             &mut relayer,
             &params,
