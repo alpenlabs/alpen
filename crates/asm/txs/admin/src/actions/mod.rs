@@ -63,7 +63,7 @@ impl MultisigAction {
                 UpdateAction::Sequencer(_) => SEQUENCER_UPDATE_TX_TYPE,
                 UpdateAction::VerifyingKey(vk) => match vk.kind() {
                     ProofType::Asm => ASM_STF_VK_UPDATE_TX_TYPE,
-                    ProofType::OlStf => OL_STF_VK_UPDATE_TX_TYPE,
+                    ProofType::OLStf => OL_STF_VK_UPDATE_TX_TYPE,
                 },
             },
         }

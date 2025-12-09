@@ -1,4 +1,4 @@
-use alpen_ee_common::{OlClientError, StorageError};
+use alpen_ee_common::{OLClientError, StorageError};
 use thiserror::Error;
 
 /// Error type for OL tracker operations.
@@ -8,14 +8,14 @@ use thiserror::Error;
 ///   failures)
 /// - **NonRecoverable**: Fatal errors requiring intervention (no fork point found, data corruption)
 #[derive(Debug, Error)]
-pub enum OlTrackerError {
+pub enum OLTrackerError {
     /// Storage operation failed (recoverable - may be transient DB issue)
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
 
     /// OL client operation failed (recoverable - network/RPC issues)
     #[error("OL client error: {0}")]
-    OlClient(#[from] OlClientError),
+    OLClient(#[from] OLClientError),
 
     /// Failed to build tracker state from storage data (recoverable - may succeed on retry)
     #[error("failed to build tracker state: {0}")]
@@ -36,19 +36,19 @@ pub enum OlTrackerError {
     Other(String),
 }
 
-impl OlTrackerError {
+impl OLTrackerError {
     /// Returns true if this error is recoverable and the operation can be retried.
     pub fn is_recoverable(&self) -> bool {
         match self {
             // Non-recoverable: requires manual intervention
-            OlTrackerError::NoForkPointFound { .. } => false,
+            OLTrackerError::NoForkPointFound { .. } => false,
 
             // All others are potentially recoverable
-            OlTrackerError::Storage(_)
-            | OlTrackerError::OlClient(_)
-            | OlTrackerError::BuildStateFailed(_)
-            | OlTrackerError::MissingBlock { .. }
-            | OlTrackerError::Other(_) => true,
+            OLTrackerError::Storage(_)
+            | OLTrackerError::OLClient(_)
+            | OLTrackerError::BuildStateFailed(_)
+            | OLTrackerError::MissingBlock { .. }
+            | OLTrackerError::Other(_) => true,
         }
     }
 
@@ -60,7 +60,7 @@ impl OlTrackerError {
     /// Creates a detailed panic message for non-recoverable errors.
     pub fn panic_message(&self) -> String {
         match self {
-            OlTrackerError::NoForkPointFound { genesis_slot } => {
+            OLTrackerError::NoForkPointFound { genesis_slot } => {
                 format!(
                     "FATAL: OL tracker cannot recover - no common fork point found.\n\
                      \n\
@@ -75,10 +75,10 @@ impl OlTrackerError {
     }
 }
 
-impl From<eyre::Error> for OlTrackerError {
+impl From<eyre::Error> for OLTrackerError {
     fn from(e: eyre::Error) -> Self {
-        OlTrackerError::Other(e.to_string())
+        OLTrackerError::Other(e.to_string())
     }
 }
 
-pub(crate) type Result<T> = std::result::Result<T, OlTrackerError>;
+pub(crate) type Result<T> = std::result::Result<T, OLTrackerError>;

@@ -8,14 +8,14 @@ use crate::serialization_types::{DBAccountStateAtSlot, DBExecBlockRecord, DBOLBl
 
 define_table_without_codec!(
     /// store canonical OL block id at OL slot
-    (OlBlockAtSlotSchema) u64 => DBOLBlockId
+    (OLBlockAtSlotSchema) u64 => DBOLBlockId
 );
-// impl_bincode_key_codec!(OlBlockAtSlotSchema, u64);
-impl_borsh_value_codec!(OlBlockAtSlotSchema, DBOLBlockId);
+// impl_bincode_key_codec!(OLBlockAtSlotSchema, u64);
+impl_borsh_value_codec!(OLBlockAtSlotSchema, DBOLBlockId);
 
 define_table_with_default_codec!(
     /// EeAccountState at specific OL Block
-    (AccountStateAtOlBlockSchema) DBOLBlockId => DBAccountStateAtSlot
+    (AccountStateAtOLBlockSchema) DBOLBlockId => DBAccountStateAtSlot
 );
 
 define_table_with_default_codec!(

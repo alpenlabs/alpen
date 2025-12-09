@@ -1,26 +1,26 @@
 use alpen_ee_common::{
-    block_commitments_in_range_checked, chain_status_checked, EeAccountStateAtBlock, OlChainStatus,
-    OlClient, Storage,
+    block_commitments_in_range_checked, chain_status_checked, EeAccountStateAtBlock, OLChainStatus,
+    OLClient, Storage,
 };
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    ctx::OlTrackerCtx,
-    error::{OlTrackerError, Result},
-    state::{build_tracker_state, OlTrackerState},
+    ctx::OLTrackerCtx,
+    error::{OLTrackerError, Result},
+    state::{build_tracker_state, OLTrackerState},
 };
 
 /// Finds the last common block state between local storage and remote chain.
-pub(crate) async fn find_fork_point<TStorage, TOlClient>(
+pub(crate) async fn find_fork_point<TStorage, TOLClient>(
     storage: &TStorage,
-    ol_client: &TOlClient,
+    ol_client: &TOLClient,
     genesis_slot: u64,
     latest_slot: u64,
     fetch_size: u64,
 ) -> Result<Option<EeAccountStateAtBlock>>
 where
     TStorage: Storage,
-    TOlClient: OlClient,
+    TOLClient: OLClient,
 {
     let mut max_slot = latest_slot;
 
@@ -49,10 +49,10 @@ where
 
 /// Rolls back storage to fork point and updates internal tracker state.
 pub(crate) async fn rollback_to_fork_point<TStorage>(
-    state: &mut OlTrackerState,
+    state: &mut OLTrackerState,
     storage: &TStorage,
     fork_state: &EeAccountStateAtBlock,
-    ol_status: &OlChainStatus,
+    ol_status: &OLChainStatus,
 ) -> Result<()>
 where
     TStorage: Storage,
@@ -76,13 +76,13 @@ where
 }
 
 /// Handles chain reorganization by finding fork point and rolling back state.
-pub(crate) async fn handle_reorg<TStorage, TOlClient>(
-    state: &mut OlTrackerState,
-    ctx: &OlTrackerCtx<TStorage, TOlClient>,
+pub(crate) async fn handle_reorg<TStorage, TOLClient>(
+    state: &mut OLTrackerState,
+    ctx: &OLTrackerCtx<TStorage, TOLClient>,
 ) -> Result<()>
 where
     TStorage: Storage,
-    TOlClient: OlClient,
+    TOLClient: OLClient,
 {
     let genesis_slot = ctx.params.genesis_ol_slot();
 
@@ -101,7 +101,7 @@ where
             %genesis_slot,
             "reorg: could not find ol fork block till ol genesis slot"
         );
-        OlTrackerError::NoForkPointFound { genesis_slot }
+        OLTrackerError::NoForkPointFound { genesis_slot }
     })?;
 
     warn!(
@@ -121,7 +121,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{MockOlClient, MockStorage, OLBlockOrSlot, OlClientError, StorageError};
+    use alpen_ee_common::{MockOLClient, MockStorage, OLBlockOrSlot, OLClientError, StorageError};
     use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
     use strata_identifiers::{Buf32, OLBlockCommitment};
@@ -153,7 +153,7 @@ mod tests {
         #[tokio::test]
         async fn test_finds_fork_point_in_first_batch() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -189,7 +189,7 @@ mod tests {
         #[tokio::test]
         async fn test_searches_multiple_batches() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -224,7 +224,7 @@ mod tests {
         #[tokio::test]
         async fn test_returns_none_when_no_fork_point_found() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -250,7 +250,7 @@ mod tests {
         #[tokio::test]
         async fn test_respects_genesis_slot_boundary() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -276,7 +276,7 @@ mod tests {
         #[tokio::test]
         async fn test_handles_small_fetch_size() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -311,12 +311,12 @@ mod tests {
         #[tokio::test]
         async fn test_propagates_client_error() {
             let mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
                 .times(1)
-                .returning(|_, _| Err(OlClientError::network("test error")));
+                .returning(|_, _| Err(OLClientError::network("test error")));
 
             let result = find_fork_point(&mock_storage, &mock_client, 100, 110, 50).await;
 
@@ -326,7 +326,7 @@ mod tests {
         #[tokio::test]
         async fn test_propagates_storage_error() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -355,7 +355,7 @@ mod tests {
             let mut mock_storage = MockStorage::new();
 
             let fork_state = make_state_at_block(100, 1, 1);
-            let ol_status = OlChainStatus {
+            let ol_status = OLChainStatus {
                 latest: make_block_commitment(110, 2),
                 confirmed: make_block_commitment(105, 3),
                 finalized: make_block_commitment(100, 1),
@@ -380,7 +380,7 @@ mod tests {
                     }
                 });
 
-            let mut state = OlTrackerState::new(
+            let mut state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -397,7 +397,7 @@ mod tests {
             let mut mock_storage = MockStorage::new();
 
             let fork_state = make_state_at_block(100, 1, 1);
-            let ol_status = OlChainStatus {
+            let ol_status = OLChainStatus {
                 latest: make_block_commitment(110, 2),
                 confirmed: make_block_commitment(105, 3),
                 finalized: make_block_commitment(100, 1),
@@ -421,7 +421,7 @@ mod tests {
                 .times(1)
                 .returning(|_| Err(StorageError::database("rollback failed")));
 
-            let mut state = OlTrackerState::new(
+            let mut state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -458,10 +458,10 @@ mod tests {
 
         fn make_test_ctx(
             storage: MockStorage,
-            ol_client: MockOlClient,
+            ol_client: MockOLClient,
             genesis_slot: u64,
             reorg_fetch_size: u64,
-        ) -> OlTrackerCtx<MockStorage, MockOlClient> {
+        ) -> OLTrackerCtx<MockStorage, MockOLClient> {
             let (ee_state_tx, _) = watch::channel(make_ee_state([0; 32]));
             let (consensus_tx, _) = watch::channel(ConsensusHeads {
                 confirmed: [0; 32],
@@ -470,7 +470,7 @@ mod tests {
 
             let params = make_test_params(genesis_slot);
 
-            OlTrackerCtx {
+            OLTrackerCtx {
                 storage: Arc::new(storage),
                 ol_client: Arc::new(ol_client),
                 params: Arc::new(params),
@@ -485,10 +485,10 @@ mod tests {
         #[tokio::test]
         async fn test_successful_reorg() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client.expect_chain_status().times(1).returning(|| {
-                Ok(OlChainStatus {
+                Ok(OLChainStatus {
                     latest: make_block_commitment(110, 2),
                     confirmed: make_block_commitment(105, 3),
                     finalized: make_block_commitment(100, 1),
@@ -525,7 +525,7 @@ mod tests {
                 .returning(|_| Ok(()));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let mut state = OlTrackerState::new(
+            let mut state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -545,10 +545,10 @@ mod tests {
         #[tokio::test]
         async fn test_fails_when_no_fork_point_found() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client.expect_chain_status().times(1).returning(|| {
-                Ok(OlChainStatus {
+                Ok(OLChainStatus {
                     latest: make_block_commitment(110, 2),
                     confirmed: make_block_commitment(105, 3),
                     finalized: make_block_commitment(100, 1),
@@ -568,7 +568,7 @@ mod tests {
                 .returning(|_| Ok(None));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let mut state = OlTrackerState::new(
+            let mut state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -579,7 +579,7 @@ mod tests {
             assert!(result.is_err());
             let error = result.unwrap_err();
             // Check that it's specifically the NoForkPointFound error
-            assert!(matches!(error, OlTrackerError::NoForkPointFound { .. }));
+            assert!(matches!(error, OLTrackerError::NoForkPointFound { .. }));
             // Verify the error message contains key info
             assert!(error.to_string().contains("no fork point found"));
             assert!(error.to_string().contains("100")); // genesis slot
@@ -588,15 +588,15 @@ mod tests {
         #[tokio::test]
         async fn test_propagates_chain_status_error() {
             let mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_chain_status()
                 .times(1)
-                .returning(|| Err(OlClientError::network("network error")));
+                .returning(|| Err(OLClientError::network("network error")));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let mut state = OlTrackerState::new(
+            let mut state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -610,10 +610,10 @@ mod tests {
         #[tokio::test]
         async fn test_reorg_with_small_fetch_size() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client.expect_chain_status().times(1).returning(|| {
-                Ok(OlChainStatus {
+                Ok(OLChainStatus {
                     latest: make_block_commitment(110, 2),
                     confirmed: make_block_commitment(105, 3),
                     finalized: make_block_commitment(100, 1),
@@ -650,7 +650,7 @@ mod tests {
                 .returning(|_| Ok(()));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 5);
-            let mut state = OlTrackerState::new(
+            let mut state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -664,10 +664,10 @@ mod tests {
         #[tokio::test]
         async fn test_state_unchanged_when_build_tracker_state_fails() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client.expect_chain_status().times(1).returning(|| {
-                Ok(OlChainStatus {
+                Ok(OLChainStatus {
                     latest: make_block_commitment(110, 2),
                     confirmed: make_block_commitment(105, 3),
                     finalized: make_block_commitment(100, 1),
@@ -711,7 +711,7 @@ mod tests {
             mock_storage.expect_rollback_ee_account_state().times(0);
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let initial_state = OlTrackerState::new(
+            let initial_state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -735,10 +735,10 @@ mod tests {
         #[tokio::test]
         async fn test_state_unchanged_when_rollback_fails() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client.expect_chain_status().times(1).returning(|| {
-                Ok(OlChainStatus {
+                Ok(OLChainStatus {
                     latest: make_block_commitment(110, 2),
                     confirmed: make_block_commitment(105, 3),
                     finalized: make_block_commitment(100, 1),
@@ -777,7 +777,7 @@ mod tests {
                 .returning(|_| Err(StorageError::database("simulated rollback failure")));
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let initial_state = OlTrackerState::new(
+            let initial_state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),
@@ -801,10 +801,10 @@ mod tests {
         #[tokio::test]
         async fn test_state_not_mutated_when_find_fork_fails() {
             let mut mock_storage = MockStorage::new();
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client.expect_chain_status().times(1).returning(|| {
-                Ok(OlChainStatus {
+                Ok(OLChainStatus {
                     latest: make_block_commitment(110, 2),
                     confirmed: make_block_commitment(105, 3),
                     finalized: make_block_commitment(100, 1),
@@ -828,7 +828,7 @@ mod tests {
             mock_storage.expect_rollback_ee_account_state().times(0);
 
             let ctx = make_test_ctx(mock_storage, mock_client, 100, 50);
-            let initial_state = OlTrackerState::new(
+            let initial_state = OLTrackerState::new(
                 make_state_at_block(110, 2, 2),
                 make_state_at_block(105, 3, 3),
                 make_state_at_block(100, 1, 1),

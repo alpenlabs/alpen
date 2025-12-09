@@ -1,15 +1,15 @@
-use alpen_ee_common::{OlChainStatus, OlClient, OlClientError};
+use alpen_ee_common::{OLChainStatus, OLClient, OLClientError};
 use async_trait::async_trait;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::UpdateInputData;
 
 #[derive(Debug, Default)]
-pub(crate) struct DummyOlClient {}
+pub(crate) struct DummyOLClient {}
 
 #[async_trait]
-impl OlClient for DummyOlClient {
-    async fn chain_status(&self) -> Result<OlChainStatus, OlClientError> {
-        Ok(OlChainStatus {
+impl OLClient for DummyOLClient {
+    async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
+        Ok(OLChainStatus {
             latest: OLBlockCommitment::null(),
             confirmed: OLBlockCommitment::null(),
             finalized: OLBlockCommitment::null(),
@@ -20,9 +20,9 @@ impl OlClient for DummyOlClient {
         &self,
         start_slot: u64,
         end_slot: u64,
-    ) -> Result<Vec<OLBlockCommitment>, OlClientError> {
+    ) -> Result<Vec<OLBlockCommitment>, OLClientError> {
         if end_slot < start_slot {
-            return Err(OlClientError::InvalidSlotRange {
+            return Err(OLClientError::InvalidSlotRange {
                 start_slot,
                 end_slot,
             });
@@ -36,7 +36,7 @@ impl OlClient for DummyOlClient {
     async fn get_update_operations_for_blocks(
         &self,
         blocks: Vec<OLBlockId>,
-    ) -> Result<Vec<Vec<UpdateInputData>>, OlClientError> {
+    ) -> Result<Vec<Vec<UpdateInputData>>, OLClientError> {
         Ok((blocks.iter().map(|_| vec![])).collect())
     }
 }

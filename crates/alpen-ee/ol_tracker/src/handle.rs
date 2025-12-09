@@ -1,27 +1,27 @@
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{ConsensusHeads, OlClient, Storage};
+use alpen_ee_common::{ConsensusHeads, OLClient, Storage};
 use alpen_ee_config::AlpenEeParams;
 use strata_ee_acct_types::EeAccountState;
 use tokio::sync::watch;
 
-use crate::{ctx::OlTrackerCtx, state::OlTrackerState, task::ol_tracker_task};
+use crate::{ctx::OLTrackerCtx, state::OLTrackerState, task::ol_tracker_task};
 
-/// Default number of Ol blocks to process in each cycle
+/// Default number of OL blocks to process in each cycle
 const DEFAULT_MAX_BLOCKS_FETCH: u64 = 10;
 /// Default ms to wait between ol polls
 const DEFAULT_POLL_WAIT_MS: u64 = 100;
-/// Default number of Ol blocks to process in each cycle during reorg
+/// Default number of OL blocks to process in each cycle during reorg
 const DEFAULT_REORG_FETCH_SIZE: u64 = 10;
 
 /// Handle for accessing OL tracker state updates.
 #[derive(Debug)]
-pub struct OlTrackerHandle {
+pub struct OLTrackerHandle {
     ee_state_rx: watch::Receiver<EeAccountState>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
 }
 
-impl OlTrackerHandle {
+impl OLTrackerHandle {
     /// Returns a watcher for EE account state updates.
     pub fn ee_state_watcher(&self) -> watch::Receiver<EeAccountState> {
         self.ee_state_rx.clone()
@@ -35,23 +35,23 @@ impl OlTrackerHandle {
 
 /// Builder for creating an OL tracker with custom configuration.
 #[derive(Debug)]
-pub struct OlTrackerBuilder<TStorage, TOlClient> {
-    state: OlTrackerState,
+pub struct OLTrackerBuilder<TStorage, TOLClient> {
+    state: OLTrackerState,
     params: Arc<AlpenEeParams>,
     storage: Arc<TStorage>,
-    ol_client: Arc<TOlClient>,
+    ol_client: Arc<TOLClient>,
     max_block_fetch: Option<u64>,
     poll_wait_ms: Option<u64>,
     reorg_fetch_size: Option<u64>,
 }
 
-impl<TStorage, TOlClient> OlTrackerBuilder<TStorage, TOlClient> {
+impl<TStorage, TOLClient> OLTrackerBuilder<TStorage, TOLClient> {
     /// Creates a new OL tracker builder with all required fields.
     pub fn new(
-        state: OlTrackerState,
+        state: OLTrackerState,
         params: Arc<AlpenEeParams>,
         storage: Arc<TStorage>,
-        ol_client: Arc<TOlClient>,
+        ol_client: Arc<TOLClient>,
     ) -> Self {
         Self {
             state,
@@ -83,18 +83,18 @@ impl<TStorage, TOlClient> OlTrackerBuilder<TStorage, TOlClient> {
     }
 
     /// Builds and returns the tracker handle and task.
-    pub fn build(self) -> (OlTrackerHandle, impl Future<Output = ()>)
+    pub fn build(self) -> (OLTrackerHandle, impl Future<Output = ()>)
     where
         TStorage: Storage,
-        TOlClient: OlClient,
+        TOLClient: OLClient,
     {
         let (ee_state_tx, ee_state_rx) = watch::channel(self.state.best_ee_state().clone());
         let (consensus_tx, consensus_rx) = watch::channel(self.state.get_consensus_heads());
-        let handle = OlTrackerHandle {
+        let handle = OLTrackerHandle {
             ee_state_rx,
             consensus_rx,
         };
-        let ctx = OlTrackerCtx {
+        let ctx = OLTrackerCtx {
             storage: self.storage,
             params: self.params,
             ol_client: self.ol_client,
