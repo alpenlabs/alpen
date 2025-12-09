@@ -8,12 +8,14 @@ use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
 pub(crate) fn make_epoch_commitment(epoch: u32, slot: u64, id: u8) -> EpochCommitment {
     let mut bytes = [0u8; 32];
     bytes[0] = id;
+    bytes[1] = 1; // Ensure non-null even when id=0
     EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::new(bytes)))
 }
 
 pub(crate) fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
     let mut bytes = [0u8; 32];
     bytes[0] = id;
+    bytes[1] = 1; // Ensure non-null even when id=0
     OLBlockCommitment::new(slot, OLBlockId::from(Buf32::new(bytes)))
 }
 
@@ -61,6 +63,8 @@ pub(crate) fn create_epochs(terminal_ids: &[u8]) -> Vec<EeAccountStateAtEpoch> {
 
 /// Sets up mock client to return epochs from a pre-built chain.
 /// The chain's epochs are indexed by their epoch number.
+/// The prev_epoch in each summary correctly references the previous epoch's commitment.
+/// For epoch 0, the prev is `EpochCommitment::null()`.
 pub(crate) fn setup_mock_client_with_chain(
     mock_client: &mut MockOLClient,
     chain: Vec<EeAccountStateAtEpoch>,
@@ -70,11 +74,16 @@ pub(crate) fn setup_mock_client_with_chain(
         if epoch_idx >= chain.len() {
             return Err(OLClientError::network("epoch not found"));
         }
-        let prev_epoch = if epoch > 0 { epoch - 1 } else { epoch };
         let current = &chain[epoch_idx];
+        // For epoch 0, prev is null; for others, get the actual prev epoch's commitment
+        let prev_commitment = if epoch > 0 {
+            *chain[epoch_idx - 1].epoch_commitment()
+        } else {
+            EpochCommitment::null()
+        };
         Ok(OLEpochSummary::new(
             *current.epoch_commitment(),
-            make_epoch_commitment(prev_epoch, prev_epoch as u64 * 10, 0),
+            prev_commitment,
             vec![],
         ))
     });

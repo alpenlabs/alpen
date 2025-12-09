@@ -245,259 +245,306 @@ where
     Ok(())
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use alpen_ee_common::{MockOLClient, OLChainStatus};
-//     use strata_acct_types::BitcoinAmount;
-//     use strata_identifiers::{Buf32, OLBlockCommitment};
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::{MockOLClient, OLChainStatus, OLEpochSummary};
+    use strata_acct_types::BitcoinAmount;
 
-//     use super::*;
+    use super::*;
+    use crate::test_utils::*;
 
-//     /// Helper to create a block commitment for testing
-//     fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
-//         let mut bytes = [0u8; 32];
-//         bytes[0] = id;
-//         OLBlockCommitment::new(slot, Buf32::new(bytes).into())
-//     }
+    mod apply_epoch_operations_tests {
+        use super::*;
 
-//     /// Helper to create a test tracker state
-//     fn make_test_state(slot: u64, id: u8) -> OLTrackerState {
-//         let block_state = EeAccountStateAtBlock::new(
-//             make_block_commitment(slot, id),
-//             EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]),
-//         );
-//         OLTrackerState::new(block_state.clone(), block_state.clone(), block_state)
-//     }
+        #[test]
+        fn test_apply_empty_operations() {
+            // Scenario: Apply empty operations list
+            // Expected: State unchanged, returns Ok
+            let mut state = EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+            let operations: Vec<UpdateInputData> = vec![];
 
-//     mod apply_block_operations_tests {
-//         use super::*;
+            let result = apply_epoch_operations(&mut state, &operations);
 
-//         #[test]
-//         fn test_apply_empty_operations() {
-//             let mut state = EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
-//             let operations: Vec<UpdateInputData> = vec![];
+            assert!(result.is_ok());
+        }
+    }
 
-//             let result = apply_block_operations(&mut state, &operations);
+    mod track_ol_state_tests {
+        use super::*;
 
-//             assert!(result.is_ok());
-//         }
-//     }
+        #[tokio::test]
+        async fn test_noop_when_local_ahead() {
+            // Scenario: Local chain is ahead of OL confirmed chain
+            // Local state:    epoch 5 with terminal block ID 105
+            // Remote chain:   confirmed epoch 3 (behind local)
+            // Expected:       Noop (unusual state, but handled gracefully)
 
-//     mod track_ol_state_tests {
-//         use super::*;
+            let chain = create_epochs(&[100, 101, 102, 103, 104, 105]);
+            let state = OLTrackerState::new(chain[5].clone(), chain[0].clone());
 
-//         #[tokio::test]
-//         async fn test_noop_when_local_ahead() {
-//             let state = make_test_state(100, 1);
-//             let mut mock_client = MockOLClient::new();
+            let mut mock_client = MockOLClient::new();
 
-//             mock_client.expect_chain_status().times(1).returning(|| {
-//                 Ok(OLChainStatus {
-//                     latest: make_block_commitment(50, 1), // OL chain is behind
-//                     confirmed: make_block_commitment(50, 1),
-//                     finalized: make_block_commitment(50, 1),
-//                 })
-//             });
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    latest: make_block_commitment(30, 103),
+                    confirmed: make_epoch_commitment(3, 30, 103),
+                    finalized: make_epoch_commitment(0, 0, 100),
+                })
+            });
 
-//             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 
-//             assert!(matches!(result, TrackOLAction::Noop));
-//         }
+            assert!(matches!(result, TrackOLAction::Noop));
+        }
 
-//         #[tokio::test]
-//         async fn test_noop_when_synced() {
-//             let state = make_test_state(100, 1);
-//             let mut mock_client = MockOLClient::new();
+        #[tokio::test]
+        async fn test_noop_when_synced() {
+            // Scenario: Local chain is in sync with OL confirmed chain
+            // Local state:    epoch 3 with terminal block ID 103
+            // Remote chain:   confirmed epoch 3 with same terminal block ID 103
+            // Expected:       Noop (already synced)
 
-//             mock_client.expect_chain_status().times(1).returning(|| {
-//                 Ok(OLChainStatus {
-//                     latest: make_block_commitment(100, 1), // Same slot and ID
-//                     confirmed: make_block_commitment(100, 1),
-//                     finalized: make_block_commitment(100, 1),
-//                 })
-//             });
+            let chain = create_epochs(&[100, 101, 102, 103]);
+            let state = OLTrackerState::new(chain[3].clone(), chain[0].clone());
 
-//             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let mut mock_client = MockOLClient::new();
 
-//             assert!(matches!(result, TrackOLAction::Noop));
-//         }
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    latest: make_block_commitment(30, 103),
+                    confirmed: make_epoch_commitment(3, 30, 103),
+                    finalized: make_epoch_commitment(0, 0, 100),
+                })
+            });
 
-//         #[tokio::test]
-//         async fn test_reorg_when_same_slot_different_block_id() {
-//             let state = make_test_state(100, 1);
-//             let mut mock_client = MockOLClient::new();
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 
-//             mock_client.expect_chain_status().times(1).returning(|| {
-//                 Ok(OLChainStatus {
-//                     latest: make_block_commitment(100, 2), // Same slot, different ID
-//                     confirmed: make_block_commitment(100, 2),
-//                     finalized: make_block_commitment(100, 2),
-//                 })
-//             });
+            assert!(matches!(result, TrackOLAction::Noop));
+        }
 
-//             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+        #[tokio::test]
+        async fn test_reorg_when_same_epoch_different_terminal_block() {
+            // Scenario: Same epoch but different terminal block ID (chain mismatch)
+            // Local state:    epoch 3 with terminal block ID 103
+            // Remote chain:   confirmed epoch 3 with terminal block ID 199 (different!)
+            // Expected:       Reorg triggered
 
-//             assert!(matches!(result, TrackOLAction::Reorg));
-//         }
+            let chain = create_epochs(&[100, 101, 102, 103]);
+            let state = OLTrackerState::new(chain[3].clone(), chain[0].clone());
 
-//         #[tokio::test]
-//         async fn test_reorg_when_local_block_not_in_chain() {
-//             let state = make_test_state(100, 1);
-//             let mut mock_client = MockOLClient::new();
+            let mut mock_client = MockOLClient::new();
 
-//             mock_client.expect_chain_status().times(1).returning(|| {
-//                 Ok(OLChainStatus {
-//                     latest: make_block_commitment(101, 2),
-//                     confirmed: make_block_commitment(101, 2),
-//                     finalized: make_block_commitment(101, 2),
-//                 })
-//             });
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    latest: make_block_commitment(30, 199),
+                    confirmed: make_epoch_commitment(3, 30, 199), // Same epoch, different block ID
+                    finalized: make_epoch_commitment(0, 0, 100),
+                })
+            });
 
-//             // Note: block_commitments_in_range_checked calls block_commitments_in_range
-//             mock_client
-//                 .expect_block_commitments_in_range()
-//                 .times(1)
-//                 .withf(|start, end| *start == 100 && *end == 101)
-//                 .returning(|_, _| {
-//                     Ok(vec![
-//                         make_block_commitment(100, 99), // Different ID at slot 100
-//                         make_block_commitment(101, 2),
-//                     ])
-//                 });
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 
-//             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            assert!(matches!(result, TrackOLAction::Reorg));
+        }
 
-//             assert!(matches!(result, TrackOLAction::Reorg));
-//         }
+        #[tokio::test]
+        async fn test_reorg_when_first_new_epoch_prev_mismatch() {
+            // Scenario: First new epoch's prev doesn't match local state (reorg detected)
+            // Local chain:    [100, 101, 102, 103] (epochs 0-3)
+            // Remote chain:   [100, 101, 102, 199, 104] (epochs 0-4, diverged at epoch 3)
+            // Local state:    epoch 3 with terminal block ID 103
+            // Remote epoch 4's prev has block ID 199 (not 103)
+            // Expected:       Reorg triggered
 
-//         #[tokio::test]
-//         async fn test_extend_with_one_new_block() {
-//             let state = make_test_state(100, 100);
-//             let mut mock_client = MockOLClient::new();
+            let local_chain = create_epochs(&[100, 101, 102, 103]);
+            let remote_chain = create_epochs(&[100, 101, 102, 199, 104]);
 
-//             mock_client.expect_chain_status().times(1).returning(|| {
-//                 Ok(OLChainStatus {
-//                     latest: make_block_commitment(101, 101),
-//                     confirmed: make_block_commitment(101, 101),
-//                     finalized: make_block_commitment(101, 101),
-//                 })
-//             });
+            let state = OLTrackerState::new(local_chain[3].clone(), local_chain[0].clone());
 
-//             // Mock for block_commitments_in_range_checked
-//             mock_client
-//                 .expect_block_commitments_in_range()
-//                 .times(1)
-//                 .withf(|start, end| *start == 100 && *end == 101)
-//                 .returning(|_, _| {
-//                     Ok(vec![
-//                         make_block_commitment(100, 100), // Local block
-//                         make_block_commitment(101, 101), // New block
-//                     ])
-//                 });
+            let mut mock_client = MockOLClient::new();
 
-//             // Mock for get_update_operations_for_blocks_checked
-//             mock_client
-//                 .expect_get_update_operations_for_blocks()
-//                 .times(1)
-//                 .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    latest: make_block_commitment(40, 104),
+                    confirmed: make_epoch_commitment(4, 40, 104),
+                    finalized: make_epoch_commitment(0, 0, 100),
+                })
+            });
 
-//             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-//             match result {
-//                 TrackOLAction::Extend(ops, _status) => {
-//                     assert_eq!(ops.len(), 1);
-//                     assert_eq!(ops[0].block.slot(), 101);
-//                 }
-//                 _ => panic!("Expected Extend action"),
-//             }
-//         }
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 
-//         #[tokio::test]
-//         async fn test_extend_with_multiple_blocks() {
-//             let state = make_test_state(100, 100);
-//             let mut mock_client = MockOLClient::new();
+            assert!(matches!(result, TrackOLAction::Reorg));
+        }
 
-//             mock_client.expect_chain_status().times(1).returning(|| {
-//                 Ok(OLChainStatus {
-//                     latest: make_block_commitment(103, 103),
-//                     confirmed: make_block_commitment(103, 103),
-//                     finalized: make_block_commitment(103, 103),
-//                 })
-//             });
+        #[tokio::test]
+        async fn test_extend_with_new_epochs() {
+            // Scenario: Multiple new epochs to sync
+            // Local chain:    [100, 101, 102] (epochs 0-2)
+            // Remote chain:   [100, 101, 102, 103, 104, 105] (epochs 0-5)
+            // Local state:    epoch 2 with terminal block ID 102
+            // Expected:       Extend with epochs 3, 4, 5
 
-//             // Mock for block_commitments_in_range_checked
-//             mock_client
-//                 .expect_block_commitments_in_range()
-//                 .times(1)
-//                 .withf(|start, end| *start == 100 && *end == 103)
-//                 .returning(|_, _| {
-//                     Ok(vec![
-//                         make_block_commitment(100, 100),
-//                         make_block_commitment(101, 101),
-//                         make_block_commitment(102, 102),
-//                         make_block_commitment(103, 103),
-//                     ])
-//                 });
+            let local_chain = create_epochs(&[100, 101, 102]);
+            let remote_chain = create_epochs(&[100, 101, 102, 103, 104, 105]);
 
-//             // Mock for get_update_operations_for_blocks_checked
-//             mock_client
-//                 .expect_get_update_operations_for_blocks()
-//                 .times(1)
-//                 .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+            let state = OLTrackerState::new(local_chain[2].clone(), local_chain[0].clone());
 
-//             let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let mut mock_client = MockOLClient::new();
 
-//             match result {
-//                 TrackOLAction::Extend(ops, _status) => {
-//                     assert_eq!(ops.len(), 3);
-//                     assert_eq!(ops[0].block.slot(), 101);
-//                     assert_eq!(ops[1].block.slot(), 102);
-//                     assert_eq!(ops[2].block.slot(), 103);
-//                 }
-//                 _ => panic!("Expected Extend action"),
-//             }
-//         }
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    latest: make_block_commitment(50, 105),
+                    confirmed: make_epoch_commitment(5, 50, 105),
+                    finalized: make_epoch_commitment(0, 0, 100),
+                })
+            });
 
-//         #[tokio::test]
-//         async fn test_extend_respects_max_blocks_fetch() {
-//             let state = make_test_state(100, 100);
-//             let mut mock_client = MockOLClient::new();
+            setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-//             mock_client.expect_chain_status().times(1).returning(|| {
-//                 Ok(OLChainStatus {
-//                     latest: make_block_commitment(150, 150), // 50 blocks behind
-//                     confirmed: make_block_commitment(150, 150),
-//                     finalized: make_block_commitment(150, 150),
-//                 })
-//             });
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
 
-//             // Mock for block_commitments_in_range_checked - should cap at 5 blocks
-//             mock_client
-//                 .expect_block_commitments_in_range()
-//                 .times(1)
-//                 .withf(|start, end| *start == 100 && *end == 105) // Should cap at 5
-//                 .returning(|start, end| {
-//                     Ok((start..=end)
-//                         .map(|slot| make_block_commitment(slot, slot as u8))
-//                         .collect())
-//                 });
+            match result {
+                TrackOLAction::Extend(ops, _status) => {
+                    assert_eq!(ops.len(), 3);
+                    assert_eq!(ops[0].epoch.epoch(), 3);
+                    assert_eq!(ops[1].epoch.epoch(), 4);
+                    assert_eq!(ops[2].epoch.epoch(), 5);
+                }
+                _ => panic!("Expected Extend action"),
+            }
+        }
 
-//             // Mock for get_update_operations_for_blocks_checked
-//             mock_client
-//                 .expect_get_update_operations_for_blocks()
-//                 .times(1)
-//                 .returning(|blocks| Ok(vec![vec![]; blocks.len()]));
+        #[tokio::test]
+        async fn test_extend_respects_max_epochs_fetch() {
+            // Scenario: Many epochs behind but capped by max_epochs_fetch
+            // Local chain:    [100] (epoch 0)
+            // Remote chain:   [100, 101, 102, ..., 110] (epochs 0-10)
+            // Local state:    epoch 0 with terminal block ID 100
+            // max_epochs_fetch: 3
+            // Expected:       Extend with only epochs 1, 2, 3
 
-//             let result = track_ol_state(&state, &mock_client, 5).await.unwrap();
+            let local_chain = create_epochs(&[100]);
+            let remote_chain =
+                create_epochs(&[100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110]);
 
-//             match result {
-//                 TrackOLAction::Extend(ops, _status) => {
-//                     assert_eq!(ops.len(), 5);
-//                     assert_eq!(ops[0].block.slot(), 101);
-//                     assert_eq!(ops[4].block.slot(), 105);
-//                 }
-//                 _ => panic!("Expected Extend action"),
-//             }
-//         }
-//     }
-// }
+            let state = OLTrackerState::new(local_chain[0].clone(), local_chain[0].clone());
+
+            let mut mock_client = MockOLClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    latest: make_block_commitment(100, 110),
+                    confirmed: make_epoch_commitment(10, 100, 110),
+                    finalized: make_epoch_commitment(0, 0, 100),
+                })
+            });
+
+            setup_mock_client_with_chain(&mut mock_client, remote_chain);
+
+            let result = track_ol_state(&state, &mock_client, 3).await.unwrap();
+
+            match result {
+                TrackOLAction::Extend(ops, _status) => {
+                    assert_eq!(ops.len(), 3);
+                    assert_eq!(ops[0].epoch.epoch(), 1);
+                    assert_eq!(ops[1].epoch.epoch(), 2);
+                    assert_eq!(ops[2].epoch.epoch(), 3);
+                }
+                _ => panic!("Expected Extend action"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_extend_stops_on_chain_discontinuity() {
+            // Scenario: Chain discontinuity detected during batch fetch (remote reorg mid-fetch)
+            // Local chain:    [100, 101, 102] (epochs 0-2)
+            // Local state:    epoch 2 with terminal block ID 102
+            // Remote returns: epoch 3 (prev=102), epoch 4 (prev=103), epoch 5 (prev=199!)
+            // Epoch 5's prev (199) doesn't match the epoch 4 (104) we just fetched
+            // Expected:       Extend with epochs 3, 4 only (stops at discontinuity)
+            //
+            // Note: This simulates a remote reorg happening mid-fetch, requiring manual mock
+            // setup since the helper only produces internally consistent chains.
+
+            let local_chain = create_epochs(&[100, 101, 102]);
+            let state = OLTrackerState::new(local_chain[2].clone(), local_chain[0].clone());
+
+            let mut mock_client = MockOLClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    latest: make_block_commitment(50, 105),
+                    confirmed: make_epoch_commitment(5, 50, 105),
+                    finalized: make_epoch_commitment(0, 0, 100),
+                })
+            });
+
+            mock_client
+                .expect_epoch_summary()
+                .withf(|epoch| *epoch == 3)
+                .returning(|_| {
+                    Ok(OLEpochSummary::new(
+                        make_epoch_commitment(3, 30, 103),
+                        make_epoch_commitment(2, 20, 102),
+                        vec![],
+                    ))
+                });
+
+            mock_client
+                .expect_epoch_summary()
+                .withf(|epoch| *epoch == 4)
+                .returning(|_| {
+                    Ok(OLEpochSummary::new(
+                        make_epoch_commitment(4, 40, 104),
+                        make_epoch_commitment(3, 30, 103),
+                        vec![],
+                    ))
+                });
+
+            mock_client
+                .expect_epoch_summary()
+                .withf(|epoch| *epoch == 5)
+                .returning(|_| {
+                    Ok(OLEpochSummary::new(
+                        make_epoch_commitment(5, 50, 105),
+                        make_epoch_commitment(4, 40, 199), /* Discontinuity: prev doesn't match
+                                                            * epoch 4 */
+                        vec![],
+                    ))
+                });
+
+            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+
+            match result {
+                TrackOLAction::Extend(ops, _status) => {
+                    assert_eq!(ops.len(), 2);
+                    assert_eq!(ops[0].epoch.epoch(), 3);
+                    assert_eq!(ops[1].epoch.epoch(), 4);
+                }
+                _ => panic!("Expected Extend action"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_propagates_client_error() {
+            // Scenario: OL client returns error when fetching chain status
+            // Expected:       Error propagated
+
+            let chain = create_epochs(&[100, 101, 102]);
+            let state = OLTrackerState::new(chain[2].clone(), chain[0].clone());
+
+            let mut mock_client = MockOLClient::new();
+
+            mock_client
+                .expect_chain_status()
+                .times(1)
+                .returning(|| Err(alpen_ee_common::OLClientError::network("network error")));
+
+            let result = track_ol_state(&state, &mock_client, 10).await;
+
+            assert!(result.is_err());
+        }
+    }
+}
