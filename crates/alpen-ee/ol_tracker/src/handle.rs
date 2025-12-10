@@ -9,7 +9,7 @@ use crate::{ctx::OLTrackerCtx, state::OLTrackerState, task::ol_tracker_task};
 /// Default number of OL epochs to process in each cycle
 const DEFAULT_MAX_EPOCHS_FETCH: u32 = 10;
 /// Default ms to wait between ol polls
-const DEFAULT_POLL_WAIT_MS: u64 = 1000;
+const DEFAULT_POLL_WAIT_MS: u64 = 1_000;
 
 /// Handle for accessing OL tracker state updates.
 #[derive(Debug)]
