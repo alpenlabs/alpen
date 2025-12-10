@@ -1,3 +1,9 @@
+use bitcoin::{
+    ScriptBuf,
+    opcodes::all::{OP_CHECKSIGVERIFY, OP_EQUAL, OP_EQUALVERIFY, OP_SHA256, OP_SIZE},
+    script::Instruction,
+    XOnlyPublicKey,
+};
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 
@@ -9,23 +15,87 @@ use crate::{
 /// Index of the stake connector input.
 pub const STAKE_INPUT_INDEX: usize = 0;
 
+/// Expected number of items in the stake-connector witness stack.
+///
+/// Layout is fixed for the script-path spend we build in tests:
+/// 1. 32-byte preimage
+/// 2. Signature
+/// 3. Executed script itself
+/// 4. Control block proving this script belongs to the tweaked output key
+///
+/// Enforcing the length lets us index directly and fail fast on malformed witnesses.
+const STAKE_WITNESS_ITEMS: usize = 4;
+
 /// Parse an unstake transaction to extract [`UnstakeInfo`].
 ///
 /// Parses an unstake transaction following the SPS-50 specification and extracts the auxiliary
-/// metadata along with the stake connector outpoint (input index 1).
-///
-/// # Parameters
-/// - `tx` - Reference to the transaction input containing the unstake transaction and tag data
-///
-/// # Returns
-/// - `Ok(UnstakeInfo)` on success
-/// - `Err(SlashTxParseError)` if [`UnstakeTxHeaderAux`] data cannot be decoded, or the stake
-///   connector input (at index [`STAKE_INPUT_INDEX`]) is missing.
+/// metadata along with the aggregated N/N pubkey embedded in the stake-connector script (input
+/// index 0).
 pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeTxParseError> {
     // Parse auxiliary data using UnstakeTxHeaderAux
     let header_aux: UnstakeTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
-    let info = UnstakeInfo::new(header_aux);
+    let stake_input = tx
+        .tx()
+        .input
+        .get(STAKE_INPUT_INDEX)
+        .ok_or(UnstakeTxParseError::MissingInput(STAKE_INPUT_INDEX))?;
+
+    let witness = &stake_input.witness;
+
+    let witness_len = witness.len();
+    if witness_len != STAKE_WITNESS_ITEMS {
+        return Err(UnstakeTxParseError::InvalidStakeWitnessLen {
+            expected: STAKE_WITNESS_ITEMS,
+            actual: witness_len,
+        });
+    }
+    // With fixed layout, grab the script directly (index 2).
+    let script = ScriptBuf::from_bytes(witness[2].to_vec());
+
+    // Validate script structure and extract pushed pubkey and stake hash.
+    let mut instructions = script.instructions();
+    let nn_pubkey_bytes = match instructions.next() {
+        Some(Ok(Instruction::PushBytes(bytes))) if bytes.len() == 32 => bytes,
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    };
+    match instructions.next() {
+        Some(Ok(Instruction::Op(op))) if op == OP_CHECKSIGVERIFY => {}
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    }
+    match instructions.next() {
+        Some(Ok(Instruction::Op(op))) if op == OP_SIZE => {}
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    }
+    match instructions.next() {
+        Some(Ok(Instruction::PushBytes(bytes)))
+            if bytes.len() == 1 && bytes.as_bytes()[0] == 0x20 => {}
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    }
+    match instructions.next() {
+        Some(Ok(Instruction::Op(op))) if op == OP_EQUALVERIFY => {}
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    }
+    match instructions.next() {
+        Some(Ok(Instruction::Op(op))) if op == OP_SHA256 => {}
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    }
+    let _stake_hash_bytes = match instructions.next() {
+        Some(Ok(Instruction::PushBytes(bytes))) if bytes.len() == 32 => bytes,
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    };
+    match instructions.next() {
+        Some(Ok(Instruction::Op(op))) if op == OP_EQUAL => {}
+        _ => return Err(UnstakeTxParseError::InvalidStakeScript),
+    }
+    if instructions.next().is_some() {
+        return Err(UnstakeTxParseError::InvalidStakeScript);
+    }
+
+    let witness_pushed_pubkey = XOnlyPublicKey::from_slice(nn_pubkey_bytes.as_bytes())
+        .map_err(|_| UnstakeTxParseError::InvalidNnPubkey)?;
+
+    let info = UnstakeInfo::new(header_aux, witness_pushed_pubkey);
 
     Ok(info)
 }

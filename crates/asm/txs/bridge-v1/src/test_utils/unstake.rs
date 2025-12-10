@@ -2,8 +2,7 @@ use bitcoin::{
     Address, Amount, Network, OutPoint, ScriptBuf, Transaction, Witness, XOnlyPublicKey,
     constants::COINBASE_MATURITY,
     hashes::{Hash as _, sha256},
-    opcodes::all::{OP_CHECKSIGVERIFY, OP_EQUALVERIFY, OP_PUSHNUM_1, OP_SHA256, OP_SIZE},
-    secp256k1::schnorr::Signature,
+    opcodes::all::{OP_CHECKSIGVERIFY, OP_EQUAL, OP_EQUALVERIFY, OP_SHA256, OP_SIZE},
     taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
 };
 use secp256k1::SECP256K1;
@@ -38,6 +37,21 @@ pub fn create_test_unstake_tx(info: &UnstakeInfo) -> Transaction {
     // The first output is SPS 50 header
     tx.output[0].script_pubkey = op_return_script;
 
+    // Include a fully-formed stake-connector witness so parsing can recover the N/N pubkey.
+    let preimage = [0u8; 32];
+    let stake_hash = sha256::Hash::hash(&preimage).to_byte_array();
+    let nn_pubkey = *info.witness_pushed_pubkey();
+    let script = stake_connector_script(stake_hash, nn_pubkey);
+    let (_, spend_info) = stake_connector_tapproot_addr(stake_hash, nn_pubkey);
+    let control_block = spend_info
+        .control_block(&(script.clone(), LeafVersion::TapScript))
+        .unwrap();
+
+    tx.input[0].witness.push(preimage);
+    tx.input[0].witness.push([0u8; 64]); // dummy sig
+    tx.input[0].witness.push(script.to_bytes());
+    tx.input[0].witness.push(control_block.serialize());
+
     tx
 }
 
@@ -66,7 +80,7 @@ pub fn create_connected_stake_and_unstake_txs(
     //         .unwrap();
 
     // 2. Create the base slash transaction using the provided metadata.
-    let unstake_info = UnstakeInfo::new(header_aux.clone());
+    let unstake_info = UnstakeInfo::new(header_aux.clone(), internal_key);
     let mut unstake = create_test_unstake_tx(&unstake_info);
 
     let _ = submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut unstake)
@@ -102,7 +116,7 @@ pub fn create_connected_stake_and_unstake_txs_new(
             .unwrap();
 
     // 2. Create the base unstake transaction using the provided metadata.
-    let unstake_info = UnstakeInfo::new(header_aux.clone());
+    let unstake_info = UnstakeInfo::new(header_aux.clone(), nn_key);
     let mut unstake_tx = create_test_unstake_tx(&unstake_info);
 
     unstake_tx.input[0].previous_output = OutPoint {
@@ -179,29 +193,6 @@ fn stake_connector_script(stake_hash: [u8; 32], nn_pubkey: XOnlyPublicKey) -> Sc
         // Verify the preimage matches the hash
         .push_opcode(OP_SHA256)
         .push_slice(stake_hash)
-        .push_opcode(OP_EQUALVERIFY)
-        // Leave a truthy stack element to satisfy cleanstack rules
-        .push_opcode(OP_PUSHNUM_1)
+        .push_opcode(OP_EQUAL)
         .into_script()
-}
-
-fn stake_connector_witness(
-    preimage: [u8; 32],
-    nn_pubkey: XOnlyPublicKey,
-    nn_sig: Signature,
-) -> Witness {
-    let stake_hash = sha256::Hash::hash(&preimage).to_byte_array();
-    let script = stake_connector_script(stake_hash, nn_pubkey);
-    let (_, taproot_spending_info) = stake_connector_tapproot_addr(stake_hash, nn_pubkey);
-    let control_block = taproot_spending_info
-        .control_block(&(script.clone(), LeafVersion::TapScript))
-        .unwrap();
-
-    let mut witness_stack = Witness::new();
-    witness_stack.push(preimage);
-    witness_stack.push(nn_sig.serialize());
-    witness_stack.push(script.to_bytes());
-    witness_stack.push(control_block.serialize());
-
-    witness_stack
 }

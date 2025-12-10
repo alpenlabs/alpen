@@ -110,7 +110,7 @@ pub async fn submit_transaction_with_keys(
     }
 
     // Derive MuSig2 aggregated P2TR address
-    let (p2tr_address, aggregated_internal_key) = derive_musig2_p2tr_address(secret_keys)?;
+    let (p2tr_address, _aggregated_internal_key) = derive_musig2_p2tr_address(secret_keys)?;
 
     // Calculate funding amount
     let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();

@@ -172,4 +172,20 @@ pub enum UnstakeTxParseError {
 
     #[error("Missing input at index {0}")]
     MissingInput(usize),
+
+    /// Stake connector witness is missing the script leaf.
+    #[error("Missing stake connector script in witness")]
+    MissingStakeScript,
+
+    /// Could not parse the N/N pubkey from the stake connector script.
+    #[error("Invalid N/N pubkey in stake connector script")]
+    InvalidNnPubkey,
+
+    /// Witness length did not match the expected layout for a stake-connector spend.
+    #[error("Invalid stake connector witness length: expected {expected}, got {actual}")]
+    InvalidStakeWitnessLen { expected: usize, actual: usize },
+
+    /// Stake connector script does not match expected pattern.
+    #[error("Invalid stake connector script structure")]
+    InvalidStakeScript,
 }

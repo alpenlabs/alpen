@@ -2,7 +2,10 @@ use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAu
 use strata_asm_logs::NewExportEntry;
 use strata_asm_txs_bridge_v1::parser::{ParsedDepositTx, ParsedTx};
 
-use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
+use crate::{
+    SlashValidationError, UnstakeValidationError, errors::BridgeSubprotocolError,
+    state::BridgeV1State,
+};
 
 /// Handles parsed transactions and update the bridge state accordingly.
 ///
@@ -63,7 +66,17 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
-        ParsedTx::Unstake(_info) => Ok(()),
+        ParsedTx::Unstake(info) => {
+            // Validate the stake connector is locked to the current N/N aggregated key.
+            let agg_key = state.operators().agg_key().to_xonly_public_key();
+            if info.witness_pushed_pubkey() != &agg_key {
+                return Err(UnstakeValidationError::InvalidStakeConnectorScript.into());
+            }
+
+            state.remove_operator(info.header_aux().operator_idx());
+
+            Ok(())
+        }
     }
 }
 
@@ -91,7 +104,7 @@ pub(crate) fn preprocess_parsed_tx<'t>(
         ParsedTx::Slash(info) => {
             collector.request_bitcoin_tx(info.second_inpoint().0.txid);
         }
-        ParsedTx::Unstake(info) => {}
+        ParsedTx::Unstake(_) => {}
     }
 }
 
