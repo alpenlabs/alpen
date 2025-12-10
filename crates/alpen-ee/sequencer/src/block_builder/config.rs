@@ -8,6 +8,8 @@ const DEFAULT_BLOCKTIME_MS: u64 = 1000;
 const DEFAULT_DEPOSITS_PER_BLOCK: NonZeroU8 = NonZeroU8::new(16).unwrap();
 /// Default bridge gateway account on OL.
 const DEFAULT_BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(1); // TODO: correct account id
+/// Default time to wait on errors during block building.
+const DEFAULT_ERROR_BACKOFF_MS: u64 = 100;
 
 #[derive(Debug)]
 pub struct BlockBuilderConfig {
@@ -17,6 +19,8 @@ pub struct BlockBuilderConfig {
     max_deposits_per_block: NonZeroU8,
     /// [`AccountId`] of bridge gateway on OL.
     bridge_gateway_account_id: AccountId,
+    /// Base backoff time to delay on errors during block building.
+    error_backoff_ms: u64,
 }
 
 impl Default for BlockBuilderConfig {
@@ -25,6 +29,7 @@ impl Default for BlockBuilderConfig {
             blocktime_ms: DEFAULT_BLOCKTIME_MS,
             max_deposits_per_block: DEFAULT_DEPOSITS_PER_BLOCK,
             bridge_gateway_account_id: DEFAULT_BRIDGE_GATEWAY_ACCOUNT,
+            error_backoff_ms: DEFAULT_ERROR_BACKOFF_MS,
         }
     }
 }
@@ -34,6 +39,7 @@ impl BlockBuilderConfig {
         self.blocktime_ms = blocktime_ms;
         self
     }
+
     pub fn with_max_deposits_per_block(
         mut self,
         max_deposits_per_block: impl Into<NonZeroU8>,
@@ -41,8 +47,14 @@ impl BlockBuilderConfig {
         self.max_deposits_per_block = max_deposits_per_block.into();
         self
     }
+
     pub fn with_bridge_gateway_account_id(mut self, bridge_gateway_account_id: AccountId) -> Self {
         self.bridge_gateway_account_id = bridge_gateway_account_id;
+        self
+    }
+
+    pub fn with_error_backoff_ms(mut self, error_backoff_ms: u64) -> Self {
+        self.error_backoff_ms = error_backoff_ms;
         self
     }
 
@@ -56,5 +68,9 @@ impl BlockBuilderConfig {
 
     pub fn bridge_gateway_account_id(&self) -> AccountId {
         self.bridge_gateway_account_id
+    }
+
+    pub fn error_backoff_ms(&self) -> u64 {
+        self.error_backoff_ms
     }
 }

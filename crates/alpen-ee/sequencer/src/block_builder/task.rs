@@ -11,9 +11,11 @@ use tracing::{debug, error};
 
 use crate::{block_builder::BlockBuilderConfig, ol_chain_tracker::OLChainTrackerHandle};
 
-trait Clock: Sized {
+pub trait Clock: Sized {
     /// current time in milliseconds since UNIX_EPOCH
     fn current_timestamp(&self) -> u64;
+    /// sleep for specified time interval.
+    fn sleep_ms(&self, ms: u64) -> impl Future<Output = ()>;
     /// sleep until unix timestamp
     fn sleep_until(&self, timestamp_ms: u64) -> impl Future<Output = ()>;
 }
@@ -23,6 +25,10 @@ struct SystemClock;
 impl Clock for SystemClock {
     fn current_timestamp(&self) -> u64 {
         std::time::UNIX_EPOCH.elapsed().unwrap().as_millis() as u64
+    }
+
+    fn sleep_ms(&self, ms: u64) -> impl Future<Output = ()> {
+        tokio::time::sleep(Duration::from_millis(ms))
     }
 
     fn sleep_until(&self, timestamp_ms: u64) -> impl Future<Output = ()> {
@@ -58,6 +64,7 @@ pub async fn block_builder_task<
             }
             Err(err) => {
                 error!(?err, "failed to build block");
+                clock.sleep_ms(config.error_backoff_ms()).await;
             }
         }
     }
