@@ -1,5 +1,4 @@
 import flexitest
-from solcx import install_solc, set_solc_version
 
 from factory.test_cli import extract_p2tr_pubkey, xonlypk_to_descriptor
 from mixins import bridge_mixin
@@ -10,9 +9,6 @@ from utils.transaction import SmartContracts
 class BridgePrecompileMixin(bridge_mixin.BridgeMixin):
     def premain(self, ctx: flexitest.InitContext):
         super().premain(ctx)
-
-        install_solc(version="0.8.16")
-        set_solc_version("0.8.16")
 
         self.withdraw_address = ctx.env.gen_ext_btc_address()
         self.bridge_pk = get_bridge_pubkey(self.seqrpc)

@@ -2,7 +2,6 @@ from collections.abc import Callable
 from enum import Enum
 from typing import TypeAlias
 
-import solcx
 import web3
 from eth_typing import HexStr
 from hexbytes import HexBytes
@@ -11,6 +10,7 @@ from web3.types import TxReceipt
 from load.reth.log_helper import log_metadata_var, tx_caller
 
 from .evm_account import AbstractAccount
+from .utils import compile_solidity
 
 
 class TransactionType(Enum):
@@ -175,30 +175,15 @@ class SmartContracts(TransactionSender):
     """
 
     CONTRACTS_DIR = "contracts/"
-    SOL_VERSION = "0.8.7"
 
     _smart_contracts_storage = dict()
-
-    @staticmethod
-    def extract_compiled_contract(compiled_sol, contract_name: str):
-        for ct_id, ct_interface in compiled_sol.items():
-            if ct_id.endswith(contract_name):
-                return ct_interface["abi"], ct_interface["bin"]
-        return None
 
     @staticmethod
     def compile_contract(filename, contract_name=None):
         if contract_name is None:
             contract_name = filename.split(".")[0]
 
-        solcx.install_solc(SmartContracts.SOL_VERSION)
-
-        compiled_sol = solcx.compile_files(
-            [f"{SmartContracts.CONTRACTS_DIR}{filename}"],
-            output_values=["abi", "bin"],
-            solc_version=SmartContracts.SOL_VERSION,
-        )
-        return SmartContracts.extract_compiled_contract(compiled_sol, contract_name)
+        return compile_solidity(f"{SmartContracts.CONTRACTS_DIR}{filename}", contract_name)
 
     @tx_caller("DEPLOYING CONTRACT [3]")
     def deploy_contract(self, contract_path, contract_name, contract_id, *args):

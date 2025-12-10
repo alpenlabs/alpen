@@ -761,3 +761,84 @@ def run_tty(cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.C
         stdout=(b"".join(buf) if buf is not None else None),
         stderr=None,  # PTY merges stderr
     )
+
+
+def compile_solidity(source: str, contract_name: str | None = None) -> tuple[list, str]:
+    """
+    Compile Solidity source code or file and return (abi, bytecode).
+
+    Requires solc 0.8.16 to be installed and active:
+        $ solc-select install 0.8.16
+        $ solc-select use 0.8.16
+
+    Args:
+        source: Either a file path (e.g., "contracts/Counter.sol") or inline source code
+        contract_name: Name of contract to extract. If None, extracts the only contract.
+
+    Returns:
+        Tuple of (abi, bytecode_hex)
+
+    Raises:
+        RuntimeError: If compilation fails or contract not found
+    """
+    import json
+    import tempfile
+    from pathlib import Path
+
+    # Determine if source is a file or inline code
+    is_file = not source.strip().startswith("pragma") and not source.strip().startswith("//")
+
+    if is_file:
+        # Source is a file path
+        files = [source]
+        temp_file = None
+    else:
+        # Source is inline code - write to temp file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sol", delete=False) as f:
+            f.write(source)
+            temp_file = f.name
+        files = [temp_file]
+
+    try:
+        result = subprocess.run(
+            ["solc", "--combined-json", "abi,bin"] + files,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        compiled = json.loads(result.stdout)
+        contracts = compiled.get("contracts", {})
+
+        if not contracts:
+            raise RuntimeError("No contracts found in compilation output")
+
+        # If contract_name specified, find it
+        if contract_name:
+            for contract_id, data in contracts.items():
+                if contract_id.endswith(f":{contract_name}"):
+                    abi_data = data["abi"]
+                    abi = json.loads(abi_data) if isinstance(abi_data, str) else abi_data
+                    bytecode = data["bin"]
+                    return abi, bytecode
+            raise RuntimeError(f"Contract '{contract_name}' not found in compiled output")
+
+        # Otherwise, extract the only contract
+        if len(contracts) != 1:
+            raise RuntimeError(
+                f"Multiple contracts found but no contract_name specified: {list(contracts.keys())}"
+            )
+
+        contract_id, data = next(iter(contracts.items()))
+        abi_data = data["abi"]
+        abi = json.loads(abi_data) if isinstance(abi_data, str) else abi_data
+        bytecode = data["bin"]
+        return abi, bytecode
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Solidity compilation failed: {e.stderr}") from e
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Failed to parse solc output: {e}") from e
+    finally:
+        if temp_file:
+            Path(temp_file).unlink(missing_ok=True)
