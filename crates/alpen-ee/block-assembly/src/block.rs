@@ -55,7 +55,7 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
 
     // 1. apply new inbox messages to account state
     let parsed_inputs = apply_input_messages(&mut account_state, &inbox_messages)
-        .context("build_next_exec_block: failed to appply input messages")?;
+        .context("build_next_exec_block: failed to apply input messages")?;
 
     // 2. build exec block payload
     let (payload, update_extra_data) = build_exec_payload(

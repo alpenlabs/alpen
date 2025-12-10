@@ -139,7 +139,7 @@ fn main() {
                 }
             };
 
-            // --- INTIALIZE STATE ---
+            // --- INITIALIZE STATE ---
 
             let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())
                 .context("failed to load alpen database")?

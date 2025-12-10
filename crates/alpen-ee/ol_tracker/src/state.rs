@@ -62,7 +62,7 @@ where
     TStorage: Storage,
 {
     let Some(best_state) = storage.best_ee_account_state().await? else {
-        // nothing in storage, expected atleast genesis epoch info to be present
+        // nothing in storage, expected at least genesis epoch info to be present
         return Err(OLTrackerError::MissingGenesisEpoch);
     };
 
