@@ -79,8 +79,11 @@ fn main() {
         command,
         |builder: WithLaunchContext<NodeBuilder<Arc<reth_db::DatabaseEnv>, ChainSpec>>,
          ext: AdditionalConfig| async move {
+            // --- CONFIGS ---
+
             let datadir = builder.config().datadir().data_dir().to_path_buf();
 
+            // TODO: read config, params from file
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
             let params = AlpenEeParams::new(
@@ -136,6 +139,8 @@ fn main() {
                 }
             };
 
+            // --- INTIALIZE STATE ---
+
             let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())
                 .context("failed to load alpen database")?
                 .into();
@@ -184,6 +189,8 @@ fn main() {
                     ol_tracker_state.best_ee_state().last_exec_blkid()
                 }
             };
+
+            // --- INITIALIZE SERVICES ---
 
             // Create gossip channel before building the node so we can register it early
             let (gossip_tx, gossip_rx) = mpsc::unbounded_channel();
@@ -387,6 +394,8 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
         .map_err(|e| eyre::eyre!("Failed to parse hex string as Buf32: {e}"))
 }
 
+/// Handle genesis related tasks.
+/// Mainly deals with ensuring database has minimal expected state.
 async fn ensure_genesis<TStorage: Storage + ExecBlockStorage>(
     config: &AlpenEeConfig,
     storage: &TStorage,
