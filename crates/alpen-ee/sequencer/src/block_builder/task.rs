@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
 use alpen_ee_common::{
-    EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, PayloadBuilderEngine,
+    Clock, EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage,
+    PayloadBuilderEngine, SystemClock,
 };
 use alpen_ee_exec_chain::ExecChainHandle;
 use eyre::Context;
@@ -14,10 +15,7 @@ use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 use tracing::{error, info, warn};
 
-use crate::{
-    block_builder::{BlockBuilderConfig, Clock, SystemClock},
-    ol_chain_tracker::OLChainTrackerHandle,
-};
+use crate::{block_builder::BlockBuilderConfig, ol_chain_tracker::OLChainTrackerHandle};
 
 /// Error type for block builder that distinguishes retriable from real errors.
 #[derive(Debug, Error)]

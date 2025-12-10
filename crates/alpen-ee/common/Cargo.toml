@@ -31,6 +31,7 @@ reth-node-builder.workspace = true
 reth-primitives-traits.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

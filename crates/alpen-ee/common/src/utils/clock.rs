@@ -14,7 +14,8 @@ pub trait Clock: Sized {
     fn sleep_until(&self, timestamp_ms: u64) -> impl Future<Output = ()>;
 }
 
-pub(crate) struct SystemClock;
+#[derive(Debug)]
+pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn current_timestamp(&self) -> u64 {

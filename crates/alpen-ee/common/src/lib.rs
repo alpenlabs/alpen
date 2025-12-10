@@ -27,4 +27,7 @@ pub use types::{
     ol_chain_status::{OLChainStatus, OLFinalizedStatus},
     payload_builder::{DepositInfo, PayloadBuildAttributes},
 };
-pub use utils::conversions::sats_to_gwei;
+pub use utils::{
+    clock::{Clock, SystemClock},
+    conversions::sats_to_gwei,
+};
