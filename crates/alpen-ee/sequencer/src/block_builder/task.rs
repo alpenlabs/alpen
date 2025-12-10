@@ -1,7 +1,9 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
-use alpen_ee_common::{ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, PayloadBuilderEngine};
+use alpen_ee_common::{
+    EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, PayloadBuilderEngine,
+};
 use alpen_ee_exec_chain::ExecChainHandle;
 use eyre::Context;
 use strata_acct_types::Hash;
@@ -61,11 +63,11 @@ pub async fn block_builder_task<
     }
 }
 
-async fn block_builder_task_inner(
+async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
     config: &BlockBuilderConfig,
     exec_chain_handle: &ExecChainHandle,
     ol_chain_handle: &OLChainTrackerHandle,
-    payload_builder: &impl PayloadBuilderEngine,
+    payload_builder: &TEngine,
     storage: &impl ExecBlockStorage,
     clock: &impl Clock,
 ) -> eyre::Result<Hash> {
@@ -84,6 +86,14 @@ async fn block_builder_task_inner(
         clock,
     )
     .await?;
+    // submit the built payload back to engine so reth knows the block
+    payload_builder
+        .submit_payload(
+            <TEngine::TEnginePayload as EnginePayload>::from_bytes(payload.as_bytes())
+                .context("block_builder: deserialize payload")?,
+        )
+        .await
+        .context("block_builder: submit payload to engine")?;
 
     // save block outputs
     storage

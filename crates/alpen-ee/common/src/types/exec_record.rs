@@ -100,4 +100,8 @@ impl ExecBlockPayload {
     pub fn to_bytes(self) -> Vec<u8> {
         self.0
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
