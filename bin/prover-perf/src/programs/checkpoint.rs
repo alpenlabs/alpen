@@ -4,37 +4,37 @@ use zkaleido::{
 };
 
 pub(super) fn prepare_input(
-    cl_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
+    ol_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
 ) -> CheckpointProverInput {
-    let (cl_stf_proof, cl_stf_vk) = cl_stf_proof_with_vk;
-    let cl_stf_proofs = vec![cl_stf_proof];
+    let (ol_stf_proof, ol_stf_vk) = ol_stf_proof_with_vk;
+    let ol_stf_proofs = vec![ol_stf_proof];
     CheckpointProverInput {
-        cl_stf_proofs,
-        cl_stf_vk,
+        ol_stf_proofs,
+        ol_stf_vk,
     }
 }
 
 pub(crate) fn gen_perf_report(
     host: &impl ZkVmHostPerf,
-    cl_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
+    ol_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
 ) -> PerformanceReport {
-    let input = prepare_input(cl_stf_proof_with_vk);
+    let input = prepare_input(ol_stf_proof_with_vk);
     CheckpointProgram::perf_report(&input, host).unwrap()
 }
 
 #[cfg(test)]
 mod tests {
-    use strata_proofimpl_cl_stf::program::ClStfProgram;
     use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
+    use strata_proofimpl_ol_stf::program::OLStfProgram;
 
     use super::*;
-    use crate::programs::cl_stf;
+    use crate::programs::ol_stf;
 
     #[test]
     fn test_checkpoint_native_execution() {
-        let (cl_stf_proof, cl_stf_vk) =
-            cl_stf::proof_with_vk(&ClStfProgram::native_host(), &EvmEeProgram::native_host());
-        let input = prepare_input((cl_stf_proof, cl_stf_vk));
+        let (ol_stf_proof, ol_stf_vk) =
+            ol_stf::proof_with_vk(&OLStfProgram::native_host(), &EvmEeProgram::native_host());
+        let input = prepare_input((ol_stf_proof, ol_stf_vk));
         let output = CheckpointProgram::execute(&input).unwrap();
         dbg!(output);
     }

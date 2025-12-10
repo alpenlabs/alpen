@@ -21,7 +21,7 @@ mod task;
 mod task_store;
 
 // Re-export public types
-pub(crate) use handlers::{new_checkpoint_handler, new_cl_stf_handler, new_evm_ee_stf_handler};
+pub(crate) use handlers::{new_checkpoint_handler, new_evm_ee_stf_handler, new_ol_stf_handler};
 pub(crate) use task::{ProofContextVariant, ProofTask};
 pub(crate) use task_store::SledTaskStore;
 

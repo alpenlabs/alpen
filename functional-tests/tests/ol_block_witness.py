@@ -7,7 +7,7 @@ REORG_DEPTH = 3
 
 
 @flexitest.register
-class CLBlockWitnessDataGenerationTest(testenv.StrataTestBase):
+class OLBlockWitnessDataGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 
@@ -28,5 +28,5 @@ class CLBlockWitnessDataGenerationTest(testenv.StrataTestBase):
     def get_witness(self, seqrpc, idx):
         block_ids = seqrpc.strata_getHeadersAtIdx(idx)
         block_id = block_ids[0]["block_id"]
-        witness = seqrpc.strata_getCLBlockWitness(block_id)
+        witness = seqrpc.strata_getOLBlockWitness(block_id)
         return witness

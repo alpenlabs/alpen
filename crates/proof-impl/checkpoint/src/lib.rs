@@ -3,36 +3,36 @@
 //! chain and that all L1-L2 transactions were processed.
 
 use strata_checkpoint_types::{BatchTransition, ChainstateRootTransition};
-use strata_proofimpl_cl_stf::program::ClStfOutput;
+use strata_proofimpl_ol_stf::program::OLStfOutput;
 use zkaleido::ZkVmEnv;
 
 pub mod program;
 
-pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
+pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, ol_stf_vk: &[u32; 8]) {
     let batches_count: usize = zkvm.read_serde();
     assert!(batches_count > 0);
 
-    let ClStfOutput {
+    let OLStfOutput {
         epoch,
         initial_chainstate_root,
         mut final_chainstate_root,
-    } = zkvm.read_verified_borsh(cl_stf_vk);
+    } = zkvm.read_verified_borsh(ol_stf_vk);
 
-    // Starting with 1 since we have already read the first CL STF output
+    // Starting with 1 since we have already read the first OL STF output
     for _ in 1..batches_count {
-        let cl_stf_output: ClStfOutput = zkvm.read_verified_borsh(cl_stf_vk);
+        let ol_stf_output: OLStfOutput = zkvm.read_verified_borsh(ol_stf_vk);
 
         assert_eq!(
-            cl_stf_output.initial_chainstate_root, final_chainstate_root,
+            ol_stf_output.initial_chainstate_root, final_chainstate_root,
             "continuity error"
         );
 
         assert_eq!(
-            epoch, cl_stf_output.epoch,
+            epoch, ol_stf_output.epoch,
             "transition must be within the same epoch"
         );
 
-        final_chainstate_root = cl_stf_output.final_chainstate_root;
+        final_chainstate_root = ol_stf_output.final_chainstate_root;
     }
 
     let chainstate_transition = ChainstateRootTransition {

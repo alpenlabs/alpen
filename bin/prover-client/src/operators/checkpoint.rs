@@ -10,7 +10,7 @@ use strata_rpc_types::RpcCheckpointInfo;
 use strata_zkvm_hosts::get_verification_key;
 use tracing::{error, info};
 
-use super::{cl_stf::ClStfOperator, ProofInputFetcher};
+use super::{ol_stf::OLStfOperator, ProofInputFetcher};
 use crate::{
     checkpoint_runner::{errors::CheckpointResult, submit::submit_checkpoint_proof},
     errors::ProvingTaskError,
@@ -18,28 +18,28 @@ use crate::{
 
 /// Operator for checkpoint proof generation.
 ///
-/// Provides access to CL client and checkpoint submission functionality.
+/// Provides access to OL client and checkpoint submission functionality.
 #[derive(Debug, Clone)]
 pub(crate) struct CheckpointOperator {
-    cl_client: HttpClient,
-    cl_stf_operator: Arc<ClStfOperator>,
+    ol_client: HttpClient,
+    ol_stf_operator: Arc<OLStfOperator>,
 }
 
 impl CheckpointOperator {
     /// Creates a new checkpoint operator.
-    pub(crate) fn new(cl_client: HttpClient, cl_stf_operator: Arc<ClStfOperator>) -> Self {
+    pub(crate) fn new(ol_client: HttpClient, ol_stf_operator: Arc<OLStfOperator>) -> Self {
         Self {
-            cl_client,
-            cl_stf_operator,
+            ol_client,
+            ol_stf_operator,
         }
     }
 
-    /// Fetches checkpoint information from the CL client.
+    /// Fetches checkpoint information from the OL client.
     pub(crate) async fn fetch_ckp_info(
         &self,
         ckp_idx: u64,
     ) -> Result<RpcCheckpointInfo, ProvingTaskError> {
-        self.cl_client
+        self.ol_client
             .get_checkpoint_info(ckp_idx)
             .await
             .inspect_err(|_| error!(%ckp_idx, "Failed to fetch CheckpointInfo"))
@@ -47,19 +47,19 @@ impl CheckpointOperator {
             .ok_or(ProvingTaskError::WitnessNotFound)
     }
 
-    /// Returns a reference to the internal CL (Consensus Layer) [`HttpClient`].
-    pub(crate) fn cl_client(&self) -> &HttpClient {
-        &self.cl_client
+    /// Returns a reference to the internal OL (Orchestration Layer) [`HttpClient`].
+    pub(crate) fn ol_client(&self) -> &HttpClient {
+        &self.ol_client
     }
 
-    /// Returns a reference to the ClStf operator.
-    pub(crate) fn cl_stf_operator(&self) -> &Arc<ClStfOperator> {
-        &self.cl_stf_operator
+    /// Returns a reference to the OLStf operator.
+    pub(crate) fn ol_stf_operator(&self) -> &Arc<OLStfOperator> {
+        &self.ol_stf_operator
     }
 
-    /// Creates and stores the ClStf proof dependencies for a checkpoint.
+    /// Creates and stores the OL Stf proof dependencies for a checkpoint.
     ///
-    /// This fetches the checkpoint info from the CL client and creates a ClStf proof context
+    /// This fetches the checkpoint info from the OL client and creates a OL Stf proof context
     /// for the L2 block range covered by the checkpoint.
     pub(crate) async fn create_checkpoint_deps(
         &self,
@@ -79,26 +79,26 @@ impl CheckpointOperator {
         // Fetch checkpoint info to get L2 range
         let ckp_info = self.fetch_ckp_info(ckp_idx).await?;
 
-        info!(%ckp_idx, "Creating ClStf dependency for checkpoint");
+        info!(%ckp_idx, "Creating OLStf dependency for checkpoint");
 
-        // Create ClStf proof context from the checkpoint's L2 range
-        let cl_stf_ctx = ProofContext::ClStf(ckp_info.l2_range.0, ckp_info.l2_range.1);
+        // Create OLStf proof context from the checkpoint's L2 range
+        let ol_stf_ctx = ProofContext::OLStf(ckp_info.l2_range.0, ckp_info.l2_range.1);
 
-        // Store Checkpoint dependencies (ClStf)
-        db.put_proof_deps(checkpoint_ctx, vec![cl_stf_ctx])
+        // Store Checkpoint dependencies (OLStf)
+        db.put_proof_deps(checkpoint_ctx, vec![ol_stf_ctx])
             .map_err(ProvingTaskError::DatabaseError)?;
 
-        Ok(vec![cl_stf_ctx])
+        Ok(vec![ol_stf_ctx])
     }
 
-    /// Submits a checkpoint proof to the CL client.
+    /// Submits a checkpoint proof to the OL client.
     pub(crate) async fn submit_checkpoint_proof(
         &self,
         checkpoint_index: u64,
         proof_key: &ProofKey,
         proof_db: &ProofDBSled,
     ) -> CheckpointResult<()> {
-        submit_checkpoint_proof(checkpoint_index, self.cl_client(), proof_key, proof_db).await
+        submit_checkpoint_proof(checkpoint_index, self.ol_client(), proof_key, proof_db).await
     }
 }
 
@@ -115,32 +115,32 @@ impl ProofInputFetcher for CheckpointOperator {
             .map_err(ProvingTaskError::DatabaseError)?
             .ok_or(ProvingTaskError::DependencyNotFound(*task_id))?;
 
-        assert!(!deps.is_empty(), "checkpoint must have some CL STF proofs");
+        assert!(!deps.is_empty(), "checkpoint must have some OL STF proofs");
 
-        let cl_stf_key = ProofKey::new(deps[0], *task_id.host());
-        let cl_stf_vk = get_verification_key(&cl_stf_key);
+        let ol_stf_key = ProofKey::new(deps[0], *task_id.host());
+        let ol_stf_vk = get_verification_key(&ol_stf_key);
 
-        let mut cl_stf_proofs = Vec::with_capacity(deps.len());
+        let mut ol_stf_proofs = Vec::with_capacity(deps.len());
         for dep in deps {
-            // Validate that all dependencies are ClStf proofs
+            // Validate that all dependencies are OLStf proofs
             match dep {
-                strata_primitives::proof::ProofContext::ClStf(..) => {}
+                strata_primitives::proof::ProofContext::OLStf(..) => {}
                 _ => panic!(
-                    "Checkpoint dependencies must be ClStf proofs, got: {:?}",
+                    "Checkpoint dependencies must be OLStf proofs, got: {:?}",
                     dep
                 ),
             };
-            let cl_stf_key = ProofKey::new(dep, *task_id.host());
+            let ol_stf_key = ProofKey::new(dep, *task_id.host());
             let proof = db
-                .get_proof(&cl_stf_key)
+                .get_proof(&ol_stf_key)
                 .map_err(ProvingTaskError::DatabaseError)?
-                .ok_or(ProvingTaskError::ProofNotFound(cl_stf_key))?;
-            cl_stf_proofs.push(proof);
+                .ok_or(ProvingTaskError::ProofNotFound(ol_stf_key))?;
+            ol_stf_proofs.push(proof);
         }
 
         Ok(CheckpointProverInput {
-            cl_stf_proofs,
-            cl_stf_vk,
+            ol_stf_proofs,
+            ol_stf_vk,
         })
     }
 }

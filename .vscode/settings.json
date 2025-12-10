@@ -15,10 +15,10 @@
         "Cargo.toml",
         // "provers/sp1/guest-btc-blockspace/Cargo.toml",
         // "provers/sp1/guest-evm-ee-stf/Cargo.toml",
-        // "provers/sp1/guest-cl-stf/Cargo.toml",
+        // "provers/sp1/guest-ol-stf/Cargo.toml",
         // "provers/sp1/guest-l1-batch/Cargo.toml",
         // "provers/sp1/guest-checkpoint/Cargo.toml",
-        // "provers/sp1/guest-cl-agg/Cargo.toml",
+        // "provers/sp1/guest-ol-agg/Cargo.toml",
     ],
     "rust-analyzer.diagnostics.enable": true,
     "rust-analyzer.cargo.features": [

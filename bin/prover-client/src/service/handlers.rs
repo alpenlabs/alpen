@@ -1,6 +1,6 @@
 //! ProofHandler implementations for all proof types
 //!
-//! This module defines type aliases for the three proof handlers (Checkpoint, ClStf, EvmEe)
+//! This module defines type aliases for the three proof handlers (Checkpoint, OLStf, EvmEe)
 //! using the generic RemoteProofHandler from paas with prover-client-specific adapters.
 
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use super::{
     adapters::{OperatorInputFetcher, ProofDbStorer},
     host_resolver::CentralizedHostResolver,
 };
-use crate::operators::{CheckpointOperator, ClStfOperator, EvmEeOperator};
+use crate::operators::{CheckpointOperator, EvmEeOperator, OLStfOperator};
 
 /// Type alias for Checkpoint proof handler
 ///
@@ -29,13 +29,13 @@ pub(crate) type CheckpointHandler = RemoteProofHandler<
     strata_proofimpl_checkpoint::program::CheckpointProgram,
 >;
 
-/// Type alias for CL STF proof handler
-pub(crate) type ClStfHandler = RemoteProofHandler<
+/// Type alias for OL STF proof handler
+pub(crate) type OLStfHandler = RemoteProofHandler<
     super::task::ProofTask,
-    OperatorInputFetcher<ClStfOperator>,
+    OperatorInputFetcher<OLStfOperator>,
     ProofDbStorer,
     CentralizedHostResolver,
-    strata_proofimpl_cl_stf::program::ClStfProgram,
+    strata_proofimpl_ol_stf::program::OLStfProgram,
 >;
 
 /// Type alias for EVM EE STF proof handler
@@ -59,12 +59,12 @@ pub(crate) fn new_checkpoint_handler(
     RemoteProofHandler::new(fetcher, storer, resolver, executor)
 }
 
-/// Create a new ClStfHandler
-pub(crate) fn new_cl_stf_handler(
-    operator: ClStfOperator,
+/// Create a new OLStfHandler
+pub(crate) fn new_ol_stf_handler(
+    operator: OLStfOperator,
     db: Arc<ProofDBSled>,
     executor: TaskExecutor,
-) -> ClStfHandler {
+) -> OLStfHandler {
     let fetcher = OperatorInputFetcher::new(operator, db.clone());
     let storer = ProofDbStorer::new(db);
     let resolver = CentralizedHostResolver;

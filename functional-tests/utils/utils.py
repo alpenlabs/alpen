@@ -596,7 +596,7 @@ def submit_da_blob(btcrpc: BitcoindClient, seqrpc: JsonrpcClient, blobdata: str)
     return tx
 
 
-def cl_slot_to_block_id(seqrpc, slot):
+def ol_slot_to_block_id(seqrpc, slot):
     """Convert L2 slot number to block ID."""
     l2_blocks = seqrpc.strata_getHeadersAtIdx(slot)
     return l2_blocks[0]["block_id"]

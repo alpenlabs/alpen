@@ -102,7 +102,7 @@ updates:
       include: "scope"
 
   - package-ecosystem: "cargo"
-    directory: "/provers/risc0/guest-cl-stf"
+    directory: "/provers/risc0/guest-ol-stf"
     schedule:
       interval: "monthly"
       time: "00:00"
@@ -163,7 +163,7 @@ updates:
       include: "scope"
 
   - package-ecosystem: "cargo"
-    directory: "/provers/sp1/guest-cl-stf"
+    directory: "/provers/sp1/guest-ol-stf"
     schedule:
       interval: "monthly"
       time: "00:00"

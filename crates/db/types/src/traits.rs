@@ -132,7 +132,7 @@ pub trait ClientStateDatabase: Send + Sync + 'static {
     ) -> DbResult<Vec<(L1BlockCommitment, ClientUpdateOutput)>>;
 }
 
-/// L2 data store for CL blocks.  Does not store anything about what we think
+/// L2 data store for OL blocks.  Does not store anything about what we think
 /// the L2 chain tip is, that's controlled by the consensus state.
 pub trait L2BlockDatabase: Send + Sync + 'static {
     /// Stores an L2 block, does not care about the block height of the L2

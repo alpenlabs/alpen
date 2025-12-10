@@ -1,4 +1,4 @@
-//! Chain data types relating to the CL's updating view of an execution
+//! Chain data types relating to the OL's updating view of an execution
 //! environment's state.  For now the EVM EL is the only execution environment.
 
 use arbitrary::Arbitrary;
@@ -39,11 +39,11 @@ impl ExecUpdate {
 }
 
 /// Contains the explicit inputs to the STF.  Implicit inputs are determined
-/// from the CL's exec env state.
+/// from the OL's exec env state.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct UpdateInput {
     /// Update index.  This is incremented exactly 1.  This is to handle the
-    /// future possible cases where we skip CL blocks and provide a monotonic
+    /// future possible cases where we skip OL blocks and provide a monotonic
     /// ordering of EL states.
     update_idx: u64,
 
@@ -152,15 +152,14 @@ impl UpdateOutput {
     }
 }
 
-/// Operation the CL pushes into the EL to perform as part of the block it's
+/// Operation the OL pushes into the EL to perform as part of the block it's
 /// producing.
-
 #[derive(
     Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
 )]
 pub enum Op {
     /// Deposit some amount.
-    Deposit(ELDepositData),
+    Deposit(OLDepositData),
 }
 
 pub fn construct_ops_from_deposit_intents(
@@ -176,7 +175,7 @@ pub fn construct_ops_from_deposit_intents(
         }
         let pending_deposit = pending_deposits.pop_front().unwrap();
 
-        el_ops.push(Op::Deposit(ELDepositData::new(
+        el_ops.push(Op::Deposit(OLDepositData::new(
             idx,
             pending_deposit.amt(),
             pending_deposit.dest_ident().to_vec(),
@@ -188,7 +187,7 @@ pub fn construct_ops_from_deposit_intents(
 #[derive(
     Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
 )]
-pub struct ELDepositData {
+pub struct OLDepositData {
     /// base index of applied deposit intent.
     intent_idx: u64,
 
@@ -200,7 +199,7 @@ pub struct ELDepositData {
     dest_addr: Vec<u8>,
 }
 
-impl ELDepositData {
+impl OLDepositData {
     pub fn new(intent_idx: u64, amt: u64, dest_addr: Vec<u8>) -> Self {
         Self {
             intent_idx,

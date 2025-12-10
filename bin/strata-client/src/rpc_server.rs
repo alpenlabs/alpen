@@ -374,7 +374,7 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     // TODO rework this, at least to use new OL naming?
-    async fn get_cl_block_witness_raw(&self, blkid: L2BlockId) -> RpcResult<Vec<u8>> {
+    async fn get_ol_block_witness_raw(&self, blkid: L2BlockId) -> RpcResult<Vec<u8>> {
         let l2_blk_bundle = self.fetch_l2_block_ok(&blkid).await?;
 
         let parent = *l2_blk_bundle.block().header().header().parent();
@@ -388,11 +388,11 @@ impl StrataApiServer for StrataRpcImpl {
             .ok_or(Error::MissingChainstate(parent))?
             .into_toplevel();
 
-        let cl_block_witness = (chain_state, l2_blk_bundle.block());
-        let raw_cl_block_witness = borsh::to_vec(&cl_block_witness)
+        let ol_block_witness = (chain_state, l2_blk_bundle.block());
+        let raw_ol_block_witness = borsh::to_vec(&ol_block_witness)
             .map_err(|_| Error::Other("Failed to get raw cl block witness".to_string()))?;
 
-        Ok(raw_cl_block_witness)
+        Ok(raw_ol_block_witness)
     }
 
     async fn get_current_deposits(&self) -> RpcResult<Vec<u32>> {

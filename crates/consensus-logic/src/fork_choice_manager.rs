@@ -499,7 +499,7 @@ pub fn forkchoice_manager_task_inner(
     mut fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<()> {
-    let mut cl_rx = status_channel.subscribe_checkpoint_state();
+    let mut ol_rx = status_channel.subscribe_checkpoint_state();
     loop {
         // Check if we should shut down.
         if shutdown.should_shutdown() {
@@ -507,7 +507,7 @@ pub fn forkchoice_manager_task_inner(
             break;
         }
 
-        let fcm_ev = wait_for_fcm_event(&handle, &mut fcm_rx, &mut cl_rx);
+        let fcm_ev = wait_for_fcm_event(&handle, &mut fcm_rx, &mut ol_rx);
 
         // Check again in case we got the signal while waiting.
         if shutdown.should_shutdown() {
@@ -530,7 +530,7 @@ pub fn forkchoice_manager_task_inner(
 fn wait_for_fcm_event(
     handle: &Handle,
     fcm_rx: &mut mpsc::Receiver<ForkChoiceMessage>,
-    cl_rx: &mut watch::Receiver<CheckpointState>,
+    ol_rx: &mut watch::Receiver<CheckpointState>,
 ) -> FcmEvent {
     handle.block_on(async {
         tokio::select! {
@@ -540,7 +540,7 @@ fn wait_for_fcm_event(
                     FcmEvent::Abort
                 })
             }
-            c = wait_for_client_change(cl_rx) => {
+            c = wait_for_client_change(ol_rx) => {
                 c.map(FcmEvent::NewStateUpdate).unwrap_or_else(|_| {
                     trace!("ClientState update channel closed");
                     FcmEvent::Abort
@@ -552,10 +552,10 @@ fn wait_for_fcm_event(
 
 /// Waits until there's a new client state and returns the client state.
 async fn wait_for_client_change(
-    cl_rx: &mut watch::Receiver<CheckpointState>,
+    ol_rx: &mut watch::Receiver<CheckpointState>,
 ) -> Result<ClientState, watch::error::RecvError> {
-    cl_rx.changed().await?;
-    let state = cl_rx.borrow_and_update().clone();
+    ol_rx.changed().await?;
+    let state = ol_rx.borrow_and_update().clone();
     Ok(state.client_state)
 }
 
@@ -709,7 +709,7 @@ fn handle_new_block(
         }
 
         Err(e) => {
-            warn!(err = ?e, "failed to compute CL STF");
+            warn!(err = ?e, "failed to compute OL STF");
 
             // Specifically state transition errors we want to handle
             // specially so that we can remember to not accept the block again.

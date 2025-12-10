@@ -1,4 +1,4 @@
-//! Top-level CL state transition logic.  This is largely stubbed off now, but
+//! Top-level OL state transition logic.  This is largely stubbed off now, but
 //! we'll replace components with real implementations as we go along.
 
 use rand_core::{RngCore, SeedableRng};

@@ -14,7 +14,7 @@ use strata_primitives::proof::ProofContext;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ProofContextVariant {
     EvmEeStf,
-    ClStf,
+    OLStf,
     Checkpoint,
 }
 
@@ -54,7 +54,7 @@ impl ProgramType for ProofTask {
     fn routing_key(&self) -> Self::RoutingKey {
         match self.0 {
             ProofContext::EvmEeStf(..) => ProofContextVariant::EvmEeStf,
-            ProofContext::ClStf(..) => ProofContextVariant::ClStf,
+            ProofContext::OLStf(..) => ProofContextVariant::OLStf,
             ProofContext::Checkpoint(_) => ProofContextVariant::Checkpoint,
         }
     }

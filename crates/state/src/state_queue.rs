@@ -1,6 +1,6 @@
-//! Generic queue type used in CL state, serializable with Borsh.
+//! Generic queue type used in OL state, serializable with Borsh.
 //!
-//! There's a few different types of entries in CL state that represent "queues"
+//! There's a few different types of entries in OL state that represent "queues"
 //! of data that we push things into, have monotonic indexes, and pull out.
 //! This module is meant to implement this bookkeeping generically.  This does
 //! *not* use `VecDeque` internally, as it's designed around being easily

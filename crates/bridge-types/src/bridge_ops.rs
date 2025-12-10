@@ -1,4 +1,4 @@
-//! Types for managing pending bridging operations in the CL state.
+//! Types for managing pending bridging operations in the OL state.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};

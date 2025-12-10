@@ -8,7 +8,7 @@
 //!
 //! The `CentralizedHostResolver` implements the PaaS `HostResolver` trait, providing
 //! a single `resolve()` method that determines the appropriate host based on:
-//! - The proof context (which proof type: Checkpoint, ClStf, EvmEeStf)
+//! - The proof context (which proof type: Checkpoint, OLStf, EvmEeStf)
 //! - The backend (SP1, Native, Risc0)
 //! - Feature flags (compile-time SP1 support)
 //!

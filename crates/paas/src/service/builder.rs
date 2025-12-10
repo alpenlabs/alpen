@@ -28,7 +28,7 @@ use crate::{
 /// let handle = ProverServiceBuilder::new(config)
 ///     .with_task_store(task_store)
 ///     .with_handler(ProofContextVariant::Checkpoint, checkpoint_handler)
-///     .with_handler(ProofContextVariant::ClStf, cl_stf_handler)
+///     .with_handler(ProofContextVariant::OLStf, ol_stf_handler)
 ///     .with_handler(ProofContextVariant::EvmEeStf, evm_ee_handler)
 ///     .launch(&executor)
 ///     .await?;

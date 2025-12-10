@@ -42,7 +42,7 @@ impl StatusChannel {
     ///
     /// # Arguments
     ///
-    /// * `cl_state` - Initial state for the client.
+    /// * `ol_state` - Initial state for the client.
     /// * `l1_status` - Initial L1 status.
     /// * `ch_state` - initial FCM state.
     ///
@@ -50,22 +50,22 @@ impl StatusChannel {
     ///
     /// A `StatusChannel` containing a sender and receiver for the provided states.
     pub fn new(
-        cl_state: ClientState,
-        cl_block: L1BlockCommitment,
+        ol_state: ClientState,
+        ol_block: L1BlockCommitment,
         l1_status: L1Status,
         ch_state: Option<ChainSyncStatusUpdate>,
     ) -> Self {
-        let (cl_tx, cl_rx) = watch::channel(CheckpointState::new(cl_state, cl_block));
+        let (ol_tx, ol_rx) = watch::channel(CheckpointState::new(ol_state, ol_block));
         let (l1_tx, l1_rx) = watch::channel(l1_status);
         let (chs_tx, chs_rx) = watch::channel(ch_state);
 
         let sender = Arc::new(StatusSender {
-            cl: cl_tx,
+            ol: ol_tx,
             l1: l1_tx,
             chs: chs_tx,
         });
         let receiver = Arc::new(StatusReceiver {
-            cl: cl_rx,
+            ol: ol_rx,
             l1: l1_rx,
             chs: chs_rx,
         });
@@ -77,7 +77,7 @@ impl StatusChannel {
 
     /// Gets the last finalized [`L1Checkpoint`] from the current client state.
     pub fn get_last_checkpoint(&self) -> Option<L1Checkpoint> {
-        self.receiver.cl.borrow().client_state.get_last_checkpoint()
+        self.receiver.ol.borrow().client_state.get_last_checkpoint()
     }
 
     /// Returns a clone of the most recent tip block's chainstate, if present.
@@ -133,15 +133,15 @@ impl StatusChannel {
     }
 
     pub fn get_cur_client_state(&self) -> ClientState {
-        self.receiver.cl.borrow().client_state.clone()
+        self.receiver.ol.borrow().client_state.clone()
     }
 
     pub fn get_cur_checkpoint_state(&self) -> CheckpointState {
-        self.receiver.cl.borrow().clone()
+        self.receiver.ol.borrow().clone()
     }
 
     pub fn has_genesis_occurred(&self) -> bool {
-        self.receiver.cl.borrow().has_genesis_occurred()
+        self.receiver.ol.borrow().has_genesis_occurred()
     }
 
     pub fn get_last_sync_status_update(&self) -> Option<ChainSyncStatusUpdate> {
@@ -162,7 +162,7 @@ impl StatusChannel {
 
     /// Create a subscription to the client state watcher.
     pub fn subscribe_checkpoint_state(&self) -> watch::Receiver<CheckpointState> {
-        self.sender.cl.subscribe()
+        self.sender.ol.subscribe()
     }
 
     /// Create a subscription to the chain sync status watcher.
@@ -192,7 +192,7 @@ impl StatusChannel {
     pub fn update_client_state(&self, post_state: ClientState, post_block: L1BlockCommitment) {
         if self
             .sender
-            .cl
+            .ol
             .send(CheckpointState::new(post_state, post_block))
             .is_err()
         {
@@ -212,7 +212,7 @@ impl StatusChannel {
 /// Wrapper for watch status receivers
 #[derive(Debug, Clone)]
 struct StatusReceiver {
-    cl: watch::Receiver<CheckpointState>,
+    ol: watch::Receiver<CheckpointState>,
     l1: watch::Receiver<L1Status>,
     chs: watch::Receiver<Option<ChainSyncStatusUpdate>>,
 }
@@ -220,7 +220,7 @@ struct StatusReceiver {
 /// Wrapper for watch status senders
 #[derive(Debug, Clone)]
 struct StatusSender {
-    cl: watch::Sender<CheckpointState>,
+    ol: watch::Sender<CheckpointState>,
     l1: watch::Sender<L1Status>,
     chs: watch::Sender<Option<ChainSyncStatusUpdate>>,
 }

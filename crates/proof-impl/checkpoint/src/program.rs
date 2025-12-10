@@ -14,8 +14,8 @@ use crate::process_checkpoint_proof;
 
 #[derive(Debug)]
 pub struct CheckpointProverInput {
-    pub cl_stf_proofs: Vec<ProofReceiptWithMetadata>,
-    pub cl_stf_vk: VerifyingKey,
+    pub ol_stf_proofs: Vec<ProofReceiptWithMetadata>,
+    pub ol_stf_vk: VerifyingKey,
 }
 
 #[derive(Debug)]
@@ -39,12 +39,12 @@ impl ZkVmProgram for CheckpointProgram {
     {
         let mut input_builder = B::new();
 
-        input_builder.write_serde(&input.cl_stf_proofs.len())?;
+        input_builder.write_serde(&input.ol_stf_proofs.len())?;
 
-        for cl_stf_proof in &input.cl_stf_proofs {
-            let cl_stf_proof_with_vk =
-                AggregationInput::new(cl_stf_proof.clone(), input.cl_stf_vk.clone());
-            input_builder.write_proof(&cl_stf_proof_with_vk)?;
+        for ol_stf_proof in &input.ol_stf_proofs {
+            let ol_stf_proof_with_vk =
+                AggregationInput::new(ol_stf_proof.clone(), input.ol_stf_vk.clone());
+            input_builder.write_proof(&ol_stf_proof_with_vk)?;
         }
 
         input_builder.build()
@@ -60,11 +60,11 @@ impl ZkVmProgram for CheckpointProgram {
 
 impl CheckpointProgram {
     pub fn native_host() -> NativeHost {
-        const MOCK_CL_STF_VK: [u32; 8] = [0u32; 8];
+        const MOCK_OL_STF_VK: [u32; 8] = [0u32; 8];
         NativeHost {
             process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
                 catch_unwind(AssertUnwindSafe(|| {
-                    process_checkpoint_proof(zkvm, &MOCK_CL_STF_VK);
+                    process_checkpoint_proof(zkvm, &MOCK_OL_STF_VK);
                 }))
                 .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
                 Ok(())

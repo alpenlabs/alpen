@@ -1,12 +1,12 @@
 import flexitest
 
 from envs import testenv
-from utils import cl_slot_to_block_id
+from utils import ol_slot_to_block_id
 
 # Parameters defining the range of Execution Engine (EE) blocks to be proven.
-# FIXME: cl_stf needs range to cover a full epoch so this test should be focused on epoch/checkpoint
+# FIXME: ol_stf needs range to cover a full epoch so this test should be focused on epoch/checkpoint
 # range instead of arbitrary range which will fail.
-CL_PROVER_PARAMS = {
+OL_PROVER_PARAMS = {
     "start_block": 1,
     "end_block": 1,
 }
@@ -34,13 +34,13 @@ class ProverClientTest(testenv.StrataTestBase):
         reth_waiter.wait_until_eth_block_at_least(20)
 
         # Dispatch the prover task
-        start_block_id = cl_slot_to_block_id(seqrpc, CL_PROVER_PARAMS["start_block"])
-        start_block_commitment = {"slot": CL_PROVER_PARAMS["start_block"], "blkid": start_block_id}
+        start_block_id = ol_slot_to_block_id(seqrpc, OL_PROVER_PARAMS["start_block"])
+        start_block_commitment = {"slot": OL_PROVER_PARAMS["start_block"], "blkid": start_block_id}
 
-        end_block_id = cl_slot_to_block_id(seqrpc, CL_PROVER_PARAMS["end_block"])
-        end_block_commitment = {"slot": CL_PROVER_PARAMS["end_block"], "blkid": end_block_id}
+        end_block_id = ol_slot_to_block_id(seqrpc, OL_PROVER_PARAMS["end_block"])
+        end_block_commitment = {"slot": OL_PROVER_PARAMS["end_block"], "blkid": end_block_id}
 
-        task_ids = prover_client_rpc.dev_strata_proveClBlocks(
+        task_ids = prover_client_rpc.dev_strata_proveOLBlocks(
             (start_block_commitment, end_block_commitment)
         )
         task_id = task_ids[0]

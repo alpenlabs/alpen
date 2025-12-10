@@ -11,8 +11,8 @@ zkaleido.workspace = true
 
 # proof programs
 strata-proofimpl-checkpoint.workspace = true
-strata-proofimpl-cl-stf.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
+strata-proofimpl-ol-stf.workspace = true
 
 strata-test-utils-evm-ee.workspace = true
 strata-test-utils-l2.workspace = true

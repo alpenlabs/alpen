@@ -1,4 +1,4 @@
-//! Types relating to the state of an execution environment in the CL state.
+//! Types relating to the state of an execution environment in the OL state.
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -29,8 +29,8 @@ pub struct ExecEnvState {
     // TODO make this not pub
     pub pending_deposits: StateQueue<DepositIntent>,
 
-    /// Forced inclusions that have been accepted by the CL but not processed by
-    /// a CL payload yet.
+    /// Forced inclusions that have been accepted by the OL but not processed by
+    /// a OL payload yet.
     // TODO This is a stub, we don't support these yet and should assert it to
     // be empty.
     pending_forced_incls: StateQueue<forced_inclusion::ForcedInclusion>,

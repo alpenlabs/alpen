@@ -1,12 +1,12 @@
 [package]
 edition = "2021"
-name = "guest-sp1-cl-stf"
+name = "guest-sp1-ol-stf"
 version = "0.1.0"
 
 [workspace]
 
 [dependencies]
-strata-proofimpl-cl-stf = { path = "../../../crates/proof-impl/cl-stf" }
+strata-proofimpl-ol-stf = { path = "../../../crates/proof-impl/ol-stf" }
 zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
 
 [patch.crates-io]

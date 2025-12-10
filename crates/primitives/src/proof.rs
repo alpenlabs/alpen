@@ -27,9 +27,9 @@ pub enum ProofContext {
     /// Transition Function (STF) proof.
     EvmEeStf(EvmEeBlockCommitment, EvmEeBlockCommitment),
 
-    /// Identifier for the Consensus Layer (CL) blocks used in generating the State Transition
+    /// Identifier for the Orchestration Layer (OL) blocks used in generating the State Transition
     /// Function (STF) proof.
-    ClStf(L2BlockCommitment, L2BlockCommitment),
+    OLStf(L2BlockCommitment, L2BlockCommitment),
 
     /// Identifier for a specific checkpoint being proven.
     Checkpoint(u64),

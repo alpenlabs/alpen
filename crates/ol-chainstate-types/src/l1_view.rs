@@ -3,8 +3,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_types::HeaderVerificationState;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 
-/// Describes state relating to the CL's view of L1.  Updated by entries in the
-/// L1 segment of CL blocks.
+/// Describes state relating to the OL's view of L1.  Updated by entries in the
+/// L1 segment of OL blocks.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct L1ViewState {
     /// The actual first block we ever looked at.

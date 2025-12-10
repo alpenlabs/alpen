@@ -10,7 +10,7 @@ use jsonrpsee::http_client::HttpClientBuilder;
 use operators::init_operators;
 use rpc_server::ProverClientRpc;
 use service::{
-    new_checkpoint_handler, new_cl_stf_handler, new_evm_ee_stf_handler, ProofContextVariant,
+    new_checkpoint_handler, new_evm_ee_stf_handler, new_ol_stf_handler, ProofContextVariant,
     ProofTask, SledTaskStore,
 };
 use strata_common::logging;
@@ -59,13 +59,13 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         .resolve_and_validate_rollup_params()
         .context("Failed to resolve and validate rollup parameters")?;
 
-    let el_client = HttpClientBuilder::default()
+    let ee_client = HttpClientBuilder::default()
         .build(config.get_reth_rpc_url())
         .context("Failed to connect to the Ethereum client")?;
 
-    let cl_client = HttpClientBuilder::default()
+    let ol_client = HttpClientBuilder::default()
         .build(config.get_sequencer_rpc_url())
-        .context("Failed to connect to the CL Sequencer client")?;
+        .context("Failed to connect to the OL Sequencer client")?;
 
     let btc_client = Client::new(
         config.bitcoind_url.clone(),
@@ -77,8 +77,8 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     .context("Failed to connect to the Bitcoin client")?;
 
     // Initialize operators
-    let (checkpoint_operator, cl_stf_operator, evm_ee_operator) =
-        init_operators(btc_client, el_client, cl_client, rollup_params);
+    let (checkpoint_operator, ol_stf_operator, evm_ee_operator) =
+        init_operators(btc_client, ee_client, ol_client, rollup_params);
 
     let sled_db =
         strata_db_store_sled::open_sled_database(&config.datadir, strata_db_store_sled::SLED_NAME)
@@ -126,8 +126,8 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         executor.clone(),
     ));
 
-    let cl_stf_handler = Arc::new(new_cl_stf_handler(
-        cl_stf_operator.clone(),
+    let ol_stf_handler = Arc::new(new_ol_stf_handler(
+        ol_stf_operator.clone(),
         db.clone(),
         executor.clone(),
     ));
@@ -143,7 +143,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         .with_task_store(task_store)
         .with_retry_config(strata_paas::RetryConfig::default())
         .with_handler(ProofContextVariant::Checkpoint, checkpoint_handler)
-        .with_handler(ProofContextVariant::ClStf, cl_stf_handler)
+        .with_handler(ProofContextVariant::OLStf, ol_stf_handler)
         .with_handler(ProofContextVariant::EvmEeStf, evm_ee_handler);
 
     // Launch the service
@@ -175,7 +175,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let rpc_server = ProverClientRpc::new(
         service_handle.clone(),
         checkpoint_operator,
-        cl_stf_operator,
+        ol_stf_operator,
         db,
     );
     let rpc_url = config.get_dev_rpc_url();

@@ -14,10 +14,10 @@ use zkaleido::{
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
-use crate::process_cl_stf;
+use crate::process_ol_stf;
 
 #[derive(Debug)]
-pub struct ClStfInput {
+pub struct OLStfInput {
     pub rollup_params: RollupParams,
     pub chainstate: Chainstate,
     pub parent_header: L2BlockHeader,
@@ -26,21 +26,21 @@ pub struct ClStfInput {
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct ClStfOutput {
+pub struct OLStfOutput {
     pub epoch: u64,
     pub initial_chainstate_root: Buf32,
     pub final_chainstate_root: Buf32,
 }
 
 #[derive(Debug)]
-pub struct ClStfProgram;
+pub struct OLStfProgram;
 
-impl ZkVmProgram for ClStfProgram {
-    type Input = ClStfInput;
-    type Output = ClStfOutput;
+impl ZkVmProgram for OLStfProgram {
+    type Input = OLStfInput;
+    type Output = OLStfOutput;
 
     fn name() -> String {
-        "CL STF".to_string()
+        "OL STF".to_string()
     }
 
     fn proof_type() -> zkaleido::ProofType {
@@ -71,13 +71,13 @@ impl ZkVmProgram for ClStfProgram {
     }
 }
 
-impl ClStfProgram {
+impl OLStfProgram {
     pub fn native_host() -> NativeHost {
         const MOCK_VK: [u32; 8] = [0u32; 8];
         NativeHost {
             process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
                 catch_unwind(AssertUnwindSafe(|| {
-                    process_cl_stf(zkvm, &MOCK_VK);
+                    process_ol_stf(zkvm, &MOCK_VK);
                 }))
                 .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
                 Ok(())

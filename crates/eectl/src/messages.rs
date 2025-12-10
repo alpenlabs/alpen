@@ -9,16 +9,16 @@ use strata_state::exec_update::{ExecUpdate, Op};
 pub struct ExecPayloadData {
     /// Encoded EL payload, minus any operations we push to it.
     ///
-    /// This is the "explicit" input from the CL block.
+    /// This is the "explicit" input from the OL block.
     exec_update: ExecUpdate,
 
     accessory_data: Vec<u8>,
 
-    /// CL operations pushed into the EL, such as deposits from L1.  This
+    /// OL operations pushed into the EL, such as deposits from L1.  This
     /// corresponds to the "withdrawals" field in the `ExecutionPayloadVX`
     /// type(s), but is separated here because we control it ourselves.
     ///
-    /// This is an "implicit" input from elsewhere in the CL STF.
+    /// This is an "implicit" input from elsewhere in the OL STF.
     ops: Vec<Op>,
 }
 
@@ -68,14 +68,14 @@ pub struct WithdrawData {
     _destination: Descriptor,
 }
 
-/// Environment state from the CL that we pass into the EL for the payload we're
+/// Environment state from the OL that we pass into the EL for the payload we're
 /// producing.  Maybe this should also have L1 headers or something?
 #[derive(Clone, Debug)]
 pub struct PayloadEnv {
     /// Timestamp we're attesting this block was created on.
     timestamp: u64,
 
-    /// BlockId of previous CL block
+    /// BlockId of previous OL block
     prev_l2_block_id: L2BlockId,
 
     /// Safe L1 block we're exposing into the EL that's not likely to reorg.

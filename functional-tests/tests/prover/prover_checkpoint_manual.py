@@ -52,11 +52,11 @@ class ProverClientTest(testenv.StrataTestBase):
 
         # L2 Range
         slot = CHECKPOINT_PROVER_PARAMS["l2_range"][0]
-        block_id = cl_slot_to_block_id(seqrpc, slot)
+        block_id = ol_slot_to_block_id(seqrpc, slot)
         l2_start_block_commitment = {"slot": slot, "blkid": block_id}
 
         slot = CHECKPOINT_PROVER_PARAMS["l2_range"][1]
-        block_id = cl_slot_to_block_id(seqrpc, slot)
+        block_id = ol_slot_to_block_id(seqrpc, slot)
         l2_end_block_commitment = {"slot": slot, "blkid": block_id}
 
         task_ids = prover_client_rpc.dev_strata_proveCheckpointRaw(
@@ -70,7 +70,7 @@ class ProverClientTest(testenv.StrataTestBase):
         is_proof_gen_complete = prover_waiter.wait_for_proof_completion(task_ids[0])
 
         # Proof generation is expected to fail because the range will not match
-        # CL STF Proof will fail, which in turns fails the checkpoint proof
+        # OL STF Proof will fail, which in turns fails the checkpoint proof
         #
         # FIXME: Proof generation is failing consistently on my local machine but the
         # test passes consistently in CI. Not sure on how this can be fixed. I have

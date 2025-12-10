@@ -20,7 +20,7 @@ use strata_eectl::{
 };
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l1::BitcoinAmount;
-use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput};
+use strata_state::exec_update::{ExecUpdate, OLDepositData, Op, UpdateOutput};
 use strata_storage::L2BlockManager;
 use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
@@ -179,7 +179,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             .withdrawals()
             .iter()
             .map(|withdrawal| {
-                Op::Deposit(ELDepositData::new(
+                Op::Deposit(OLDepositData::new(
                     withdrawal.index,
                     gwei_to_sats(withdrawal.amount),
                     withdrawal.address.as_slice().to_vec(),

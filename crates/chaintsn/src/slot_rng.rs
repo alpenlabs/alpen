@@ -1,4 +1,4 @@
-//! Deterministic cryptographically-secure PRNG for use when picking stuff in the CL STF.
+//! Deterministic cryptographically-secure PRNG for use when picking stuff in the OL STF.
 //!
 //! This uses `ChaCha12Rng` from the `rand_chacha` crate.
 

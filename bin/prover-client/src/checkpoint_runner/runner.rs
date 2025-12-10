@@ -47,7 +47,7 @@ async fn process_checkpoint(
     db: &Arc<ProofDBSled>,
     runner_state: &mut CheckpointRunnerState,
 ) -> anyhow::Result<()> {
-    let res = fetch_next_unproven_checkpoint_index(operator.cl_client()).await;
+    let res = fetch_next_unproven_checkpoint_index(operator.ol_client()).await;
     let fetched_ckpt = match res {
         Ok(Some(idx)) => idx,
         Ok(None) => {
@@ -74,7 +74,7 @@ async fn process_checkpoint(
 }
 
 /// Submit a checkpoint task to Prover Service, wait for completion,
-/// and submit the proof to CL client
+/// and submit the proof to OL client
 async fn submit_checkpoint_task(
     checkpoint_idx: u64,
     operator: &CheckpointOperator,
@@ -87,38 +87,38 @@ async fn submit_checkpoint_task(
     // Check if proof already exists
     if db
         .get_proof(&proof_key)
-        .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
+        .map_err(|e| anyhow::anyhow!("DB error: {e}"))?
         .is_some()
     {
-        info!(%checkpoint_idx, "Checkpoint proof already exists, submitting to CL");
+        info!(%checkpoint_idx, "Checkpoint proof already exists, submitting to OL");
 
-        // Proof exists, submit it to CL
+        // Proof exists, submit it to OL
         operator
             .submit_checkpoint_proof(checkpoint_idx, &proof_key, db)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to submit checkpoint to CL: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to submit checkpoint to OL: {e}"))?;
 
-        info!(%checkpoint_idx, "Checkpoint proof submitted to CL");
+        info!(%checkpoint_idx, "Checkpoint proof submitted to OL");
         return Ok(());
     }
 
-    // Create checkpoint dependencies (ClStf)
-    let cl_stf_deps = operator
+    // Create checkpoint dependencies (OL Stf)
+    let ol_stf_deps = operator
         .create_checkpoint_deps(checkpoint_idx, db)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create checkpoint dependencies: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create checkpoint dependencies: {e}"))?;
 
-    // For each ClStf dependency, create EvmEeStf dependencies and submit recursively
-    for dep_ctx in &cl_stf_deps {
-        if let ProofContext::ClStf(start, end) = dep_ctx {
-            // Create EvmEeStf dependencies for this ClStf
+    // For each OLStf dependency, create EvmEeStf dependencies and submit recursively
+    for dep_ctx in &ol_stf_deps {
+        if let ProofContext::OLStf(start, end) = dep_ctx {
+            // Create EvmEeStf dependencies for this OLStf
             operator
-                .cl_stf_operator()
-                .create_cl_stf_deps(*start, *end, db)
+                .ol_stf_operator()
+                .create_ol_stf_deps(*start, *end, db)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to create cl stf dependencies: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to create OL stf dependencies: {e}"))?;
 
-            // Submit ClStf and its EvmEeStf dependencies recursively
+            // Submit OLStf and its EvmEeStf dependencies recursively
             submit_proof_context_recursive(*dep_ctx, prover_handle, db).await?;
         }
     }
@@ -145,15 +145,15 @@ async fn submit_checkpoint_task(
         }
     }
 
-    info!(%checkpoint_idx, "Checkpoint proof completed, submitting to CL");
+    info!(%checkpoint_idx, "Checkpoint proof completed, submitting to OL");
 
-    // Submit checkpoint proof to CL client
+    // Submit checkpoint proof to OL client
     operator
         .submit_checkpoint_proof(checkpoint_idx, &proof_key, db)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to submit checkpoint to CL: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to submit checkpoint to OL: {e}"))?;
 
-    info!(%checkpoint_idx, "Checkpoint proof submitted to CL");
+    info!(%checkpoint_idx, "Checkpoint proof submitted to OL");
     Ok(())
 }
 

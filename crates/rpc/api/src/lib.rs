@@ -73,8 +73,8 @@ pub trait StrataApi {
     #[method(name = "getChainstateRaw")]
     async fn get_chainstate_raw(&self, block_id: L2BlockId) -> RpcResult<Vec<u8>>;
 
-    #[method(name = "getCLBlockWitness")]
-    async fn get_cl_block_witness_raw(&self, block_id: L2BlockId) -> RpcResult<Vec<u8>>;
+    #[method(name = "getOLBlockWitness")]
+    async fn get_ol_block_witness_raw(&self, block_id: L2BlockId) -> RpcResult<Vec<u8>>;
 
     #[method(name = "getCurrentDeposits")]
     async fn get_current_deposits(&self) -> RpcResult<Vec<u32>>;

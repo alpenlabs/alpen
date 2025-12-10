@@ -30,7 +30,7 @@ define_host!(
     GUEST_EVM_EE_STF_ELF,
     "guest-evm-ee-stf.elf"
 );
-define_host!(CL_STF_HOST, GUEST_CL_STF_ELF, "guest-cl-stf.elf");
+define_host!(OL_STF_HOST, GUEST_OL_STF_ELF, "guest-ol-stf.elf");
 define_host!(
     CHECKPOINT_HOST,
     GUEST_CHECKPOINT_ELF,
@@ -45,7 +45,7 @@ define_host!(
 pub fn get_host(id: &ProofContext) -> Arc<SP1Host> {
     match id {
         ProofContext::EvmEeStf(..) => Arc::clone(&EVM_EE_STF_HOST),
-        ProofContext::ClStf(..) => Arc::clone(&CL_STF_HOST),
+        ProofContext::OLStf(..) => Arc::clone(&OL_STF_HOST),
         ProofContext::Checkpoint(..) => Arc::clone(&CHECKPOINT_HOST),
     }
 }

@@ -3,7 +3,7 @@
 
 pub mod program;
 
-use program::ClStfOutput;
+use program::OLStfOutput;
 use strata_chainexec::{ChainExecutor, MemExecContext};
 use strata_chaintsn::context::L2HeaderAndParent;
 use strata_ol_chain_types::{
@@ -13,7 +13,7 @@ use strata_ol_chainstate_types::Chainstate;
 use strata_params::RollupParams;
 use zkaleido::ZkVmEnv;
 
-pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
+pub fn process_ol_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
     // 1. Read the rollup params
     let rollup_params: RollupParams = zkvm.read_serde();
 
@@ -42,7 +42,7 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
         "mismatch len of l2 block and exec segments"
     );
 
-    // NOTE: block range in cl-stf must not cross epoch boundaries
+    // NOTE: block range in ol-stf must not cross epoch boundaries
     let mut epoch = initial_chainstate.cur_epoch();
 
     for (l2_block, exec_segment) in l2_blocks.iter().zip(exec_segments) {
@@ -87,7 +87,7 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
         epoch = output.write_batch().new_toplevel_state().cur_epoch();
     }
 
-    let output = ClStfOutput {
+    let output = OLStfOutput {
         epoch: epoch as u64,
         initial_chainstate_root,
         final_chainstate_root,

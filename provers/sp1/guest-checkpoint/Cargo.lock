@@ -1207,8 +1207,8 @@ dependencies = [
 
 [[package]]
 name = "sizzle-parser"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -1288,18 +1288,20 @@ dependencies = [
 
 [[package]]
 name = "ssz"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
+ "hex",
  "itertools 0.13.0",
+ "serde",
  "smallvec",
  "ssz_primitives",
 ]
 
 [[package]]
 name = "ssz_codegen"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -1317,8 +1319,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_derive"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
  "darling",
  "quote",
@@ -1327,8 +1329,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -1337,9 +1339,12 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
  "ssz",
  "ssz_primitives",
  "tree_hash",
@@ -1368,10 +1373,16 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "serde",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_types",
  "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",
  "thiserror 2.0.17",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1449,6 +1460,7 @@ name = "strata-chainexec"
 version = "0.1.0"
 dependencies = [
  "strata-chaintsn",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -1466,6 +1478,7 @@ dependencies = [
  "strata-asm-types",
  "strata-bridge-types",
  "strata-checkpoint-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -1550,9 +1563,12 @@ dependencies = [
  "serde",
  "sha2",
  "ssz",
+ "ssz_codegen",
  "ssz_derive",
+ "ssz_types",
  "strata-codec",
  "tree_hash",
+ "tree_hash_derive",
  "zeroize",
 ]
 
@@ -1574,14 +1590,8 @@ dependencies = [
  "digest",
  "serde",
  "sha2",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_types",
  "strata-codec",
  "thiserror 2.0.17",
- "tree_hash",
- "tree_hash_derive",
 ]
 
 [[package]]
@@ -1617,6 +1627,7 @@ dependencies = [
  "borsh",
  "strata-asm-types",
  "strata-bridge-types",
+ "strata-identifiers",
  "strata-primitives",
  "strata-state",
  "tracing",
@@ -1660,6 +1671,7 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
+ "hex",
  "secp256k1",
  "serde",
  "strata-btc-types",
@@ -1674,13 +1686,13 @@ name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
  "strata-checkpoint-types",
- "strata-proofimpl-cl-stf",
+ "strata-proofimpl-ol-stf",
  "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
  "zkaleido-native-adapter",
 ]
 
 [[package]]
-name = "strata-proofimpl-cl-stf"
+name = "strata-proofimpl-ol-stf"
 version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
@@ -1897,8 +1909,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
  "digest",
  "sha2",
@@ -1909,8 +1921,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash_derive"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.9.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.9.0#b9ae1d98994ed8fe635fad022441c013f4a1f06a"
 dependencies = [
  "darling",
  "quote",

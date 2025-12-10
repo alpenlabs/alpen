@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "strata-proofimpl-cl-stf"
+name = "strata-proofimpl-ol-stf"
 version = "0.3.0-alpha.1"
 
 [lints]

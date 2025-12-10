@@ -74,8 +74,8 @@ members = [
   "crates/params",
   "crates/primitives",
   "crates/proof-impl/checkpoint",
-  "crates/proof-impl/cl-stf",
   "crates/proof-impl/evm-ee-stf",
+  "crates/proof-impl/ol-stf",
   "crates/zkvm/hosts",
   "crates/reth/chainspec",
   "crates/reth/db",
@@ -227,8 +227,8 @@ strata-paas = { path = "crates/paas" }
 strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
-strata-proofimpl-cl-stf = { path = "crates/proof-impl/cl-stf" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
+strata-proofimpl-ol-stf = { path = "crates/proof-impl/ol-stf" }
 strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
 strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-api-new = { path = "crates/rpc-new/api" }

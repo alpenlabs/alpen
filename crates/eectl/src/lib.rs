@@ -1,5 +1,5 @@
 //! Infrastructure for controlling EVM execution.  This operates on similar
-//! principles to the Ethereum engine API used for CL clients to control their
+//! principles to the Ethereum engine API used for OL clients to control their
 //! corresponding EL client.
 
 pub mod builder;

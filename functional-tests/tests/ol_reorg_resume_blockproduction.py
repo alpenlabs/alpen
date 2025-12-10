@@ -20,7 +20,7 @@ def send_tx(web3: Web3) -> None:
 
 
 @flexitest.register
-class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
+class OLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
     """This tests sync when el is missing blocks"""
 
     def __init__(self, ctx: flexitest.InitContext):

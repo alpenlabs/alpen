@@ -12,7 +12,7 @@ use strata_primitives::{
     l2::L2BlockCommitment,
     proof::{ProofContext, ProofKey},
 };
-use strata_proofimpl_cl_stf::program::ClStfInput;
+use strata_proofimpl_ol_stf::program::OLStfInput;
 use strata_rpc_api::StrataApiClient;
 use strata_rpc_types::RpcBlockHeader;
 use strata_zkvm_hosts::get_verification_key;
@@ -21,35 +21,35 @@ use tracing::{error, info};
 use super::{evm_ee::EvmEeOperator, ProofInputFetcher};
 use crate::errors::ProvingTaskError;
 
-/// Operator for Consensus Layer (CL) State Transition Function (STF) proof generation.
+/// Operator for Orchestration Layer (OL) State Transition Function (STF) proof generation.
 ///
-/// Provides access to CL client and methods for fetching data needed for CL STF proofs.
+/// Provides access to OL client and methods for fetching data needed for OL STF proofs.
 #[derive(Debug, Clone)]
-pub(crate) struct ClStfOperator {
-    pub cl_client: HttpClient,
+pub(crate) struct OLStfOperator {
+    pub ol_client: HttpClient,
     evm_ee_operator: Arc<EvmEeOperator>,
     rollup_params: Arc<RollupParams>,
 }
 
-impl ClStfOperator {
-    /// Creates a new CL STF operator.
+impl OLStfOperator {
+    /// Creates a new OL STF operator.
     pub(crate) fn new(
-        cl_client: HttpClient,
+        ol_client: HttpClient,
         evm_ee_operator: Arc<EvmEeOperator>,
         rollup_params: Arc<RollupParams>,
     ) -> Self {
         Self {
-            cl_client,
+            ol_client,
             evm_ee_operator,
             rollup_params,
         }
     }
 
-    /// Creates and stores the EvmEeStf proof dependencies for a ClStf proof.
+    /// Creates and stores the EvmEeStf proof dependencies for a OLStf proof.
     ///
     /// This fetches the L2 blocks in the range to get their exec commitments and creates
     /// EvmEeStf proof contexts. Returns the EvmEeStf contexts that need to be submitted.
-    pub(crate) async fn create_cl_stf_deps(
+    pub(crate) async fn create_ol_stf_deps(
         &self,
         start_block: L2BlockCommitment,
         end_block: L2BlockCommitment,
@@ -58,16 +58,16 @@ impl ClStfOperator {
         info!(
             ?start_block,
             ?end_block,
-            "Creating EvmEeStf dependencies for ClStf"
+            "Creating EvmEeStf dependencies for OL Stf"
         );
 
         // Check if dependencies already exist
-        let cl_stf_ctx = ProofContext::ClStf(start_block, end_block);
+        let ol_stf_ctx = ProofContext::OLStf(start_block, end_block);
         if let Some(existing_deps) = db
-            .get_proof_deps(cl_stf_ctx)
+            .get_proof_deps(ol_stf_ctx)
             .map_err(ProvingTaskError::DatabaseError)?
         {
-            info!("ClStf dependencies already exist, skipping creation");
+            info!("OL Stf dependencies already exist, skipping creation");
             return Ok(existing_deps);
         }
 
@@ -78,8 +78,8 @@ impl ClStfOperator {
         // Create EvmEeStf proof context
         let evm_ee_ctx = ProofContext::EvmEeStf(start_exec, end_exec);
 
-        // Store ClStf dependencies (EvmEeStf)
-        db.put_proof_deps(cl_stf_ctx, vec![evm_ee_ctx])
+        // Store OL Stf dependencies (EvmEeStf)
+        db.put_proof_deps(ol_stf_ctx, vec![evm_ee_ctx])
             .map_err(ProvingTaskError::DatabaseError)?;
 
         Ok(vec![evm_ee_ctx])
@@ -91,7 +91,7 @@ impl ClStfOperator {
         blkid: L2BlockId,
     ) -> Result<RpcBlockHeader, ProvingTaskError> {
         let header = self
-            .cl_client
+            .ol_client
             .get_header_by_id(blkid)
             .await
             .inspect_err(|_| error!(%blkid, "Failed to fetch corresponding ee data"))
@@ -107,9 +107,9 @@ impl ClStfOperator {
     /// Retrieves the EVM EE block commitment corresponding to the given L2 block ID.
     pub(crate) async fn get_exec_commitment(
         &self,
-        cl_block_id: L2BlockId,
+        ol_block_id: L2BlockId,
     ) -> Result<EvmEeBlockCommitment, ProvingTaskError> {
-        let header = self.get_l2_block_header(cl_block_id).await?;
+        let header = self.get_l2_block_header(ol_block_id).await?;
         let ee_header = self
             .evm_ee_operator
             .get_block_header_by_height(header.block_idx)
@@ -127,8 +127,8 @@ impl ClStfOperator {
         blkid: L2BlockId,
     ) -> Result<Chainstate, ProvingTaskError> {
         let raw_witness: Vec<u8> = self
-            .cl_client
-            .get_cl_block_witness_raw(blkid)
+            .ol_client
+            .get_ol_block_witness_raw(blkid)
             .await
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
         let (chainstate, _): (Chainstate, L2Block) =
@@ -139,8 +139,8 @@ impl ClStfOperator {
     /// Retrieves the L2 block for the given block ID.
     pub(crate) async fn get_block(&self, blkid: &L2BlockId) -> Result<L2Block, ProvingTaskError> {
         let raw_witness: Vec<u8> = self
-            .cl_client
-            .get_cl_block_witness_raw(*blkid)
+            .ol_client
+            .get_ol_block_witness_raw(*blkid)
             .await
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
         let (_, blk): (Chainstate, L2Block) =
@@ -149,8 +149,8 @@ impl ClStfOperator {
     }
 }
 
-impl ProofInputFetcher for ClStfOperator {
-    type Input = ClStfInput;
+impl ProofInputFetcher for OLStfOperator {
+    type Input = OLStfInput;
 
     async fn fetch_input(
         &self,
@@ -158,8 +158,8 @@ impl ProofInputFetcher for ClStfOperator {
         db: &ProofDBSled,
     ) -> Result<Self::Input, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
-            strata_primitives::proof::ProofContext::ClStf(start, end) => (*start, *end),
-            _ => return Err(ProvingTaskError::InvalidInput("CL_STF".to_string())),
+            strata_primitives::proof::ProofContext::OLStf(start, end) => (*start, *end),
+            _ => return Err(ProvingTaskError::InvalidInput("OL_STF".to_string())),
         };
 
         let deps = db
@@ -168,11 +168,11 @@ impl ProofInputFetcher for ClStfOperator {
             .ok_or(ProvingTaskError::DependencyNotFound(*task_id))?;
 
         // sanity check
-        // CL STF can have at most 2 deps
+        // OL STF can have at most 2 deps
         // 1. It will always have EVM EE Proof as a dependency
-        // 2. If the CL STF includes terminal block, it also has BTC Blockspace Proof as a
+        // 2. If the OL STF includes terminal block, it also has BTC Blockspace Proof as a
         //    dependency
-        assert!(deps.len() <= 2, "invalid CL STF deps");
+        assert!(deps.len() <= 2, "invalid OL STF deps");
 
         // First dependency is always EVM EE Proof
         let evm_ee_id = deps.first().ok_or(ProvingTaskError::NoTasksFound)?;
@@ -209,7 +209,7 @@ impl ProofInputFetcher for ClStfOperator {
             .clone();
 
         let rollup_params = self.rollup_params.as_ref().clone();
-        Ok(ClStfInput {
+        Ok(OLStfInput {
             rollup_params,
             parent_header,
             chainstate,

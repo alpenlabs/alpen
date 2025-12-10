@@ -21,10 +21,10 @@ pub trait StrataProverClientApi {
     ) -> RpcResult<Vec<ProofKey>>;
 
     /// Start proving the given cl block
-    #[method(name = "proveClBlocks")]
-    async fn prove_cl_blocks(
+    #[method(name = "proveOLBlocks")]
+    async fn prove_ol_blocks(
         &self,
-        cl_block_range: (L2BlockCommitment, L2BlockCommitment),
+        ol_block_range: (L2BlockCommitment, L2BlockCommitment),
     ) -> RpcResult<Vec<ProofKey>>;
 
     /// Start proving the given checkpoint info

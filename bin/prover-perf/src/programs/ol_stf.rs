@@ -1,4 +1,4 @@
-use strata_proofimpl_cl_stf::program::{ClStfInput, ClStfProgram};
+use strata_proofimpl_ol_stf::program::{OLStfInput, OLStfProgram};
 use strata_test_utils_evm_ee::L2Segment;
 use strata_test_utils_l2::gen_params;
 use tracing::info;
@@ -11,8 +11,8 @@ use super::evm_ee;
 
 pub(crate) fn prepare_input(
     evm_ee_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
-) -> ClStfInput {
-    info!("Preparing input for CL STF");
+) -> OLStfInput {
+    info!("Preparing input for OL STF");
     let params = gen_params();
     let rollup_params = params.rollup().clone();
 
@@ -23,7 +23,7 @@ pub(crate) fn prepare_input(
         .split_first()
         .expect("must have at least one element");
 
-    ClStfInput {
+    OLStfInput {
         rollup_params,
         chainstate,
         parent_header: parent_block.header().header().clone(),
@@ -36,28 +36,28 @@ pub(crate) fn gen_perf_report(
     host: &impl ZkVmHostPerf,
     evm_ee_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
 ) -> PerformanceReport {
-    info!("Generating performance report for CL STF");
+    info!("Generating performance report for OL STF");
     let input = prepare_input(evm_ee_proof_with_vk);
-    ClStfProgram::perf_report(&input, host).unwrap()
+    OLStfProgram::perf_report(&input, host).unwrap()
 }
 
 pub(crate) fn gen_proof(
     host: &impl ZkVmHost,
     evm_ee_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
 ) -> ProofReceiptWithMetadata {
-    info!("Generating proof for CL STF");
+    info!("Generating proof for OL STF");
     let input = prepare_input(evm_ee_proof_with_vk);
-    ClStfProgram::prove(&input, host).unwrap()
+    OLStfProgram::prove(&input, host).unwrap()
 }
 
 pub(crate) fn proof_with_vk(
-    cl_stf_host: &impl ZkVmHost,
+    ol_stf_host: &impl ZkVmHost,
     evm_ee_host: &impl ZkVmHost,
 ) -> (ProofReceiptWithMetadata, VerifyingKey) {
     let evm_ee_proof_with_vk = evm_ee::proof_with_vk(evm_ee_host);
 
-    let proof = gen_proof(cl_stf_host, evm_ee_proof_with_vk);
-    (proof, cl_stf_host.vk())
+    let proof = gen_proof(ol_stf_host, evm_ee_proof_with_vk);
+    (proof, ol_stf_host.vk())
 }
 
 #[cfg(test)]
@@ -67,10 +67,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cl_stf_native_execution() {
+    fn test_ol_stf_native_execution() {
         let evm_ee_proof_with_vk = evm_ee::proof_with_vk(&EvmEeProgram::native_host());
         let input = prepare_input(evm_ee_proof_with_vk);
-        let output = ClStfProgram::execute(&input).unwrap();
+        let output = OLStfProgram::execute(&input).unwrap();
         dbg!(output);
     }
 }
