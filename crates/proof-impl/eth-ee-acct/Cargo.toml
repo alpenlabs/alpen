@@ -1,0 +1,40 @@
+[package]
+name = "strata-proofimpl-eth-ee-acct"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Strata crates (for host module)
+strata-acct-types = { workspace = true, optional = true }
+
+# Strata crates (for guest processing)
+strata-ee-acct-types.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-snark-acct-types.workspace = true
+strata-evm-ee = { path = "../../evm-ee" }
+
+# Reth for ChainSpec
+reth-chainspec.workspace = true
+
+# RSP primitives for Genesis
+rsp-primitives.workspace = true
+
+# zkVM environment
+zkaleido.workspace = true
+zkaleido-native-adapter.workspace = true
+
+# Serialization (used by guest deserialization)
+borsh.workspace = true
+
+# Error handling (for host module)
+thiserror = { workspace = true, optional = true }
+
+[features]
+default = []
+host = [
+    "dep:thiserror",
+    "dep:strata-acct-types",
+]
+
+[lints]
+workspace = true
