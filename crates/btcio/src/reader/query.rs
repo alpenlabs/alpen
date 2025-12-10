@@ -452,14 +452,14 @@ pub async fn fetch_verification_state(
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod test {
+    use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
 
     use super::*;
-    use crate::test_utils::corepc_node_helpers::{get_bitcoind_and_client, mine_blocks};
 
-    #[tokio::test()]
+    #[tokio::test]
     async fn test_fetch_timestamps() {
         let (bitcoind, client) = get_bitcoind_and_client();
-        let _ = mine_blocks(&bitcoind, 115, None).unwrap();
+        let _ = mine_blocks(&bitcoind, &client, 115, None).await.unwrap();
 
         let ts = fetch_block_timestamps_ascending(&client, 15, 10)
             .await

@@ -13811,6 +13811,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-primitives",
  "strata-test-utils",
+ "strata-test-utils-btcio",
  "thiserror 2.0.17",
 ]
 
@@ -13829,6 +13830,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bitcoin",
+ "bitcoind-async-client",
+ "corepc-node",
  "serde",
  "strata-asm-common",
  "strata-asm-spec",
@@ -13839,7 +13842,10 @@ dependencies = [
  "strata-service",
  "strata-state",
  "strata-tasks",
+ "strata-test-utils-btcio",
+ "strata-test-utils-l2",
  "thiserror 2.0.17",
+ "tokio",
  "tracing",
 ]
 
@@ -13911,7 +13917,6 @@ dependencies = [
  "bitcoin",
  "bitcoind-async-client",
  "borsh",
- "corepc-node",
  "hex",
  "musig2",
  "rand 0.8.5",
@@ -13934,6 +13939,7 @@ dependencies = [
  "strata-storage",
  "strata-tasks",
  "strata-test-utils",
+ "strata-test-utils-btcio",
  "strata-test-utils-l2",
  "strata-test-utils-tx-indexer",
  "thiserror 2.0.17",
@@ -15253,6 +15259,20 @@ dependencies = [
  "strata-params",
  "strata-primitives",
  "strata-test-utils",
+ "tokio",
+]
+
+[[package]]
+name = "strata-test-utils-btcio"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "bitcoind-async-client",
+ "corepc-node",
+ "musig2",
+ "rand 0.8.5",
+ "strata-crypto",
  "tokio",
 ]
 

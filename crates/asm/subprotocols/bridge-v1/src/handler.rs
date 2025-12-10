@@ -112,17 +112,14 @@ mod tests {
     #[test]
     fn test_handle_slash_tx_success() {
         // 1. Setup Bridge State
-        let (mut state, _) = create_test_state();
+        let (mut state, operators) = create_test_state();
 
         // 2. Prepare Slash Info and Transactions
         // We act as if the first operator (index 0) is being slashed.
         let operator_idx = 0;
         let slash_header = SlashTxHeaderAux::new(operator_idx);
 
-        // We need the N-of-N script to create a valid stake transaction that the slash tx spends.
-        let nn_script = state.operators().current_nn_script().clone();
-
-        let (stake_tx, slash_tx) = create_connected_stake_and_slash_txs(&slash_header, nn_script);
+        let (stake_tx, slash_tx) = create_connected_stake_and_slash_txs(&slash_header, &operators);
 
         // 3. Prepare ParsedTx
         // We need to re-parse the slash tx to get the correct SlashInfo with updated input

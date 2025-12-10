@@ -17,7 +17,10 @@ use strata_asm_txs_bridge_v1::{
     deposit_request::parse_drt_from_tx,
     test_utils::{build_deposit_transaction, create_deposit_op_return},
 };
-use strata_crypto::{test_utils::schnorr::create_musig2_signature, EvenSecretKey};
+use strata_crypto::{
+    test_utils::schnorr::{create_musig2_signature, Musig2Tweak},
+    EvenSecretKey,
+};
 use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use crate::{
@@ -136,8 +139,8 @@ fn sign_deposit_transaction(
         .map_err(|e| Error::TxBuilder(format!("Sighash creation failed: {e}")))?;
 
     let msg = sighash.to_byte_array();
-    let tweak_bytes = Some(takeback_hash.to_byte_array());
-    let schnorr_sig = create_musig2_signature(signers, &msg, tweak_bytes);
+    let tweak = Musig2Tweak::TaprootScript(takeback_hash.to_byte_array());
+    let schnorr_sig = create_musig2_signature(signers, &msg, tweak);
 
     let signature = bdk_wallet::bitcoin::taproot::Signature {
         signature: schnorr_sig.into(),

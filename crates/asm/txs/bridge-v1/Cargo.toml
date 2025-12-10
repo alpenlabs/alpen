@@ -20,13 +20,18 @@ strata-primitives.workspace = true
 
 # Optional dependencies for test utilities
 strata-crypto = { workspace = true, optional = true }
+strata-test-utils-btcio = { workspace = true, optional = true }
 
 [dev-dependencies]
-strata-test-utils.workspace = true
-strata-crypto = { workspace = true, features = ["test-utils"] }
 musig2.workspace = true
-rand.workspace = true
 proptest.workspace = true
+rand.workspace = true
+strata-crypto = { workspace = true, features = ["test-utils"] }
+strata-test-utils.workspace = true
 
 [features]
-test-utils = ["dep:strata-crypto", "strata-crypto/test-utils"]
+test-utils = [
+  "dep:strata-crypto",
+  "dep:strata-test-utils-btcio",
+  "strata-crypto/test-utils",
+]

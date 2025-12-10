@@ -24,13 +24,13 @@ pub struct AsmWorkerServiceState<W> {
     pub(crate) context: W,
 
     /// Whether the service is initialized.
-    pub(crate) initialized: bool,
+    pub initialized: bool,
 
     /// Current ASM state.
-    pub(crate) anchor: Option<AsmState>,
+    pub anchor: Option<AsmState>,
 
     /// Current anchor block.
-    pub(crate) blkid: Option<L1BlockCommitment>,
+    pub blkid: Option<L1BlockCommitment>,
 
     /// ASM spec for ASM STF.
     asm_spec: StrataAsmSpec,
@@ -38,7 +38,7 @@ pub struct AsmWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
-    pub(crate) fn new(context: W, params: Arc<Params>) -> Self {
+    pub fn new(context: W, params: Arc<Params>) -> Self {
         let asm_spec = StrataAsmSpec::from_params(params.rollup());
         Self {
             params,
@@ -53,7 +53,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// Loads and sets the latest anchor state.
     ///
     /// If there are no anchor states yet, creates and stores genesis one beforehand.
-    pub(crate) fn load_latest_or_create_genesis(&mut self) -> WorkerResult<()> {
+    pub fn load_latest_or_create_genesis(&mut self) -> WorkerResult<()> {
         match self.context.get_latest_asm_state()? {
             Some((blkid, state)) => {
                 self.update_anchor_state(state, blkid);
@@ -88,7 +88,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// Returns the actual ASM STF results: a Bitcoin block is applied onto current anchor state.
     ///
     /// A caller is responsible for ensuring the current anchor is a parent of a passed block.
-    pub(crate) fn transition(&self, block: &Block) -> WorkerResult<AsmStfOutput> {
+    pub fn transition(&self, block: &Block) -> WorkerResult<AsmStfOutput> {
         let cur_state = self.anchor.as_ref().expect("state should be set before");
 
         // Pre process transition next block against current anchor state.
@@ -129,5 +129,197 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
 impl<W: WorkerContext + Send + Sync + 'static> ServiceState for AsmWorkerServiceState<W> {
     fn name(&self) -> &str {
         "asm_worker"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Mutex};
+
+    use async_trait::async_trait;
+    use bitcoin::{BlockHash, Network, absolute::Height, block::Header};
+    use bitcoind_async_client::{
+        Client,
+        traits::{Reader, Wallet},
+    };
+    use corepc_node::Node;
+    use strata_primitives::{L1BlockId, l1::GenesisL1View};
+    use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
+    use strata_test_utils_l2::gen_params;
+
+    use super::*;
+
+    struct TestEnv {
+        pub _node: Node, // Keep node alive
+        pub client: Arc<Client>,
+        pub service_state: AsmWorkerServiceState<MockWorkerContext>,
+    }
+
+    async fn setup_env() -> TestEnv {
+        // 1. Setup Bitcoin Regtest
+        let (node, client) = get_bitcoind_and_client();
+        let client = Arc::new(client);
+
+        // Mine some initial blocks to have funds and chain height.
+        let _ = mine_blocks(&node, &client, 101, None)
+            .await
+            .expect("Failed to mine initial blocks");
+
+        // Pick the current tip as our "genesis" for the ASM.
+        let tip_hash = client.get_block_hash(101).await.unwrap();
+
+        // 2. Setup Params
+        let mut params = gen_params();
+        params.rollup.network = Network::Regtest;
+
+        // Sync parameters with the actual bitcoind state
+        let genesis_view = get_genesis_l1_view(&client, &tip_hash)
+            .await
+            .expect("Failed to fetch genesis view");
+        params.rollup.genesis_l1_view = genesis_view;
+
+        let params = Arc::new(params);
+
+        // 3. Set worker context and initialize service state
+        let context = MockWorkerContext::new();
+        let mut service_state = AsmWorkerServiceState::new(context.clone(), params.clone());
+
+        // Initialize: this should create genesis state based on our `genesis_l1_view`
+        service_state
+            .load_latest_or_create_genesis()
+            .expect("Failed to load/create genesis state");
+
+        assert!(service_state.initialized);
+        assert!(service_state.anchor.is_some());
+
+        println!("Service initialized with genesis at height 101");
+
+        TestEnv {
+            _node: node,
+            client,
+            service_state,
+        }
+    }
+
+    /// Helper to construct `GenesisL1View` from a block hash using the client.
+    async fn get_genesis_l1_view(
+        client: &Client,
+        hash: &BlockHash,
+    ) -> anyhow::Result<GenesisL1View> {
+        let header: Header = client.get_block_header(hash).await?;
+        let height = client.get_block_height(hash).await?;
+
+        // Construct L1BlockCommitment
+        let blkid: L1BlockId = header.block_hash().into();
+        let blk_commitment = L1BlockCommitment::new(
+            Height::from_consensus(height as u32).expect("Height u32 overflow"),
+            blkid,
+        );
+
+        // Create dummy/default values for other fields
+        let next_target = header.bits.to_consensus();
+        let epoch_start_timestamp = header.time;
+        let last_11_timestamps = [header.time - 1; 11]; // simplified: ensure median < tip time by making history older
+
+        Ok(GenesisL1View {
+            blk: blk_commitment,
+            next_target,
+            epoch_start_timestamp,
+            last_11_timestamps, // simplified: ensure median < tip time by making history older
+        })
+    }
+
+    #[derive(Clone, Default)]
+    struct MockWorkerContext {
+        pub blocks: Arc<Mutex<HashMap<L1BlockId, Block>>>,
+        pub asm_states: Arc<Mutex<HashMap<L1BlockCommitment, AsmState>>>,
+        pub latest_asm_state: Arc<Mutex<Option<(L1BlockCommitment, AsmState)>>>,
+    }
+
+    impl MockWorkerContext {
+        fn new() -> Self {
+            Self::default()
+        }
+    }
+
+    #[async_trait]
+    impl WorkerContext for MockWorkerContext {
+        fn get_l1_block(&self, blockid: &L1BlockId) -> WorkerResult<Block> {
+            self.blocks
+                .lock()
+                .unwrap()
+                .get(blockid)
+                .cloned()
+                .ok_or(WorkerError::MissingL1Block(*blockid))
+        }
+
+        fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<AsmState> {
+            self.asm_states
+                .lock()
+                .unwrap()
+                .get(blockid)
+                .cloned()
+                .ok_or(WorkerError::MissingAsmState(*blockid.blkid()))
+        }
+
+        fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AsmState)>> {
+            Ok(self.latest_asm_state.lock().unwrap().clone())
+        }
+
+        fn store_anchor_state(
+            &self,
+            blockid: &L1BlockCommitment,
+            state: &AsmState,
+        ) -> WorkerResult<()> {
+            self.asm_states
+                .lock()
+                .unwrap()
+                .insert(*blockid, state.clone());
+            *self.latest_asm_state.lock().unwrap() = Some((*blockid, state.clone()));
+            Ok(())
+        }
+
+        fn get_network(&self) -> WorkerResult<Network> {
+            Ok(Network::Regtest)
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_asm_transition() {
+        // 1. Setup Environment
+        let env = setup_env().await;
+        let client = env.client;
+        let node = env._node;
+        let service_state = env.service_state;
+
+        // 2. Create a new block to test transition
+        // We mine 1 block on top of tip (which is our genesis).
+        let address = client.get_new_address().await.unwrap();
+        let new_block_hashes = mine_blocks(&node, &client, 1, Some(address)).await.unwrap();
+        let new_block_hash = new_block_hashes[0];
+
+        let new_block = client.get_block(&new_block_hash).await.unwrap();
+
+        println!("Mined new block: {}", new_block_hash);
+
+        // 6. Call Transition
+        // The transition function expects the block to be a child of the current anchor.
+        // Current anchor is at 101. New block is at 102, parent is 101.
+        // This should work.
+
+        let result = service_state.transition(&new_block);
+
+        match result {
+            Ok(_output) => {
+                println!("Transition successful!");
+                // Verify output if needed.
+                // Since block is empty (coinbase only), `compute_asm_transition` should return a
+                // state that reflects an empty transition or just L1 updates.
+                // We mainly care that it didn't error.
+            }
+            Err(e) => {
+                panic!("Transition failed: {:?}", e);
+            }
+        }
     }
 }
