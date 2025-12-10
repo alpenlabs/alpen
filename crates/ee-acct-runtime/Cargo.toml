@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = ["builders"]
 builders = ["dep:thiserror"]
+test-utils = []
 
 [dependencies]
 strata-acct-types.workspace = true

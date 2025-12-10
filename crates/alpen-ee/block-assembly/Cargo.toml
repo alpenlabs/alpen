@@ -25,3 +25,4 @@ tracing.workspace = true
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
 alloy-primitives.workspace = true
+strata-ee-acct-runtime = { workspace = true, features = ["test-utils"] }

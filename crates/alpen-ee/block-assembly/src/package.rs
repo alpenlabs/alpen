@@ -87,3 +87,78 @@ fn create_withdrawal_init_message_payload(
 
     MsgPayload::new(value, payload_data)
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::{SubjectId, VarVec};
+    use strata_ee_acct_types::{CommitMsgData, DepositMsgData, SubjTransferMsgData};
+
+    use super::*;
+
+    fn make_deposit_msg(dest_bytes: [u8; 32], sats: u64) -> MsgData {
+        MsgData::new_for_test(
+            AccountId::zero(),
+            0,
+            BitcoinAmount::from_sat(sats),
+            DecodedEeMessageData::Deposit(DepositMsgData::new(SubjectId::new(dest_bytes))),
+        )
+    }
+
+    fn make_subj_transfer_msg(sats: u64) -> MsgData {
+        MsgData::new_for_test(
+            AccountId::zero(),
+            0,
+            BitcoinAmount::from_sat(sats),
+            DecodedEeMessageData::SubjTransfer(SubjTransferMsgData::new(
+                SubjectId::new([0xaa; 32]),
+                SubjectId::new([0xbb; 32]),
+                VarVec::new(),
+            )),
+        )
+    }
+
+    fn make_commit_msg() -> MsgData {
+        MsgData::new_for_test(
+            AccountId::zero(),
+            0,
+            BitcoinAmount::from_sat(0),
+            DecodedEeMessageData::Commit(CommitMsgData::new([0xcc; 32])),
+        )
+    }
+
+    #[test]
+    fn build_block_inputs_filters_non_deposit_messages() {
+        // Mix of deposit, transfer, and commit messages
+        let inputs = vec![
+            make_deposit_msg([0x01; 32], 1000),
+            make_subj_transfer_msg(500), // Should be ignored
+            make_deposit_msg([0x02; 32], 2000),
+            make_commit_msg(), // Should be ignored
+            make_deposit_msg([0x03; 32], 3000),
+        ];
+
+        let block_inputs = build_block_inputs(inputs);
+
+        // Only deposits should be included
+        assert_eq!(block_inputs.total_inputs(), 3);
+        let deposits = block_inputs.subject_deposits();
+        assert_eq!(deposits[0].dest(), SubjectId::new([0x01; 32]));
+        assert_eq!(deposits[0].value(), BitcoinAmount::from_sat(1000));
+        assert_eq!(deposits[1].dest(), SubjectId::new([0x02; 32]));
+        assert_eq!(deposits[2].dest(), SubjectId::new([0x03; 32]));
+    }
+
+    #[test]
+    fn build_block_inputs_preserves_deposit_value_from_msg_meta() {
+        // The value comes from msg.value() (the meta), not from the deposit message itself
+        let inputs = vec![make_deposit_msg([0xaa; 32], 12345)];
+
+        let block_inputs = build_block_inputs(inputs);
+
+        assert_eq!(block_inputs.total_inputs(), 1);
+        assert_eq!(
+            block_inputs.subject_deposits()[0].value(),
+            BitcoinAmount::from_sat(12345)
+        );
+    }
+}
