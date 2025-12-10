@@ -21,79 +21,11 @@ use crate::{
     unstake::{UnstakeInfo, UnstakeTxHeaderAux},
 };
 
-/// Creates an unstake transaction for testing purposes.
-pub fn create_test_unstake_tx(info: &UnstakeInfo) -> Transaction {
-    // Create a dummy tx with two inputs (placeholder at index 0, stake connector at index 1) and a
-    // single output.
-    let mut tx = create_dummy_tx(1, 1);
-
-    // Encode auxiliary data and construct SPS 50 op_return script
-    let aux_data = encode_to_vec(info.header_aux()).unwrap();
-    let tag_data = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, UNSTAKE_TX_TYPE, aux_data).unwrap();
-    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
-        .encode_script_buf(&tag_data.as_ref())
-        .unwrap();
-
-    // The first output is SPS 50 header
-    tx.output[0].script_pubkey = op_return_script;
-
-    // Include a fully-formed stake-connector witness so parsing can recover the N/N pubkey.
-    let preimage = [0u8; 32];
-    let stake_hash = sha256::Hash::hash(&preimage).to_byte_array();
-    let nn_pubkey = *info.witness_pushed_pubkey();
-    let script = stake_connector_script(stake_hash, nn_pubkey);
-    let (_, spend_info) = stake_connector_tapproot_addr(stake_hash, nn_pubkey);
-    let control_block = spend_info
-        .control_block(&(script.clone(), LeafVersion::TapScript))
-        .unwrap();
-
-    tx.input[0].witness.push(preimage);
-    tx.input[0].witness.push([0u8; 64]); // dummy sig
-    tx.input[0].witness.push(script.to_bytes());
-    tx.input[0].witness.push(control_block.serialize());
-
-    tx
-}
-
-/// Sets up a connected pair of stake and slash transactions for testing.
-///
-/// Returns a tuple `(stake_tx, unstake)` where `unstake` correctly spends
-/// the stake output from `stake_tx`.
-pub fn create_connected_stake_and_unstake_txs(
-    header_aux: &UnstakeTxHeaderAux,
-    operator_keys: &[EvenSecretKey],
-) -> (Transaction, Transaction) {
-    let (bitcoind, client) = get_bitcoind_and_client();
-    let _ =
-        mine_blocks_blocking(&bitcoind, &client, (COINBASE_MATURITY + 1) as usize, None).unwrap();
-
-    // 1. Create a "stake transaction" to act as the funding source. This simulates the N-of-N
-    //    multisig UTXO that the slash transaction spends.
-    let mut stake_tx = create_dummy_tx(0, 1);
-    let (_, internal_key) = derive_musig2_p2tr_address(operator_keys).unwrap();
-    let nn_script = ScriptBuf::new_p2tr(SECP256K1, internal_key, None);
-    stake_tx.output[0].script_pubkey = nn_script;
-    stake_tx.output[0].value = Amount::from_sat(1_000);
-
-    // let stake_txid =
-    //     submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut stake_tx)
-    //         .unwrap();
-
-    // 2. Create the base slash transaction using the provided metadata.
-    let unstake_info = UnstakeInfo::new(header_aux.clone(), internal_key);
-    let mut unstake = create_test_unstake_tx(&unstake_info);
-
-    let _ = submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut unstake)
-        .unwrap();
-
-    (stake_tx, unstake)
-}
-
 /// Sets up a connected pair of stake and unstake transactions for testing.
 ///
 /// Returns a tuple `(stake_tx, unstake)` where `unstake` correctly spends
 /// the stake output from `stake_tx`.
-pub fn create_connected_stake_and_unstake_txs_new(
+pub fn build_connected_stake_and_unstake_txs(
     header_aux: &UnstakeTxHeaderAux,
     operator_keys: &[EvenSecretKey],
 ) -> (Transaction, Transaction) {
@@ -117,7 +49,7 @@ pub fn create_connected_stake_and_unstake_txs_new(
 
     // 2. Create the base unstake transaction using the provided metadata.
     let unstake_info = UnstakeInfo::new(header_aux.clone(), nn_key);
-    let mut unstake_tx = create_test_unstake_tx(&unstake_info);
+    let mut unstake_tx = build_dummy_unstake_tx(&unstake_info);
 
     unstake_tx.input[0].previous_output = OutPoint {
         txid: stake_txid,
@@ -156,6 +88,25 @@ pub fn create_connected_stake_and_unstake_txs_new(
     let _ = bitcoind.client.send_raw_transaction(&unstake_tx).unwrap();
 
     (stake_tx, unstake_tx)
+}
+
+/// Creates an unstake transaction for testing purposes.
+fn build_dummy_unstake_tx(info: &UnstakeInfo) -> Transaction {
+    // Create a dummy tx with two inputs (placeholder at index 0, stake connector at index 1) and a
+    // single output.
+    let mut tx = create_dummy_tx(1, 1);
+
+    // Encode auxiliary data and construct SPS 50 op_return script
+    let aux_data = encode_to_vec(info.header_aux()).unwrap();
+    let tag_data = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, UNSTAKE_TX_TYPE, aux_data).unwrap();
+    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+        .encode_script_buf(&tag_data.as_ref())
+        .unwrap();
+
+    // The first output is SPS 50 header
+    tx.output[0].script_pubkey = op_return_script;
+
+    tx
 }
 
 fn stake_connector_tapproot_addr(

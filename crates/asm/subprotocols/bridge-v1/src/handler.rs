@@ -114,11 +114,8 @@ mod tests {
     use strata_asm_txs_bridge_v1::{
         parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
-        test_utils::{
-            create_connected_stake_and_slash_txs, create_connected_stake_and_unstake_txs_new,
-            parse_tx,
-        },
-        unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
+        test_utils::{create_connected_stake_and_slash_txs, parse_tx},
+        unstake::{UnstakeTxHeaderAux, build_connected_stake_and_unstake_txs, parse_unstake_tx},
     };
     use strata_btc_types::RawBitcoinTx;
 
@@ -176,7 +173,7 @@ mod tests {
         let unstake_header = UnstakeTxHeaderAux::new(operator_idx);
 
         let (stake_tx, unstake_tx) =
-            create_connected_stake_and_unstake_txs_new(&unstake_header, &operators);
+            build_connected_stake_and_unstake_txs(&unstake_header, &operators);
 
         // 3. Prepare ParsedTx
         // We need to re-parse the slash tx to get the correct SlashInfo with updated input

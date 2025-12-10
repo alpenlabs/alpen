@@ -1,8 +1,7 @@
 use bitcoin::{
-    ScriptBuf,
+    ScriptBuf, XOnlyPublicKey,
     opcodes::all::{OP_CHECKSIGVERIFY, OP_EQUAL, OP_EQUALVERIFY, OP_SHA256, OP_SIZE},
     script::Instruction,
-    XOnlyPublicKey,
 };
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
@@ -102,18 +101,30 @@ pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeT
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Transaction;
+    use strata_crypto::test_utils::schnorr::create_agg_pubkey_from_privkeys;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{create_test_unstake_tx, mutate_aux_data, parse_tx};
+    use crate::{
+        test_utils::{create_test_operators, mutate_aux_data, parse_tx},
+        unstake::build::build_connected_stake_and_unstake_txs,
+    };
 
     const AUX_LEN: usize = std::mem::size_of::<UnstakeTxHeaderAux>();
 
+    fn create_slash_tx_with_info() -> (UnstakeInfo, Transaction) {
+        let header_aux: UnstakeTxHeaderAux = ArbitraryGenerator::new().generate();
+        let (sks, _) = create_test_operators(3);
+        let (_stake_tx, unstake_tx) = build_connected_stake_and_unstake_txs(&header_aux, &sks);
+        let nn_key = create_agg_pubkey_from_privkeys(&sks);
+        let info = UnstakeInfo::new(header_aux, nn_key);
+        (info, unstake_tx)
+    }
+
     #[test]
     fn test_parse_unstake_tx_success() {
-        let info: UnstakeInfo = ArbitraryGenerator::new().generate();
-
-        let tx = create_test_unstake_tx(&info);
+        let (info, tx) = create_slash_tx_with_info();
         let tx_input = parse_tx(&tx);
 
         let parsed = parse_unstake_tx(&tx_input).expect("Should parse unstake tx");
@@ -123,8 +134,7 @@ mod tests {
 
     #[test]
     fn test_parse_unstake_missing_stake_input() {
-        let info: UnstakeInfo = ArbitraryGenerator::new().generate();
-        let mut tx = create_test_unstake_tx(&info);
+        let (_info, mut tx) = create_slash_tx_with_info();
 
         // Remove the stake connector to force an input count mismatch
         tx.input.pop();
@@ -139,8 +149,7 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_aux() {
-        let info: UnstakeInfo = ArbitraryGenerator::new().generate();
-        let mut tx = create_test_unstake_tx(&info);
+        let (_info, mut tx) = create_slash_tx_with_info();
 
         let larger_aux = [0u8; AUX_LEN + 1].to_vec();
         mutate_aux_data(&mut tx, larger_aux);
