@@ -4,7 +4,7 @@ rpc_host = "0.0.0.0"
 rpc_port = 8432
 l2_blocks_fetch_limit = 1000
 datadir = "/app/data"
-sync_endpoint = "ws://fnclient675f9eff3a682b8c0ea7423.testnet.alpenlabs.io"
+sync_endpoint = "ws://fnclient675f9eff3a682b8c0ea7423.pectra-testnet.alpenlabs.io"
 db_retry_count = 5
 
 [bitcoind]
