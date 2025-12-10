@@ -6,6 +6,26 @@ use strata_acct_types::Hash;
 use strata_ee_acct_types::{EeAccountState, PendingInputEntry, UpdateExtraData};
 use tracing::debug;
 
+/// Extracts deposits from pending inputs, limited by `max_deposits`.
+///
+/// Returns a vector of [`DepositInfo`] ready for payload building.
+pub(crate) fn extract_deposits(
+    pending_inputs: &[PendingInputEntry],
+    max_deposits: NonZero<u8>,
+) -> Vec<DepositInfo> {
+    pending_inputs
+        .iter()
+        .filter_map(|entry| match entry {
+            PendingInputEntry::Deposit(data) => Some(DepositInfo::new(
+                0,
+                Address::from_slice(data.dest().inner()),
+                data.value(),
+            )),
+        })
+        .take(max_deposits.get() as usize)
+        .collect()
+}
+
 /// Builds the block payload.
 /// All EE <-> EVM conversions should be contained inside here.
 pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
@@ -18,29 +38,7 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
     let parent = B256::from_slice(&parent_exec_blkid);
     let timestamp_sec = timestamp_ms / 1000;
 
-    // limit number of deposits that are processed per block
-    let max_deposit_capacity = account_state
-        .pending_inputs()
-        .len()
-        .min(max_deposits_per_block.get() as usize);
-    let mut deposits = Vec::with_capacity(max_deposit_capacity);
-    for pending_input in account_state.pending_inputs() {
-        match pending_input {
-            PendingInputEntry::Deposit(subject_deposit_data) => {
-                let deposit = DepositInfo::new(
-                    0,
-                    Address::from_slice(subject_deposit_data.dest().inner()),
-                    subject_deposit_data.value(),
-                );
-                deposits.push(deposit);
-            }
-        }
-
-        if deposits.len() == max_deposits_per_block.get() as usize {
-            break;
-        }
-    }
-
+    let deposits = extract_deposits(account_state.pending_inputs(), max_deposits_per_block);
     let processed_inputs = deposits.len() as u32;
     // dont handle forced inclusions currently
     let processed_fincls = 0;
