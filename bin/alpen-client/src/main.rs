@@ -168,18 +168,6 @@ fn main() {
             )
             .build();
 
-            #[cfg(feature = "sequencer")]
-            let (exec_chain_handle, exec_chain_task) =
-                build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
-
-            #[cfg(feature = "sequencer")]
-            let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
-                ol_chain_tracker_state,
-                ol_tracker.ol_status_watcher(),
-                ol_client.clone(),
-                storage.clone(),
-            );
-
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
                 .on_component_initialized({
@@ -244,7 +232,7 @@ fn main() {
                         }
                     };
 
-                    let gossip_task = create_gossip_task(gossip_rx, state_events, preconf_tx, gossip_config);
+                    let gossip_task = create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
 
                     node.task_executor
                         .spawn_critical("ol_tracker_task", ol_tracker_task);
@@ -260,6 +248,16 @@ fn main() {
                             node.payload_builder_handle.clone(),
                             node.beacon_engine_handle.clone(),
                         ));
+
+                        let (exec_chain_handle, exec_chain_task) =
+                            build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
+
+                        let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
+                            ol_chain_tracker_state,
+                            ol_tracker.ol_status_watcher(),
+                            ol_client.clone(),
+                            storage.clone(),
+                        );
 
                         node.task_executor
                             .spawn_critical("exec_chain", exec_chain_task);
