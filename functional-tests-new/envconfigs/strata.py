@@ -1,6 +1,6 @@
 """Environment configurations."""
 
-from typing import Any, cast
+from typing import cast
 
 import flexitest
 
@@ -9,9 +9,9 @@ from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
 
 
-class BasicEnvConfig(flexitest.EnvConfig):
+class StrataEnvConfig(flexitest.EnvConfig):
     """
-    Basic environment: Bitcoin regtest + Strata sequencer.
+    Straa environment: Initializes services required to run strata.
     """
 
     def __init__(self, pre_generate_blocks: int = 0):

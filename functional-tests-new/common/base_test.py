@@ -61,6 +61,20 @@ class BaseTest(flexitest.Test):
         """Log at ERROR level."""
         return self.logger.error
 
+    # Overriding here to have `self.get_service` return a `ServiceWrapper[Rpc]` without boilerplate.
+    def main(self, ctx) -> bool:  # type: ignore[override]
+        self.runctx = ctx
+        return self.run()
+
+    def run(self) -> bool:
+        raise NotImplementedError
+
+
+class StrataNodeTest(BaseTest):
+    """
+    Base Test class for testing strata. Assumes related services like strata, bitcoin, reth, etc.
+    """
+
     @overload
     def get_service(self, typ: Literal[ServiceType.Bitcoin]) -> BitcoinServiceWrapper: ...
 
@@ -75,11 +89,3 @@ class BaseTest(flexitest.Test):
                 f"{list(self.runctx.env.services.keys())}"  # type: ignore[union-attr]
             )
         return svc
-
-    # Overriding here to have `self.get_service` return a `ServiceWrapper[Rpc]` without boilerplate.
-    def main(self, ctx) -> bool:  # type: ignore[override]
-        self.runctx = ctx
-        return self.run()
-
-    def run(self) -> bool:
-        raise NotImplementedError

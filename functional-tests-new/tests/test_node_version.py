@@ -2,13 +2,13 @@
 
 import flexitest
 
-from common.base_test import BaseTest
+from common.base_test import StrataNodeTest
 from common.config import ServiceType
 
 
 # NOTE: this is redundant and is just for setting up the func tests infra. Remove later.
 @flexitest.register
-class TestNodeVersion(BaseTest):
+class TestNodeVersion(StrataNodeTest):
     """Test that node starts and responds to protocolVersion calls."""
 
     def __init__(self, ctx: flexitest.InitContext):
