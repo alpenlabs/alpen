@@ -1,5 +1,4 @@
 use arbitrary::Arbitrary;
-use strata_primitives::l1::BitcoinOutPoint;
 
 use crate::unstake::UnstakeTxHeaderAux;
 
@@ -8,23 +7,14 @@ use crate::unstake::UnstakeTxHeaderAux;
 pub struct UnstakeInfo {
     /// SPS-50 auxiliary data from the transaction tag.
     header_aux: UnstakeTxHeaderAux,
-    /// Previous outpoint referenced second input (stake connector).
-    second_inpoint: BitcoinOutPoint,
 }
 
 impl UnstakeInfo {
-    pub fn new(header_aux: UnstakeTxHeaderAux, second_inpoint: BitcoinOutPoint) -> Self {
-        Self {
-            header_aux,
-            second_inpoint,
-        }
+    pub fn new(header_aux: UnstakeTxHeaderAux) -> Self {
+        Self { header_aux }
     }
 
     pub fn header_aux(&self) -> &UnstakeTxHeaderAux {
         &self.header_aux
-    }
-
-    pub fn second_inpoint(&self) -> &BitcoinOutPoint {
-        &self.second_inpoint
     }
 }

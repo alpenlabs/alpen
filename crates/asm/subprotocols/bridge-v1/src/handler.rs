@@ -63,26 +63,7 @@ pub(crate) fn handle_parsed_tx<'t>(
 
             Ok(())
         }
-        ParsedTx::Unstake(info) => {
-            let stake_connector_script = &verified_aux_data
-                .get_bitcoin_txout(info.second_inpoint().outpoint())?
-                .script_pubkey;
-
-            // Validate that the stake connector (second input) is locked to a known N/N multisig
-            // script from any recorded configuration.
-            if !state
-                .operators()
-                .historical_nn_scripts()
-                .any(|script| script == stake_connector_script)
-            {
-                return Err(SlashValidationError::InvalidStakeConnectorScript.into());
-            };
-
-            // Remove the operator from active set
-            state.remove_operator(info.header_aux().operator_idx());
-
-            Ok(())
-        }
+        ParsedTx::Unstake(_info) => Ok(()),
     }
 }
 
@@ -110,9 +91,7 @@ pub(crate) fn preprocess_parsed_tx<'t>(
         ParsedTx::Slash(info) => {
             collector.request_bitcoin_tx(info.second_inpoint().0.txid);
         }
-        ParsedTx::Unstake(info) => {
-            collector.request_bitcoin_tx(info.second_inpoint().0.txid);
-        }
+        ParsedTx::Unstake(info) => {}
     }
 }
 
@@ -122,7 +101,11 @@ mod tests {
     use strata_asm_txs_bridge_v1::{
         parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
-        test_utils::{create_connected_stake_and_slash_txs, parse_tx},
+        test_utils::{
+            create_connected_stake_and_slash_txs, create_connected_stake_and_unstake_txs_new,
+            parse_tx,
+        },
+        unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
     };
     use strata_btc_types::RawBitcoinTx;
 
@@ -147,6 +130,48 @@ mod tests {
         let slash_tx_input = parse_tx(&slash_tx);
         let parsed_slash_info = parse_slash_tx(&slash_tx_input).expect("Should parse slash tx");
         let parsed_tx = ParsedTx::Slash(parsed_slash_info);
+
+        // 4. Prepare VerifiedAuxData containing the stake transaction
+        let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();
+        let aux_data = AuxData::new(vec![], vec![raw_stake_tx]);
+        let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
+        let compact_mmr: AsmCompactMmr = mmr.into();
+        let verified_aux_data =
+            VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
+
+        // 5. Handle the transaction
+        let mut relayer = MockMsgRelayer;
+        let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
+
+        assert!(result.is_ok(), "Handle parsed tx should succeed");
+
+        // 6. Verify the operator is removed
+        assert!(
+            !state.operators().is_in_current_multisig(operator_idx),
+            "Operator should be removed"
+        );
+    }
+
+    #[test]
+    fn test_handle_unstake_tx_success() {
+        // 1. Setup Bridge State
+        let (mut state, operators) = create_test_state();
+
+        // 2. Prepare Slash Info and Transactions
+        // We act as if the first operator (index 0) is being slashed.
+        let operator_idx = 0;
+        let unstake_header = UnstakeTxHeaderAux::new(operator_idx);
+
+        let (stake_tx, unstake_tx) =
+            create_connected_stake_and_unstake_txs_new(&unstake_header, &operators);
+
+        // 3. Prepare ParsedTx
+        // We need to re-parse the slash tx to get the correct SlashInfo with updated input
+        // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
+        let unstake_tx_input = parse_tx(&unstake_tx);
+        let parsed_unstake_info =
+            parse_unstake_tx(&unstake_tx_input).expect("Should parse slash tx");
+        let parsed_tx = ParsedTx::Unstake(parsed_unstake_info);
 
         // 4. Prepare VerifiedAuxData containing the stake transaction
         let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();

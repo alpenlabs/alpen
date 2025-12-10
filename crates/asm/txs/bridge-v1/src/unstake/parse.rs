@@ -25,16 +25,7 @@ pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeT
     // Parse auxiliary data using UnstakeTxHeaderAux
     let header_aux: UnstakeTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
-    // Extract the previous outpoint from the second input
-    let second_input_outpoint = tx
-        .tx()
-        .input
-        .get(STAKE_INPUT_INDEX)
-        .ok_or(UnstakeTxParseError::MissingInput(STAKE_INPUT_INDEX))?
-        .previous_output
-        .into();
-
-    let info = UnstakeInfo::new(header_aux, second_input_outpoint);
+    let info = UnstakeInfo::new(header_aux);
 
     Ok(info)
 }
