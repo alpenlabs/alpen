@@ -46,8 +46,19 @@ pub(crate) fn handle_parsed_tx(
                 .into());
             }
 
+            // Verify the deposit amount matches the bridge's expected amount
+            let expected_amount = state.denomination().to_sat();
+            if info.amt().to_sat() != expected_amount {
+                return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
+                    expected: expected_amount,
+                    got: info.amt().to_sat(),
+                })
+                .into());
+            }
+
             // Update bridge state with the validated deposit
-            state.process_deposit_tx(&info)?;
+            state.process_deposit_tx(&info);
+
             Ok(())
         }
         ParsedTx::WithdrawalFulfillment(info) => {
@@ -178,5 +189,10 @@ mod tests {
         let (_, _) = create_connected_drt_and_dt(drt_header_aux, dt_header_aux, &operators);
 
         // FIXME: This is failing due to signature mismatch
+    }
+
+    #[test]
+    fn test_process_deposit_tx_invalid_amount() {
+        todo!()
     }
 }

@@ -99,7 +99,7 @@ pub(crate) fn add_deposits(state: &mut BridgeV1State, count: usize) -> Vec<Depos
     for _ in 0..count {
         let mut info: DepositInfo = arb.generate();
         info.set_amt(*state.denomination());
-        state.process_deposit_tx(&info).unwrap();
+        state.process_deposit_tx(&info);
         infos.push(info);
     }
     infos

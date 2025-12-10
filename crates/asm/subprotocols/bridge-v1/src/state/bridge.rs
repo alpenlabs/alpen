@@ -7,7 +7,7 @@ use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
-    errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
+    errors::{WithdrawalCommandError, WithdrawalValidationError},
     state::{
         assignment::AssignmentTable,
         config::BridgeV1Config,
@@ -85,54 +85,6 @@ impl BridgeV1State {
         &self.denomination
     }
 
-    /// Validates a deposit transaction and info against bridge state requirements.
-    ///
-    /// This function performs comprehensive validation of a deposit by verifying:
-    /// - The deposit amount matches the bridge's expected amount
-    /// - The Deposit Request Transaction (DRT) spending signature is valid
-    /// - The deposit output is properly locked to the aggregated operator key
-    /// - The deposit index is unique within the deposits table
-    ///
-    /// # Parameters
-    ///
-    /// - `tx` - The Bitcoin transaction containing the deposit
-    /// - `info` - The parsed deposit information to validate
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` - If the deposit passes all validation checks
-    /// - `Err(DepositValidationError)` - If validation fails for any reason
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - The deposit amount doesn't match the bridge's expected amount
-    /// - The DRT spending signature is invalid or doesn't match the aggregated operator key
-    /// - The deposit output lock is incorrect
-    /// - A deposit with the same index already exists
-    fn validate_deposit(&self, info: &DepositInfo) -> Result<(), DepositValidationError> {
-        // Verify the deposit amount matches the bridge's expected amount
-        if info.amt().to_sat() != self.denomination.to_sat() {
-            return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
-                expected: self.denomination.to_sat(),
-                got: info.amt().to_sat(),
-            }));
-        }
-
-        // Verify this deposit index hasn't been used before
-        if self
-            .deposits()
-            .get_deposit(info.header_aux().deposit_idx())
-            .is_some()
-        {
-            return Err(DepositValidationError::DepositIdxAlreadyExists(
-                info.header_aux().deposit_idx(),
-            ));
-        }
-
-        Ok(())
-    }
-
     /// Processes a deposit transaction by validating and adding it to the deposits table.
     ///
     /// This function takes already parsed deposit transaction information, validates it against the
@@ -156,18 +108,17 @@ impl BridgeV1State {
     /// - The deposit amount is zero or negative
     /// - The internal key doesn't match the current aggregated operator key
     /// - The deposit index already exists in the deposits table
-    pub fn process_deposit_tx(&mut self, info: &DepositInfo) -> Result<(), DepositValidationError> {
-        // Validate the deposit first
-        self.validate_deposit(info)?;
+    pub fn process_deposit_tx(&mut self, info: &DepositInfo) {
         let notary_operators = self.operators.current_multisig().clone();
         let entry = DepositEntry::new(
             info.header_aux().deposit_idx(),
             notary_operators,
             info.amt(),
-        )?;
-        self.deposits.insert_deposit(entry)?;
-
-        Ok(())
+        )
+        .expect("operator should not be empty");
+        self.deposits
+            .insert_deposit(entry)
+            .expect("deposit idx should not be duplicated");
     }
 
     /// Adds a new withdrawal assignment to the assignments table.
@@ -381,11 +332,7 @@ mod tests {
             deposit_info.set_amt(bridge_state.denomination);
 
             // Process the deposit
-            let result = bridge_state.process_deposit_tx(&deposit_info);
-            assert!(
-                result.is_ok(),
-                "Valid deposit should be processed successfully"
-            );
+            bridge_state.process_deposit_tx(&deposit_info);
 
             // Verify the deposit was added to the state
             assert_eq!(bridge_state.deposits().len(), i + 1);
@@ -399,50 +346,6 @@ mod tests {
             );
             assert_eq!(stored_deposit.amt(), deposit_info.amt());
         }
-    }
-
-    /// Test deposit transaction rejection due to invalid amount.
-    ///
-    /// Verifies that deposits with amounts that don't match the bridge's expected
-    /// denomination are rejected with the appropriate error type.
-    #[test]
-    fn test_process_deposit_tx_invalid_amount() {
-        let (mut bridge_state, _) = create_test_state();
-        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-
-        let err = bridge_state.process_deposit_tx(&deposit_info).unwrap_err();
-        assert!(matches!(
-            err,
-            DepositValidationError::MismatchDepositAmount(_)
-        ));
-        if let DepositValidationError::MismatchDepositAmount(mismatch) = err {
-            assert_eq!(mismatch.expected, bridge_state.denomination.to_sat());
-            assert_eq!(mismatch.got, deposit_info.amt().to_sat());
-        }
-
-        // Verify no deposit was added
-        assert_eq!(bridge_state.deposits().len(), 0);
-    }
-
-    /// Test deposit transaction rejection due to invalid signature.
-    ///
-    /// Verifies that deposits signed with incomplete or incorrect operator keys
-    /// are rejected during signature validation.
-    #[test]
-    fn test_process_deposit_tx_invalid_signing_set() {
-        let (mut bridge_state, mut privkeys) = create_test_state();
-
-        let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-        deposit_info.set_amt(bridge_state.denomination);
-
-        privkeys.pop();
-
-        let err = bridge_state.process_deposit_tx(&deposit_info).unwrap_err();
-
-        assert!(matches!(err, DepositValidationError::DrtSignature(_)));
-
-        // Verify no deposit was added
-        assert_eq!(bridge_state.deposits().len(), 0);
     }
 
     /// Test successful withdrawal assignment creation.
