@@ -423,8 +423,8 @@ mod tests {
         async fn prunes_to_included_ol_block() {
             // Scenario: State has blocks, finalized EE block references an earlier OL block
             //
-            // OL State: base=[slot=10] -> [slot=11] -> [slot=12] -> [slot=13] -> [slot=14] -> [slot=15]
-            // Finalized EE block references OL block at slot=13
+            // OL State: base=[slot=10] -> [slot=11] -> [slot=12] -> [slot=13] -> [slot=14] ->
+            // [slot=15] Finalized EE block references OL block at slot=13
             //
             // Expected: Prune up to slot=13, leaving slots 14, 15 in state
 

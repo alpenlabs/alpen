@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{ConsensusHeads, OLFinalizedStatus, OLClient, Storage};
+use alpen_ee_common::{ConsensusHeads, OLClient, OLFinalizedStatus, Storage};
 use alpen_ee_config::AlpenEeParams;
 use tokio::sync::watch;
 

@@ -48,7 +48,10 @@ pub(crate) fn make_chain_status(finalized: OLBlockCommitment) -> OLChainStatus {
 }
 
 /// Helper to create OLBlockData for a block with messages.
-pub(crate) fn make_block_data(block: OLBlockCommitment, messages: Vec<MessageEntry>) -> OLBlockData {
+pub(crate) fn make_block_data(
+    block: OLBlockCommitment,
+    messages: Vec<MessageEntry>,
+) -> OLBlockData {
     OLBlockData {
         commitment: block,
         inbox_messages: messages,

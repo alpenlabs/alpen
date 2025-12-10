@@ -1,5 +1,5 @@
 use alpen_ee_common::{
-    ConsensusHeads, EeAccountStateAtEpoch, OLFinalizedStatus, OLChainStatus, Storage,
+    ConsensusHeads, EeAccountStateAtEpoch, OLChainStatus, OLFinalizedStatus, Storage,
 };
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::EpochCommitment;
