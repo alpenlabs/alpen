@@ -8,10 +8,10 @@ use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot,
     hash::raw,
 };
-use strata_ledger_types::{AccountTypeState, IStateAccessor};
+use strata_ledger_types::*;
 
 use crate::{
-    account::{AccountState, NativeAccountTypeState},
+    account::{NativeAccountState, NativeAccountTypeState},
     epochal::EpochalState,
     global::GlobalState,
     ledger::TsnlLedgerAccountsTable,
@@ -61,7 +61,8 @@ impl OLState {
 }
 
 impl IStateAccessor for OLState {
-    type AccountState = AccountState;
+    type AccountState = NativeAccountState;
+    type AccountStateMut = NativeAccountState;
 
     // ===== Global state methods =====
 
@@ -121,30 +122,26 @@ impl IStateAccessor for OLState {
         Ok(self.ledger.get_account_state(&id))
     }
 
-    fn get_account_state_mut(
-        &mut self,
-        id: AccountId,
-    ) -> AcctResult<Option<&mut Self::AccountState>> {
-        Ok(self.ledger.get_account_state_mut(&id))
-    }
-
-    fn update_account_state(&mut self, id: AccountId, state: Self::AccountState) -> AcctResult<()> {
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    where
+        F: FnOnce(&mut Self::AccountStateMut) -> R,
+    {
         let acct = self
             .ledger
             .get_account_state_mut(&id)
             .ok_or(AcctError::MissingExpectedAccount(id))?;
-        *acct = state;
-        Ok(())
+        Ok(f(acct))
     }
 
     fn create_new_account(
         &mut self,
         id: AccountId,
-        state: AccountTypeState<Self::AccountState>,
+        new_acct_data: NewAccountData<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
         let serial = self.ledger.next_avail_serial();
-        let state = NativeAccountTypeState::from_generic(state);
-        let account = AccountState::new(serial, BitcoinAmount::from(0), state);
+        let bal = new_acct_data.initial_balance();
+        let state = NativeAccountTypeState::from_generic(new_acct_data.into_type_state());
+        let account = NativeAccountState::new(serial, bal, state);
         self.ledger.create_account(id, account)
     }
 

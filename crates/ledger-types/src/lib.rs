@@ -26,14 +26,19 @@
 //! These parts are committed to in the toplevel state, which is updated later
 //! when we finish a state transition.
 
+#![expect(missing_debug_implementations, reason = "annoying!")]
+
 mod account;
 mod coin;
 mod state_accessor;
 
-pub use account::{AccountTypeState, IAccountState, ISnarkAccountState, ISnarkAccountStateExt};
+pub use account::{
+    AccountTypeState, AccountTypeStateMut, AccountTypeStateRef, IAccountState,
+    IAccountStateConstructible, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateExt,
+    ISnarkAccountStateMut, NewAccountData,
+};
 pub use coin::Coin;
 pub use state_accessor::IStateAccessor;
-
 // transitional crap
 pub use strata_asm_manifest_types::AsmManifest;
 pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};
