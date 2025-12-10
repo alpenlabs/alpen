@@ -794,7 +794,7 @@ def compile_solidity(source: str, contract_name: str | None = None) -> tuple[lis
     """
     Compile Solidity source and return (abi, bytecode).
 
-    Auto-installs solc 0.8.16 on first use.
+    Auto-installs solc 0.8.24 on first use.
 
     Args:
         source: File path (e.g., "contracts/Counter.sol") or inline source code
