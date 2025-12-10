@@ -8,7 +8,7 @@ use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use tracing::{error, warn};
 use typed_sled::{error::Error as TSledError, transaction::SledTransactional, SledDb, SledTree};
 
-use super::{AccountStateAtOlBlockSchema, OlBlockAtSlotSchema};
+use super::{AccountStateAtOLBlockSchema, OLBlockAtSlotSchema};
 use crate::{
     database::EeNodeDb,
     serialization_types::DBAccountStateAtSlot,
@@ -23,8 +23,8 @@ fn abort<T>(reason: impl std::error::Error + Send + Sync + 'static) -> Result<T,
 }
 
 pub(crate) struct EeNodeDBSled {
-    ol_blockid_tree: SledTree<OlBlockAtSlotSchema>,
-    account_state_tree: SledTree<AccountStateAtOlBlockSchema>,
+    ol_blockid_tree: SledTree<OLBlockAtSlotSchema>,
+    account_state_tree: SledTree<AccountStateAtOLBlockSchema>,
     exec_block_tree: SledTree<ExecBlockSchema>,
     exec_blocks_by_height_tree: SledTree<ExecBlocksAtHeightSchema>,
     exec_block_finalized_tree: SledTree<ExecBlockFinalizedSchema>,
@@ -54,7 +54,7 @@ impl EeNodeDb for EeNodeDBSled {
     ) -> DbResult<()> {
         // ensure null block is not persisted
         if ol_block.is_null() {
-            return Err(DbError::NullOlBlock);
+            return Err(DbError::NullOLBlock);
         }
 
         let slot = ol_block.slot();
@@ -81,7 +81,7 @@ impl EeNodeDb for EeNodeDBSled {
                 // empty. This check can still be bypassed by a race with a concurrent deletion.
 
                 if ol_blockid_tree.get(&slot)?.is_some() {
-                    return abort(DbError::TxnFilledOlSlot(slot))?;
+                    return abort(DbError::TxnFilledOLSlot(slot))?;
                 }
 
                 ol_blockid_tree.insert(&slot, &blockid)?;
@@ -115,7 +115,7 @@ impl EeNodeDb for EeNodeDBSled {
                 // NOTE: Cannot check for last slot inside txn, so check that next expected slot is
                 // empty. This check can still be bypassed by a race with inserting new state.
                 if ol_blockid_tree.get(&(max_slot + 1))?.is_some() {
-                    abort(DbError::TxnExpectEmptyOlSlot(max_slot + 1))?;
+                    abort(DbError::TxnExpectEmptyOLSlot(max_slot + 1))?;
                 }
 
                 for slot in (min_slot..=max_slot).rev() {

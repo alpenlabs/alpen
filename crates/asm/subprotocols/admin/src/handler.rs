@@ -57,7 +57,7 @@ pub(crate) fn handle_pending_updates(
                     ProofType::Asm => {
                         // TODO: STR-1721 Emit ASM Log
                     }
-                    ProofType::OlStf => {
+                    ProofType::OLStf => {
                         relay_checkpoint_predicate(relayer, key);
                         info!(
                             %update_id,
@@ -489,7 +489,7 @@ mod tests {
 
         let predicate = PredicateKey::always_accept();
 
-        let update = PredicateUpdate::new(predicate.clone(), ProofType::OlStf);
+        let update = PredicateUpdate::new(predicate.clone(), ProofType::OLStf);
         let update_id = state.next_update_id();
         let activation_height = 42;
         state.enqueue(QueuedUpdate::new(

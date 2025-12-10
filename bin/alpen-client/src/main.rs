@@ -12,12 +12,12 @@ use alpen_ee_common::chain_status_checked;
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
-use alpen_ee_ol_tracker::{init_ol_tracker_state, OlTrackerBuilder};
+use alpen_ee_ol_tracker::{init_ol_tracker_state, OLTrackerBuilder};
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
 use clap::Parser;
-use ol_client::DummyOlClient;
+use ol_client::DummyOLClient;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
@@ -89,7 +89,7 @@ fn main() {
                 .into();
 
             // TODO: real ol client
-            let ol_client = Arc::new(DummyOlClient::default());
+            let ol_client = Arc::new(DummyOLClient::default());
 
             // TODO: startup consistency check
             let ol_chain_status = builder
@@ -132,7 +132,7 @@ fn main() {
                     }
                 })
                 .on_node_started(move |node| {
-                    let (ol_tracker, ol_tracker_task) = OlTrackerBuilder::new(
+                    let (ol_tracker, ol_tracker_task) = OLTrackerBuilder::new(
                         ol_tracker_state,
                         config.params().clone(),
                         storage,

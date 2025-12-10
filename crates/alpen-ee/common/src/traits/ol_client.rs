@@ -3,18 +3,18 @@ use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::UpdateInputData;
 use thiserror::Error;
 
-use crate::OlChainStatus;
+use crate::OLChainStatus;
 
 /// Client interface for interacting with the OL chain.
 ///
 /// Provides methods to view OL Chain data required by an alpen EE fullnode.
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
-pub trait OlClient: Sized + Send + Sync {
+pub trait OLClient: Sized + Send + Sync {
     /// Returns the current status of the OL chain.
     ///
     /// Includes the latest, confirmed, and finalized block commitments.
-    async fn chain_status(&self) -> Result<OlChainStatus, OlClientError>;
+    async fn chain_status(&self) -> Result<OLChainStatus, OLClientError>;
 
     /// Retrieves block commitments for a range of slots (inclusive).
     ///
@@ -30,7 +30,7 @@ pub trait OlClient: Sized + Send + Sync {
         &self,
         start_slot: u64,
         end_slot: u64,
-    ) -> Result<Vec<OLBlockCommitment>, OlClientError>;
+    ) -> Result<Vec<OLBlockCommitment>, OLClientError>;
 
     /// Retrieves update operations for the specified blocks.
     ///
@@ -45,19 +45,19 @@ pub trait OlClient: Sized + Send + Sync {
     async fn get_update_operations_for_blocks(
         &self,
         blocks: Vec<OLBlockId>,
-    ) -> Result<Vec<Vec<UpdateInputData>>, OlClientError>;
+    ) -> Result<Vec<Vec<UpdateInputData>>, OLClientError>;
 }
 
 /// Returns the current status of the OL chain.
 ///
-/// This is a checked version of [`OlClient::chain_status`] that validates
+/// This is a checked version of [`OLClient::chain_status`] that validates
 /// the slot numbers of latest >= confirmed >= finalized
-pub async fn chain_status_checked(client: &impl OlClient) -> Result<OlChainStatus, OlClientError> {
+pub async fn chain_status_checked(client: &impl OLClient) -> Result<OLChainStatus, OLClientError> {
     let status = client.chain_status().await?;
     if status.finalized.slot() > status.confirmed.slot()
         || status.confirmed.slot() > status.latest.slot()
     {
-        return Err(OlClientError::InvalidChainStatusSlotOrder {
+        return Err(OLClientError::InvalidChainStatusSlotOrder {
             latest: status.latest.slot(),
             confirmed: status.confirmed.slot(),
             finalized: status.finalized.slot(),
@@ -68,16 +68,16 @@ pub async fn chain_status_checked(client: &impl OlClient) -> Result<OlChainStatu
 
 /// Retrieves block commitments for a range of slots with validation.
 ///
-/// This is a checked version of [`OlClient::block_commitments_in_range`] that validates:
+/// This is a checked version of [`OLClient::block_commitments_in_range`] that validates:
 /// - The end slot is greater than the start slot
 /// - The number of returned blocks matches the expected count
 pub async fn block_commitments_in_range_checked(
-    client: &impl OlClient,
+    client: &impl OLClient,
     start_slot: u64,
     end_slot: u64,
-) -> Result<Vec<OLBlockCommitment>, OlClientError> {
+) -> Result<Vec<OLBlockCommitment>, OLClientError> {
     if end_slot <= start_slot {
-        return Err(OlClientError::InvalidSlotRange {
+        return Err(OLClientError::InvalidSlotRange {
             start_slot,
             end_slot,
         });
@@ -87,7 +87,7 @@ pub async fn block_commitments_in_range_checked(
         .await?;
     let expected_result_len = end_slot - start_slot + 1;
     if blocks.len() != expected_result_len as usize {
-        return Err(OlClientError::UnexpectedBlockCount {
+        return Err(OLClientError::UnexpectedBlockCount {
             expected: expected_result_len as usize,
             actual: blocks.len(),
         });
@@ -97,16 +97,16 @@ pub async fn block_commitments_in_range_checked(
 
 /// Retrieves update operations for the specified blocks with validation.
 ///
-/// This is a checked version of [`OlClient::get_update_operations_for_blocks`] that validates
+/// This is a checked version of [`OLClient::get_update_operations_for_blocks`] that validates
 /// the number of returned operation vectors matches the number of input blocks.
 pub async fn get_update_operations_for_blocks_checked(
-    client: &impl OlClient,
+    client: &impl OLClient,
     blocks: Vec<OLBlockId>,
-) -> Result<Vec<Vec<UpdateInputData>>, OlClientError> {
+) -> Result<Vec<Vec<UpdateInputData>>, OLClientError> {
     let expected_len = blocks.len();
     let res = client.get_update_operations_for_blocks(blocks).await?;
     if res.len() != expected_len {
-        return Err(OlClientError::UnexpectedOperationCount {
+        return Err(OLClientError::UnexpectedOperationCount {
             expected: expected_len,
             actual: res.len(),
         });
@@ -117,7 +117,7 @@ pub async fn get_update_operations_for_blocks_checked(
 
 /// Errors that can occur when interacting with the OL client.
 #[derive(Debug, Error)]
-pub enum OlClientError {
+pub enum OLClientError {
     /// End slot is less than or equal to start slot.
     #[error(
         "invalid slot range: end_slot ({end_slot}) must be greater than start_slot ({start_slot})"
@@ -153,7 +153,7 @@ pub enum OlClientError {
     Other(#[from] eyre::Error),
 }
 
-impl OlClientError {
+impl OLClientError {
     /// Creates a network error.
     pub fn network(msg: impl Into<String>) -> Self {
         Self::Network(msg.into())
@@ -183,7 +183,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_validates_end_greater_than_start() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             // Should not call the underlying method if validation fails
             mock_client.expect_block_commitments_in_range().times(0);
@@ -193,13 +193,13 @@ mod tests {
             assert!(result.is_err());
             assert!(matches!(
                 result.unwrap_err(),
-                OlClientError::InvalidSlotRange { .. }
+                OLClientError::InvalidSlotRange { .. }
             ));
         }
 
         #[tokio::test]
         async fn test_validates_end_less_than_start() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client.expect_block_commitments_in_range().times(0);
 
@@ -208,13 +208,13 @@ mod tests {
             assert!(result.is_err());
             assert!(matches!(
                 result.unwrap_err(),
-                OlClientError::InvalidSlotRange { .. }
+                OLClientError::InvalidSlotRange { .. }
             ));
         }
 
         #[tokio::test]
         async fn test_validates_result_length_matches_expected() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -233,7 +233,7 @@ mod tests {
 
             assert!(result.is_err());
             match result.unwrap_err() {
-                OlClientError::UnexpectedBlockCount { expected, actual } => {
+                OLClientError::UnexpectedBlockCount { expected, actual } => {
                     assert_eq!(expected, 6);
                     assert_eq!(actual, 3);
                 }
@@ -243,7 +243,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_success_with_single_block() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -266,7 +266,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_success_with_multiple_blocks() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
@@ -289,17 +289,17 @@ mod tests {
 
         #[tokio::test]
         async fn test_propagates_client_error() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             mock_client
                 .expect_block_commitments_in_range()
                 .times(1)
-                .returning(|_, _| Err(OlClientError::network("network error")));
+                .returning(|_, _| Err(OLClientError::network("network error")));
 
             let result = block_commitments_in_range_checked(&mock_client, 100, 105).await;
 
             assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), OlClientError::Network(_)));
+            assert!(matches!(result.unwrap_err(), OLClientError::Network(_)));
         }
     }
 
@@ -314,7 +314,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_validates_result_length_matches_input() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             let block_ids = vec![make_block_id(1), make_block_id(2), make_block_id(3)];
 
@@ -330,7 +330,7 @@ mod tests {
 
             assert!(result.is_err());
             match result.unwrap_err() {
-                OlClientError::UnexpectedOperationCount { expected, actual } => {
+                OLClientError::UnexpectedOperationCount { expected, actual } => {
                     assert_eq!(expected, 3);
                     assert_eq!(actual, 2);
                 }
@@ -340,7 +340,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_success_with_empty_blocks() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             let block_ids: Vec<OLBlockId> = vec![];
 
@@ -358,7 +358,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_success_with_single_block() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             let block_ids = vec![make_block_id(1)];
 
@@ -377,7 +377,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_success_with_multiple_blocks() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             let block_ids = vec![
                 make_block_id(1),
@@ -401,19 +401,19 @@ mod tests {
 
         #[tokio::test]
         async fn test_propagates_client_error() {
-            let mut mock_client = MockOlClient::new();
+            let mut mock_client = MockOLClient::new();
 
             let block_ids = vec![make_block_id(1), make_block_id(2)];
 
             mock_client
                 .expect_get_update_operations_for_blocks()
                 .times(1)
-                .returning(|_| Err(OlClientError::rpc("rpc error")));
+                .returning(|_| Err(OLClientError::rpc("rpc error")));
 
             let result = get_update_operations_for_blocks_checked(&mock_client, block_ids).await;
 
             assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), OlClientError::Rpc(_)));
+            assert!(matches!(result.unwrap_err(), OLClientError::Rpc(_)));
         }
     }
 }

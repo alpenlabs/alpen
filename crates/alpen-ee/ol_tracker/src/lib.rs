@@ -7,5 +7,5 @@ mod reorg;
 mod state;
 mod task;
 
-pub use handle::{OlTrackerBuilder, OlTrackerHandle};
-pub use state::{init_ol_tracker_state, OlTrackerState};
+pub use handle::{OLTrackerBuilder, OLTrackerHandle};
+pub use state::{init_ol_tracker_state, OLTrackerState};

@@ -1,24 +1,24 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{ConsensusHeads, EeAccountStateAtBlock, OlChainStatus, Storage};
+use alpen_ee_common::{ConsensusHeads, EeAccountStateAtBlock, OLChainStatus, Storage};
 use alpen_ee_config::AlpenEeConfig;
 use strata_acct_types::BitcoinAmount;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::OLBlockCommitment;
 use tracing::warn;
 
-use crate::error::{OlTrackerError, Result};
+use crate::error::{OLTrackerError, Result};
 
 /// Internal State of the OL tracker.
 #[derive(Debug, Clone)]
-pub struct OlTrackerState {
+pub struct OLTrackerState {
     best: EeAccountStateAtBlock,
     confirmed: EeAccountStateAtBlock,
     finalized: EeAccountStateAtBlock,
 }
 
 #[cfg(test)]
-impl OlTrackerState {
+impl OLTrackerState {
     pub fn new(
         best: EeAccountStateAtBlock,
         confirmed: EeAccountStateAtBlock,
@@ -32,7 +32,7 @@ impl OlTrackerState {
     }
 }
 
-impl OlTrackerState {
+impl OLTrackerState {
     /// Returns the best EE account state.
     pub fn best_ee_state(&self) -> &EeAccountState {
         self.best.ee_state()
@@ -52,12 +52,12 @@ impl OlTrackerState {
     }
 }
 
-/// Initialized [`OlTrackerState`] from storage
+/// Initialized [`OLTrackerState`] from storage
 pub async fn init_ol_tracker_state<TStorage>(
     config: Arc<AlpenEeConfig>,
-    ol_chain_status: OlChainStatus,
+    ol_chain_status: OLChainStatus,
     storage: Arc<TStorage>,
-) -> Result<OlTrackerState>
+) -> Result<OLTrackerState>
 where
     TStorage: Storage,
 {
@@ -82,7 +82,7 @@ where
 
         let block_account_state = EeAccountStateAtBlock::new(genesis_ol_block, genesis_state);
 
-        return Ok(OlTrackerState {
+        return Ok(OLTrackerState {
             best: block_account_state.clone(),
             confirmed: block_account_state.clone(),
             finalized: block_account_state,
@@ -94,21 +94,21 @@ where
 
 pub(crate) async fn build_tracker_state(
     best_state: EeAccountStateAtBlock,
-    ol_chain_status: &OlChainStatus,
+    ol_chain_status: &OLChainStatus,
     storage: &impl Storage,
-) -> Result<OlTrackerState> {
+) -> Result<OLTrackerState> {
     // determine confirmed, finalized states
     let confirmed_state =
         effective_account_state(best_state.ol_block(), ol_chain_status.confirmed(), storage)
             .await
-            .map_err(|e| OlTrackerError::BuildStateFailed(format!("confirmed state: {}", e)))?;
+            .map_err(|e| OLTrackerError::BuildStateFailed(format!("confirmed state: {}", e)))?;
 
     let finalized_state =
         effective_account_state(best_state.ol_block(), ol_chain_status.finalized(), storage)
             .await
-            .map_err(|e| OlTrackerError::BuildStateFailed(format!("finalized state: {}", e)))?;
+            .map_err(|e| OLTrackerError::BuildStateFailed(format!("finalized state: {}", e)))?;
 
-    Ok(OlTrackerState {
+    Ok(OLTrackerState {
         best: best_state,
         confirmed: confirmed_state,
         finalized: finalized_state,
@@ -129,14 +129,14 @@ async fn effective_account_state(
     storage
         .ee_account_state(min_blockid.into())
         .await?
-        .ok_or_else(|| OlTrackerError::MissingBlock {
+        .ok_or_else(|| OLTrackerError::MissingBlock {
             block_id: min_blockid.to_string(),
         })
 }
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{MockStorage, OLBlockOrSlot, OlChainStatus, StorageError};
+    use alpen_ee_common::{MockStorage, OLBlockOrSlot, OLChainStatus, StorageError};
     use strata_acct_types::Hash;
     use strata_identifiers::Buf32;
 
@@ -256,7 +256,7 @@ mod tests {
 
             assert!(result.is_err());
             let error = result.unwrap_err();
-            assert!(matches!(error, OlTrackerError::MissingBlock { .. }));
+            assert!(matches!(error, OLTrackerError::MissingBlock { .. }));
             assert!(error.to_string().contains("missing expected block"));
         }
 
@@ -277,7 +277,7 @@ mod tests {
 
             assert!(result.is_err());
             let error = result.unwrap_err();
-            assert!(matches!(error, OlTrackerError::Storage(_)));
+            assert!(matches!(error, OLTrackerError::Storage(_)));
             assert!(error.to_string().contains("database connection failed"));
         }
 
@@ -330,7 +330,7 @@ mod tests {
             let mut mock_storage = MockStorage::new();
 
             let best_state = make_state_at_block(110, 1, 1);
-            let ol_status = OlChainStatus {
+            let ol_status = OLChainStatus {
                 latest: make_block_commitment(110, 1),
                 confirmed: make_block_commitment(105, 2),
                 finalized: make_block_commitment(100, 3),
@@ -372,7 +372,7 @@ mod tests {
             let mut mock_storage = MockStorage::new();
 
             let best_state = make_state_at_block(110, 1, 1);
-            let ol_status = OlChainStatus {
+            let ol_status = OLChainStatus {
                 latest: make_block_commitment(110, 1),
                 confirmed: make_block_commitment(105, 2),
                 finalized: make_block_commitment(100, 3),
@@ -388,7 +388,7 @@ mod tests {
 
             assert!(result.is_err());
             let error = result.unwrap_err();
-            assert!(matches!(error, OlTrackerError::BuildStateFailed(_)));
+            assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
             assert!(error.to_string().contains("confirmed state"));
         }
 
@@ -397,7 +397,7 @@ mod tests {
             let mut mock_storage = MockStorage::new();
 
             let best_state = make_state_at_block(110, 1, 1);
-            let ol_status = OlChainStatus {
+            let ol_status = OLChainStatus {
                 latest: make_block_commitment(110, 1),
                 confirmed: make_block_commitment(105, 2),
                 finalized: make_block_commitment(100, 3),
@@ -418,7 +418,7 @@ mod tests {
 
             assert!(result.is_err());
             let error = result.unwrap_err();
-            assert!(matches!(error, OlTrackerError::BuildStateFailed(_)));
+            assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
             assert!(error.to_string().contains("finalized state"));
         }
 
@@ -427,7 +427,7 @@ mod tests {
             let mut mock_storage = MockStorage::new();
 
             let best_state = make_state_at_block(110, 1, 1);
-            let ol_status = OlChainStatus {
+            let ol_status = OLChainStatus {
                 latest: make_block_commitment(110, 1),
                 confirmed: make_block_commitment(105, 2),
                 finalized: make_block_commitment(100, 3),
@@ -443,7 +443,7 @@ mod tests {
 
             assert!(result.is_err());
             let error = result.unwrap_err();
-            assert!(matches!(error, OlTrackerError::BuildStateFailed(_)));
+            assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
             assert!(error.to_string().contains("confirmed state"));
             assert!(error.to_string().contains("disk error"));
         }

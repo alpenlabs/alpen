@@ -12,20 +12,20 @@ pub type DbResult<T> = Result<T, DbError>;
 #[derive(Debug, Clone, Error)]
 pub enum DbError {
     /// Attempted to persist a null OL block.
-    #[error("null Ol block should not be persisted")]
-    NullOlBlock,
+    #[error("null OL block should not be persisted")]
+    NullOLBlock,
 
     /// OL slot was skipped in sequential persistence.
     #[error("OL entries must be persisted sequentially; next: {expected}; got: {got}")]
-    SkippedOlSlot { expected: u64, got: u64 },
+    SkippedOLSlot { expected: u64, got: u64 },
 
     /// Transaction conflict: slot is already filled.
     #[error("Txn conflict: OL slot {0} already filled")]
-    TxnFilledOlSlot(u64),
+    TxnFilledOLSlot(u64),
 
     /// Transaction conflict: expected slot to be empty.
     #[error("Txn conflict: OL slot {0} should be empty")]
-    TxnExpectEmptyOlSlot(u64),
+    TxnExpectEmptyOLSlot(u64),
 
     /// Account state is missing for the given block.
     #[error("Account state expected to be present; block_id = {0}")]
@@ -74,7 +74,7 @@ pub enum DbError {
 
 impl DbError {
     pub(crate) fn skipped_ol_slot(expected: u64, got: u64) -> DbError {
-        DbError::SkippedOlSlot { expected, got }
+        DbError::SkippedOLSlot { expected, got }
     }
 }
 
@@ -99,7 +99,7 @@ impl From<TransactionError<SledError>> for DbError {
 impl From<DbError> for StorageError {
     fn from(err: DbError) -> Self {
         match err {
-            DbError::SkippedOlSlot { expected, got } => StorageError::MissingSlot {
+            DbError::SkippedOLSlot { expected, got } => StorageError::MissingSlot {
                 attempted_slot: got,
                 last_slot: expected,
             },

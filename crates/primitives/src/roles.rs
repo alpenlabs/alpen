@@ -36,7 +36,7 @@ pub enum Role {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub enum ProofType {
     Asm,
-    OlStf,
+    OLStf,
 }
 
 #[cfg(test)]

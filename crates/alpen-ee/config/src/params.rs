@@ -18,7 +18,7 @@ pub struct AlpenEeParams {
     /// OL slot of Alpen ee account genesis
     genesis_ol_slot: u64,
 
-    /// Ol block of Alpen ee account genesis
+    /// OL block of Alpen ee account genesis
     genesis_ol_blockid: OLBlockId,
 }
 
