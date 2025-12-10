@@ -85,7 +85,9 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         payload_builder,
         clock,
     )
-    .await?;
+    .await
+    .context("block_builder: build_next_block")?;
+
     // submit the built payload back to engine so reth knows the block
     payload_builder
         .submit_payload(
@@ -99,12 +101,13 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
     storage
         .save_exec_block(block, payload)
         .await
-        .context("failed to save exec block")?;
+        .context("block_builder: save exec block to storage")?;
+
     // submit block to chain tracker
     exec_chain_handle
         .new_block(blockhash)
         .await
-        .context("failed to submit new exec block")?;
+        .context("block_builder: submit new exec block")?;
 
     Ok(blockhash)
 }
@@ -116,7 +119,7 @@ async fn next_block_target_timestamp(
     let last_local_block = exec_chain_handle
         .get_best_block()
         .await
-        .context("failed to get best exec block")?;
+        .context("next_block_target_timestamp: failed to get best exec block")?;
 
     Ok(last_local_block.timestamp_ms() + config.blocktime_ms())
 }
@@ -131,17 +134,17 @@ async fn build_next_block(
     let last_local_block = exec_chain_handle
         .get_best_block()
         .await
-        .context("failed to get best exec block")?;
+        .context("build_next_block: failed to get best exec block")?;
     // check if there are new OL block inputs that need to be included
     let best_ol_block = ol_chain_handle
         .get_finalized_block()
         .await
-        .context("failed to get finalized OL block")?;
+        .context("build_next_block: failed to get finalized OL block")?;
     let inbox_messages = if last_local_block.ol_block().blkid() != best_ol_block.blkid() {
         ol_chain_handle
             .get_inbox_messages(last_local_block.ol_block().slot(), best_ol_block.slot())
             .await
-            .context("failed to get inbox messages")?
+            .context("build_next_block: failed to get inbox messages")?
     } else {
         vec![]
     };
@@ -164,7 +167,7 @@ async fn build_next_block(
         account_state,
     } = build_next_exec_block(block_assembly_inputs, payload_builder)
         .await
-        .context("failed to build exec block")?;
+        .context("build_next_block: failed to build exec block")?;
 
     let blockhash = package.exec_blkid();
     let blocknum = last_local_block.blocknum() + 1;

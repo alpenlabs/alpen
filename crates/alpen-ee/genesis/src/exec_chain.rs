@@ -18,13 +18,13 @@ pub async fn ensure_finalized_exec_chain_genesis<TStorage: ExecBlockStorage>(
         .save_exec_block(genesis_block, genesis_block_payload)
         .await
         .map_err(eyre::Error::from)
-        .context("failed to create genesis exec block")?;
+        .context("ensure_finalized_exec_chain_genesis: failed to create genesis exec block")?;
     // Inserts if empty, checks genesis blockhash is correct if exists.
     storage
         .init_finalized_chain(genesis_ee_blockhash)
         .await
         .map_err(eyre::Error::from)
-        .context("failed to set genesis exec block")?;
+        .context("ensure_finalized_exec_chain_genesis: failed to set genesis exec block")?;
 
     Ok(())
 }
