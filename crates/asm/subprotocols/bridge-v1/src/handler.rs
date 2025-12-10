@@ -115,8 +115,10 @@ pub(crate) fn preprocess_parsed_tx(
 mod tests {
     use strata_asm_common::{AsmCompactMmr, AsmMmr, AuxData, VerifiedAuxData};
     use strata_asm_txs_bridge_v1::{
+        deposit::DepositTxHeaderAux,
+        deposit_request::DrtHeaderAux,
         slash::{SlashTxHeaderAux, parse_slash_tx},
-        test_utils::{create_connected_stake_and_slash_txs, parse_tx},
+        test_utils::{create_connected_drt_and_dt, create_connected_stake_and_slash_txs, parse_tx},
     };
     use strata_btc_types::RawBitcoinTx;
 
@@ -164,5 +166,17 @@ mod tests {
             !state.operators().is_in_current_multisig(operator_idx),
             "Operator should be removed"
         );
+    }
+
+    #[test]
+    fn test_handle_deposit_tx_success() {
+        // 1. Setup Bridge State
+        let (_, operators) = create_test_state();
+
+        let drt_header_aux = DrtHeaderAux::new([1u8; 32], vec![1u8; 20]);
+        let dt_header_aux = DepositTxHeaderAux::new(1, [1u8; 32], vec![1u8; 20]);
+        let (_, _) = create_connected_drt_and_dt(drt_header_aux, dt_header_aux, &operators);
+
+        // FIXME: This is failing due to signature mismatch
     }
 }

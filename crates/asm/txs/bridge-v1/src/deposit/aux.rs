@@ -1,6 +1,9 @@
 use arbitrary::Arbitrary;
 use bitcoin::taproot::TAPROOT_CONTROL_NODE_SIZE;
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
+use strata_l1_txfmt::TagData;
+
+use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::DEPOSIT_TX_TYPE, errors::DepositTxParseError};
 
 /// Auxiliary data in the SPS-50 header for bridge v1 deposit transactions.
 ///
@@ -52,6 +55,11 @@ impl DepositTxHeaderAux {
 
     pub fn address(&self) -> &[u8] {
         &self.address
+    }
+
+    pub fn encode_tag(&self) -> Result<TagData, DepositTxParseError> {
+        let aux_data = encode_to_vec(self).map_err(DepositTxParseError::InvalidAuxiliaryData)?;
+        Ok(TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data).unwrap())
     }
 }
 

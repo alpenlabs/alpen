@@ -1,4 +1,4 @@
-use bitcoin::{Transaction, XOnlyPublicKey};
+use bitcoin::{Amount, Transaction, XOnlyPublicKey};
 use strata_l1_txfmt::ParseConfig;
 use strata_primitives::constants::RECOVER_DELAY;
 
@@ -21,6 +21,7 @@ pub fn create_test_deposit_request_tx(
 
     tx.output[1].script_pubkey =
         create_deposit_request_locking_script(info.recovery_pk(), internal_key, RECOVER_DELAY);
+    tx.output[1].value = Amount::from_sat(10_000); // dust
 
     tx
 }
