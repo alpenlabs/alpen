@@ -1234,6 +1234,8 @@ dependencies = [
  "alpen-ee-exec-chain",
  "eyre",
  "strata-acct-types",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
  "strata-identifiers",
  "strata-snark-acct-types",
  "tokio",

@@ -38,7 +38,7 @@ pub async fn chain_status_checked(client: &impl OLClient) -> Result<OLChainStatu
     Ok(status)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OLBlockData {
     pub commitment: OLBlockCommitment,
     pub inbox_messages: Vec<MessageEntry>,

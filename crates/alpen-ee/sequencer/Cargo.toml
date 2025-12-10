@@ -20,3 +20,5 @@ tracing.workspace = true
 
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
