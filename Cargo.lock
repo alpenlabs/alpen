@@ -1036,6 +1036,7 @@ dependencies = [
  "sled",
  "strata-asm-txs-bridge-v1",
  "strata-cli-common",
+ "strata-l1-txfmt",
  "strata-primitives",
  "terrors",
  "tokio",
