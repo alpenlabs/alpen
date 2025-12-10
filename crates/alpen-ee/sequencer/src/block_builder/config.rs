@@ -2,6 +2,13 @@ use std::num::NonZeroU8;
 
 use strata_acct_types::AccountId;
 
+/// Default target blocktime in millis
+const DEFAULT_BLOCKTIME_MS: u64 = 1000;
+/// Default number of deposits to process per ee block.
+const DEFAULT_DEPOSITS_PER_BLOCK: NonZeroU8 = NonZeroU8::new(16).unwrap();
+/// Default bridge gateway account on OL.
+const DEFAULT_BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(1); // TODO: correct account id
+
 #[derive(Debug)]
 pub struct BlockBuilderConfig {
     /// Target blocktime in ms
@@ -12,17 +19,31 @@ pub struct BlockBuilderConfig {
     bridge_gateway_account_id: AccountId,
 }
 
-impl BlockBuilderConfig {
-    pub fn new(
-        blocktime_ms: u64,
-        max_deposits_per_block: NonZeroU8,
-        bridge_gateway_account_id: AccountId,
-    ) -> Self {
+impl Default for BlockBuilderConfig {
+    fn default() -> Self {
         Self {
-            blocktime_ms,
-            max_deposits_per_block,
-            bridge_gateway_account_id,
+            blocktime_ms: DEFAULT_BLOCKTIME_MS,
+            max_deposits_per_block: DEFAULT_DEPOSITS_PER_BLOCK,
+            bridge_gateway_account_id: DEFAULT_BRIDGE_GATEWAY_ACCOUNT,
         }
+    }
+}
+
+impl BlockBuilderConfig {
+    pub fn with_blocktime_ms(mut self, blocktime_ms: u64) -> Self {
+        self.blocktime_ms = blocktime_ms;
+        self
+    }
+    pub fn with_max_deposits_per_block(
+        mut self,
+        max_deposits_per_block: impl Into<NonZeroU8>,
+    ) -> Self {
+        self.max_deposits_per_block = max_deposits_per_block.into();
+        self
+    }
+    pub fn with_bridge_gateway_account_id(mut self, bridge_gateway_account_id: AccountId) -> Self {
+        self.bridge_gateway_account_id = bridge_gateway_account_id;
+        self
     }
 
     pub fn blocktime_ms(&self) -> u64 {

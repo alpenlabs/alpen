@@ -92,6 +92,8 @@ fn main() {
                 OLBlockId::from(Buf32([1; 32])), // TODO
             );
 
+            info!(?params, sequencer = ext.sequencer, "Starting EE Node");
+
             let config = Arc::new(AlpenEeConfig::new(
                 params,
                 CredRule::Unchecked,
@@ -101,8 +103,38 @@ fn main() {
             ));
 
             #[cfg(feature = "sequencer")]
-            let block_builder_config =
-                BlockBuilderConfig::new(1000, 16.try_into().unwrap(), AccountId::zero());
+            let block_builder_config = BlockBuilderConfig::default();
+
+            // Parse sequencer private key from environment variable (only in sequencer mode)
+            let gossip_config = {
+                #[cfg(feature = "sequencer")]
+                {
+                    let sequencer_privkey = if ext.sequencer {
+                        let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
+                            eyre::eyre!("SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer")
+                        })?;
+                        Some(privkey_str.parse::<Buf32>().map_err(|e| {
+                            eyre::eyre!("Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}")
+                        })?)
+                    } else {
+                        None
+                    };
+
+                    GossipConfig {
+                        sequencer_pubkey: ext.sequencer_pubkey,
+                        sequencer_enabled: ext.sequencer,
+                        sequencer_privkey,
+                    }
+                }
+
+                #[cfg(not(feature = "sequencer"))]
+                {
+                    GossipConfig {
+                        sequencer_pubkey: ext.sequencer_pubkey,
+                        sequencer_enabled: false,
+                    }
+                }
+            };
 
             let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())
                 .context("failed to load alpen database")?
@@ -195,44 +227,12 @@ fn main() {
                     // Subscribe to canonical state notifications for broadcasting new blocks
                     let state_events = node.provider.subscribe_to_canonical_state();
 
-                    // Parse sequencer private key from environment variable (only in sequencer mode)
-                    let gossip_config = {
-                        #[cfg(feature = "sequencer")]
-                        {
-                            let sequencer_privkey = if ext.sequencer {
-                                let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
-                                    eyre::eyre!(
-                                        "SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer"
-                                    )
-                                })?;
-                                Some(
-                                    privkey_str.parse::<Buf32>().map_err(|e| {
-                                        eyre::eyre!(
-                                            "Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}"
-                                        )
-                                    })?,
-                                )
-                            } else {
-                                None
-                            };
-
-                            GossipConfig {
-                                sequencer_pubkey: ext.sequencer_pubkey,
-                                sequencer_enabled: ext.sequencer,
-                                sequencer_privkey,
-                            }
-                        }
-
-                        #[cfg(not(feature = "sequencer"))]
-                        {
-                            GossipConfig {
-                                sequencer_pubkey: ext.sequencer_pubkey,
-                                sequencer_enabled: false,
-                            }
-                        }
-                    };
-
-                    let gossip_task = create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
+                    let gossip_task = create_gossip_task(
+                        gossip_rx,
+                        state_events,
+                        preconf_tx.clone(),
+                        gossip_config,
+                    );
 
                     node.task_executor
                         .spawn_critical("ol_tracker_task", ol_tracker_task);
@@ -249,8 +249,11 @@ fn main() {
                             node.beacon_engine_handle.clone(),
                         ));
 
-                        let (exec_chain_handle, exec_chain_task) =
-                            build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
+                        let (exec_chain_handle, exec_chain_task) = build_exec_chain_task(
+                            exec_chain_state,
+                            preconf_tx.clone(),
+                            storage.clone(),
+                        );
 
                         let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
                             ol_chain_tracker_state,
@@ -268,13 +271,22 @@ fn main() {
                                 ol_tracker.consensus_watcher(),
                             ),
                         );
-                        node.task_executor.spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
-                        node.task_executor.spawn_critical("block_assembly", block_builder_task(block_builder_config, exec_chain_handle, ol_chain_tracker, payload_engine, storage.clone()));
+                        node.task_executor
+                            .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
+                        node.task_executor.spawn_critical(
+                            "block_assembly",
+                            block_builder_task(
+                                block_builder_config,
+                                exec_chain_handle,
+                                ol_chain_tracker,
+                                payload_engine,
+                                storage.clone(),
+                            ),
+                        );
 
                         // TODO: batch assembly
                         // TODO: proof generation
                         // TODO: post update to OL
-
                     }
 
                     Ok(())
