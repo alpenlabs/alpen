@@ -97,7 +97,7 @@ async fn handle_chain_update(
             panic!("Deep reorg detected. Manual resolution required.")
         }
         Err(err) => {
-            error!("failed to track ol state; {}", err);
+            error!(?err, "failed to track ol state");
             // retry next cycle
             // TODO: unrecoverable error
         }

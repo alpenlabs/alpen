@@ -62,7 +62,7 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
                         return;
                     }
                     Err(err) => {
-                        error!("failed to handle new block; err = {err}");
+                        error!(?err, "failed to handle new block");
                     }
                     Ok(()) => {}
                 }
@@ -75,7 +75,7 @@ pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
                         return;
                     }
                     Err(err) => {
-                        error!("failed to handle OLConsensUpdate; err = {err}");
+                        error!(?err, "failed to handle OLConsensUpdate");
                     }
                     Ok(()) => {}
                 }

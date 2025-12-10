@@ -125,7 +125,7 @@ impl EeNodeDb for EeNodeDBSled {
 
                 for epoch in (min_epoch..=max_epoch).rev() {
                     let Some(blockid) = ol_blockid_tree.take(&epoch)? else {
-                        warn!("expected block to exist in db: epoch = {}", epoch);
+                        warn!(%epoch, "expected block to exist in db");
                         // Even if the epoch does not exist for some reason, we are trying to remove
                         // it so its ok. But this may leave orphan account
                         // state entries in the db. Will need an orphan

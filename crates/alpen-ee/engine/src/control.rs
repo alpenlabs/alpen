@@ -77,13 +77,13 @@ async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: Ex
                 let update = match forkchoice_state_from_consensus(&consensus_state, head_block_hash, &provider) {
                     Ok(update) => update,
                     Err(err) => {
-                        error!("failed to access blockchain provider: {:?}", err);
+                        error!(?err, "failed to access blockchain provider");
                         continue;
                     }
                 };
 
                 if let Err(err) = engine.update_consensus_state(update).await {
-                    warn!("forkchoice_update failed: {}", err);
+                    warn!(?err, "forkchoice_update failed");
                     continue;
                 }
             }
@@ -103,7 +103,7 @@ async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: Ex
                     finalized_block_hash: B256::ZERO,
                 };
                 if let Err(err) = engine.update_consensus_state(update).await {
-                    warn!("forkchoice_update failed: {}", err);
+                    warn!(?err, "forkchoice_update failed");
                     continue;
                 }
                 head_block_hash = next_head_block_hash;
