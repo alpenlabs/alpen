@@ -12,7 +12,7 @@ pub trait ExecPartialState: Codec + Clone + Sized {
 }
 
 /// Represents an execution block header.
-pub trait ExecHeader: Clone + Codec + Sized {
+pub trait ExecHeader: Codec + Clone + Sized {
     /// Data intrinsic to a block header, like the timestamp and parent block.
     ///
     /// This doesn't include data that's a commitment to external data, like

@@ -4,13 +4,26 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types.workspace = true
 strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
 
 thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+strata-test-utils-ssz.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [lints]
 workspace = true

@@ -16,9 +16,6 @@ mod ssz_generated {
 }
 
 // Publicly re-export only the SSZ items this crate's API intends to expose
-pub use ssz_generated::ssz::block::{
-    BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage, OutputTransfer,
-    SubjectDepositData,
-};
+pub use ssz_generated::ssz::block::*;
 
 mod block;

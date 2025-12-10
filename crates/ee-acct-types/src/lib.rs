@@ -13,13 +13,25 @@ mod outputs;
 mod state;
 mod traits;
 
-pub use commit::{CommitBlockData, CommitChainSegment};
+// Include generated SSZ types from build.rs output
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
+pub use commit::*;
 pub use errors::{EnvError, EnvResult, MessageDecodeError, MessageDecodeResult};
-pub use extra_data::UpdateExtraData;
+pub use extra_data::*;
 pub use inputs::ExecPayload;
 pub use messages::*;
 pub use outputs::ExecBlockOutput;
-pub use state::{EeAccountState, PendingFinclEntry, PendingInputEntry, PendingInputType};
+pub use ssz_generated::ssz::{self as ssz, state::*};
+pub use state::PendingInputType;
 pub use strata_identifiers::Hash;
 pub use traits::{
     BlockAssembler, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState, ExecutionEnvironment,
