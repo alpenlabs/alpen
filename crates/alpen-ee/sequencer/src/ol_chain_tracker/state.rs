@@ -6,6 +6,7 @@ use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::MessageEntry;
 use tracing::{error, warn};
 
+/// Tracks OL chain blocks and their inbox messages for the sequencer.
 #[derive(Debug)]
 pub struct OLChainTrackerState {
     /// Lowest block being tracked.
@@ -18,7 +19,7 @@ pub struct OLChainTrackerState {
 }
 
 impl OLChainTrackerState {
-    fn new_empty(base: OLBlockCommitment) -> Self {
+    pub(crate) fn new_empty(base: OLBlockCommitment) -> Self {
         Self {
             base,
             blocks: VecDeque::new(),
@@ -26,10 +27,12 @@ impl OLChainTrackerState {
         }
     }
 
+    /// Returns the most recent tracked block, or the base if no blocks are tracked.
     pub(crate) fn best_block(&self) -> OLBlockCommitment {
         *self.blocks.back().unwrap_or(&self.base)
     }
 
+    /// Appends a block and its inbox messages. The block must extend the current chain.
     pub(crate) fn append_block(
         &mut self,
         block: OLBlockCommitment,
@@ -52,6 +55,7 @@ impl OLChainTrackerState {
         Ok(())
     }
 
+    /// Prunes blocks up to and including `next_base`, which becomes the new base.
     pub(crate) fn prune_blocks(&mut self, next_base: OLBlockCommitment) -> eyre::Result<()> {
         if next_base == self.base {
             // noop
@@ -74,6 +78,7 @@ impl OLChainTrackerState {
         Ok(())
     }
 
+    /// Returns inbox messages for blocks in the given slot range (inclusive).
     pub(crate) fn get_inbox_messages(
         &self,
         mut from_slot: u64,
@@ -131,6 +136,7 @@ impl OLChainTrackerState {
     }
 }
 
+/// Initializes tracker state by syncing from local storage and the OL client.
 pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: SequencerOLClient>(
     storage: &TStorage,
     ol_client: &TClient,
@@ -212,33 +218,8 @@ pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: Se
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-    use strata_identifiers::Buf32;
-
     use super::*;
-
-    /// Helper to create a block commitment with a given slot.
-    fn make_block(slot: u64) -> OLBlockCommitment {
-        let mut blkid_bytes = [0u8; 32];
-        blkid_bytes[0..8].copy_from_slice(&slot.to_le_bytes());
-        OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from(blkid_bytes)))
-    }
-
-    /// Helper to create a block commitment with a given slot and specific blkid bytes.
-    fn make_block_with_id(slot: u64, id_byte: u8) -> OLBlockCommitment {
-        let mut blkid_bytes = [id_byte; 32];
-        blkid_bytes[0..8].copy_from_slice(&slot.to_le_bytes());
-        OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from(blkid_bytes)))
-    }
-
-    /// Helper to create a dummy message entry.
-    fn make_message(value: u64) -> MessageEntry {
-        MessageEntry::new(
-            AccountId::new([0u8; 32]),
-            0,
-            MsgPayload::new(BitcoinAmount::from_sat(value), vec![]),
-        )
-    }
+    use crate::ol_chain_tracker::test_utils::{make_block, make_block_with_id, make_message};
 
     mod best_block {
         use super::*;
@@ -597,115 +578,17 @@ mod tests {
     }
 
     mod init_ol_chain_tracker_state_tests {
-        use alpen_ee_common::{
-            MockExecBlockStorage, MockSequencerOLClient, OLBlockData, OLChainStatus, OLClientError,
-        };
-        use strata_identifiers::EpochCommitment;
+        use alpen_ee_common::{MockExecBlockStorage, MockSequencerOLClient, OLChainStatus, OLClientError};
 
         use super::*;
+        use crate::ol_chain_tracker::test_utils::{
+            create_block_data_chain, create_mock_exec_record, make_block_data, make_block_with_id,
+            make_chain_status,
+        };
 
         // =========================================================================
         // Test Helpers
         // =========================================================================
-
-        /// Helper to create an OLBlockCommitment with a given slot and id byte.
-        /// The id_byte is placed at the start of the blkid for easy identification.
-        fn make_ol_block(slot: u64, id_byte: u8) -> OLBlockCommitment {
-            let mut blkid_bytes = [0u8; 32];
-            blkid_bytes[0] = id_byte;
-            blkid_bytes[1] = 1; // Ensure non-null
-            OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from(blkid_bytes)))
-        }
-
-        /// Helper to create an EpochCommitment from an OLBlockCommitment.
-        fn make_epoch_from_block(epoch: u32, block: OLBlockCommitment) -> EpochCommitment {
-            EpochCommitment::new(epoch, block.slot(), *block.blkid())
-        }
-
-        /// Helper to create OLChainStatus with the given finalized block.
-        fn make_chain_status(finalized: OLBlockCommitment) -> OLChainStatus {
-            let epoch = make_epoch_from_block(0, finalized);
-            OLChainStatus {
-                latest: finalized,
-                confirmed: epoch,
-                finalized: epoch,
-            }
-        }
-
-        /// Helper to create OLBlockData for a block.
-        fn make_block_data(block: OLBlockCommitment, messages: Vec<MessageEntry>) -> OLBlockData {
-            OLBlockData {
-                commitment: block,
-                inbox_messages: messages,
-            }
-        }
-
-        /// Creates a chain of OL blocks starting from base_slot.
-        ///
-        /// Returns blocks with slots [base_slot, base_slot+1, ..., base_slot+count-1]
-        /// Each block has id_byte = slot as u8 for easy identification.
-        ///
-        /// # Example
-        /// ```
-        /// // Creates blocks at slots 10, 11, 12
-        /// let blocks = create_ol_block_chain(10, 3);
-        /// assert_eq!(blocks[0].slot(), 10);
-        /// assert_eq!(blocks[2].slot(), 12);
-        /// ```
-        fn create_ol_block_chain(base_slot: u64, count: usize) -> Vec<OLBlockCommitment> {
-            (0..count)
-                .map(|i| {
-                    let slot = base_slot + i as u64;
-                    make_ol_block(slot, slot as u8)
-                })
-                .collect()
-        }
-
-        /// Creates OLBlockData for each block in the chain.
-        /// Each block gets one message with value = slot * 100.
-        fn create_block_data_chain(blocks: &[OLBlockCommitment]) -> Vec<OLBlockData> {
-            blocks
-                .iter()
-                .map(|block| {
-                    let msg = make_message(block.slot() * 100);
-                    make_block_data(*block, vec![msg])
-                })
-                .collect()
-        }
-
-        /// Creates a mock ExecBlockRecord that references the given OL block.
-        /// Uses the test helper from alpen_ee_common.
-        fn create_mock_exec_record(
-            ol_block: OLBlockCommitment,
-        ) -> alpen_ee_common::ExecBlockRecord {
-            use strata_acct_types::Hash;
-            use strata_ee_acct_types::EeAccountState;
-            use strata_ee_chain_types::{
-                BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage,
-            };
-            use strata_identifiers::Buf32;
-
-            let hash_bytes = [ol_block.slot() as u8; 32];
-            let hash = Hash::from(Buf32::new(hash_bytes));
-
-            let package = ExecBlockPackage::new(
-                ExecBlockCommitment::new(hash, hash),
-                BlockInputs::new_empty(),
-                BlockOutputs::new_empty(),
-            );
-
-            let account_state =
-                EeAccountState::new(hash, strata_acct_types::BitcoinAmount::ZERO, vec![], vec![]);
-
-            alpen_ee_common::ExecBlockRecord::new(
-                package,
-                account_state,
-                ol_block.slot(),
-                ol_block,
-                1_000_000,
-                Hash::default(),
-            )
-        }
 
         /// Sets up mock storage to return the given exec record as best finalized block.
         fn setup_mock_storage_finalized(
@@ -732,7 +615,7 @@ mod tests {
         /// Sets up mock OL client to return inbox messages for the given block data.
         fn setup_mock_client_inbox_messages(
             mock_client: &mut MockSequencerOLClient,
-            block_data: Vec<OLBlockData>,
+            block_data: Vec<alpen_ee_common::OLBlockData>,
         ) {
             mock_client
                 .expect_get_inbox_messages()
@@ -753,7 +636,7 @@ mod tests {
             //
             // Expected: Empty state with base at slot 10
 
-            let finalized_block = make_ol_block(10, 10);
+            let finalized_block = make_block_with_id(10, 10);
             let exec_record = create_mock_exec_record(finalized_block);
             let chain_status = make_chain_status(finalized_block);
 
@@ -781,11 +664,14 @@ mod tests {
             //
             // Expected: State with base at slot 10, blocks 11-13 tracked
 
-            let local_finalized = make_ol_block(10, 10);
-            let remote_finalized = make_ol_block(13, 13);
+            let local_finalized = make_block_with_id(10, 10);
+            let remote_finalized = make_block_with_id(13, 13);
 
             // Create block chain from slot 10 to 13
-            let ol_blocks = create_ol_block_chain(10, 4); // slots 10, 11, 12, 13
+            // Use make_block_with_id to ensure block at slot 10 matches local_finalized
+            let ol_blocks: Vec<_> = (10..=13)
+                .map(|slot| make_block_with_id(slot, slot as u8))
+                .collect();
             let block_data = create_block_data_chain(&ol_blocks);
 
             let exec_record = create_mock_exec_record(local_finalized);
@@ -847,8 +733,8 @@ mod tests {
             //
             // Expected: Error about local being ahead
 
-            let local_finalized = make_ol_block(15, 15);
-            let remote_finalized = make_ol_block(10, 10);
+            let local_finalized = make_block_with_id(15, 15);
+            let remote_finalized = make_block_with_id(10, 10);
 
             let exec_record = create_mock_exec_record(local_finalized);
             let chain_status = make_chain_status(remote_finalized);
@@ -878,12 +764,12 @@ mod tests {
             //
             // Expected: Error "Deep reorg detected"
 
-            let local_finalized = make_ol_block(10, 0xAA);
-            let remote_finalized = make_ol_block(11, 11);
+            let local_finalized = make_block_with_id(10, 0xAA);
+            let remote_finalized = make_block_with_id(11, 11);
 
             // Remote returns different block at slot 10
-            let remote_block_at_10 = make_ol_block(10, 0xBB);
-            let remote_block_at_11 = make_ol_block(11, 11);
+            let remote_block_at_10 = make_block_with_id(10, 0xBB);
+            let remote_block_at_11 = make_block_with_id(11, 11);
             let block_data = vec![
                 make_block_data(remote_block_at_10, vec![]),
                 make_block_data(remote_block_at_11, vec![]),
@@ -914,7 +800,7 @@ mod tests {
             //
             // Expected: Error propagated from client
 
-            let local_finalized = make_ol_block(10, 10);
+            let local_finalized = make_block_with_id(10, 10);
             let exec_record = create_mock_exec_record(local_finalized);
 
             let mut mock_storage = MockExecBlockStorage::new();
@@ -943,8 +829,8 @@ mod tests {
             //
             // Expected: Error propagated from client
 
-            let local_finalized = make_ol_block(10, 10);
-            let remote_finalized = make_ol_block(11, 11);
+            let local_finalized = make_block_with_id(10, 10);
+            let remote_finalized = make_block_with_id(11, 11);
 
             let exec_record = create_mock_exec_record(local_finalized);
             let chain_status = make_chain_status(remote_finalized);
