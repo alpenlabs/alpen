@@ -2,7 +2,7 @@ use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
-use crate::account::{AccountTypeState, IAccountState};
+use crate::account::{IAccountState, IAccountStateMut, NewAccountData};
 
 /// Opaque interface for manipulating the chainstate, for all of the parts
 /// directly under the toplevel state.
@@ -10,8 +10,11 @@ use crate::account::{AccountTypeState, IAccountState};
 /// This exists because we want to make this generic across the various
 /// different contexts we'll be manipulating state.
 pub trait IStateAccessor {
-    /// Type representing a ledger account's state.
+    /// Type representing a ledger account's state for read operations.
     type AccountState: IAccountState;
+
+    /// Same as above, but the mutable view.
+    type AccountStateMut: IAccountStateMut;
 
     // ===== Global state methods =====
 
@@ -63,20 +66,20 @@ pub trait IStateAccessor {
     /// Checks if an account exists.
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;
 
-    /// Gets a ref to an account, if it exists.
+    /// Gets a ref to an account, if it exists. For read-only access.
     fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>>;
 
-    /// Gets a mut ref to an account, if it exists.
-    fn get_account_state_mut(
-        &mut self,
-        id: AccountId,
-    ) -> AcctResult<Option<&mut Self::AccountState>>;
-
-    /// Overwrites an existing account entry's state, if it exists.
+    /// Transactional modification of an account state.
     ///
-    /// This refuses to create new accounts in order to avoid accidents like
-    /// screwing up serials.
-    fn update_account_state(&mut self, id: AccountId, state: Self::AccountState) -> AcctResult<()>;
+    /// The closure receives a mutable reference to the account write context and
+    /// can modify it. The implementation handles any setup before and cleanup
+    /// after the closure returns. Returns whatever the closure returns, wrapped
+    /// in `AcctResult`.
+    ///
+    /// Returns an error if the account doesn't exist.
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    where
+        F: FnOnce(&mut Self::AccountStateMut) -> R;
 
     /// Creates a new account as some ID with some type state, if that ID
     /// doesn't exist, assigning it a fresh serial.  Returns the freshly created
@@ -84,13 +87,13 @@ pub trait IStateAccessor {
     fn create_new_account(
         &mut self,
         id: AccountId,
-        state: AccountTypeState<Self::AccountState>,
+        new_acct_data: NewAccountData<Self::AccountState>,
     ) -> AcctResult<AccountSerial>;
 
     /// Resolves an account serial to an account ID.
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>>;
 
     /// Computes the full state root, using whatever things we've updated.
-    // TODO don't use `AcctResult`, actually convert all/most of these to use a new error type
+    // TODO maybe don't use `AcctResult`, actually convert all/most of these to use a new error type
     fn compute_state_root(&self) -> AcctResult<Buf32>;
 }

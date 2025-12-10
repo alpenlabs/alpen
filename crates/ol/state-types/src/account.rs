@@ -1,20 +1,20 @@
-use strata_acct_types::{
-    AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, RawAccountTypeId,
-};
+use strata_acct_types::*;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_ledger_types::{AccountTypeState, Coin, IAccountState};
+use strata_identifiers::AccountSerial;
+use strata_ledger_types::{AccountTypeState, *};
 
 use crate::snark_account::NativeSnarkAccountState;
 
 #[derive(Clone, Debug, Eq, PartialEq, Codec)]
-pub struct AccountState {
+pub struct NativeAccountState {
     serial: AccountSerial,
     balance: BitcoinAmount,
     state: NativeAccountTypeState,
 }
 
-impl AccountState {
-    pub(crate) fn new(
+impl NativeAccountState {
+    /// Creates a new account state.
+    pub fn new(
         serial: AccountSerial,
         balance: BitcoinAmount,
         state: NativeAccountTypeState,
@@ -26,12 +26,19 @@ impl AccountState {
         }
     }
 
-    pub(crate) fn serial(&self) -> AccountSerial {
+    /// Returns the account serial.
+    pub fn serial(&self) -> AccountSerial {
         self.serial
+    }
+
+    /// Sets the account serial. Used during account creation when the serial
+    /// is assigned after the initial state is constructed.
+    pub fn set_serial(&mut self, serial: AccountSerial) {
+        self.serial = serial;
     }
 }
 
-impl IAccountState for AccountState {
+impl IAccountState for NativeAccountState {
     type SnarkAccountState = NativeSnarkAccountState;
 
     fn serial(&self) -> AccountSerial {
@@ -41,6 +48,28 @@ impl IAccountState for AccountState {
     fn balance(&self) -> BitcoinAmount {
         self.balance
     }
+
+    fn ty(&self) -> AccountTypeId {
+        self.state.ty()
+    }
+
+    fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
+        match &self.state {
+            NativeAccountTypeState::Empty => AccountTypeStateRef::Empty,
+            NativeAccountTypeState::Snark(state) => AccountTypeStateRef::Snark(state),
+        }
+    }
+
+    fn as_snark_account(&self) -> AcctResult<&Self::SnarkAccountState> {
+        match &self.state {
+            NativeAccountTypeState::Snark(state) => Ok(state),
+            _ => Err(AcctError::MismatchedType(self.ty(), AccountTypeId::Snark)),
+        }
+    }
+}
+
+impl IAccountStateMut for NativeAccountState {
+    type SnarkAccountStateMut = NativeSnarkAccountState;
 
     fn add_balance(&mut self, coin: Coin) {
         self.balance = self
@@ -58,28 +87,28 @@ impl IAccountState for AccountState {
         Ok(Coin::new_unchecked(amt))
     }
 
-    // TODO should we remove this?  what value is it even still providing?
-    fn raw_ty(&self) -> AcctResult<RawAccountTypeId> {
-        Ok(self.state.ty() as RawAccountTypeId)
+    fn as_snark_account_mut(&mut self) -> AcctResult<&mut Self::SnarkAccountStateMut> {
+        let ty = self.ty();
+        match &mut self.state {
+            NativeAccountTypeState::Snark(state) => Ok(state),
+            _ => Err(AcctError::MismatchedType(ty, AccountTypeId::Snark)),
+        }
     }
+}
 
-    fn ty(&self) -> AcctResult<AccountTypeId> {
-        Ok(self.state.ty())
-    }
-
-    fn get_type_state(&self) -> AcctResult<AccountTypeState<Self>> {
-        Ok(self.state.clone().into_generic())
-    }
-
-    fn set_type_state(&mut self, state: AccountTypeState<Self>) -> AcctResult<()> {
-        self.state = NativeAccountTypeState::from_generic(state);
-        Ok(())
+impl IAccountStateConstructible for NativeAccountState {
+    fn new_with_serial(new_acct_data: NewAccountData<Self>, serial: AccountSerial) -> Self {
+        Self::new(
+            serial,
+            new_acct_data.initial_balance(),
+            NativeAccountTypeState::from_generic(new_acct_data.into_type_state()),
+        )
     }
 }
 
 /// Internal impl of account state types.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum NativeAccountTypeState {
+pub enum NativeAccountTypeState {
     /// An empty/inert account entry that holds a balance but nothing else.
     ///
     /// Usable for testing/internal purposes.
@@ -90,7 +119,8 @@ pub(crate) enum NativeAccountTypeState {
 }
 
 impl NativeAccountTypeState {
-    pub(crate) fn ty(&self) -> AccountTypeId {
+    /// Returns the account type ID for this state.
+    pub fn ty(&self) -> AccountTypeId {
         match self {
             Self::Empty => AccountTypeId::Empty,
             Self::Snark(_) => AccountTypeId::Snark,
@@ -98,7 +128,7 @@ impl NativeAccountTypeState {
     }
 
     /// Converts from the generic wrapper.
-    pub(crate) fn from_generic(ts: AccountTypeState<AccountState>) -> Self {
+    pub fn from_generic(ts: AccountTypeState<NativeAccountState>) -> Self {
         match ts {
             AccountTypeState::Empty => Self::Empty,
             AccountTypeState::Snark(s) => Self::Snark(s),
@@ -106,7 +136,7 @@ impl NativeAccountTypeState {
     }
 
     /// Converts into the generic wrapper.
-    pub(crate) fn into_generic(self) -> AccountTypeState<AccountState> {
+    pub fn into_generic(self) -> AccountTypeState<NativeAccountState> {
         match self {
             NativeAccountTypeState::Empty => AccountTypeState::Empty,
             NativeAccountTypeState::Snark(s) => AccountTypeState::Snark(s),

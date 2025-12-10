@@ -14705,6 +14705,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-state-support-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-asm-manifest-types",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-state-types",
+ "strata-snark-acct-types",
+]
+
+[[package]]
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [

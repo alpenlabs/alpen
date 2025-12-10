@@ -19,12 +19,12 @@ pub enum AcctError {
     #[error("decode {0} account state")]
     DecodeState(AccountTypeId),
 
-    #[error("invalid account id {0}")]
-    InvalidAcctTypeId(RawAccountTypeId),
-
     #[error("tried to create account with existing ID ({0:?})")]
     AccountIdExists(AccountId),
 
     #[error("tried to access account that does not exist ({0:?})")]
     MissingExpectedAccount(AccountId),
+
+    #[error("operation not supported in this context")]
+    Unsupported,
 }
