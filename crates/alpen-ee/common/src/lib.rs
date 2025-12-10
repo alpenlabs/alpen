@@ -5,12 +5,11 @@ mod types;
 mod utils;
 
 pub use traits::{
-    engine::{ExecutionEngine, ExecutionEngineError},
+    engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLBlockData, OLClient, OLClientError,
         SequencerOLClient,
     },
-    payload_builder::{EnginePayload, PayloadBuilderEngine},
     storage::{ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError},
 };
 #[cfg(feature = "test-utils")]

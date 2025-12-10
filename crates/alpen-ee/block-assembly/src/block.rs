@@ -1,6 +1,7 @@
 use std::num::NonZero;
 
 use alpen_ee_common::{EnginePayload, ExecBlockPayload, PayloadBuilderEngine};
+use eyre::Context;
 use strata_acct_types::{AccountId, Hash};
 use strata_ee_acct_runtime::{apply_final_update_changes, apply_input_messages};
 use strata_ee_acct_types::EeAccountState;
@@ -73,7 +74,9 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
 
     Ok(BlockAssemblyOutputs {
         package,
-        payload: ExecBlockPayload::from_bytes(payload.to_bytes()),
+        payload: ExecBlockPayload::from_bytes(
+            payload.to_bytes().context("failed to serialized payload")?,
+        ),
         account_state,
     })
 }

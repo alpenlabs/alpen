@@ -1108,19 +1108,26 @@ dependencies = [
 name = "alpen-ee-common"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types-engine",
  "alpen-reth-node",
  "async-trait",
+ "bincode",
  "eyre",
  "mockall",
+ "reth-ethereum-engine-primitives",
+ "reth-ethereum-primitives",
  "reth-node-builder",
+ "reth-primitives-traits",
+ "serde",
  "strata-acct-types",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]

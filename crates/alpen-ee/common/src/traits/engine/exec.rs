@@ -2,11 +2,13 @@ use alloy_rpc_types_engine::ForkchoiceState;
 use async_trait::async_trait;
 use thiserror::Error;
 
+use crate::EnginePayload;
+
 /// Interface for interacting with an execution engine that processes payloads
 /// and tracks consensus state. Typically wraps an Engine API-compliant client.
 #[async_trait]
 pub trait ExecutionEngine {
-    type TEnginePayload;
+    type TEnginePayload: EnginePayload;
 
     /// Submits an execution payload to the engine for processing.
     async fn submit_payload(

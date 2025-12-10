@@ -50,8 +50,6 @@ impl ExecutionEngine for AlpenRethPayloadEngine {
 
 #[async_trait::async_trait]
 impl PayloadBuilderEngine for AlpenRethPayloadEngine {
-    type TEnginePayload = AlpenBuiltPayload;
-
     async fn build_payload(
         &self,
         build_attrs: PayloadBuildAttributes,
