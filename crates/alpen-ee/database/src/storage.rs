@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use alpen_ee_common::{
     EeAccountStateAtEpoch, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch,
@@ -30,8 +30,9 @@ pub struct EeNodeStorage {
 impl EeNodeStorage {
     pub(crate) fn new(pool: ThreadPool, db: Arc<impl EeNodeDb + 'static>) -> Self {
         let ops = ops::Context::new(db).into_ops(pool);
-        let blockid_cache = CacheTable::new(64.try_into().unwrap());
-        let account_state_cache = CacheTable::new(64.try_into().unwrap());
+        let blockid_cache = CacheTable::new(NonZeroUsize::new(64).expect("64 is always NonZero"));
+        let account_state_cache =
+            CacheTable::new(NonZeroUsize::new(64).expect("64 is always NonZero"));
 
         Self {
             ops,

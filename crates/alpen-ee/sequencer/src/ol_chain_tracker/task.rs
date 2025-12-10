@@ -41,8 +41,8 @@ pub(crate) async fn ol_chain_tracker_task<
                     break;
                 }
                 // we only track inbox messages from finalized blocks to include in block assembly.
-                let ol_status = *chainstatus_rx.borrow_and_update();
-                handle_chain_update(ol_status, &mut state, client.as_ref(), storage.as_ref()).await;
+                let ol_finalized_status = *chainstatus_rx.borrow_and_update();
+                handle_chain_update(ol_finalized_status, &mut state, client.as_ref(), storage.as_ref()).await;
             }
             maybe_query = query_rx.recv() => {
                 let Some(query) = maybe_query else {
@@ -71,24 +71,35 @@ fn handle_chain_query(state: &OLChainTrackerState, query: OLChainTrackerQuery) {
 }
 
 async fn handle_chain_update(
-    ol_status: OLFinalizedStatus,
+    ol_finalized_status: OLFinalizedStatus,
     state: &mut OLChainTrackerState,
     client: &impl SequencerOLClient,
     storage: &impl ExecBlockStorage,
 ) {
     // compare latest finalized block with local chain segment using db. get extend, revert info
-    match track_ol_state(state, ol_status, client).await {
+    match track_ol_state(state, ol_finalized_status, client).await {
         Ok(TrackAction::Extend(ol_blocks)) => {
-            // update state
+            // update tracker state with new blocks
             for OLBlockData {
                 commitment,
                 inbox_messages,
             } in ol_blocks
             {
-                state.append_block(commitment, inbox_messages).unwrap();
+                if let Err(err) = state.append_block(commitment, inbox_messages) {
+                    // As blocks are expected to be in order, if one block cannot be appended,
+                    // the remaining blocks will also fail.
+                    // So skip rest of the updates and retry in in next cycle.
+                    error!(
+                        %commitment,
+                        ?err,
+                        "failed to append block to ol chain tracker; skipping update"
+                    );
+                    return;
+                }
             }
 
-            if let Err(err) = handle_state_pruning(state, ol_status, storage).await {
+            // check if state c
+            if let Err(err) = handle_state_pruning(state, ol_finalized_status, storage).await {
                 error!(?err, "failed to prune state");
             }
         }
@@ -112,12 +123,12 @@ enum TrackAction {
 
 async fn track_ol_state(
     state: &OLChainTrackerState,
-    ol_status: OLFinalizedStatus,
+    ol_finalized_status: OLFinalizedStatus,
     ol_client: &impl SequencerOLClient,
 ) -> eyre::Result<TrackAction> {
     let best_ol_block = state.best_block();
     // We only care about finalized ol blocks to use as inputs to block assembly.
-    let remote_finalized_ol_block = ol_status.ol_block;
+    let remote_finalized_ol_block = ol_finalized_status.ol_block;
 
     if remote_finalized_ol_block == best_ol_block {
         // nothing to do

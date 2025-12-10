@@ -5,7 +5,7 @@ use strata_acct_types::AccountId;
 /// Default target blocktime in millis
 const DEFAULT_BLOCKTIME_MS: u64 = 1000;
 /// Default number of deposits to process per ee block.
-const DEFAULT_DEPOSITS_PER_BLOCK: NonZeroU8 = NonZeroU8::new(16).unwrap();
+const DEFAULT_DEPOSITS_PER_BLOCK: NonZeroU8 = NonZeroU8::new(16).expect("16 is always NonZero");
 /// Default bridge gateway account on OL.
 const DEFAULT_BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(1); // TODO: correct account id
 /// Default time to wait on errors during block building.
