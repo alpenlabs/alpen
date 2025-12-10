@@ -1,8 +1,7 @@
 use bitcoin::{
-    Address, Amount, Network, OutPoint, ScriptBuf, Transaction, Witness, XOnlyPublicKey,
+    Address, Amount, Network, OutPoint, Transaction, Witness, XOnlyPublicKey,
     constants::COINBASE_MATURITY,
     hashes::{Hash as _, sha256},
-    opcodes::all::{OP_CHECKSIGVERIFY, OP_EQUAL, OP_EQUALVERIFY, OP_SHA256, OP_SIZE},
     taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
 };
 use secp256k1::SECP256K1;
@@ -15,6 +14,7 @@ use strata_test_utils_btcio::{
     signing::sign_musig2_scriptpath, submit::submit_transaction_with_keys_blocking,
 };
 
+use super::stake_connector_script;
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, UNSTAKE_TX_TYPE},
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
@@ -130,20 +130,4 @@ fn stake_connector_tapproot_addr(
     );
 
     (address, spend_info)
-}
-
-fn stake_connector_script(stake_hash: [u8; 32], nn_pubkey: XOnlyPublicKey) -> ScriptBuf {
-    ScriptBuf::builder()
-        // Verify the signature
-        .push_slice(nn_pubkey.serialize())
-        .push_opcode(OP_CHECKSIGVERIFY)
-        // Verify size of preimage is 32 bytes
-        .push_opcode(OP_SIZE)
-        .push_int(0x20)
-        .push_opcode(OP_EQUALVERIFY)
-        // Verify the preimage matches the hash
-        .push_opcode(OP_SHA256)
-        .push_slice(stake_hash)
-        .push_opcode(OP_EQUAL)
-        .into_script()
 }
