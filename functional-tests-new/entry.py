@@ -16,13 +16,14 @@ import os
 import sys
 
 import flexitest
+from flexitest.runtime import scan_dir_for_modules, load_candidate_modules
 
 from common.config import ServiceType
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
-from common.runtime import TestRuntimeWithLogging
 
 # Import environments
-from envconfigs.basic import BasicEnvConfig
+from common.runtime import TestRuntimeWithLogging
+from envconfigs.strata import StrataEnvConfig
 
 # Import factories
 from factories.bitcoin import BitcoinFactory
@@ -220,7 +221,7 @@ def main(argv: list[str]) -> int:
 
     # Define global environments
     global_envs: dict[str, flexitest.EnvConfig] = {
-        "basic": BasicEnvConfig(pre_generate_blocks=110),
+        "basic": StrataEnvConfig(pre_generate_blocks=110),
     }
 
     # Set up test runtime
@@ -239,7 +240,7 @@ def main(argv: list[str]) -> int:
         tests = [KEEP_ALIVE_TEST_NAME]
     else:
         # Discover and filter tests
-        modules = flexitest.runtime.scan_dir_for_modules(test_dir)
+        modules = scan_dir_for_modules(test_dir)
         filtered_modules = filter_tests(args, modules, test_dir)
 
         if not filtered_modules:
@@ -248,7 +249,7 @@ def main(argv: list[str]) -> int:
                 print("\nUse --list to see available tests and groups.")
             return 1
 
-        tests = flexitest.runtime.load_candidate_modules(filtered_modules)
+        tests = load_candidate_modules(filtered_modules)
         runtime.prepare_registered_tests()
 
     # Run tests

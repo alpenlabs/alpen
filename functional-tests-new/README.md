@@ -48,11 +48,11 @@ tests/        Test files
 
 ```python
 import flexitest
-from common.base_test import BaseTest
+from common.base_test import StrataNodeTest
 from common.config import ServiceType
 
 @flexitest.register
-class TestExample(BaseTest):
+class TestExample(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")  # Use basic environment
 
