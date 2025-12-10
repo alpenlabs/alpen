@@ -114,7 +114,11 @@ pub mod tests {
     use super::*;
 
     fn create_test_block_id(value: u8) -> OLBlockId {
-        OLBlockId::from(Buf32::new([value; 32]))
+        let mut bytes = [0u8; 32];
+        bytes[31] = value;
+        // ensure null block is not created
+        bytes[0] = 1;
+        OLBlockId::from(Buf32::new(bytes))
     }
 
     fn create_test_ee_account_state() -> EeAccountState {
