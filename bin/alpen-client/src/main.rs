@@ -89,7 +89,7 @@ fn main() {
                 genesis_info.stateroot(),
                 0,
                 0,
-                OLBlockId::null(), // TODO
+                OLBlockId::from(Buf32([1; 32])), // TODO
             );
 
             let config = Arc::new(AlpenEeConfig::new(
@@ -109,7 +109,9 @@ fn main() {
                 .into();
 
             // TODO: real ol client
-            let ol_client = Arc::new(DummyOLClient::default());
+            let ol_client = Arc::new(DummyOLClient {
+                genesis_epoch: config.params().genesis_ol_epoch_commitment(),
+            });
 
             ensure_genesis(config.as_ref(), storage.as_ref())
                 .await

@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use strata_acct_types::AccountId;
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{EpochCommitment, OLBlockId};
 
 /// Chain specific config, that needs to remain constant on all nodes
 /// to ensure all stay on the same chain.
@@ -72,5 +72,13 @@ impl AlpenEeParams {
     /// Returns the OL block ID at genesis.
     pub fn genesis_ol_blockid(&self) -> OLBlockId {
         self.genesis_ol_blockid
+    }
+
+    pub fn genesis_ol_epoch_commitment(&self) -> EpochCommitment {
+        EpochCommitment {
+            epoch: self.genesis_ol_epoch,
+            last_slot: self.genesis_ol_slot,
+            last_blkid: self.genesis_ol_blockid,
+        }
     }
 }

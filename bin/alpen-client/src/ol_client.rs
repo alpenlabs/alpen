@@ -6,16 +6,18 @@ use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_primitives::EpochCommitment;
 use strata_snark_acct_types::SnarkAccountUpdate;
 
-#[derive(Debug, Default)]
-pub(crate) struct DummyOLClient {}
+#[derive(Debug)]
+pub(crate) struct DummyOLClient {
+    pub(crate) genesis_epoch: EpochCommitment,
+}
 
 #[async_trait]
 impl OLClient for DummyOLClient {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
         Ok(OLChainStatus {
-            latest: OLBlockCommitment::null(),
-            confirmed: EpochCommitment::null(),
-            finalized: EpochCommitment::null(),
+            latest: self.genesis_epoch.to_block_commitment(),
+            confirmed: self.genesis_epoch,
+            finalized: self.genesis_epoch,
         })
     }
 
@@ -32,11 +34,7 @@ impl OLClient for DummyOLClient {
 #[async_trait]
 impl SequencerOLClient for DummyOLClient {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
-        Ok(OLChainStatus {
-            latest: OLBlockCommitment::null(),
-            confirmed: EpochCommitment::null(),
-            finalized: EpochCommitment::null(),
-        })
+        <Self as OLClient>::chain_status(self).await
     }
 
     async fn get_inbox_messages(
@@ -65,5 +63,5 @@ fn slot_to_block_commitment(slot: u64) -> OLBlockCommitment {
 }
 
 fn u64_to_256(v: u64) -> [u8; 32] {
-    unsafe { std::mem::transmute([0, 0, 0, v]) }
+    unsafe { std::mem::transmute([1, 0, 0, v]) }
 }
