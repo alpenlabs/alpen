@@ -7,9 +7,21 @@ use alpen_ee_common::{
 use alpen_ee_exec_chain::ExecChainHandle;
 use eyre::Context;
 use strata_acct_types::Hash;
-use tracing::{debug, error};
+use thiserror::Error;
+use tracing::{error, info, warn};
 
 use crate::{block_builder::BlockBuilderConfig, ol_chain_tracker::OLChainTrackerHandle};
+
+/// Error type for block builder that distinguishes retriable from real errors.
+#[derive(Debug, Error)]
+enum BlockBuilderError {
+    /// Timestamp constraint violated - should retry immediately without backoff.
+    #[error("blocktime constraint violated")]
+    BlocktimeConstraintViolated,
+    /// Real error occurred - should backoff before retry.
+    #[error(transparent)]
+    Other(#[from] eyre::Report),
+}
 
 pub trait Clock: Sized {
     /// current time in milliseconds since UNIX_EPOCH
@@ -60,9 +72,12 @@ pub async fn block_builder_task<
         .await
         {
             Ok(blockhash) => {
-                debug!(?blockhash, "built new block");
+                info!(?blockhash, "built new block");
             }
-            Err(err) => {
+            Err(BlockBuilderError::BlocktimeConstraintViolated) => {
+                warn!("blocktime constraint violated, retrying immediately");
+            }
+            Err(BlockBuilderError::Other(err)) => {
                 error!(?err, "failed to build block");
                 clock.sleep_ms(config.error_backoff_ms()).await;
             }
@@ -77,7 +92,7 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
     payload_builder: &TEngine,
     storage: &impl ExecBlockStorage,
     clock: &impl Clock,
-) -> eyre::Result<Hash> {
+) -> Result<Hash, BlockBuilderError> {
     // check when the next block should be built
     let next_block_target = next_block_target_timestamp(config, exec_chain_handle).await?;
 
@@ -92,8 +107,7 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         payload_builder,
         clock,
     )
-    .await
-    .context("block_builder: build_next_block")?;
+    .await?;
 
     // submit the built payload back to engine so reth knows the block
     payload_builder
@@ -137,11 +151,20 @@ async fn build_next_block(
     ol_chain_handle: &OLChainTrackerHandle,
     payload_builder: &impl PayloadBuilderEngine,
     clock: &impl Clock,
-) -> eyre::Result<(ExecBlockRecord, ExecBlockPayload, Hash)> {
+) -> Result<(ExecBlockRecord, ExecBlockPayload, Hash), BlockBuilderError> {
     let last_local_block = exec_chain_handle
         .get_best_block()
         .await
         .context("build_next_block: failed to get best exec block")?;
+
+    // validate blocktime constraint
+    // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
+    let timestamp_ms = clock.current_timestamp();
+    let min_timestamp = last_local_block.timestamp_ms() + config.blocktime_ms();
+    if timestamp_ms < min_timestamp {
+        return Err(BlockBuilderError::BlocktimeConstraintViolated);
+    }
+
     // check if there are new OL block inputs that need to be included
     let best_ol_block = ol_chain_handle
         .get_finalized_block()
@@ -157,7 +180,6 @@ async fn build_next_block(
     };
 
     // build next block
-    let timestamp_ms = clock.current_timestamp();
     let parent_blockhash = last_local_block.package().exec_blkid();
     let block_assembly_inputs = BlockAssemblyInputs {
         account_state: last_local_block.account_state().clone(),

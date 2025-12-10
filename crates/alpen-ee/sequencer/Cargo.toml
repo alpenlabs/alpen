@@ -15,6 +15,7 @@ strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
 eyre.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
