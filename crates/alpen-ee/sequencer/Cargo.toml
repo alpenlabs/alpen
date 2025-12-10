@@ -11,6 +11,8 @@ alpen-ee-block-assembly.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-exec-chain.workspace = true
 strata-acct-types.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
@@ -21,5 +23,3 @@ tracing.workspace = true
 
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
-strata-ee-acct-types.workspace = true
-strata-ee-chain-types.workspace = true
