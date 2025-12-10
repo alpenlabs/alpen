@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use alpen_ee_common::{
     ConsensusHeads, EeAccountStateAtEpoch, OLFinalizedStatus, OLChainStatus, Storage,
 };
@@ -58,7 +56,7 @@ impl OLTrackerState {
 /// Initialized [`OLTrackerState`] from storage
 pub async fn init_ol_tracker_state<TStorage>(
     ol_chain_status: OLChainStatus,
-    storage: Arc<TStorage>,
+    storage: &TStorage,
 ) -> Result<OLTrackerState>
 where
     TStorage: Storage,
@@ -68,7 +66,7 @@ where
         return Err(OLTrackerError::MissingGenesisEpoch);
     };
 
-    build_tracker_state(best_state, &ol_chain_status, storage.as_ref()).await
+    build_tracker_state(best_state, &ol_chain_status, storage).await
 }
 
 pub(crate) async fn build_tracker_state(

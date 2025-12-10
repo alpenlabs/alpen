@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
+use std::collections::{HashMap, VecDeque};
 
 use alpen_ee_common::{get_inbox_messages_checked, ExecBlockStorage, SequencerOLClient};
 use eyre::eyre;
@@ -127,8 +124,8 @@ impl OLChainTrackerState {
 }
 
 pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: SequencerOLClient>(
-    storage: Arc<TStorage>,
-    ol_client: Arc<TClient>,
+    storage: &TStorage,
+    ol_client: &TClient,
 ) -> eyre::Result<OLChainTrackerState> {
     // last finalized block known to EE sequencer locally
     let finalized_exec_block = storage
@@ -168,7 +165,7 @@ pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: Se
     // TODO: retry
     // TODO: chunk calls by slot range
     let blocks = get_inbox_messages_checked(
-        ol_client.as_ref(),
+        ol_client,
         local_finalized_ol_block.slot(),
         remote_finalized_ol_block.slot(),
     )

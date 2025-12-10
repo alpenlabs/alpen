@@ -30,6 +30,7 @@ use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
 use clap::Parser;
+use eyre::Context;
 use ol_client::DummyOLClient;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
@@ -104,40 +105,36 @@ fn main() {
                 BlockBuilderConfig::new(1000, 16.try_into().unwrap(), AccountId::zero());
 
             let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())
-                .expect("failed to load alpen database")
+                .context("failed to load alpen database")?
                 .into();
 
             // TODO: real ol client
             let ol_client = Arc::new(DummyOLClient::default());
 
-            let tokio_handle = builder.task_executor().handle();
-
-            tokio_handle
-                .block_on(ensure_genesis(config.clone(), storage.clone()))
-                .expect("genesis should not fail");
+            ensure_genesis(config.as_ref(), storage.as_ref())
+                .await
+                .context("genesis should not fail")?;
 
             // TODO: startup consistency check
 
-            let ol_chain_status = tokio_handle
-                .block_on(chain_status_checked(ol_client.as_ref()))
-                .expect("cannot fetch OL chain status");
+            let ol_chain_status = chain_status_checked(ol_client.as_ref())
+                .await
+                .context("cannot fetch OL chain status")?;
 
-            let ol_tracker_state = tokio_handle
-                .block_on(init_ol_tracker_state(ol_chain_status, storage.clone()))
-                .expect("ol tracker state initialization should not fail");
-
-            #[cfg(feature = "sequencer")]
-            let ol_chain_tracker_state = tokio_handle
-                .block_on(init_ol_chain_tracker_state(
-                    storage.clone(),
-                    ol_client.clone(),
-                ))
-                .expect("ol chain tracker state initialization should not fail");
+            let ol_tracker_state = init_ol_tracker_state(ol_chain_status, storage.as_ref())
+                .await
+                .context("ol tracker state initialization should not fail")?;
 
             #[cfg(feature = "sequencer")]
-            let exec_chain_state = tokio_handle
-                .block_on(init_exec_chain_state_from_storage(storage.clone()))
-                .expect("exec chain state initialization should not fail");
+            let ol_chain_tracker_state =
+                init_ol_chain_tracker_state(storage.as_ref(), ol_client.as_ref())
+                    .await
+                    .context("ol chain tracker state initialization should not fail")?;
+
+            #[cfg(feature = "sequencer")]
+            let exec_chain_state = init_exec_chain_state_from_storage(storage.as_ref())
+                .await
+                .context("exec chain state initialization should not fail")?;
 
             let best_ee_blockhash = {
                 #[cfg(feature = "sequencer")]
@@ -379,11 +376,11 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 }
 
 async fn ensure_genesis<TStorage: Storage + ExecBlockStorage>(
-    config: Arc<AlpenEeConfig>,
-    storage: Arc<TStorage>,
+    config: &AlpenEeConfig,
+    storage: &TStorage,
 ) -> eyre::Result<()> {
-    ensure_genesis_ee_account_state(config.clone(), storage.clone()).await?;
+    ensure_genesis_ee_account_state(config, storage).await?;
     #[cfg(feature = "sequencer")]
-    ensure_finalized_exec_chain_genesis(config.clone(), storage.clone()).await?;
+    ensure_finalized_exec_chain_genesis(config, storage).await?;
     Ok(())
 }
