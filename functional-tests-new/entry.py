@@ -19,6 +19,7 @@ import flexitest
 
 from common.config import ServiceType
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
+from common.runtime import TestRuntimeWithLogging
 
 # Import environments
 from envconfigs.basic import BasicEnvConfig
@@ -224,7 +225,7 @@ def main(argv: list[str]) -> int:
 
     # Set up test runtime
     datadir = flexitest.create_datadir_in_workspace(os.path.join(root_dir, "_dd"))
-    runtime = flexitest.TestRuntime(global_envs, datadir, factories)
+    runtime = TestRuntimeWithLogging(global_envs, datadir, factories)
 
     # Handle keep-alive mode
     if args.keep_alive:
