@@ -14,17 +14,24 @@ use strata_acct_types::Hash;
 use thiserror::Error;
 use tracing::error;
 
+/// Trait for engine payloads that can be serialized and provide block metadata.
 pub trait EnginePayload: Sized + Clone {
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// Returns the block number of this payload.
     fn blocknum(&self) -> u64;
+    /// Returns the block hash of this payload.
     fn blockhash(&self) -> Hash;
+    /// Returns the withdrawal intents included in this payload.
     fn withdrawal_intents(&self) -> &[WithdrawalIntent];
 
+    /// Serializes this payload to bytes.
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error>;
+    /// Deserializes a payload from bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>;
 }
 
+/// Errors that can occur when working with Alpen engine payloads.
 #[derive(Debug, Error)]
 pub enum AlpenEnginePayloadError {
     #[error("expected blob sidecars to be empty; blockhash: {0}")]
@@ -59,6 +66,7 @@ impl EnginePayload for AlpenBuiltPayload {
     }
 }
 
+/// Internal representation of a payload for serialization.
 #[derive(Debug, Serialize, Deserialize)]
 struct SerializablePayload {
     payload_id: PayloadId,
