@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use bitcoin::ScriptBuf;
 use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{
-    BridgeTxParseError, DrtSignatureError, Mismatch, WithdrawalParseError,
+    DepositTxParseError, DrtSignatureError, Mismatch, SlashTxParseError, WithdrawalParseError,
 };
 use strata_bridge_types::OperatorIdx;
 use strata_l1_txfmt::TxType;

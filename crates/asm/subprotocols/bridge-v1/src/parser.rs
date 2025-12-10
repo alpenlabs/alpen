@@ -6,9 +6,11 @@ use strata_asm_txs_bridge_v1::{
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, parse_withdrawal_fulfillment_tx},
 };
 
+use crate::BridgeSubprotocolError;
+
 /// Represents a parsed transaction that can be either a deposit or withdrawal fulfillment.
 #[derive(Debug)]
-pub enum ParsedTx {
+pub(crate) enum ParsedTx {
     /// A deposit transaction that locks Bitcoin funds in the bridge
     Deposit(DepositInfo),
     /// A withdrawal fulfillment transaction that releases Bitcoin funds from the bridge
@@ -38,7 +40,7 @@ pub enum ParsedTx {
 /// Returns an error if:
 /// - The transaction type is not supported by the bridge subprotocol
 /// - The transaction data extraction fails (malformed transaction structure)
-pub fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx, BridgeTxParseError> {
+pub(crate) fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx, BridgeSubprotocolError> {
     match tx.tag().tx_type() {
         DEPOSIT_TX_TYPE => {
             let info = parse_deposit_tx(tx)?;

@@ -3,12 +3,14 @@ use strata_asm_logs::NewExportEntry;
 use strata_asm_txs_bridge_v1::{
     deposit_request::{create_deposit_request_locking_script, parse_drt_new},
     errors::Mismatch,
-    parser::ParsedTx,
 };
 use strata_primitives::constants::RECOVER_DELAY; /* TODO:PG make this a parameter instead of
                                                   * constant */
 
-use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
+use crate::{
+    DepositValidationError, SlashValidationError, errors::BridgeSubprotocolError, parser::ParsedTx,
+    state::BridgeV1State,
+};
 
 /// Handles parsed transactions and updates the bridge state accordingly.
 pub(crate) fn handle_parsed_tx(
@@ -75,26 +77,6 @@ pub(crate) fn handle_parsed_tx(
             };
 
             // Remove the slashed operator from the active set
-            state.remove_operator(info.header_aux().operator_idx());
-
-            Ok(())
-        }
-        ParsedTx::Unstake(info) => {
-            // Extract the stake connector script from the second input of the unstake transaction
-            let stake_connector_script = &verified_aux_data
-                .get_bitcoin_txout(info.second_inpoint().outpoint())?
-                .script_pubkey;
-
-            // Validate that the stake connector is locked to a known N/N multisig script.
-            if !state
-                .operators()
-                .historical_nn_scripts()
-                .any(|script| script == stake_connector_script)
-            {
-                return Err(SlashValidationError::InvalidStakeConnectorScript.into());
-            };
-
-            // Remove the unstaking operator from the active set
             state.remove_operator(info.header_aux().operator_idx());
 
             Ok(())
