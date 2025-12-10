@@ -44,20 +44,37 @@ pub struct OLBlockData {
     pub inbox_messages: Vec<MessageEntry>,
 }
 
+/// Client interface for sequencer-specific OL chain interactions.
+///
+/// Extends the base OL client functionality with methods needed by the sequencer
+/// to read inbox messages and submit state updates to the OL chain.
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 pub trait SequencerOLClient {
+    /// Returns the current status of the OL chain.
+    ///
+    /// Includes the latest, confirmed, and finalized block commitments.
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError>;
 
+    /// Retrieves inbox messages for the specified slot range (inclusive).
+    ///
+    /// Returns block data containing commitments and inbox messages for each slot
+    /// from `min_slot` to `max_slot`.
     async fn get_inbox_messages(
         &self,
         min_slot: u64,
         max_slot: u64,
     ) -> Result<Vec<OLBlockData>, OLClientError>;
 
+    /// Submits an account update with proof to the OL chain sequencer.
     async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError>;
 }
 
+/// Retrieves inbox messages with validation checks.
+///
+/// This is a checked version of [`SequencerOLClient::get_inbox_messages`] that validates:
+/// - The slot range is valid (`min_slot <= max_slot`)
+/// - The returned message count matches the expected number of slots
 pub async fn get_inbox_messages_checked(
     client: &impl SequencerOLClient,
     min_slot: u64,
