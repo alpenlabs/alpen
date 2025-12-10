@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use bitcoin::XOnlyPublicKey;
+use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
 
 use crate::unstake::UnstakeTxHeaderAux;
 
@@ -33,10 +33,14 @@ impl<'a> Arbitrary<'a> for UnstakeInfo {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let header_aux = UnstakeTxHeaderAux::arbitrary(u)?;
 
-        let mut candidate = [0u8; 32];
-        u.fill_buffer(&mut candidate)?;
-        let witness_pushed_pubkey = XOnlyPublicKey::from_slice(&candidate)
+        let secp = Secp256k1::new();
+        let mut secret_key_bytes = [0u8; 32];
+        u.fill_buffer(&mut secret_key_bytes)?;
+
+        let secret_key = bitcoin::secp256k1::SecretKey::from_slice(&secret_key_bytes)
             .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+        let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
+        let (witness_pushed_pubkey, _parity) = keypair.x_only_public_key();
 
         Ok(Self {
             header_aux,

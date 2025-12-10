@@ -1,11 +1,9 @@
+use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
 use strata_asm_txs_bridge_v1::parser::{ParsedDepositTx, ParsedTx};
 
-use crate::{
-    SlashValidationError, UnstakeValidationError, errors::BridgeSubprotocolError,
-    state::BridgeV1State,
-};
+use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
 
 /// Handles parsed transactions and update the bridge state accordingly.
 ///
@@ -67,11 +65,19 @@ pub(crate) fn handle_parsed_tx<'t>(
             Ok(())
         }
         ParsedTx::Unstake(info) => {
-            // Validate the stake connector is locked to the current N/N aggregated key.
-            let agg_key = state.operators().agg_key().to_xonly_public_key();
-            if info.witness_pushed_pubkey() != &agg_key {
-                return Err(UnstakeValidationError::InvalidStakeConnectorScript.into());
-            }
+            // Build P2TR scriptPubKey from the extracted pubkey. This needs to be validated against
+            // known operator configurations.
+            let extracted_pubkey_script =
+                ScriptBuf::new_p2tr(SECP256K1, *info.witness_pushed_pubkey(), None);
+
+            // Verify the extracted pubkey corresponds to a known operator configuration.
+            if !state
+                .operators()
+                .historical_nn_scripts()
+                .any(|script| script == &extracted_pubkey_script)
+            {
+                return Err(SlashValidationError::InvalidStakeConnectorScript.into());
+            };
 
             state.remove_operator(info.header_aux().operator_idx());
 

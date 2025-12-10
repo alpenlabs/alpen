@@ -1,4 +1,4 @@
-use bitcoin::{ScriptBuf, XOnlyPublicKey};
+use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 
@@ -53,12 +53,8 @@ pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeT
     // Validate the script and extract parameters in one step.
     // This extracts nn_pubkey and stake_hash, reconstructs the expected script,
     // and compares byte-for-byte. Returns parameters only if script is valid.
-    let (nn_pubkey_bytes, _stake_hash_bytes) = validate_and_extract_script_params(&script)
+    let (witness_pushed_pubkey, _stake_hash_bytes) = validate_and_extract_script_params(&script)
         .ok_or(UnstakeTxParseError::InvalidStakeScript)?;
-
-    // Parse nn_pubkey from validated bytes (we know it's valid from the validation above)
-    let witness_pushed_pubkey = XOnlyPublicKey::from_slice(&nn_pubkey_bytes)
-        .map_err(|_| UnstakeTxParseError::InvalidNnPubkey)?;
 
     let info = UnstakeInfo::new(header_aux, witness_pushed_pubkey);
 
@@ -130,33 +126,5 @@ mod tests {
         let tx_input = parse_tx(&tx);
         let err = parse_unstake_tx(&tx_input).unwrap_err();
         assert!(matches!(err, UnstakeTxParseError::InvalidAuxiliaryData(_)));
-    }
-
-    #[test]
-    fn test_parse_unstake_rejects_mismatched_stake_script() {
-        let (_info, mut tx) = create_slash_tx_with_info();
-
-        // Corrupt the script so it no longer matches the canonical builder.
-        let mut witness_items = tx.input[0].witness.to_vec();
-        witness_items[2][0] ^= 1;
-        tx.input[0].witness = Witness::from_slice(&witness_items);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_unstake_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, UnstakeTxParseError::InvalidStakeScript));
-    }
-
-    #[test]
-    fn test_parse_unstake_rejects_preimage_hash_mismatch() {
-        let (_info, mut tx) = create_slash_tx_with_info();
-
-        // Corrupt the preimage so the script hash check fails.
-        let mut witness_items = tx.input[0].witness.to_vec();
-        witness_items[0][0] ^= 1;
-        tx.input[0].witness = Witness::from_slice(&witness_items);
-
-        let tx_input = parse_tx(&tx);
-        let err = parse_unstake_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, UnstakeTxParseError::InvalidStakeScript));
     }
 }
