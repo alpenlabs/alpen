@@ -4,7 +4,6 @@
 #![allow(dead_code, reason = "utilities used by different test files")]
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SubjectId};
-use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChainSegmentBuilder, UpdateBuilder};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState, ExecHeader, PendingInputEntry};
 use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
@@ -72,12 +71,13 @@ pub(crate) fn create_deposit_message(
     source: AccountId,
     incl_epoch: u32,
 ) -> MessageEntry {
-    use strata_ee_acct_types::{DEPOSIT_MSG_TYPE, DepositMsgData};
+    use ssz::Encode;
+    use strata_ee_acct_types::{DEPOSIT_MSG_TYPE, ssz::messages::DepositMsgData};
     use strata_msg_fmt::OwnedMsg;
 
     // Encode the deposit message data
-    let deposit_data = DepositMsgData::new(dest);
-    let body = encode_to_vec(&deposit_data).expect("encode deposit data");
+    let deposit_data = DepositMsgData { dest_subject: dest };
+    let body = deposit_data.as_ssz_bytes();
 
     // Create properly formatted message
     let msg = OwnedMsg::new(DEPOSIT_MSG_TYPE, body).expect("create message");

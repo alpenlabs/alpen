@@ -1,10 +1,16 @@
 //! Definitions for EE message types.
 
-use strata_acct_types::{SubjectId, VarVec};
-use strata_codec::{Codec, decode_buf_exact, impl_type_flat_struct};
+use ssz::Decode;
+use ssz_types::VariableList;
+use strata_acct_types::SubjectId;
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
 
-use crate::{MessageDecodeError, MessageDecodeResult};
+use crate::{
+    MessageDecodeError, MessageDecodeResult,
+    ssz_generated::ssz::messages::{CommitMsgData, DepositMsgData, SubjTransferMsgData},
+};
+
+type TransferData = VariableList<u8, 1048576>;
 
 /// Message type ID for deposit messages.
 pub const DEPOSIT_MSG_TYPE: TypeId = 0x02;
@@ -39,17 +45,17 @@ impl DecodedEeMessageData {
 
         match msg.ty() {
             DEPOSIT_MSG_TYPE => {
-                let data = decode_codec_msg_body::<DepositMsgData>(body)?;
+                let data = decode_ssz_msg_body::<DepositMsgData>(body)?;
                 Ok(DecodedEeMessageData::Deposit(data))
             }
 
             SUBJ_TRANSFER_MSG_TYPE => {
-                let data = decode_codec_msg_body::<SubjTransferMsgData>(body)?;
+                let data = decode_ssz_msg_body::<SubjTransferMsgData>(body)?;
                 Ok(DecodedEeMessageData::SubjTransfer(data))
             }
 
             COMMIT_MSG_TYPE => {
-                let data = decode_codec_msg_body::<CommitMsgData>(body)?;
+                let data = decode_ssz_msg_body::<CommitMsgData>(body)?;
                 Ok(DecodedEeMessageData::Commit(data))
             }
 
@@ -59,38 +65,90 @@ impl DecodedEeMessageData {
 }
 
 /// Decode a message body from a buffer.
-fn decode_codec_msg_body<T: Codec>(buf: &[u8]) -> MessageDecodeResult<T> {
-    decode_buf_exact(buf).map_err(|_| MessageDecodeError::InvalidBody)
+fn decode_ssz_msg_body<T: Decode>(buf: &[u8]) -> MessageDecodeResult<T> {
+    T::from_ssz_bytes(buf).map_err(|_| MessageDecodeError::InvalidBody)
 }
 
-impl_type_flat_struct! {
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub struct DepositMsgData {
-        dest_subject: SubjectId,
-    }
-}
-
-impl_type_flat_struct! {
-    /// Describes a transfer between subjects in EEs.
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub struct SubjTransferMsgData {
-        source_subject: SubjectId,
-        dest_subject: SubjectId,
-        transfer_data: VarVec<u8>,
+impl DepositMsgData {
+    pub fn dest_subject(&self) -> &SubjectId {
+        &self.dest_subject
     }
 }
 
 impl SubjTransferMsgData {
+    pub fn source_subject(&self) -> &SubjectId {
+        &self.source_subject
+    }
+
+    pub fn dest_subject(&self) -> &SubjectId {
+        &self.dest_subject
+    }
+
+    pub fn transfer_data(&self) -> &TransferData {
+        &self.transfer_data
+    }
+
     pub fn data_buf(&self) -> &[u8] {
-        self.transfer_data().as_slice()
+        &self.transfer_data[..]
     }
 }
 
-impl_type_flat_struct! {
-    /// Describes a chunk a sequencer wants to stage.
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub struct CommitMsgData {
-        // TODO rename to new_tip_exec_blkid
-        new_tip_exec_blkid: [u8; 32],
+// CommitMsgData is now generated from ssz/messages.ssz
+
+impl CommitMsgData {
+    pub fn new_tip_exec_blkid(&self) -> &[u8; 32] {
+        self.new_tip_exec_blkid
+            .as_ref()
+            .try_into()
+            .expect("FixedBytes<32> should convert to &[u8; 32]")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use strata_acct_types::SubjectId;
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use crate::ssz_generated::ssz::messages::{CommitMsgData, DepositMsgData, SubjTransferMsgData};
+
+    mod deposit_msg_data {
+        use super::*;
+
+        ssz_proptest!(
+            DepositMsgData,
+            any::<[u8; 32]>().prop_map(|subject_bytes| DepositMsgData {
+                dest_subject: SubjectId::from(subject_bytes),
+            })
+        );
+    }
+
+    mod subj_transfer_msg_data {
+        use super::*;
+
+        ssz_proptest!(
+            SubjTransferMsgData,
+            (
+                any::<[u8; 32]>(),
+                any::<[u8; 32]>(),
+                prop::collection::vec(any::<u8>(), 0..256),
+            )
+                .prop_map(|(source_bytes, dest_bytes, data)| SubjTransferMsgData {
+                    source_subject: SubjectId::from(source_bytes),
+                    dest_subject: SubjectId::from(dest_bytes),
+                    transfer_data: data.into(),
+                })
+        );
+    }
+
+    mod commit_msg_data {
+        use super::*;
+
+        ssz_proptest!(
+            CommitMsgData,
+            any::<[u8; 32]>().prop_map(|blkid| CommitMsgData {
+                new_tip_exec_blkid: blkid.into(),
+            })
+        );
     }
 }

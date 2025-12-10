@@ -49,16 +49,16 @@ fn test_mismatched_processed_inputs_count() {
 
     // Tamper with the processed_inputs count in extra_data
     // This should cause InvalidBlock error
-    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use ssz::{Decode, Encode};
     use strata_ee_acct_types::UpdateExtraData;
 
-    let extra: UpdateExtraData = decode_buf_exact(operation.extra_data()).unwrap();
+    let extra = UpdateExtraData::from_ssz_bytes(operation.extra_data()).unwrap();
     let tampered_extra = UpdateExtraData::new(
         *extra.new_tip_blkid(),
         extra.processed_inputs() + 1, // Wrong count!
         *extra.processed_fincls(),
     );
-    let tampered_extra_buf = encode_to_vec(&tampered_extra).unwrap();
+    let tampered_extra_buf = tampered_extra.as_ssz_bytes();
 
     // Replace extra_data (we need to rebuild the operation)
     let tampered_operation = strata_snark_acct_types::UpdateOperationData::new(

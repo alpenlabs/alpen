@@ -1,0 +1,24 @@
+import strata_acct_types
+
+MAX_TRANSFER_DATA_BYTES = 1 << 20
+
+### Deposit message data - deposits from L1 to a subject in the EE
+class DepositMsgData(Container):
+    ### Destination subject ID within the execution environment
+    dest_subject: strata_acct_types.SubjectId
+
+### Subject transfer message data - transfer from one EE subject to another
+class SubjTransferMsgData(Container):
+    ### Source subject ID
+    source_subject: strata_acct_types.SubjectId
+
+    ### Destination subject ID
+    dest_subject: strata_acct_types.SubjectId
+
+    ### Application-specific transfer data payload
+    transfer_data: List[uint8, MAX_TRANSFER_DATA_BYTES]
+
+### Commit message data - sequencer staging a new tip block
+class CommitMsgData(Container):
+    ### The blkid of the new execution tip block being committed
+    new_tip_exec_blkid: Bytes32

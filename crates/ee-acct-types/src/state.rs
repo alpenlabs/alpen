@@ -1,30 +1,10 @@
 //! EE account internal state.
 
 use strata_acct_types::BitcoinAmount;
-use strata_ee_chain_types::SubjectDepositData;
+
+use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, PendingInputEntry};
 
 type Hash = [u8; 32];
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EeAccountState {
-    /// ID of the last execution block that we've processed.
-    last_exec_blkid: Hash,
-
-    /// Tracked balance bridged into execution env, according to processed
-    /// messages.
-    tracked_balance: BitcoinAmount,
-
-    /// Pending inputs that haven't been accepted into a block.
-    ///
-    /// These must be processed in order.
-    pending_inputs: Vec<PendingInputEntry>,
-
-    /// Pending forced inclusions that haven't been included in a block.
-    ///
-    /// These are separate from pending inputs because they're not really an
-    /// input but a requirement we have to check about the blocks.
-    pending_fincls: Vec<PendingFinclEntry>,
-}
 
 impl EeAccountState {
     pub fn new(
@@ -34,10 +14,10 @@ impl EeAccountState {
         pending_fincls: Vec<PendingFinclEntry>,
     ) -> Self {
         Self {
-            last_exec_blkid,
+            last_exec_blkid: last_exec_blkid.into(),
             tracked_balance,
-            pending_inputs,
-            pending_fincls,
+            pending_inputs: pending_inputs.into(),
+            pending_fincls: pending_fincls.into(),
         }
     }
 
@@ -50,19 +30,25 @@ impl EeAccountState {
         Vec<PendingFinclEntry>,
     ) {
         (
-            self.last_exec_blkid,
+            self.last_exec_blkid
+                .as_ref()
+                .try_into()
+                .expect("FixedBytes<32> should convert to [u8; 32]"),
             self.tracked_balance,
-            self.pending_inputs,
-            self.pending_fincls,
+            self.pending_inputs.into(),
+            self.pending_fincls.into(),
         )
     }
 
     pub fn last_exec_blkid(&self) -> Hash {
         self.last_exec_blkid
+            .as_ref()
+            .try_into()
+            .expect("FixedBytes<32> should convert to [u8; 32]")
     }
 
     pub fn set_last_exec_blkid(&mut self, blkid: Hash) {
-        self.last_exec_blkid = blkid;
+        self.last_exec_blkid = blkid.into();
     }
 
     pub fn tracked_balance(&self) -> BitcoinAmount {
@@ -81,8 +67,8 @@ impl EeAccountState {
         &self.pending_inputs
     }
 
-    pub fn add_pending_input(&mut self, inp: PendingInputEntry) {
-        self.pending_inputs.push(inp);
+    pub fn add_pending_input(&mut self, inp: PendingInputEntry) -> bool {
+        self.pending_inputs.push(inp).is_ok()
     }
 
     /// Removing some number of pending inputs.
@@ -90,7 +76,9 @@ impl EeAccountState {
         if self.pending_inputs.len() < n {
             false
         } else {
-            self.pending_inputs.drain(..n);
+            let mut vec: Vec<_> = self.pending_inputs.clone().into();
+            vec.drain(..n);
+            self.pending_inputs = vec.into();
             true
         }
     }
@@ -99,8 +87,8 @@ impl EeAccountState {
         &self.pending_fincls
     }
 
-    pub fn add_pending_fincl(&mut self, inp: PendingFinclEntry) {
-        self.pending_fincls.push(inp);
+    pub fn add_pending_fincl(&mut self, inp: PendingFinclEntry) -> bool {
+        self.pending_fincls.push(inp).is_ok()
     }
 
     /// Removing some number of pending forced inclusions.
@@ -108,16 +96,12 @@ impl EeAccountState {
         if self.pending_fincls.len() < n {
             false
         } else {
-            self.pending_fincls.drain(..n);
+            let mut vec: Vec<_> = self.pending_fincls.clone().into();
+            vec.drain(..n);
+            self.pending_fincls = vec.into();
             true
         }
     }
-}
-
-/// Pending input we expect to see in a block.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PendingInputEntry {
-    Deposit(SubjectDepositData),
 }
 
 impl PendingInputEntry {
@@ -135,28 +119,99 @@ pub enum PendingInputType {
     Deposit,
 }
 
-/// A pending forced inclusion that's been accepted by the EE account but not
-/// included in a block yet.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PendingFinclEntry {
-    epoch: u32,
-    raw_tx_hash: Hash,
-}
-
 impl PendingFinclEntry {
     pub fn new(epoch: u32, raw_tx_hash: Hash) -> Self {
-        Self { epoch, raw_tx_hash }
+        Self {
+            epoch,
+            raw_tx_hash: raw_tx_hash.into(),
+        }
     }
 
     pub fn into_parts(self) -> (u32, Hash) {
-        (self.epoch, self.raw_tx_hash)
+        (
+            self.epoch,
+            self.raw_tx_hash
+                .as_ref()
+                .try_into()
+                .expect("FixedBytes<32> should convert to [u8; 32]"),
+        )
     }
 
-    pub fn epoch(&self) -> u32 {
-        self.epoch
+    pub fn epoch(&self) -> &u32 {
+        &self.epoch
     }
 
     pub fn raw_tx_hash(&self) -> &Hash {
-        &self.raw_tx_hash
+        self.raw_tx_hash
+            .as_ref()
+            .try_into()
+            .expect("FixedBytes<32> should convert to &[u8; 32]")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use strata_acct_types::{BitcoinAmount, SubjectId};
+    use strata_ee_chain_types::SubjectDepositData;
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, PendingInputEntry};
+
+    fn subject_deposit_data_strategy() -> impl Strategy<Value = SubjectDepositData> {
+        (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest_bytes, value)| SubjectDepositData {
+            dest: SubjectId::from(dest_bytes),
+            value: BitcoinAmount::from_sat(value),
+        })
+    }
+
+    fn pending_input_entry_strategy() -> impl Strategy<Value = PendingInputEntry> {
+        subject_deposit_data_strategy().prop_map(PendingInputEntry::Deposit)
+    }
+
+    mod pending_input_entry {
+        use super::*;
+
+        ssz_proptest!(PendingInputEntry, pending_input_entry_strategy());
+    }
+
+    mod pending_fincl_entry {
+        use super::*;
+
+        ssz_proptest!(
+            PendingFinclEntry,
+            (any::<u32>(), any::<[u8; 32]>()).prop_map(|(epoch, hash)| PendingFinclEntry {
+                epoch,
+                raw_tx_hash: hash.into(),
+            })
+        );
+    }
+
+    mod ee_account_state {
+        use super::*;
+
+        ssz_proptest!(
+            EeAccountState,
+            (
+                any::<[u8; 32]>(),
+                any::<u64>(),
+                prop::collection::vec(pending_input_entry_strategy(), 0..5),
+                prop::collection::vec(
+                    (any::<u32>(), any::<[u8; 32]>()).prop_map(|(epoch, hash)| PendingFinclEntry {
+                        epoch,
+                        raw_tx_hash: hash.into(),
+                    }),
+                    0..5,
+                ),
+            )
+                .prop_map(|(last_exec_blkid, balance, inputs, fincls)| {
+                    EeAccountState {
+                        last_exec_blkid: last_exec_blkid.into(),
+                        tracked_balance: BitcoinAmount::from_sat(balance),
+                        pending_inputs: inputs.into(),
+                        pending_fincls: fincls.into(),
+                    }
+                })
+        );
     }
 }

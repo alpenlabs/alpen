@@ -1,0 +1,10 @@
+### Message sent in the extra data field in the update operation
+class UpdateExtraData(Container):
+    ### The blkid of the new execution tip block
+    new_tip_blkid: Bytes32
+
+    ### The total number of items to remove from the input queue
+    processed_inputs: uint32
+
+    ### The total number of items to remove from the fincl queue
+    processed_fincls: uint32
