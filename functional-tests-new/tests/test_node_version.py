@@ -24,7 +24,7 @@ class TestNodeVersion(BaseTest):
         strata_rpc = strata.create_rpc()
 
         self.info("Waiting for Strata RPC to be ready...")
-        self.wait_for_rpc_ready(strata_rpc, timeout=5)
+        strata.wait_for_rpc_ready(timeout=10)
 
         # Test protocol version
         self.info("Checking protocol version...")
