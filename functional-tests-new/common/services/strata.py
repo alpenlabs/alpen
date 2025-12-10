@@ -4,6 +4,7 @@ Strata service wrapper with Strata-specific health checks.
 
 from common.rpc import JsonRpcClient
 from common.services.base import ServiceWrapper
+from common.wait import wait_until
 
 
 class StrataServiceWrapper(ServiceWrapper[JsonRpcClient]):
@@ -39,3 +40,26 @@ class StrataServiceWrapper(ServiceWrapper[JsonRpcClient]):
         rpc.set_pre_call_hook(_status_check)
 
         return rpc
+
+    def wait_for_rpc_ready(
+        self,
+        method: str = "strata_protocolVersion",
+        timeout: int = 30,
+    ):
+        """
+        Wait until an RPC endpoint is responding.
+
+        Args:
+            rpc: RPC client to test
+            method: Method to call to check readiness
+            timeout: Maximum time to wait
+
+        Usage:
+            self.wait_for_rpc_ready(strata_rpc)
+            self.wait_for_rpc_ready(bitcoin_rpc, method="getblockchaininfo")
+        """
+
+        err = f"RPC not ready (method: {method})"
+        rpc = self.create_rpc()
+
+        wait_until(lambda: rpc.call(method) is not None, error_with=err, timeout=timeout)

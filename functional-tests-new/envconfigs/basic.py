@@ -1,6 +1,6 @@
 """Environment configurations."""
 
-from typing import cast
+from typing import Any, cast
 
 import flexitest
 

@@ -69,11 +69,11 @@ ProofPublishMode = Literal["strict"] | ProofPublishModeTimeout
 
 
 @dataclass
-class Checked:
+class SchnorrVerify:
     schnorr_key: str  # TODO: more sophisticated, using pydantic?
 
 
-CredRule = Checked | Literal["unchecked"]
+CredRule = SchnorrVerify | Literal["unchecked"]
 
 
 @dataclass

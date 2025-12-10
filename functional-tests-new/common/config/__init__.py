@@ -17,7 +17,7 @@ from common.config.config import (
 )
 from common.config.constants import ServiceType
 from common.config.params import (
-    Checked,
+    SchnorrVerify,
     CredRule,
     DepositTxParams,
     GenesisL1View,
@@ -58,7 +58,7 @@ __all__ = [
     "OperatorConfig",
     "ProofPublishModeTimeout",
     "ProofPublishMode",
-    "Checked",
+    "SchnorrVerify",
     "CredRule",
     "DepositTxParams",
     "hex_bytes_repeated",

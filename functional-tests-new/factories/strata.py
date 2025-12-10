@@ -10,7 +10,7 @@ import flexitest
 
 from common.config import BitcoindConfig, ClientConfig, RollupParams, ServiceType, StrataConfig
 from common.rpc import JsonRpcClient
-from common.services import StrataServiceProps, StrataServiceWrapper
+from common.services import StrataServiceWrapper
 
 
 class StrataFactory(flexitest.Factory):
@@ -93,7 +93,7 @@ class StrataFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_host}:{rpc_port}"
 
-        props = StrataServiceProps(
+        props = dict(
             rpc_port=rpc_port,
             rpc_host=rpc_host,
             rpc_url=rpc_url,

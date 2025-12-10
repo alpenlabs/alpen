@@ -2,10 +2,12 @@
 Bitcoin service wrapper with Bitcoin-specific health checks.
 """
 
+from bitcoinlib.services.bitcoind import BitcoindClient
+
 from common.services.base import ServiceWrapper
 
 
-class BitcoinServiceWrapper(ServiceWrapper):
+class BitcoinServiceWrapper(ServiceWrapper[BitcoindClient]):
     """
     ServiceWrapper for Bitcoin with health check via `getblockchaininfo`.
     """

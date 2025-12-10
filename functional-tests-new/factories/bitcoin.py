@@ -10,7 +10,7 @@ import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from common.config import ServiceType
-from common.services import BitcoinServiceProps, BitcoinServiceWrapper
+from common.services import BitcoinServiceWrapper
 
 
 class BitcoinFactory(flexitest.Factory):
@@ -70,7 +70,7 @@ class BitcoinFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_user}:{rpc_password}@localhost:{rpc_port}"
 
-        props = BitcoinServiceProps(
+        props = dict(
             p2p_port=p2p_port,
             rpc_port=rpc_port,
             rpc_user=rpc_user,
