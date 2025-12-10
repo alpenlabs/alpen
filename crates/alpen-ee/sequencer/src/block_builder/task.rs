@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
 use alpen_ee_common::{
@@ -14,7 +14,10 @@ use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 use tracing::{error, info, warn};
 
-use crate::{block_builder::BlockBuilderConfig, ol_chain_tracker::OLChainTrackerHandle};
+use crate::{
+    block_builder::{BlockBuilderConfig, Clock, SystemClock},
+    ol_chain_tracker::OLChainTrackerHandle,
+};
 
 /// Error type for block builder that distinguishes retriable from real errors.
 #[derive(Debug, Error)]
@@ -25,32 +28,6 @@ enum BlockBuilderError {
     /// Real error occurred - should backoff before retry.
     #[error(transparent)]
     Other(#[from] eyre::Report),
-}
-
-pub trait Clock: Sized {
-    /// current time in milliseconds since UNIX_EPOCH
-    fn current_timestamp(&self) -> u64;
-    /// sleep for specified time interval.
-    fn sleep_ms(&self, ms: u64) -> impl Future<Output = ()>;
-    /// sleep until unix timestamp
-    fn sleep_until(&self, timestamp_ms: u64) -> impl Future<Output = ()>;
-}
-
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn current_timestamp(&self) -> u64 {
-        std::time::UNIX_EPOCH.elapsed().unwrap().as_millis() as u64
-    }
-
-    fn sleep_ms(&self, ms: u64) -> impl Future<Output = ()> {
-        tokio::time::sleep(Duration::from_millis(ms))
-    }
-
-    fn sleep_until(&self, timestamp_ms: u64) -> impl Future<Output = ()> {
-        let now = self.current_timestamp();
-        tokio::time::sleep(Duration::from_millis(timestamp_ms.saturating_sub(now)))
-    }
 }
 
 /// Computes the target timestamp for the next block.
