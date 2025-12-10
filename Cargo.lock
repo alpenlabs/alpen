@@ -14940,6 +14940,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-eth-ee-acct"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "reth-chainspec",
+ "rsp-primitives",
+ "strata-acct-types",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-evm-ee",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "zkaleido",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
 name = "strata-proofimpl-evm-ee-stf"
 version = "0.3.0-alpha.1"
 dependencies = [

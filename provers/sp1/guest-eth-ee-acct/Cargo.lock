@@ -4464,7 +4464,6 @@ name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bitvec",
  "borsh",
  "hex",
  "k256",

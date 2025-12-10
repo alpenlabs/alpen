@@ -59,8 +59,11 @@ pub use program::{EthEeAcctInput, EthEeAcctOutput, EthEeAcctProgram};
 pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     // 1. Read raw SSZ bytes from zkVM
     // Each field is passed as raw bytes using write_buf/read_buf
-    let astate_ssz = zkvm.read_buf();
-    let operation_ssz = zkvm.read_buf();
+    // TODO: Replace with actual SSZ deserialization once available
+    let mut astate = decode_ee_account_state_ssz(&zkvm.read_buf())
+        .expect("Failed to decode EeAccountState from SSZ");
+    let operation = decode_update_operation_ssz(&zkvm.read_buf())
+        .expect("Failed to decode UpdateOperationData from SSZ");
 
     // Coinputs is Vec<Vec<u8>> so we read it with borsh
     let coinputs: Vec<Vec<u8>> = zkvm.read_borsh();
@@ -71,21 +74,6 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     for _ in 0..num_segments {
         commit_segments_ssz.push(zkvm.read_buf());
     }
-
-    // Already raw bytes
-    let raw_prev_header = zkvm.read_buf();
-    let raw_partial_pre_state = zkvm.read_buf();
-
-    // Read genesis data for ChainSpec construction
-    let genesis: rsp_primitives::genesis::Genesis = zkvm.read_serde();
-
-    // 2. Deserialize SSZ-encoded types
-    // TODO: Replace with actual SSZ deserialization once available
-    let mut astate = decode_ee_account_state_ssz(&astate_ssz)
-        .expect("Failed to decode EeAccountState from SSZ");
-    let operation = decode_update_operation_ssz(&operation_ssz)
-        .expect("Failed to decode UpdateOperationData from SSZ");
-
     // 3. Build SharedPrivateInput from components
     let commit_segments: Vec<CommitChainSegment> = commit_segments_ssz
         .iter()
@@ -94,14 +82,20 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
         })
         .collect();
 
-    let shared_private =
-        SharedPrivateInput::new(commit_segments, raw_prev_header, raw_partial_pre_state);
+    // Already raw bytes
+    let raw_prev_header = zkvm.read_buf();
+    let raw_partial_pre_state = zkvm.read_buf();
 
-    // 4. Create EVM execution environment with ChainSpec from genesis
+    // Read genesis data for ChainSpec construction
+    let genesis: rsp_primitives::genesis::Genesis = zkvm.read_serde();
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().expect("Invalid genesis"));
     let ee = EvmExecutionEnvironment::new(chain_spec);
 
-    // 5. Verify and apply the update operation
+    let shared_private =
+        SharedPrivateInput::new(commit_segments, raw_prev_header, raw_partial_pre_state);
+
+
+    // Verify and apply the update operation
     // This will:
     // - Process messages (deposits, commits, transfers)
     // - Execute chain segments through EVM
@@ -124,13 +118,13 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
 /// Decode EeAccountState from SSZ bytes
 /// TODO: Replace with actual SSZ decode once EeAccountState has SSZ support
 fn decode_ee_account_state_ssz(_bytes: &[u8]) -> Result<EeAccountState, String> {
-    Err("SSZ decoding for EeAccountState not yet implemented - coordinate with Dilli".to_string())
+    Err("SSZ decoding for EeAccountState not yet implemented".to_string())
 }
 
 /// Decode UpdateOperationData from SSZ bytes
 /// TODO: Replace with actual SSZ decode (UpdateOperationData already has SSZ Encode/Decode)
 fn decode_update_operation_ssz(_bytes: &[u8]) -> Result<UpdateOperationData, String> {
-    Err("SSZ decoding for UpdateOperationData not yet implemented - coordinate with Dilli"
+    Err("SSZ decoding for UpdateOperationData not yet implemented"
         .to_string())
 }
 
