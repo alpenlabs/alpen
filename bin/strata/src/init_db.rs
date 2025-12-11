@@ -13,5 +13,5 @@ pub(crate) fn init_database(config: &ClientConfig) -> Result<Arc<SledBackend>> {
     let sled_db = open_sled_database(&config.datadir, SLED_NAME)?;
     let db_config =
         SledDbConfig::new_with_constant_backoff(config.db_retry_count, config.db_retry_delay_ms);
-    Ok(init_core_dbs(sled_db.clone(), db_config.clone())?)
+    Ok(init_core_dbs(sled_db, db_config)?)
 }

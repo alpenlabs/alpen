@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bitcoin::{Block, hashes::Hash};
-use strata_asm_common::{ASM_MMR_CAP_LOG2, AnchorState, AsmMmr, AuxData, ChainViewState};
+use strata_asm_common::{ASM_MMR_CAP_LOG2, AnchorState, AsmMmr, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
@@ -10,7 +10,7 @@ use strata_primitives::{Buf32, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
 
-use crate::{WorkerContext, WorkerError, WorkerResult};
+use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResolver};
 
 /// Service state for the ASM worker.
 ///
@@ -95,8 +95,9 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         let pre_process = strata_asm_stf::pre_process_asm(&self.asm_spec, cur_state.state(), block)
             .map_err(WorkerError::AsmError)?;
 
-        // Create empty aux data for now (to be populated by external workers)
-        let aux_data = AuxData::default();
+        // Resolve auxiliary data requests from subprotocols
+        let resolver = AuxDataResolver::new(&self.context, self.params.clone());
+        let aux_data = resolver.resolve(&pre_process.aux_requests)?;
 
         // For blocks without witness data (pre-SegWit or legacy-only transactions),
         // the witness merkle root equals the transaction merkle root per Bitcoin protocol.
