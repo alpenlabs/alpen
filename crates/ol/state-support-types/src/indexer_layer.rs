@@ -244,7 +244,7 @@ impl<A: IAccountStateMut> IndexerAccountStateMut<A> {
             || self
                 .snark_wrapper
                 .as_ref()
-                .map_or(false, |s| s.was_modified())
+                .is_some_and(|s| s.was_modified())
     }
 
     /// Consumes the wrapper and returns the inner state, accumulated writes,

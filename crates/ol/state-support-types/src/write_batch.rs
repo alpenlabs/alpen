@@ -37,6 +37,7 @@ impl<A> WriteBatch<A> {
     where
         S: IStateAccessor<AccountState = A>,
     {
+        // TODO provide accessors/constructors to simplify this
         let global = GlobalState::new(state.cur_slot());
         let epochal = EpochalState::new(
             state.total_ledger_balance(),
@@ -46,7 +47,7 @@ impl<A> WriteBatch<A> {
                 *state.last_l1_blkid(),
             )
             .expect("state: invalid L1 height"),
-            state.asm_recorded_epoch().clone(),
+            *state.asm_recorded_epoch(),
         );
         WriteBatch::new(global, epochal)
     }
