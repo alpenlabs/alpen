@@ -57,4 +57,18 @@ impl MmrManager {
     pub fn generate_proofs_blocking(&self, start: u64, end: u64) -> DbResult<Vec<MerkleProof>> {
         self.ops.generate_proofs_blocking(start, end)
     }
+
+    /// Remove and return the last leaf from the MMR (async version)
+    ///
+    /// Returns `Some(hash)` if a leaf was removed, or `None` if the MMR is empty.
+    pub async fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>> {
+        self.ops.pop_leaf_async().await
+    }
+
+    /// Remove and return the last leaf from the MMR (blocking version)
+    ///
+    /// Returns `Some(hash)` if a leaf was removed, or `None` if the MMR is empty.
+    pub fn pop_leaf_blocking(&self) -> DbResult<Option<[u8; 32]>> {
+        self.ops.pop_leaf_blocking()
+    }
 }

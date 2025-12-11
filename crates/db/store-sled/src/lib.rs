@@ -90,19 +90,11 @@ impl SledBackend {
             broadcast_db,
         })
     }
-<<<<<<< HEAD
-=======
-
-    /// Get the raw sled database handle for opening untyped trees
-    pub fn raw_db(&self) -> &Arc<sled::Db> {
-        &self.raw_db
-    }
 
     /// Get the typed AsmDBSled for MMR database access
     pub fn asm_db_sled(&self) -> &Arc<AsmDBSled> {
         &self.asm_db
     }
->>>>>>> 58fcdbb4 (refactor(storage): Reorganize MMR with ops pattern)
 }
 
 impl DatabaseBackend for SledBackend {

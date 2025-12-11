@@ -9,8 +9,8 @@ use strata_merkle::{
 
 use super::{
     mmr_helpers::{
-        find_peak_for_pos, get_peaks, leaf_index_to_pos, parent_pos, pos_height_in_tree,
-        sibling_pos,
+        find_peak_for_pos, get_peaks, leaf_index_to_mmr_size, leaf_index_to_pos, parent_pos,
+        pos_height_in_tree, sibling_pos,
     },
     schemas::{AsmMmrMetaSchema, AsmMmrNodeSchema, MmrMetadata},
 };
@@ -312,6 +312,53 @@ impl MmrDatabase for SledMmrDb {
             roots: roots_vec.into(),
         }
     }
+
+    fn pop_leaf(&self) -> DbResult<Option<Hash>> {
+        let num_leaves = self.cache.lock().num_leaves;
+
+        // Can't pop from empty MMR
+        if num_leaves == 0 {
+            return Ok(None);
+        }
+
+        // Get the hash of the leaf we're about to pop (before deletion)
+        let leaf_index = num_leaves - 1;
+        let leaf_pos = leaf_index_to_pos(leaf_index);
+        let leaf_hash = self.get_node(leaf_pos)?;
+
+        // Calculate the old MMR size (before the last leaf was added)
+        let old_mmr_size = if num_leaves == 1 {
+            0 // Empty MMR
+        } else {
+            leaf_index_to_mmr_size(num_leaves - 2)
+        };
+
+        let current_mmr_size = self.cache.lock().mmr_size;
+
+        // Delete all nodes created when the last leaf was added
+        // These are nodes with positions: [old_mmr_size, current_mmr_size)
+        for pos in old_mmr_size..current_mmr_size {
+            self.nodes_tree.remove(&pos)?;
+        }
+
+        // Update metadata
+        let mut cache = self.cache.lock();
+        cache.num_leaves -= 1;
+        cache.mmr_size = old_mmr_size;
+        drop(cache); // Release lock before calling other methods
+
+        // Update peak_roots for the new size
+        if old_mmr_size > 0 {
+            self.update_peak_roots()?;
+        } else {
+            self.cache.lock().peak_roots = Vec::new();
+        }
+
+        // Save metadata to Sled
+        self.save_metadata()?;
+
+        Ok(Some(leaf_hash))
+    }
 }
 
 impl CompactMmrData for SledMmrDb {
@@ -446,6 +493,162 @@ mod tests {
                 "Proof failed for leaf {}",
                 i
             );
+        }
+    }
+
+    #[test]
+    fn test_pop_empty_mmr() {
+        let (_dir, db) = create_test_db();
+
+        // Popping from empty MMR should return None
+        let result = db.pop_leaf().unwrap();
+        assert_eq!(result, None);
+        assert_eq!(db.num_leaves(), 0);
+    }
+
+    #[test]
+    fn test_pop_single_leaf() {
+        let (_dir, db) = create_test_db();
+
+        let hash = [42u8; 32];
+        db.append_leaf(hash).unwrap();
+        assert_eq!(db.num_leaves(), 1);
+
+        // Pop the leaf
+        let popped = db.pop_leaf().unwrap();
+        assert_eq!(popped, Some(hash));
+        assert_eq!(db.num_leaves(), 0);
+
+        // MMR should be empty now
+        assert_eq!(db.peak_roots().len(), 0);
+    }
+
+    #[test]
+    fn test_pop_multiple_leaves() {
+        let (_dir, db) = create_test_db();
+
+        // Add 4 leaves
+        for i in 0..4 {
+            db.append_leaf([i as u8; 32]).unwrap();
+        }
+        assert_eq!(db.num_leaves(), 4);
+
+        // Pop leaf 3
+        let popped = db.pop_leaf().unwrap();
+        assert_eq!(popped, Some([3u8; 32]));
+        assert_eq!(db.num_leaves(), 3);
+
+        // Pop leaf 2
+        let popped = db.pop_leaf().unwrap();
+        assert_eq!(popped, Some([2u8; 32]));
+        assert_eq!(db.num_leaves(), 2);
+
+        // Verify remaining leaves can still generate valid proofs
+        let compact = db.to_compact();
+        for i in 0..2 {
+            let proof = db.generate_proof(i).unwrap();
+            let leaf = [i as u8; 32];
+            assert!(
+                strata_merkle::mmr::verify::<_, _, Sha256Hasher>(&compact, &proof, &leaf),
+                "Proof failed for leaf {} after pops",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_pop_and_append_sequence() {
+        let (_dir, db) = create_test_db();
+
+        // Add 8 leaves
+        for i in 0..8 {
+            db.append_leaf([i as u8; 32]).unwrap();
+        }
+        assert_eq!(db.num_leaves(), 8);
+
+        // Pop 3 leaves
+        for _ in 0..3 {
+            db.pop_leaf().unwrap();
+        }
+        assert_eq!(db.num_leaves(), 5);
+
+        // Add 2 more leaves
+        db.append_leaf([100u8; 32]).unwrap();
+        db.append_leaf([101u8; 32]).unwrap();
+        assert_eq!(db.num_leaves(), 7);
+
+        // Verify all proofs are valid
+        let compact = db.to_compact();
+        for i in 0..5 {
+            let proof = db.generate_proof(i).unwrap();
+            let leaf = [i as u8; 32];
+            assert!(strata_merkle::mmr::verify::<_, _, Sha256Hasher>(
+                &compact, &proof, &leaf
+            ));
+        }
+
+        // Verify the newly added leaves
+        let proof = db.generate_proof(5).unwrap();
+        assert!(strata_merkle::mmr::verify::<_, _, Sha256Hasher>(
+            &compact,
+            &proof,
+            &[100u8; 32]
+        ));
+
+        let proof = db.generate_proof(6).unwrap();
+        assert!(strata_merkle::mmr::verify::<_, _, Sha256Hasher>(
+            &compact,
+            &proof,
+            &[101u8; 32]
+        ));
+    }
+
+    #[test]
+    fn test_pop_persistence() {
+        use super::super::schemas::{AsmMmrMetaSchema, AsmMmrNodeSchema};
+
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().to_path_buf();
+
+        // Create and populate database
+        {
+            let raw_db = sled::open(&db_path).unwrap();
+            let typed_db = typed_sled::SledDb::new(raw_db).unwrap();
+
+            let nodes_tree = typed_db.get_tree::<AsmMmrNodeSchema>().unwrap();
+            let metadata_tree = typed_db.get_tree::<AsmMmrMetaSchema>().unwrap();
+
+            let mmr_db = SledMmrDb::new(nodes_tree, metadata_tree).unwrap();
+
+            // Add 10 leaves
+            for i in 0..10 {
+                mmr_db.append_leaf([i as u8; 32]).unwrap();
+            }
+
+            // Pop 3 leaves
+            for _ in 0..3 {
+                mmr_db.pop_leaf().unwrap();
+            }
+        }
+
+        // Reopen and verify state persisted
+        {
+            let raw_db = sled::open(&db_path).unwrap();
+            let typed_db = typed_sled::SledDb::new(raw_db).unwrap();
+
+            let nodes_tree = typed_db.get_tree::<AsmMmrNodeSchema>().unwrap();
+            let metadata_tree = typed_db.get_tree::<AsmMmrMetaSchema>().unwrap();
+
+            let mmr_db = SledMmrDb::new(nodes_tree, metadata_tree).unwrap();
+
+            // Should have 7 leaves
+            assert_eq!(mmr_db.num_leaves(), 7);
+
+            // Verify we can generate proofs for all remaining leaves
+            // Note: Some leaves may be peaks and have empty cohashes
+            for i in 0..7 {
+                mmr_db.generate_proof(i).unwrap();
+            }
         }
     }
 }
