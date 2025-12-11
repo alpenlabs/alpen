@@ -1,0 +1,34 @@
+[package]
+name = "strata-test-utils-asm"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Internal crates
+strata-asm-common.workspace = true
+strata-asm-proto-checkpoint-txs.workspace = true
+strata-checkpoint-types-ssz.workspace = true
+strata-crypto.workspace = true
+strata-identifiers.workspace = true
+strata-l1-envelope-fmt.workspace = true
+strata-l1-txfmt.workspace = true
+
+# Serialization
+ssz.workspace = true
+
+# Bitcoin
+bitcoin = { workspace = true, features = ["rand"] }
+
+# Other
+rand.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# Currently unused but reserved for future integration tests
+# tokio = { workspace = true, features = ["full", "test-util"] }
+# bitcoind-async-client.workspace = true
+# corepc-node = { version = "0.8.0", features = ["29_0"] }
+# strata-test-utils-btcio.workspace = true

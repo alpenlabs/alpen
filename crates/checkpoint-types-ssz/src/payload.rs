@@ -2,14 +2,27 @@
 
 use std::fmt;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz::Decode;
+use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
+use ssz_types::VariableList;
 use strata_identifiers::{
     Buf32, Buf64, Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment, L2BlockId, Slot,
     hash::raw,
 };
 use strata_ol_chain_types_new::OLLog;
+use tree_hash_derive::TreeHash;
+
+// ============================================================================
+// Max sizes for variable-length fields
+// ============================================================================
+
+/// Maximum size for OL state diff blob (256 KiB).
+const MAX_STATE_DIFF_LEN: usize = 262144;
+/// Maximum size for OL logs blob (256 KiB).
+const MAX_OL_LOGS_LEN: usize = 262144;
+/// Maximum size for ZK proof bytes (64 KiB).
+const MAX_PROOF_LEN: usize = 65536;
 
 // ============================================================================
 // L1BlockRange - Range of L1 blocks covered by a checkpoint
@@ -17,7 +30,7 @@ use strata_ol_chain_types_new::OLLog;
 
 /// Range of L1 blocks covered by a checkpoint batch.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
 )]
 pub struct L1BlockRange {
     /// Start of the L1 block range (inclusive).
@@ -25,6 +38,9 @@ pub struct L1BlockRange {
     /// End of the L1 block range (inclusive).
     pub end: L1BlockCommitment,
 }
+
+// Borsh compatibility via SSZ (fixed-size, no length prefix)
+strata_identifiers::impl_borsh_via_ssz_fixed!(L1BlockRange);
 
 impl L1BlockRange {
     /// Creates a new L1 block range.
@@ -49,7 +65,7 @@ impl L1BlockRange {
 
 /// Range of L2 (OL) blocks covered by a checkpoint batch.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
 )]
 pub struct L2BlockRange {
     /// Start of the L2 block range (inclusive).
@@ -57,6 +73,9 @@ pub struct L2BlockRange {
     /// End of the L2 block range (inclusive).
     pub end: L2BlockCommitment,
 }
+
+// Borsh compatibility via SSZ (fixed-size, no length prefix)
+strata_identifiers::impl_borsh_via_ssz_fixed!(L2BlockRange);
 
 impl L2BlockRange {
     /// Creates a new L2 block range.
@@ -82,7 +101,7 @@ impl L2BlockRange {
 /// Contains metadata describing a batch checkpoint, including the L1 and L2 height ranges
 /// it covers and the final L2 block ID in that range.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
 )]
 pub struct BatchInfo {
     /// Checkpoint epoch.
@@ -92,6 +111,9 @@ pub struct BatchInfo {
     /// L2 block range (inclusive) the checkpoint covers.
     pub l2_range: L2BlockRange,
 }
+
+// Borsh compatibility via SSZ (fixed-size, no length prefix)
+strata_identifiers::impl_borsh_via_ssz_fixed!(BatchInfo);
 
 impl fmt::Display for BatchInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -171,7 +193,7 @@ impl BatchInfo {
 ///   (i.e., immediately after executing block `M-1`)
 /// - `post_state_root` represents the chainstate root immediately **after** executing block `N`
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
 )]
 pub struct BatchTransition {
     /// Epoch number.
@@ -181,6 +203,9 @@ pub struct BatchTransition {
     /// Chainstate root after batch execution.
     pub post_state_root: Buf32,
 }
+
+// Borsh compatibility via SSZ (fixed-size, no length prefix)
+strata_identifiers::impl_borsh_via_ssz_fixed!(BatchTransition);
 
 impl BatchTransition {
     /// Creates a new batch transition.
@@ -213,20 +238,23 @@ impl BatchTransition {
 // ============================================================================
 
 /// Sidecar data posted alongside the checkpoint.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, SszEncode, SszDecode, TreeHash)]
 pub struct CheckpointSidecar {
     /// OL state diff blob.
-    pub ol_state_diff: Vec<u8>,
+    pub ol_state_diff: VariableList<u8, { MAX_STATE_DIFF_LEN }>,
     /// OL logs blob (contains withdrawal intents, etc.).
-    pub ol_logs: Vec<u8>,
+    pub ol_logs: VariableList<u8, { MAX_OL_LOGS_LEN }>,
 }
+
+// Borsh compatibility via SSZ (variable-size, with length prefix)
+strata_identifiers::impl_borsh_via_ssz!(CheckpointSidecar);
 
 impl CheckpointSidecar {
     /// Creates a new checkpoint sidecar.
     pub fn new(ol_state_diff: Vec<u8>, ol_logs: Vec<u8>) -> Self {
         Self {
-            ol_state_diff,
-            ol_logs,
+            ol_state_diff: ol_state_diff.into(),
+            ol_logs: ol_logs.into(),
         }
     }
 
@@ -257,18 +285,52 @@ impl CheckpointSidecar {
     }
 }
 
+// Custom Serde implementation for CheckpointSidecar (serialize as hex bytes)
+impl Serialize for CheckpointSidecar {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("CheckpointSidecar", 2)?;
+        state.serialize_field("ol_state_diff", &self.ol_state_diff.to_vec())?;
+        state.serialize_field("ol_logs", &self.ol_logs.to_vec())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CheckpointSidecar {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            ol_state_diff: Vec<u8>,
+            ol_logs: Vec<u8>,
+        }
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(CheckpointSidecar::new(helper.ol_state_diff, helper.ol_logs))
+    }
+}
+
 // ============================================================================
 // CheckpointCommitment - Core commitment data
 // ============================================================================
 
 /// Core commitment data in a checkpoint.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
+)]
 pub struct CheckpointCommitment {
     /// Batch metadata.
     pub batch_info: BatchInfo,
     /// State transition.
     pub transition: BatchTransition,
 }
+
+// Borsh compatibility via SSZ (fixed-size, no length prefix)
+strata_identifiers::impl_borsh_via_ssz_fixed!(CheckpointCommitment);
 
 impl CheckpointCommitment {
     /// Creates a new checkpoint commitment.
@@ -300,15 +362,18 @@ impl CheckpointCommitment {
 /// - Commitment (batch info + transition)
 /// - Sidecar (state diff + OL logs)
 /// - ZK proof
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, SszEncode, SszDecode, TreeHash)]
 pub struct CheckpointPayload {
     /// Core commitment data.
     pub commitment: CheckpointCommitment,
     /// Sidecar with state diff and OL logs.
     pub sidecar: CheckpointSidecar,
     /// ZK proof bytes.
-    pub proof: Vec<u8>,
+    pub proof: VariableList<u8, { MAX_PROOF_LEN }>,
 }
+
+// Borsh compatibility via SSZ (variable-size, with length prefix)
+strata_identifiers::impl_borsh_via_ssz!(CheckpointPayload);
 
 impl CheckpointPayload {
     /// Creates a new checkpoint payload.
@@ -321,7 +386,7 @@ impl CheckpointPayload {
         Self {
             commitment: CheckpointCommitment::new(batch_info, transition),
             sidecar,
-            proof,
+            proof: proof.into(),
         }
     }
 
@@ -357,8 +422,44 @@ impl CheckpointPayload {
 
     /// Computes the hash of this payload (for signing).
     pub fn compute_hash(&self) -> Buf32 {
-        let encoded = borsh::to_vec(self).expect("borsh serialization should not fail");
+        use ssz::Encode;
+        let encoded = self.as_ssz_bytes();
         raw(&encoded)
+    }
+}
+
+// Custom Serde implementation for CheckpointPayload
+impl Serialize for CheckpointPayload {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("CheckpointPayload", 3)?;
+        state.serialize_field("commitment", &self.commitment)?;
+        state.serialize_field("sidecar", &self.sidecar)?;
+        state.serialize_field("proof", &self.proof.to_vec())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CheckpointPayload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            commitment: CheckpointCommitment,
+            sidecar: CheckpointSidecar,
+            proof: Vec<u8>,
+        }
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(CheckpointPayload {
+            commitment: helper.commitment,
+            sidecar: helper.sidecar,
+            proof: helper.proof.into(),
+        })
     }
 }
 
@@ -367,13 +468,16 @@ impl CheckpointPayload {
 // ============================================================================
 
 /// Signed checkpoint payload ready for L1 posting.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, SszEncode, SszDecode, TreeHash)]
 pub struct SignedCheckpointPayload {
     /// The checkpoint payload.
     pub inner: CheckpointPayload,
     /// Signature over the payload hash.
     pub signature: Buf64,
 }
+
+// Borsh compatibility via SSZ (variable-size, with length prefix)
+strata_identifiers::impl_borsh_via_ssz!(SignedCheckpointPayload);
 
 impl SignedCheckpointPayload {
     /// Creates a new signed checkpoint payload.
@@ -394,6 +498,38 @@ impl SignedCheckpointPayload {
     /// Consumes self and returns the inner payload.
     pub fn into_payload(self) -> CheckpointPayload {
         self.inner
+    }
+}
+
+// Custom Serde implementation for SignedCheckpointPayload
+impl Serialize for SignedCheckpointPayload {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("SignedCheckpointPayload", 2)?;
+        state.serialize_field("inner", &self.inner)?;
+        state.serialize_field("signature", &self.signature)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SignedCheckpointPayload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            inner: CheckpointPayload,
+            signature: Buf64,
+        }
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(SignedCheckpointPayload {
+            inner: helper.inner,
+            signature: helper.signature,
+        })
     }
 }
 

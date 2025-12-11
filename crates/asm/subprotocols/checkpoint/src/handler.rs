@@ -139,3 +139,232 @@ fn emit_checkpoint_log(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::any::Any;
+
+    use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
+    use strata_identifiers::CredRule;
+    use strata_predicate::PredicateKey;
+    use strata_test_utils_asm::checkpoint::{
+        CheckpointFixtures, SequencerKeypair, gen_l1_block_commitment,
+    };
+
+    use super::*;
+    use crate::state::CheckpointConfig;
+
+    /// Mock message relayer for testing.
+    #[derive(Default)]
+    struct MockMsgRelayer {
+        relayed_msgs: Vec<String>,
+        emitted_logs: Vec<AsmLogEntry>,
+    }
+
+    impl MsgRelayer for MockMsgRelayer {
+        fn relay_msg(&mut self, m: &dyn InterprotoMsg) {
+            self.relayed_msgs.push(format!("{:?}", m.id()));
+        }
+
+        fn emit_log(&mut self, log: AsmLogEntry) {
+            self.emitted_logs.push(log);
+        }
+
+        fn as_mut_any(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    fn create_test_config_with_fixtures(fixtures: &CheckpointFixtures) -> CheckpointConfig {
+        CheckpointConfig {
+            sequencer_cred: CredRule::SchnorrKey(fixtures.sequencer.public_key),
+            checkpoint_predicate: PredicateKey::always_accept(),
+            genesis_l1_block: gen_l1_block_commitment(100),
+        }
+    }
+
+    #[test]
+    fn test_verify_checkpoint_signature_success() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let _state = CheckpointState::new(&config);
+
+        let signed = fixtures.gen_signed_payload();
+
+        // Signature should verify with correct credential
+        assert!(verify_checkpoint_signature(&signed, &config.sequencer_cred));
+    }
+
+    #[test]
+    fn test_verify_checkpoint_signature_wrong_key() {
+        let fixtures = CheckpointFixtures::new();
+        let signed = fixtures.gen_signed_payload();
+
+        // Wrong keypair should fail verification
+        let wrong_keypair = SequencerKeypair::random();
+        let wrong_cred = CredRule::SchnorrKey(wrong_keypair.public_key);
+
+        assert!(!verify_checkpoint_signature(&signed, &wrong_cred));
+    }
+
+    #[test]
+    fn test_verify_checkpoint_signature_unchecked() {
+        let fixtures = CheckpointFixtures::new();
+        let signed = fixtures.gen_signed_payload();
+
+        // Unchecked credential should always pass
+        let unchecked_cred = CredRule::Unchecked;
+        assert!(verify_checkpoint_signature(&signed, &unchecked_cred));
+    }
+
+    #[test]
+    fn test_validate_epoch_invalid_when_skipping() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // Initial state expects epoch 0, so epoch 1 is invalid
+        let result = validate_epoch_sequence(&state, 1);
+        assert!(result.is_err());
+
+        if let Err(CheckpointError::InvalidEpoch { expected, actual }) = result {
+            assert_eq!(expected, 0);
+            assert_eq!(actual, 1);
+        } else {
+            panic!("Expected InvalidEpoch error");
+        }
+    }
+
+    #[test]
+    fn test_validate_epoch_valid_sequential() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let mut state = CheckpointState::new(&config);
+
+        // Epoch 0 is valid initially
+        assert!(validate_epoch_sequence(&state, 0).is_ok());
+
+        // Update state with epoch 0
+        let payload_0 = fixtures.gen_payload_for_epoch(0);
+        state.update_with_checkpoint(&payload_0);
+
+        // Now epoch 1 is valid
+        assert!(validate_epoch_sequence(&state, 1).is_ok());
+
+        // But epoch 0 and 2 are invalid
+        assert!(validate_epoch_sequence(&state, 0).is_err());
+        assert!(validate_epoch_sequence(&state, 2).is_err());
+    }
+
+    #[test]
+    fn test_validate_l1_height_regression_invalid() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // Genesis at height 100, so height <= 100 is invalid
+        let result = validate_l1_progression(&state, 100);
+        assert!(result.is_err());
+
+        if let Err(CheckpointError::InvalidL1Height { previous, new }) = result {
+            assert_eq!(previous, 100);
+            assert_eq!(new, 100);
+        } else {
+            panic!("Expected InvalidL1Height error");
+        }
+
+        // Height below genesis is also invalid
+        let result = validate_l1_progression(&state, 50);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_l1_height_progression_valid() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // Any height > 100 is valid
+        assert!(validate_l1_progression(&state, 101).is_ok());
+        assert!(validate_l1_progression(&state, 200).is_ok());
+        assert!(validate_l1_progression(&state, 1000).is_ok());
+    }
+
+    #[test]
+    fn test_forward_withdrawal_intents_empty_logs() {
+        let fixtures = CheckpointFixtures::new();
+        let checkpoint = fixtures.gen_payload_for_epoch(0);
+        let mut relayer = MockMsgRelayer::default();
+
+        // Forward withdrawal intents - with empty sidecar logs, nothing should be forwarded
+        forward_withdrawal_intents(&checkpoint, &mut relayer);
+
+        // No messages should be relayed for empty checkpoint without withdrawal intents
+        // (The actual behavior depends on whether the sidecar has logs)
+        // This test verifies the function doesn't panic
+    }
+
+    #[test]
+    fn test_checkpoint_state_update_after_verification() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let mut state = CheckpointState::new(&config);
+
+        // Initial state
+        assert!(state.current_epoch().is_none());
+        assert_eq!(state.expected_next_epoch(), 0);
+
+        // Apply epoch 0 checkpoint
+        let payload_0 = fixtures.gen_payload_for_epoch(0);
+        state.update_with_checkpoint(&payload_0);
+
+        // Verify state updated
+        assert_eq!(state.current_epoch(), Some(0));
+        assert_eq!(state.expected_next_epoch(), 1);
+
+        // Verify last L2 terminal is set
+        let terminal = state.last_l2_terminal().expect("Should have terminal");
+        assert_eq!(terminal, payload_0.batch_info().final_l2_block());
+    }
+
+    #[test]
+    fn test_proof_verification_always_accept() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        let payload = fixtures.gen_payload_for_epoch(0);
+        let manifest_hashes = vec![];
+
+        // Construct claim
+        let claim = construct_checkpoint_claim(&state, &payload, &manifest_hashes).unwrap();
+
+        // With always_accept predicate, any proof should pass
+        let result = verify_checkpoint_proof(&config.checkpoint_predicate, &claim, payload.proof());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_proof_verification_never_accept() {
+        let fixtures = CheckpointFixtures::new();
+        let mut config = create_test_config_with_fixtures(&fixtures);
+        config.checkpoint_predicate = PredicateKey::never_accept();
+        let state = CheckpointState::new(&config);
+
+        let payload = fixtures.gen_payload_for_epoch(0);
+        let manifest_hashes = vec![];
+
+        // Construct claim
+        let claim = construct_checkpoint_claim(&state, &payload, &manifest_hashes).unwrap();
+
+        // With never_accept predicate, any proof should fail
+        let result = verify_checkpoint_proof(&config.checkpoint_predicate, &claim, payload.proof());
+        assert!(result.is_err());
+
+        if let Err(CheckpointError::ProofVerification) = result {
+            // Expected error
+        } else {
+            panic!("Expected ProofVerification error");
+        }
+    }
+}

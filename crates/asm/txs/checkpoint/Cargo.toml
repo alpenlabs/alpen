@@ -12,5 +12,5 @@ strata-checkpoint-types-ssz.workspace = true
 strata-l1-envelope-fmt.workspace = true
 
 bitcoin.workspace = true
-borsh.workspace = true
+ssz.workspace = true
 thiserror.workspace = true

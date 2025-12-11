@@ -1,15 +1,16 @@
 //! Epoch summary types for checkpoint state management.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment};
+use tree_hash_derive::TreeHash;
 
 /// Summary generated when we accept the last block of an epoch.
 ///
 /// It's possible in theory for more than one of these to validly exist for a
 /// single epoch, but not in the same chain.
 #[derive(
-    Copy, Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
 )]
 pub struct EpochSummary {
     /// The epoch number.
@@ -28,6 +29,9 @@ pub struct EpochSummary {
     /// The final state root of the epoch.
     final_state: Buf32,
 }
+
+// Borsh compatibility via SSZ (fixed-size, no length prefix)
+strata_identifiers::impl_borsh_via_ssz_fixed!(EpochSummary);
 
 impl EpochSummary {
     /// Creates a new instance.

@@ -138,3 +138,198 @@ pub(crate) fn validate_l2_progression(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_predicate::PredicateKey;
+    use strata_test_utils_asm::checkpoint::{
+        CheckpointFixtures, SequencerKeypair, gen_checkpoint_payload, gen_l1_block_commitment,
+    };
+
+    use super::*;
+    use crate::state::CheckpointConfig;
+
+    fn create_test_config_with_fixtures(fixtures: &CheckpointFixtures) -> CheckpointConfig {
+        CheckpointConfig {
+            sequencer_cred: CredRule::SchnorrKey(fixtures.sequencer.public_key),
+            checkpoint_predicate: PredicateKey::always_accept(),
+            genesis_l1_block: gen_l1_block_commitment(100),
+        }
+    }
+
+    #[test]
+    fn test_verify_checkpoint_signature_valid() {
+        let fixtures = CheckpointFixtures::new();
+        let signed = fixtures.gen_signed_payload();
+
+        let cred_rule = CredRule::SchnorrKey(fixtures.sequencer.public_key);
+        assert!(verify_checkpoint_signature(&signed, &cred_rule));
+    }
+
+    #[test]
+    fn test_verify_checkpoint_signature_invalid() {
+        let fixtures = CheckpointFixtures::new();
+        let signed = fixtures.gen_signed_payload();
+
+        // Different keypair
+        let wrong_keypair = SequencerKeypair::random();
+        let wrong_cred = CredRule::SchnorrKey(wrong_keypair.public_key);
+
+        assert!(!verify_checkpoint_signature(&signed, &wrong_cred));
+    }
+
+    #[test]
+    fn test_verify_checkpoint_signature_unchecked() {
+        let fixtures = CheckpointFixtures::new();
+        let signed = fixtures.gen_signed_payload();
+
+        // Unchecked always passes
+        let unchecked_cred = CredRule::Unchecked;
+        assert!(verify_checkpoint_signature(&signed, &unchecked_cred));
+    }
+
+    #[test]
+    fn test_validate_epoch_sequence_valid() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // Initial state expects epoch 0
+        assert!(validate_epoch_sequence(&state, 0).is_ok());
+    }
+
+    #[test]
+    fn test_validate_epoch_sequence_invalid() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // Initial state expects epoch 0, not epoch 1
+        let result = validate_epoch_sequence(&state, 1);
+        assert!(result.is_err());
+
+        if let Err(crate::error::CheckpointError::InvalidEpoch { expected, actual }) = result {
+            assert_eq!(expected, 0);
+            assert_eq!(actual, 1);
+        } else {
+            panic!("Expected InvalidEpoch error");
+        }
+    }
+
+    #[test]
+    fn test_validate_epoch_sequence_after_update() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let mut state = CheckpointState::new(&config);
+
+        // Apply epoch 0
+        let payload_0 = gen_checkpoint_payload(0);
+        state.update_with_checkpoint(&payload_0);
+
+        // Now epoch 1 is valid
+        assert!(validate_epoch_sequence(&state, 1).is_ok());
+
+        // But epoch 0 and epoch 2 are invalid
+        assert!(validate_epoch_sequence(&state, 0).is_err());
+        assert!(validate_epoch_sequence(&state, 2).is_err());
+    }
+
+    #[test]
+    fn test_validate_l1_progression_valid() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // Genesis at height 100, so any height > 100 is valid
+        assert!(validate_l1_progression(&state, 101).is_ok());
+        assert!(validate_l1_progression(&state, 200).is_ok());
+    }
+
+    #[test]
+    fn test_validate_l1_progression_invalid() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // Genesis at height 100, so height <= 100 is invalid
+        let result = validate_l1_progression(&state, 100);
+        assert!(result.is_err());
+
+        let result = validate_l1_progression(&state, 50);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_l2_progression_initial() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        // No previous terminal, any slot is valid
+        assert!(validate_l2_progression(&state, Slot::from(0u64)).is_ok());
+        assert!(validate_l2_progression(&state, Slot::from(100u64)).is_ok());
+    }
+
+    #[test]
+    fn test_validate_l2_progression_after_checkpoint() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let mut state = CheckpointState::new(&config);
+
+        // Apply epoch 0
+        let payload_0 = gen_checkpoint_payload(0);
+        state.update_with_checkpoint(&payload_0);
+
+        let terminal_slot = state.last_l2_terminal().unwrap().slot();
+
+        // New slot must be > terminal_slot
+        assert!(validate_l2_progression(&state, terminal_slot + 1).is_ok());
+        assert!(validate_l2_progression(&state, terminal_slot + 100).is_ok());
+
+        // Same or lower slot is invalid
+        assert!(validate_l2_progression(&state, terminal_slot).is_err());
+        if terminal_slot > 0 {
+            assert!(validate_l2_progression(&state, terminal_slot - 1).is_err());
+        }
+    }
+
+    #[test]
+    fn test_construct_checkpoint_claim() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        let payload = gen_checkpoint_payload(0);
+        let manifest_hashes: Vec<Hash32> = vec![];
+
+        let claim = construct_checkpoint_claim(&state, &payload, &manifest_hashes).unwrap();
+
+        // Verify claim fields
+        assert_eq!(claim.epoch(), 0);
+        assert_eq!(
+            claim.post_state_root(),
+            payload.transition().post_state_root()
+        );
+    }
+
+    #[test]
+    fn test_construct_checkpoint_claim_with_manifests() {
+        let fixtures = CheckpointFixtures::new();
+        let config = create_test_config_with_fixtures(&fixtures);
+        let state = CheckpointState::new(&config);
+
+        let payload = gen_checkpoint_payload(0);
+
+        // Create some manifest hashes
+        let manifest_hashes: Vec<Hash32> = vec![
+            Hash32::from([1u8; 32]),
+            Hash32::from([2u8; 32]),
+            Hash32::from([3u8; 32]),
+        ];
+
+        let claim = construct_checkpoint_claim(&state, &payload, &manifest_hashes).unwrap();
+
+        // Input msgs commitment should not be zero when we have manifests
+        assert_ne!(*claim.input_msgs_commitment(), Buf32::zero());
+    }
+}

@@ -11,10 +11,18 @@ workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
 
-# Serialization
-borsh.workspace = true
-serde = { workspace = true, features = ["derive"] }
+# Serialization - SSZ
 ssz.workspace = true
+ssz_derive.workspace = true
+ssz_types.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+# Serialization - Borsh (for state serialization via impl_borsh_via_ssz macros)
+borsh.workspace = true
+
+# Serialization - Serde for JSON/RPC
+serde = { workspace = true, features = ["derive"] }
 
 # OL types (for parse_ol_logs)
 strata-ol-chain-types-new.workspace = true

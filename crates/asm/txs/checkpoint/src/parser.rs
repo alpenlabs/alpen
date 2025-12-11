@@ -1,6 +1,7 @@
 //! Parser for extracting checkpoint data from L1 transactions.
 
 use bitcoin::ScriptBuf;
+use ssz::Decode;
 use strata_asm_common::TxInputRef;
 use strata_checkpoint_types_ssz::SignedCheckpointPayload;
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
@@ -12,7 +13,7 @@ use crate::errors::{CheckpointTxError, CheckpointTxResult};
 /// Performs the following steps:
 /// - Unwraps the taproot envelope script from the first input witness.
 /// - Streams the embedded payload directly from the script instructions.
-/// - Deserializes the payload into a [`SignedCheckpointPayload`].
+/// - Deserializes the payload into a [`SignedCheckpointPayload`] using SSZ.
 pub fn extract_signed_checkpoint_from_envelope(
     tx: &TxInputRef<'_>,
 ) -> CheckpointTxResult<SignedCheckpointPayload> {
@@ -30,8 +31,8 @@ pub fn extract_signed_checkpoint_from_envelope(
 
     let payload = parse_envelope_payload(&payload_script)?;
 
-    let checkpoint: SignedCheckpointPayload =
-        borsh::from_slice(&payload).map_err(CheckpointTxError::Deserialization)?;
+    let checkpoint = SignedCheckpointPayload::from_ssz_bytes(&payload)
+        .map_err(CheckpointTxError::from_ssz_decode)?;
 
     Ok(checkpoint)
 }

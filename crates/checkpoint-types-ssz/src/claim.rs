@@ -1,8 +1,10 @@
 //! Checkpoint claim types for proof verification.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{Buf32, hash::raw};
+use ssz::Encode;
+use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
+use strata_identifiers::{Buf32, L1BlockCommitment, L2BlockCommitment, hash::raw};
+use tree_hash_derive::TreeHash;
 
 use crate::{
     Epoch,
@@ -18,7 +20,7 @@ use crate::{
 /// This is reconstructed from:
 /// - The checkpoint payload (from L1)
 /// - Input messages commitment (computed from L1 manifests)
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash)]
 pub struct CheckpointClaim {
     /// Epoch number.
     pub epoch: Epoch,
@@ -37,6 +39,9 @@ pub struct CheckpointClaim {
     /// Hash of OL logs.
     pub ol_logs_hash: Buf32,
 }
+
+// Borsh compatibility via SSZ (fixed-size, no length prefix)
+strata_identifiers::impl_borsh_via_ssz_fixed!(CheckpointClaim);
 
 impl CheckpointClaim {
     /// Creates a new checkpoint claim.
@@ -105,15 +110,13 @@ impl CheckpointClaim {
 
     /// Serializes the claim to bytes for proof verification.
     pub fn to_bytes(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("borsh serialization should not fail")
+        self.as_ssz_bytes()
     }
 }
 
 // ============================================================================
 // CheckpointClaimBuilder - Builder for constructing claims
 // ============================================================================
-
-use strata_identifiers::{L1BlockCommitment, L2BlockCommitment};
 
 /// Builder for constructing a [`CheckpointClaim`] from a payload and state data.
 ///
