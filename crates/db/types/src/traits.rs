@@ -438,4 +438,24 @@ pub trait MmrDatabase: Send + Sync {
     /// This is useful for serialization and verification without needing
     /// the full tree structure.
     fn to_compact(&self) -> strata_merkle::CompactMmr64B32;
+
+    /// Remove the last leaf from the MMR
+    ///
+    /// This reverses the last `append_leaf` operation, removing the most recently
+    /// added leaf and all internal nodes that were created during its insertion.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(hash))` - The hash of the removed leaf
+    /// - `Ok(None)` - The MMR was empty, nothing to pop
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// mmr.append_leaf([1u8; 32])?; // index 0
+    /// mmr.append_leaf([2u8; 32])?; // index 1
+    /// let popped = mmr.pop_leaf()?; // removes leaf 1, returns Some([2u8; 32])
+    /// assert_eq!(mmr.num_leaves(), 1);
+    /// ```
+    fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>>;
 }

@@ -10,5 +10,6 @@ inst_ops_simple! {
         append_leaf(hash: [u8; 32]) => u64;
         generate_proof(index: u64) => MerkleProof;
         generate_proofs(start: u64, end: u64) => Vec<MerkleProof>;
+        pop_leaf() => Option<[u8; 32]>;
     }
 }
