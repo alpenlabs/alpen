@@ -209,10 +209,8 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
 
     let op_keys = OperatorKeys::new(&xpriv)?;
     if cmd.p2p {
-        let p2p_pk = EvenSecretKey::from(op_keys.message_xpriv().private_key)
-            .x_only_public_key(SECP256K1)
-            .0;
-        println!("{:?}", Hex(p2p_pk.serialize()));
+        let p2p_pk = op_keys.message_verifying_key().to_bytes();
+        println!("{:?}", Hex(p2p_pk));
     }
 
     if cmd.wallet {
@@ -486,11 +484,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
 
     let pub_opkeys = opkeys.iter().map(|keys| {
         OperatorPubkeys::new(
-            EvenSecretKey::from(keys.message_xpriv().private_key)
-                .x_only_public_key(SECP256K1)
-                .0
-                .serialize()
-                .into(),
+            keys.message_verifying_key().to_bytes().into(),
             EvenSecretKey::from(keys.wallet_xpriv().private_key)
                 .x_only_public_key(SECP256K1)
                 .0
