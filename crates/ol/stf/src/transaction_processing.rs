@@ -2,9 +2,7 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
 use strata_codec::encode_to_vec;
-use strata_ledger_types::{
-    IAccountState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor,
-};
+use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
 use strata_ol_chain_types_new::{
     OLLog, OLTransaction, OLTxSegment, SnarkAccountUpdateLogData, TransactionAttachment,
     TransactionPayload,

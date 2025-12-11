@@ -189,12 +189,13 @@ mod tests {
     use strata_identifiers::{
         AccountSerial, Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot,
     };
-    use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData};
+    use strata_ledger_types::{
+        AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData,
+    };
     use strata_ol_state_types::{EpochalState, GlobalState, OLState};
 
     use super::*;
-    use crate::test_utils::*;
-    use crate::write_batch::WriteBatch;
+    use crate::{test_utils::*, write_batch::WriteBatch};
 
     /// Helper to create a WriteBatch initialized from a base OLState.
     fn create_batch_from_state(
@@ -230,11 +231,8 @@ mod tests {
     #[test]
     fn test_read_falls_back_to_base() {
         let account_id = test_account_id(1);
-        let (base_state, serial) = setup_state_with_snark_account(
-            account_id,
-            1,
-            BitcoinAmount::from_sat(1000),
-        );
+        let (base_state, serial) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let batch = create_batch_from_state(&base_state);
         // Need to update next_serial to account for the account we created
@@ -255,11 +253,8 @@ mod tests {
     fn test_check_account_exists_falls_back_to_base() {
         let account_id = test_account_id(1);
         let nonexistent_id = test_account_id(99);
-        let (base_state, _) = setup_state_with_snark_account(
-            account_id,
-            1,
-            BitcoinAmount::from_sat(1000),
-        );
+        let (base_state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let batch = create_batch_from_state(&base_state);
         let tracking = WriteTrackingState::new(&base_state, batch);
@@ -271,11 +266,8 @@ mod tests {
     #[test]
     fn test_write_copies_to_batch() {
         let account_id = test_account_id(1);
-        let (base_state, _) = setup_state_with_snark_account(
-            account_id,
-            1,
-            BitcoinAmount::from_sat(1000),
-        );
+        let (base_state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let original_balance = base_state
             .get_account_state(account_id)
             .unwrap()
@@ -312,11 +304,8 @@ mod tests {
     #[test]
     fn test_read_prefers_batch_over_base() {
         let account_id = test_account_id(1);
-        let (base_state, _) = setup_state_with_snark_account(
-            account_id,
-            1,
-            BitcoinAmount::from_sat(1000),
-        );
+        let (base_state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let mut batch = create_batch_from_state(&base_state);
         batch
@@ -493,11 +482,8 @@ mod tests {
     #[test]
     fn test_into_batch_returns_modifications() {
         let account_id = test_account_id(1);
-        let (base_state, _) = setup_state_with_snark_account(
-            account_id,
-            1,
-            BitcoinAmount::from_sat(1000),
-        );
+        let (base_state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let mut batch = create_batch_from_state(&base_state);
         batch
@@ -550,9 +536,6 @@ mod tests {
         let nonexistent_id = test_account_id(99);
         let result = tracking.update_account(nonexistent_id, |_acct| {});
 
-        assert!(matches!(
-            result,
-            Err(AcctError::MissingExpectedAccount(_))
-        ));
+        assert!(matches!(result, Err(AcctError::MissingExpectedAccount(_))));
     }
 }

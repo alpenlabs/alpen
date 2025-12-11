@@ -15,9 +15,7 @@ use strata_ledger_types::{
 };
 use strata_ol_state_types::{EpochalState, GlobalState, OLState};
 
-use crate::test_utils::*;
-use crate::write_batch::WriteBatch;
-use crate::{IndexerState, WriteTrackingState};
+use crate::{IndexerState, WriteTrackingState, test_utils::*, write_batch::WriteBatch};
 
 /// Helper to create a WriteBatch initialized from a base OLState.
 fn create_batch_from_state(
@@ -49,11 +47,8 @@ fn create_batch_from_state(
 #[test]
 fn test_indexer_over_write_tracking_basic() {
     let account_id = test_account_id(1);
-    let (base_state, _serial) = setup_state_with_snark_account(
-        account_id,
-        1,
-        BitcoinAmount::from_sat(1000),
-    );
+    let (base_state, _serial) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
     // Create the layer stack: IndexerState<WriteTrackingState<&OLState>>
     let mut batch = create_batch_from_state(&base_state);
@@ -73,11 +68,8 @@ fn test_indexer_over_write_tracking_basic() {
 #[test]
 fn test_combined_inbox_message_tracking() {
     let account_id = test_account_id(1);
-    let (base_state, _serial) = setup_state_with_snark_account(
-        account_id,
-        1,
-        BitcoinAmount::from_sat(1000),
-    );
+    let (base_state, _serial) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
     let mut batch = create_batch_from_state(&base_state);
     batch
@@ -113,7 +105,11 @@ fn test_combined_inbox_message_tracking() {
     // Verify base state is unchanged
     let base_account = base_state.get_account_state(account_id).unwrap().unwrap();
     assert_eq!(
-        base_account.as_snark_account().unwrap().inbox_mmr().num_entries(),
+        base_account
+            .as_snark_account()
+            .unwrap()
+            .inbox_mmr()
+            .num_entries(),
         0
     );
 }
@@ -144,11 +140,8 @@ fn test_combined_manifest_tracking() {
 #[test]
 fn test_combined_balance_modification() {
     let account_id = test_account_id(1);
-    let (base_state, _serial) = setup_state_with_snark_account(
-        account_id,
-        1,
-        BitcoinAmount::from_sat(1000),
-    );
+    let (base_state, _serial) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
     let mut batch = create_batch_from_state(&base_state);
     batch
@@ -244,11 +237,8 @@ fn test_combined_multiple_operations() {
     let account_id_2 = test_account_id(2);
 
     // Setup base state with one account
-    let (base_state, _) = setup_state_with_snark_account(
-        account_id_1,
-        1,
-        BitcoinAmount::from_sat(1000),
-    );
+    let (base_state, _) =
+        setup_state_with_snark_account(account_id_1, 1, BitcoinAmount::from_sat(1000));
 
     let mut batch = create_batch_from_state(&base_state);
     batch
@@ -360,7 +350,11 @@ fn test_combined_layers_preserve_base_state() {
     let account = base_state.get_account_state(account_id).unwrap().unwrap();
     assert_eq!(account.balance(), initial_balance);
     assert_eq!(
-        account.as_snark_account().unwrap().inbox_mmr().num_entries(),
+        account
+            .as_snark_account()
+            .unwrap()
+            .inbox_mmr()
+            .num_entries(),
         original_inbox_count
     );
 }

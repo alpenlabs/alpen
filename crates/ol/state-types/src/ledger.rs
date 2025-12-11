@@ -49,7 +49,10 @@ impl TsnlLedgerAccountsTable {
         self.get_acct_entry(id).map(|e| &e.state)
     }
 
-    pub(crate) fn get_account_state_mut(&mut self, id: &AccountId) -> Option<&mut NativeAccountState> {
+    pub(crate) fn get_account_state_mut(
+        &mut self,
+        id: &AccountId,
+    ) -> Option<&mut NativeAccountState> {
         self.get_acct_entry_mut(id).map(|e| &mut e.state)
     }
 
@@ -156,7 +159,10 @@ mod tests {
     use crate::account::NativeAccountTypeState;
 
     // Helper function to create an Empty account state
-    fn create_empty_account_state(serial: AccountSerial, balance: BitcoinAmount) -> NativeAccountState {
+    fn create_empty_account_state(
+        serial: AccountSerial,
+        balance: BitcoinAmount,
+    ) -> NativeAccountState {
         NativeAccountState::new(serial, balance, NativeAccountTypeState::Empty)
     }
 
