@@ -513,6 +513,10 @@ where
         self.inner.find_account_id_by_serial(serial)
     }
 
+    fn next_account_serial(&self) -> AccountSerial {
+        self.inner.next_account_serial()
+    }
+
     fn compute_state_root(&self) -> AcctResult<Buf32> {
         self.inner.compute_state_root()
     }

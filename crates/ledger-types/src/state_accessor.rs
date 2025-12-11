@@ -93,6 +93,9 @@ pub trait IStateAccessor {
     /// Resolves an account serial to an account ID.
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>>;
 
+    /// Returns the next account serial that will be assigned when creating a new account.
+    fn next_account_serial(&self) -> AccountSerial;
+
     /// Computes the full state root, using whatever things we've updated.
     // TODO maybe don't use `AcctResult`, actually convert all/most of these to use a new error type
     fn compute_state_root(&self) -> AcctResult<Buf32>;

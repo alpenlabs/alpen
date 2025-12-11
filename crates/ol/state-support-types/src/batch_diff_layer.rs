@@ -184,6 +184,16 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
         self.base.find_account_id_by_serial(serial)
     }
 
+    fn next_account_serial(&self) -> AccountSerial {
+        let total_new_accounts: u32 = self
+            .batches
+            .iter()
+            .map(|b| b.ledger().new_accounts().len() as u32)
+            .sum();
+        let base_serial: u32 = self.base.next_account_serial().into();
+        AccountSerial::from(base_serial + total_new_accounts)
+    }
+
     fn compute_state_root(&self) -> AcctResult<Buf32> {
         // TODO implement with new SSZ state summary type
         Err(AcctError::Unsupported)
@@ -216,11 +226,7 @@ mod tests {
         );
         let global = GlobalState::new(state.cur_slot());
 
-        let mut batch = WriteBatch::new(global, epochal);
-        let base_next_serial = AccountSerial::from(SYSTEM_RESERVED_ACCTS);
-        batch.ledger_mut().set_next_serial(base_next_serial);
-
-        batch
+        WriteBatch::new(global, epochal)
     }
 
     // =========================================================================
@@ -282,9 +288,10 @@ mod tests {
             BitcoinAmount::from_sat(5000),
             AccountTypeState::Snark(snark_state),
         );
-        let serial = batch
+        let serial = base_state.next_account_serial();
+        batch
             .ledger_mut()
-            .create_account_from_data(account_id, new_acct);
+            .create_account_from_data(account_id, new_acct, serial);
 
         let batches = vec![batch];
         let diff_state = BatchDiffState::new(&base_state, &batches);
@@ -306,9 +313,10 @@ mod tests {
             BitcoinAmount::from_sat(5000),
             AccountTypeState::Snark(snark_state),
         );
+        let serial = base_state.next_account_serial();
         batch
             .ledger_mut()
-            .create_account_from_data(account_id, new_acct);
+            .create_account_from_data(account_id, new_acct, serial);
 
         let batches = vec![batch];
         let diff_state = BatchDiffState::new(&base_state, &batches);
@@ -347,23 +355,23 @@ mod tests {
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state1),
         );
+        let serial1 = base_state.next_account_serial();
         batch1
             .ledger_mut()
-            .create_account_from_data(account_id, new_acct1);
+            .create_account_from_data(account_id, new_acct1, serial1);
 
         // Second batch (more recent): same account with 5000 sats
+        // This batch shadows the first, so uses a different serial
         let mut batch2 = create_batch_from_state(&base_state);
-        batch2
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
         let snark_state2 = test_snark_account_state(2);
         let new_acct2 = NewAccountData::new(
             BitcoinAmount::from_sat(5000),
             AccountTypeState::Snark(snark_state2),
         );
+        let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
         batch2
             .ledger_mut()
-            .create_account_from_data(account_id, new_acct2);
+            .create_account_from_data(account_id, new_acct2, serial2);
 
         // Last batch should shadow first
         let batches = vec![batch1, batch2];
@@ -386,23 +394,22 @@ mod tests {
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state1),
         );
+        let serial1 = base_state.next_account_serial();
         batch1
             .ledger_mut()
-            .create_account_from_data(account_id_1, new_acct1);
+            .create_account_from_data(account_id_1, new_acct1, serial1);
 
         // Second batch: account 2 only
         let mut batch2 = create_batch_from_state(&base_state);
-        batch2
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
         let snark_state2 = test_snark_account_state(2);
         let new_acct2 = NewAccountData::new(
             BitcoinAmount::from_sat(2000),
             AccountTypeState::Snark(snark_state2),
         );
+        let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
         batch2
             .ledger_mut()
-            .create_account_from_data(account_id_2, new_acct2);
+            .create_account_from_data(account_id_2, new_acct2, serial2);
 
         let batches = vec![batch1, batch2];
         let diff_state = BatchDiffState::new(&base_state, &batches);
@@ -424,17 +431,15 @@ mod tests {
             setup_state_with_snark_account(account_id_base, 1, BitcoinAmount::from_sat(1000));
 
         let mut batch = create_batch_from_state(&base_state);
-        batch
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
         let snark_state = test_snark_account_state(2);
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(2000),
             AccountTypeState::Snark(snark_state),
         );
+        let serial = base_state.next_account_serial();
         batch
             .ledger_mut()
-            .create_account_from_data(account_id_batch, new_acct);
+            .create_account_from_data(account_id_batch, new_acct, serial);
 
         let batches = vec![batch];
         let diff_state = BatchDiffState::new(&base_state, &batches);
@@ -465,9 +470,10 @@ mod tests {
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
         );
-        let serial = batch
+        let serial = base_state.next_account_serial();
+        batch
             .ledger_mut()
-            .create_account_from_data(account_id, new_acct);
+            .create_account_from_data(account_id, new_acct, serial);
 
         let batches = vec![batch];
         let diff_state = BatchDiffState::new(&base_state, &batches);
