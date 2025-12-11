@@ -1,10 +1,11 @@
 //! Reth node for the Alpen codebase.
 
+mod dummy_ol_client;
 mod genesis;
 mod gossip;
-mod ol_client;
 #[cfg(feature = "sequencer")]
 mod payload_builder;
+mod rpc_client;
 
 use std::{env, process, sync::Arc};
 
@@ -30,8 +31,8 @@ use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
 use clap::Parser;
+use dummy_ol_client::DummyOLClient;
 use eyre::Context;
-use ol_client::DummyOLClient;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;

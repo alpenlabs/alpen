@@ -34,8 +34,11 @@ alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
+strata-common.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
+strata-rpc-api-new = { workspace = true, features = ["client"] }
+strata-rpc-types-new.workspace = true
 strata-snark-acct-types.workspace = true
 
 alloy-eips = { workspace = true, optional = true }
@@ -56,6 +59,7 @@ reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-provider.workspace = true
+ssz.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
