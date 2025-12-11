@@ -3,14 +3,14 @@
 use strata_acct_types::{BitcoinAmount, Hash, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_manifest_types::DepositIntentLogData;
-use strata_identifiers::{Buf32, SubjectId, WtxidsRoot};
+use strata_identifiers::{AccountSerial, Buf32, L1BlockId, SubjectId, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::Msg;
 use strata_ol_chain_types_new::{
     SimpleWithdrawalIntentLogData, SnarkAccountUpdateLogData, SnarkAccountUpdateTxPayload,
     TransactionPayload,
 };
-use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
+use strata_ol_msg_types::{WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_state_types::{NativeSnarkAccountState, OLState};
 use strata_snark_acct_types::{
     LedgerRefProofs, LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate,
@@ -38,8 +38,9 @@ fn test_snark_account_deposit_and_withdrawal() {
     // Create a NativeSnarkAccountState using the public new_fresh method
     let snark_state = NativeSnarkAccountState::new_fresh(initial_state_root);
 
+    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
     let snark_serial = state
-        .create_new_account(snark_account_id, AccountTypeState::Snark(snark_state))
+        .create_new_account(snark_account_id, new_acct_data)
         .expect("Should create snark account");
 
     // Create a genesis block with a manifest containing a deposit to the snark account
