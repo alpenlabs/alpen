@@ -38,13 +38,6 @@ where
     pub got: T,
 }
 
-/// Errors that can occur when building deposit request transactions (DRT).
-#[derive(Debug, Error, Clone)]
-pub enum DepositRequestBuildError {
-    #[error("SPS-50 format error: {0}")]
-    TxFmt(String),
-}
-
 /// Errors that can occur when parsing deposit request transactions (DRT).
 #[derive(Debug, Error, Clone)]
 pub enum DepositRequestParseError {
@@ -154,8 +147,8 @@ pub enum CommitParseError {
 
 /// Errors that can occur when building transaction tag data for any bridge v1 transaction type.
 ///
-/// This error type is used across all transaction types (commit, deposit, withdrawal, slash, unstake)
-/// since they all have the same failure modes when building tag data.
+/// This error type is used across all transaction types (commit, deposit, withdrawal, slash,
+/// unstake) since they all have the same failure modes when building tag data.
 #[derive(Debug, Error)]
 pub enum TagDataError {
     /// Failed to encode auxiliary data.
