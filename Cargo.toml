@@ -35,7 +35,8 @@ members = [
   "crates/chainexec",
   "crates/chaintsn",
   "crates/chain-worker",
-  "crates/checkpoint-types-new",
+  "crates/checkpoint-types",
+  "crates/checkpoint-types-ssz",
   "crates/cli-common",
   "crates/codec-utils",
   "crates/common",
@@ -189,7 +190,8 @@ strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
-strata-checkpoint-types-new = { path = "crates/checkpoint-types-new" }
+strata-checkpoint-types = { path = "crates/checkpoint-types" }
+strata-checkpoint-types-ssz = { path = "crates/checkpoint-types-ssz" }
 strata-cli-common = { path = "crates/cli-common" }
 strata-codec-utils = { path = "crates/codec-utils" }
 strata-common = { path = "crates/common" }

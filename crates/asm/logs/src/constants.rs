@@ -13,6 +13,11 @@ macro_rules! define_ids {
 }
 
 // Define all log type IDs
+//
+// CHECKPOINT_UPDATE_LOG_TYPE (3): New checkpoint update log type (SPS-62 types) - used by
+//     checkpoint subprotocol
+// CHECKPOINT_UPDATE_LEGACY_LOG_TYPE (7): Legacy checkpoint update log type (old types) - used by
+//     csm-worker. TODO(cleanup): Remove when csm-worker is deprecated after OL STF migration
 define_ids! {TypeId, LOG_TYPE_IDS,
     DEPOSIT_LOG_TYPE_ID = 1,
     FORCED_INCLUSION_LOG_TYPE_ID = 2,
@@ -20,6 +25,7 @@ define_ids! {TypeId, LOG_TYPE_IDS,
     OL_STF_UPDATE_LOG_TYPE = 4,
     ASM_STF_UPDATE_LOG_TYPE = 5,
     NEW_EXPORT_ENTRY_LOG_TYPE = 6,
+    CHECKPOINT_UPDATE_LEGACY_LOG_TYPE = 7,
 }
 
 #[cfg(test)]

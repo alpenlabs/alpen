@@ -1,5 +1,5 @@
 [package]
-name = "strata-checkpoint-types-new"
+name = "strata-checkpoint-types-ssz"
 version = "0.3.0-alpha.1"
 edition = "2024"
 

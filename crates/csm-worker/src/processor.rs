@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+use strata_asm_logs::{CheckpointUpdateLegacy, constants::CHECKPOINT_UPDATE_LEGACY_LOG_TYPE};
 use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
@@ -20,7 +20,7 @@ pub(crate) fn process_log(
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
     match log.ty() {
-        Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
+        Some(CHECKPOINT_UPDATE_LEGACY_LOG_TYPE) => {
             let ckpt_upd = log
                 .try_into_log()
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
@@ -40,7 +40,7 @@ pub(crate) fn process_log(
 /// Process a single ASM log entry, extracting and handling checkpoint updates.
 fn process_checkpoint_log(
     state: &mut CsmWorkerState,
-    checkpoint_update: &CheckpointUpdate,
+    checkpoint_update: &CheckpointUpdateLegacy,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
     let epoch = checkpoint_update.batch_info().epoch();
@@ -158,7 +158,7 @@ fn update_client_state_with_checkpoint(
     Ok(())
 }
 
-/// Create a [`Checkpoint`] from a [`CheckpointUpdate`] log.
+/// Create a [`Checkpoint`] from a [`CheckpointUpdateLegacy`] log.
 ///
 /// Note: The log doesn't contain the full signed checkpoint, so we reconstruct
 /// what we can. The signature verification was already done by ASM.
@@ -166,7 +166,7 @@ fn update_client_state_with_checkpoint(
 /// TODO: This function is created for compatibility reason to avoid making larger changes.
 /// This will be largely changed as we move to the new OL STF as the checkpoint structure
 /// will be different than the existing ones.
-fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
+fn create_checkpoint_from_update(update: &CheckpointUpdateLegacy) -> Checkpoint {
     let epoch = update.batch_info().epoch();
 
     // Create empty sidecar - checkpoint was already verified by ASM
@@ -189,7 +189,7 @@ mod tests {
 
     use bitcoin::absolute::Height;
     use strata_asm_common::AsmLogEntry;
-    use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+    use strata_asm_logs::{CheckpointUpdateLegacy, constants::CHECKPOINT_UPDATE_LEGACY_LOG_TYPE};
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -355,7 +355,7 @@ mod tests {
         state.last_asm_block = Some(asm_block);
 
         // Create a log with checkpoint type but invalid data
-        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, vec![1, 2, 3])
+        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LEGACY_LOG_TYPE, vec![1, 2, 3])
             .expect("Failed to create log");
 
         // Should fail with deserialization error
@@ -423,8 +423,8 @@ mod tests {
             // Create checkpoint txid
             let checkpoint_txid: BitcoinTxid = arbgen.generate();
 
-            // Create CheckpointUpdate
-            let checkpoint_update = CheckpointUpdate::new(
+            // Create CheckpointUpdateLegacy
+            let checkpoint_update = CheckpointUpdateLegacy::new(
                 epoch_commitment,
                 batch_info,
                 chainstate_transition,

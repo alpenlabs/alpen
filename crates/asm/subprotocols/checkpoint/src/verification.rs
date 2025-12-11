@@ -4,7 +4,7 @@
 //! and proof verification for checkpoints.
 
 use strata_asm_manifest_types::Hash32;
-use strata_checkpoint_types_new::{
+use strata_checkpoint_types_ssz::{
     CheckpointClaim, CheckpointClaimBuilder, CheckpointPayload, SignedCheckpointPayload,
     verify_checkpoint_payload_signature as verify_sig,
 };

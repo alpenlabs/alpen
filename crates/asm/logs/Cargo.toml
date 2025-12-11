@@ -9,7 +9,11 @@ workspace = true
 [dependencies]
 borsh.workspace = true
 strata-asm-common.workspace = true
-strata-checkpoint-types-new.workspace = true
+# New checkpoint types (SPS-62) - used by CheckpointUpdate
+strata-checkpoint-types-ssz.workspace = true
+# Old/legacy checkpoint types - used by CheckpointUpdateLegacy for csm-worker compatibility
+# TODO(cleanup): Remove when csm-worker is deprecated after OL STF migration
+strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-codec-utils.workspace = true
 strata-msg-fmt.workspace = true

@@ -13596,6 +13596,7 @@ dependencies = [
  "borsh",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils",
  "strata-msg-fmt",
@@ -13683,21 +13684,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-checkpoint-txs"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "borsh",
- "strata-asm-common",
- "strata-bridge-types",
- "strata-checkpoint-types",
- "strata-l1-envelope-fmt",
- "strata-ol-chainstate-types",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "strata-asm-proto-checkpoint-v0"
+name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
  "borsh",
@@ -13705,26 +13692,27 @@ dependencies = [
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-txs",
- "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
+ "strata-codec",
  "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-ol-stf",
  "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.17",
 ]
 
 [[package]]
-name = "strata-asm-proto-core"
+name = "strata-asm-proto-checkpoint-txs"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "borsh",
  "strata-asm-common",
- "strata-checkpoint-types",
- "strata-l1-txfmt",
- "strata-l1tx",
- "strata-msg-fmt",
- "strata-predicate",
- "strata-primitives",
+ "strata-checkpoint-types-ssz",
+ "strata-l1-envelope-fmt",
  "thiserror 2.0.17",
 ]
 
@@ -13748,7 +13736,7 @@ version = "0.1.0"
 dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
- "strata-asm-proto-checkpoint-v0",
+ "strata-asm-proto-checkpoint",
  "strata-l1-txfmt",
  "strata-params",
  "strata-primitives",
@@ -13760,7 +13748,7 @@ version = "0.1.0"
 dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
- "strata-asm-proto-checkpoint-v0",
+ "strata-asm-proto-checkpoint",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
  "strata-l1-txfmt",
@@ -14018,6 +14006,19 @@ dependencies = [
  "strata-crypto",
  "strata-identifiers",
  "zkaleido",
+]
+
+[[package]]
+name = "strata-checkpoint-types-ssz"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "borsh",
+ "serde",
+ "ssz",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

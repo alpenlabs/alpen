@@ -7,7 +7,7 @@ use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
 use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_logs::CheckpointUpdate;
 use strata_asm_proto_checkpoint_txs::extract_signed_checkpoint_from_envelope;
-use strata_checkpoint_types_new::CheckpointPayload;
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinTxid};

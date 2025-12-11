@@ -2,7 +2,7 @@
 
 use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
-use strata_checkpoint_types_new::SignedCheckpointPayload;
+use strata_checkpoint_types_ssz::SignedCheckpointPayload;
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
 use crate::errors::{CheckpointTxError, CheckpointTxResult};

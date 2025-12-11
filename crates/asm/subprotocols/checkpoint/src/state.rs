@@ -1,7 +1,7 @@
 //! Checkpoint subprotocol state and configuration types.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_checkpoint_types_new::{CheckpointPayload, EpochSummary};
+use strata_checkpoint_types_ssz::{CheckpointPayload, EpochSummary};
 use strata_identifiers::{Buf32, CredRule, Epoch, L1BlockCommitment, L2BlockCommitment};
 use strata_predicate::PredicateKey;
 
