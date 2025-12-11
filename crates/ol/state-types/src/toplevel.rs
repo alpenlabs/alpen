@@ -5,7 +5,9 @@ use strata_acct_types::{
     AccountId, AccountSerial, AccountTypeId, AcctError, AcctResult, BitcoinAmount, Hash,
 };
 use strata_codec::{Codec, encode_to_vec};
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, hash::raw};
+use strata_identifiers::{
+    Buf32, Epoch, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot, hash::raw,
+};
 use strata_ledger_types::{
     AccountTypeState, AsmManifest, Coin, EpochCommitment, IAccountState, IGlobalState,
     IL1ViewState, ISnarkAccountState, StateAccessor,
@@ -206,25 +208,15 @@ impl OLState {
     ///
     /// This takes the changes accumulated during block execution and applies them
     /// to the current state. Used when accepting blocks into the canonical chain.
-    pub fn apply_write_batch(&mut self, batch: crate::WriteBatch) -> AcctResult<()> {
-        // Apply global state changes
-        self.global.set_cur_slot(batch.new_slot);
+    pub fn apply_write_batch(&mut self, batch: crate::WriteBatch<OLState>) -> AcctResult<()> {
+        // Apply global state changes if present
+        if let Some(global_state) = batch.global_state {
+            self.global = global_state;
+        }
 
-        // Apply L1 view changes
-        self.epoch.set_cur_epoch(batch.l1_view_writes.cur_epoch);
-        self.epoch
-            .set_asm_recorded_epoch(batch.l1_view_writes.asm_recorded_epoch);
-        self.epoch
-            .set_total_ledger_balance(batch.l1_view_writes.total_ledger_balance);
-
-        // Note: manifests were already applied during execution via append_manifest()
-        // They're included in WriteBatch for DB persistence, not for state application
-
-        // Apply new accounts
-        for (id, _serial, acct_state) in batch.new_accounts {
-            // Accounts should have been created during execution
-            // This just ensures they're in the final state
-            self.update_account_state(id, acct_state)?;
+        // Apply epochal state changes if present
+        if let Some(epochal_state) = batch.epochal_state {
+            self.epoch = epochal_state;
         }
 
         // Apply modified accounts
