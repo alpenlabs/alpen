@@ -184,7 +184,6 @@ impl BridgeV1State {
         let notary_operators = self.operators.current_multisig().clone();
         let entry = DepositEntry::new(
             info.header_aux().deposit_idx(),
-            info.outpoint(),
             notary_operators,
             info.amt(),
         )?;
@@ -423,7 +422,6 @@ mod tests {
                 deposit_info.header_aux().deposit_idx()
             );
             assert_eq!(stored_deposit.amt(), deposit_info.amt());
-            assert_eq!(stored_deposit.output(), &deposit_info.outpoint());
         }
     }
 

@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint};
+use strata_primitives::l1::BitcoinAmount;
 
 use crate::deposit::aux::DepositTxHeaderAux;
 
@@ -11,22 +11,11 @@ pub struct DepositInfo {
 
     /// The amount of Bitcoin deposited.
     amt: BitcoinAmount,
-
-    /// The outpoint of the deposit transaction.
-    outpoint: BitcoinOutPoint,
 }
 
 impl DepositInfo {
-    pub fn new(
-        header_aux: DepositTxHeaderAux,
-        amt: BitcoinAmount,
-        outpoint: BitcoinOutPoint,
-    ) -> Self {
-        Self {
-            header_aux,
-            amt,
-            outpoint,
-        }
+    pub fn new(header_aux: DepositTxHeaderAux, amt: BitcoinAmount) -> Self {
+        Self { header_aux, amt }
     }
 
     pub fn header_aux(&self) -> &DepositTxHeaderAux {
@@ -45,14 +34,5 @@ impl DepositInfo {
     #[cfg(feature = "test-utils")]
     pub fn set_amt(&mut self, amt: BitcoinAmount) {
         self.amt = amt;
-    }
-
-    pub fn outpoint(&self) -> BitcoinOutPoint {
-        self.outpoint
-    }
-
-    #[cfg(feature = "test-utils")]
-    pub fn set_outpoint(&mut self, outpoint: BitcoinOutPoint) {
-        self.outpoint = outpoint;
     }
 }

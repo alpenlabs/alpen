@@ -1,7 +1,5 @@
-use bitcoin::OutPoint;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::l1::BitcoinOutPoint;
 
 use crate::{
     deposit::{DEPOSIT_OUTPUT_INDEX, DepositInfo, aux::DepositTxHeaderAux},
@@ -30,18 +28,8 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
         .get(DEPOSIT_OUTPUT_INDEX)
         .ok_or(DepositTxParseError::MissingDepositOutput)?;
 
-    // Create outpoint reference for the deposit output
-    let deposit_outpoint = BitcoinOutPoint::from(OutPoint {
-        txid: tx_input.tx().compute_txid(),
-        vout: DEPOSIT_OUTPUT_INDEX as u32,
-    });
-
     // Construct the validated deposit information
-    Ok(DepositInfo::new(
-        header_aux,
-        deposit_output.value.into(),
-        deposit_outpoint,
-    ))
+    Ok(DepositInfo::new(header_aux, deposit_output.value.into()))
 }
 
 #[cfg(test)]
@@ -57,7 +45,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_deposit_tx, mutate_aux_data, parse_sps50_tx};
+    use crate::test_utils::{
+        TEST_MAGIC_BYTES, create_test_deposit_tx, mutate_aux_data, parse_sps50_tx,
+    };
 
     /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
     /// - 4 bytes for deposit_idx (u32)
