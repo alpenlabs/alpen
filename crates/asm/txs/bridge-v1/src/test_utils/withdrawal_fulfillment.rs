@@ -7,14 +7,9 @@ use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
     transaction::Version,
 };
-use strata_codec::encode_to_vec;
-use strata_l1_txfmt::{ParseConfig, TagData, TagDataRef};
+use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
-use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, WITHDRAWAL_FULFILLMENT_TX_TYPE},
-    test_utils::TEST_MAGIC_BYTES,
-    withdrawal_fulfillment::WithdrawalFulfillmentInfo,
-};
+use crate::{test_utils::TEST_MAGIC_BYTES, withdrawal_fulfillment::WithdrawalFulfillmentInfo};
 
 /// Error type for withdrawal transaction building
 #[derive(Debug, Clone, thiserror::Error)]
@@ -191,13 +186,7 @@ pub fn create_simple_withdrawal_fulfillment_tx(
 pub fn create_test_withdrawal_fulfillment_tx(
     withdrawal_info: &WithdrawalFulfillmentInfo,
 ) -> Transaction {
-    let aux_data = encode_to_vec(withdrawal_info.header_aux()).unwrap();
-    let td = TagData::new(
-        BRIDGE_V1_SUBPROTOCOL_ID,
-        WITHDRAWAL_FULFILLMENT_TX_TYPE,
-        aux_data,
-    )
-    .unwrap();
+    let td = withdrawal_info.header_aux().build_tag_data().unwrap();
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();

@@ -10,18 +10,13 @@ use bitcoin::{
     taproot::TaprootBuilder,
     transaction::Version,
 };
-use strata_codec::encode_to_vec;
 use strata_crypto::{
     EvenSecretKey,
     test_utils::schnorr::{Musig2Tweak, create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
-use strata_l1_txfmt::{ParseConfig, TagData, TagDataRef};
+use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
-use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE},
-    deposit::DepositInfo,
-    test_utils::TEST_MAGIC_BYTES,
-};
+use crate::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 
 /// Creates a test deposit transaction with MuSig2 signatures
 ///
@@ -31,8 +26,7 @@ pub fn create_test_deposit_tx(
     operators_privkeys: &[EvenSecretKey],
 ) -> Transaction {
     // Create auxiliary data in the expected format for deposit transactions
-    let aux_data = encode_to_vec(deposit_info.header_aux()).unwrap();
-    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data).unwrap();
+    let td = deposit_info.header_aux().build_tag_data().unwrap();
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();

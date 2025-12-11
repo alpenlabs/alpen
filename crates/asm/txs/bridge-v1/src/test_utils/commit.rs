@@ -1,10 +1,8 @@
 use bitcoin::Transaction;
-use strata_codec::encode_to_vec;
-use strata_l1_txfmt::{ParseConfig, TagData};
+use strata_l1_txfmt::ParseConfig;
 
 use crate::{
     commit::CommitInfo,
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE},
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
 };
 
@@ -14,8 +12,7 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
     let mut tx = create_dummy_tx(1, 2);
 
     // Encode auxiliary data and construct SPS 50 op_return script
-    let aux_data = encode_to_vec(commit_info.header_aux()).unwrap();
-    let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, COMMIT_TX_TYPE, aux_data).unwrap();
+    let td = commit_info.header_aux().build_tag_data().unwrap();
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();
