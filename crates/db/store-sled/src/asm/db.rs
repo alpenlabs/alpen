@@ -8,15 +8,11 @@ use super::schemas::{
 use crate::define_sled_database;
 
 define_sled_database!(
-    #[expect(
-        dead_code,
-        reason = "MMR trees accessed directly via raw sled DB in storage layer"
-    )]
     pub struct AsmDBSled {
         asm_state_tree: AsmStateSchema,
         asm_log_tree: AsmLogSchema,
-        mmr_node_tree: AsmMmrNodeSchema,
-        mmr_meta_tree: AsmMmrMetaSchema,
+        pub mmr_node_tree: AsmMmrNodeSchema,
+        pub mmr_meta_tree: AsmMmrMetaSchema,
         manifest_hash_tree: AsmManifestHashSchema,
     }
 );

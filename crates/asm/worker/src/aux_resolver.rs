@@ -26,9 +26,9 @@ use strata_asm_common::{
     AsmMerkleProof, AuxData, AuxRequests, Hash32, ManifestHashRange, VerifiableManifestHash,
 };
 use strata_btc_types::BitcoinTxid;
+use strata_db_types::traits::MmrDatabase;
 use strata_params::Params;
 use strata_primitives::prelude::*;
-use strata_storage::mmr_db::MmrDatabase;
 use tracing::*;
 
 use crate::{WorkerContext, WorkerError, WorkerResult};

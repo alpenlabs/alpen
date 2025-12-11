@@ -41,7 +41,7 @@ pub trait WorkerContext {
     /// Gets the MMR database for proof generation.
     ///
     /// Returns a mutable reference to the MMR database that can generate proofs.
-    fn get_mmr_database(&self) -> WorkerResult<strata_storage::mmr_db::SledMmrDb>;
+    fn get_mmr_database(&self) -> WorkerResult<strata_db_store_sled::asm::SledMmrDb>;
 
     /// Retrieves a manifest hash by its MMR leaf index.
     ///
