@@ -151,6 +151,12 @@ impl SerialMap {
     }
 }
 
+impl Default for SerialMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn offset_serial_by(serial: AccountSerial, amt: usize) -> AccountSerial {
     AccountSerial::from(serial.inner() + amt as u32)
 }
