@@ -1,10 +1,6 @@
 // TODO rework/remove these types since we have the more structured system now
 
-use crate::{
-    AccountSerial, AccountTypeId, BitcoinAmount, RawAccountTypeId,
-    errors::{AcctError, AcctResult},
-    mmr::Hash,
-};
+use crate::{AccountSerial, AccountTypeId, BitcoinAmount, RawAccountTypeId, mmr::Hash};
 
 type Root = Hash;
 
