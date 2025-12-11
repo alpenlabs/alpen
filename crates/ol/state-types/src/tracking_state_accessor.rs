@@ -1,5 +1,5 @@
-//! This accessor wraps OLState and tracks all modifications during block execution,
-//! accumulating them into a WriteBatch that can be persisted to the database.
+//! Generic tracking accessor that wraps any StateAccessor and tracks all modifications
+//! during block execution, accumulating them into a WriteBatch.
 
 use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Hash};
 use strata_identifiers::{Buf32, EpochCommitment, L1Height};
@@ -9,27 +9,39 @@ use strata_ledger_types::{
 };
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
-use crate::{
-    AccountState, EpochalState, GlobalState, OLState,
-    writebatch::{ExecutionAuxiliaryData, WriteBatch},
-};
+use crate::writebatch::{ExecutionAuxiliaryData, WriteBatch};
 
-/// Tracks all state changes for WriteBatch generation using CoW overlay
-#[derive(Debug)]
-pub struct TrackingStateAccessor {
+/// Tracks all state changes for WriteBatch generation using CoW overlay.
+/// Generic over any StateAccessor implementation.
+pub struct TrackingStateAccessor<S: StateAccessor> {
     /// Base state before execution
-    base: OLState,
+    base: S,
 
     /// Copy-on-Write overlay tracking modifications during execution
-    writebatch: WriteBatch<OLState>,
+    writebatch: WriteBatch<S>,
 
     /// Accumulate auxiliary data for database persistence
     aux: ExecutionAuxiliaryData,
 }
 
-impl TrackingStateAccessor {
+impl<S: StateAccessor + core::fmt::Debug> core::fmt::Debug for TrackingStateAccessor<S>
+where
+    S::GlobalState: core::fmt::Debug,
+    S::L1ViewState: core::fmt::Debug,
+    S::AccountState: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TrackingStateAccessor")
+            .field("base", &self.base)
+            .field("writebatch", &self.writebatch)
+            .field("aux", &self.aux)
+            .finish()
+    }
+}
+
+impl<S: StateAccessor> TrackingStateAccessor<S> {
     /// Create a new state accessor from an initial state
-    pub fn new(state: OLState) -> Self {
+    pub fn new(state: S) -> Self {
         Self {
             base: state,
             writebatch: WriteBatch::new(),
@@ -38,25 +50,30 @@ impl TrackingStateAccessor {
     }
 
     /// Finalize execution and produce WriteBatch and auxiliary data
-    pub fn finalize_as_writebatch(self) -> (WriteBatch<OLState>, ExecutionAuxiliaryData) {
+    pub fn finalize_as_writebatch(self) -> (WriteBatch<S>, ExecutionAuxiliaryData) {
         (self.writebatch, self.aux)
     }
 
     /// Get reference to the base state (before modifications)
-    pub fn base_state(&self) -> &OLState {
+    pub fn base_state(&self) -> &S {
         &self.base
     }
 
     /// Get reference to the writebatch overlay
-    pub fn writebatch(&self) -> &WriteBatch<OLState> {
+    pub fn writebatch(&self) -> &WriteBatch<S> {
         &self.writebatch
     }
 }
 
-impl StateAccessor for TrackingStateAccessor {
-    type GlobalState = GlobalState;
-    type L1ViewState = EpochalState;
-    type AccountState = AccountState;
+impl<S: StateAccessor> StateAccessor for TrackingStateAccessor<S>
+where
+    S::GlobalState: Clone,
+    S::L1ViewState: Clone,
+    S::AccountState: Clone + IAccountState,
+{
+    type GlobalState = S::GlobalState;
+    type L1ViewState = S::L1ViewState;
+    type AccountState = S::AccountState;
 
     fn global(&self) -> &Self::GlobalState {
         self.writebatch

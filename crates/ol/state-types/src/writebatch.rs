@@ -9,7 +9,7 @@ use strata_snark_acct_types::MessageEntry;
 /// This structure acts as a sparse, in-memory layer on top of a base state
 /// (which could be DB-backed). Reads check the overlay first, then fall through
 /// to the base. Writes populate the overlay.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct WriteBatch<S: StateAccessor> {
     /// Accounts modified during execution (CoW overlay).
     /// Presence in this map indicates the account was accessed mutably.
@@ -20,6 +20,21 @@ pub struct WriteBatch<S: StateAccessor> {
 
     /// Epochal state override. None means use base state.
     pub(crate) epochal_state: Option<S::L1ViewState>,
+}
+
+impl<S: StateAccessor> core::fmt::Debug for WriteBatch<S>
+where
+    S::GlobalState: core::fmt::Debug,
+    S::L1ViewState: core::fmt::Debug,
+    S::AccountState: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("WriteBatch")
+            .field("modified_accounts", &self.modified_accounts)
+            .field("global_state", &self.global_state)
+            .field("epochal_state", &self.epochal_state)
+            .finish()
+    }
 }
 
 impl<S: StateAccessor> WriteBatch<S> {
