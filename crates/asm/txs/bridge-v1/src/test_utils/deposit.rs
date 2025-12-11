@@ -16,7 +16,10 @@ use strata_crypto::{
 };
 use strata_l1_txfmt::ParseConfig;
 
-use crate::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
+use crate::{
+    deposit::DepositInfo,
+    test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
+};
 
 /// Creates a test deposit transaction with MuSig2 signatures
 ///
@@ -27,7 +30,7 @@ pub fn create_test_deposit_tx(
 ) -> Transaction {
     // Create auxiliary data in the expected format for deposit transactions
     let td = deposit_info.header_aux().build_tag_data().unwrap();
-    let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+    let sps50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .unwrap();
 
@@ -45,26 +48,10 @@ pub fn create_test_deposit_tx(
         script_pubkey: drt_script_pubkey,
     };
 
-    let unsigned_tx = Transaction {
-        version: Version(2),
-        lock_time: LockTime::ZERO,
-        input: vec![TxIn {
-            previous_output: OutPoint::null(),
-            script_sig: ScriptBuf::new(),
-            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-            witness: Witness::new(),
-        }],
-        output: vec![
-            TxOut {
-                value: Amount::ZERO,
-                script_pubkey: sps_50_script,
-            },
-            TxOut {
-                value: deposit_amount,
-                script_pubkey: deposit_script,
-            },
-        ],
-    };
+    let mut unsigned_tx = create_dummy_tx(1, 2);
+    unsigned_tx.output[0].script_pubkey = sps50_script;
+    unsigned_tx.output[1].script_pubkey = deposit_script;
+    unsigned_tx.output[1].value = deposit_amount;
 
     // Sign with MuSig2
     let prevouts = [prev_txout];
