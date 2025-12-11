@@ -25,15 +25,11 @@
 //! multisig.
 
 mod aux;
-#[cfg(feature = "test-utils")]
-mod build;
 mod info;
 mod parse;
 mod script;
 
 pub use aux::UnstakeTxHeaderAux;
-#[cfg(feature = "test-utils")]
-pub use build::build_connected_stake_and_unstake_txs;
 pub use info::UnstakeInfo;
 pub use parse::{STAKE_INPUT_INDEX, parse_unstake_tx};
 pub use script::{stake_connector_script, validate_and_extract_script_params};

@@ -14,11 +14,10 @@ use strata_test_utils_btcio::{
     signing::sign_musig2_scriptpath, submit::submit_transaction_with_keys_blocking,
 };
 
-use super::stake_connector_script;
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, UNSTAKE_TX_TYPE},
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
-    unstake::{UnstakeInfo, UnstakeTxHeaderAux},
+    unstake::{UnstakeInfo, UnstakeTxHeaderAux, stake_connector_script},
 };
 
 /// Sets up a connected pair of stake and unstake transactions for testing.

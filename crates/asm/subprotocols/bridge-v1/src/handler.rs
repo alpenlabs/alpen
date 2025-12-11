@@ -120,8 +120,10 @@ mod tests {
     use strata_asm_txs_bridge_v1::{
         parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
-        test_utils::{create_connected_stake_and_slash_txs, parse_tx},
-        unstake::{UnstakeTxHeaderAux, build_connected_stake_and_unstake_txs, parse_unstake_tx},
+        test_utils::{
+            build_connected_stake_and_unstake_txs, create_connected_stake_and_slash_txs, parse_tx,
+        },
+        unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
     };
     use strata_btc_types::RawBitcoinTx;
 

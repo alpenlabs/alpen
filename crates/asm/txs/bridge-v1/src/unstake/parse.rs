@@ -68,9 +68,8 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{
-        test_utils::{create_test_operators, mutate_aux_data, parse_tx},
-        unstake::build::build_connected_stake_and_unstake_txs,
+    use crate::test_utils::{
+        build_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data, parse_tx,
     };
 
     const AUX_LEN: usize = std::mem::size_of::<UnstakeTxHeaderAux>();
