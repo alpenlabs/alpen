@@ -41,7 +41,7 @@ use super::{
 /// - Short-lived processes
 /// - Production use with in-memory cache
 ///
-/// For persistent storage, use `RocksDbMmrDb`.
+/// For persistent storage, use [`SledMmrDb`].
 #[derive(Debug)]
 pub struct InMemoryMmrDb {
     /// All MMR nodes indexed by position
