@@ -16,5 +16,8 @@ bitcoin.workspace = true
 ssz.workspace = true
 tree_hash.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true
