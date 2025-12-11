@@ -14,9 +14,7 @@ use bitcoin::{
     Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
     Transaction, TxIn, TxOut, Witness,
 };
-use strata_asm_txs_bridge_v1::constants::{
-    BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE,
-};
+use strata_asm_txs_bridge_v1::constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType};
 use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
@@ -197,7 +195,7 @@ pub fn build_test_deposit_script(
     // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
     let mut data = dep_config.magic_bytes.clone().to_vec();
     data.push(BRIDGE_V1_SUBPROTOCOL_ID);
-    data.push(DEPOSIT_TX_TYPE);
+    data.push(BridgeTxType::Deposit as u8);
     data.extend(aux_data);
 
     let builder = script::Builder::new()
@@ -295,7 +293,7 @@ pub fn create_opreturn_metadata(magic: [u8; 4], deposit_idx: u32) -> ScriptBuf {
     // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
     let mut data = magic.to_vec();
     data.push(BRIDGE_V1_SUBPROTOCOL_ID);
-    data.push(WITHDRAWAL_FULFILLMENT_TX_TYPE);
+    data.push(BridgeTxType::WithdrawalFulfillment as u8);
     data.extend(aux_data);
 
     Descriptor::new_op_return(&data).unwrap().to_script()

@@ -2,14 +2,9 @@ use arbitrary::Arbitrary;
 use strata_codec::{Codec, encode_to_vec};
 use strata_l1_txfmt::TagData;
 
-use crate::{
-    BRIDGE_V1_SUBPROTOCOL_ID, constants::WITHDRAWAL_FULFILLMENT_TX_TYPE, errors::TagDataError,
-};
+use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::BridgeTxType, errors::TagDataError};
 
-/// Auxiliary data in the SPS-50 header for bridge v1 withdrawal fulfillment transactions.
-///
-/// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
-/// and tx_type fields in the OP_RETURN output at position 0.
+/// Auxiliary data in the SPS-50 header for [`BridgeTxType::WithdrawalFulfillment`].
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Codec)]
 pub struct WithdrawalFulfillmentTxHeaderAux {
     /// The index of the locked deposit UTXO that the operator will receive payout from.
@@ -48,7 +43,7 @@ impl WithdrawalFulfillmentTxHeaderAux {
         let aux_data = encode_to_vec(self)?;
         let tag = TagData::new(
             BRIDGE_V1_SUBPROTOCOL_ID,
-            WITHDRAWAL_FULFILLMENT_TX_TYPE,
+            BridgeTxType::WithdrawalFulfillment as u8,
             aux_data,
         )?;
         Ok(tag)

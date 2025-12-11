@@ -5,14 +5,11 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
 use strata_l1_txfmt::TagData;
 
 use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE},
+    constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType},
     errors::TagDataError,
 };
 
-/// Auxiliary data in the SPS-50 header for bridge v1 deposit request transactions.
-///
-/// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
-/// and tx_type fields in the OP_RETURN output at position 0.
+/// Auxiliary data in the SPS-50 header for [`BridgeTxType::DepositRequest`].
 #[derive(Debug, Clone)]
 pub struct DepositRequestAuxData {
     recovery_pk: [u8; 32],
@@ -50,7 +47,11 @@ impl DepositRequestAuxData {
     /// - The encoded auxiliary data exceeds the maximum allowed size (74 bytes)
     pub fn build_tag_data(&self) -> Result<TagData, TagDataError> {
         let aux_data = encode_to_vec(self)?;
-        let tag = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data)?;
+        let tag = TagData::new(
+            BRIDGE_V1_SUBPROTOCOL_ID,
+            BridgeTxType::DepositRequest as u8,
+            aux_data,
+        )?;
         Ok(tag)
     }
 }

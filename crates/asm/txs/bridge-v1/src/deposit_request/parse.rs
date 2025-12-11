@@ -9,7 +9,7 @@ use strata_asm_common::TxInputRef;
 use strata_l1_txfmt::ParseConfig;
 use strata_primitives::l1::DepositRequestInfo;
 
-use crate::{constants::DEPOSIT_REQUEST_TX_TYPE, errors::DepositRequestParseError};
+use crate::{constants::BridgeTxType, errors::DepositRequestParseError};
 
 const RECOVERY_PK_LEN: usize = 32;
 
@@ -19,10 +19,10 @@ pub const MIN_DRT_AUX_DATA_LEN: usize = RECOVERY_PK_LEN;
 pub fn parse_drt(
     tx_input: &TxInputRef<'_>,
 ) -> Result<DepositRequestInfo, DepositRequestParseError> {
-    if tx_input.tag().tx_type() != DEPOSIT_REQUEST_TX_TYPE {
+    if tx_input.tag().tx_type() != BridgeTxType::DepositRequest as u8 {
         return Err(DepositRequestParseError::InvalidTxType {
             actual: tx_input.tag().tx_type(),
-            expected: DEPOSIT_REQUEST_TX_TYPE,
+            expected: BridgeTxType::DepositRequest as u8,
         });
     }
 
@@ -95,7 +95,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        constants::{BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE},
+        constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType},
         test_utils::{TEST_MAGIC_BYTES, parse_tx},
     };
 
@@ -110,8 +110,12 @@ mod tests {
         aux_data.extend_from_slice(ee_address);
 
         // Create OP_RETURN script following SPS-50 format
-        let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data)
-            .expect("valid tag data");
+        let td = TagData::new(
+            BRIDGE_V1_SUBPROTOCOL_ID,
+            BridgeTxType::DepositRequest as u8,
+            aux_data,
+        )
+        .expect("valid tag data");
         let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
             .encode_script_buf(&td.as_ref())
             .expect("encode OP_RETURN script");
@@ -203,7 +207,7 @@ mod tests {
             result,
             Err(DepositRequestParseError::InvalidTxType {
                 actual: 99,
-                expected: DEPOSIT_REQUEST_TX_TYPE
+                expected: 0
             })
         ));
     }
@@ -214,7 +218,12 @@ mod tests {
         let aux_data = vec![0x05; 10];
 
         // Create OP_RETURN script with insufficient aux_data
-        let td = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_REQUEST_TX_TYPE, aux_data).unwrap();
+        let td = TagData::new(
+            BRIDGE_V1_SUBPROTOCOL_ID,
+            BridgeTxType::DepositRequest as u8,
+            aux_data,
+        )
+        .unwrap();
         let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
             .encode_script_buf(&td.as_ref())
             .unwrap();

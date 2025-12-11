@@ -3,12 +3,9 @@ use strata_bridge_types::OperatorIdx;
 use strata_codec::{Codec, encode_to_vec};
 use strata_l1_txfmt::TagData;
 
-use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::UNSTAKE_TX_TYPE, errors::TagDataError};
+use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::BridgeTxType, errors::TagDataError};
 
-/// Auxiliary data in the SPS-50 header for bridge v1 unstake transaction.
-///
-/// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
-/// and tx_type fields in the OP_RETURN output at position 0.
+/// Auxiliary data in the SPS-50 header for [`BridgeTxType::Unstake`].
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Codec)]
 pub struct UnstakeTxHeaderAux {
     /// The index of the operator whose stake is being unlocked.
@@ -36,7 +33,11 @@ impl UnstakeTxHeaderAux {
     /// - The encoded auxiliary data exceeds the maximum allowed size (74 bytes)
     pub fn build_tag_data(&self) -> Result<TagData, TagDataError> {
         let aux_data = encode_to_vec(self)?;
-        let tag = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, UNSTAKE_TX_TYPE, aux_data)?;
+        let tag = TagData::new(
+            BRIDGE_V1_SUBPROTOCOL_ID,
+            BridgeTxType::Unstake as u8,
+            aux_data,
+        )?;
         Ok(tag)
     }
 }
