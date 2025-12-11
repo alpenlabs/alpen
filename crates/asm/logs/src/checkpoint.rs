@@ -1,6 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
 use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
+use strata_checkpoint_types_new::CheckpointPayload;
 use strata_codec::Codec;
 use strata_codec_utils::CodecBorsh;
 use strata_msg_fmt::TypeId;
@@ -49,6 +50,41 @@ impl CheckpointUpdate {
         Self::new(
             batch_info.get_epoch_commitment(),
             batch_info.clone(),
+            chainstate_transition,
+            checkpoint_txid,
+        )
+    }
+
+    /// Construct a `CheckpointUpdate` from a new `CheckpointPayload` (SPS-62).
+    ///
+    /// This converts the new checkpoint types to the legacy format for backward
+    /// compatibility with existing log consumers.
+    pub fn from_payload(payload: &CheckpointPayload, checkpoint_txid: BitcoinTxid) -> Self {
+        let new_batch_info = payload.batch_info();
+        let new_transition = payload.transition();
+
+        // Convert new L1BlockRange to old tuple format
+        let l1_range = (
+            *new_batch_info.l1_range().start(),
+            *new_batch_info.l1_range().end(),
+        );
+
+        // Convert new L2BlockRange to old tuple format
+        let l2_range = (
+            *new_batch_info.l2_range().start(),
+            *new_batch_info.l2_range().end(),
+        );
+
+        let batch_info = BatchInfo::new(new_batch_info.epoch(), l1_range, l2_range);
+
+        let chainstate_transition = ChainstateRootTransition {
+            pre_state_root: *new_transition.pre_state_root(),
+            post_state_root: *new_transition.post_state_root(),
+        };
+
+        Self::new(
+            batch_info.get_epoch_commitment(),
+            batch_info,
             chainstate_transition,
             checkpoint_txid,
         )

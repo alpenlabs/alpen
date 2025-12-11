@@ -6,9 +6,7 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
-use strata_asm_proto_checkpoint_v0::{
-    CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
-};
+use strata_asm_proto_checkpoint::{CheckpointConfig, CheckpointSubprotocol};
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, RollupParams};
 use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
@@ -23,7 +21,7 @@ pub struct StrataAsmSpec {
 
     // subproto params, which right now currently just contain the genesis data
     // TODO rename these
-    checkpoint_v0_params: CheckpointV0Params,
+    checkpoint_config: CheckpointConfig,
     bridge_v1_genesis: BridgeV1Config,
 }
 
@@ -34,12 +32,12 @@ impl AsmSpec for StrataAsmSpec {
 
     fn load_subprotocols(&self, loader: &mut impl Loader) {
         // TODO avoid clone?
-        loader.load_subprotocol::<CheckpointV0Subproto>(self.checkpoint_v0_params.clone());
+        loader.load_subprotocol::<CheckpointSubprotocol>(self.checkpoint_config.clone());
         loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
     }
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
-        stage.invoke_subprotocol::<CheckpointV0Subproto>();
+        stage.invoke_subprotocol::<CheckpointSubprotocol>();
         stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
 }
@@ -48,12 +46,12 @@ impl StrataAsmSpec {
     /// Creates a new ASM spec instance.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
-        checkpoint_v0_params: CheckpointV0Params,
+        checkpoint_config: CheckpointConfig,
         bridge_v1_genesis: BridgeV1Config,
     ) -> Self {
         Self {
             magic_bytes,
-            checkpoint_v0_params,
+            checkpoint_config,
             bridge_v1_genesis,
         }
     }
@@ -61,12 +59,10 @@ impl StrataAsmSpec {
     pub fn from_params(params: &RollupParams) -> Self {
         let OperatorConfig::Static(operators) = params.operator_config.clone();
 
-        let checkpoint_v0_params = CheckpointV0Params {
-            verification_params: CheckpointV0VerificationParams {
-                genesis_l1_block: params.genesis_l1_view.blk,
-                cred_rule: params.cred_rule.clone(),
-                predicate: params.checkpoint_predicate.clone(),
-            },
+        let checkpoint_config = CheckpointConfig {
+            sequencer_cred: params.cred_rule.clone(),
+            checkpoint_predicate: params.checkpoint_predicate.clone(),
+            genesis_l1_block: params.genesis_l1_view.blk,
         };
 
         let operators = operators
@@ -84,7 +80,7 @@ impl StrataAsmSpec {
 
         Self {
             magic_bytes: params.magic_bytes,
-            checkpoint_v0_params,
+            checkpoint_config,
             bridge_v1_genesis,
         }
     }
