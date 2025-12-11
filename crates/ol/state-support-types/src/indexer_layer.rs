@@ -517,3 +517,579 @@ where
         self.inner.compute_state_root()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::BitcoinAmount;
+    use strata_asm_manifest_types::AsmManifest;
+    use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
+    use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData};
+    use strata_ol_state_types::OLState;
+    use strata_snark_acct_types::Seqno;
+
+    use super::*;
+    use crate::test_utils::*;
+
+    // =========================================================================
+    // Pass-through tests
+    // =========================================================================
+
+    #[test]
+    fn test_passthrough_slot() {
+        let state = OLState::new_genesis();
+        let mut indexer = IndexerState::new(state);
+
+        // Test initial slot
+        assert_eq!(indexer.cur_slot(), 0);
+
+        // Test setting slot
+        indexer.set_cur_slot(42);
+        assert_eq!(indexer.cur_slot(), 42);
+
+        // Verify inner state was updated
+        let (inner, _) = indexer.into_parts();
+        assert_eq!(inner.cur_slot(), 42);
+    }
+
+    #[test]
+    fn test_passthrough_epoch() {
+        let state = OLState::new_genesis();
+        let mut indexer = IndexerState::new(state);
+
+        // Test initial epoch
+        assert_eq!(indexer.cur_epoch(), 0);
+
+        // Test setting epoch
+        indexer.set_cur_epoch(5);
+        assert_eq!(indexer.cur_epoch(), 5);
+
+        // Verify inner state was updated
+        let (inner, _) = indexer.into_parts();
+        assert_eq!(inner.cur_epoch(), 5);
+    }
+
+    #[test]
+    fn test_passthrough_get_account_state() {
+        let account_id = test_account_id(1);
+        let (state, serial) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let indexer = IndexerState::new(state);
+
+        // Verify account can be retrieved
+        let account = indexer.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.serial(), serial);
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+    }
+
+    #[test]
+    fn test_passthrough_check_account_exists() {
+        let account_id = test_account_id(1);
+        let nonexistent_id = test_account_id(99);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let indexer = IndexerState::new(state);
+
+        assert!(indexer.check_account_exists(account_id).unwrap());
+        assert!(!indexer.check_account_exists(nonexistent_id).unwrap());
+    }
+
+    #[test]
+    fn test_passthrough_create_account() {
+        let state = OLState::new_genesis();
+        let mut indexer = IndexerState::new(state);
+
+        let account_id = test_account_id(1);
+        let snark_state = test_snark_account_state(1);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(5000),
+            AccountTypeState::Snark(snark_state),
+        );
+
+        let serial = indexer.create_new_account(account_id, new_acct).unwrap();
+
+        // Verify account was created
+        assert!(indexer.check_account_exists(account_id).unwrap());
+        let account = indexer.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.serial(), serial);
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+    }
+
+    #[test]
+    fn test_passthrough_compute_state_root() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+
+        // Get state root directly
+        let direct_root = state.compute_state_root().unwrap();
+
+        // Get state root through indexer
+        let indexer = IndexerState::new(state);
+        let indexer_root = indexer.compute_state_root().unwrap();
+
+        assert_eq!(direct_root, indexer_root);
+    }
+
+    // =========================================================================
+    // Write tracking tests
+    // =========================================================================
+
+    #[test]
+    fn test_tracks_inbox_message_writes() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        // Insert a message into the inbox
+        let msg = test_message_entry(50, 0, 2000);
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        // Verify the write was tracked
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.inbox_messages().len(), 1);
+        assert_eq!(writes.inbox_messages()[0].account_id, account_id);
+        assert_eq!(writes.inbox_messages()[0].index, 0); // First message at index 0
+    }
+
+    #[test]
+    fn test_tracks_multiple_inbox_writes_same_account() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        // Insert multiple messages
+        for i in 0..3 {
+            let msg = test_message_entry(i, 0, (i as u64 + 1) * 1000);
+            indexer
+                .update_account(account_id, |acct| {
+                    acct.as_snark_account_mut()
+                        .unwrap()
+                        .insert_inbox_message(msg.clone())
+                })
+                .unwrap()
+                .unwrap();
+        }
+
+        // Verify all writes were tracked
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.inbox_messages().len(), 3);
+
+        // Verify indices are sequential
+        for (i, write) in writes.inbox_messages().iter().enumerate() {
+            assert_eq!(write.index, i as u64);
+            assert_eq!(write.account_id, account_id);
+        }
+    }
+
+    #[test]
+    fn test_tracks_writes_across_accounts() {
+        let account_id_1 = test_account_id(1);
+        let account_id_2 = test_account_id(2);
+
+        // Setup state with two snark accounts
+        let mut state = OLState::new_genesis();
+        let snark_state_1 = test_snark_account_state(1);
+        let snark_state_2 = test_snark_account_state(2);
+        state
+            .create_new_account(
+                account_id_1,
+                NewAccountData::new(
+                    BitcoinAmount::from_sat(1000),
+                    AccountTypeState::Snark(snark_state_1),
+                ),
+            )
+            .unwrap();
+        state
+            .create_new_account(
+                account_id_2,
+                NewAccountData::new(
+                    BitcoinAmount::from_sat(2000),
+                    AccountTypeState::Snark(snark_state_2),
+                ),
+            )
+            .unwrap();
+
+        let mut indexer = IndexerState::new(state);
+
+        // Insert message to first account
+        let msg1 = test_message_entry(10, 0, 1000);
+        indexer
+            .update_account(account_id_1, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg1.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        // Insert message to second account
+        let msg2 = test_message_entry(20, 0, 2000);
+        indexer
+            .update_account(account_id_2, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg2.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        // Verify writes for both accounts
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.inbox_messages().len(), 2);
+
+        // First write should be for account 1
+        assert_eq!(writes.inbox_messages()[0].account_id, account_id_1);
+        assert_eq!(writes.inbox_messages()[0].index, 0);
+
+        // Second write should be for account 2
+        assert_eq!(writes.inbox_messages()[1].account_id, account_id_2);
+        assert_eq!(writes.inbox_messages()[1].index, 0);
+    }
+
+    #[test]
+    fn test_tracks_manifest_writes() {
+        let state = OLState::new_genesis();
+        let mut indexer = IndexerState::new(state);
+
+        // Create a test manifest
+        let height = L1Height::from(100u32);
+        let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
+        let wtxids_root = WtxidsRoot::from(Buf32::from([2u8; 32]));
+        let manifest = AsmManifest::new(l1_blkid, wtxids_root, vec![]);
+
+        // Append the manifest
+        indexer.append_manifest(height, manifest.clone());
+
+        // Verify the write was tracked
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.manifests().len(), 1);
+        assert_eq!(writes.manifests()[0].height, height);
+    }
+
+    // =========================================================================
+    // Modification flag tests
+    // =========================================================================
+
+    #[test]
+    fn test_modification_flag_on_balance_add() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        // Add balance
+        indexer
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        // Verify the balance was actually updated in inner state
+        let (inner, _) = indexer.into_parts();
+        let account = inner.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(1500));
+    }
+
+    #[test]
+    fn test_modification_flag_on_balance_take() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        // Take balance
+        indexer
+            .update_account(account_id, |acct| {
+                let coin = acct.take_balance(BitcoinAmount::from_sat(300)).unwrap();
+                coin.safely_consume_unchecked();
+            })
+            .unwrap();
+
+        // Verify the balance was actually updated in inner state
+        let (inner, _) = indexer.into_parts();
+        let account = inner.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(700));
+    }
+
+    #[test]
+    fn test_modification_flag_on_snark_update() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        // Update snark state
+        let new_hash = test_hash(99);
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .set_proof_state_directly(new_hash, 0, Seqno::from(1));
+            })
+            .unwrap();
+
+        // Verify the snark state was updated
+        let (inner, _) = indexer.into_parts();
+        let account = inner.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(
+            account.as_snark_account().unwrap().inner_state_root(),
+            new_hash
+        );
+    }
+
+    #[test]
+    fn test_no_modification_when_closure_doesnt_mutate() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let original_root = state.compute_state_root().unwrap();
+        let mut indexer = IndexerState::new(state);
+
+        // Call update_account but don't actually modify anything
+        indexer
+            .update_account(account_id, |acct| {
+                // Just read the balance, don't modify
+                let _ = acct.balance();
+            })
+            .unwrap();
+
+        // Verify no writes were tracked (at least for inbox)
+        let (inner, writes) = indexer.into_parts();
+        assert!(writes.inbox_messages().is_empty());
+
+        // State root should be unchanged
+        assert_eq!(inner.compute_state_root().unwrap(), original_root);
+    }
+
+    // =========================================================================
+    // State consistency tests (direct vs wrapped)
+    // =========================================================================
+
+    #[test]
+    fn test_direct_vs_wrapped_inbox_insert() {
+        let account_id = test_account_id(1);
+        let balance = BitcoinAmount::from_sat(1000);
+
+        // Create two identical states
+        let (mut direct_state, _) =
+            setup_state_with_snark_account(account_id, 1, balance);
+        let (base_state, _) = setup_state_with_snark_account(account_id, 1, balance);
+        let mut wrapped_state = IndexerState::new(base_state);
+
+        // Create identical message
+        let msg = test_message_entry(50, 0, 2000);
+
+        // Apply to direct state
+        direct_state
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        // Apply to wrapped state
+        wrapped_state
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        // Extract inner state from wrapper
+        let (inner_state, writes) = wrapped_state.into_parts();
+
+        // Compare account states
+        let direct_acct = direct_state.get_account_state(account_id).unwrap().unwrap();
+        let wrapped_acct = inner_state.get_account_state(account_id).unwrap().unwrap();
+
+        assert_eq!(direct_acct.balance(), wrapped_acct.balance());
+        assert_eq!(
+            direct_acct.as_snark_account().unwrap().inbox_mmr().num_entries(),
+            wrapped_acct.as_snark_account().unwrap().inbox_mmr().num_entries()
+        );
+
+        // Verify writes were tracked
+        assert_eq!(writes.inbox_messages().len(), 1);
+        assert_eq!(writes.inbox_messages()[0].index, 0);
+    }
+
+    #[test]
+    fn test_direct_vs_wrapped_balance_update() {
+        let account_id = test_account_id(1);
+        let balance = BitcoinAmount::from_sat(1000);
+
+        // Create two identical states
+        let (mut direct_state, _) =
+            setup_state_with_snark_account(account_id, 1, balance);
+        let (base_state, _) = setup_state_with_snark_account(account_id, 1, balance);
+        let mut wrapped_state = IndexerState::new(base_state);
+
+        // Apply balance change to both
+        let add_amount = BitcoinAmount::from_sat(500);
+
+        direct_state
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(add_amount);
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        wrapped_state
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(add_amount);
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        // Extract inner state from wrapper
+        let (inner_state, _) = wrapped_state.into_parts();
+
+        // Compare balances
+        let direct_acct = direct_state.get_account_state(account_id).unwrap().unwrap();
+        let wrapped_acct = inner_state.get_account_state(account_id).unwrap().unwrap();
+
+        assert_eq!(direct_acct.balance(), wrapped_acct.balance());
+        assert_eq!(wrapped_acct.balance(), BitcoinAmount::from_sat(1500));
+    }
+
+    // =========================================================================
+    // Write data accuracy tests
+    // =========================================================================
+
+    #[test]
+    fn test_inbox_write_captures_pre_insertion_index() {
+        let account_id = test_account_id(1);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        // Insert three messages sequentially
+        for i in 0..3 {
+            let msg = test_message_entry(i, 0, (i as u64 + 1) * 1000);
+            indexer
+                .update_account(account_id, |acct| {
+                    acct.as_snark_account_mut()
+                        .unwrap()
+                        .insert_inbox_message(msg.clone())
+                })
+                .unwrap()
+                .unwrap();
+        }
+
+        let (_, writes) = indexer.into_parts();
+
+        // Verify indices are the BEFORE-insertion indices (0, 1, 2)
+        assert_eq!(writes.inbox_messages()[0].index, 0);
+        assert_eq!(writes.inbox_messages()[1].index, 1);
+        assert_eq!(writes.inbox_messages()[2].index, 2);
+    }
+
+    #[test]
+    fn test_inbox_write_captures_correct_account_id() {
+        let account_id = test_account_id(42);
+        let (state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        let msg = test_message_entry(1, 0, 1000);
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.inbox_messages()[0].account_id, account_id);
+    }
+
+    #[test]
+    fn test_writes_empty_initially() {
+        let state = OLState::new_genesis();
+        let indexer = IndexerState::new(state);
+
+        assert!(indexer.writes().is_empty());
+        assert!(indexer.writes().inbox_messages().is_empty());
+        assert!(indexer.writes().manifests().is_empty());
+    }
+
+    #[test]
+    fn test_into_parts_returns_inner_and_writes() {
+        let account_id = test_account_id(1);
+        let (state, serial) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let mut indexer = IndexerState::new(state);
+
+        // Make a modification
+        let msg = test_message_entry(1, 0, 1000);
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        let (inner, writes) = indexer.into_parts();
+
+        // Verify inner state is intact
+        let account = inner.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.serial(), serial);
+
+        // Verify writes were collected
+        assert_eq!(writes.inbox_messages().len(), 1);
+    }
+}
