@@ -3,6 +3,7 @@
 mod cache;
 mod exec;
 mod managers;
+pub mod mmr_db;
 pub mod ops;
 
 use std::sync::Arc;

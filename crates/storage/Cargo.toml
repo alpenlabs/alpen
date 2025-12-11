@@ -11,6 +11,7 @@ strata-asm-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
+strata-merkle = { workspace = true, features = ["ssz"] }
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
@@ -20,6 +21,8 @@ strata-storage-common.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+ssz_types.workspace = true
+thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
