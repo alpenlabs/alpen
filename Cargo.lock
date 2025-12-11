@@ -14708,7 +14708,6 @@ dependencies = [
 name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-identifiers",

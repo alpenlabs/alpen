@@ -3,8 +3,11 @@
 use std::collections::BTreeMap;
 
 use strata_acct_types::{AccountId, AccountSerial};
-use strata_ledger_types::{IAccountStateConstructible, NewAccountData};
+use strata_identifiers::L1BlockCommitment;
+use strata_ledger_types::{IAccountStateConstructible, IStateAccessor, NewAccountData};
 use strata_ol_state_types::{EpochalState, GlobalState};
+
+use crate::SerialMap;
 
 /// A batch of writes to the OL state.
 ///
@@ -25,6 +28,27 @@ impl<A> WriteBatch<A> {
             epochal,
             ledger: LedgerWriteBatch::new(),
         }
+    }
+
+    /// Creates a new write batch by extracting state from a state accessor.
+    ///
+    /// This initializes the global and epochal state from the accessor's current values.
+    pub fn new_from_state<S>(state: &S) -> Self
+    where
+        S: IStateAccessor<AccountState = A>,
+    {
+        let global = GlobalState::new(state.cur_slot());
+        let epochal = EpochalState::new(
+            state.total_ledger_balance(),
+            state.cur_epoch(),
+            L1BlockCommitment::from_height_u64(
+                state.last_l1_height() as u64,
+                *state.last_l1_blkid(),
+            )
+            .expect("state: invalid L1 height"),
+            state.asm_recorded_epoch().clone(),
+        );
+        WriteBatch::new(global, epochal)
     }
 
     /// Returns a reference to the global state in this batch.
@@ -64,21 +88,8 @@ pub struct LedgerWriteBatch<A> {
     /// Tracks the state of new and updated accounts.
     account_writes: BTreeMap<AccountId, A>,
 
-    /// Tracks the order we insert new accounts into the serials MMR.
-    new_accounts: Vec<AccountId>,
-
-    /// Maps serial -> account ID for newly created accounts.
-    serial_to_id: BTreeMap<AccountSerial, AccountId>,
-}
-
-impl<A> Default for LedgerWriteBatch<A> {
-    fn default() -> Self {
-        Self {
-            account_writes: BTreeMap::new(),
-            new_accounts: Vec::new(),
-            serial_to_id: BTreeMap::new(),
-        }
-    }
+    /// Maps serial -> account ID for newly created accounts (contiguous serials).
+    serial_to_id: SerialMap,
 }
 
 impl<A> LedgerWriteBatch<A> {
@@ -97,8 +108,8 @@ impl<A> LedgerWriteBatch<A> {
         }
 
         self.account_writes.insert(id, state);
-        self.new_accounts.push(id);
-        self.serial_to_id.insert(serial, id);
+        let inserted = self.serial_to_id.insert_next(serial, id);
+        debug_assert!(inserted, "state/wb: serial not contiguous");
     }
 
     /// Creates a new account from new account data with the given serial.
@@ -138,16 +149,25 @@ impl<A> LedgerWriteBatch<A> {
 
     /// Looks up an account ID by serial in the newly created accounts.
     pub fn find_id_by_serial(&self, serial: AccountSerial) -> Option<AccountId> {
-        self.serial_to_id.get(&serial).copied()
+        self.serial_to_id.get(serial).copied()
     }
 
     /// Returns the list of new account IDs in creation order.
     pub fn new_accounts(&self) -> &[AccountId] {
-        &self.new_accounts
+        self.serial_to_id.ids()
     }
 
     /// Returns an iterator over all written accounts.
     pub fn iter_accounts(&self) -> impl Iterator<Item = (&AccountId, &A)> {
         self.account_writes.iter()
+    }
+}
+
+impl<A> Default for LedgerWriteBatch<A> {
+    fn default() -> Self {
+        Self {
+            account_writes: BTreeMap::new(),
+            serial_to_id: SerialMap::new(),
+        }
     }
 }

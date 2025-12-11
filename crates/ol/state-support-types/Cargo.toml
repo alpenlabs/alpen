@@ -15,8 +15,5 @@ tracing = { workspace = true, optional = true }
 [features]
 tracing = ["dep:tracing"]
 
-[dev-dependencies]
-bitcoin.workspace = true
-
 [lints]
 workspace = true
