@@ -1,12 +1,20 @@
 //! Unstake Transaction Parser
 //!
-//! This module provides functionality for parsing Bitcoin unstake transactions
+//! This module provides functionality for parsing Bitcoin unstaking intent transactions
 //! that follow the SPS-50 specification for the Strata bridge protocol.
+//!
+//! ## Note on Terminology
+//!
+//! In the ASM context, "unstake transaction" refers to the **unstaking intent** transaction.
+//! While there is a separate unstaking transaction that actually transfers funds back to the
+//! operator, ASM only parses and validates the unstaking intent transaction. Once the unstaking
+//! intent transaction is observed on-chain, the operator is immediately removed from bridge
+//! duties, regardless of whether the final unstaking transaction is seen.
 //!
 //! ## Unstake Transaction Structure
 //!
-//! An unstake transaction is posted by an operator if it wants to exit from bridge duties and
-//! have its staked funds back.
+//! An unstaking intent transaction is posted by an operator when it wants to exit from bridge
+//! duties and have its staked funds returned.
 //!
 //! ### Inputs
 //! - 1. **Stake connector**: Locked to the N-of-N multisig and hashlock.
@@ -19,10 +27,6 @@
 //!     - Transaction type (1 byte): Unstake transaction type
 //!     - Auxiliary data (4 bytes):
 //!         - Operator index (4 bytes, encoded using [`strata_codec::Codec`] which uses big-endian)
-//!
-//! Additional output sends the stake to the operator, but ASM skips validating them because
-//! correctness is assumed to be enforced during presigning as they spend from the same N/N
-//! multisig.
 
 mod aux;
 mod info;

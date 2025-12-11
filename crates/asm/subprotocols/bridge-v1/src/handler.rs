@@ -5,24 +5,16 @@ use strata_asm_txs_bridge_v1::parser::{ParsedDepositTx, ParsedTx};
 
 use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
 
-/// Handles parsed transactions and update the bridge state accordingly.
+/// Handles parsed bridge transactions.
 ///
-/// # Transaction Types and Log Behavior:
-/// - **Deposit**: Processes the deposit transaction without emitting logs
-/// - **WithdrawalFulfillment**: Processes the withdrawal and emits a withdrawal processed log via
-///   the relayer to notify other components of the processed withdrawal
-/// - **Slash**: Processes slash transactions after validating the stake connector is locked to any
-///   valid N/N multisig.
-///
-/// # Arguments
-/// * `state` - Mutable reference to the bridge state to be updated
-/// * `parsed_tx` - The parsed transaction to handle
-/// * `verified_aux_data` - Auxiliary data containing referenced transaction outputs
-/// * `relayer` - The message relayer used for emitting logs
+/// This function processes each transaction type according to its specific requirements:
+/// - Validating transaction-specific rules and constraints
+/// - Updating the bridge state
+/// - Emitting logs or relaying InterProtocolMsg if needed
 ///
 /// # Returns
 /// * `Ok(())` if the transaction was processed successfully
-/// * `Err(BridgeSubprotocolError)` if an error occurred during processing
+/// * `Err(BridgeSubprotocolError)` if validation fails or an error occurred during processing
 pub(crate) fn handle_parsed_tx<'t>(
     state: &mut BridgeV1State,
     parsed_tx: ParsedTx<'t>,
@@ -89,16 +81,7 @@ pub(crate) fn handle_parsed_tx<'t>(
 /// Pre-processes a parsed transaction to collect auxiliary data requests.
 ///
 /// This function inspects the transaction type and requests any additional data needed
-/// for full verification during the main processing phase. Currently handles:
-///
-/// - **Deposit transactions**: No auxiliary data required
-/// - **Withdrawal fulfillment transactions**: No auxiliary data required
-/// - **Slash transactions**: Requests the Bitcoin transaction spent by the stake connector (second
-///   input). We need this information to verify the stake connector is locked to a known N/N
-///   multisig.
-/// - **Unstake transactions**: Requests the Bitcoin transaction spent by the stake connector
-///   (second input). We need this information to verify the stake connector is locked to a known
-///   N/N multisig.
+/// for the main processing phase.
 pub(crate) fn preprocess_parsed_tx<'t>(
     parsed_tx: ParsedTx<'t>,
     _state: &BridgeV1State,
@@ -108,6 +91,8 @@ pub(crate) fn preprocess_parsed_tx<'t>(
         ParsedTx::Deposit(_) => {}
         ParsedTx::WithdrawalFulfillment(_) => {}
         ParsedTx::Slash(info) => {
+            // Requests the Bitcoin transaction spent by the stake connector (second input). We need
+            // this information to verify the stake connector is locked to a known N/N multisig.
             collector.request_bitcoin_tx(info.second_inpoint().0.txid);
         }
         ParsedTx::Unstake(_) => {}

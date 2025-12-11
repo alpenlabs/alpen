@@ -23,6 +23,9 @@ pub const STAKE_INPUT_INDEX: usize = 0;
 /// Enforcing the length lets us index directly and fail fast on malformed witnesses.
 const STAKE_WITNESS_ITEMS: usize = 4;
 
+/// Index of the executed script in witness stack.
+const SCRIPT_INDEX: usize = 2;
+
 /// Parse an unstake transaction to extract [`UnstakeInfo`].
 ///
 /// Parses an unstake transaction following the SPS-50 specification and extracts the auxiliary
@@ -47,8 +50,8 @@ pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeT
             actual: witness_len,
         });
     }
-    // With fixed layout, grab the script directly (index 2).
-    let script = ScriptBuf::from_bytes(witness[2].to_vec());
+    // With fixed layout, grab the script directly.
+    let script = ScriptBuf::from_bytes(witness[SCRIPT_INDEX].to_vec());
 
     // Validate the script and extract parameters in one step.
     // This extracts nn_pubkey and stake_hash, reconstructs the expected script,
