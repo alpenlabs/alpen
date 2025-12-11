@@ -5,6 +5,7 @@
 
 mod batch_diff_layer;
 mod indexer_layer;
+mod serial_map;
 mod write_batch;
 mod write_tracking_layer;
 
@@ -19,5 +20,6 @@ pub use indexer_layer::{
     AccumulatorWrites, InboxMessageWrite, IndexerAccountStateMut, IndexerSnarkAccountStateMut,
     IndexerState, ManifestWrite,
 };
+pub use serial_map::SerialMap;
 pub use write_batch::{LedgerWriteBatch, WriteBatch};
 pub use write_tracking_layer::WriteTrackingState;

@@ -202,32 +202,13 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::absolute;
     use strata_acct_types::{AcctError, BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_identifiers::{AccountSerial, Buf32, L1BlockCommitment, L1BlockId};
+    use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
     use strata_ledger_types::{AccountTypeState, IAccountState, IStateAccessor, NewAccountData};
-    use strata_ol_state_types::{EpochalState, GlobalState, OLState};
+    use strata_ol_state_types::OLState;
 
     use super::*;
     use crate::test_utils::*;
-
-    /// Helper to create a WriteBatch initialized from a base OLState.
-    fn create_batch_from_state(
-        state: &OLState,
-    ) -> WriteBatch<<OLState as IStateAccessor>::AccountState> {
-        let epochal = EpochalState::new(
-            state.total_ledger_balance(),
-            state.cur_epoch(),
-            L1BlockCommitment::new(
-                absolute::Height::from_consensus(state.last_l1_height().into()).unwrap(),
-                *state.last_l1_blkid(),
-            ),
-            state.asm_recorded_epoch().clone(),
-        );
-        let global = GlobalState::new(state.cur_slot());
-
-        WriteBatch::new(global, epochal)
-    }
 
     // =========================================================================
     // Empty batch tests (pure passthrough)
@@ -282,7 +263,7 @@ mod tests {
         let base_state = OLState::new_genesis();
 
         // Create a batch with an account
-        let mut batch = create_batch_from_state(&base_state);
+        let mut batch = WriteBatch::new_from_state(&base_state);
         let snark_state = test_snark_account_state(1);
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(5000),
@@ -307,7 +288,7 @@ mod tests {
         let account_id = test_account_id(1);
         let base_state = OLState::new_genesis();
 
-        let mut batch = create_batch_from_state(&base_state);
+        let mut batch = WriteBatch::new_from_state(&base_state);
         let snark_state = test_snark_account_state(1);
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(5000),
@@ -328,7 +309,7 @@ mod tests {
     fn test_global_state_from_top_batch() {
         let base_state = OLState::new_at(5, 100);
 
-        let mut batch = create_batch_from_state(&base_state);
+        let mut batch = WriteBatch::new_from_state(&base_state);
         batch.global_mut().set_cur_slot(200);
         batch.epochal_mut().set_cur_epoch(10);
 
@@ -349,7 +330,7 @@ mod tests {
         let base_state = OLState::new_genesis();
 
         // First batch: account with 1000 sats
-        let mut batch1 = create_batch_from_state(&base_state);
+        let mut batch1 = WriteBatch::new_from_state(&base_state);
         let snark_state1 = test_snark_account_state(1);
         let new_acct1 = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
@@ -362,7 +343,7 @@ mod tests {
 
         // Second batch (more recent): same account with 5000 sats
         // This batch shadows the first, so uses a different serial
-        let mut batch2 = create_batch_from_state(&base_state);
+        let mut batch2 = WriteBatch::new_from_state(&base_state);
         let snark_state2 = test_snark_account_state(2);
         let new_acct2 = NewAccountData::new(
             BitcoinAmount::from_sat(5000),
@@ -388,7 +369,7 @@ mod tests {
         let base_state = OLState::new_genesis();
 
         // First batch: account 1
-        let mut batch1 = create_batch_from_state(&base_state);
+        let mut batch1 = WriteBatch::new_from_state(&base_state);
         let snark_state1 = test_snark_account_state(1);
         let new_acct1 = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
@@ -400,7 +381,7 @@ mod tests {
             .create_account_from_data(account_id_1, new_acct1, serial1);
 
         // Second batch: account 2 only
-        let mut batch2 = create_batch_from_state(&base_state);
+        let mut batch2 = WriteBatch::new_from_state(&base_state);
         let snark_state2 = test_snark_account_state(2);
         let new_acct2 = NewAccountData::new(
             BitcoinAmount::from_sat(2000),
@@ -430,7 +411,7 @@ mod tests {
         let (base_state, _) =
             setup_state_with_snark_account(account_id_base, 1, BitcoinAmount::from_sat(1000));
 
-        let mut batch = create_batch_from_state(&base_state);
+        let mut batch = WriteBatch::new_from_state(&base_state);
         let snark_state = test_snark_account_state(2);
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(2000),
@@ -464,7 +445,7 @@ mod tests {
         let account_id = test_account_id(1);
         let base_state = OLState::new_genesis();
 
-        let mut batch = create_batch_from_state(&base_state);
+        let mut batch = WriteBatch::new_from_state(&base_state);
         let snark_state = test_snark_account_state(1);
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
@@ -534,7 +515,7 @@ mod tests {
     fn test_epochal_state_from_top_batch() {
         let base_state = OLState::new_genesis();
 
-        let mut batch = create_batch_from_state(&base_state);
+        let mut batch = WriteBatch::new_from_state(&base_state);
         batch
             .epochal_mut()
             .set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
@@ -551,7 +532,7 @@ mod tests {
     #[test]
     fn test_last_l1_blkid_from_batch() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
+        let batch = WriteBatch::new_from_state(&base_state);
 
         let batches = vec![batch];
         let diff_state = BatchDiffState::new(&base_state, &batches);

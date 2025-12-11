@@ -43,6 +43,15 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
         Self { base, batch }
     }
 
+    /// Creates a new write-tracking state with a batch initialized from the base state.
+    ///
+    /// This is a convenience method that creates the write batch from the base state
+    /// and wraps them together.
+    pub fn new_from_state(base: &'base S) -> Self {
+        let batch = WriteBatch::new_from_state(base);
+        Self { base, batch }
+    }
+
     /// Returns a reference to the underlying write batch.
     pub fn batch(&self) -> &WriteBatch<S::AccountState> {
         &self.batch
@@ -187,36 +196,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::absolute;
     use strata_acct_types::{AcctError, BitcoinAmount};
     use strata_asm_manifest_types::AsmManifest;
-    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
+    use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
     use strata_ledger_types::{
         AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData,
     };
-    use strata_ol_state_types::{EpochalState, GlobalState, OLState};
+    use strata_ol_state_types::OLState;
 
     use super::*;
-    use crate::{test_utils::*, write_batch::WriteBatch};
-
-    /// Helper to create a WriteBatch initialized from a base OLState.
-    fn create_batch_from_state(
-        state: &OLState,
-    ) -> WriteBatch<<OLState as IStateAccessor>::AccountState> {
-        // Create epochal state matching the base
-        let epochal = EpochalState::new(
-            state.total_ledger_balance(),
-            state.cur_epoch(),
-            L1BlockCommitment::new(
-                absolute::Height::from_consensus(state.last_l1_height().into()).unwrap(),
-                *state.last_l1_blkid(),
-            ),
-            state.asm_recorded_epoch().clone(),
-        );
-        let global = GlobalState::new(state.cur_slot());
-
-        WriteBatch::new(global, epochal)
-    }
+    use crate::test_utils::*;
 
     // =========================================================================
     // Copy-on-write tests
@@ -228,8 +217,7 @@ mod tests {
         let (base_state, serial) =
             setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-        let batch = create_batch_from_state(&base_state);
-        let tracking = WriteTrackingState::new(&base_state, batch);
+        let tracking = WriteTrackingState::new_from_state(&base_state);
 
         // Read should fall back to base since batch is empty
         let account = tracking.get_account_state(account_id).unwrap().unwrap();
@@ -244,8 +232,7 @@ mod tests {
         let (base_state, _) =
             setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-        let batch = create_batch_from_state(&base_state);
-        let tracking = WriteTrackingState::new(&base_state, batch);
+        let tracking = WriteTrackingState::new_from_state(&base_state);
 
         assert!(tracking.check_account_exists(account_id).unwrap());
         assert!(!tracking.check_account_exists(nonexistent_id).unwrap());
@@ -262,8 +249,7 @@ mod tests {
             .unwrap()
             .balance();
 
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         // Modify account
         tracking
@@ -291,8 +277,7 @@ mod tests {
         let (base_state, _) =
             setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         // Modify the account to put it in the batch
         tracking
@@ -322,8 +307,7 @@ mod tests {
     #[test]
     fn test_create_account_in_batch() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let account_id = test_account_id(1);
         let snark_state = test_snark_account_state(1);
@@ -349,8 +333,7 @@ mod tests {
     #[test]
     fn test_find_account_id_by_serial_for_new_account() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let account_id = test_account_id(1);
         let snark_state = test_snark_account_state(1);
@@ -373,8 +356,7 @@ mod tests {
     #[test]
     fn test_slot_modifications_in_batch() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         assert_eq!(tracking.cur_slot(), 0);
 
@@ -389,8 +371,7 @@ mod tests {
     #[test]
     fn test_epoch_modifications_in_batch() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         assert_eq!(tracking.cur_epoch(), 0);
 
@@ -405,8 +386,7 @@ mod tests {
     #[test]
     fn test_total_ledger_balance_in_batch() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         tracking.set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
 
@@ -419,8 +399,7 @@ mod tests {
     #[test]
     fn test_manifest_append_in_batch() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let height = L1Height::from(100u32);
         let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
@@ -440,8 +419,7 @@ mod tests {
     #[test]
     fn test_compute_state_root_returns_unsupported() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let tracking = WriteTrackingState::new(&base_state, batch);
+        let tracking = WriteTrackingState::new_from_state(&base_state);
 
         let result = tracking.compute_state_root();
         assert!(matches!(result, Err(AcctError::Unsupported)));
@@ -457,8 +435,7 @@ mod tests {
         let (base_state, _) =
             setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         // Make some modifications
         tracking.set_cur_slot(100);
@@ -483,8 +460,7 @@ mod tests {
     #[test]
     fn test_batch_reference_accessible() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let tracking = WriteTrackingState::new(&base_state, batch);
+        let tracking = WriteTrackingState::new_from_state(&base_state);
 
         // Should be able to access batch via reference
         let batch_ref = tracking.batch();
@@ -498,8 +474,7 @@ mod tests {
     #[test]
     fn test_update_nonexistent_account_returns_error() {
         let base_state = OLState::new_genesis();
-        let batch = create_batch_from_state(&base_state);
-        let mut tracking = WriteTrackingState::new(&base_state, batch);
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let nonexistent_id = test_account_id(99);
         let result = tracking.update_account(nonexistent_id, |_acct| {});
