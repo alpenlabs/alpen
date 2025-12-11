@@ -8,6 +8,8 @@ use crate::{
     },
 };
 
+type Root = Hash;
+
 impl EncodedAccountInnerState {
     pub fn raw_ty(&self) -> RawAccountTypeId {
         self.intrinsics.raw_ty()

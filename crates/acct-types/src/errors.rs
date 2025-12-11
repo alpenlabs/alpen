@@ -1,7 +1,7 @@
 use strata_identifiers::AccountId;
 use thiserror::Error;
 
-use crate::{AccountTypeId, RawAccountTypeId};
+use crate::AccountTypeId;
 
 pub type AcctResult<T> = Result<T, AcctError>;
 
