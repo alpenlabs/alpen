@@ -55,7 +55,9 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_commit_tx, mutate_aux_data, parse_tx};
+    use crate::test_utils::{
+        TEST_MAGIC_BYTES, create_test_commit_tx, mutate_aux_data, parse_sps50_tx,
+    };
 
     const COMMIT_TX_AUX_DATA_LEN: usize = std::mem::size_of::<CommitTxHeaderAux>();
 
@@ -90,7 +92,7 @@ mod tests {
         let shorter_aux = vec![0u8; COMMIT_TX_AUX_DATA_LEN - 1];
         mutate_aux_data(&mut tx, shorter_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
 
         assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
@@ -99,7 +101,7 @@ mod tests {
         let longer_aux = vec![0u8; COMMIT_TX_AUX_DATA_LEN + 1];
         mutate_aux_data(&mut tx, longer_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
         assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
     }

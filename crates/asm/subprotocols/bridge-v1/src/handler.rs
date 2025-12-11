@@ -106,7 +106,8 @@ mod tests {
         parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
         test_utils::{
-            build_connected_stake_and_unstake_txs, create_connected_stake_and_slash_txs, parse_tx,
+            build_connected_stake_and_unstake_txs, create_connected_stake_and_slash_txs,
+            parse_sps50_tx,
         },
         unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
     };
@@ -130,7 +131,7 @@ mod tests {
         // 3. Prepare ParsedTx
         // We need to re-parse the slash tx to get the correct SlashInfo with updated input
         // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
-        let slash_tx_input = parse_tx(&slash_tx);
+        let slash_tx_input = parse_sps50_tx(&slash_tx);
         let parsed_slash_info = parse_slash_tx(&slash_tx_input).expect("Should parse slash tx");
         let parsed_tx = ParsedTx::Slash(parsed_slash_info);
 
@@ -171,7 +172,7 @@ mod tests {
         // 3. Prepare ParsedTx
         // We need to re-parse the slash tx to get the correct SlashInfo with updated input
         // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
-        let unstake_tx_input = parse_tx(&unstake_tx);
+        let unstake_tx_input = parse_sps50_tx(&unstake_tx);
         let parsed_unstake_info =
             parse_unstake_tx(&unstake_tx_input).expect("Should parse slash tx");
         let parsed_tx = ParsedTx::Unstake(parsed_unstake_info);

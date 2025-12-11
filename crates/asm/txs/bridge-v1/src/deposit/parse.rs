@@ -57,7 +57,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_deposit_tx, mutate_aux_data, parse_tx};
+    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_deposit_tx, mutate_aux_data, parse_sps50_tx};
 
     /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
     /// - 4 bytes for deposit_idx (u32)
@@ -111,7 +111,7 @@ mod tests {
         let short_aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN - 1];
         mutate_aux_data(&mut tx, short_aux_data);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
         assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData(_)));
     }
@@ -128,7 +128,7 @@ mod tests {
         let aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN];
         mutate_aux_data(&mut tx, aux_data);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let result = parse_deposit_tx(&tx_input);
         assert!(result.is_ok(), "Should succeed with empty destination");
 
@@ -149,7 +149,7 @@ mod tests {
         // Remove the deposit output (keep only OP_RETURN at index 0)
         tx.output.truncate(1);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
         assert!(matches!(err, DepositTxParseError::MissingDepositOutput));
     }

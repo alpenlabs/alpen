@@ -72,7 +72,8 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        build_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data, parse_tx,
+        build_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data,
+        parse_sps50_tx,
     };
 
     const AUX_LEN: usize = std::mem::size_of::<UnstakeTxHeaderAux>();
@@ -89,7 +90,7 @@ mod tests {
     #[test]
     fn test_parse_unstake_tx_success() {
         let (info, tx) = create_slash_tx_with_info();
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
 
         let parsed = parse_unstake_tx(&tx_input).expect("Should parse unstake tx");
 
@@ -103,7 +104,7 @@ mod tests {
         // Remove the stake connector to force an input count mismatch
         tx.input.pop();
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_unstake_tx(&tx_input).unwrap_err();
         assert!(matches!(
             err,
@@ -118,14 +119,14 @@ mod tests {
         let larger_aux = [0u8; AUX_LEN + 1].to_vec();
         mutate_aux_data(&mut tx, larger_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_unstake_tx(&tx_input).unwrap_err();
         assert!(matches!(err, UnstakeTxParseError::InvalidAuxiliaryData(_)));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
         mutate_aux_data(&mut tx, smaller_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_unstake_tx(&tx_input).unwrap_err();
         assert!(matches!(err, UnstakeTxParseError::InvalidAuxiliaryData(_)));
     }
