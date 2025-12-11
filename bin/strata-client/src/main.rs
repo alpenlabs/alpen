@@ -103,10 +103,10 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // Open and initialize database
     let database = init_db::init_database(&config.client.datadir, config.client.db_retry_count)?;
-    let raw_db = database.raw_db().clone();
+    let asm_db_sled = database.asm_db_sled().clone();
     let storage = Arc::new(strata_storage::create_node_storage_with_sled(
         database.clone(),
-        raw_db,
+        asm_db_sled,
         pool.clone(),
     )?);
 

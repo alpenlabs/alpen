@@ -19,7 +19,7 @@ pub mod writer;
 use std::{path::Path, sync::Arc};
 
 // Re-exports
-use asm::AsmDBSled;
+pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
@@ -90,6 +90,19 @@ impl SledBackend {
             broadcast_db,
         })
     }
+<<<<<<< HEAD
+=======
+
+    /// Get the raw sled database handle for opening untyped trees
+    pub fn raw_db(&self) -> &Arc<sled::Db> {
+        &self.raw_db
+    }
+
+    /// Get the typed AsmDBSled for MMR database access
+    pub fn asm_db_sled(&self) -> &Arc<AsmDBSled> {
+        &self.asm_db
+    }
+>>>>>>> 58fcdbb4 (refactor(storage): Reorganize MMR with ops pattern)
 }
 
 impl DatabaseBackend for SledBackend {

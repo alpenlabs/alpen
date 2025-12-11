@@ -2,7 +2,7 @@
 //!
 //! This module provides bit manipulation utilities for navigating the MMR structure.
 //! Based on the Nervos MMR implementation:
-//! https://github.com/nervosnetwork/merkle-mountain-range
+//! <https://github.com/nervosnetwork/merkle-mountain-range>
 //!
 //! # MMR Structure
 //!
@@ -200,20 +200,6 @@ pub(super) fn get_peaks(mmr_size: u64) -> Vec<u64> {
     peaks
 }
 
-/// Check if a position is a peak in the MMR
-///
-/// # Arguments
-///
-/// * `pos` - Node position to check
-/// * `mmr_size` - Current MMR size
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Used in tests, utility for MMR operations")
-)]
-pub(super) fn is_peak(pos: u64, mmr_size: u64) -> bool {
-    get_peaks(mmr_size).contains(&pos)
-}
-
 /// Find which peak a given position belongs to
 ///
 /// Returns the position of the peak that contains the given position.
@@ -320,20 +306,6 @@ mod tests {
 
         // 11 nodes (7 leaves): [6, 9, 10]
         assert_eq!(get_peaks(11), vec![6, 9, 10]);
-    }
-
-    #[test]
-    fn test_is_peak() {
-        // 7 nodes: peak is 6
-        assert!(is_peak(6, 7));
-        assert!(!is_peak(0, 7));
-        assert!(!is_peak(2, 7));
-
-        // 11 nodes: peaks are 6, 9, 10
-        assert!(is_peak(6, 11));
-        assert!(is_peak(9, 11));
-        assert!(is_peak(10, 11));
-        assert!(!is_peak(0, 11));
     }
 
     #[test]

@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
-use strata_db_types::DbError;
+use strata_db_store_sled::asm::SledMmrDb;
+use strata_db_types::{traits::MmrDatabase, DbError};
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{AsmStateManager, L1BlockManager};
 use tokio::runtime::Handle;
+use tracing;
 
 #[expect(
     missing_debug_implementations,
@@ -19,8 +21,8 @@ pub struct AsmWorkerCtx {
     bitcoin_client: Arc<Client>,
     l1man: Arc<L1BlockManager>,
     asmman: Arc<AsmStateManager>,
-    /// Lazily initialized MMR database (created on first use)
-    mmr_db: std::sync::Mutex<Option<strata_storage::mmr_db::SledMmrDb>>,
+    /// MMR database for proof generation
+    mmr_db: Arc<SledMmrDb>,
 }
 
 impl AsmWorkerCtx {
@@ -29,31 +31,15 @@ impl AsmWorkerCtx {
         bitcoin_client: Arc<Client>,
         l1man: Arc<L1BlockManager>,
         asmman: Arc<AsmStateManager>,
+        mmr_db: Arc<SledMmrDb>,
     ) -> Self {
         Self {
             handle,
             bitcoin_client,
             l1man,
             asmman,
-            mmr_db: std::sync::Mutex::new(None),
+            mmr_db,
         }
-    }
-
-    /// Gets or initializes the MMR database
-    fn get_mmr_db(&self) -> WorkerResult<strata_storage::mmr_db::SledMmrDb> {
-        let mut mmr_db_lock = self.mmr_db.lock().map_err(|_| WorkerError::DbError)?;
-
-        if mmr_db_lock.is_none() {
-            // Initialize MMR database on first use
-            let db = self
-                .asmman
-                .create_mmr_database()
-                .map_err(|_| WorkerError::DbError)?;
-            *mmr_db_lock = Some(db);
-        }
-
-        // Clone the database (it's Arc-based internally via sled trees)
-        mmr_db_lock.as_ref().cloned().ok_or(WorkerError::DbError)
     }
 }
 
@@ -120,9 +106,7 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn append_manifest_to_mmr(&self, manifest_hash: [u8; 32]) -> WorkerResult<u64> {
-        let mut mmr_db = self.get_mmr_db()?;
-        use strata_storage::mmr_db::MmrDatabase;
-        mmr_db
+        self.mmr_db
             .append_leaf(manifest_hash)
             .map_err(|_| WorkerError::DbError)
     }
@@ -133,8 +117,8 @@ impl WorkerContext for AsmWorkerCtx {
             .map_err(conv_db_err)
     }
 
-    fn get_mmr_database(&self) -> WorkerResult<strata_storage::mmr_db::SledMmrDb> {
-        self.get_mmr_db()
+    fn get_mmr_database(&self) -> WorkerResult<SledMmrDb> {
+        Ok((*self.mmr_db).clone())
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>> {

@@ -12,11 +12,12 @@ strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
 strata-asm-types.workspace = true
 strata-btc-types.workspace = true
+strata-db-store-sled.workspace = true
+strata-db-types.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-state.workspace = true
-strata-storage.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true
