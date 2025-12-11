@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
+use bitcoin::{XOnlyPublicKey, secp256k1::Secp256k1};
 
 use crate::unstake::UnstakeTxHeaderAux;
 

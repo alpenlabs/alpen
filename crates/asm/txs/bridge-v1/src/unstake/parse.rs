@@ -63,7 +63,7 @@ pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeT
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{Transaction, Witness};
+    use bitcoin::Transaction;
     use strata_crypto::test_utils::schnorr::create_agg_pubkey_from_privkeys;
     use strata_test_utils::ArbitraryGenerator;
 

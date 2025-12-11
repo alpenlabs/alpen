@@ -9,16 +9,16 @@ use crate::deposit_request::MIN_DRT_AUX_DATA_LEN;
 /// Errors that can occur when parsing bridge transaction
 #[derive(Debug, Error)]
 pub enum BridgeTxParseError {
-    #[error("failed to parse deposit tx")]
+    #[error("failed to parse deposit tx: {0}")]
     DepositTxParse(#[from] DepositTxParseError),
 
-    #[error("failed to parse withdrawal fulfillment tx")]
+    #[error("failed to parse withdrawal fulfillment tx: {0}")]
     WithdrawalTxParse(#[from] WithdrawalParseError),
 
-    #[error("failed to parse slash tx")]
+    #[error("failed to parse slash tx: {0}")]
     SlashTxParse(#[from] SlashTxParseError),
 
-    #[error("failed to parse unstake tx")]
+    #[error("failed to parse unstake tx: {0}")]
     UnstakeTxParse(#[from] UnstakeTxParseError),
 
     #[error("unsupported tx type {0}")]
