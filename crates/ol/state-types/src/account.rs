@@ -30,12 +30,6 @@ impl NativeAccountState {
     pub fn serial(&self) -> AccountSerial {
         self.serial
     }
-
-    /// Sets the account serial. Used during account creation when the serial
-    /// is assigned after the initial state is constructed.
-    pub fn set_serial(&mut self, serial: AccountSerial) {
-        self.serial = serial;
-    }
 }
 
 impl IAccountState for NativeAccountState {
