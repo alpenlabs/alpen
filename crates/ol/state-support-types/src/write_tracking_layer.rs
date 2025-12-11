@@ -180,3 +180,379 @@ where
         Err(AcctError::Unsupported)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::absolute;
+    use strata_acct_types::{AcctError, BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+    use strata_asm_manifest_types::AsmManifest;
+    use strata_identifiers::{
+        AccountSerial, Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot,
+    };
+    use strata_ledger_types::{AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData};
+    use strata_ol_state_types::{EpochalState, GlobalState, OLState};
+
+    use super::*;
+    use crate::test_utils::*;
+    use crate::write_batch::WriteBatch;
+
+    /// Helper to create a WriteBatch initialized from a base OLState.
+    fn create_batch_from_state(
+        state: &OLState,
+    ) -> WriteBatch<<OLState as IStateAccessor>::AccountState> {
+        // Create epochal state matching the base
+        let epochal = EpochalState::new(
+            state.total_ledger_balance(),
+            state.cur_epoch(),
+            L1BlockCommitment::new(
+                absolute::Height::from_consensus(state.last_l1_height().into()).unwrap(),
+                *state.last_l1_blkid(),
+            ),
+            state.asm_recorded_epoch().clone(),
+        );
+        let global = GlobalState::new(state.cur_slot());
+
+        let mut batch = WriteBatch::new(global, epochal);
+
+        // Initialize next_serial for account creation
+        // The next serial is SYSTEM_RESERVED_ACCTS + number of accounts
+        // For new genesis state, it would be SYSTEM_RESERVED_ACCTS
+        let base_next_serial = AccountSerial::from(SYSTEM_RESERVED_ACCTS);
+        batch.ledger_mut().set_next_serial(base_next_serial);
+
+        batch
+    }
+
+    // =========================================================================
+    // Copy-on-write tests
+    // =========================================================================
+
+    #[test]
+    fn test_read_falls_back_to_base() {
+        let account_id = test_account_id(1);
+        let (base_state, serial) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+
+        let batch = create_batch_from_state(&base_state);
+        // Need to update next_serial to account for the account we created
+        let mut batch = batch;
+        batch
+            .ledger_mut()
+            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+
+        let tracking = WriteTrackingState::new(&base_state, batch);
+
+        // Read should fall back to base since batch is empty
+        let account = tracking.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.serial(), serial);
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+    }
+
+    #[test]
+    fn test_check_account_exists_falls_back_to_base() {
+        let account_id = test_account_id(1);
+        let nonexistent_id = test_account_id(99);
+        let (base_state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+
+        let batch = create_batch_from_state(&base_state);
+        let tracking = WriteTrackingState::new(&base_state, batch);
+
+        assert!(tracking.check_account_exists(account_id).unwrap());
+        assert!(!tracking.check_account_exists(nonexistent_id).unwrap());
+    }
+
+    #[test]
+    fn test_write_copies_to_batch() {
+        let account_id = test_account_id(1);
+        let (base_state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+        let original_balance = base_state
+            .get_account_state(account_id)
+            .unwrap()
+            .unwrap()
+            .balance();
+
+        let mut batch = create_batch_from_state(&base_state);
+        batch
+            .ledger_mut()
+            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        // Modify account
+        tracking
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        // Verify it's now in batch
+        assert!(tracking.batch().ledger().contains_account(&account_id));
+
+        // Verify the modified balance through tracking state
+        let modified_account = tracking.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(modified_account.balance(), BitcoinAmount::from_sat(1500));
+
+        // Verify base state is unchanged
+        let base_account = base_state.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(base_account.balance(), original_balance);
+    }
+
+    #[test]
+    fn test_read_prefers_batch_over_base() {
+        let account_id = test_account_id(1);
+        let (base_state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+
+        let mut batch = create_batch_from_state(&base_state);
+        batch
+            .ledger_mut()
+            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        // Modify the account to put it in the batch
+        tracking
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        // Modify again - should use batch version
+        tracking
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(100));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        // Final balance should be 1000 + 500 + 100 = 1600
+        let account = tracking.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(1600));
+    }
+
+    // =========================================================================
+    // Account creation tests
+    // =========================================================================
+
+    #[test]
+    fn test_create_account_in_batch() {
+        let base_state = OLState::new_genesis();
+        let mut batch = create_batch_from_state(&base_state);
+        batch
+            .ledger_mut()
+            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS));
+
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        let account_id = test_account_id(1);
+        let snark_state = test_snark_account_state(1);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(5000),
+            AccountTypeState::Snark(snark_state),
+        );
+
+        let serial = tracking.create_new_account(account_id, new_acct).unwrap();
+
+        // Verify it's in the batch
+        assert!(tracking.batch().ledger().contains_account(&account_id));
+
+        // Verify we can retrieve it
+        let account = tracking.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.serial(), serial);
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+
+        // Verify base is unchanged
+        assert!(!base_state.check_account_exists(account_id).unwrap());
+    }
+
+    #[test]
+    fn test_find_account_id_by_serial_for_new_account() {
+        let base_state = OLState::new_genesis();
+        let mut batch = create_batch_from_state(&base_state);
+        batch
+            .ledger_mut()
+            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS));
+
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        let account_id = test_account_id(1);
+        let snark_state = test_snark_account_state(1);
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(5000),
+            AccountTypeState::Snark(snark_state),
+        );
+
+        let serial = tracking.create_new_account(account_id, new_acct).unwrap();
+
+        // Should be able to find the account by serial
+        let found_id = tracking.find_account_id_by_serial(serial).unwrap();
+        assert_eq!(found_id, Some(account_id));
+    }
+
+    // =========================================================================
+    // Global/epochal state tests
+    // =========================================================================
+
+    #[test]
+    fn test_slot_modifications_in_batch() {
+        let base_state = OLState::new_genesis();
+        let batch = create_batch_from_state(&base_state);
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        assert_eq!(tracking.cur_slot(), 0);
+
+        tracking.set_cur_slot(42);
+
+        assert_eq!(tracking.cur_slot(), 42);
+
+        // Verify it's in the batch
+        assert_eq!(tracking.batch().global().get_cur_slot(), 42);
+    }
+
+    #[test]
+    fn test_epoch_modifications_in_batch() {
+        let base_state = OLState::new_genesis();
+        let batch = create_batch_from_state(&base_state);
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        assert_eq!(tracking.cur_epoch(), 0);
+
+        tracking.set_cur_epoch(5);
+
+        assert_eq!(tracking.cur_epoch(), 5);
+
+        // Verify it's in the batch
+        assert_eq!(tracking.batch().epochal().cur_epoch(), 5);
+    }
+
+    #[test]
+    fn test_total_ledger_balance_in_batch() {
+        let base_state = OLState::new_genesis();
+        let batch = create_batch_from_state(&base_state);
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        tracking.set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
+
+        assert_eq!(
+            tracking.total_ledger_balance(),
+            BitcoinAmount::from_sat(1_000_000)
+        );
+    }
+
+    #[test]
+    fn test_manifest_append_in_batch() {
+        let base_state = OLState::new_genesis();
+        let batch = create_batch_from_state(&base_state);
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        let height = L1Height::from(100u32);
+        let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
+        let wtxids_root = WtxidsRoot::from(Buf32::from([2u8; 32]));
+        let manifest = AsmManifest::new(l1_blkid, wtxids_root, vec![]);
+
+        tracking.append_manifest(height, manifest);
+
+        // The manifest should be recorded in the epochal state
+        // (The actual validation of this would depend on the epochal state implementation)
+    }
+
+    // =========================================================================
+    // State root test
+    // =========================================================================
+
+    #[test]
+    fn test_compute_state_root_returns_unsupported() {
+        let base_state = OLState::new_genesis();
+        let batch = create_batch_from_state(&base_state);
+        let tracking = WriteTrackingState::new(&base_state, batch);
+
+        let result = tracking.compute_state_root();
+        assert!(matches!(result, Err(AcctError::Unsupported)));
+    }
+
+    // =========================================================================
+    // Batch extraction tests
+    // =========================================================================
+
+    #[test]
+    fn test_into_batch_returns_modifications() {
+        let account_id = test_account_id(1);
+        let (base_state, _) = setup_state_with_snark_account(
+            account_id,
+            1,
+            BitcoinAmount::from_sat(1000),
+        );
+
+        let mut batch = create_batch_from_state(&base_state);
+        batch
+            .ledger_mut()
+            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        // Make some modifications
+        tracking.set_cur_slot(100);
+        tracking
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        // Extract the batch
+        let batch = tracking.into_batch();
+
+        // Verify modifications are in the batch
+        assert_eq!(batch.global().get_cur_slot(), 100);
+        assert!(batch.ledger().contains_account(&account_id));
+
+        let account = batch.ledger().get_account(&account_id).unwrap();
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(1500));
+    }
+
+    #[test]
+    fn test_batch_reference_accessible() {
+        let base_state = OLState::new_genesis();
+        let batch = create_batch_from_state(&base_state);
+        let tracking = WriteTrackingState::new(&base_state, batch);
+
+        // Should be able to access batch via reference
+        let batch_ref = tracking.batch();
+        assert_eq!(batch_ref.global().get_cur_slot(), 0);
+    }
+
+    // =========================================================================
+    // Error handling tests
+    // =========================================================================
+
+    #[test]
+    fn test_update_nonexistent_account_returns_error() {
+        let base_state = OLState::new_genesis();
+        let batch = create_batch_from_state(&base_state);
+        let mut tracking = WriteTrackingState::new(&base_state, batch);
+
+        let nonexistent_id = test_account_id(99);
+        let result = tracking.update_account(nonexistent_id, |_acct| {});
+
+        assert!(matches!(
+            result,
+            Err(AcctError::MissingExpectedAccount(_))
+        ));
+    }
+}

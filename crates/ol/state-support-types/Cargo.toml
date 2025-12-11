@@ -11,5 +11,8 @@ strata-ledger-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-snark-acct-types.workspace = true
 
+[dev-dependencies]
+bitcoin.workspace = true
+
 [lints]
 workspace = true

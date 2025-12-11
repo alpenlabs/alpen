@@ -7,6 +7,12 @@ mod indexer_layer;
 mod write_batch;
 mod write_tracking_layer;
 
+#[cfg(test)]
+mod test_utils;
+
+#[cfg(test)]
+mod tests;
+
 pub use indexer_layer::{
     AccumulatorWrites, InboxMessageWrite, IndexerAccountStateMut, IndexerSnarkAccountStateMut,
     IndexerState, ManifestWrite,
