@@ -6,7 +6,9 @@
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{IAccountStateConstructible, IAccountStateMut, IStateAccessor, NewAccountData};
+use strata_ledger_types::{
+    IAccountStateConstructible, IAccountStateMut, IStateAccessor, NewAccountData,
+};
 
 use crate::write_batch::WriteBatch;
 
@@ -57,7 +59,7 @@ where
     S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
 {
     type AccountState = S::AccountState;
-    type AccountStateMut = S::AccountState;  // Same type as AccountState for this layer
+    type AccountStateMut = S::AccountState; // Same type as AccountState for this layer
 
     // ===== Global state methods =====
 

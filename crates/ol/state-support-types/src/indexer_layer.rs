@@ -4,7 +4,9 @@
 //! to accumulator structures (like MMRs) and records them for later use by
 //! indexers, while passing all operations through to an inner implementation.
 
-use strata_acct_types::{AccountId, AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64};
+use strata_acct_types::{
+    AccountId, AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64,
+};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
@@ -107,7 +109,9 @@ pub struct IndexerSnarkAccountStateMut<S: ISnarkAccountStateMut> {
     modified: bool,
 }
 
-impl<S: ISnarkAccountStateMut + std::fmt::Debug> std::fmt::Debug for IndexerSnarkAccountStateMut<S> {
+impl<S: ISnarkAccountStateMut + std::fmt::Debug> std::fmt::Debug
+    for IndexerSnarkAccountStateMut<S>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IndexerSnarkAccountStateMut")
             .field("inner", &self.inner)
@@ -167,7 +171,8 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
 impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStateMut<S> {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
         self.modified = true;
-        self.inner.set_proof_state_directly(state, next_read_idx, seqno);
+        self.inner
+            .set_proof_state_directly(state, next_read_idx, seqno);
     }
 
     fn update_inner_state(
@@ -178,14 +183,16 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStat
         extra_data: &[u8],
     ) -> AcctResult<()> {
         self.modified = true;
-        self.inner.update_inner_state(inner_state, next_read_idx, seqno, extra_data)
+        self.inner
+            .update_inner_state(inner_state, next_read_idx, seqno, extra_data)
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
         self.modified = true;
         // Record the write BEFORE insertion so we capture the correct index
         let index = self.inner.inbox_mmr().num_entries();
-        self.writes.push_inbox_message(self.account_id, entry.clone(), index);
+        self.writes
+            .push_inbox_message(self.account_id, entry.clone(), index);
 
         // Pass through to inner
         self.inner.insert_inbox_message(entry)
@@ -233,7 +240,11 @@ impl<A: IAccountStateMut> IndexerAccountStateMut<A> {
 
     /// Returns whether this account was modified.
     pub fn was_modified(&self) -> bool {
-        self.modified || self.snark_wrapper.as_ref().map_or(false, |s| s.was_modified())
+        self.modified
+            || self
+                .snark_wrapper
+                .as_ref()
+                .map_or(false, |s| s.was_modified())
     }
 
     /// Consumes the wrapper and returns the inner state, accumulated writes,
@@ -328,7 +339,10 @@ where
         // being able to sync changes back to the inner account in into_parts().
         if self.snark_wrapper.is_none() {
             let inner_snark = self.inner.as_snark_account_mut()?.clone();
-            self.snark_wrapper = Some(IndexerSnarkAccountStateMut::new(inner_snark, self.account_id));
+            self.snark_wrapper = Some(IndexerSnarkAccountStateMut::new(
+                inner_snark,
+                self.account_id,
+            ));
         }
         Ok(self.snark_wrapper.as_mut().unwrap())
     }

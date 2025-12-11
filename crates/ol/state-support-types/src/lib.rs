@@ -8,8 +8,8 @@ mod write_batch;
 mod write_tracking_layer;
 
 pub use indexer_layer::{
-    AccumulatorWrites, IndexerAccountStateMut, IndexerSnarkAccountStateMut, IndexerState,
-    InboxMessageWrite, ManifestWrite,
+    AccumulatorWrites, InboxMessageWrite, IndexerAccountStateMut, IndexerSnarkAccountStateMut,
+    IndexerState, ManifestWrite,
 };
 pub use write_batch::{LedgerWriteBatch, WriteBatch};
 pub use write_tracking_layer::WriteTrackingState;
