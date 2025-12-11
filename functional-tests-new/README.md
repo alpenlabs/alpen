@@ -236,12 +236,20 @@ Service connection info will be printed on startup.
 
 ### Disabling Tests
 
-To temporarily disable flaky or WIP tests, add them to `disabled_tests()` in `entry.py`:
+Permanently disabled tests are defined in `entry.py` `disabled_tests()`. For temporary disabling (e.g., local debugging), use the `DISABLED_TESTS` environment variable:
 
-```python
-def disabled_tests() -> frozenset[str]:
-    return frozenset(["test_flaky", "test_wip"])
+```bash
+# Disable single test
+DISABLED_TESTS=test_flaky ./run_tests.sh
+
+# Disable multiple tests (comma-separated)
+DISABLED_TESTS=test_foo,test_bar,test_flaky ./run_tests.sh
+
+# Works with other flags
+DISABLED_TESTS=test_slow ./run_tests.sh -t test_fast test_slow
 ```
+
+The env var extends the base disabled list, so both are applied.
 
 ## Debugging
 

@@ -7,10 +7,9 @@ import contextlib
 import os
 
 import flexitest
-from bitcoinlib.services.bitcoind import BitcoindClient
 
 from common.config import ServiceType
-from common.services import BitcoinServiceWrapper
+from common.services import BitcoinProps, BitcoinService
 
 
 class BitcoinFactory(flexitest.Factory):
@@ -38,7 +37,7 @@ class BitcoinFactory(flexitest.Factory):
         rpc_user: str = "user",
         rpc_password: str = "password",
         **kwargs,
-    ) -> BitcoinServiceWrapper:
+    ) -> BitcoinService:
         """
         Create a Bitcoin regtest node.
 
@@ -70,22 +69,17 @@ class BitcoinFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_user}:{rpc_password}@localhost:{rpc_port}"
 
-        props = dict(
-            p2p_port=p2p_port,
-            rpc_port=rpc_port,
-            rpc_user=rpc_user,
-            rpc_url=rpc_url,
-            rpc_password=rpc_password,
-            datadir=datadir,
-            walletname="testwallet",
-        )
+        props: BitcoinProps = {
+            "p2p_port": p2p_port,
+            "rpc_port": rpc_port,
+            "rpc_user": rpc_user,
+            "rpc_url": rpc_url,
+            "rpc_password": rpc_password,
+            "datadir": datadir,
+            "walletname": "testwallet",
+        }
 
-        def make_rpc() -> BitcoindClient:
-            return BitcoindClient(base_url=rpc_url, network="regtest")
-
-        svc = BitcoinServiceWrapper(
-            props, cmd, stdout=logfile, rpc_factory=make_rpc, name=ServiceType.Bitcoin
-        )
+        svc = BitcoinService(props, cmd, stdout=logfile, name=ServiceType.Bitcoin)
         try:
             svc.start()
         except Exception as e:

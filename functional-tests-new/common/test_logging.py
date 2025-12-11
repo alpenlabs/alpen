@@ -7,8 +7,8 @@ allowing library functions to log without tight coupling to test instances.
 
 import contextvars
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 _current_test_logger: contextvars.ContextVar[logging.Logger | None] = contextvars.ContextVar(
     "test_logger", default=None
@@ -23,9 +23,7 @@ def get_test_logger() -> logging.Logger:
     """
     logger = _current_test_logger.get()
     if logger is None:
-        raise RuntimeError(
-            "No test logger set. Are you calling this outside a test context?"
-        )
+        raise RuntimeError("No test logger set. Are you calling this outside a test context?")
     return logger
 
 

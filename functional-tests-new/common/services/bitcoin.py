@@ -2,30 +2,56 @@
 Bitcoin service wrapper with Bitcoin-specific health checks.
 """
 
+from typing import TypedDict
+
 from bitcoinlib.services.bitcoind import BitcoindClient
 
-from common.services.base import ServiceWrapper
+from common.services.base import RpcService
 
 
-class BitcoinServiceWrapper(ServiceWrapper[BitcoindClient]):
+class BitcoinProps(TypedDict):
+    """Properties for Bitcoin service."""
+
+    p2p_port: int
+    rpc_port: int
+    rpc_user: str
+    rpc_password: str
+    rpc_url: str
+    datadir: str
+    walletname: str
+
+
+class BitcoinService(RpcService):
     """
-    ServiceWrapper for Bitcoin with health check via `getblockchaininfo`.
+    Rpc Service for Bitcoin with health check via `getblockchaininfo`.
     """
 
-    def check_health(self) -> bool:
-        """
-        Check if Bitcoin RPC is ready by calling getblockchaininfo.
+    props: BitcoinProps
 
-        Returns:
-            True if Bitcoin is running and RPC responds, False otherwise
+    def __init__(
+        self,
+        props: BitcoinProps,
+        cmd: list[str],
+        stdout: str | None = None,
+        name: str | None = None,
+    ):
         """
+        Initialize Bitcoin service.
+
+        Args:
+            props: Bitcoin service properties
+            cmd: Command and arguments to execute
+            stdout: Path to log file for stdout/stderr
+            name: Service name for logging
+        """
+        super().__init__(dict(props), cmd, stdout, name)
+
+    def _rpc_health_check(self, rpc):
+        """Check Bitcoin health by calling getblockchaininfo."""
+        rpc.proxy.getblockchaininfo()
+
+    def create_rpc(self) -> BitcoindClient:
         if not self.check_status():
-            return False
+            raise RuntimeError("Service is not running")
 
-        try:
-            rpc = self.create_rpc()
-            # Try calling a simple RPC method
-            rpc.proxy.getblockchaininfo()
-            return True
-        except Exception:
-            return False
+        return BitcoindClient(base_url=self.props["rpc_url"], network="regtest")

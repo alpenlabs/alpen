@@ -9,8 +9,7 @@ from pathlib import Path
 import flexitest
 
 from common.config import BitcoindConfig, ClientConfig, RollupParams, ServiceType, StrataConfig
-from common.rpc import JsonRpcClient
-from common.services import StrataServiceWrapper
+from common.services import StrataProps, StrataService
 
 
 class StrataFactory(flexitest.Factory):
@@ -34,7 +33,7 @@ class StrataFactory(flexitest.Factory):
         is_sequencer: bool = True,
         config_overrides: dict | None = None,
         **kwargs,
-    ) -> StrataServiceWrapper:
+    ) -> StrataService:
         """
         Create a Strata node.
 
@@ -93,22 +92,18 @@ class StrataFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_host}:{rpc_port}"
 
-        props = dict(
-            rpc_port=rpc_port,
-            rpc_host=rpc_host,
-            rpc_url=rpc_url,
-            datadir=datadir,
-            mode=mode,
-        )
+        props: StrataProps = {
+            "rpc_port": rpc_port,
+            "rpc_host": rpc_host,
+            "rpc_url": rpc_url,
+            "datadir": str(datadir),
+            "mode": mode,
+        }
 
-        def make_rpc() -> JsonRpcClient:
-            return JsonRpcClient(rpc_url)
-
-        svc = StrataServiceWrapper(
+        svc = StrataService(
             props,
             cmd,
             stdout=str(logfile),
-            rpc_factory=make_rpc,
             name=f"{ServiceType.Strata}_{mode}",
         )
         svc.stop_timeout = 30

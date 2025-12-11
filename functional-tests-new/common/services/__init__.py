@@ -2,12 +2,14 @@
 Service wrappers for test infrastructure.
 """
 
-from common.services.base import ServiceWrapper
-from common.services.bitcoin import BitcoinServiceWrapper
-from common.services.strata import StrataServiceWrapper
+from common.services.base import RpcService
+from common.services.bitcoin import BitcoinProps, BitcoinService
+from common.services.strata import StrataProps, StrataService
 
 __all__ = [
-    "ServiceWrapper",
-    "BitcoinServiceWrapper",
-    "StrataServiceWrapper",
+    "RpcService",
+    "BitcoinService",
+    "BitcoinProps",
+    "StrataService",
+    "StrataProps",
 ]

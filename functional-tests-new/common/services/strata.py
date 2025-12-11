@@ -2,35 +2,57 @@
 Strata service wrapper with Strata-specific health checks.
 """
 
+from typing import TypedDict, cast
+
 from common.rpc import JsonRpcClient
-from common.services.base import ServiceWrapper
+from common.services.base import RpcService
 from common.wait import wait_until
 
 
-class StrataServiceWrapper(ServiceWrapper[JsonRpcClient]):
+class StrataProps(TypedDict):
+    """Properties for Strata service."""
+
+    rpc_port: int
+    rpc_host: str
+    rpc_url: str
+    datadir: str
+    mode: str
+
+
+class StrataService(RpcService):
     """
-    ServiceWrapper for Strata with health check via `strata_protocolVersion`.
+    RpcService for Strata with health check via `strata_protocolVersion`.
     """
 
-    def check_health(self) -> bool:
-        """
-        Check if Strata RPC is ready by calling strata_protocolVersion.
+    props: StrataProps
 
-        Returns:
-            True if Strata is running and RPC responds, False otherwise
+    def __init__(
+        self,
+        props: StrataProps,
+        cmd: list[str],
+        stdout: str | None = None,
+        name: str | None = None,
+    ):
         """
-        if not self.check_status():
-            return False
+        Initialize Strata service.
 
-        try:
-            rpc = self.create_rpc()
-            rpc.strata_protocolVersion()
-            return True
-        except Exception:
-            return False
+        Args:
+            props: Strata service properties
+            cmd: Command and arguments to execute
+            stdout: Path to log file for stdout/stderr
+            name: Service name for logging
+        """
+        super().__init__(dict(props), cmd, stdout, name)
+
+    def _rpc_health_check(self, rpc):
+        """Check Strata health by calling strata_protocolVersion."""
+        rpc.strata_protocolVersion()
 
     def create_rpc(self) -> JsonRpcClient:
-        rpc = super().create_rpc()
+        if not self.check_status():
+            raise RuntimeError("Service is not running")
+
+        rpc = JsonRpcClient(self.props["rpc_url"])
 
         def _status_check(method: str):
             if not self.check_status():

@@ -94,17 +94,19 @@ class JsonRpcClient:
             raise
 
         try:
-            result = resp.json()
+            response = resp.json()
         except json.JSONDecodeError as e:
             self.logger.warning(f"Invalid JSON response: {resp.text}")
             raise RpcError({"code": -1, "message": f"Invalid JSON: {e}"}) from e
 
-        if "error" in result:
-            error = result.get("error", {})
+        if "error" in response:
+            error = response["error"]
             self.logger.warning(f"RPC error: {error}")
             raise RpcError(error)
-
-        return result.get("result")
+        elif "result" in response:
+            return response["result"]
+        else:
+            raise RpcError({"message": "malformed response"})
 
     def call(self, method: str, *params) -> Any:
         """
