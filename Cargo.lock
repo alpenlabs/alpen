@@ -14509,6 +14509,7 @@ name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
+ "ed25519-dalek",
  "secp256k1 0.29.1",
  "strata-primitives",
  "thiserror 2.0.17",

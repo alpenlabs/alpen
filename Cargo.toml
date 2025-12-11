@@ -406,6 +406,7 @@ clap = { version = "4.5.39", default-features = false, features = ["derive"] }
 criterion = { version = "0.7.0", features = ["html_reports"] }
 deadpool = "0.12.1"
 digest = "0.10"
+ed25519-dalek = { version = "2.2.0", features = ["zeroize"] }
 ethnum = "1.5.0"
 eyre = "0.6"
 format_serde_error = { git = "https://github.com/AlexanderThaller/format_serde_error" }
