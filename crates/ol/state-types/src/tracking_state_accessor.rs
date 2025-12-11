@@ -46,9 +46,10 @@ where
 impl<S: StateAccessor> TrackingStateAccessor<S> {
     /// Create a new state accessor from an initial state
     pub fn new(state: S) -> Self {
+        let next_serial = state.get_next_serial();
         Self {
             base: state,
-            writebatch: WriteBatch::new(),
+            writebatch: WriteBatch::new(next_serial),
             aux: ExecutionAuxiliaryData::default(),
         }
     }
@@ -213,18 +214,34 @@ where
         id: AccountId,
         state: AccountTypeState<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
-        let serial = self.base.create_new_account(id, state)?;
-        let acct = self
-            .base
-            .get_account_state(id)?
-            .ok_or(AcctError::MissingExpectedAccount(id))?
-            .clone();
-        self.writebatch.insert_account(id, acct);
-        Ok(serial)
+        // Check if account already exists in overlay or base
+        if self.writebatch.has_account(&id) || self.base.check_account_exists(id)? {
+            return Err(AcctError::AccountIdExists(id));
+        }
+
+        // Get the next serial from writebatch (no base mutation!)
+        let serial = self.writebatch.get_next_serial();
+
+        // Create the account state using the trait constructor with zero initial balance
+        let account_state = S::AccountState::new_account(serial, BitcoinAmount::from(0), state);
+
+        // Add to writebatch - purely in overlay, no base mutation!
+        let assigned_serial = self.writebatch.create_account(id, account_state);
+
+        Ok(assigned_serial)
     }
 
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+        // Check overlay first for newly created accounts
+        if let Some(id) = self.writebatch.find_serial(serial) {
+            return Ok(Some(id));
+        }
+        // Fall back to base state
         self.base.find_account_id_by_serial(serial)
+    }
+
+    fn get_next_serial(&self) -> AccountSerial {
+        self.writebatch.get_next_serial()
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {

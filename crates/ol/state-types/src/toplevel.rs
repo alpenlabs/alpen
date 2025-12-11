@@ -193,6 +193,10 @@ impl StateAccessor for OLState {
         Ok(self.ledger.get_serial_acct_id(serial).copied())
     }
 
+    fn get_next_serial(&self) -> AccountSerial {
+        self.ledger.next_avail_serial()
+    }
+
     fn compute_state_root(&self) -> AcctResult<Buf32> {
         // Compute the state root by hashing the Codec encoding of the state
         // For now, we'll panic on encoding errors as they shouldn't happen in practice
@@ -208,7 +212,7 @@ impl OLState {
     ///
     /// This takes the changes accumulated during block execution and applies them
     /// to the current state. Used when accepting blocks into the canonical chain.
-    pub fn apply_write_batch(&mut self, batch: crate::WriteBatch<OLState>) -> AcctResult<()> {
+    pub fn apply_write_batch(&mut self, mut batch: crate::WriteBatch<OLState>) -> AcctResult<()> {
         // Apply global state changes if present
         if let Some(global_state) = batch.global_state {
             self.global = global_state;
@@ -219,7 +223,18 @@ impl OLState {
             self.epoch = epochal_state;
         }
 
-        // Apply modified accounts
+        // Apply newly created accounts first, in order
+        // This ensures serials are assigned in the correct sequence
+        // We remove them from modified_accounts to take ownership and avoid cloning
+        for id in &batch.created_ids {
+            let acct_state = batch
+                .modified_accounts
+                .remove(id)
+                .ok_or(AcctError::MissingExpectedAccount(*id))?;
+            self.ledger.create_account(*id, acct_state)?;
+        }
+
+        // Apply remaining modified accounts (all newly created accounts were already removed)
         for (id, acct_state) in batch.modified_accounts {
             self.update_account_state(id, acct_state)?;
         }

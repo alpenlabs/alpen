@@ -34,6 +34,15 @@ impl AccountState {
 impl IAccountState for AccountState {
     type SnarkAccountState = NativeSnarkAccountState;
 
+    fn new_account(
+        serial: AccountSerial,
+        balance: BitcoinAmount,
+        type_state: AccountTypeState<Self>,
+    ) -> Self {
+        let native_state = NativeAccountTypeState::from_generic(type_state);
+        Self::new(serial, balance, native_state)
+    }
+
     fn serial(&self) -> AccountSerial {
         self.serial
     }

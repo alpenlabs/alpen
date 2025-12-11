@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt};
 
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, AccountSerial};
 use strata_ledger_types::{AsmManifest, StateAccessor};
 use strata_snark_acct_types::MessageEntry;
 
@@ -20,6 +20,19 @@ pub struct WriteBatch<S: StateAccessor> {
 
     /// Epochal state override. None means use base state.
     pub(crate) epochal_state: Option<S::L1ViewState>,
+
+    /// Next available serial number.
+    /// Initialized from base state and incremented as new accounts are created.
+    pub(crate) next_serial: AccountSerial,
+
+    /// IDs of newly created accounts, tracked in order of creation.
+    /// We only store IDs here; the actual state is in modified_accounts.
+    /// This maintains creation order for serial assignment during apply.
+    pub(crate) created_ids: Vec<AccountId>,
+
+    /// Mapping of newly assigned serials to account IDs created during execution.
+    /// This is needed for find_account_id_by_serial to work correctly during execution.
+    pub(crate) serial_to_id: HashMap<AccountSerial, AccountId>,
 }
 
 impl<S: StateAccessor> fmt::Debug for WriteBatch<S>
@@ -33,17 +46,23 @@ where
             .field("modified_accounts", &self.modified_accounts)
             .field("global_state", &self.global_state)
             .field("epochal_state", &self.epochal_state)
+            .field("next_serial", &self.next_serial)
+            .field("created_ids", &self.created_ids)
+            .field("serial_to_id", &self.serial_to_id)
             .finish()
     }
 }
 
 impl<S: StateAccessor> WriteBatch<S> {
-    /// Create a new empty WriteBatch
-    pub fn new() -> Self {
+    /// Create a new empty WriteBatch with the initial serial number from base state
+    pub fn new(next_serial: AccountSerial) -> Self {
         Self {
             modified_accounts: Default::default(),
             global_state: None,
             epochal_state: None,
+            next_serial,
+            created_ids: Vec::new(),
+            serial_to_id: HashMap::new(),
         }
     }
 
@@ -96,6 +115,36 @@ impl<S: StateAccessor> WriteBatch<S> {
     /// Get the number of modified accounts
     pub fn modified_accounts_count(&self) -> usize {
         self.modified_accounts.len()
+    }
+
+    /// Get the next available serial number
+    pub fn get_next_serial(&self) -> AccountSerial {
+        self.next_serial
+    }
+
+    /// Create a new account in the overlay, assigning it the next serial.
+    /// Returns the assigned serial.
+    pub fn create_account(&mut self, id: AccountId, state: S::AccountState) -> AccountSerial {
+        let serial = self.next_serial;
+
+        // Track the serial-to-id mapping
+        self.serial_to_id.insert(serial, id);
+
+        // Track the ID in creation order
+        self.created_ids.push(id);
+
+        // Store the state in modified_accounts (this is the single source of truth)
+        self.modified_accounts.insert(id, state);
+
+        // Increment for next account
+        self.next_serial = AccountSerial::from(u32::from(self.next_serial) + 1);
+
+        serial
+    }
+
+    /// Find account ID by serial, checking overlay first
+    pub fn find_serial(&self, serial: AccountSerial) -> Option<AccountId> {
+        self.serial_to_id.get(&serial).copied()
     }
 }
 

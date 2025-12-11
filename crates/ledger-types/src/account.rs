@@ -10,6 +10,13 @@ pub trait IAccountState: Clone + Sized {
     /// Type representing snark account state.
     type SnarkAccountState: ISnarkAccountState;
 
+    /// Constructs a new account state with the given serial, balance, and type state.
+    fn new_account(
+        serial: AccountSerial,
+        balance: BitcoinAmount,
+        type_state: AccountTypeState<Self>,
+    ) -> Self;
+
     /// Gets the account serial.
     fn serial(&self) -> AccountSerial;
 
