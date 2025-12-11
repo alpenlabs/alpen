@@ -174,9 +174,7 @@ where
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // State root computation is not supported on WriteTrackingState because
-        // we only have a subset of the state (modified accounts). The proper
-        // state root should be computed after the batch is applied to the full state.
+        // TODO implement with new SSZ state summary type
         Err(AcctError::Unsupported)
     }
 }

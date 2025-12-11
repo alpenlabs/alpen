@@ -15,7 +15,9 @@ use strata_ledger_types::{
 };
 use strata_ol_state_types::{EpochalState, GlobalState, OLState};
 
-use crate::{IndexerState, WriteTrackingState, test_utils::*, write_batch::WriteBatch};
+use crate::{
+    BatchDiffState, IndexerState, WriteTrackingState, test_utils::*, write_batch::WriteBatch,
+};
 
 /// Helper to create a WriteBatch initialized from a base OLState.
 fn create_batch_from_state(
@@ -293,6 +295,290 @@ fn test_combined_multiple_operations() {
 
     // Verify slot was updated
     assert_eq!(batch.global().get_cur_slot(), 100);
+}
+
+// =============================================================================
+// WriteTrackingState over BatchDiffState tests
+// =============================================================================
+
+/// Test that WriteTrackingState can wrap BatchDiffState and all write operations work correctly.
+/// This verifies that we can build on top of a read-only diff layer with pending batches.
+#[test]
+fn test_write_tracking_over_batch_diff_basic() {
+    let account_id = test_account_id(1);
+    let (base_state, _serial) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+
+    // Create a pending batch with some modifications
+    let mut pending_batch = create_batch_from_state(&base_state);
+    pending_batch
+        .ledger_mut()
+        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    pending_batch.global_mut().set_cur_slot(50);
+    pending_batch.epochal_mut().set_cur_epoch(3);
+
+    // Create BatchDiffState with the pending batch
+    let pending_batches = vec![pending_batch];
+    let diff_state = BatchDiffState::new(&base_state, &pending_batches);
+
+    // Create WriteTrackingState on top of BatchDiffState
+    // The write batch needs to be initialized with values from the diff state
+    // (WriteTrackingState reads global/epochal from its own batch, not from base)
+    let mut write_batch = create_batch_from_state(&base_state);
+    write_batch.global_mut().set_cur_slot(diff_state.cur_slot());
+    write_batch
+        .epochal_mut()
+        .set_cur_epoch(diff_state.cur_epoch());
+    let tracking = WriteTrackingState::new(&diff_state, write_batch);
+
+    // Verify we can read through the layers (account from base via diff_state)
+    let account = tracking.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+
+    // Global/epochal come from the write batch (which we initialized from diff_state)
+    assert_eq!(tracking.cur_slot(), 50);
+    assert_eq!(tracking.cur_epoch(), 3);
+}
+
+/// Test that update_account works through WriteTrackingState over BatchDiffState.
+#[test]
+fn test_write_tracking_over_batch_diff_update_account() {
+    let account_id = test_account_id(1);
+    let (base_state, _serial) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+
+    // Create BatchDiffState (empty batches = pure passthrough)
+    let pending_batches: Vec<WriteBatch<_>> = vec![];
+    let diff_state = BatchDiffState::new(&base_state, &pending_batches);
+
+    // Create WriteTrackingState on top
+    let mut write_batch = create_batch_from_state(&base_state);
+    write_batch
+        .ledger_mut()
+        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
+
+    // Update account balance
+    tracking
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+
+    // Verify the update worked
+    let account = tracking.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(1500));
+
+    // Verify it's in the write batch
+    let batch = tracking.into_batch();
+    assert!(batch.ledger().contains_account(&account_id));
+    assert_eq!(
+        batch.ledger().get_account(&account_id).unwrap().balance(),
+        BitcoinAmount::from_sat(1500)
+    );
+}
+
+/// Test that create_new_account works through WriteTrackingState over BatchDiffState.
+#[test]
+fn test_write_tracking_over_batch_diff_create_account() {
+    let base_state = OLState::new_genesis();
+
+    // Create BatchDiffState with empty batches
+    let pending_batches: Vec<WriteBatch<_>> = vec![];
+    let diff_state = BatchDiffState::new(&base_state, &pending_batches);
+
+    // Create WriteTrackingState on top
+    let mut write_batch = create_batch_from_state(&base_state);
+    write_batch
+        .ledger_mut()
+        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS));
+    let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
+
+    // Create a new account
+    let account_id = test_account_id(1);
+    let snark_state = test_snark_account_state(1);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(5000),
+        AccountTypeState::Snark(snark_state),
+    );
+    let serial = tracking.create_new_account(account_id, new_acct).unwrap();
+
+    // Verify the account exists
+    assert!(tracking.check_account_exists(account_id).unwrap());
+    let account = tracking.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(account.serial(), serial);
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+
+    // Verify it's in the write batch
+    let batch = tracking.into_batch();
+    assert!(batch.ledger().contains_account(&account_id));
+}
+
+/// Test that global/epochal setters work through WriteTrackingState over BatchDiffState.
+#[test]
+fn test_write_tracking_over_batch_diff_global_epochal_setters() {
+    let base_state = OLState::new_genesis();
+
+    // Create BatchDiffState with a pending batch that has slot=50, epoch=3
+    let mut pending_batch = create_batch_from_state(&base_state);
+    pending_batch.global_mut().set_cur_slot(50);
+    pending_batch.epochal_mut().set_cur_epoch(3);
+    let pending_batches = vec![pending_batch];
+    let diff_state = BatchDiffState::new(&base_state, &pending_batches);
+
+    // Create WriteTrackingState on top
+    let write_batch = create_batch_from_state(&base_state);
+    let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
+
+    // Modify slot and epoch through WriteTrackingState
+    tracking.set_cur_slot(100);
+    tracking.set_cur_epoch(10);
+
+    // Verify the values are updated
+    assert_eq!(tracking.cur_slot(), 100);
+    assert_eq!(tracking.cur_epoch(), 10);
+
+    // Verify they're in the write batch
+    let batch = tracking.into_batch();
+    assert_eq!(batch.global().get_cur_slot(), 100);
+    assert_eq!(batch.epochal().cur_epoch(), 10);
+}
+
+/// Test that inbox message insertion works through WriteTrackingState over BatchDiffState.
+#[test]
+fn test_write_tracking_over_batch_diff_inbox_message() {
+    let account_id = test_account_id(1);
+    let (base_state, _serial) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+
+    // Create BatchDiffState with empty batches
+    let pending_batches: Vec<WriteBatch<_>> = vec![];
+    let diff_state = BatchDiffState::new(&base_state, &pending_batches);
+
+    // Create WriteTrackingState on top
+    let mut write_batch = create_batch_from_state(&base_state);
+    write_batch
+        .ledger_mut()
+        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
+
+    // Insert an inbox message
+    let msg = test_message_entry(50, 0, 2000);
+    tracking
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg.clone())
+        })
+        .unwrap()
+        .unwrap();
+
+    // Verify the message was inserted
+    let account = tracking.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(
+        account
+            .as_snark_account()
+            .unwrap()
+            .inbox_mmr()
+            .num_entries(),
+        1
+    );
+
+    // Verify base is unchanged
+    let base_account = base_state.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(
+        base_account
+            .as_snark_account()
+            .unwrap()
+            .inbox_mmr()
+            .num_entries(),
+        0
+    );
+}
+
+/// Test reading account from pending batch through WriteTrackingState over BatchDiffState.
+#[test]
+fn test_write_tracking_over_batch_diff_reads_from_pending_batch() {
+    let base_state = OLState::new_genesis();
+
+    // Create a pending batch with a new account
+    let account_id_in_batch = test_account_id(1);
+    let mut pending_batch = create_batch_from_state(&base_state);
+    let snark_state = test_snark_account_state(1);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(3000),
+        AccountTypeState::Snark(snark_state),
+    );
+    pending_batch
+        .ledger_mut()
+        .create_account_from_data(account_id_in_batch, new_acct);
+
+    let pending_batches = vec![pending_batch];
+    let diff_state = BatchDiffState::new(&base_state, &pending_batches);
+
+    // Create WriteTrackingState on top
+    let mut write_batch = create_batch_from_state(&base_state);
+    write_batch
+        .ledger_mut()
+        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let tracking = WriteTrackingState::new(&diff_state, write_batch);
+
+    // Should be able to read the account from the pending batch
+    assert!(tracking.check_account_exists(account_id_in_batch).unwrap());
+    let account = tracking
+        .get_account_state(account_id_in_batch)
+        .unwrap()
+        .unwrap();
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(3000));
+}
+
+/// Test that WriteTrackingState over BatchDiffState can update an account from the pending batch.
+#[test]
+fn test_write_tracking_over_batch_diff_update_account_from_pending_batch() {
+    let base_state = OLState::new_genesis();
+
+    // Create a pending batch with a new account
+    let account_id = test_account_id(1);
+    let mut pending_batch = create_batch_from_state(&base_state);
+    let snark_state = test_snark_account_state(1);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(3000),
+        AccountTypeState::Snark(snark_state),
+    );
+    pending_batch
+        .ledger_mut()
+        .create_account_from_data(account_id, new_acct);
+
+    let pending_batches = vec![pending_batch];
+    let diff_state = BatchDiffState::new(&base_state, &pending_batches);
+
+    // Create WriteTrackingState on top
+    let mut write_batch = create_batch_from_state(&base_state);
+    write_batch
+        .ledger_mut()
+        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
+
+    // Update the account (copy-on-write from pending batch to write batch)
+    tracking
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+
+    // Verify the update worked
+    let account = tracking.get_account_state(account_id).unwrap().unwrap();
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(3500));
+
+    // Verify it's now in the write batch with the updated balance
+    let batch = tracking.into_batch();
+    assert!(batch.ledger().contains_account(&account_id));
+    assert_eq!(
+        batch.ledger().get_account(&account_id).unwrap().balance(),
+        BitcoinAmount::from_sat(3500)
+    );
 }
 
 // =============================================================================

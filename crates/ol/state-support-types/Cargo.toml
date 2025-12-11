@@ -10,6 +10,10 @@ strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-snark-acct-types.workspace = true
+tracing = { workspace = true, optional = true }
+
+[features]
+tracing = ["dep:tracing"]
 
 [dev-dependencies]
 bitcoin.workspace = true

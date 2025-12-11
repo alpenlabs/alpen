@@ -14715,6 +14715,7 @@ dependencies = [
  "strata-ledger-types",
  "strata-ol-state-types",
  "strata-snark-acct-types",
+ "tracing",
 ]
 
 [[package]]
