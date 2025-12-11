@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
+use strata_acct_types::{AccountId, AccountSerial};
 use strata_ledger_types::{IAccountStateConstructible, NewAccountData};
 use strata_ol_state_types::{EpochalState, GlobalState};
 
@@ -69,9 +69,6 @@ pub struct LedgerWriteBatch<A> {
 
     /// Maps serial -> account ID for newly created accounts.
     serial_to_id: BTreeMap<AccountSerial, AccountId>,
-
-    /// The next serial to assign to a new account.
-    next_serial: Option<AccountSerial>,
 }
 
 impl<A> Default for LedgerWriteBatch<A> {
@@ -80,7 +77,6 @@ impl<A> Default for LedgerWriteBatch<A> {
             account_writes: BTreeMap::new(),
             new_accounts: Vec::new(),
             serial_to_id: BTreeMap::new(),
-            next_serial: None,
         }
     }
 }
@@ -91,54 +87,33 @@ impl<A> LedgerWriteBatch<A> {
         Self::default()
     }
 
-    /// Sets the next serial value (should be called during initialization).
-    pub fn set_next_serial(&mut self, serial: AccountSerial) {
-        self.next_serial = Some(serial);
-    }
-
-    /// Tracks creating a new account with the given pre-built state.
+    /// Tracks creating a new account with the given pre-built state and assigned serial.
     ///
-    /// This is the low-level method that accepts an already-constructed account state.
-    /// Use `create_account_from_parts` for a higher-level interface.
-    pub fn create_account_raw(&mut self, id: AccountId, state: A) -> AccountSerial {
+    /// The serial should be obtained from `IStateAccessor::next_account_serial()`.
+    pub fn create_account_raw(&mut self, id: AccountId, state: A, serial: AccountSerial) {
         #[cfg(debug_assertions)]
         if self.account_writes.contains_key(&id) {
             panic!("state/wb: creating new account at addr that already exists");
         }
 
-        let serial = self
-            .next_serial
-            .expect("state/wb: next_serial not initialized");
-
         self.account_writes.insert(id, state);
         self.new_accounts.push(id);
         self.serial_to_id.insert(serial, id);
-
-        // Increment next serial
-        let raw: u32 = serial.into();
-        self.next_serial = Some(AccountSerial::from(raw + 1));
-
-        serial
     }
 
-    /// Creates a new account from new account data, assigning a serial automatically.
+    /// Creates a new account from new account data with the given serial.
     ///
-    /// This is the preferred method for creating accounts as it handles serial
-    /// assignment internally using `IAccountStateConstructible`.
+    /// The serial should be obtained from `IStateAccessor::next_account_serial()`.
     pub fn create_account_from_data(
         &mut self,
         id: AccountId,
         new_acct_data: NewAccountData<A>,
-    ) -> AccountSerial
-    where
+        serial: AccountSerial,
+    ) where
         A: IAccountStateConstructible,
     {
-        let serial = self
-            .next_serial
-            .expect("state/wb: next_serial not initialized");
-
         let state = A::new_with_serial(new_acct_data, serial);
-        self.create_account_raw(id, state)
+        self.create_account_raw(id, state, serial);
     }
 
     /// Tracks an update to an existing account.

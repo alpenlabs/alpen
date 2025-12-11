@@ -157,10 +157,10 @@ where
         id: AccountId,
         new_acct_data: NewAccountData<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
-        let serial = self
-            .batch
+        let serial = self.next_account_serial();
+        self.batch
             .ledger_mut()
-            .create_account_from_data(id, new_acct_data);
+            .create_account_from_data(id, new_acct_data, serial);
         Ok(serial)
     }
 
@@ -173,6 +173,12 @@ where
         self.base.find_account_id_by_serial(serial)
     }
 
+    fn next_account_serial(&self) -> AccountSerial {
+        let base_serial: u32 = self.base.next_account_serial().into();
+        let new_count = self.batch.ledger().new_accounts().len() as u32;
+        AccountSerial::from(base_serial + new_count)
+    }
+
     fn compute_state_root(&self) -> AcctResult<Buf32> {
         // TODO implement with new SSZ state summary type
         Err(AcctError::Unsupported)
@@ -182,11 +188,9 @@ where
 #[cfg(test)]
 mod tests {
     use bitcoin::absolute;
-    use strata_acct_types::{AcctError, BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+    use strata_acct_types::{AcctError, BitcoinAmount};
     use strata_asm_manifest_types::AsmManifest;
-    use strata_identifiers::{
-        AccountSerial, Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot,
-    };
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
     use strata_ledger_types::{
         AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData,
     };
@@ -211,15 +215,7 @@ mod tests {
         );
         let global = GlobalState::new(state.cur_slot());
 
-        let mut batch = WriteBatch::new(global, epochal);
-
-        // Initialize next_serial for account creation
-        // The next serial is SYSTEM_RESERVED_ACCTS + number of accounts
-        // For new genesis state, it would be SYSTEM_RESERVED_ACCTS
-        let base_next_serial = AccountSerial::from(SYSTEM_RESERVED_ACCTS);
-        batch.ledger_mut().set_next_serial(base_next_serial);
-
-        batch
+        WriteBatch::new(global, epochal)
     }
 
     // =========================================================================
@@ -233,12 +229,6 @@ mod tests {
             setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let batch = create_batch_from_state(&base_state);
-        // Need to update next_serial to account for the account we created
-        let mut batch = batch;
-        batch
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
         let tracking = WriteTrackingState::new(&base_state, batch);
 
         // Read should fall back to base since batch is empty
@@ -272,11 +262,7 @@ mod tests {
             .unwrap()
             .balance();
 
-        let mut batch = create_batch_from_state(&base_state);
-        batch
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+        let batch = create_batch_from_state(&base_state);
         let mut tracking = WriteTrackingState::new(&base_state, batch);
 
         // Modify account
@@ -305,11 +291,7 @@ mod tests {
         let (base_state, _) =
             setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-        let mut batch = create_batch_from_state(&base_state);
-        batch
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+        let batch = create_batch_from_state(&base_state);
         let mut tracking = WriteTrackingState::new(&base_state, batch);
 
         // Modify the account to put it in the batch
@@ -340,11 +322,7 @@ mod tests {
     #[test]
     fn test_create_account_in_batch() {
         let base_state = OLState::new_genesis();
-        let mut batch = create_batch_from_state(&base_state);
-        batch
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS));
-
+        let batch = create_batch_from_state(&base_state);
         let mut tracking = WriteTrackingState::new(&base_state, batch);
 
         let account_id = test_account_id(1);
@@ -371,11 +349,7 @@ mod tests {
     #[test]
     fn test_find_account_id_by_serial_for_new_account() {
         let base_state = OLState::new_genesis();
-        let mut batch = create_batch_from_state(&base_state);
-        batch
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS));
-
+        let batch = create_batch_from_state(&base_state);
         let mut tracking = WriteTrackingState::new(&base_state, batch);
 
         let account_id = test_account_id(1);
@@ -483,11 +457,7 @@ mod tests {
         let (base_state, _) =
             setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-        let mut batch = create_batch_from_state(&base_state);
-        batch
-            .ledger_mut()
-            .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+        let batch = create_batch_from_state(&base_state);
         let mut tracking = WriteTrackingState::new(&base_state, batch);
 
         // Make some modifications

@@ -149,6 +149,10 @@ impl IStateAccessor for OLState {
         Ok(self.ledger.get_serial_acct_id(serial).copied())
     }
 
+    fn next_account_serial(&self) -> AccountSerial {
+        self.ledger.next_avail_serial()
+    }
+
     fn compute_state_root(&self) -> AcctResult<Buf32> {
         // Compute the state root by hashing the Codec encoding of the state
         // For now, we'll panic on encoding errors as they shouldn't happen in practice

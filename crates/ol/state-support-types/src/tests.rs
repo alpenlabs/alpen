@@ -4,11 +4,9 @@
 //! and work correctly.
 
 use bitcoin::absolute;
-use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+use strata_acct_types::BitcoinAmount;
 use strata_asm_manifest_types::AsmManifest;
-use strata_identifiers::{
-    AccountSerial, Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot,
-};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 use strata_ledger_types::{
     AccountTypeState, Coin, IAccountState, IAccountStateMut, ISnarkAccountState,
     ISnarkAccountStateMut, IStateAccessor, NewAccountData,
@@ -34,11 +32,7 @@ fn create_batch_from_state(
     );
     let global = GlobalState::new(state.cur_slot());
 
-    let mut batch = WriteBatch::new(global, epochal);
-    let base_next_serial = AccountSerial::from(SYSTEM_RESERVED_ACCTS);
-    batch.ledger_mut().set_next_serial(base_next_serial);
-
-    batch
+    WriteBatch::new(global, epochal)
 }
 
 // =============================================================================
@@ -53,11 +47,7 @@ fn test_indexer_over_write_tracking_basic() {
         setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
     // Create the layer stack: IndexerState<WriteTrackingState<&OLState>>
-    let mut batch = create_batch_from_state(&base_state);
-    batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+    let batch = create_batch_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let indexer = IndexerState::new(tracking);
 
@@ -73,11 +63,7 @@ fn test_combined_inbox_message_tracking() {
     let (base_state, _serial) =
         setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-    let mut batch = create_batch_from_state(&base_state);
-    batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+    let batch = create_batch_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
 
@@ -145,11 +131,7 @@ fn test_combined_balance_modification() {
     let (base_state, _serial) =
         setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
-    let mut batch = create_batch_from_state(&base_state);
-    batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+    let batch = create_batch_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
 
@@ -178,11 +160,7 @@ fn test_combined_balance_modification() {
 #[test]
 fn test_combined_account_creation() {
     let base_state = OLState::new_genesis();
-    let mut batch = create_batch_from_state(&base_state);
-    batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS));
-
+    let batch = create_batch_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
 
@@ -242,11 +220,7 @@ fn test_combined_multiple_operations() {
     let (base_state, _) =
         setup_state_with_snark_account(account_id_1, 1, BitcoinAmount::from_sat(1000));
 
-    let mut batch = create_batch_from_state(&base_state);
-    batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+    let batch = create_batch_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
 
@@ -311,9 +285,6 @@ fn test_write_tracking_over_batch_diff_basic() {
 
     // Create a pending batch with some modifications
     let mut pending_batch = create_batch_from_state(&base_state);
-    pending_batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
     pending_batch.global_mut().set_cur_slot(50);
     pending_batch.epochal_mut().set_cur_epoch(3);
 
@@ -352,10 +323,7 @@ fn test_write_tracking_over_batch_diff_update_account() {
     let diff_state = BatchDiffState::new(&base_state, &pending_batches);
 
     // Create WriteTrackingState on top
-    let mut write_batch = create_batch_from_state(&base_state);
-    write_batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let write_batch = create_batch_from_state(&base_state);
     let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
 
     // Update account balance
@@ -389,10 +357,7 @@ fn test_write_tracking_over_batch_diff_create_account() {
     let diff_state = BatchDiffState::new(&base_state, &pending_batches);
 
     // Create WriteTrackingState on top
-    let mut write_batch = create_batch_from_state(&base_state);
-    write_batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS));
+    let write_batch = create_batch_from_state(&base_state);
     let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
 
     // Create a new account
@@ -457,10 +422,7 @@ fn test_write_tracking_over_batch_diff_inbox_message() {
     let diff_state = BatchDiffState::new(&base_state, &pending_batches);
 
     // Create WriteTrackingState on top
-    let mut write_batch = create_batch_from_state(&base_state);
-    write_batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let write_batch = create_batch_from_state(&base_state);
     let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
 
     // Insert an inbox message
@@ -510,18 +472,16 @@ fn test_write_tracking_over_batch_diff_reads_from_pending_batch() {
         BitcoinAmount::from_sat(3000),
         AccountTypeState::Snark(snark_state),
     );
+    let serial = base_state.next_account_serial();
     pending_batch
         .ledger_mut()
-        .create_account_from_data(account_id_in_batch, new_acct);
+        .create_account_from_data(account_id_in_batch, new_acct, serial);
 
     let pending_batches = vec![pending_batch];
     let diff_state = BatchDiffState::new(&base_state, &pending_batches);
 
     // Create WriteTrackingState on top
-    let mut write_batch = create_batch_from_state(&base_state);
-    write_batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let write_batch = create_batch_from_state(&base_state);
     let tracking = WriteTrackingState::new(&diff_state, write_batch);
 
     // Should be able to read the account from the pending batch
@@ -546,18 +506,16 @@ fn test_write_tracking_over_batch_diff_update_account_from_pending_batch() {
         BitcoinAmount::from_sat(3000),
         AccountTypeState::Snark(snark_state),
     );
+    let serial = base_state.next_account_serial();
     pending_batch
         .ledger_mut()
-        .create_account_from_data(account_id, new_acct);
+        .create_account_from_data(account_id, new_acct, serial);
 
     let pending_batches = vec![pending_batch];
     let diff_state = BatchDiffState::new(&base_state, &pending_batches);
 
     // Create WriteTrackingState on top
-    let mut write_batch = create_batch_from_state(&base_state);
-    write_batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
+    let write_batch = create_batch_from_state(&base_state);
     let mut tracking = WriteTrackingState::new(&diff_state, write_batch);
 
     // Update the account (copy-on-write from pending batch to write batch)
@@ -604,11 +562,7 @@ fn test_combined_layers_preserve_base_state() {
         .inbox_mmr()
         .num_entries();
 
-    let mut batch = create_batch_from_state(&base_state);
-    batch
-        .ledger_mut()
-        .set_next_serial(AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1));
-
+    let batch = create_batch_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
 
