@@ -161,4 +161,121 @@ pub struct ExecutionAuxiliaryData {
     pub asm_manifests: Vec<AsmManifest>,
 }
 
-// TODO: comprehensive tests
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
+    use strata_ledger_types::{AccountTypeState, IAccountState, IGlobalState, IL1ViewState};
+
+    use super::*;
+    use crate::OLState;
+    use crate::account::AccountState;
+
+    fn test_account_id(n: u8) -> AccountId {
+        let mut bytes = [0u8; 32];
+        bytes[0] = n;
+        AccountId::from(bytes)
+    }
+
+    fn empty_account() -> AccountState {
+        AccountState::new_account(AccountSerial::from(0), BitcoinAmount::from(0), AccountTypeState::Empty)
+    }
+
+    #[test]
+    fn test_create_account_coordinates_all_structures() {
+        let mut wb = WriteBatch::<OLState>::new(AccountSerial::from(100));
+
+        let id1 = test_account_id(1);
+        let id2 = test_account_id(2);
+
+        let serial1 = wb.create_account(id1, empty_account());
+        let serial2 = wb.create_account(id2, empty_account());
+
+        assert_eq!(serial1, AccountSerial::from(100));
+        assert_eq!(serial2, AccountSerial::from(101));
+        assert_eq!(wb.get_next_serial(), AccountSerial::from(102));
+
+        assert!(wb.has_account(&id1));
+        assert!(wb.has_account(&id2));
+        assert_eq!(wb.find_serial(serial1), Some(id1));
+        assert_eq!(wb.find_serial(serial2), Some(id2));
+        assert_eq!(wb.created_ids, vec![id1, id2]);
+    }
+
+    #[test]
+    fn test_created_ids_preserves_order() {
+        let mut wb = WriteBatch::<OLState>::new(AccountSerial::from(0));
+        let ids: Vec<_> = (0..10).map(|i| test_account_id(i)).collect();
+
+        for id in &ids {
+            wb.create_account(*id, empty_account());
+        }
+
+        assert_eq!(wb.created_ids, ids);
+    }
+
+    #[test]
+    fn test_find_serial_returns_none_for_unknown() {
+        let wb = WriteBatch::<OLState>::new(AccountSerial::from(0));
+
+        assert_eq!(wb.find_serial(AccountSerial::from(999)), None);
+    }
+
+    #[test]
+    fn test_serial_to_id_mapping_after_multiple_creates() {
+        let mut wb = WriteBatch::<OLState>::new(AccountSerial::from(50));
+
+        let id1 = test_account_id(10);
+        let id2 = test_account_id(20);
+        let id3 = test_account_id(30);
+
+        wb.create_account(id1, empty_account());
+        wb.create_account(id2, empty_account());
+        wb.create_account(id3, empty_account());
+
+        assert_eq!(wb.find_serial(AccountSerial::from(50)), Some(id1));
+        assert_eq!(wb.find_serial(AccountSerial::from(51)), Some(id2));
+        assert_eq!(wb.find_serial(AccountSerial::from(52)), Some(id3));
+        assert_eq!(wb.find_serial(AccountSerial::from(49)), None);
+        assert_eq!(wb.find_serial(AccountSerial::from(53)), None);
+    }
+
+    #[test]
+    fn test_global_state_mut_or_insert_lazy_init() {
+        let mut wb = WriteBatch::<OLState>::new(AccountSerial::from(0));
+        assert!(wb.global_state().is_none());
+
+        let base = OLState::new_genesis().global().clone();
+        wb.global_state_mut_or_insert(&base).set_cur_slot(99);
+
+        assert_eq!(wb.global_state().unwrap().get_cur_slot(), 99);
+
+        wb.global_state_mut_or_insert(&base).set_cur_slot(200);
+        assert_eq!(wb.global_state().unwrap().get_cur_slot(), 200);
+    }
+
+    #[test]
+    fn test_epochal_state_mut_or_insert_lazy_init() {
+        let mut wb = WriteBatch::<OLState>::new(AccountSerial::from(0));
+        assert!(wb.epochal_state().is_none());
+
+        let base = OLState::new_genesis().l1_view().clone();
+        wb.epochal_state_mut_or_insert(&base).set_cur_epoch(200);
+
+        assert_eq!(wb.epochal_state().unwrap().cur_epoch(), 200);
+    }
+
+    #[test]
+    fn test_modified_accounts_count() {
+        let mut wb = WriteBatch::<OLState>::new(AccountSerial::from(0));
+        assert_eq!(wb.modified_accounts_count(), 0);
+
+        wb.create_account(test_account_id(1), empty_account());
+        assert_eq!(wb.modified_accounts_count(), 1);
+
+        wb.create_account(test_account_id(2), empty_account());
+        assert_eq!(wb.modified_accounts_count(), 2);
+
+        wb.insert_account(test_account_id(1), empty_account());
+        assert_eq!(wb.modified_accounts_count(), 2);
+    }
+}
