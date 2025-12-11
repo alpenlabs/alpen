@@ -3,12 +3,9 @@ use bitcoin::taproot::TAPROOT_CONTROL_NODE_SIZE;
 use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
 use strata_l1_txfmt::TagData;
 
-use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::DEPOSIT_TX_TYPE, errors::TagDataError};
+use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::BridgeTxType, errors::TagDataError};
 
-/// Auxiliary data in the SPS-50 header for bridge v1 deposit transactions.
-///
-/// This represents the type-specific auxiliary bytes that appear after the magic, subprotocol,
-/// and tx_type fields in the OP_RETURN output at position 0.
+/// Auxiliary data in the SPS-50 header for [`BridgeTxType::Deposit`].
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary)]
 pub struct DepositTxHeaderAux {
     /// idx of the deposit as given by the N/N multisig.
@@ -69,7 +66,11 @@ impl DepositTxHeaderAux {
     /// - The encoded auxiliary data exceeds the maximum allowed size (74 bytes)
     pub fn build_tag_data(&self) -> Result<TagData, TagDataError> {
         let aux_data = encode_to_vec(self)?;
-        let tag = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, aux_data)?;
+        let tag = TagData::new(
+            BRIDGE_V1_SUBPROTOCOL_ID,
+            BridgeTxType::Deposit as u8,
+            aux_data,
+        )?;
         Ok(tag)
     }
 }

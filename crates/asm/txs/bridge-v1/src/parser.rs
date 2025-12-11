@@ -1,8 +1,10 @@
+use std::convert::TryInto;
+
 use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
 
 use crate::{
-    constants::{DEPOSIT_TX_TYPE, SLASH_TX_TYPE, UNSTAKE_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE},
+    constants::BridgeTxType,
     deposit::{DepositInfo, parse_deposit_tx},
     errors::BridgeTxParseError,
     slash::{SlashInfo, parse_slash_tx},
@@ -52,24 +54,27 @@ pub enum ParsedTx<'t> {
 /// - The transaction type is not supported by the bridge subprotocol
 /// - The transaction data extraction fails (malformed transaction structure)
 pub fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx<'t>, BridgeTxParseError> {
-    match tx.tag().tx_type() {
-        DEPOSIT_TX_TYPE => {
+    match tx.tag().tx_type().try_into() {
+        Ok(BridgeTxType::Deposit) => {
             let info = parse_deposit_tx(tx)?;
             let parsed_tx = ParsedDepositTx { tx: tx.tx(), info };
             Ok(ParsedTx::Deposit(parsed_tx))
         }
-        WITHDRAWAL_FULFILLMENT_TX_TYPE => {
+        Ok(BridgeTxType::WithdrawalFulfillment) => {
             let info = parse_withdrawal_fulfillment_tx(tx)?;
             Ok(ParsedTx::WithdrawalFulfillment(info))
         }
-        SLASH_TX_TYPE => {
+        Ok(BridgeTxType::Slash) => {
             let info = parse_slash_tx(tx)?;
             Ok(ParsedTx::Slash(info))
         }
-        UNSTAKE_TX_TYPE => {
+        Ok(BridgeTxType::Unstake) => {
             let info = parse_unstake_tx(tx)?;
             Ok(ParsedTx::Unstake(info))
         }
-        unsupported_type => Err(BridgeTxParseError::UnsupportedTxType(unsupported_type)),
+        Ok(BridgeTxType::DepositRequest | BridgeTxType::Commit) => {
+            Err(BridgeTxParseError::UnsupportedTxType(tx.tag().tx_type()))
+        }
+        Err(unsupported_type) => Err(BridgeTxParseError::UnsupportedTxType(unsupported_type)),
     }
 }
