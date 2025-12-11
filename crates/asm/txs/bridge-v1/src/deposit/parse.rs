@@ -26,10 +26,12 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
         .tx()
         .output
         .get(DEPOSIT_OUTPUT_INDEX)
-        .ok_or(DepositTxParseError::MissingDepositOutput)?;
+        .ok_or(DepositTxParseError::MissingDepositOutput)?
+        .clone()
+        .into();
 
     // Construct the validated deposit information
-    Ok(DepositInfo::new(header_aux, deposit_output.value.into()))
+    Ok(DepositInfo::new(header_aux, deposit_output))
 }
 
 #[cfg(test)]
