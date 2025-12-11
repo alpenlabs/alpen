@@ -1,15 +1,13 @@
 import flexitest
-from solcx import compile_source, install_solc, set_solc_version
 from web3 import Web3
 
 from envs import testenv
+from utils import compile_solidity
 
 
 @flexitest.register
 class ElBlockWitnessDataGenerationTest(testenv.StrataTestBase):
     def __init__(self, ctx: flexitest.InitContext):
-        install_solc(version="0.8.16")
-        set_solc_version("0.8.16")
         ctx.set_env("basic")
 
     def main(self, ctx: flexitest.RunContext):
@@ -37,22 +35,16 @@ class ElBlockWitnessDataGenerationTest(testenv.StrataTestBase):
 
 
 def get_contract() -> tuple[list, str]:
-    compiled_sol = compile_source(
+    return compile_solidity(
         """
         pragma solidity ^0.8.0;
 
         contract Greeter {
             string public greeting;
 
-            constructor() public {
+            constructor() {
                 greeting = 'Hello';
             }
         }
-        """,
-        output_values=["abi", "bin"],
+        """
     )
-
-    _, contract_interface = compiled_sol.popitem()
-    bytecode = contract_interface["bin"]
-    abi = contract_interface["abi"]
-    return abi, bytecode

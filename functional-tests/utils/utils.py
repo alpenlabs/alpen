@@ -1,12 +1,15 @@
 import contextlib
+import json
 import logging
 import math
 import os
 import pty
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from threading import Thread
 from typing import Any, TypeVar
 
@@ -761,3 +764,90 @@ def run_tty(cmd, *, capture_output=False, stdout=None, env=None) -> subprocess.C
         stdout=(b"".join(buf) if buf is not None else None),
         stderr=None,  # PTY merges stderr
     )
+
+
+def _ensure_solc_installed():
+    """Ensure solc version is installed (auto-install on first use)."""
+    result = subprocess.run(
+        ["solc-select", "use", SOLC_VERSION],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        # Version not installed, install it
+        subprocess.run(
+            ["solc-select", "install", SOLC_VERSION],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["solc-select", "use", SOLC_VERSION],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+
+def compile_solidity(source: str, contract_name: str | None = None) -> tuple[list, str]:
+    """
+    Compile Solidity source and return (abi, bytecode).
+
+    Auto-installs solc 0.8.24 on first use.
+
+    Args:
+        source: File path (e.g., "contracts/Counter.sol") or inline source code
+        contract_name: Contract to extract. If None, extracts the only contract.
+
+    Returns:
+        Tuple of (abi, bytecode_hex)
+    """
+    _ensure_solc_installed()
+
+    # Determine if source is file path or inline code
+    is_file = Path(source).exists()
+
+    if is_file:
+        temp_file = None
+        source_file = source
+    else:
+        # Write inline source to temp file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sol", delete=False) as f:
+            f.write(source)
+            temp_file = f.name
+            source_file = temp_file
+
+    try:
+        result = subprocess.run(
+            ["solc", "--combined-json", "abi,bin", source_file],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        contracts = json.loads(result.stdout)["contracts"]
+
+        # Find contract by name or get the only one
+        if contract_name:
+            for contract_id, data in contracts.items():
+                if contract_id.endswith(f":{contract_name}"):
+                    abi_data = data["abi"]
+                    abi = json.loads(abi_data) if isinstance(abi_data, str) else abi_data
+                    return abi, data["bin"]
+            raise RuntimeError(f"Contract '{contract_name}' not found")
+
+        if len(contracts) != 1:
+            contract_names = list(contracts.keys())
+            raise RuntimeError(f"Expected 1 contract, found {len(contracts)}: {contract_names}")
+
+        data = next(iter(contracts.values()))
+        abi_data = data["abi"]
+        abi = json.loads(abi_data) if isinstance(abi_data, str) else abi_data
+        return abi, data["bin"]
+
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Compilation failed: {e.stderr}") from e
+    finally:
+        if temp_file:
+            Path(temp_file).unlink(missing_ok=True)

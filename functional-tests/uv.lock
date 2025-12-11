@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = "==3.10.*"
 
 [[package]]
@@ -881,19 +881,6 @@ wheels = [
 ]
 
 [[package]]
-name = "py-solc-x"
-version = "2.0.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/72/92c6c96584cf9b1e7f1da50978d44910e7545ce0df646041ce683993ee18/py-solc-x-2.0.4.tar.gz", hash = "sha256:6f6f7f47c8520bde73679624568ec343db9baca6914212b371896fad8697deca", size = 77779, upload-time = "2025-05-30T22:50:48.908Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/97/3a/063e034e0b283933fc1b8359ba5982b5cb853520e32829f1d0e7881fe47c/py_solc_x-2.0.4-py3-none-any.whl", hash = "sha256:fe7baf788ed2f23b3c793c20661560cceca6f8a1de9d6d479fe3ea9c6c1b2a9e", size = 18560, upload-time = "2025-05-30T22:50:47.512Z" },
-]
-
-[[package]]
 name = "pycparser"
 version = "2.22"
 source = { registry = "https://pypi.org/simple" }
@@ -1184,6 +1171,20 @@ wheels = [
 ]
 
 [[package]]
+name = "solc-select"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pycryptodome" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/62/89/51e614fdbf26f47268c18f8a3b6cf1cb67c9a8b48b7b7231c948cae97814/solc_select-1.2.0.tar.gz", hash = "sha256:ad0a7afcae05061ce5e7632950b1fa0193ba9eaf05e4956f86effee024c6fb07", size = 52211, upload-time = "2025-12-04T20:57:18.584Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/ec/0d653030e519fa308e01978698289deb3e0a08adbed5df20a8b8a4884fcf/solc_select-1.2.0-py3-none-any.whl", hash = "sha256:dd00cab29229570c4399058852a4052f2120d87c7e341e35f04794a13cfdd1de", size = 36276, upload-time = "2025-12-04T20:57:16.58Z" },
+]
+
+[[package]]
 name = "sqlalchemy"
 version = "2.0.37"
 source = { registry = "https://pypi.org/simple" }
@@ -1213,7 +1214,7 @@ dependencies = [
     { name = "bitcoinlib" },
     { name = "flexitest" },
     { name = "locust" },
-    { name = "py-solc-x" },
+    { name = "solc-select" },
     { name = "toml" },
     { name = "web3" },
     { name = "websockets" },
@@ -1231,7 +1232,7 @@ requires-dist = [
     { name = "bitcoinlib", specifier = ">=0.7.5,<0.8" },
     { name = "flexitest", git = "https://codeberg.org/treyd/flexitest.git" },
     { name = "locust", specifier = ">=2.39.1,<3" },
-    { name = "py-solc-x", specifier = ">=2.0.4,<3" },
+    { name = "solc-select", specifier = ">=1.0.4,<2" },
     { name = "toml", specifier = ">=0.10.2,<0.11" },
     { name = "web3", specifier = ">=7.13.0,<8" },
     { name = "websockets", specifier = "~=15.0" },
