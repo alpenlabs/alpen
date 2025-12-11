@@ -1,7 +1,11 @@
 //! Generic tracking accessor that wraps any StateAccessor and tracks all modifications
 //! during block execution, accumulating them into a WriteBatch.
 
-use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Hash};
+use std::fmt;
+
+use strata_acct_types::{
+    AcctError, AccountId, AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash,
+};
 use strata_identifiers::{Buf32, EpochCommitment, L1Height};
 use strata_ledger_types::{
     AccountTypeState, AsmManifest, Coin, IAccountState, IGlobalState, IL1ViewState,
@@ -24,13 +28,13 @@ pub struct TrackingStateAccessor<S: StateAccessor> {
     aux: ExecutionAuxiliaryData,
 }
 
-impl<S: StateAccessor + core::fmt::Debug> core::fmt::Debug for TrackingStateAccessor<S>
+impl<S: StateAccessor + fmt::Debug> fmt::Debug for TrackingStateAccessor<S>
 where
-    S::GlobalState: core::fmt::Debug,
-    S::L1ViewState: core::fmt::Debug,
-    S::AccountState: core::fmt::Debug,
+    S::GlobalState: fmt::Debug,
+    S::L1ViewState: fmt::Debug,
+    S::AccountState: fmt::Debug,
 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TrackingStateAccessor")
             .field("base", &self.base)
             .field("writebatch", &self.writebatch)
@@ -62,6 +66,34 @@ impl<S: StateAccessor> TrackingStateAccessor<S> {
     /// Get reference to the writebatch overlay
     pub fn writebatch(&self) -> &WriteBatch<S> {
         &self.writebatch
+    }
+
+    /// Get mutable account, cloning from base if not in overlay
+    fn get_account_mut(&mut self, acct_id: AccountId) -> AcctResult<S::AccountState>
+    where
+        S::AccountState: Clone,
+    {
+        if let Some(acct) = self.writebatch.get_account(&acct_id) {
+            Ok(acct.clone())
+        } else {
+            self.base
+                .get_account_state(acct_id)?
+                .ok_or(AcctError::MissingExpectedAccount(acct_id))
+                .cloned()
+        }
+    }
+
+    /// Extract snark account state from account
+    fn get_snark_state_mut(
+        acct: &mut S::AccountState,
+    ) -> AcctResult<<S::AccountState as IAccountState>::SnarkAccountState>
+    where
+        S::AccountState: IAccountState,
+    {
+        match acct.get_type_state()? {
+            AccountTypeState::Snark(s) => Ok(s),
+            _ => Err(AcctError::MismatchedType(acct.ty()?, AccountTypeId::Snark)),
+        }
     }
 }
 
@@ -128,66 +160,28 @@ where
     }
 
     fn add_balance(&mut self, acct_id: AccountId, coin: Coin) -> AcctResult<()> {
-        // Get or clone the account into overlay
-        let acct = if let Some(acct) = self.writebatch.get_account(&acct_id) {
-            acct.clone()
-        } else {
-            self.base
-                .get_account_state(acct_id)?
-                .ok_or(strata_acct_types::AcctError::MissingExpectedAccount(acct_id))?
-                .clone()
-        };
-
-        let mut acct = acct;
+        let mut acct = self.get_account_mut(acct_id)?;
         acct.add_balance(coin);
         self.writebatch.insert_account(acct_id, acct);
         Ok(())
     }
 
     fn take_balance(&mut self, acct_id: AccountId, amt: BitcoinAmount) -> AcctResult<Coin> {
-        // Get or clone the account into overlay
-        let acct = if let Some(acct) = self.writebatch.get_account(&acct_id) {
-            acct.clone()
-        } else {
-            self.base
-                .get_account_state(acct_id)?
-                .ok_or(strata_acct_types::AcctError::MissingExpectedAccount(acct_id))?
-                .clone()
-        };
-
-        let mut acct = acct;
+        let mut acct = self.get_account_mut(acct_id)?;
         let coin = acct.take_balance(amt)?;
         self.writebatch.insert_account(acct_id, acct);
         Ok(coin)
     }
 
     fn insert_inbox_message(&mut self, acct_id: AccountId, entry: MessageEntry) -> AcctResult<()> {
-        // Accumulate for auxiliary data
         self.aux
             .account_message_additions
             .entry(acct_id)
             .or_default()
             .push(entry.clone());
 
-        // Get or clone the account into overlay
-        let mut acct = if let Some(acct) = self.writebatch.get_account(&acct_id) {
-            acct.clone()
-        } else {
-            self.base
-                .get_account_state(acct_id)?
-                .ok_or(strata_acct_types::AcctError::MissingExpectedAccount(acct_id))?
-                .clone()
-        };
-
-        // Get snark state, modify it, and set it back
-        let mut snark_state = match acct.get_type_state()? {
-            AccountTypeState::Snark(s) => s,
-            _ => return Err(strata_acct_types::AcctError::MismatchedType(
-                acct.ty()?,
-                strata_acct_types::AccountTypeId::Snark,
-            )),
-        };
-
+        let mut acct = self.get_account_mut(acct_id)?;
+        let mut snark_state = Self::get_snark_state_mut(&mut acct)?;
         snark_state.insert_inbox_message(entry)?;
         acct.set_type_state(AccountTypeState::Snark(snark_state))?;
         self.writebatch.insert_account(acct_id, acct);
@@ -201,25 +195,8 @@ where
         next_read_idx: u64,
         seqno: Seqno,
     ) -> AcctResult<()> {
-        // Get or clone the account into overlay
-        let mut acct = if let Some(acct) = self.writebatch.get_account(&acct_id) {
-            acct.clone()
-        } else {
-            self.base
-                .get_account_state(acct_id)?
-                .ok_or(strata_acct_types::AcctError::MissingExpectedAccount(acct_id))?
-                .clone()
-        };
-
-        // Get snark state, modify it, and set it back
-        let mut snark_state = match acct.get_type_state()? {
-            AccountTypeState::Snark(s) => s,
-            _ => return Err(strata_acct_types::AcctError::MismatchedType(
-                acct.ty()?,
-                strata_acct_types::AccountTypeId::Snark,
-            )),
-        };
-
+        let mut acct = self.get_account_mut(acct_id)?;
+        let mut snark_state = Self::get_snark_state_mut(&mut acct)?;
         snark_state.set_proof_state_directly(state, next_read_idx, seqno);
         acct.set_type_state(AccountTypeState::Snark(snark_state))?;
         self.writebatch.insert_account(acct_id, acct);
@@ -236,14 +213,12 @@ where
         id: AccountId,
         state: AccountTypeState<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
-        // Create account in base state to get serial
         let serial = self.base.create_new_account(id, state)?;
-
-        // Get the newly created account and put it in overlay
-        let acct = self.base.get_account_state(id)?.ok_or(
-            strata_acct_types::AcctError::MissingExpectedAccount(id)
-        )?.clone();
-
+        let acct = self
+            .base
+            .get_account_state(id)?
+            .ok_or(AcctError::MissingExpectedAccount(id))?
+            .clone();
         self.writebatch.insert_account(id, acct);
         Ok(serial)
     }

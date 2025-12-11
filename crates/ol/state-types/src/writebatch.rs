@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 use strata_acct_types::AccountId;
 use strata_ledger_types::{AsmManifest, StateAccessor};
@@ -22,13 +22,13 @@ pub struct WriteBatch<S: StateAccessor> {
     pub(crate) epochal_state: Option<S::L1ViewState>,
 }
 
-impl<S: StateAccessor> core::fmt::Debug for WriteBatch<S>
+impl<S: StateAccessor> fmt::Debug for WriteBatch<S>
 where
-    S::GlobalState: core::fmt::Debug,
-    S::L1ViewState: core::fmt::Debug,
-    S::AccountState: core::fmt::Debug,
+    S::GlobalState: fmt::Debug,
+    S::L1ViewState: fmt::Debug,
+    S::AccountState: fmt::Debug,
 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WriteBatch")
             .field("modified_accounts", &self.modified_accounts)
             .field("global_state", &self.global_state)
@@ -77,10 +77,7 @@ impl<S: StateAccessor> WriteBatch<S> {
     where
         S::GlobalState: Clone,
     {
-        if self.global_state.is_none() {
-            self.global_state = Some(base.clone());
-        }
-        self.global_state.as_mut().unwrap()
+        self.global_state.get_or_insert_with(|| base.clone())
     }
 
     /// Get epochal state if overridden
@@ -93,10 +90,7 @@ impl<S: StateAccessor> WriteBatch<S> {
     where
         S::L1ViewState: Clone,
     {
-        if self.epochal_state.is_none() {
-            self.epochal_state = Some(base.clone());
-        }
-        self.epochal_state.as_mut().unwrap()
+        self.epochal_state.get_or_insert_with(|| base.clone())
     }
 
     /// Get the number of modified accounts
