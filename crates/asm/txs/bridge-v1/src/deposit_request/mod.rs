@@ -39,5 +39,7 @@
 pub mod aux;
 pub mod parse;
 
+pub const DRT_OUTPUT_INDEX: usize = 1;
+
 pub use aux::DepositRequestAuxData;
-pub use parse::{MIN_DRT_AUX_DATA_LEN, parse_drt, parse_drt_from_tx};
+pub use parse::parse_drt;

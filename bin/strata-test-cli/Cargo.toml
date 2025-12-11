@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 shrex.workspace = true
+strata-asm-common.workspace = true
 strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
 strata-cli-common.workspace = true
 strata-crypto.workspace = true

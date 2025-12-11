@@ -19,7 +19,7 @@ pub fn mutate_aux_data(tx: &mut Transaction, new_aux: Vec<u8>) {
 }
 
 // Helper function to parse transaction
-pub fn parse_tx(tx: &Transaction) -> TxInputRef<'_> {
+pub fn parse_sps50_tx(tx: &Transaction) -> TxInputRef<'_> {
     let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
     let tag_data = parser.try_parse_tx(tx).expect("Should parse transaction");
     TxInputRef::new(tx, tag_data)

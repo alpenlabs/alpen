@@ -52,7 +52,7 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data, parse_tx,
+        TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data, parse_sps50_tx,
     };
 
     /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
@@ -113,7 +113,7 @@ mod tests {
         let short_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
         mutate_aux_data(&mut tx, short_aux_data);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
 
         assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
@@ -122,7 +122,7 @@ mod tests {
         let long_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
         mutate_aux_data(&mut tx, long_aux_data);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
         assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
     }

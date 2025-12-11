@@ -44,7 +44,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{create_test_slash_tx, mutate_aux_data, parse_tx};
+    use crate::test_utils::{create_test_slash_tx, mutate_aux_data, parse_sps50_tx};
 
     const AUX_LEN: usize = std::mem::size_of::<SlashTxHeaderAux>();
 
@@ -53,7 +53,7 @@ mod tests {
         let info: SlashInfo = ArbitraryGenerator::new().generate();
 
         let tx = create_test_slash_tx(&info);
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
 
         let parsed = parse_slash_tx(&tx_input).expect("Should parse slash tx");
 
@@ -68,7 +68,7 @@ mod tests {
         // Remove the stake connector to force an input count mismatch
         tx.input.pop();
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_slash_tx(&tx_input).unwrap_err();
         assert!(matches!(
             err,
@@ -84,14 +84,14 @@ mod tests {
         let larger_aux = [0u8; AUX_LEN + 1].to_vec();
         mutate_aux_data(&mut tx, larger_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_slash_tx(&tx_input).unwrap_err();
         assert!(matches!(err, SlashTxParseError::InvalidAuxiliaryData(_)));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
         mutate_aux_data(&mut tx, smaller_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_slash_tx(&tx_input).unwrap_err();
         assert!(matches!(err, SlashTxParseError::InvalidAuxiliaryData(_)));
     }
