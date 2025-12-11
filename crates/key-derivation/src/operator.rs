@@ -133,8 +133,8 @@ impl Zeroize for OperatorKeys {
         let Self {
             master,
             base,
+            message,
             wallet,
-            ..
         } = self;
 
         // # Security note
@@ -201,9 +201,9 @@ impl Zeroize for OperatorKeys {
             };
         }
 
-        // NOTE: We don't need to zeroize the ed25519 signing key since it is already
-        //       zeroized on drop if we use `ed25519-dalek` with the `zeroize` feature.
-        //       Ref: <https://docs.rs/ed25519-dalek/latest/src/ed25519_dalek/signing.rs.html#665-666>.
+        // Zeroize ed25519 signing key by replacing with a zeroed key.
+        // This drops the old key, triggering ZeroizeOnDrop.
+        *message = SigningKey::from_bytes(&[0u8; 32]);
 
         // Zeroize wallet components
         wallet.depth.zeroize();
@@ -368,6 +368,9 @@ mod tests {
         assert_eq!(keys.master_xpriv().private_key.secret_bytes(), [1u8; 32]);
         assert_eq!(keys.base_xpriv().private_key.secret_bytes(), [1u8; 32]);
         assert_eq!(keys.wallet_xpriv().private_key.secret_bytes(), [1u8; 32]);
+
+        // Verify message signing key is zeroed
+        assert_eq!(keys.message_signing_key().to_bytes(), [0u8; 32]);
 
         assert_eq!(*keys.master_xpriv().chain_code.as_bytes(), [0u8; 32]);
         assert_eq!(*keys.base_xpriv().chain_code.as_bytes(), [0u8; 32]);
