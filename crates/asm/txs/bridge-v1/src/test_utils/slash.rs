@@ -1,14 +1,12 @@
 use bitcoin::{Amount, OutPoint, Transaction, constants::COINBASE_MATURITY};
-use strata_codec::encode_to_vec;
 use strata_crypto::EvenSecretKey;
-use strata_l1_txfmt::{ParseConfig, TagData};
+use strata_l1_txfmt::ParseConfig;
 use strata_test_utils_btcio::{
     address::derive_musig2_p2tr_address, get_bitcoind_and_client, mining::mine_blocks_blocking,
     submit::submit_transaction_with_keys_blocking,
 };
 
 use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, SLASH_TX_TYPE},
     slash::{SlashInfo, SlashTxHeaderAux},
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
 };
@@ -20,8 +18,7 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
     let mut tx = create_dummy_tx(2, 1);
 
     // Encode auxiliary data and construct SPS 50 op_return script
-    let aux_data = encode_to_vec(info.header_aux()).unwrap();
-    let tag_data = TagData::new(BRIDGE_V1_SUBPROTOCOL_ID, SLASH_TX_TYPE, aux_data).unwrap();
+    let tag_data = info.header_aux().build_tag_data().unwrap();
     let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&tag_data.as_ref())
         .unwrap();

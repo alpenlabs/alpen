@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use strata_codec::CodecError;
-use strata_l1_txfmt::TxType;
+use strata_l1_txfmt::{TxFmtError, TxType};
 use thiserror::Error;
 
 use crate::deposit_request::MIN_DRT_AUX_DATA_LEN;
@@ -150,6 +150,21 @@ pub enum CommitParseError {
     /// Missing N/N output at index 1.
     #[error("Missing N/N output at index 1")]
     MissingNnOutput,
+}
+
+/// Errors that can occur when building transaction tag data for any bridge v1 transaction type.
+///
+/// This error type is used across all transaction types (commit, deposit, withdrawal, slash, unstake)
+/// since they all have the same failure modes when building tag data.
+#[derive(Debug, Error)]
+pub enum TagDataError {
+    /// Failed to encode auxiliary data.
+    #[error("Failed to encode auxiliary data: {0}")]
+    AuxiliaryDataEncoding(#[from] CodecError),
+
+    /// Failed to create tag data.
+    #[error("Failed to create tag data: {0}")]
+    TagDataCreation(#[from] TxFmtError),
 }
 
 /// Errors that can occur when parsing slash transaction.
