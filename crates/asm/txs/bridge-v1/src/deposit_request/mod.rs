@@ -36,10 +36,8 @@
 //! users to reclaim their Bitcoin if operators fail to process the deposit within the timeout
 //! period, maintaining the non-custodial property of the bridge.
 
-pub mod build;
+pub mod aux;
 pub mod parse;
 
-pub use build::DepositRequestAuxData;
+pub use aux::DepositRequestAuxData;
 pub use parse::{MIN_DRT_AUX_DATA_LEN, parse_drt, parse_drt_from_tx};
-
-pub use crate::errors::{DepositRequestBuildError, DepositRequestParseError};

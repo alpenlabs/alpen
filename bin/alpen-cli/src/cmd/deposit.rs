@@ -3,7 +3,7 @@ use std::{str::FromStr, time::Duration};
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
 use argh::FromArgs;
 use bdk_wallet::{
-    bitcoin::{script::PushBytesBuf, secp256k1::SECP256K1, PrivateKey, XOnlyPublicKey},
+    bitcoin::{secp256k1::SECP256K1, Amount, PrivateKey, XOnlyPublicKey},
     chain::ChainOracle,
     coin_selection::InsufficientFunds,
     descriptor::IntoWalletDescriptor,
@@ -17,6 +17,7 @@ use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_txs_bridge_v1::deposit_request::DepositRequestAuxData;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_l1_txfmt::ParseConfig;
 use strata_primitives::crypto::even_kp;
 
 use crate::{
@@ -124,28 +125,31 @@ pub async fn deposit(
     let fee_rate = get_fee_rate(fee_rate, settings.signet_backend.as_ref()).await;
     log_fee_rate(&fee_rate);
 
-    // Construct the DRT metadata using the canonical builder
-    let drt_metadata =
-        DepositRequestAuxData::new(recovery_public_key, alpen_address.as_slice().to_vec());
-
     // Convert to PushBytes (ensures length ≤ 80 bytes)
     let magic_bytes: [u8; 4] = settings
         .magic_bytes
         .as_bytes()
         .try_into()
         .expect("magic_bytes validated to be 4 bytes");
-    let op_return_data = drt_metadata
-        .op_return_data(magic_bytes)
-        .internal_error("Failed to generate DRT metadata")?;
-    let push_bytes = PushBytesBuf::try_from(op_return_data)
-        .expect("conversion should succeed after length check");
+
+    // Construct the DRT metadata using the canonical builder
+    let drt_sps50_tag = DepositRequestAuxData::new(
+        recovery_public_key.serialize(),
+        alpen_address.as_slice().to_vec(),
+    )
+    .build_tag_data()
+    .expect("tag data should be created");
+
+    let sps50_script = ParseConfig::new(magic_bytes)
+        .encode_script_buf(&drt_sps50_tag.as_ref())
+        .expect("drt metadata should be created");
 
     let mut psbt = {
         let mut builder = l1w.build_tx();
         // Important: the deposit won't be found by the sequencer if the order isn't correct.
         // Per SPS-50 spec: OP_RETURN must be at index 0, P2TR at index 1
         builder.ordering(TxOrdering::Untouched);
-        builder.add_data(&push_bytes);
+        builder.add_recipient(sps50_script, Amount::ZERO);
         builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
         builder.fee_rate(fee_rate);
         match builder.finish() {

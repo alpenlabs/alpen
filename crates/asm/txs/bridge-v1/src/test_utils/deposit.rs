@@ -14,7 +14,7 @@ use strata_crypto::{
     EvenSecretKey,
     test_utils::schnorr::{Musig2Tweak, create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
-use strata_l1_txfmt::{ParseConfig, TagDataRef};
+use strata_l1_txfmt::ParseConfig;
 
 use crate::{deposit::DepositInfo, test_utils::TEST_MAGIC_BYTES};
 
@@ -149,65 +149,4 @@ pub fn build_deposit_transaction(
         input: tx_ins,
         output: tx_outs,
     }
-}
-
-/// Creates the auxiliary data for a deposit transaction OP_RETURN
-///
-/// # Arguments
-/// * `deposit_idx` - The deposit index
-/// * `takeback_hash` - The taproot hash for the takeback script
-/// * `ee_address` - The execution environment address
-///
-/// # Returns
-/// The auxiliary data bytes that should be encoded into an OP_RETURN script
-fn create_deposit_aux_data(
-    deposit_idx: u32,
-    takeback_hash: TapNodeHash,
-    ee_address: &[u8],
-) -> Vec<u8> {
-    let mut aux_data = Vec::new();
-    aux_data.extend_from_slice(&deposit_idx.to_be_bytes());
-    aux_data.extend_from_slice(takeback_hash.as_ref());
-    aux_data.extend_from_slice(ee_address);
-    aux_data
-}
-
-/// Returns the subprotocol ID and transaction type for deposit transactions
-fn deposit_tx_tag() -> (u8, u8) {
-    (BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE)
-}
-
-/// Creates an OP_RETURN script for deposit transactions using SPS-50 format
-///
-/// This is the canonical function for creating deposit OP_RETURN scripts.
-/// Both test utilities and production CLI should use this.
-///
-/// # Arguments
-/// * `magic_bytes` - The magic bytes for the network
-/// * `deposit_idx` - The deposit index
-/// * `takeback_hash` - The taproot hash for the takeback script
-/// * `ee_address` - The execution environment address
-///
-/// # Returns
-/// The OP_RETURN script ready to be included in a transaction
-///
-/// # Errors
-/// Returns an error if the SPS-50 encoding fails
-pub fn create_deposit_op_return(
-    magic_bytes: [u8; 4],
-    deposit_idx: u32,
-    takeback_hash: TapNodeHash,
-    ee_address: &[u8],
-) -> Result<ScriptBuf, String> {
-    let aux_data = create_deposit_aux_data(deposit_idx, takeback_hash, ee_address);
-    let (subprotocol_id, tx_type) = deposit_tx_tag();
-
-    let tag_data = TagDataRef::new(subprotocol_id, tx_type, &aux_data)
-        .map_err(|e| format!("SPS-50 format error: {}", e))?;
-
-    let op_return_script = ParseConfig::new(magic_bytes)
-        .encode_script_buf(&tag_data)
-        .map_err(|e| format!("SPS-50 encoding error: {}", e))?;
-
-    Ok(op_return_script)
 }

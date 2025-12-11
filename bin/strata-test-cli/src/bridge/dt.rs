@@ -14,13 +14,14 @@ use bdk_wallet::bitcoin::{
 };
 use secp256k1::SECP256K1;
 use strata_asm_txs_bridge_v1::{
-    deposit_request::parse_drt_from_tx,
-    test_utils::{build_deposit_transaction, create_deposit_op_return},
+    deposit::DepositTxHeaderAux, deposit_request::parse_drt_from_tx,
+    test_utils::build_deposit_transaction,
 };
 use strata_crypto::{
     test_utils::schnorr::{create_musig2_signature, Musig2Tweak},
     EvenSecretKey,
 };
+use strata_l1_txfmt::ParseConfig;
 use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use crate::{
@@ -74,14 +75,18 @@ pub(crate) fn create_deposit_transaction_cli(
     let takeback_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
 
     // Use canonical OP_RETURN construction from asm/txs/bridge-v1
-    let op_return_script =
-        create_deposit_op_return(*MAGIC_BYTES, dt_index, takeback_hash, &drt_data.address)
-            .map_err(Error::TxBuilder)?;
+    let dt_tag =
+        DepositTxHeaderAux::new(dt_index, *takeback_hash.as_byte_array(), drt_data.address)
+            .build_tag_data()
+            .map_err(|e| Error::TxBuilder(e.to_string()))?;
+    let sps50_script = ParseConfig::new(*MAGIC_BYTES)
+        .encode_script_buf(&dt_tag.as_ref())
+        .map_err(|e| Error::TxBuilder(e.to_string()))?;
 
     // Build deposit transaction using canonical builder
     let unsigned_tx = build_deposit_transaction(
         drt_tx.compute_txid(),
-        op_return_script,
+        sps50_script,
         agg_pubkey,
         BRIDGE_OUT_AMOUNT,
     );
