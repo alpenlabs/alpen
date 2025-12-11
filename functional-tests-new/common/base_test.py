@@ -9,8 +9,8 @@ import flexitest
 
 from common.config import ServiceType
 from common.services import (
-    BitcoinServiceWrapper,
-    StrataServiceWrapper,
+    BitcoinService,
+    StrataService,
 )
 from common.test_logging import get_test_logger
 
@@ -21,7 +21,6 @@ class BaseTest(flexitest.Test):
 
     Provides:
     - Logging utilities
-    - Waiting helpers
     - Common assertions
 
     Tests should explicitly:
@@ -63,10 +62,6 @@ class BaseTest(flexitest.Test):
 
     # Overriding here to have `self.get_service` return a `ServiceWrapper[Rpc]` without boilerplate.
     def main(self, ctx) -> bool:  # type: ignore[override]
-        self.runctx = ctx
-        return self.run()
-
-    def run(self) -> bool:
         raise NotImplementedError
 
 
@@ -76,10 +71,10 @@ class StrataNodeTest(BaseTest):
     """
 
     @overload
-    def get_service(self, typ: Literal[ServiceType.Bitcoin]) -> BitcoinServiceWrapper: ...
+    def get_service(self, typ: Literal[ServiceType.Bitcoin]) -> BitcoinService: ...
 
     @overload
-    def get_service(self, typ: Literal[ServiceType.Strata]) -> StrataServiceWrapper: ...
+    def get_service(self, typ: Literal[ServiceType.Strata]) -> StrataService: ...
 
     def get_service(self, typ: ServiceType):
         svc = self.runctx.get_service(typ)

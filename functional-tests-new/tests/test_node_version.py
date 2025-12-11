@@ -14,9 +14,7 @@ class TestNodeVersion(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 
-    # The `main()` method implicitly calls this from the base class. The `ctx`
-    # param is abstracted away.
-    def run(self):
+    def main(self, ctx):
         # Get services
         strata = self.get_service(ServiceType.Strata)
 

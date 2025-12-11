@@ -11,7 +11,7 @@ from factories.strata import StrataFactory
 
 class StrataEnvConfig(flexitest.EnvConfig):
     """
-    Straa environment: Initializes services required to run strata.
+    Strata environment: Initializes services required to run strata.
     """
 
     def __init__(self, pre_generate_blocks: int = 0):

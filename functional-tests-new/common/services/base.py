@@ -5,36 +5,46 @@ Avoids ad-hoc monkey-patching and provides type-safe service abstractions.
 """
 
 import logging
-from collections.abc import Callable
-from dataclasses import asdict, is_dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 import flexitest
 
 from common.wait import wait_until
 
-Rpc = TypeVar("Rpc")
 
-
-class ServiceWrapper(flexitest.service.ProcService, Generic[Rpc]):
+class RpcService(flexitest.service.ProcService):
     """
-    Extends ProcService with well-defined methods for test services.
+    Extends ProcService with RPC capabilities and standardized methods for test services.
 
-    Provides standardized:
-    - create_rpc() method for RPC client creation
-    - Type-safe property access
-    - Extensible for service-specific methods
+    Subclasses must implement create_rpc() to provide service-specific RPC client creation.
+
+    Provides:
+    - create_rpc() - Override to create RPC client from self.props
+    - _rpc_health_check() - Override to specify health check RPC call
+    - wait_for_ready() - Wait until service is healthy
 
     Usage:
-        def make_rpc():
-            return JsonrpcClient("ws://localhost:9944")
+        class MyServiceProps(TypedDict):
+            rpc_url: str
+            rpc_port: int
 
-        svc = ServiceWrapper(
+        class MyService(RpcService):
+            props: MyServiceProps
+
+            def __init__(self, props: MyServiceProps, cmd: list[str], ...):
+                super().__init__(props, cmd, ...)
+
+            def _rpc_health_check(self, rpc):
+                rpc.ping()
+
+            def create_rpc(self) -> MyRpcClient:
+                return MyRpcClient(self.props["rpc_url"])
+
+        svc = MyService(
             props={"rpc_port": 9944, "rpc_url": "ws://localhost:9944"},
-            cmd=["strata", "--sequencer"],
+            cmd=["myservice", "--flag"],
             stdout="/path/to/service.log",
-            rpc_factory=make_rpc,
-            name="sequencer"
+            name="myservice"
         )
         svc.start()
         rpc = svc.create_rpc()
@@ -43,60 +53,72 @@ class ServiceWrapper(flexitest.service.ProcService, Generic[Rpc]):
 
     def __init__(
         self,
-        props: dict[str, Any] | Any,
+        props: dict[str, Any],
         cmd: list[str],
         stdout: str | None = None,
-        rpc_factory: Callable[[], Rpc] | None = None,
         name: str | None = None,
     ):
         """
         Initialize service wrapper.
 
         Args:
-            props: Service properties (ports, URLs, etc.) - dict or dataclass
+            props: Service properties (ports, URLs, etc.)
             cmd: Command and arguments to execute
             stdout: Path to log file for stdout/stderr
-            rpc_factory: Optional factory function to create RPC client
             name: Service name for logging
         """
-        # Convert dataclass to dict if needed
-        props_dict = asdict(props) if is_dataclass(props) else props  # type: ignore[args-any]
-
-        super().__init__(props_dict, cmd, stdout)
-        self._rpc_factory = rpc_factory
+        super().__init__(props, cmd, stdout)
         self._name = name or cmd[0]
         self._logger = logging.getLogger(f"service.{self._name}")
 
-    def create_rpc(self) -> Rpc:
+    def create_rpc(self):
         """
         Create RPC client for this service.
 
+        Subclasses must override this method to provide service-specific RPC client creation.
+
         Returns:
-            RPC client instance (type depends on rpc_factory)
+            RPC client instance (type defined by subclass).
 
         Raises:
-            NotImplementedError: If no RPC factory was configured
+            NotImplementedError: If subclass doesn't implement this method
             RuntimeError: If service is not running
         """
-        if not self._rpc_factory:
-            raise NotImplementedError("No RPC factory configured for this service")
-        if not self.check_status():
-            raise RuntimeError("Service is not running")
+        raise NotImplementedError("Subclass must implement create_rpc()")
 
-        rpc = self._rpc_factory()
-        return rpc
+    def _rpc_health_check(self, rpc: Any) -> None:
+        """
+        Perform RPC call to verify service health.
+
+        Subclasses override this to call a simple RPC method that proves the service is responsive.
+        This method should raise an exception if the service is unhealthy.
+
+        Args:
+            rpc: RPC client returned by create_rpc()
+
+        Raises:
+            Exception: If service is not healthy
+        """
+        raise NotImplementedError("Subclass must implement _rpc_health_check()")
 
     def check_health(self) -> bool:
         """
         Check if service is healthy and ready to accept requests.
 
-        Override this in subclasses to implement service-specific health checks.
-        Default implementation just checks if process is running.
+        Checks process status and performs RPC health check via _rpc_health_check().
 
         Returns:
             True if service is healthy, False otherwise
         """
-        return self.check_status()
+        if not self.check_status():
+            return False
+
+        try:
+            rpc = self.create_rpc()
+            self._rpc_health_check(rpc)
+            return True
+        except Exception:
+            return False
 
     def wait_for_ready(self, timeout: int = 30, interval: float = 0.5) -> None:
         """

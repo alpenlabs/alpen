@@ -17,7 +17,6 @@ from common.config.config import (
 )
 from common.config.constants import ServiceType
 from common.config.params import (
-    SchnorrVerify,
     CredRule,
     DepositTxParams,
     GenesisL1View,
@@ -28,6 +27,7 @@ from common.config.params import (
     ProofPublishMode,
     ProofPublishModeTimeout,
     RollupParams,
+    SchnorrVerify,
     SyncParams,
     gen_random_keypair,
     hex_bytes_repeated,

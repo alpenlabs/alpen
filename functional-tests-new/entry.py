@@ -16,7 +16,7 @@ import os
 import sys
 
 import flexitest
-from flexitest.runtime import scan_dir_for_modules, load_candidate_modules
+from flexitest.runtime import load_candidate_modules, scan_dir_for_modules
 
 from common.config import ServiceType
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
@@ -35,8 +35,16 @@ def disabled_tests() -> frozenset[str]:
     Tests to disable (e.g., flaky tests, work-in-progress).
 
     Returns test names without .py extension.
+    Can be extended via DISABLED_TESTS env var (comma-separated).
     """
-    return frozenset(["keepalive_stub_test"])
+    base_disabled = frozenset(["keepalive_stub_test"])
+
+    env_disabled = os.getenv("DISABLED_TESTS", "")
+    if env_disabled:
+        env_set = frozenset(t.strip() for t in env_disabled.split(",") if t.strip())
+        return base_disabled | env_set
+
+    return base_disabled
 
 
 def setup_logging() -> None:
