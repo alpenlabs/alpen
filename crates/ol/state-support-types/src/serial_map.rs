@@ -87,8 +87,8 @@ impl SerialMap {
     }
 
     /// Checks if a provided serial is valid to be passed to the next invocation
-    /// of [`insert_next`].  If there has not been any serials written, then
-    /// this check effectively does nothing.
+    /// of [`Self::insert_next`].  If there has not been any serials written,
+    /// then this check effectively does nothing.
     pub fn check_next_serial(&self, serial: AccountSerial) -> bool {
         self.next_expected_serial()
             .is_none_or(|next| serial == next)
