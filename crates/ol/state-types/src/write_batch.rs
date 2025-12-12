@@ -5,9 +5,8 @@ use std::collections::BTreeMap;
 use strata_acct_types::{AccountId, AccountSerial};
 use strata_identifiers::L1BlockCommitment;
 use strata_ledger_types::{IAccountStateConstructible, IStateAccessor, NewAccountData};
-use strata_ol_state_types::{EpochalState, GlobalState};
 
-use crate::SerialMap;
+use crate::{EpochalState, GlobalState, SerialMap};
 
 /// A batch of writes to the OL state.
 ///
@@ -81,6 +80,11 @@ impl<A> WriteBatch<A> {
     pub fn ledger_mut(&mut self) -> &mut LedgerWriteBatch<A> {
         &mut self.ledger
     }
+
+    /// Consumes the batch and returns its component parts.
+    pub fn into_parts(self) -> (GlobalState, EpochalState, LedgerWriteBatch<A>) {
+        (self.global, self.epochal, self.ledger)
+    }
 }
 
 /// Tracks writes to the ledger accounts table.
@@ -153,6 +157,11 @@ impl<A> LedgerWriteBatch<A> {
         self.serial_to_id.get(serial).copied()
     }
 
+    /// Returns an iterator over the serials of the new accounts being created.
+    pub fn iter_new_accounts(&self) -> impl Iterator<Item = (AccountSerial, &AccountId)> {
+        self.serial_to_id.iter()
+    }
+
     /// Returns the list of new account IDs in creation order.
     pub fn new_accounts(&self) -> &[AccountId] {
         self.serial_to_id.ids()
@@ -161,6 +170,26 @@ impl<A> LedgerWriteBatch<A> {
     /// Returns an iterator over all written accounts.
     pub fn iter_accounts(&self) -> impl Iterator<Item = (&AccountId, &A)> {
         self.account_writes.iter()
+    }
+
+    /// Consumes the batch, separating new accounts from updated accounts.
+    ///
+    /// Returns a tuple of:
+    /// - Iterator over (AccountId, A) for newly created accounts (in serial order)
+    /// - BTreeMap of remaining account updates (existing accounts only)
+    pub fn into_new_and_updated(mut self) -> (Vec<(AccountId, A)>, BTreeMap<AccountId, A>) {
+        let new_account_ids = self.serial_to_id.ids().to_vec();
+        let mut new_accounts = Vec::with_capacity(new_account_ids.len());
+
+        for id in new_account_ids {
+            // If this is missing the entry for the account then that's fine, we
+            // can just skip it.
+            if let Some(state) = self.account_writes.remove(&id) {
+                new_accounts.push((id, state));
+            }
+        }
+
+        (new_accounts, self.account_writes)
     }
 }
 

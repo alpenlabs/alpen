@@ -9,8 +9,7 @@ use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
     IAccountStateConstructible, IAccountStateMut, IStateAccessor, NewAccountData,
 };
-
-use crate::write_batch::WriteBatch;
+use strata_ol_state_types::WriteBatch;
 
 /// A write-tracking state accessor that wraps a base state.
 ///
