@@ -31,7 +31,7 @@ impl RpcSnarkAccountUpdate {
         &self.target
     }
 
-    /// Returns encoded [`UpdateOperationData`]
+    /// Returns encoded [`strata_snark_acct_types::UpdateOperationData`]
     pub fn update_operation_encoded(&self) -> &HexBytes {
         &self.update_operation_encoded
     }
