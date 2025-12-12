@@ -30,12 +30,10 @@ class SnarkAccountUpdateTxPayload(Container):
     #~# external_kind: container
     update_container: strata_snark_acct_types.SnarkAccountUpdateContainer
 
-### Type aliases for union variant names
-GenericAccountMessage = GamTxPayload
-SnarkAccountUpdate = SnarkAccountUpdateTxPayload
-
 ### Transaction payload union.
-TransactionPayload = Union[GenericAccountMessage, SnarkAccountUpdate]
+class TransactionPayload(Union):
+    GenericAccountMessage: GamTxPayload
+    SnarkAccountUpdate: SnarkAccountUpdateTxPayload
 
 ### Transaction container.
 class OLTransaction(Container):
