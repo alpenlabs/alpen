@@ -1,7 +1,8 @@
 //! Error types for the checkpoint subprotocol.
 
+use strata_asm_manifest_types::AsmManifestError;
 use strata_asm_proto_checkpoint_txs::CheckpointTxError;
-use strata_identifiers::{Epoch, Slot};
+use strata_identifiers::{Buf32, Epoch, L1BlockCommitment, L2BlockCommitment, Slot};
 use thiserror::Error;
 
 /// Result type for checkpoint subprotocol operations.
@@ -30,6 +31,24 @@ pub(crate) enum CheckpointError {
     #[error("invalid L2 slot progression: previous {previous}, new {new}")]
     InvalidL2Slot { previous: Slot, new: Slot },
 
+    /// L1 range start does not match expected value from state.
+    #[error("invalid L1 range start: expected {expected:?}, got {actual:?}")]
+    InvalidL1RangeStart {
+        expected: L1BlockCommitment,
+        actual: L1BlockCommitment,
+    },
+
+    /// L2 range start does not match expected value from state.
+    #[error("invalid L2 range start: expected {expected:?}, got {actual:?}")]
+    InvalidL2RangeStart {
+        expected: L2BlockCommitment,
+        actual: L2BlockCommitment,
+    },
+
+    /// Pre-state root does not match expected value from state.
+    #[error("invalid pre-state root: expected {expected:?}, got {actual:?}")]
+    InvalidPreStateRoot { expected: Buf32, actual: Buf32 },
+
     /// Failed to verify checkpoint proof.
     #[error("proof verification failed")]
     ProofVerification,
@@ -37,4 +56,8 @@ pub(crate) enum CheckpointError {
     /// Missing auxiliary data for manifest hashes.
     #[error("missing manifest hash auxiliary data")]
     MissingManifestHashes,
+
+    /// Failed to encode checkpoint log.
+    #[error("failed to encode checkpoint log")]
+    LogEncoding(#[from] AsmManifestError),
 }

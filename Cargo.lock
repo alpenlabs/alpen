@@ -13687,39 +13687,21 @@ dependencies = [
 name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "async-trait",
- "bitcoin",
- "bitcoind-async-client",
  "borsh",
- "corepc-node",
- "rand 0.8.5",
- "ssz",
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-txs",
- "strata-asm-spec",
- "strata-asm-stf",
- "strata-asm-types",
- "strata-asm-worker",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "strata-ol-stf",
- "strata-params",
  "strata-predicate",
  "strata-primitives",
- "strata-service",
- "strata-state",
- "strata-test-utils-asm",
- "strata-test-utils-btcio",
- "strata-test-utils-l2",
  "thiserror 2.0.17",
- "tokio",
 ]
 
 [[package]]
@@ -13780,6 +13762,31 @@ dependencies = [
  "strata-asm-common",
  "strata-identifiers",
  "strata-l1-txfmt",
+]
+
+[[package]]
+name = "strata-asm-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitcoin",
+ "bitcoind-async-client",
+ "corepc-node",
+ "rand 0.8.5",
+ "strata-asm-proto-administration",
+ "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-checkpoint",
+ "strata-asm-worker",
+ "strata-checkpoint-types-ssz",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-predicate",
+ "strata-primitives",
+ "strata-state",
+ "strata-test-utils-btcio",
+ "strata-test-utils-l2",
+ "tokio",
 ]
 
 [[package]]
@@ -14038,7 +14045,6 @@ dependencies = [
  "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types-new",
- "thiserror 2.0.17",
  "tree_hash 0.9.0",
  "tree_hash_derive 0.9.0",
 ]
@@ -15265,23 +15271,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "rand_core 0.6.4",
-]
-
-[[package]]
-name = "strata-test-utils-asm"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "rand 0.8.5",
- "ssz",
- "strata-asm-common",
- "strata-asm-proto-checkpoint-txs",
- "strata-checkpoint-types-ssz",
- "strata-crypto",
- "strata-identifiers",
- "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
- "thiserror 2.0.17",
 ]
 
 [[package]]

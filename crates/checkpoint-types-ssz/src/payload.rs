@@ -192,12 +192,15 @@ impl BatchInfo {
 /// - `pre_state_root` represents the chainstate root immediately **before** executing block `M`
 ///   (i.e., immediately after executing block `M-1`)
 /// - `post_state_root` represents the chainstate root immediately **after** executing block `N`
+///
+/// # Note
+///
+/// The epoch is not stored here as it's available via [`BatchInfo::epoch`] in the parent
+/// [`CheckpointCommitment`].
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
 )]
 pub struct BatchTransition {
-    /// Epoch number.
-    pub epoch: Epoch,
     /// Chainstate root prior to execution of the batch.
     pub pre_state_root: Buf32,
     /// Chainstate root after batch execution.
@@ -209,17 +212,11 @@ strata_identifiers::impl_borsh_via_ssz_fixed!(BatchTransition);
 
 impl BatchTransition {
     /// Creates a new batch transition.
-    pub fn new(epoch: Epoch, pre_state_root: Buf32, post_state_root: Buf32) -> Self {
+    pub fn new(pre_state_root: Buf32, post_state_root: Buf32) -> Self {
         Self {
-            epoch,
             pre_state_root,
             post_state_root,
         }
-    }
-
-    /// Returns the epoch number.
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
     }
 
     /// Returns the pre-state root.
@@ -319,13 +316,18 @@ impl<'de> Deserialize<'de> for CheckpointSidecar {
 // ============================================================================
 
 /// Core commitment data in a checkpoint.
+///
+/// This struct bundles together the batch metadata and state transition data.
+/// The epoch number is stored only in [`BatchInfo`] and applies to both the
+/// batch metadata and the transition. Use [`batch_info.epoch()`](BatchInfo::epoch)
+/// to get the epoch for this commitment.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SszEncode, SszDecode, TreeHash,
 )]
 pub struct CheckpointCommitment {
-    /// Batch metadata.
+    /// Batch metadata (includes epoch, L1/L2 block ranges).
     pub batch_info: BatchInfo,
-    /// State transition.
+    /// State transition (pre/post state roots).
     pub transition: BatchTransition,
 }
 

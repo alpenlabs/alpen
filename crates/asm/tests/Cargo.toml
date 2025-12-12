@@ -1,0 +1,44 @@
+[package]
+name = "strata-asm-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# ASM subprotocols under test
+strata-asm-proto-administration.workspace = true
+strata-asm-proto-bridge-v1.workspace = true
+strata-asm-proto-checkpoint.workspace = true
+
+# Test utilities
+strata-test-utils-btcio.workspace = true
+strata-test-utils-l2.workspace = true
+
+# Checkpoint types for test data generation
+strata-checkpoint-types-ssz.workspace = true
+
+# ASM worker for E2E tests
+strata-asm-worker.workspace = true
+strata-state.workspace = true
+
+# Identifiers and primitives
+strata-crypto.workspace = true
+strata-identifiers.workspace = true
+strata-predicate.workspace = true
+strata-primitives.workspace = true
+
+# Bitcoin
+bitcoin.workspace = true
+bitcoind-async-client.workspace = true
+corepc-node = { version = "0.8.0", features = ["29_0"] }
+
+# Async runtime
+async-trait.workspace = true
+tokio = { workspace = true, features = ["full", "test-util"] }
+
+# Misc
+anyhow.workspace = true
+rand.workspace = true

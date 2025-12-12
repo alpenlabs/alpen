@@ -26,6 +26,3 @@ serde = { workspace = true, features = ["derive"] }
 
 # OL types (for parse_ol_logs)
 strata-ol-chain-types-new.workspace = true
-
-# Misc
-thiserror.workspace = true

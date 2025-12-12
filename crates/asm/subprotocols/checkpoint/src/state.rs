@@ -12,17 +12,17 @@ use strata_predicate::PredicateKey;
 #[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct CheckpointState {
     /// Credential rule for sequencer signature verification.
-    pub sequencer_cred: CredRule,
+    sequencer_cred: CredRule,
 
     /// Predicate for checkpoint proof verification.
-    pub checkpoint_predicate: PredicateKey,
+    checkpoint_predicate: PredicateKey,
 
     /// Summary of the last verified checkpoint epoch.
     /// None if no checkpoint has been verified yet (pre-genesis).
-    pub verified_epoch_summary: Option<EpochSummary>,
+    verified_epoch_summary: Option<EpochSummary>,
 
     /// L1 block commitment of the last checkpoint transaction.
-    pub last_checkpoint_l1: L1BlockCommitment,
+    last_checkpoint_l1: L1BlockCommitment,
 }
 
 impl CheckpointState {
@@ -34,6 +34,26 @@ impl CheckpointState {
             verified_epoch_summary: None,
             last_checkpoint_l1: config.genesis_l1_block,
         }
+    }
+
+    /// Returns the sequencer credential rule.
+    pub fn sequencer_cred(&self) -> &CredRule {
+        &self.sequencer_cred
+    }
+
+    /// Returns the checkpoint predicate for proof verification.
+    pub fn checkpoint_predicate(&self) -> &PredicateKey {
+        &self.checkpoint_predicate
+    }
+
+    /// Returns the verified epoch summary, if any.
+    pub fn verified_epoch_summary(&self) -> Option<&EpochSummary> {
+        self.verified_epoch_summary.as_ref()
+    }
+
+    /// Returns the L1 block commitment of the last checkpoint.
+    pub fn last_checkpoint_l1(&self) -> &L1BlockCommitment {
+        &self.last_checkpoint_l1
     }
 
     /// Get the current verified epoch number.
@@ -117,141 +137,4 @@ pub struct CheckpointConfig {
 
     /// Genesis L1 block commitment (starting point for L1 height validation).
     pub genesis_l1_block: L1BlockCommitment,
-}
-
-#[cfg(test)]
-mod tests {
-    use strata_predicate::PredicateKey;
-    use strata_test_utils_asm::checkpoint::{
-        CheckpointFixtures, gen_checkpoint_payload, gen_l1_block_commitment,
-    };
-
-    use super::*;
-
-    fn create_test_config() -> CheckpointConfig {
-        let fixtures = CheckpointFixtures::new();
-        CheckpointConfig {
-            sequencer_cred: CredRule::SchnorrKey(fixtures.sequencer.public_key),
-            checkpoint_predicate: PredicateKey::always_accept(),
-            genesis_l1_block: gen_l1_block_commitment(100),
-        }
-    }
-
-    #[test]
-    fn test_checkpoint_state_new() {
-        let config = create_test_config();
-        let state = CheckpointState::new(&config);
-
-        assert_eq!(state.sequencer_cred, config.sequencer_cred);
-        assert_eq!(state.checkpoint_predicate, config.checkpoint_predicate);
-        assert!(state.verified_epoch_summary.is_none());
-        assert_eq!(state.last_checkpoint_l1, config.genesis_l1_block);
-    }
-
-    #[test]
-    fn test_expected_next_epoch_initial() {
-        let config = create_test_config();
-        let state = CheckpointState::new(&config);
-
-        // Initially, no epochs verified, so next expected is 0
-        assert_eq!(state.expected_next_epoch(), 0);
-        assert!(state.current_epoch().is_none());
-    }
-
-    #[test]
-    fn test_can_accept_epoch() {
-        let config = create_test_config();
-        let state = CheckpointState::new(&config);
-
-        // Initially can only accept epoch 0
-        assert!(state.can_accept_epoch(0));
-        assert!(!state.can_accept_epoch(1));
-        assert!(!state.can_accept_epoch(5));
-    }
-
-    #[test]
-    fn test_update_with_checkpoint() {
-        let config = create_test_config();
-        let mut state = CheckpointState::new(&config);
-
-        // Create and apply epoch 0 checkpoint
-        let payload_0 = gen_checkpoint_payload(0);
-        state.update_with_checkpoint(&payload_0);
-
-        // Verify state was updated
-        assert_eq!(state.current_epoch(), Some(0));
-        assert_eq!(state.expected_next_epoch(), 1);
-        assert!(state.can_accept_epoch(1));
-        assert!(!state.can_accept_epoch(0));
-        assert!(!state.can_accept_epoch(2));
-
-        // Verify epoch summary
-        let summary = state.verified_epoch_summary.as_ref().unwrap();
-        assert_eq!(summary.epoch(), 0);
-        assert_eq!(summary.terminal(), payload_0.batch_info().final_l2_block());
-        assert_eq!(
-            summary.final_state(),
-            payload_0.transition().post_state_root()
-        );
-    }
-
-    #[test]
-    fn test_sequential_epoch_updates() {
-        let config = create_test_config();
-        let mut state = CheckpointState::new(&config);
-
-        // Apply epochs 0, 1, 2 sequentially
-        for epoch in 0..3 {
-            assert_eq!(state.expected_next_epoch(), epoch);
-
-            let payload = gen_checkpoint_payload(epoch);
-            state.update_with_checkpoint(&payload);
-
-            assert_eq!(state.current_epoch(), Some(epoch));
-        }
-
-        // After epoch 2, next expected is 3
-        assert_eq!(state.expected_next_epoch(), 3);
-    }
-
-    #[test]
-    fn test_last_l2_terminal() {
-        let config = create_test_config();
-        let mut state = CheckpointState::new(&config);
-
-        // Initially no terminal
-        assert!(state.last_l2_terminal().is_none());
-
-        // After epoch 0
-        let payload_0 = gen_checkpoint_payload(0);
-        state.update_with_checkpoint(&payload_0);
-
-        let terminal = state.last_l2_terminal().unwrap();
-        assert_eq!(terminal, payload_0.batch_info().final_l2_block());
-    }
-
-    #[test]
-    fn test_update_sequencer_cred() {
-        let config = create_test_config();
-        let mut state = CheckpointState::new(&config);
-
-        let new_keypair = CheckpointFixtures::new().sequencer;
-        state.update_sequencer_cred(new_keypair.public_key);
-
-        match &state.sequencer_cred {
-            CredRule::SchnorrKey(key) => assert_eq!(*key, new_keypair.public_key),
-            _ => panic!("Expected SchnorrKey"),
-        }
-    }
-
-    #[test]
-    fn test_update_checkpoint_predicate() {
-        let config = create_test_config();
-        let mut state = CheckpointState::new(&config);
-
-        let new_predicate = PredicateKey::never_accept();
-        state.update_checkpoint_predicate(new_predicate.clone());
-
-        assert_eq!(state.checkpoint_predicate, new_predicate);
-    }
 }

@@ -11,7 +11,7 @@ use crate::state::CheckpointState;
 
 /// Apply a sequencer key update from the admin subprotocol.
 pub(crate) fn apply_sequencer_key_update(state: &mut CheckpointState, new_key: Buf32) {
-    if matches!(&state.sequencer_cred, CredRule::SchnorrKey(existing) if existing == &new_key) {
+    if matches!(state.sequencer_cred(), CredRule::SchnorrKey(existing) if existing == &new_key) {
         logging::debug!("Sequencer key update received, key unchanged");
         return;
     }
@@ -22,7 +22,7 @@ pub(crate) fn apply_sequencer_key_update(state: &mut CheckpointState, new_key: B
 
 /// Apply a checkpoint predicate update from the admin subprotocol.
 pub(crate) fn apply_predicate_update(state: &mut CheckpointState, new_predicate: &PredicateKey) {
-    let prev_kind = state.checkpoint_predicate.id();
+    let prev_kind = state.checkpoint_predicate().id();
     let next_kind = new_predicate.id();
 
     if prev_kind == next_kind {

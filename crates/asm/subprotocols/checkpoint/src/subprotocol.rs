@@ -49,7 +49,7 @@ impl Subprotocol for CheckpointSubprotocol {
                 continue;
             }
 
-            let start_height = state.last_checkpoint_l1.height_u64();
+            let start_height = state.last_checkpoint_l1().height_u64();
 
             // Parse checkpoint to get exact L1 range for manifest hash request
             match extract_signed_checkpoint_from_envelope(tx) {

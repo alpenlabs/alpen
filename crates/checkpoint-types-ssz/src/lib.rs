@@ -21,22 +21,16 @@
 
 mod claim;
 mod epoch;
-mod error;
 mod payload;
 mod signature;
 
 pub use claim::{CheckpointClaim, CheckpointClaimBuilder};
 pub use epoch::EpochSummary;
-pub use error::{CheckpointError, CheckpointResult};
 pub use payload::{
     BatchInfo, BatchTransition, CheckpointCommitment, CheckpointPayload, CheckpointSidecar,
     L1BlockRange, L2BlockRange, SignedCheckpointPayload,
 };
 pub use signature::verify_checkpoint_payload_signature;
-
-// Legacy type alias for backward compatibility during migration.
-// TODO: Remove once all code is migrated to use `SignedCheckpointPayload`.
-pub type SignedCheckpoint = SignedCheckpointPayload;
 // Re-export commonly used identifier types
 pub use strata_identifiers::{
     Buf32, Buf64, CredRule, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height,

@@ -23,26 +23,3 @@ strata-primitives.workspace = true
 
 borsh.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-strata-test-utils-asm.workspace = true
-strata-test-utils-btcio.workspace = true
-strata-test-utils-l2.workspace = true
-
-# ASM worker for E2E tests
-strata-asm-worker.workspace = true
-strata-asm-stf.workspace = true
-strata-asm-spec.workspace = true
-strata-asm-types.workspace = true
-strata-params.workspace = true
-strata-state.workspace = true
-strata-service.workspace = true
-
-anyhow.workspace = true
-async-trait.workspace = true
-bitcoin = { workspace = true, features = ["rand"] }
-bitcoind-async-client.workspace = true
-corepc-node = { version = "0.8.0", features = ["29_0"] }
-rand.workspace = true
-ssz.workspace = true
-tokio = { workspace = true, features = ["full", "test-util"] }
