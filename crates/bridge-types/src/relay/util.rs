@@ -1,10 +1,7 @@
 use std::io;
 
-use bitcoin::secp256k1::{
-    schnorr::Signature, Keypair, Message, SecretKey, XOnlyPublicKey, SECP256K1,
-};
 use borsh::BorshSerialize;
-use rand::rngs::OsRng;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use strata_primitives::buf::{Buf32, Buf64};
 use thiserror::Error;
 
@@ -53,7 +50,6 @@ impl MessageSigner {
         };
 
         let id: Buf32 = tmp_m.compute_id().into();
-        // WARN: I don't know if a global context is safe here, maybe.
         let sig = sign_msg_hash(&self.msg_signing_sk, &id);
         tmp_m.sig = sig;
 
@@ -72,29 +68,27 @@ impl MessageSigner {
     }
 }
 
-/// Computes the corresponding x-only pubkey as a buf32 for an sk.
+/// Computes the corresponding ed25519 verifying key (pubkey) for a secret key.
 fn compute_pubkey_for_privkey(sk: &Buf32) -> Buf32 {
-    let kp = Keypair::from_seckey_slice(SECP256K1, sk.as_ref()).unwrap();
-    let (xonly_pk, _) = kp.public_key().x_only_public_key();
-    Buf32::from(xonly_pk.serialize())
+    let signing_key = SigningKey::from_bytes(sk.as_ref());
+    Buf32::from(signing_key.verifying_key().to_bytes())
 }
 
-/// Generates a signature for the message.
+/// Generates an ed25519 signature for the message hash.
 fn sign_msg_hash(sk: &Buf32, msg_hash: &Buf32) -> Buf64 {
-    let keypair = Keypair::from_secret_key(SECP256K1, &SecretKey::from_slice(sk.as_ref()).unwrap());
-    let msg = Message::from_digest(*msg_hash.as_ref());
-    let sig = SECP256K1.sign_schnorr_with_rng(&msg, &keypair, &mut OsRng);
-
-    Buf64::from(*sig.as_ref())
+    let signing_key = SigningKey::from_bytes(sk.as_ref());
+    let sig = signing_key.sign(msg_hash.as_ref());
+    Buf64::from(sig.to_bytes())
 }
 
-/// Returns if the signature is correct for the message.
+/// Returns if the ed25519 signature is correct for the message.
 fn verify_sig(pk: &Buf32, msg_hash: &Buf32, sig: &Buf64) -> bool {
-    let pk = XOnlyPublicKey::from_slice(pk.as_ref()).unwrap();
-    let msg = Message::from_digest(*msg_hash.as_ref());
-    let sig = Signature::from_slice(sig.as_ref()).unwrap();
+    let Ok(verifying_key) = VerifyingKey::from_bytes(pk.as_ref()) else {
+        return false;
+    };
+    let signature = Signature::from_bytes(sig.as_ref());
 
-    sig.verify(&msg, &pk).is_ok()
+    verifying_key.verify(msg_hash.as_ref(), &signature).is_ok()
 }
 
 #[derive(Debug, Error)]
@@ -126,7 +120,7 @@ pub fn verify_bridge_msg_sig(
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::OsRng;
+    use rand::{thread_rng, Rng};
     use strata_primitives::{buf::Buf32, l1::BitcoinTxid};
     use strata_test_utils::ArbitraryGenerator;
 
@@ -184,8 +178,8 @@ mod tests {
         let txid: BitcoinTxid = generator.generate();
         let scope = Scope::V0PubNonce(txid);
         let payload: Musig2PubNonce = generator.generate();
-        let keypair = Keypair::new(SECP256K1, &mut OsRng);
-        let msg_signer = MessageSigner::new(0, keypair.secret_key().into());
+        let sk = Buf32::from(thread_rng().gen::<[u8; 32]>());
+        let msg_signer = MessageSigner::new(0, sk);
 
         let signed_message = msg_signer
             .sign_scope(&scope, &payload)

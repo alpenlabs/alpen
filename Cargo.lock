@@ -13856,6 +13856,7 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
+ "ed25519-dalek",
  "musig2",
  "rand 0.8.5",
  "serde",
