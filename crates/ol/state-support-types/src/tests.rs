@@ -10,9 +10,7 @@ use strata_ledger_types::{
     AccountTypeState, Coin, IAccountState, IAccountStateMut, ISnarkAccountState,
     ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
-use strata_ol_state_types::OLState;
-
-use strata_ol_state_types::WriteBatch;
+use strata_ol_state_types::{OLState, WriteBatch};
 
 use crate::{BatchDiffState, IndexerState, WriteTrackingState, test_utils::*};
 
