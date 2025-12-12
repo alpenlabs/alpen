@@ -5,7 +5,7 @@
 //! outputs (corresponding with headers/checkpoints/etc).
 
 use strata_identifiers::{Buf32, hash};
-use strata_ledger_types::StateAccessor;
+use strata_ledger_types::IStateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
     OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog, OLTxSegment,
@@ -142,7 +142,7 @@ impl<'b> BlockExecInput<'b> {
 /// Verifies a block by executing it the normal way.
 ///
 /// This closely aligns with `execute_block_inputs`.
-pub fn verify_block<S: StateAccessor>(
+pub fn verify_block<S: IStateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
@@ -331,7 +331,7 @@ pub struct EpochExecExpectations {
 ///
 /// The manifests are expected to be produced synthetically based on what's
 /// implied in the checkpoint.
-pub fn verify_epoch_with_diff<S: StateAccessor, D: DaScheme<S>>(
+pub fn verify_epoch_with_diff<S: IStateAccessor, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,
     diff: D::Diff,

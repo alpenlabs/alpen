@@ -3,9 +3,9 @@
 //! This can be completely omitted from DA.
 
 use strata_acct_types::BitcoinAmount;
+use strata_asm_manifest_types::AsmManifest;
 use strata_codec::Codec;
-use strata_identifiers::L1BlockCommitment;
-use strata_ledger_types::*;
+use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
 #[derive(Clone, Debug, Codec)]
 pub struct EpochalState {
@@ -30,46 +30,60 @@ impl EpochalState {
             checkpointed_epoch,
         }
     }
-}
 
-impl IL1ViewState for EpochalState {
-    fn cur_epoch(&self) -> u32 {
+    /// Gets the current epoch.
+    pub fn cur_epoch(&self) -> u32 {
         self.cur_epoch
     }
 
-    fn set_cur_epoch(&mut self, epoch: u32) {
+    /// Sets the current epoch.
+    pub fn set_cur_epoch(&mut self, epoch: u32) {
         self.cur_epoch = epoch;
     }
 
-    fn last_l1_blkid(&self) -> &L1BlockId {
+    /// Last L1 block ID.
+    pub fn last_l1_blkid(&self) -> &L1BlockId {
         self.last_l1_block.blkid()
     }
 
-    fn last_l1_height(&self) -> L1Height {
+    /// Last L1 block height.
+    pub fn last_l1_height(&self) -> L1Height {
         // FIXME this conversion is weird
         self.last_l1_block.height_u64() as u32
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+    /// Appends a new ASM manifest to the accumulator, also updating the last L1
+    /// block height and other fields.
+    pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
         // TODO actually insert into mmr
         // FIXME make this conversion less weird
         self.last_l1_block = L1BlockCommitment::from_height_u64(height as u64, *mf.blkid())
             .expect("state: weird conversion")
     }
 
-    fn asm_recorded_epoch(&self) -> &EpochCommitment {
+    /// Gets the field for the epoch that the ASM considers to be valid.
+    ///
+    /// This is our perspective of the perspective of the last block's ASM
+    /// manifest we've accepted.
+    pub fn asm_recorded_epoch(&self) -> &EpochCommitment {
         &self.checkpointed_epoch
     }
 
-    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+    /// Sets the field for the epoch that the ASM considers to be finalized.
+    ///
+    /// This is our perspective of the perspective of the last block's ASM
+    /// manifest we've accepted.
+    pub fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
         self.checkpointed_epoch = epoch;
     }
 
-    fn total_ledger_balance(&self) -> BitcoinAmount {
+    /// Gets the total OL ledger balance.
+    pub fn total_ledger_balance(&self) -> BitcoinAmount {
         self.total_ledger_funds
     }
 
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+    /// Sets the total OL ledger balance.
+    pub fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.total_ledger_funds = amt;
     }
 }

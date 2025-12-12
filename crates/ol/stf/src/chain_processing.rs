@@ -1,7 +1,7 @@
 //! General bookkeeping to ensure that the chain evolves correctly.
 
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockId};
-use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
+use strata_ledger_types::IStateAccessor;
 
 use crate::{
     context::{BlockContext, EpochInitialContext},
@@ -11,17 +11,15 @@ use crate::{
 /// Preliminary processing we do at the start of every epoch.
 ///
 /// This is done outside of the checked DA range.
-pub fn process_epoch_initial<S: StateAccessor>(
+pub fn process_epoch_initial<S: IStateAccessor>(
     state: &mut S,
     context: &EpochInitialContext,
 ) -> ExecResult<()> {
-    let estate = state.l1_view_mut();
-
     // 1. Check that this is the first block of the epoch.
     // TODO maybe we actually do this implicitly?
 
     // 2. Make sure the state's epoch matches the block.
-    let state_cur_epoch = estate.cur_epoch();
+    let state_cur_epoch = state.cur_epoch();
     let block_cur_epoch = context.cur_epoch();
     if block_cur_epoch != state_cur_epoch {
         return Err(ExecError::ChainIntegrity);
@@ -40,7 +38,7 @@ pub fn process_epoch_initial<S: StateAccessor>(
 /// Processing that happens at the start of every block.
 ///
 /// This updates the global state to track the current slot number.
-pub fn process_block_start<S: StateAccessor>(
+pub fn process_block_start<S: IStateAccessor>(
     state: &mut S,
     context: &BlockContext<'_>,
 ) -> ExecResult<()> {
@@ -63,14 +61,14 @@ pub fn process_block_start<S: StateAccessor>(
     }
 
     // 2. Make sure that the current state epoch matches the header's epoch.
-    let state_epoch = state.l1_view().cur_epoch();
+    let state_epoch = state.cur_epoch();
     if header_epoch != state_epoch {
         return Err(ExecError::EpochMismatch(header_epoch, state_epoch));
     }
 
     // 3. Update the global state's current slot to match the block's slot
     let slot = context.slot();
-    state.global_mut().set_cur_slot(slot);
+    state.set_cur_slot(slot);
 
     Ok(())
 }

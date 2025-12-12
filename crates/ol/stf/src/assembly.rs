@@ -2,7 +2,7 @@
 
 use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;
-use strata_ledger_types::StateAccessor;
+use strata_ledger_types::IStateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
     BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog,
@@ -83,7 +83,7 @@ impl BlockExecOutputs {
 /// block.
 ///
 /// This closely aligns with `verify_block_classically`.
-pub fn execute_block_inputs<S: StateAccessor>(
+pub fn execute_block_inputs<S: IStateAccessor>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_exec_input: BlockExecInput<'_>,
@@ -243,7 +243,7 @@ impl CompletedBlock {
 /// Given components of a block, executes it and uses it to construct the
 /// components of a block that can be signed, returning the completed block and
 /// the execution outputs (like logs).
-pub fn construct_block<S: StateAccessor>(
+pub fn construct_block<S: IStateAccessor>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
@@ -297,7 +297,7 @@ pub fn construct_block<S: StateAccessor>(
 
 /// Given components of a block, executes it and uses it to construct the
 /// components of a block that can be signed.
-pub fn execute_and_complete_block<S: StateAccessor>(
+pub fn execute_and_complete_block<S: IStateAccessor>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
