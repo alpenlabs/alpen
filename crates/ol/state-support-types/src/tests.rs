@@ -12,9 +12,9 @@ use strata_ledger_types::{
 };
 use strata_ol_state_types::OLState;
 
-use crate::{
-    BatchDiffState, IndexerState, WriteTrackingState, test_utils::*, write_batch::WriteBatch,
-};
+use strata_ol_state_types::WriteBatch;
+
+use crate::{BatchDiffState, IndexerState, WriteTrackingState, test_utils::*};
 
 // =============================================================================
 // IndexerState over WriteTrackingState tests

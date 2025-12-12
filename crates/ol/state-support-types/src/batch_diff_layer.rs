@@ -8,8 +8,7 @@ use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, Bitcoin
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{IStateAccessor, NewAccountData};
-
-use crate::write_batch::WriteBatch;
+use strata_ol_state_types::WriteBatch;
 
 /// A read-only state accessor that overlays a stack of WriteBatch diffs.
 ///
