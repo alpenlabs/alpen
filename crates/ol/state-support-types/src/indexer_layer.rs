@@ -15,83 +15,7 @@ use strata_ledger_types::{
 };
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
-// ============================================================================
-// Tracked write types
-// ============================================================================
-
-/// A tracked inbox message write.
-#[derive(Clone, Debug)]
-pub struct InboxMessageWrite {
-    /// The account that received the message.
-    pub account_id: AccountId,
-
-    /// The message entry that was inserted.
-    pub entry: MessageEntry,
-
-    /// The index in the MMR where this entry was inserted.
-    pub index: u64,
-}
-
-/// A tracked manifest write.
-#[derive(Clone, Debug)]
-pub struct ManifestWrite {
-    /// The L1 block height associated with the manifest.
-    pub height: L1Height,
-
-    /// The manifest that was appended.
-    pub manifest: AsmManifest,
-}
-
-/// Collection of all tracked accumulator writes.
-///
-/// This struct is extensible - add new `Vec` fields for future MMR types.
-#[derive(Clone, Debug, Default)]
-pub struct AccumulatorWrites {
-    inbox_messages: Vec<InboxMessageWrite>,
-    manifests: Vec<ManifestWrite>,
-}
-
-impl AccumulatorWrites {
-    /// Creates a new empty collection.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Records an inbox message write.
-    pub fn push_inbox_message(&mut self, account_id: AccountId, entry: MessageEntry, index: u64) {
-        self.inbox_messages.push(InboxMessageWrite {
-            account_id,
-            entry,
-            index,
-        });
-    }
-
-    /// Records a manifest write.
-    pub fn push_manifest(&mut self, height: L1Height, manifest: AsmManifest) {
-        self.manifests.push(ManifestWrite { height, manifest });
-    }
-
-    /// Returns all tracked inbox message writes.
-    pub fn inbox_messages(&self) -> &[InboxMessageWrite] {
-        &self.inbox_messages
-    }
-
-    /// Returns all tracked manifest writes.
-    pub fn manifests(&self) -> &[ManifestWrite] {
-        &self.manifests
-    }
-
-    /// Returns true if no writes have been tracked.
-    pub fn is_empty(&self) -> bool {
-        self.inbox_messages.is_empty() && self.manifests.is_empty()
-    }
-
-    /// Extends this collection with writes from another.
-    pub fn extend(&mut self, other: AccumulatorWrites) {
-        self.inbox_messages.extend(other.inbox_messages);
-        self.manifests.extend(other.manifests);
-    }
-}
+use crate::index_types::*;
 
 // ============================================================================
 // Snark account state wrapper (owned)
@@ -99,13 +23,15 @@ impl AccumulatorWrites {
 
 /// Wrapper around a snark account state that tracks `insert_inbox_message` calls.
 ///
-/// This wrapper owns its inner state and an AccumulatorWrites buffer.
+/// This wrapper owns its inner state and an IndexerWrites buffer.
 /// After modifications, use `into_parts()` to extract the inner state and writes.
 pub struct IndexerSnarkAccountStateMut<S: ISnarkAccountStateMut> {
     inner: S,
     account_id: AccountId,
-    writes: AccumulatorWrites,
-    /// Tracks whether any modifications were made.
+    writes: IndexerWrites,
+
+    /// Tracks whether any modifications were made so we can decide if we want
+    /// to bother writing back afterwards.  This might not be necessary anymore.
     modified: bool,
 }
 
@@ -126,7 +52,7 @@ impl<S: ISnarkAccountStateMut> IndexerSnarkAccountStateMut<S> {
         Self {
             inner,
             account_id,
-            writes: AccumulatorWrites::new(),
+            writes: IndexerWrites::new(),
             modified: false,
         }
     }
@@ -136,9 +62,9 @@ impl<S: ISnarkAccountStateMut> IndexerSnarkAccountStateMut<S> {
         self.modified
     }
 
-    /// Consumes the wrapper and returns the inner state, accumulated writes,
+    /// Consumes the wrapper and returns the inner state, indexer writes,
     /// and whether the snark was modified.
-    pub fn into_parts(self) -> (S, AccumulatorWrites, bool) {
+    pub fn into_parts(self) -> (S, IndexerWrites, bool) {
         (self.inner, self.writes, self.modified)
     }
 }
@@ -170,9 +96,16 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStateMut<S> {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        self.modified = true;
+        let op = SAStateSetOp::new(self.account_id, state, next_read_idx, seqno);
+
+        // Pass through to inner.
         self.inner
             .set_proof_state_directly(state, next_read_idx, seqno);
+        self.modified = true;
+
+        // Track the write.
+        self.writes
+            .push_snark_acct_update(SnarkAcctStateUpdate::DirectSet(op));
     }
 
     fn update_inner_state(
@@ -182,20 +115,41 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStat
         seqno: Seqno,
         extra_data: &[u8],
     ) -> AcctResult<()> {
-        self.modified = true;
+        let op = SAStateUpdateOp::new(
+            self.account_id,
+            inner_state,
+            next_read_idx,
+            seqno,
+            extra_data.to_vec(),
+        );
+
+        // Pass through to inner first, if this fails we won't have emitted
+        // anything.
         self.inner
-            .update_inner_state(inner_state, next_read_idx, seqno, extra_data)
+            .update_inner_state(inner_state, next_read_idx, seqno, extra_data)?;
+        self.modified = true;
+
+        // Track the write.
+        self.writes
+            .push_snark_acct_update(SnarkAcctStateUpdate::Update(op));
+
+        Ok(())
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
-        self.modified = true;
-        // Record the write BEFORE insertion so we capture the correct index
+        // Record the index BEFORE insertion so that we capture the correct index.
         let index = self.inner.inbox_mmr().num_entries();
-        self.writes
-            .push_inbox_message(self.account_id, entry.clone(), index);
+        let entry2 = entry.clone();
 
-        // Pass through to inner
-        self.inner.insert_inbox_message(entry)
+        // Pass through to inner.
+        self.inner.insert_inbox_message(entry)?;
+        self.modified = true;
+
+        // Only emit the write if it was successful.
+        self.writes
+            .push_inbox_message(InboxMessageWrite::new(self.account_id, entry2, index));
+
+        Ok(())
     }
 }
 
@@ -205,14 +159,16 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStat
 
 /// Wrapper around an account state that tracks inbox MMR writes.
 ///
-/// This wrapper owns its inner state and an AccumulatorWrites buffer.
+/// This wrapper owns its inner state and an IndexerWrites buffer.
 /// After modifications, use `into_parts()` to extract the inner state and writes.
 pub struct IndexerAccountStateMut<A: IAccountStateMut> {
     inner: A,
     account_id: AccountId,
-    writes: AccumulatorWrites,
+    writes: IndexerWrites,
+
     /// Tracks whether any modifications were made to this account.
     modified: bool,
+
     /// Cached snark wrapper, lazily initialized.
     snark_wrapper: Option<IndexerSnarkAccountStateMut<A::SnarkAccountStateMut>>,
 }
@@ -232,7 +188,7 @@ impl<A: IAccountStateMut> IndexerAccountStateMut<A> {
         Self {
             inner,
             account_id,
-            writes: AccumulatorWrites::new(),
+            writes: IndexerWrites::new(),
             modified: false,
             snark_wrapper: None,
         }
@@ -252,7 +208,7 @@ impl<A: IAccountStateMut> IndexerAccountStateMut<A> {
     ///
     /// If a snark wrapper was created and modified, its state is synced back
     /// to the inner account.
-    pub fn into_parts(mut self) -> (A, AccumulatorWrites, bool) {
+    pub fn into_parts(mut self) -> (A, IndexerWrites, bool) {
         let mut modified = self.modified;
 
         // If we have a snark wrapper, check if it was modified
@@ -275,6 +231,7 @@ impl<A: IAccountStateMut> IndexerAccountStateMut<A> {
     }
 }
 
+// idk why we need this separately
 impl<A: IAccountStateMut + Clone> Clone for IndexerAccountStateMut<A>
 where
     A::SnarkAccountStateMut: Clone,
@@ -359,7 +316,7 @@ where
 /// to the inner implementation.
 pub struct IndexerState<S: IStateAccessor> {
     inner: S,
-    writes: AccumulatorWrites,
+    writes: IndexerWrites,
 }
 
 impl<S: IStateAccessor + std::fmt::Debug> std::fmt::Debug for IndexerState<S>
@@ -379,17 +336,17 @@ impl<S: IStateAccessor> IndexerState<S> {
     pub fn new(inner: S) -> Self {
         Self {
             inner,
-            writes: AccumulatorWrites::new(),
+            writes: IndexerWrites::new(),
         }
     }
 
     /// Returns a reference to the tracked accumulator writes.
-    pub fn writes(&self) -> &AccumulatorWrites {
+    pub fn writes(&self) -> &IndexerWrites {
         &self.writes
     }
 
     /// Consumes this wrapper and returns the inner state and tracked writes.
-    pub fn into_parts(self) -> (S, AccumulatorWrites) {
+    pub fn into_parts(self) -> (S, IndexerWrites) {
         (self.inner, self.writes)
     }
 
@@ -442,7 +399,10 @@ where
 
     fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
         // Track the manifest write
-        self.writes.push_manifest(height, mf.clone());
+        self.writes.push_manifest(ManifestWrite {
+            height,
+            manifest: mf.clone(),
+        });
         // Pass through to inner
         self.inner.append_manifest(height, mf);
     }
@@ -1067,5 +1027,243 @@ mod tests {
 
         // Verify writes were collected
         assert_eq!(writes.inbox_messages().len(), 1);
+    }
+
+    // =========================================================================
+    // Snark state update tracking tests
+    // =========================================================================
+
+    #[test]
+    fn test_tracks_direct_set() {
+        use crate::SnarkAcctStateUpdate;
+
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut indexer = IndexerState::new(state);
+
+        // Update proof state directly
+        let new_hash = test_hash(42);
+        let next_read_idx = 5;
+        let seqno = Seqno::from(10);
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .set_proof_state_directly(new_hash, next_read_idx, seqno);
+            })
+            .unwrap();
+
+        // Verify the write was tracked
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.snark_state_updates().len(), 1);
+
+        match &writes.snark_state_updates()[0] {
+            SnarkAcctStateUpdate::DirectSet(s) => {
+                assert_eq!(s.account_id(), account_id);
+                assert_eq!(s.state(), new_hash);
+                assert_eq!(s.next_read_idx(), next_read_idx);
+                assert_eq!(s.seqno(), seqno);
+            }
+            _ => panic!("expected DirectSet variant"),
+        }
+    }
+
+    #[test]
+    fn test_tracks_inner_state_updates() {
+        use crate::SnarkAcctStateUpdate;
+
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut indexer = IndexerState::new(state);
+
+        // Update inner state
+        let inner_state = test_hash(99);
+        let next_read_idx = 3;
+        let seqno = Seqno::from(7);
+        let extra_data = vec![1, 2, 3, 4, 5];
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut().unwrap().update_inner_state(
+                    inner_state,
+                    next_read_idx,
+                    seqno,
+                    &extra_data,
+                )
+            })
+            .unwrap()
+            .unwrap();
+
+        // Verify the write was tracked
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.snark_state_updates().len(), 1);
+
+        match &writes.snark_state_updates()[0] {
+            SnarkAcctStateUpdate::Update(s) => {
+                assert_eq!(s.account_id(), account_id);
+                assert_eq!(s.inner_state(), inner_state);
+                assert_eq!(s.next_read_idx(), next_read_idx);
+                assert_eq!(s.seqno(), seqno);
+                assert_eq!(s.extra_data(), extra_data);
+            }
+            _ => panic!("expected Update variant"),
+        }
+    }
+
+    #[test]
+    fn test_tracks_multiple_snark_state_updates() {
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut indexer = IndexerState::new(state);
+
+        // Multiple proof state updates
+        for i in 0..3 {
+            let hash = test_hash(i);
+            indexer
+                .update_account(account_id, |acct| {
+                    acct.as_snark_account_mut()
+                        .unwrap()
+                        .set_proof_state_directly(hash, i as u64, Seqno::from(i as u64));
+                })
+                .unwrap();
+        }
+
+        // Verify all writes were tracked
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.snark_state_updates().len(), 3);
+
+        for (i, update) in writes.snark_state_updates().iter().enumerate() {
+            assert_eq!(update.account_id(), account_id);
+            assert_eq!(update.next_read_idx(), i as u64);
+            assert_eq!(update.seqno(), Seqno::from(i as u64));
+        }
+    }
+
+    #[test]
+    fn test_tracks_state_updates_across_accounts() {
+        use crate::SnarkAcctStateUpdate;
+
+        let account_id_1 = test_account_id(1);
+        let account_id_2 = test_account_id(2);
+
+        // Setup state with two snark accounts
+        let mut state = OLState::new_genesis();
+        let snark_state_1 = test_snark_account_state(1);
+        let snark_state_2 = test_snark_account_state(2);
+        state
+            .create_new_account(
+                account_id_1,
+                NewAccountData::new(
+                    BitcoinAmount::from_sat(1000),
+                    AccountTypeState::Snark(snark_state_1),
+                ),
+            )
+            .unwrap();
+        state
+            .create_new_account(
+                account_id_2,
+                NewAccountData::new(
+                    BitcoinAmount::from_sat(2000),
+                    AccountTypeState::Snark(snark_state_2),
+                ),
+            )
+            .unwrap();
+
+        let mut indexer = IndexerState::new(state);
+
+        // Update proof state for first account (DirectSet)
+        indexer
+            .update_account(account_id_1, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .set_proof_state_directly(test_hash(1), 0, Seqno::from(1));
+            })
+            .unwrap();
+
+        // Update inner state for second account (Update)
+        indexer
+            .update_account(account_id_2, |acct| {
+                acct.as_snark_account_mut().unwrap().update_inner_state(
+                    test_hash(2),
+                    0,
+                    Seqno::from(1),
+                    &[10, 20, 30],
+                )
+            })
+            .unwrap()
+            .unwrap();
+
+        // Verify writes for both accounts
+        let (_, writes) = indexer.into_parts();
+        assert_eq!(writes.snark_state_updates().len(), 2);
+
+        // First should be DirectSet for account_id_1
+        match &writes.snark_state_updates()[0] {
+            SnarkAcctStateUpdate::DirectSet(s) => {
+                assert_eq!(s.account_id(), account_id_1);
+            }
+            _ => panic!("expected DirectSet variant"),
+        }
+
+        // Second should be Update for account_id_2
+        match &writes.snark_state_updates()[1] {
+            SnarkAcctStateUpdate::Update(s) => {
+                assert_eq!(s.account_id(), account_id_2);
+                assert_eq!(s.extra_data(), vec![10, 20, 30]);
+            }
+            _ => panic!("expected Update variant"),
+        }
+    }
+
+    #[test]
+    fn test_is_empty_includes_state_updates() {
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut indexer = IndexerState::new(state);
+
+        // Initially empty
+        assert!(indexer.writes().is_empty());
+
+        // Add a proof state write
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .set_proof_state_directly(test_hash(1), 0, Seqno::from(1));
+            })
+            .unwrap();
+
+        // No longer empty
+        let (_, writes) = indexer.into_parts();
+        assert!(!writes.is_empty());
+    }
+
+    #[test]
+    fn test_state_update_captures_inner_state_change() {
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut indexer = IndexerState::new(state);
+
+        // Update proof state
+        let new_hash = test_hash(77);
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .set_proof_state_directly(new_hash, 0, Seqno::from(1));
+            })
+            .unwrap();
+
+        // Verify the inner state was actually updated
+        let (inner, _) = indexer.into_parts();
+        let account = inner.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(
+            account.as_snark_account().unwrap().inner_state_root(),
+            new_hash
+        );
     }
 }
