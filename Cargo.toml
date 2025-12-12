@@ -131,6 +131,7 @@ default-members = [
   "bin/alpen-reth",
   "bin/alpen-client",
   "bin/strata-client",
+  "bin/strata",
   "bin/strata-dbtool",
   "bin/strata-sequencer-client",
   "bin/alpen-cli",
