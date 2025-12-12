@@ -17,6 +17,7 @@
 //! - `m/20000'/20'/101'` for the wallet transaction signing key
 
 use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use secp256k1::SECP256K1;
 use strata_primitives::constants::{
     STRATA_OPERATOR_BASE_DERIVATION_PATH, STRATA_OP_MESSAGE_DERIVATION_PATH,
@@ -39,8 +40,8 @@ pub struct OperatorKeys {
     /// This is the [`Xpriv`] that is generated from only hardened paths.
     base: Xpriv,
 
-    /// Operator's message signing [`Xpriv`].
-    message: Xpriv,
+    /// Operator's message signing ed25519 key.
+    message: SigningKey,
 
     /// Operator's wallet transaction signing [`Xpriv`].
     wallet: Xpriv,
@@ -53,10 +54,13 @@ impl OperatorKeys {
         let message_xpriv = master.derive_priv(SECP256K1, &STRATA_OP_MESSAGE_DERIVATION_PATH)?;
         let wallet_xpriv = master.derive_priv(SECP256K1, &STRATA_OP_WALLET_DERIVATION_PATH)?;
 
+        // Derive ed25519 signing key from the BIP-32 derived secret
+        let message = SigningKey::from_bytes(&message_xpriv.private_key.secret_bytes());
+
         Ok(Self {
             master: *master,
             base: base_xpriv,
-            message: message_xpriv,
+            message,
             wallet: wallet_xpriv,
         })
     }
@@ -80,8 +84,8 @@ impl OperatorKeys {
         &self.wallet
     }
 
-    /// Operator's message signing [`Xpriv`].
-    pub fn message_xpriv(&self) -> &Xpriv {
+    /// Operator's message signing ed25519 key.
+    pub fn message_signing_key(&self) -> &SigningKey {
         &self.message
     }
 
@@ -102,12 +106,9 @@ impl OperatorKeys {
         Xpub::from_priv(SECP256K1, &self.base)
     }
 
-    /// Operator's message signing [`Xpub`].
-    ///
-    /// Infallible according to
-    /// [BIP-32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
-    pub fn message_xpub(&self) -> Xpub {
-        Xpub::from_priv(SECP256K1, &self.message)
+    /// Operator's message signing ed25519 verifying key.
+    pub fn message_verifying_key(&self) -> VerifyingKey {
+        self.message.verifying_key()
     }
 
     /// Operator's wallet transaction signing [`Xpub`].
@@ -200,31 +201,9 @@ impl Zeroize for OperatorKeys {
             };
         }
 
-        // Zeroize message components
-        message.depth.zeroize();
-        {
-            let fingerprint: &mut [u8; 4] = message.parent_fingerprint.as_mut();
-            fingerprint.zeroize();
-        }
-        message.private_key.non_secure_erase();
-        {
-            let chaincode: &mut [u8; 32] = message.chain_code.as_mut();
-            chaincode.zeroize();
-        }
-        let raw_ptr = &mut message.child_number as *mut ChildNumber;
-        // SAFETY: `message.child_number` is a valid enum variant
-        //          and will not be accessed after zeroization.
-        //          Also there are only two possible variants that will
-        //          always have an `index` which is a `u32`.
-        //          Note that `ChildNumber` does not have the `#[non_exhaustive]`
-        //          attribute.
-        unsafe {
-            *raw_ptr = if message.child_number.is_normal() {
-                ChildNumber::Normal { index: 0 }
-            } else {
-                ChildNumber::Hardened { index: 0 }
-            };
-        }
+        // Zeroize ed25519 signing key by replacing with a zeroed key.
+        // This drops the old key, triggering ZeroizeOnDrop.
+        *message = SigningKey::from_bytes(&[0u8; 32]);
 
         // Zeroize wallet components
         wallet.depth.zeroize();
@@ -372,13 +351,13 @@ mod tests {
         // Store original values
         let master_chaincode = *keys.master_xpriv().chain_code.as_bytes();
         let base_chaincode = *keys.base_xpriv().chain_code.as_bytes();
-        let message_chaincode = *keys.message_xpriv().chain_code.as_bytes();
+        let message_key_bytes = keys.message_signing_key().to_bytes();
         let wallet_chaincode = *keys.wallet_xpriv().chain_code.as_bytes();
 
         // Verify data exists
         assert_ne!(master_chaincode, [0u8; 32]);
         assert_ne!(base_chaincode, [0u8; 32]);
-        assert_ne!(message_chaincode, [0u8; 32]);
+        assert_ne!(message_key_bytes, [0u8; 32]);
         assert_ne!(wallet_chaincode, [0u8; 32]);
 
         // Manually zeroize
@@ -388,25 +367,21 @@ mod tests {
         // NOTE: SecretKey::non_secure_erase writes `1`s to the memory.
         assert_eq!(keys.master_xpriv().private_key.secret_bytes(), [1u8; 32]);
         assert_eq!(keys.base_xpriv().private_key.secret_bytes(), [1u8; 32]);
-        assert_eq!(keys.message_xpriv().private_key.secret_bytes(), [1u8; 32]);
         assert_eq!(keys.wallet_xpriv().private_key.secret_bytes(), [1u8; 32]);
+
+        // Verify message signing key is zeroed
+        assert_eq!(keys.message_signing_key().to_bytes(), [0u8; 32]);
 
         assert_eq!(*keys.master_xpriv().chain_code.as_bytes(), [0u8; 32]);
         assert_eq!(*keys.base_xpriv().chain_code.as_bytes(), [0u8; 32]);
-        assert_eq!(*keys.message_xpriv().chain_code.as_bytes(), [0u8; 32]);
         assert_eq!(*keys.wallet_xpriv().chain_code.as_bytes(), [0u8; 32]);
 
         assert_eq!(*keys.master_xpriv().parent_fingerprint.as_bytes(), [0u8; 4]);
         assert_eq!(*keys.base_xpriv().parent_fingerprint.as_bytes(), [0u8; 4]);
-        assert_eq!(
-            *keys.message_xpriv().parent_fingerprint.as_bytes(),
-            [0u8; 4]
-        );
         assert_eq!(*keys.wallet_xpriv().parent_fingerprint.as_bytes(), [0u8; 4]);
 
         assert_eq!(keys.master_xpriv().depth, 0);
         assert_eq!(keys.base_xpriv().depth, 0);
-        assert_eq!(keys.message_xpriv().depth, 0);
         assert_eq!(keys.wallet_xpriv().depth, 0);
 
         // Check if child numbers are zeroed while maintaining their hardened/normal status
@@ -418,13 +393,27 @@ mod tests {
             ChildNumber::Normal { index } => assert_eq!(index, 0),
             ChildNumber::Hardened { index } => assert_eq!(index, 0),
         }
-        match keys.message_xpriv().child_number {
-            ChildNumber::Normal { index } => assert_eq!(index, 0),
-            ChildNumber::Hardened { index } => assert_eq!(index, 0),
-        }
         match keys.wallet_xpriv().child_number {
             ChildNumber::Normal { index } => assert_eq!(index, 0),
             ChildNumber::Hardened { index } => assert_eq!(index, 0),
         }
+    }
+
+    #[test]
+    fn test_ed25519_message_signing() {
+        use ed25519_dalek::Signer;
+
+        let operator_keys = OperatorKeys::new(&XPRIV).unwrap();
+        let signing_key = operator_keys.message_signing_key();
+        let verifying_key = operator_keys.message_verifying_key();
+
+        // Test message signing and verification
+        let message = b"test message";
+        let signature = signing_key.sign(message);
+
+        // Verify the signature
+        verifying_key
+            .verify_strict(message, &signature)
+            .expect("signature verification should succeed");
     }
 }
