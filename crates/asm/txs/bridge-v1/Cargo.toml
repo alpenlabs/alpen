@@ -19,6 +19,7 @@ strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 
 # Optional dependencies for test utilities
+rand = { workspace = true, optional = true }
 strata-crypto = { workspace = true, optional = true }
 strata-test-utils-btcio = { workspace = true, optional = true }
 
@@ -33,5 +34,6 @@ strata-test-utils.workspace = true
 test-utils = [
   "dep:strata-crypto",
   "dep:strata-test-utils-btcio",
+  "dep:rand",
   "strata-crypto/test-utils",
 ]

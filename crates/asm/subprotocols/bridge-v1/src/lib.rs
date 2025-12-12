@@ -21,7 +21,6 @@
 
 mod errors;
 mod handler;
-mod parser;
 mod state;
 mod subprotocol;
 

@@ -10,15 +10,15 @@ use strata_asm_common::{
     VerifiedAuxData,
     logging::{error, info},
 };
-use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
+use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::parse_tx};
 use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
 };
 
 use crate::{
+    errors::BridgeSubprotocolError,
     handler::{handle_parsed_tx, preprocess_parsed_tx},
-    parser::parse_tx,
     state::{BridgeV1Config, BridgeV1State},
 };
 
@@ -125,9 +125,11 @@ impl Subprotocol for BridgeV1Subproto {
         for tx in txs {
             // Parse transaction to extract structured data (deposit/withdrawal info)
             // then handle the parsed transaction to update state and emit events
-            match parse_tx(tx).and_then(|parsed_tx| {
-                handle_parsed_tx(state, parsed_tx, verified_aux_data, relayer)
-            }) {
+            match parse_tx(tx)
+                .map_err(BridgeSubprotocolError::from)
+                .and_then(|parsed_tx| {
+                    handle_parsed_tx(state, parsed_tx, verified_aux_data, relayer)
+                }) {
                 // `tx_id` is computed inside macro, because logging is compiled to noop in ZkVM
                 Ok(()) => info!(tx_id = %tx.tx().compute_txid(), "Successfully processed tx"),
                 Err(e) => {

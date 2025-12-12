@@ -2,7 +2,9 @@ use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, absolute::LockTime,
     transaction::Version,
 };
+use secp256k1::{PublicKey, SECP256K1, SecretKey};
 use strata_asm_common::TxInputRef;
+use strata_crypto::{EvenPublicKey, EvenSecretKey};
 use strata_l1_txfmt::{ParseConfig, TagData};
 
 use crate::test_utils::TEST_MAGIC_BYTES;
@@ -51,4 +53,30 @@ pub fn create_dummy_tx(num_inputs: usize, num_outputs: usize) -> Transaction {
         input,
         output,
     }
+}
+
+// Helper function to create test operator keys
+///
+/// # Returns
+///
+/// - `Vec<EvenSecretKey>` - Private keys for creating test transactions
+/// - `Vec<EvenPublicKey>` - MuSig2 public keys for bridge configuration
+pub fn create_test_operators(num_operators: usize) -> (Vec<EvenSecretKey>, Vec<EvenPublicKey>) {
+    let mut rng = rand::thread_rng();
+
+    // Generate random operator keys
+    let operators_privkeys: Vec<EvenSecretKey> = (0..num_operators)
+        .map(|_| SecretKey::new(&mut rng).into())
+        .collect();
+
+    // Create operator MuSig2 public keys for config
+    let operator_pubkeys: Vec<EvenPublicKey> = operators_privkeys
+        .iter()
+        .map(|sk| {
+            let pk = PublicKey::from_secret_key(SECP256K1, sk);
+            EvenPublicKey::from(pk)
+        })
+        .collect();
+
+    (operators_privkeys, operator_pubkeys)
 }

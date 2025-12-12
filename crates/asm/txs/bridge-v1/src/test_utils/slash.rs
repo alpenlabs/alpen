@@ -1,5 +1,4 @@
-use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction, constants::COINBASE_MATURITY};
-use secp256k1::SECP256K1;
+use bitcoin::{Amount, OutPoint, Transaction, constants::COINBASE_MATURITY};
 use strata_codec::encode_to_vec;
 use strata_crypto::EvenSecretKey;
 use strata_l1_txfmt::{ParseConfig, TagData};
@@ -51,9 +50,8 @@ pub fn create_connected_stake_and_slash_txs(
     // 1. Create a "stake transaction" to act as the funding source. This simulates the N-of-N
     //    multisig UTXO that the slash transaction spends.
     let mut stake_tx = create_dummy_tx(0, 1);
-    let (_, internal_key) = derive_musig2_p2tr_address(operator_keys).unwrap();
-    let nn_script = ScriptBuf::new_p2tr(SECP256K1, internal_key, None);
-    stake_tx.output[0].script_pubkey = nn_script;
+    let (address, _) = derive_musig2_p2tr_address(operator_keys).unwrap();
+    stake_tx.output[0].script_pubkey = address.script_pubkey();
     stake_tx.output[0].value = Amount::from_sat(1_000);
 
     let stake_txid =
@@ -66,8 +64,6 @@ pub fn create_connected_stake_and_slash_txs(
 
     let _ = submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut slash_tx)
         .unwrap();
-
-    dbg!(&slash_tx);
 
     (stake_tx, slash_tx)
 }
