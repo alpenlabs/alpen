@@ -144,6 +144,7 @@ mod tests {
         traits::{Reader, Wallet},
     };
     use corepc_node::Node;
+    use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
     use strata_primitives::{L1BlockId, l1::GenesisL1View};
     use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
     use strata_test_utils_l2::gen_params;
@@ -282,6 +283,26 @@ mod tests {
 
         fn get_network(&self) -> WorkerResult<Network> {
             Ok(Network::Regtest)
+        }
+
+        fn get_bitcoin_tx(&self, _txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
+            Err(WorkerError::Unimplemented)
+        }
+
+        fn append_manifest_to_mmr(&self, _manifest_hash: [u8; 32]) -> WorkerResult<u64> {
+            Ok(0)
+        }
+
+        fn store_manifest_hash(&self, _index: u64, _hash: [u8; 32]) -> WorkerResult<()> {
+            Ok(())
+        }
+
+        fn get_mmr_database(&self) -> WorkerResult<strata_db_store_sled::asm::SledMmrDb> {
+            Err(WorkerError::Unimplemented)
+        }
+
+        fn get_manifest_hash(&self, _index: u64) -> WorkerResult<Option<[u8; 32]>> {
+            Ok(None)
         }
     }
 
