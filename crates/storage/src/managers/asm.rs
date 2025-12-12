@@ -49,4 +49,14 @@ impl AsmStateManager {
     ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>> {
         self.ops.get_asm_states_from_blocking(from_block, max_count)
     }
+
+    /// Stores a manifest hash at the given MMR leaf index
+    pub fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> DbResult<()> {
+        self.ops.store_manifest_hash_blocking(index, hash)
+    }
+
+    /// Gets a manifest hash by MMR leaf index
+    pub fn get_manifest_hash(&self, index: u64) -> DbResult<Option<[u8; 32]>> {
+        self.ops.get_manifest_hash_blocking(index)
+    }
 }

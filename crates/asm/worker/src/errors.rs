@@ -1,3 +1,4 @@
+use strata_btc_types::BitcoinTxid;
 use strata_primitives::prelude::*;
 use thiserror::Error;
 
@@ -29,4 +30,26 @@ pub enum WorkerError {
 
     #[error("not yet implemented")]
     Unimplemented,
+
+    // Auxiliary data resolution errors
+    #[error("Bitcoin transaction not found: {0:?}")]
+    BitcoinTxNotFound(BitcoinTxid),
+
+    #[error("L1 block not found at height {height}")]
+    L1BlockNotFound { height: u64 },
+
+    #[error("No ASM state available")]
+    NoAsmState,
+
+    #[error("Invalid manifest hash range: start={start}, end={end}")]
+    InvalidManifestRange { start: u64, end: u64 },
+
+    #[error("Invalid L1 height range: start={start}, end={end}")]
+    InvalidHeightRange { start: u64, end: u64 },
+
+    #[error("Manifest hash not found for MMR index {index}")]
+    ManifestHashNotFound { index: u64 },
+
+    #[error("MMR proof generation failed for index {index}")]
+    MmrProofFailed { index: u64 },
 }

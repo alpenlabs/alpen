@@ -19,7 +19,7 @@ pub mod writer;
 use std::{path::Path, sync::Arc};
 
 // Re-exports
-use asm::AsmDBSled;
+pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
@@ -89,6 +89,11 @@ impl SledBackend {
             prover_db,
             broadcast_db,
         })
+    }
+
+    /// Get the typed AsmDBSled for MMR database access
+    pub fn asm_db_sled(&self) -> &Arc<AsmDBSled> {
+        &self.asm_db
     }
 }
 
