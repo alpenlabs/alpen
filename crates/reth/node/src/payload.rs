@@ -125,7 +125,7 @@ pub struct AlpenBuiltPayload {
 }
 
 impl AlpenBuiltPayload {
-    pub(crate) fn new(inner: EthBuiltPayload, withdrawal_intents: Vec<WithdrawalIntent>) -> Self {
+    pub fn new(inner: EthBuiltPayload, withdrawal_intents: Vec<WithdrawalIntent>) -> Self {
         Self {
             inner,
             withdrawal_intents,
@@ -134,6 +134,10 @@ impl AlpenBuiltPayload {
 
     pub fn withdrawal_intents(&self) -> &[WithdrawalIntent] {
         &self.withdrawal_intents
+    }
+
+    pub fn into_parts(self) -> (EthBuiltPayload, Vec<WithdrawalIntent>) {
+        (self.inner, self.withdrawal_intents)
     }
 }
 

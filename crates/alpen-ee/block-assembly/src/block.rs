@@ -1,6 +1,7 @@
 use std::num::NonZero;
 
-use alpen_ee_common::{EnginePayload, PayloadBuilderEngine};
+use alpen_ee_common::{EnginePayload, ExecBlockPayload, PayloadBuilderEngine};
+use eyre::Context;
 use strata_acct_types::{AccountId, Hash};
 use strata_ee_acct_runtime::{apply_final_update_changes, apply_input_messages};
 use strata_ee_acct_types::EeAccountState;
@@ -33,7 +34,7 @@ pub struct BlockAssemblyOutputs {
     /// Block package representing the OL inputs and outputs for this block.
     pub package: ExecBlockPackage,
     /// Block payload including full exec block body.
-    pub payload: Vec<u8>,
+    pub payload: ExecBlockPayload,
     /// EeAccountState after applying the new block.
     pub account_state: EeAccountState,
 }
@@ -53,7 +54,8 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
     } = inputs;
 
     // 1. apply new inbox messages to account state
-    let parsed_inputs = apply_input_messages(&mut account_state, &inbox_messages)?;
+    let parsed_inputs = apply_input_messages(&mut account_state, &inbox_messages)
+        .context("build_next_exec_block: failed to apply input messages")?;
 
     // 2. build exec block payload
     let (payload, update_extra_data) = build_exec_payload(
@@ -66,14 +68,19 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
     .await?;
 
     // 3. update account state based on built payload and consumed inputs
-    apply_final_update_changes(&mut account_state, &update_extra_data)?;
+    apply_final_update_changes(&mut account_state, &update_extra_data)
+        .context("build_next_exec_block: failed to apply final update changes")?;
 
     // 4. build exec package
     let package = build_block_package(bridge_gateway_account_id, parsed_inputs, &payload);
 
     Ok(BlockAssemblyOutputs {
         package,
-        payload: payload.to_bytes(),
+        payload: ExecBlockPayload::from_bytes(
+            payload
+                .to_bytes()
+                .context("build_next_exec_block: failed to serialized payload")?,
+        ),
         account_state,
     })
 }

@@ -18,15 +18,21 @@ strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
+alloy-eips.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types-engine.workspace = true
 async-trait.workspace = true
+bincode.workspace = true
 eyre.workspace = true
 mockall = { workspace = true, optional = true }
+reth-ethereum-engine-primitives.workspace = true
+reth-ethereum-primitives.workspace = true
 reth-node-builder.workspace = true
+reth-primitives-traits.workspace = true
+serde.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
 mockall.workspace = true
-strata-primitives.workspace = true

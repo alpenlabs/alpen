@@ -4,18 +4,18 @@ use strata_db_store_sled::{
     impl_borsh_value_codec,
 };
 
-use crate::serialization_types::{DBAccountStateAtSlot, DBExecBlockRecord, DBOLBlockId};
+use crate::serialization_types::{DBAccountStateAtEpoch, DBExecBlockRecord, DBOLBlockId};
 
 define_table_without_codec!(
-    /// store canonical OL block id at OL slot
-    (OLBlockAtSlotSchema) u64 => DBOLBlockId
+    /// store canonical final OL block id at OL epoch
+    (OLBlockAtEpochSchema) u32 => DBOLBlockId
 );
-// impl_bincode_key_codec!(OLBlockAtSlotSchema, u64);
-impl_borsh_value_codec!(OLBlockAtSlotSchema, DBOLBlockId);
+// impl_bincode_key_codec!(OLBlockAtEpochSchema, u32);
+impl_borsh_value_codec!(OLBlockAtEpochSchema, DBOLBlockId);
 
 define_table_with_default_codec!(
     /// EeAccountState at specific OL Block
-    (AccountStateAtOLBlockSchema) DBOLBlockId => DBAccountStateAtSlot
+    (AccountStateAtOLEpochSchema) DBOLBlockId => DBAccountStateAtEpoch
 );
 
 define_table_with_default_codec!(

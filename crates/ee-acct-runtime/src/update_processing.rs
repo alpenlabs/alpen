@@ -88,6 +88,24 @@ impl MsgData {
         Ok(Self { meta, message })
     }
 
+    /// Creates a new `MsgData` for testing purposes.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_for_test(
+        source: AccountId,
+        incl_epoch: u32,
+        value: BitcoinAmount,
+        message: DecodedEeMessageData,
+    ) -> Self {
+        Self {
+            meta: MsgMeta {
+                source,
+                incl_epoch,
+                value,
+            },
+            message,
+        }
+    }
+
     pub fn value(&self) -> BitcoinAmount {
         self.meta.value
     }

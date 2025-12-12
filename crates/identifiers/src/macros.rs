@@ -13,7 +13,7 @@ macro_rules! impl_opaque_thin_wrapper {
                 &self.0
             }
 
-            fn into_inner(self) -> $inner {
+            pub fn into_inner(self) -> $inner {
                 self.0
             }
         }

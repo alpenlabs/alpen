@@ -1056,7 +1056,10 @@ dependencies = [
  "alpen-ee-config",
  "alpen-ee-database",
  "alpen-ee-engine",
+ "alpen-ee-exec-chain",
+ "alpen-ee-genesis",
  "alpen-ee-ol-tracker",
+ "alpen-ee-sequencer",
  "alpen-reth-evm",
  "alpen-reth-node",
  "async-trait",
@@ -1074,9 +1077,13 @@ dependencies = [
  "reth-payload-builder",
  "reth-primitives",
  "reth-provider",
+ "ssz",
  "strata-acct-types",
+ "strata-common",
  "strata-identifiers",
  "strata-primitives",
+ "strata-rpc-api-new",
+ "strata-rpc-types-new",
  "strata-snark-acct-types",
  "tokio",
  "tracing",
@@ -1105,21 +1112,27 @@ dependencies = [
 name = "alpen-ee-common"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types-engine",
  "alpen-reth-node",
  "async-trait",
+ "bincode",
  "eyre",
  "mockall",
+ "reth-ethereum-engine-primitives",
+ "reth-ethereum-primitives",
  "reth-node-builder",
+ "reth-primitives-traits",
+ "serde",
  "strata-acct-types",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
- "strata-primitives",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1196,6 +1209,7 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
+ "tracing",
 ]
 
 [[package]]
@@ -1209,6 +1223,24 @@ dependencies = [
  "strata-acct-types",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "alpen-ee-sequencer"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-ee-block-assembly",
+ "alpen-ee-common",
+ "alpen-ee-exec-chain",
+ "eyre",
+ "strata-acct-types",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
  "strata-identifiers",
  "strata-snark-acct-types",
  "thiserror 2.0.17",

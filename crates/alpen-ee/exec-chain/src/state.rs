@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
+use std::collections::{HashMap, VecDeque};
 
 use alpen_ee_common::{ExecBlockRecord, ExecBlockStorage, StorageError};
 use strata_acct_types::Hash;
@@ -58,12 +55,12 @@ impl ExecChainState {
     }
 
     /// Returns the hash of the current best chain tip.
-    pub(crate) fn tip_blockhash(&self) -> Hash {
+    pub fn tip_blockhash(&self) -> Hash {
         self.unfinalized.best().hash
     }
 
     /// Returns the hash of the current finalized block.
-    pub(crate) fn finalized_blockhash(&self) -> Hash {
+    pub fn finalized_blockhash(&self) -> Hash {
         self.unfinalized.finalized().hash
     }
 
@@ -163,7 +160,7 @@ impl ExecChainState {
 
 /// Initializes chain state from storage using the last finalized block and all unfinalized blocks.
 pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
-    storage: Arc<TStorage>,
+    storage: &TStorage,
 ) -> Result<ExecChainState, ExecChainStateError> {
     // Note: This function is expected to be run after
     // `alpen_ee_genesis::handle_finalized_exec_genesis` which ensures there is at least genesis
