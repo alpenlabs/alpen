@@ -13,7 +13,10 @@ use std::cell::RefCell;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{Epoch, OLBlockHeader, OLLog, Slot};
 
-use crate::output::{ExecOutputBuffer, OutputCtx};
+use crate::{
+    AuxAccumulationCtx,
+    output::{ExecOutputBuffer, OutputCtx},
+};
 
 /// Simple information about a single block.
 ///
@@ -196,16 +199,22 @@ impl EpochInitialContext {
 
 /// Basic execution context which can be used for tracking outputs.
 #[derive(Debug)]
-pub struct BasicExecContext<'b> {
+pub struct BasicExecContext<'b, A: AuxAccumulationCtx> {
     block_info: BlockInfo,
     output_buffer: &'b ExecOutputBuffer,
+    aux_accumulator: &'b A,
 }
 
-impl<'b> BasicExecContext<'b> {
-    pub(crate) fn new(block_info: BlockInfo, output_buffer: &'b ExecOutputBuffer) -> Self {
+impl<'b, A: AuxAccumulationCtx> BasicExecContext<'b, A> {
+    pub(crate) fn new(
+        block_info: BlockInfo,
+        output_buffer: &'b ExecOutputBuffer,
+        aux_accumulator: &'b A,
+    ) -> Self {
         Self {
             block_info,
             output_buffer,
+            aux_accumulator,
         }
     }
 
@@ -217,6 +226,10 @@ impl<'b> BasicExecContext<'b> {
         self.output_buffer
     }
 
+    pub fn aux_accumulator(&self) -> &'b A {
+        self.aux_accumulator
+    }
+
     pub fn slot(&self) -> Slot {
         self.block_info.slot()
     }
@@ -226,7 +239,7 @@ impl<'b> BasicExecContext<'b> {
     }
 }
 
-impl<'b> OutputCtx for BasicExecContext<'b> {
+impl<'b, A: AuxAccumulationCtx> OutputCtx for BasicExecContext<'b, A> {
     fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
         self.output_buffer.emit_logs(logs);
     }
@@ -234,14 +247,14 @@ impl<'b> OutputCtx for BasicExecContext<'b> {
 
 /// Richer execution context which can be used outside of epoch sealing.
 #[derive(Clone, Debug)]
-pub struct TxExecContext<'b> {
-    basic_context: &'b BasicExecContext<'b>,
+pub struct TxExecContext<'b, A: AuxAccumulationCtx> {
+    basic_context: &'b BasicExecContext<'b, A>,
     parent_header: Option<&'b OLBlockHeader>,
 }
 
-impl<'b> TxExecContext<'b> {
+impl<'b, A: AuxAccumulationCtx> TxExecContext<'b, A> {
     pub fn new(
-        basic_context: &'b BasicExecContext<'b>,
+        basic_context: &'b BasicExecContext<'b, A>,
         parent_header: Option<&'b OLBlockHeader>,
     ) -> Self {
         Self {
@@ -250,7 +263,7 @@ impl<'b> TxExecContext<'b> {
         }
     }
 
-    pub fn basic_context(&self) -> &'b BasicExecContext<'b> {
+    pub fn basic_context(&self) -> &'b BasicExecContext<'b, A> {
         self.basic_context
     }
 
@@ -260,7 +273,7 @@ impl<'b> TxExecContext<'b> {
     }
 }
 
-impl<'b> OutputCtx for TxExecContext<'b> {
+impl<'b, A: AuxAccumulationCtx> OutputCtx for TxExecContext<'b, A> {
     fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
         self.basic_context.emit_logs(logs);
     }

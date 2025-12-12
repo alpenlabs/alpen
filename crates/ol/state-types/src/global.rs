@@ -3,7 +3,7 @@
 use strata_codec::Codec;
 use strata_ledger_types::IGlobalState;
 
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, PartialEq, Eq, Codec)]
 pub struct GlobalState {
     cur_slot: u64,
 }

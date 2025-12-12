@@ -14,7 +14,7 @@ use crate::{
     constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
     context::BasicExecContext,
     errors::{ExecError, ExecResult},
-    output::OutputCtx,
+    output::{AuxAccumulationCtx, OutputCtx},
 };
 
 /// Processes a message by delivering it to its destination, which might involve
@@ -27,7 +27,7 @@ pub(crate) fn process_message<S: StateAccessor>(
     sender: AccountId,
     target: AccountId,
     msg: MsgPayload,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     match target {
         // Bridge gateway messages.
@@ -61,7 +61,7 @@ pub(crate) fn process_message<S: StateAccessor>(
 
                 AccountTypeState::Snark(sastate) => {
                     // Call the handler fn now that we've increased the balance.
-                    handle_snark_account_message(state, sastate, sender, msg, context)?;
+                    handle_snark_account_message(state, sastate, target, sender, msg, context)?;
                 }
             }
 
@@ -80,7 +80,7 @@ fn handle_bridge_gateway_message<S: StateAccessor>(
     state: &mut S,
     sender: AccountId,
     payload: MsgPayload,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // Parse the message from the payload data.
     let Ok(msg) = MsgRef::try_from(payload.data()) else {
@@ -123,15 +123,20 @@ fn handle_bridge_gateway_message<S: StateAccessor>(
 fn handle_snark_account_message<S: StateAccessor>(
     state: &mut S,
     mut sastate: &mut <S::AccountState as IAccountState>::SnarkAccountState,
+    target: AccountId,
     sender: AccountId,
     payload: MsgPayload,
-    context: &BasicExecContext<'_>,
+    context: &BasicExecContext<'_, impl AuxAccumulationCtx>,
 ) -> ExecResult<()> {
     // Construct the message entry to insert.
     let msg_ent = MessageEntry::new(sender, context.epoch(), payload);
 
     // And then just insert it.
-    sastate.insert_inbox_message(msg_ent)?;
+    sastate.insert_inbox_message(msg_ent.clone())?;
+    // Insert to the accumulator.
+    context
+        .aux_accumulator()
+        .append_account_message(&target, &msg_ent);
 
     Ok(())
 }
