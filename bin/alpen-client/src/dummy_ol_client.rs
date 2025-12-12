@@ -1,3 +1,5 @@
+// TODO: remove this "dummy" implementation once OL RPCs are ready and `RpcOLCLient`` can be used
+// instead.
 use alpen_ee_common::{
     OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary, SequencerOLClient,
 };
