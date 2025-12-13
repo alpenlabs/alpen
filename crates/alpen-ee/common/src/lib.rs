@@ -1,5 +1,6 @@
 //! Common traits and types for Alpen execution environment components.
 
+pub mod chain_tracker;
 mod traits;
 mod types;
 mod utils;
