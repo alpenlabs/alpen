@@ -10,8 +10,8 @@
 //! state, presumably with information extracted from DA.  This does not require
 //! understanding the execution environment.
 
+use ssz::Decode;
 use strata_acct_types::{AccountId, BitcoinAmount};
-use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
     DecodedEeMessageData, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
     MessageDecodeResult, PendingInputEntry, UpdateExtraData,
@@ -130,8 +130,8 @@ pub fn verify_and_apply_update_operation<'i>(
 
     // Basic parsing/handling for things.
     // TODO clean this up a little
-    let extra =
-        decode_buf_exact(operation.extra_data()).map_err(|_| EnvError::MalformedExtraData)?;
+    let extra = UpdateExtraData::from_ssz_bytes(operation.extra_data())
+        .map_err(|_| EnvError::MalformedExtraData)?;
     let shared = SharedData {
         operation,
         extra: &extra,
@@ -254,8 +254,8 @@ pub fn apply_update_operation_unconditionally(
     astate: &mut EeAccountState,
     operation: &UpdateInputData,
 ) -> EnvResult<()> {
-    let extra =
-        decode_buf_exact(operation.extra_data()).map_err(|_| EnvError::MalformedExtraData)?;
+    let extra = UpdateExtraData::from_ssz_bytes(operation.extra_data())
+        .map_err(|_| EnvError::MalformedExtraData)?;
 
     // 1. Apply the changes from the messages.
     for (i, inp) in operation.processed_messages().iter().enumerate() {

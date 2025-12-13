@@ -90,7 +90,7 @@ fn create_withdrawal_init_message_payload(
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{SubjectId, VarVec};
+    use strata_acct_types::SubjectId;
     use strata_ee_acct_types::{CommitMsgData, DepositMsgData, SubjTransferMsgData};
 
     use super::*;
@@ -100,7 +100,9 @@ mod tests {
             AccountId::zero(),
             0,
             BitcoinAmount::from_sat(sats),
-            DecodedEeMessageData::Deposit(DepositMsgData::new(SubjectId::new(dest_bytes))),
+            DecodedEeMessageData::Deposit(DepositMsgData {
+                dest_subject: SubjectId::new(dest_bytes),
+            }),
         )
     }
 
@@ -109,11 +111,11 @@ mod tests {
             AccountId::zero(),
             0,
             BitcoinAmount::from_sat(sats),
-            DecodedEeMessageData::SubjTransfer(SubjTransferMsgData::new(
-                SubjectId::new([0xaa; 32]),
-                SubjectId::new([0xbb; 32]),
-                VarVec::new(),
-            )),
+            DecodedEeMessageData::SubjTransfer(SubjTransferMsgData {
+                source_subject: SubjectId::new([0xaa; 32]),
+                dest_subject: SubjectId::new([0xbb; 32]),
+                transfer_data: vec![].into(),
+            }),
         )
     }
 
@@ -122,7 +124,9 @@ mod tests {
             AccountId::zero(),
             0,
             BitcoinAmount::from_sat(0),
-            DecodedEeMessageData::Commit(CommitMsgData::new([0xcc; 32])),
+            DecodedEeMessageData::Commit(CommitMsgData {
+                new_tip_exec_blkid: [0xcc; 32].into(),
+            }),
         )
     }
 

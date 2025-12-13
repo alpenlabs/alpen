@@ -1,5 +1,6 @@
 //! Builder for constructing update operations for testing.
 
+use ssz::Encode;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     CommitChainSegment, EeAccountState, ExecBlock, ExecutionEnvironment, UpdateExtraData,
@@ -177,7 +178,7 @@ impl UpdateBuilder {
         );
 
         // Encode the extra data
-        let extra_data_buf = encode_to_vec(&extra_data)?;
+        let extra_data_buf = extra_data.as_ssz_bytes();
 
         // Compute the new state by simulating the update
         // For now we just use a placeholder state

@@ -1,0 +1,16 @@
+import strata_ee_chain_types
+
+MAX_RAW_FULL_BLOCK_BYTES = 1 << 21
+MAX_COMMIT_BLOCKS = 1 << 16
+
+### Data for a particular EE block linking it in with the chain
+class CommitBlockData(Container):
+    #~# external_kind: container
+    package: strata_ee_chain_types.ExecBlockPackage
+
+    ### Raw full block bytes (for verification without parsing)
+    raw_full_block: List[uint8, MAX_RAW_FULL_BLOCK_BYTES]
+
+### Chain segment data provided with a coinput
+class CommitChainSegment(Container):
+    blocks: List[CommitBlockData, MAX_COMMIT_BLOCKS]
