@@ -1,10 +1,8 @@
 //! Maintain in memory view of canonical exec chain.
 
 mod handle;
-mod orphan_tracker;
 mod state;
 mod task;
-mod unfinalized_tracker;
 
 pub use handle::{
     build_exec_chain_consensus_forwarder_task, build_exec_chain_task, ExecChainHandle,

@@ -110,7 +110,7 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
 
     // Append to tracker state and emit best hash if changed
     let prev_best = state.tip_blockhash();
-    let new_best = state.append_block(record)?;
+    let new_best = state.append_block(record);
     if new_best != prev_best {
         preconf_tx
             .send(new_best)

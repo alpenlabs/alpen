@@ -3,6 +3,8 @@ use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::OLBlockCommitment;
 
+use crate::chain_tracker::ChainItem;
+
 /// Additional metadata associated with the block.
 /// Most of these can be derived from data in package or account_state, but are cached
 /// here for ease of access.
@@ -103,5 +105,21 @@ impl ExecBlockPayload {
 
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+}
+
+impl ChainItem for ExecBlockRecord {
+    type Id = Hash;
+
+    fn index(&self) -> u64 {
+        self.blocknum()
+    }
+
+    fn id(&self) -> Self::Id {
+        self.blockhash()
+    }
+
+    fn parent_id(&self) -> Self::Id {
+        self.parent_blockhash()
     }
 }

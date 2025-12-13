@@ -1,21 +1,15 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
-use alpen_ee_common::{ExecBlockRecord, ExecBlockStorage, StorageError};
+use alpen_ee_common::{
+    chain_tracker::{AppendResult, ChainTracker, ChainTrackerError, PruneReport},
+    ExecBlockRecord, ExecBlockStorage, StorageError,
+};
 use strata_acct_types::Hash;
 use thiserror::Error;
-use tracing::warn;
-
-use crate::{
-    orphan_tracker::OrphanTracker,
-    unfinalized_tracker::{AttachBlockRes, UnfinalizedTracker, UnfinalizedTrackerError},
-};
 
 /// Errors that can occur in the execution chain state.
 #[derive(Debug, Error)]
 pub enum ExecChainStateError {
-    /// Block is below finalized height
-    #[error("block height below finalized")]
-    BelowFinalized,
     /// Block not found
     #[error("missing expected block: {0:?}")]
     MissingBlock(Hash),
@@ -25,21 +19,24 @@ pub enum ExecChainStateError {
     /// Storage error
     #[error(transparent)]
     Storage(#[from] StorageError),
-    /// Unfinalized tracker error
-    #[error(transparent)]
-    UnfinalizedTracker(#[from] UnfinalizedTrackerError),
+    /// Chain tracker error
+    #[error("chain tracker error: {0}")]
+    ChainTracker(String),
+}
+
+impl<Id: std::fmt::Debug> From<ChainTrackerError<Id>> for ExecChainStateError {
+    fn from(err: ChainTrackerError<Id>) -> Self {
+        ExecChainStateError::ChainTracker(err.to_string())
+    }
 }
 
 /// Manages the execution chain state, tracking both unfinalized blocks and orphans.
 ///
-/// Coordinates between the unfinalized tracker (for blocks extending the chain)
-/// and the orphan tracker (for blocks whose parent is not yet known).
+/// Uses the generic `ChainTracker` internally while maintaining a cache of full block records.
 #[derive(Debug)]
 pub struct ExecChainState {
-    /// Unfinalized block chains extending from the last finalized block
-    unfinalized: UnfinalizedTracker,
-    /// Orphan blocks waiting for their parent to arrive
-    orphans: OrphanTracker,
+    /// Generic chain tracker for block structure
+    tracker: ChainTracker<ExecBlockRecord>,
     /// Cached block data for quick access
     blocks: HashMap<Hash, ExecBlockRecord>,
 }
@@ -47,114 +44,97 @@ pub struct ExecChainState {
 impl ExecChainState {
     /// Create new chain tracker with last finalized block
     pub(crate) fn new_empty(finalized_block: ExecBlockRecord) -> Self {
+        let blockhash = finalized_block.blockhash();
         Self {
-            unfinalized: UnfinalizedTracker::new_empty((&finalized_block).into()),
-            orphans: OrphanTracker::new_empty(),
-            blocks: HashMap::from([(finalized_block.blockhash(), finalized_block)]),
+            tracker: ChainTracker::new(finalized_block.clone()),
+            blocks: HashMap::from([(blockhash, finalized_block)]),
         }
     }
 
     /// Returns the hash of the current best chain tip.
     pub fn tip_blockhash(&self) -> Hash {
-        self.unfinalized.best().hash
+        *self.tracker.tip_id()
     }
 
     /// Returns the hash of the current finalized block.
     pub fn finalized_blockhash(&self) -> Hash {
-        self.unfinalized.finalized().hash
+        *self.tracker.finalized_id()
     }
 
     /// Appends a new block to the chain state.
     ///
     /// Attempts to attach the block to the unfinalized chain. If successful, checks if any
     /// orphan blocks can now be attached. Returns the new tip hash.
-    pub(crate) fn append_block(
-        &mut self,
-        block: ExecBlockRecord,
-    ) -> Result<Hash, ExecChainStateError> {
+    pub(crate) fn append_block(&mut self, block: ExecBlockRecord) -> Hash {
         let blockhash = block.blockhash();
-        match self.unfinalized.attach_block((&block).into()) {
-            AttachBlockRes::Ok(_new_tip) => {
+
+        match self.tracker.append(block.clone()) {
+            AppendResult::Attached(new_tip) => {
                 self.blocks.insert(blockhash, block);
-                Ok(self.check_orphan_blocks(blockhash))
+                new_tip
             }
-            AttachBlockRes::BelowFinalized(_) => Err(ExecChainStateError::BelowFinalized),
-            AttachBlockRes::ExistingBlock => {
-                warn!("block already present in tracker");
-                Ok(self.tip_blockhash())
-            }
-            AttachBlockRes::OrphanBlock(block_entry) => {
+            AppendResult::AlreadyExists => self.tip_blockhash(),
+            AppendResult::BelowFinalized => self.tip_blockhash(),
+            AppendResult::Orphaned => {
                 self.blocks.insert(blockhash, block);
-                self.orphans.insert(block_entry);
-                Ok(self.tip_blockhash())
+                self.tip_blockhash()
             }
         }
-    }
-
-    /// Attempts to attach orphan blocks after a new block is added.
-    ///
-    /// Recursively checks if any orphans can now be attached to the chain,
-    /// updating the tip as orphans are connected.
-    fn check_orphan_blocks(&mut self, mut tip: Hash) -> Hash {
-        let mut attachable_blocks: VecDeque<_> = self.orphans.take_children(&tip).into();
-        while let Some(block) = attachable_blocks.pop_front() {
-            let blockhash = block.blockhash;
-            match self.unfinalized.attach_block(block) {
-                AttachBlockRes::Ok(best) => {
-                    tip = best;
-                    attachable_blocks.append(&mut self.orphans.take_children(&blockhash).into());
-                }
-                AttachBlockRes::ExistingBlock => {
-                    // shouldn't happen but safe to ignore
-                    warn!("unexpected existing block");
-                }
-                AttachBlockRes::OrphanBlock(_) => unreachable!(),
-                AttachBlockRes::BelowFinalized(_) => unreachable!(),
-            }
-        }
-
-        tip
     }
 
     /// Returns the current best block record.
     pub(crate) fn get_best_block(&self) -> &ExecBlockRecord {
         self.blocks
-            .get(&self.unfinalized.best().hash)
-            .expect("should exist")
+            .get(self.tracker.tip_id())
+            .expect("best block should exist in cache")
     }
 
     /// Checks if a block exists in the unfinalized tracker.
     pub(crate) fn contains_unfinalized_block(&self, hash: &Hash) -> bool {
-        self.unfinalized.contains_block(hash)
+        self.tracker.contains_unfinalized(hash)
     }
 
     /// Checks if a block exists in the orphan tracker.
     pub(crate) fn contains_orphan_block(&self, hash: &Hash) -> bool {
-        self.orphans.has_block(hash)
+        self.tracker.contains_orphan(hash)
+    }
+
+    /// Returns the canonical chain from finalized (exclusive) to tip (inclusive).
+    pub fn canonical_chain(&self) -> &[Hash] {
+        self.tracker.canonical_chain()
+    }
+
+    /// Returns the block hash at the given height on the canonical chain.
+    pub fn canonical_blockhash_at_height(&self, height: u64) -> Option<&Hash> {
+        self.tracker.canonical_id_at_index(height)
+    }
+
+    /// Checks if a block is on the canonical chain.
+    pub fn is_canonical(&self, hash: &Hash) -> bool {
+        self.tracker.is_canonical(hash)
     }
 
     /// Advances finalization to the given block and prunes stale blocks.
     ///
     /// Removes finalized blocks and blocks that no longer extend the finalized chain,
     /// as well as old orphans at or below the finalized height.
-    pub(crate) fn prune_finalized(&mut self, finalized: Hash) -> Result<(), ExecChainStateError> {
-        let report = self.unfinalized.prune_finalized(finalized)?;
-        let finalized_height = self
-            .blocks
-            .get(&finalized)
-            .expect("should exist")
-            .blocknum();
-        for hash in report.finalize {
-            self.blocks.remove(&hash);
+    pub(crate) fn prune_finalized(
+        &mut self,
+        finalized: Hash,
+    ) -> Result<PruneReport<Hash>, ExecChainStateError> {
+        let report = self.tracker.prune_to(finalized)?;
+
+        // Remove finalized blocks from cache (they're now in the DB)
+        for hash in &report.finalized {
+            self.blocks.remove(hash);
         }
-        for hash in report.remove {
-            self.blocks.remove(&hash);
+
+        // Remove pruned blocks from cache
+        for hash in &report.pruned {
+            self.blocks.remove(hash);
         }
-        let removed_orphans = self.orphans.purge_by_height(finalized_height);
-        for hash in removed_orphans {
-            self.blocks.remove(&hash);
-        }
-        Ok(())
+
+        Ok(report)
     }
 }
 
@@ -180,7 +160,7 @@ pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
             .await?
             .ok_or(ExecChainStateError::MissingBlock(blockhash))?;
 
-        state.append_block(block)?;
+        state.append_block(block);
     }
 
     Ok(state)
@@ -233,7 +213,7 @@ mod tests {
         let mut state = ExecChainState::new_empty(block_a.clone());
 
         let block_b = create_test_block(1, hash_from_u8(1), hash_from_u8(0));
-        let tip = state.append_block(block_b.clone()).unwrap();
+        let tip = state.append_block(block_b.clone());
 
         assert_eq!(tip, hash_from_u8(1));
         assert_eq!(state.tip_blockhash(), hash_from_u8(1));
@@ -247,7 +227,7 @@ mod tests {
 
         // Add orphan block C (parent B is missing)
         let block_c = create_test_block(2, hash_from_u8(2), hash_from_u8(1));
-        let tip = state.append_block(block_c.clone()).unwrap();
+        let tip = state.append_block(block_c.clone());
 
         // Tip should still be A
         assert_eq!(tip, hash_from_u8(0));
@@ -256,7 +236,7 @@ mod tests {
 
         // Add parent block B - should trigger C to be attached
         let block_b = create_test_block(1, hash_from_u8(1), hash_from_u8(0));
-        let tip = state.append_block(block_b.clone()).unwrap();
+        let tip = state.append_block(block_b.clone());
 
         // Now tip should be C (block 2)
         assert_eq!(tip, hash_from_u8(2));
@@ -274,15 +254,15 @@ mod tests {
         let block_c = create_test_block(2, hash_from_u8(2), hash_from_u8(1));
         let block_b = create_test_block(1, hash_from_u8(1), hash_from_u8(0));
 
-        state.append_block(block_d.clone()).unwrap();
-        state.append_block(block_c.clone()).unwrap();
+        state.append_block(block_d.clone());
+        state.append_block(block_c.clone());
 
         // All should be orphans
         assert!(state.contains_orphan_block(&hash_from_u8(3)));
         assert!(state.contains_orphan_block(&hash_from_u8(2)));
 
         // Add B - should cascade attach C and D
-        let tip = state.append_block(block_b.clone()).unwrap();
+        let tip = state.append_block(block_b.clone());
 
         assert_eq!(tip, hash_from_u8(3));
         assert!(!state.contains_orphan_block(&hash_from_u8(1)));
@@ -313,22 +293,22 @@ mod tests {
         // Build main chain: A -> B -> C
         let block_b = create_test_block(1, hash_from_u8(1), hash_from_u8(0));
         let block_c = create_test_block(2, hash_from_u8(2), hash_from_u8(1));
-        state.append_block(block_b.clone()).unwrap();
-        state.append_block(block_c.clone()).unwrap();
+        state.append_block(block_b.clone());
+        state.append_block(block_c.clone());
 
         // C should be the tip
         assert_eq!(state.tip_blockhash(), hash_from_u8(2));
 
         // Add orphan E (child of D, which doesn't exist yet)
         let block_e = create_test_block(2, hash_from_u8(4), hash_from_u8(3));
-        state.append_block(block_e.clone()).unwrap();
+        state.append_block(block_e.clone());
 
         // E should be an orphan
         assert!(state.contains_orphan_block(&hash_from_u8(4)));
 
         // Add D (side chain from A)
         let block_d = create_test_block(1, hash_from_u8(3), hash_from_u8(0));
-        let tip = state.append_block(block_d.clone()).unwrap();
+        let tip = state.append_block(block_d.clone());
 
         // E should have been attached
         assert!(!state.contains_orphan_block(&hash_from_u8(4)));
@@ -353,28 +333,28 @@ mod tests {
         // Add main chain B -> C
         let block_b = create_test_block(1, hash_from_u8(1), hash_from_u8(0));
         let block_c = create_test_block(2, hash_from_u8(2), hash_from_u8(1));
-        state.append_block(block_b).unwrap();
-        state.append_block(block_c).unwrap();
+        state.append_block(block_b);
+        state.append_block(block_c);
 
         // Add orphans E and G
         let block_e = create_test_block(2, hash_from_u8(4), hash_from_u8(3));
         let block_g = create_test_block(2, hash_from_u8(6), hash_from_u8(5));
-        state.append_block(block_e.clone()).unwrap();
-        state.append_block(block_g.clone()).unwrap();
+        state.append_block(block_e.clone());
+        state.append_block(block_g.clone());
 
         assert!(state.contains_orphan_block(&hash_from_u8(4)));
         assert!(state.contains_orphan_block(&hash_from_u8(6)));
 
         // Add D - should attach E
         let block_d = create_test_block(1, hash_from_u8(3), hash_from_u8(0));
-        state.append_block(block_d).unwrap();
+        state.append_block(block_d);
 
         assert!(!state.contains_orphan_block(&hash_from_u8(4)));
         assert!(state.contains_unfinalized_block(&hash_from_u8(4)));
 
         // Add F - should attach G
         let block_f = create_test_block(1, hash_from_u8(5), hash_from_u8(0));
-        state.append_block(block_f).unwrap();
+        state.append_block(block_f);
 
         assert!(!state.contains_orphan_block(&hash_from_u8(6)));
         assert!(state.contains_unfinalized_block(&hash_from_u8(6)));
@@ -395,16 +375,16 @@ mod tests {
 
         // Add main chain B
         let block_b = create_test_block(1, hash_from_u8(1), hash_from_u8(0));
-        state.append_block(block_b).unwrap();
+        state.append_block(block_b);
 
         // Add deep orphan chain (in reverse)
         let block_g = create_test_block(4, hash_from_u8(6), hash_from_u8(5));
         let block_f = create_test_block(3, hash_from_u8(5), hash_from_u8(4));
         let block_e = create_test_block(2, hash_from_u8(4), hash_from_u8(3));
 
-        state.append_block(block_g.clone()).unwrap();
-        state.append_block(block_f.clone()).unwrap();
-        state.append_block(block_e.clone()).unwrap();
+        state.append_block(block_g.clone());
+        state.append_block(block_f.clone());
+        state.append_block(block_e.clone());
 
         assert!(state.contains_orphan_block(&hash_from_u8(4)));
         assert!(state.contains_orphan_block(&hash_from_u8(5)));
@@ -412,7 +392,7 @@ mod tests {
 
         // Add D - should cascade attach E, then F, then G
         let block_d = create_test_block(1, hash_from_u8(3), hash_from_u8(0));
-        let tip = state.append_block(block_d).unwrap();
+        let tip = state.append_block(block_d);
 
         // All blocks should now be attached
         assert!(!state.contains_orphan_block(&hash_from_u8(4)));
@@ -438,9 +418,9 @@ mod tests {
         let block_c = create_test_block(2, hash_from_u8(2), hash_from_u8(1));
         let block_d = create_test_block(3, hash_from_u8(3), hash_from_u8(2));
 
-        state.append_block(block_b).unwrap();
-        state.append_block(block_c).unwrap();
-        state.append_block(block_d).unwrap();
+        state.append_block(block_b);
+        state.append_block(block_c);
+        state.append_block(block_d);
 
         // Finalize block C
         state.prune_finalized(hash_from_u8(2)).unwrap();
@@ -468,10 +448,10 @@ mod tests {
         let block_d = create_test_block(1, hash_from_u8(3), hash_from_u8(0));
         let block_e = create_test_block(2, hash_from_u8(4), hash_from_u8(3));
 
-        state.append_block(block_b).unwrap();
-        state.append_block(block_c).unwrap();
-        state.append_block(block_d).unwrap();
-        state.append_block(block_e).unwrap();
+        state.append_block(block_b);
+        state.append_block(block_c);
+        state.append_block(block_d);
+        state.append_block(block_e);
 
         // All blocks should be present
         assert!(state.contains_unfinalized_block(&hash_from_u8(1)));
@@ -507,11 +487,11 @@ mod tests {
         let orphan_e = create_test_block(2, hash_from_u8(11), hash_from_u8(99));
         let orphan_f = create_test_block(3, hash_from_u8(12), hash_from_u8(99));
 
-        state.append_block(block_b).unwrap();
-        state.append_block(block_c).unwrap();
-        state.append_block(orphan_d).unwrap();
-        state.append_block(orphan_e).unwrap();
-        state.append_block(orphan_f).unwrap();
+        state.append_block(block_b);
+        state.append_block(block_c);
+        state.append_block(orphan_d);
+        state.append_block(orphan_e);
+        state.append_block(orphan_f);
 
         // All orphans should be present
         assert!(state.contains_orphan_block(&hash_from_u8(10)));
@@ -543,9 +523,9 @@ mod tests {
         let block_c = create_test_block(2, hash_from_u8(2), hash_from_u8(1));
         let block_d = create_test_block(1, hash_from_u8(3), hash_from_u8(0));
 
-        state.append_block(block_b).unwrap();
-        state.append_block(block_c).unwrap();
-        state.append_block(block_d).unwrap();
+        state.append_block(block_b);
+        state.append_block(block_c);
+        state.append_block(block_d);
 
         // Tip should be C (height 2)
         assert_eq!(state.tip_blockhash(), hash_from_u8(2));
@@ -556,5 +536,47 @@ mod tests {
         // Tip should now be D (the finalized block, since there are no unfinalized blocks)
         assert_eq!(state.finalized_blockhash(), hash_from_u8(3));
         assert_eq!(state.tip_blockhash(), hash_from_u8(3));
+    }
+
+    #[test]
+    fn test_canonical_chain() {
+        //     A (finalized)
+        //    / \
+        //   B   D
+        //   |
+        //   C
+        let block_a = create_test_block(0, hash_from_u8(0), hash_from_u8(0));
+        let mut state = ExecChainState::new_empty(block_a.clone());
+
+        let block_b = create_test_block(1, hash_from_u8(1), hash_from_u8(0));
+        let block_c = create_test_block(2, hash_from_u8(2), hash_from_u8(1));
+        let block_d = create_test_block(1, hash_from_u8(3), hash_from_u8(0));
+
+        state.append_block(block_b);
+        state.append_block(block_c);
+        state.append_block(block_d);
+
+        // Canonical chain should be A -> B -> C
+        let canonical = state.canonical_chain();
+        assert_eq!(canonical, &[hash_from_u8(1), hash_from_u8(2)]);
+
+        assert!(state.is_canonical(&hash_from_u8(0))); // finalized
+        assert!(state.is_canonical(&hash_from_u8(1)));
+        assert!(state.is_canonical(&hash_from_u8(2)));
+        assert!(!state.is_canonical(&hash_from_u8(3))); // side chain
+
+        assert_eq!(
+            state.canonical_blockhash_at_height(0),
+            Some(&hash_from_u8(0))
+        );
+        assert_eq!(
+            state.canonical_blockhash_at_height(1),
+            Some(&hash_from_u8(1))
+        );
+        assert_eq!(
+            state.canonical_blockhash_at_height(2),
+            Some(&hash_from_u8(2))
+        );
+        assert_eq!(state.canonical_blockhash_at_height(3), None);
     }
 }
