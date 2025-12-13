@@ -8,7 +8,11 @@
 //! 5. Run ASM transition and verify checkpoint state updates & check for correct log emission.
 //!    (CheckpointUpdate & DepositLog)
 
+use bitcoind_async_client::traits::{Reader, Wallet};
+use strata_identifiers::L1BlockId;
+use strata_test_utils_btcio::mine_blocks;
 
+use crate::test_env::AsmTestEnv;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_asm_transition_empty_block() {
