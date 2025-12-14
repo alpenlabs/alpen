@@ -13684,38 +13684,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-checkpoint-v0"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "strata-asm-bridge-msgs",
- "strata-asm-checkpoint-msgs",
- "strata-asm-common",
- "strata-asm-logs",
- "strata-asm-proto-checkpoint-txs",
- "strata-checkpoint-types",
- "strata-identifiers",
- "strata-predicate",
- "strata-primitives",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "strata-asm-proto-core"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "strata-asm-common",
- "strata-checkpoint-types",
- "strata-l1-txfmt",
- "strata-l1tx",
- "strata-msg-fmt",
- "strata-predicate",
- "strata-primitives",
- "thiserror 2.0.17",
-]
-
-[[package]]
 name = "strata-asm-proto-debug-v1"
 version = "0.1.0"
 dependencies = [
@@ -13735,7 +13703,6 @@ version = "0.1.0"
 dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
- "strata-asm-proto-checkpoint-v0",
  "strata-l1-txfmt",
  "strata-params",
  "strata-primitives",
@@ -13747,7 +13714,6 @@ version = "0.1.0"
 dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
- "strata-asm-proto-checkpoint-v0",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
  "strata-l1-txfmt",
