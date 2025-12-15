@@ -15268,7 +15268,6 @@ dependencies = [
  "serde_json",
  "shrex",
  "shrex_macros",
- "strata-asm-common",
  "strata-asm-txs-bridge-v1",
  "strata-cli-common",
  "strata-crypto",

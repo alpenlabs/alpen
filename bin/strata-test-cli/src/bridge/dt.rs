@@ -13,7 +13,6 @@ use bdk_wallet::bitcoin::{
     Amount, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
 };
 use secp256k1::SECP256K1;
-use strata_asm_common::TxInputRef;
 use strata_asm_txs_bridge_v1::{
     deposit::DepositTxHeaderAux, deposit_request::parse_drt, test_utils::build_deposit_transaction,
 };
@@ -68,13 +67,8 @@ pub(crate) fn create_deposit_transaction_cli(
     let (_address, agg_pubkey) =
         generate_taproot_address(&pubkeys, NETWORK).map_err(|e| Error::TxBuilder(e.to_string()))?;
 
-    let td = ParseConfig::new(*MAGIC_BYTES)
-        .try_parse_tx(&drt_tx)
-        .map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
-    let sps50_parsed_drt = TxInputRef::new(&drt_tx, td);
-
-    let drt_data = parse_drt(&sps50_parsed_drt)
-        .map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
+    let drt_data =
+        parse_drt(&drt_tx).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
 
     let takeback_script = build_timelock_script(&drt_data.take_back_leaf_hash);
     let takeback_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);

@@ -1,5 +1,6 @@
-use strata_asm_common::TxInputRef;
+use bitcoin::Transaction;
 use strata_codec::decode_buf_exact;
+use strata_l1_txfmt::extract_tx_magic_and_tag;
 use strata_primitives::l1::DepositRequestInfo;
 
 use crate::{
@@ -18,15 +19,15 @@ use crate::{
 ///
 /// Returns [`DepositRequestParseError`] if the auxiliary data cannot be decoded or if the expected
 /// deposit request output at index 1 is missing.
-pub fn parse_drt(
-    tx_input: &TxInputRef<'_>,
-) -> Result<DepositRequestInfo, DepositRequestParseError> {
+pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, DepositRequestParseError> {
+    let (_magic, tag) = extract_tx_magic_and_tag(tx)
+        .map_err(|e| DepositRequestParseError::Sps50ParseError(e.to_string()))?;
+
     // Parse auxiliary data using DepositRequestAuxData
-    let aux_data: DrtHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
+    let aux_data: DrtHeaderAux = decode_buf_exact(tag.aux_data())?;
 
     // Extract the deposit request output (second output at index 1)
-    let drt_output = tx_input
-        .tx()
+    let drt_output = tx
         .output
         .get(DRT_OUTPUT_INDEX)
         .ok_or(DepositRequestParseError::MissingDRTOutput)?;
@@ -52,7 +53,7 @@ mod tests {
     use super::*;
     use crate::{
         constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType},
-        test_utils::{TEST_MAGIC_BYTES, parse_sps50_tx},
+        test_utils::TEST_MAGIC_BYTES,
     };
 
     // Helper function to create a test DRT transaction
@@ -113,9 +114,7 @@ mod tests {
         let amount = 1_000_000_000;
 
         let tx = create_test_drt_tx(recovery_pk, &ee_address, amount);
-        let tx_input = parse_sps50_tx(&tx);
-
-        let result = parse_drt(&tx_input).expect("Should successfully parse DRT");
+        let result = parse_drt(&tx).expect("Should successfully parse DRT");
 
         assert_eq!(result.take_back_leaf_hash, recovery_pk);
         assert_eq!(result.address, ee_address.to_vec());
@@ -155,9 +154,8 @@ mod tests {
         };
 
         tx.output[0].script_pubkey = sps_50_script;
-        let tx_input = parse_sps50_tx(&tx);
 
-        let err = parse_drt(&tx_input).unwrap_err();
+        let err = parse_drt(&tx).unwrap_err();
         assert!(matches!(
             err,
             DepositRequestParseError::InvalidAuxiliaryData(_)
@@ -170,9 +168,8 @@ mod tests {
         let amount = 1_000_000;
 
         let tx = create_test_drt_tx(recovery_pk, &[], amount);
-        let tx_input = parse_sps50_tx(&tx);
 
-        let result = parse_drt(&tx_input);
+        let result = parse_drt(&tx);
         assert!(result.is_ok(), "Should succeed with empty EE address");
 
         let info = result.unwrap();
@@ -213,9 +210,8 @@ mod tests {
 
         // Remove the DRT output (keep only OP_RETURN at index 0)
         tx.output[0].script_pubkey = sps_50_script;
-        let tx_input = parse_sps50_tx(&tx);
 
-        let err = parse_drt(&tx_input).unwrap_err();
+        let err = parse_drt(&tx).unwrap_err();
         assert!(matches!(err, DepositRequestParseError::MissingDRTOutput));
     }
 
@@ -226,15 +222,13 @@ mod tests {
         // Test with 20-byte EVM address
         let ee_address_20 = [0x06; 20];
         let tx_20 = create_test_drt_tx(recovery_pk, &ee_address_20, 1_000_000);
-        let tx_input_20 = parse_sps50_tx(&tx_20);
-        let result_20 = parse_drt(&tx_input_20).expect("Should parse 20-byte address");
+        let result_20 = parse_drt(&tx_20).expect("Should parse 20-byte address");
         assert_eq!(result_20.address.len(), 20);
 
         // Test with 32-byte address
         let ee_address_32 = [0x07; 32];
         let tx_32 = create_test_drt_tx(recovery_pk, &ee_address_32, 1_000_000);
-        let tx_input_32 = parse_sps50_tx(&tx_32);
-        let result_32 = parse_drt(&tx_input_32).expect("Should parse 32-byte address");
+        let result_32 = parse_drt(&tx_32).expect("Should parse 32-byte address");
         assert_eq!(result_32.address.len(), 32);
     }
 }
