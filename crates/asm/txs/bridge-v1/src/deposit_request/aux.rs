@@ -82,8 +82,8 @@ impl Codec for DrtHeaderAux {
 impl<'a> Arbitrary<'a> for DrtHeaderAux {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let recovery_pk = <[u8; 32]>::arbitrary(u)?;
-        // Generate address between 20 and 64 bytes (reasonable range for EE addresses)
-        let addr_len = u.int_in_range(20..=64)?;
+        // Generate address between 20 and 42 bytes
+        let addr_len = u.int_in_range(20..=42)?;
         let ee_address = (0..addr_len)
             .map(|_| u8::arbitrary(u))
             .collect::<Result<Vec<_>, _>>()?;

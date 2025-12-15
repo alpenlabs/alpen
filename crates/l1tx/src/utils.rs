@@ -160,7 +160,7 @@ pub(crate) fn convert_bridge_v1_deposit_to_protocol_deposit(
         deposit_idx: bridge_v1_deposit.header_aux().deposit_idx(),
         amt: bridge_v1_deposit.amt(),
         outpoint: OutPoint::null().into(),
-        address: bridge_v1_deposit.header_aux().address().to_vec(),
+        address: [0u8; 20].to_vec(), // FIXME:PG
     }
 }
 

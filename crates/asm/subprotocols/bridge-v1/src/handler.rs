@@ -146,15 +146,18 @@ pub(crate) fn preprocess_parsed_tx(
 mod tests {
     use strata_asm_common::{AsmCompactMmr, AsmMmr, AuxData, VerifiedAuxData};
     use strata_asm_txs_bridge_v1::{
+        deposit::{DepositTxHeaderAux, parse_deposit_tx},
+        deposit_request::DrtHeaderAux,
         parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
         test_utils::{
-            build_connected_stake_and_unstake_txs, create_connected_stake_and_slash_txs,
-            parse_sps50_tx,
+            build_connected_stake_and_unstake_txs, create_connected_drt_and_dt,
+            create_connected_stake_and_slash_txs, parse_sps50_tx,
         },
         unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
     };
     use strata_btc_types::RawBitcoinTx;
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::handle_parsed_tx;
     use crate::test_utils::{MockMsgRelayer, create_test_state};
@@ -239,5 +242,45 @@ mod tests {
             !state.operators().is_in_current_multisig(operator_idx),
             "Operator should be removed"
         );
+    }
+
+    #[test]
+    fn test_handle_deposit_tx_success() {
+        // 1. Setup Bridge State
+        let (mut state, operators) = create_test_state();
+
+        // 2. Prepare DRT and DT
+
+        let mut arb = ArbitraryGenerator::new();
+        let drt_aux: DrtHeaderAux = arb.generate();
+        let dt_aux: DepositTxHeaderAux = arb.generate();
+
+        let (drt, dt) = create_connected_drt_and_dt(
+            drt_aux,
+            dt_aux,
+            (*state.denomination()).into(),
+            &operators,
+        );
+
+        // 3. Prepare ParsedTx
+        // We need to re-parse the slash tx to get the correct SlashInfo with updated input
+        // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
+        let dt_input = parse_sps50_tx(&dt);
+        let parsed_dt = parse_deposit_tx(&dt_input).expect("Should parse slash tx");
+        let parsed_tx = ParsedTx::Deposit(parsed_dt);
+
+        // 4. Prepare VerifiedAuxData containing the stake transaction
+        let raw_drt: RawBitcoinTx = drt.clone().into();
+        let aux_data = AuxData::new(vec![], vec![raw_drt]);
+        let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
+        let compact_mmr: AsmCompactMmr = mmr.into();
+        let verified_aux_data =
+            VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
+
+        // 5. Handle the transaction
+        let mut relayer = MockMsgRelayer;
+        let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
+
+        assert!(result.is_ok(), "Handle parsed tx should succeed");
     }
 }
