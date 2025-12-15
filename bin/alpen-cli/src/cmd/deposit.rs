@@ -15,7 +15,7 @@ use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
-use strata_asm_txs_bridge_v1::deposit_request::DepositRequestAuxData;
+use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_l1_txfmt::ParseConfig;
 use strata_primitives::crypto::even_kp;
@@ -133,7 +133,7 @@ pub async fn deposit(
         .expect("magic_bytes validated to be 4 bytes");
 
     // Construct the DRT metadata using the canonical builder
-    let drt_sps50_tag = DepositRequestAuxData::new(
+    let drt_sps50_tag = DrtHeaderAux::new(
         recovery_public_key.serialize(),
         alpen_address.as_slice().to_vec(),
     )

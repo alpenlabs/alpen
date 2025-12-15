@@ -10,13 +10,13 @@ use crate::{
 };
 
 /// Auxiliary data in the SPS-50 header for [`BridgeTxType::DepositRequest`].
-#[derive(Debug, Clone)]
-pub struct DepositRequestAuxData {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrtHeaderAux {
     recovery_pk: [u8; 32],
     ee_address: Vec<u8>,
 }
 
-impl DepositRequestAuxData {
+impl DrtHeaderAux {
     /// Creates new deposit request metadata
     pub fn new(recovery_pk: [u8; 32], ee_address: Vec<u8>) -> Self {
         Self {
@@ -56,7 +56,7 @@ impl DepositRequestAuxData {
     }
 }
 
-impl Codec for DepositRequestAuxData {
+impl Codec for DrtHeaderAux {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.recovery_pk.encode(enc)?;
         enc.write_buf(&self.ee_address)?;
@@ -75,11 +75,11 @@ impl Codec for DepositRequestAuxData {
             ee_address.push(byte[0]);
         }
 
-        Ok(DepositRequestAuxData::new(recovery_pk, ee_address))
+        Ok(DrtHeaderAux::new(recovery_pk, ee_address))
     }
 }
 
-impl<'a> Arbitrary<'a> for DepositRequestAuxData {
+impl<'a> Arbitrary<'a> for DrtHeaderAux {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let recovery_pk = <[u8; 32]>::arbitrary(u)?;
         // Generate address between 20 and 64 bytes (reasonable range for EE addresses)
@@ -88,7 +88,7 @@ impl<'a> Arbitrary<'a> for DepositRequestAuxData {
             .map(|_| u8::arbitrary(u))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(DepositRequestAuxData {
+        Ok(DrtHeaderAux {
             recovery_pk,
             ee_address,
         })
