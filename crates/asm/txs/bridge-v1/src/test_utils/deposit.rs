@@ -1,9 +1,10 @@
 //! Minimal deposit transaction builders for testing
 
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType, Transaction, TxIn, TxOut,
-    Txid, Witness, XOnlyPublicKey,
+    Address, Amount, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType, Transaction, TxIn,
+    TxOut, Txid, Witness, XOnlyPublicKey,
     absolute::LockTime,
+    constants::COINBASE_MATURITY,
     hashes::Hash,
     secp256k1::Secp256k1,
     sighash::{Prevouts, SighashCache},
@@ -15,10 +16,15 @@ use strata_crypto::{
     test_utils::schnorr::{Musig2Tweak, create_agg_pubkey_from_privkeys, create_musig2_signature},
 };
 use strata_l1_txfmt::ParseConfig;
+use strata_test_utils_btcio::{
+    address::derive_musig2_p2tr_address, get_bitcoind_and_client, mining::mine_blocks_blocking,
+    submit::submit_transaction_with_keys_blocking,
+};
 
 use crate::{
-    deposit::DepositInfo,
-    test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
+    deposit::{DepositInfo, DepositTxHeaderAux},
+    deposit_request::DrtHeaderAux,
+    test_utils::{TEST_MAGIC_BYTES, create_dummy_tx, create_test_deposit_request_tx},
 };
 
 /// Creates a test deposit transaction with MuSig2 signatures
@@ -136,4 +142,49 @@ pub fn build_deposit_transaction(
         input: tx_ins,
         output: tx_outs,
     }
+}
+
+fn create_test_deposit_tx_new(
+    dt_header_aux: DepositTxHeaderAux,
+    nn_address: Address,
+) -> Transaction {
+    let mut tx = create_dummy_tx(1, 2);
+
+    let tag = dt_header_aux.build_tag_data().unwrap();
+    let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+        .encode_script_buf(&tag.as_ref())
+        .unwrap();
+
+    tx.output[0].script_pubkey = sps_50_script;
+    tx.output[1].script_pubkey = nn_address.script_pubkey();
+    tx.output[1].value = Amount::from_sat(10_000); // dust
+
+    tx
+}
+
+pub fn create_connected_drt_and_dt(
+    drt_header_aux: DrtHeaderAux,
+    dt_header_aux: DepositTxHeaderAux,
+    operator_keys: &[EvenSecretKey],
+) -> (Transaction, Transaction) {
+    let (bitcoind, client) = get_bitcoind_and_client();
+    let _ =
+        mine_blocks_blocking(&bitcoind, &client, (COINBASE_MATURITY + 1) as usize, None).unwrap();
+
+    let (nn_address, internal_key) = derive_musig2_p2tr_address(operator_keys).unwrap();
+    let mut drt = create_test_deposit_request_tx(&drt_header_aux, internal_key);
+
+    let drt_txid =
+        submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut drt).unwrap();
+
+    let mut dt = create_test_deposit_tx_new(dt_header_aux, nn_address);
+    dt.input[0].previous_output = OutPoint {
+        txid: drt_txid,
+        vout: 1,
+    };
+
+    let _ =
+        submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut dt).unwrap();
+
+    (drt, dt)
 }

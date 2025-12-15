@@ -28,6 +28,10 @@ impl DepositRequestInfo {
         &self.header_aux
     }
 
+    pub fn deposit_request_output(&self) -> &BitcoinTxOut {
+        &self.deposit_request_output
+    }
+
     #[cfg(feature = "test-utils")]
     pub fn header_aux_mut(&mut self) -> &mut DrtHeaderAux {
         &mut self.header_aux
