@@ -13,7 +13,7 @@ use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::{chain_status_checked, ExecBlockStorage, Storage};
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
-use alpen_ee_engine::{create_engine_control_task, AlpenRethExecEngine};
+use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
 #[cfg(feature = "sequencer")]
 use alpen_ee_exec_chain::{
     build_exec_chain_consensus_forwarder_task, build_exec_chain_task,
@@ -155,8 +155,6 @@ fn main() {
                 .await
                 .context("genesis should not fail")?;
 
-            // TODO: startup consistency check
-
             let ol_chain_status = chain_status_checked(ol_client.as_ref())
                 .await
                 .context("cannot fetch OL chain status")?;
@@ -210,6 +208,7 @@ fn main() {
 
             let node_builder = builder
                 .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
+                // Register Alpen gossip RLPx subprotocol
                 .on_component_initialized({
                     let gossip_tx = gossip_tx.clone();
                     move |node| {
@@ -225,6 +224,31 @@ fn main() {
                     }
                 })
                 .on_node_started(move |node| {
+                    // Sync chainstate to engine for sequencer nodes before starting other tasks
+                    #[cfg(feature = "sequencer")]
+                    if ext.sequencer {
+                        let engine = AlpenRethExecEngine::new(node.beacon_engine_handle.clone());
+                        let storage_clone = storage.clone();
+                        let provider_clone = node.provider.clone();
+
+                        // Block on the async sync operation
+                        let sync_result = tokio::runtime::Handle::current().block_on(async {
+                            sync_chainstate_to_engine(
+                                storage_clone.as_ref(),
+                                &provider_clone,
+                                &engine,
+                            )
+                            .await
+                        });
+
+                        if let Err(e) = sync_result {
+                            error!(target: "alpen-client", error = ?e, "failed to sync chainstate to engine on startup");
+                            return Err(eyre::eyre!("chainstate sync failed: {e}"));
+                        }
+
+                        info!(target: "alpen-client", "chainstate sync completed successfully");
+                    }
+
                     let engine_control_task = create_engine_control_task(
                         preconf_rx,
                         ol_tracker.consensus_watcher(),
@@ -235,6 +259,7 @@ fn main() {
                     // Subscribe to canonical state notifications for broadcasting new blocks
                     let state_events = node.provider.subscribe_to_canonical_state();
 
+                    // Create gossip task for broadcasting new blocks
                     let gossip_task = create_gossip_task(
                         gossip_rx,
                         state_events,
@@ -242,6 +267,7 @@ fn main() {
                         gossip_config,
                     );
 
+                    // Spawn critical tasks
                     node.task_executor
                         .spawn_critical("ol_tracker_task", ol_tracker_task);
                     node.task_executor
