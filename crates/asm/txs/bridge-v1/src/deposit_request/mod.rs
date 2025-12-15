@@ -36,10 +36,14 @@
 //! users to reclaim their Bitcoin if operators fail to process the deposit within the timeout
 //! period, maintaining the non-custodial property of the bridge.
 
-pub mod aux;
-pub mod parse;
+mod aux;
+mod info;
+mod lock;
+mod parse;
 
 pub const DRT_OUTPUT_INDEX: usize = 1;
 
-pub use aux::DepositRequestAuxData;
+pub use aux::DrtHeaderAux;
+pub use info::DepositRequestInfo;
+pub use lock::create_deposit_request_locking_script;
 pub use parse::parse_drt;

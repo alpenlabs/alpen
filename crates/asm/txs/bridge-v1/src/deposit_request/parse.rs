@@ -3,7 +3,7 @@ use strata_codec::decode_buf_exact;
 use strata_primitives::l1::DepositRequestInfo;
 
 use crate::{
-    deposit_request::{DRT_OUTPUT_INDEX, DepositRequestAuxData},
+    deposit_request::{DRT_OUTPUT_INDEX, DrtHeaderAux},
     errors::DepositRequestParseError,
 };
 
@@ -22,7 +22,7 @@ pub fn parse_drt(
     tx_input: &TxInputRef<'_>,
 ) -> Result<DepositRequestInfo, DepositRequestParseError> {
     // Parse auxiliary data using DepositRequestAuxData
-    let aux_data: DepositRequestAuxData = decode_buf_exact(tx_input.tag().aux_data())?;
+    let aux_data: DrtHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
 
     // Extract the deposit request output (second output at index 1)
     let drt_output = tx_input
