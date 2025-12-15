@@ -1,3 +1,13 @@
+//! Legacy checkpoint update log type.
+//!
+//! This module provides the `CheckpointUpdate` log type using the legacy checkpoint types
+//! from `strata-checkpoint-types` for compatibility with csm-worker.
+//!
+//! # TODO: cleanup
+//!
+//! Remove this module when csm-worker is deprecated after OL STF migration.
+//! At that point, rename `CheckpointUpdateSsz` (in `checkpoint_ssz.rs`) to `CheckpointUpdate`.
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
 use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};

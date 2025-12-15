@@ -81,7 +81,7 @@ class CheckpointSidecar(Container):
     ### OL state diff blob for DA reconstruction.
     ol_state_diff: List[uint8, OL_DA_DIFF_MAX_SIZE]
     ### Output messages blob (packed OL logs including withdrawal intents).
-    ### SSZ-encoded Vec<OLLog> from ol-chain-types.
+    ### SSZ-encoded `Vec<OLLog>` from ol-chain-types.
     ol_logs: List[uint8, OUTPUT_MSG_MAX_SIZE]
 
 ### Checkpoint payload posted to L1.

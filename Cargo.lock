@@ -13583,8 +13583,10 @@ dependencies = [
  "borsh",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils",
+ "strata-identifiers",
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
@@ -13666,6 +13668,28 @@ dependencies = [
  "strata-crypto",
  "strata-primitives",
  "strata-test-utils",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "strata-asm-proto-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "strata-asm-bridge-msgs",
+ "strata-asm-checkpoint-msgs",
+ "strata-asm-common",
+ "strata-asm-logs",
+ "strata-asm-manifest-types",
+ "strata-asm-proto-checkpoint-txs",
+ "strata-checkpoint-types-ssz",
+ "strata-codec",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-ol-stf",
+ "strata-predicate",
+ "strata-primitives",
  "thiserror 2.0.17",
 ]
 
