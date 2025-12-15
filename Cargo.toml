@@ -53,6 +53,7 @@ members = [
   "crates/ee-acct-runtime",
   "crates/ee-acct-types",
   "crates/ee-chain-types",
+  "crates/ee-prover",
   "crates/eectl",
   "crates/evm-ee",
   "crates/evmexec",
@@ -211,6 +212,7 @@ strata-db-types = { path = "crates/db/types" }
 strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
 strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
+strata-ee-prover = { path = "crates/ee-prover" }
 strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
 strata-identifiers = { path = "crates/identifiers", default-features = false }

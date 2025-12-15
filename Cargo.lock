@@ -14534,6 +14534,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ee-prover"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rsp-primitives",
+ "serde",
+ "strata-paas",
+ "strata-primitives",
+ "strata-proofimpl-eth-ee-acct",
+ "strata-tasks",
+ "strata-zkvm-hosts",
+ "zkaleido-native-adapter",
+ "zkaleido-sp1-host",
+]
+
+[[package]]
 name = "strata-eectl"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15537,6 +15553,7 @@ dependencies = [
  "strata-primitives",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-cl-stf",
+ "strata-proofimpl-eth-ee-acct",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
  "zkaleido",
