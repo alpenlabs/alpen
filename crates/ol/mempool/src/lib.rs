@@ -7,6 +7,7 @@ mod error;
 #[cfg(test)]
 mod test_utils;
 mod types;
+mod validation;
 
 pub use error::OLMempoolError;
 pub use types::{
@@ -14,5 +15,6 @@ pub use types::{
     OLMempoolRejectCounts, OLMempoolRejectReason, OLMempoolSnarkAcctUpdateTxPayload,
     OLMempoolStats, OLMempoolTransaction, OLMempoolTxPayload,
 };
+pub use validation::{BasicTransactionValidator, TransactionValidator};
 
 pub type OLMempoolResult<T> = Result<T, OLMempoolError>;

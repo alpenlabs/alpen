@@ -340,6 +340,16 @@ pub enum OLMempoolRejectReason {
 
     /// Rejected due to duplicate transaction.
     Duplicate,
+
+    /// Rejected due to target account not existing.
+    AccountDoesNotExist,
+
+    /// Rejected due to account type mismatch (e.g., SnarkAccountUpdate targeting non-Snark
+    /// account).
+    AccountTypeMismatch,
+
+    /// Rejected due to invalid sequence number (transaction seq_no < account current seq_no).
+    InvalidSequenceNumber,
 }
 
 impl OLMempoolRejectReason {
@@ -349,7 +359,8 @@ impl OLMempoolRejectReason {
     /// that should be tracked in statistics.
     ///
     /// Returns `None` for errors that are not rejection reasons:
-    /// - Internal errors (Database, Serialization) - these are system errors, not rejections
+    /// - Internal errors (Database, Serialization, AccountStateAccess) - these are system errors,
+    ///   not rejections
     /// - Query errors (TransactionNotFound) - these are lookup failures, not rejections
     ///
     /// Note: Some rejection reasons (like `Duplicate`) are not errors and are tracked
@@ -360,9 +371,13 @@ impl OLMempoolRejectReason {
             OLMempoolError::TransactionTooLarge { .. } => Some(Self::TransactionTooLarge),
             OLMempoolError::TransactionExpired { .. } => Some(Self::Expired),
             OLMempoolError::TransactionNotYetValid { .. } => Some(Self::NotYetValid),
+            OLMempoolError::AccountDoesNotExist { .. } => Some(Self::AccountDoesNotExist),
+            OLMempoolError::AccountTypeMismatch { .. } => Some(Self::AccountTypeMismatch),
+            OLMempoolError::InvalidSequenceNumber { .. } => Some(Self::InvalidSequenceNumber),
             OLMempoolError::TransactionNotFound(_)
             | OLMempoolError::Database(_)
-            | OLMempoolError::Serialization(_) => None,
+            | OLMempoolError::Serialization(_)
+            | OLMempoolError::AccountStateAccess(_) => None,
         }
     }
 }

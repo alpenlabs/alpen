@@ -1,5 +1,6 @@
 //! OL mempool error types.
 
+use strata_acct_types::AccountId;
 use strata_db_types::DbError;
 use strata_identifiers::OLTxId;
 
@@ -35,6 +36,28 @@ pub enum OLMempoolError {
         min_slot: u64,
         current_slot: u64,
     },
+
+    /// Target account does not exist.
+    #[error("account {account} does not exist")]
+    AccountDoesNotExist { account: AccountId },
+
+    /// Transaction targets wrong account type.
+    #[error("transaction {txid} targets account {account} with incorrect type")]
+    AccountTypeMismatch { txid: OLTxId, account: AccountId },
+
+    /// Transaction sequence number is invalid (less than account's current sequence number).
+    #[error(
+        "transaction {txid} has invalid sequence number {tx_seq_no}, account current sequence number is {account_seq_no}"
+    )]
+    InvalidSequenceNumber {
+        txid: OLTxId,
+        tx_seq_no: u64,
+        account_seq_no: u64,
+    },
+
+    /// Account state access error (from StateAccessor).
+    #[error("account state access error: {0}")]
+    AccountStateAccess(String),
 
     /// Database error.
     #[error("database error: {0}")]
