@@ -43,6 +43,10 @@ pub enum DepositValidationError {
     #[error("DRT spending signature validation failed")]
     DrtSignature(#[from] DrtSignatureError),
 
+    /// The deposit output is not locked to the expected aggregated operator key.
+    #[error("Deposit output is not locked to the aggregated operator key")]
+    WrongOutputLock,
+
     /// Deposit output lock validation failed.
     #[error("Deposit output lock validation failed")]
     DepositOutput(#[from] DepositOutputError),
@@ -60,6 +64,10 @@ pub enum DepositValidationError {
     /// Each deposit must have at least one notary operator.
     #[error("Cannot create deposit entry with empty operators.")]
     EmptyOperators,
+
+    /// The DRT output script does not match the expected locking script.
+    #[error("DRT output script mismatch")]
+    DrtOutputScriptMismatch(Mismatch<ScriptBuf>),
 }
 
 /// Errors that can occur when validating withdrawal fulfillment transactions.

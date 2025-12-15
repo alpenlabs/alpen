@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use bitcoin::OutPoint;
+use bitcoin::{OutPoint, ScriptBuf};
 use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint, BitcoinTxOut};
 
 use crate::deposit::aux::DepositTxHeaderAux;
@@ -57,5 +57,9 @@ impl DepositInfo {
             script_pubkey: txout.script_pubkey,
         };
         self.deposit_output = new_txout.into();
+    }
+
+    pub fn locked_script(&self) -> &ScriptBuf {
+        &self.deposit_output.inner().script_pubkey
     }
 }

@@ -1,9 +1,17 @@
 use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
-use strata_asm_txs_bridge_v1::parser::{ParsedDepositTx, ParsedTx};
+use strata_asm_txs_bridge_v1::{
+    deposit_request::{create_deposit_request_locking_script, parse_drt},
+    errors::Mismatch,
+    parser::ParsedTx,
+};
+use strata_primitives::constants::RECOVER_DELAY;
 
-use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV1State};
+use crate::{
+    DepositValidationError, SlashValidationError, errors::BridgeSubprotocolError,
+    state::BridgeV1State,
+};
 
 /// Handles parsed bridge transactions.
 ///
@@ -15,16 +23,51 @@ use crate::{SlashValidationError, errors::BridgeSubprotocolError, state::BridgeV
 /// # Returns
 /// * `Ok(())` if the transaction was processed successfully
 /// * `Err(BridgeSubprotocolError)` if validation fails or an error occurred during processing
-pub(crate) fn handle_parsed_tx<'t>(
+pub(crate) fn handle_parsed_tx(
     state: &mut BridgeV1State,
-    parsed_tx: ParsedTx<'t>,
+    parsed_tx: ParsedTx,
     verified_aux_data: &VerifiedAuxData,
     relayer: &mut impl MsgRelayer,
 ) -> Result<(), BridgeSubprotocolError> {
     match parsed_tx {
-        ParsedTx::Deposit(parsed_deposit_tx) => {
-            let ParsedDepositTx { tx, info } = parsed_deposit_tx;
-            state.process_deposit_tx(tx, &info)?;
+        ParsedTx::Deposit(info) => {
+            // Verify the deposit output is locked to the current N/N multisig script
+            if info.locked_script() != state.operators().current_nn_script() {
+                return Err(DepositValidationError::WrongOutputLock)?;
+            }
+
+            // Retrieve the Deposit Request Transaction (DRT) from auxiliary data
+            let drt = verified_aux_data.get_bitcoin_tx(info.first_inpoint().txid)?;
+            let drt_info = parse_drt(drt).unwrap();
+
+            // Construct the expected locking script for the DRT output
+            let expected_drt_script = create_deposit_request_locking_script(
+                drt_info.header_aux().recovery_pk(),
+                state.operators().agg_key().to_xonly_public_key(),
+                RECOVER_DELAY,
+            );
+            let actual_script = &drt_info.deposit_request_output().inner().script_pubkey;
+
+            // Verify the DRT output script matches what we expect
+            if actual_script != &expected_drt_script {
+                return Err(DepositValidationError::DrtOutputScriptMismatch(Mismatch {
+                    expected: expected_drt_script,
+                    got: actual_script.clone(),
+                })
+                .into());
+            }
+
+            // Verify the deposit amount matches the bridge's expected amount
+            let expected_amount = state.denomination().to_sat();
+            if info.amt().to_sat() != expected_amount {
+                return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
+                    expected: expected_amount,
+                    got: info.amt().to_sat(),
+                })
+                .into());
+            }
+
+            state.add_deposit(&info)?;
             Ok(())
         }
         ParsedTx::WithdrawalFulfillment(info) => {
@@ -82,8 +125,8 @@ pub(crate) fn handle_parsed_tx<'t>(
 ///
 /// This function inspects the transaction type and requests any additional data needed
 /// for the main processing phase.
-pub(crate) fn preprocess_parsed_tx<'t>(
-    parsed_tx: ParsedTx<'t>,
+pub(crate) fn preprocess_parsed_tx(
+    parsed_tx: ParsedTx,
     _state: &BridgeV1State,
     collector: &mut AuxRequestCollector,
 ) {

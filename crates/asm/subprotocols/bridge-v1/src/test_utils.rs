@@ -4,7 +4,7 @@ use rand::Rng;
 use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
 use strata_asm_txs_bridge_v1::{
     deposit::DepositInfo,
-    test_utils::{create_test_deposit_tx, create_test_operators},
+    test_utils::create_test_operators,
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, WithdrawalFulfillmentTxHeaderAux},
 };
 use strata_crypto::EvenSecretKey;
@@ -64,18 +64,13 @@ pub(crate) fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
 /// - `state` - Mutable reference to the bridge state to add deposits to
 /// - `count` - Number of deposits to create and add
 /// - `privkeys` - Private keys used to sign the deposit transactions
-pub(crate) fn add_deposits(
-    state: &mut BridgeV1State,
-    count: usize,
-    privkeys: &[EvenSecretKey],
-) -> Vec<DepositInfo> {
+pub(crate) fn add_deposits(state: &mut BridgeV1State, count: usize) -> Vec<DepositInfo> {
     let mut arb = ArbitraryGenerator::new();
     let mut infos = Vec::new();
     for _ in 0..count {
         let mut info: DepositInfo = arb.generate();
         info.set_amt(*state.denomination());
-        let tx = create_test_deposit_tx(&info, privkeys);
-        state.process_deposit_tx(&tx, &info).unwrap();
+        state.add_deposit(&info).unwrap();
         infos.push(info);
     }
     infos
@@ -92,12 +87,8 @@ pub(crate) fn add_deposits(
 /// - `state` - Mutable reference to the bridge state
 /// - `count` - Number of deposit-assignment pairs to create
 /// - `privkeys` - Private keys used to sign the deposit transactions
-pub(crate) fn add_deposits_and_assignments(
-    state: &mut BridgeV1State,
-    count: usize,
-    privkeys: &[EvenSecretKey],
-) {
-    add_deposits(state, count, privkeys);
+pub(crate) fn add_deposits_and_assignments(state: &mut BridgeV1State, count: usize) {
+    add_deposits(state, count);
     let mut arb = ArbitraryGenerator::new();
     for _ in 0..count {
         let l1blk: L1BlockCommitment = arb.generate();
