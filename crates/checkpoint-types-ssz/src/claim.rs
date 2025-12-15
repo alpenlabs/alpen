@@ -1,5 +1,6 @@
 //! Impl blocks for checkpoint claim types.
 
+use ssz::Encode;
 use strata_identifiers::{Buf32, Epoch};
 
 use crate::{
@@ -49,5 +50,10 @@ impl CheckpointClaim {
             input_msgs_commitment,
             ol_logs_hash: payload.ol_logs_hash(),
         }
+    }
+
+    /// Serializes the claim to SSZ bytes for proof verification.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.as_ssz_bytes()
     }
 }

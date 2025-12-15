@@ -39,6 +39,8 @@ pub use ssz_generated::ssz::{
     },
     state::{EpochSummary, EpochSummaryRef},
 };
+// Re-export OLLog for consumers parsing checkpoint sidecar logs
+pub use strata_ol_chain_types_new::OLLog;
 
 // Borsh bridges for state persistence
 // Fixed-size types (no length prefix needed)

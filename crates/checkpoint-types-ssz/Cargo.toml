@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-identifiers.workspace = true
+strata-ol-chain-types-new.workspace = true
 
 borsh.workspace = true
 serde.workspace = true

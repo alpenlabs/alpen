@@ -1,7 +1,9 @@
 //! Impl blocks for checkpoint payload types.
 
+use ssz::{Decode, Encode};
 use ssz_types::VariableList;
 use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockCommitment, hash};
+use strata_ol_chain_types_new::OLLog;
 
 use crate::{
     CheckpointPayloadError, L1Commitment, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE,
@@ -76,6 +78,16 @@ impl CheckpointSidecar {
             ol_logs,
         })
     }
+
+    /// Parse the OL logs from the sidecar bytes.
+    ///
+    /// Returns `None` if the logs cannot be decoded.
+    pub fn parse_ol_logs(&self) -> Option<Vec<OLLog>> {
+        if self.ol_logs.is_empty() {
+            return Some(Vec::new());
+        }
+        Vec::<OLLog>::from_ssz_bytes(&self.ol_logs).ok()
+    }
 }
 
 impl CheckpointPayload {
@@ -107,6 +119,11 @@ impl CheckpointPayload {
 
     pub fn ol_logs_hash(&self) -> Buf32 {
         hash::raw(&self.sidecar.ol_logs)
+    }
+
+    /// Compute the hash of this payload for signature verification.
+    pub fn compute_hash(&self) -> Buf32 {
+        hash::raw(&self.as_ssz_bytes())
     }
 }
 
