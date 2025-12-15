@@ -40,7 +40,7 @@ use strata_sequencer::{
     checkpoint::{checkpoint_expiry_worker, checkpoint_worker, CheckpointHandle},
 };
 use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
+use strata_storage::{create_node_storage, NodeStorage};
 use strata_sync::{self, L2SyncContext, RpcSyncPeer};
 use strata_tasks::{ShutdownSignal, TaskExecutor, TaskManager};
 use tokio::{
@@ -103,12 +103,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // Open and initialize database
     let database = init_db::init_database(&config.client.datadir, config.client.db_retry_count)?;
-    let asm_db_sled = database.asm_db_sled().clone();
-    let storage = Arc::new(strata_storage::create_node_storage_with_sled(
-        database.clone(),
-        asm_db_sled,
-        pool.clone(),
-    )?);
+    let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;

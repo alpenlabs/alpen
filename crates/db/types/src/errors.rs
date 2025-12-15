@@ -121,10 +121,6 @@ pub enum DbError {
     #[error("Invalid MMR index range: {start}..{end}")]
     MmrInvalidRange { start: u64, end: u64 },
 
-    /// MMR proof generation failed
-    #[error("Failed to generate MMR proof for index {index}: {reason}")]
-    MmrProofGenerationFailed { index: u64, reason: String },
-
     #[error("{0}")]
     Other(String),
 }

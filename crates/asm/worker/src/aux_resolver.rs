@@ -3,17 +3,15 @@
 //! Resolves auxiliary data requests from subprotocols during pre-processing phase.
 //! Fetches Bitcoin transactions and historical manifest hashes with MMR proofs.
 //!
-//! ## Implementation Status
-//!
-//! ### Manifest Hash Resolution ✅
+//! ### Manifest Hash Resolution
 //!
 //! Fully implemented with on-demand MMR proof generation:
 //! - Maps L1 block heights to MMR indices using genesis offset
 //! - Fetches manifest hashes from fast lookup storage
-//! - Generates MMR proofs using `SledMmrDb`
+//! - Generates MMR proofs using `AsmDBSled`
 //! - Converts `MerkleProofB32` (SSZ type) to `MerkleProof<Hash32>` (ASM type)
 //!
-//! ### Bitcoin Transaction Resolution ✅
+//! ### Bitcoin Transaction Resolution
 //!
 //! Fully implemented using Bitcoin client's `getrawtransaction` RPC:
 //! - Fetches raw transaction data by txid from Bitcoin node
@@ -26,7 +24,6 @@ use strata_asm_common::{
     AsmMerkleProof, AuxData, AuxRequests, Hash32, ManifestHashRange, VerifiableManifestHash,
 };
 use strata_btc_types::BitcoinTxid;
-use strata_db_types::traits::MmrDatabase;
 use strata_params::Params;
 use strata_primitives::prelude::*;
 use tracing::*;
@@ -41,7 +38,7 @@ use crate::{WorkerContext, WorkerError, WorkerResult};
 ///
 /// Both resolution types are fully implemented:
 /// - Bitcoin transaction fetching via Bitcoin RPC (requires txindex=1)
-/// - MMR proof generation using SledMmrDb for on-demand proof generation
+/// - MMR proof generation using AsmDBSled for on-demand proof generation
 pub struct AuxDataResolver<'a> {
     /// Worker context for accessing ASM state and MMR database
     context: &'a dyn WorkerContext,
@@ -143,7 +140,7 @@ impl<'a> AuxDataResolver<'a> {
     /// Resolves historical manifest hashes with MMR proofs.
     ///
     /// For each height range, fetches the stored manifest hashes and generates
-    /// MMR proofs using the SledMmrDb implementation.
+    /// MMR proofs using the AsmDBSled implementation.
     ///
     /// # Arguments
     ///
@@ -176,9 +173,6 @@ impl<'a> AuxDataResolver<'a> {
             .genesis_l1_view
             .height()
             .to_consensus_u32() as u64;
-
-        // Get MMR database for proof generation
-        let mmr_db = self.context.get_mmr_database()?;
 
         let mut resolved = Vec::new();
 
@@ -218,10 +212,7 @@ impl<'a> AuxDataResolver<'a> {
                     .ok_or(WorkerError::ManifestHashNotFound { index: mmr_index })?;
 
                 // Generate MMR proof for this index
-                let proof_b32 = mmr_db.generate_proof(mmr_index).map_err(|e| {
-                    error!(?e, index = mmr_index, "Failed to generate MMR proof");
-                    WorkerError::MmrProofFailed { index: mmr_index }
-                })?;
+                let proof_b32 = self.context.generate_mmr_proof(mmr_index)?;
 
                 // Convert MerkleProofB32 to MerkleProof<Hash32> (AsmMerkleProof)
                 // Both types contain the same data: index and cohashes

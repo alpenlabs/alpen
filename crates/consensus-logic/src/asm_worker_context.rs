@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
-use strata_db_store_sled::asm::SledMmrDb;
-use strata_db_types::{traits::MmrDatabase, DbError};
+use strata_db_types::DbError;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
-use strata_storage::{AsmStateManager, L1BlockManager};
+use strata_storage::{AsmStateManager, L1BlockManager, MmrManager};
 use tokio::runtime::Handle;
 use tracing;
 
@@ -21,8 +20,8 @@ pub struct AsmWorkerCtx {
     bitcoin_client: Arc<Client>,
     l1man: Arc<L1BlockManager>,
     asmman: Arc<AsmStateManager>,
-    /// MMR database for proof generation
-    mmr_db: Arc<SledMmrDb>,
+    /// MMR manager for proof generation
+    mmr_manager: Arc<MmrManager>,
 }
 
 impl AsmWorkerCtx {
@@ -31,14 +30,14 @@ impl AsmWorkerCtx {
         bitcoin_client: Arc<Client>,
         l1man: Arc<L1BlockManager>,
         asmman: Arc<AsmStateManager>,
-        mmr_db: Arc<SledMmrDb>,
+        mmr_manager: Arc<MmrManager>,
     ) -> Self {
         Self {
             handle,
             bitcoin_client,
             l1man,
             asmman,
-            mmr_db,
+            mmr_manager,
         }
     }
 }
@@ -106,9 +105,12 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn append_manifest_to_mmr(&self, manifest_hash: [u8; 32]) -> WorkerResult<u64> {
-        self.mmr_db
-            .append_leaf(manifest_hash)
-            .map_err(|_| WorkerError::DbError)
+        self.mmr_manager
+            .append_leaf_blocking(manifest_hash)
+            .map_err(|e| {
+                tracing::error!(?e, "Failed to append leaf to MMR");
+                WorkerError::DbError
+            })
     }
 
     fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> WorkerResult<()> {
@@ -117,8 +119,11 @@ impl WorkerContext for AsmWorkerCtx {
             .map_err(conv_db_err)
     }
 
-    fn get_mmr_database(&self) -> WorkerResult<SledMmrDb> {
-        Ok((*self.mmr_db).clone())
+    fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
+        self.mmr_manager.generate_proof(index).map_err(|e| {
+            tracing::error!(?e, index, "Failed to generate MMR proof");
+            WorkerError::MmrProofFailed { index }
+        })
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>> {

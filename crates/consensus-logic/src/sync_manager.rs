@@ -260,16 +260,12 @@ pub fn spawn_asm_worker(
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
     // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
     // block manager).
-    let mmr_db = storage
-        .mmr_db()
-        .ok_or_else(|| anyhow::anyhow!("MMR database not available"))?
-        .clone();
     let context = AsmWorkerCtx::new(
         handle.clone(),
         bitcoin_client,
         storage.l1().clone(),
         storage.asm().clone(),
-        mmr_db,
+        storage.mmr().clone(),
     );
 
     // Use the new builder API to launch the worker and get a handle.

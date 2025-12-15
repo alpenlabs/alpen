@@ -38,10 +38,10 @@ pub trait WorkerContext {
     /// Stores a manifest hash at the given MMR leaf index for fast lookup.
     fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> WorkerResult<()>;
 
-    /// Gets the MMR database for proof generation.
+    /// Generates an MMR proof for the given leaf index.
     ///
-    /// Returns a mutable reference to the MMR database that can generate proofs.
-    fn get_mmr_database(&self) -> WorkerResult<strata_db_store_sled::asm::SledMmrDb>;
+    /// Returns a Merkle proof that can be used to verify the inclusion of the leaf.
+    fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32>;
 
     /// Retrieves a manifest hash by its MMR leaf index.
     ///

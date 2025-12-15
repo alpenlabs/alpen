@@ -90,11 +90,6 @@ impl SledBackend {
             broadcast_db,
         })
     }
-
-    /// Get the typed AsmDBSled for MMR database access
-    pub fn asm_db_sled(&self) -> &Arc<AsmDBSled> {
-        &self.asm_db
-    }
 }
 
 impl DatabaseBackend for SledBackend {
@@ -132,5 +127,14 @@ impl DatabaseBackend for SledBackend {
 
     fn broadcast_db(&self) -> Arc<impl strata_db_types::traits::L1BroadcastDatabase> {
         self.broadcast_db.clone()
+    }
+}
+
+impl SledBackend {
+    /// Get the MMR database
+    ///
+    /// Returns the ASM database which implements the MmrDatabase trait.
+    pub fn mmr_db(&self) -> Arc<AsmDBSled> {
+        self.asm_db.clone()
     }
 }

@@ -1,8 +1,14 @@
 //! MMR position calculation helpers
 //!
 //! This module provides bit manipulation utilities for navigating the MMR structure.
-//! Based on the Nervos MMR implementation:
-//! <https://github.com/nervosnetwork/merkle-mountain-range>
+//!
+//! # Note on Future Migration
+//!
+//! These helpers are pure MMR navigation utilities that don't depend on any
+//! Alpen-specific logic. They are candidates for upstreaming to the `strata-merkle`
+//! crate in the `strata-common` repository, where they would benefit the entire
+//! ecosystem. For now, they live here in `strata-db-types` to avoid duplication
+//! between the database layer and storage manager layer.
 //!
 //! # MMR Structure
 //!
@@ -20,6 +26,8 @@
 //! Leaves:   [0, 1, x, 2, 3, x, x, 4]  (x = internal node)
 //! ```
 
+use crate::{DbError, DbResult};
+
 /// Convert leaf index to total MMR size (number of nodes)
 ///
 /// Formula: 2 * leaves - peak_count
@@ -33,7 +41,7 @@
 /// 3 leaves (0b11)  -> 2 peaks -> size = 2*3 - 2 = 4
 /// 7 leaves (0b111) -> 3 peaks -> size = 2*7 - 3 = 11
 /// ```
-pub(super) fn leaf_index_to_mmr_size(index: u64) -> u64 {
+pub fn leaf_index_to_mmr_size(index: u64) -> u64 {
     let leaves_count = index + 1;
     let peak_count = leaves_count.count_ones() as u64;
     2 * leaves_count - peak_count
@@ -51,7 +59,7 @@ pub(super) fn leaf_index_to_mmr_size(index: u64) -> u64 {
 /// leaf_index_to_pos(2) = 3  // Third leaf (skip internal node at 2)
 /// leaf_index_to_pos(3) = 4  // Fourth leaf
 /// ```
-pub(super) fn leaf_index_to_pos(index: u64) -> u64 {
+pub fn leaf_index_to_pos(index: u64) -> u64 {
     leaf_index_to_mmr_size(index) - (index + 1).trailing_zeros() as u64 - 1
 }
 
@@ -68,7 +76,7 @@ pub(super) fn leaf_index_to_pos(index: u64) -> u64 {
 /// pos_height_in_tree(2) = 1  // Internal node (parent of 0,1)
 /// pos_height_in_tree(3) = 0  // Leaf
 /// ```
-pub(super) fn pos_height_in_tree(mut pos: u64) -> u8 {
+pub fn pos_height_in_tree(mut pos: u64) -> u8 {
     if pos == 0 {
         return 0;
     }
@@ -91,7 +99,7 @@ pub(super) fn pos_height_in_tree(mut pos: u64) -> u8 {
 ///
 /// For a node at height h, parent is 2^(h+1) positions away
 #[inline]
-pub(super) fn parent_offset(height: u8) -> u64 {
+pub fn parent_offset(height: u8) -> u64 {
     2 << height
 }
 
@@ -99,7 +107,7 @@ pub(super) fn parent_offset(height: u8) -> u64 {
 ///
 /// For a node at height h, sibling is 2^(h+1) - 1 positions away
 #[inline]
-pub(super) fn sibling_offset(height: u8) -> u64 {
+pub fn sibling_offset(height: u8) -> u64 {
     (2 << height) - 1
 }
 
@@ -113,7 +121,7 @@ pub(super) fn sibling_offset(height: u8) -> u64 {
 /// # Returns
 ///
 /// Position of the parent node
-pub(super) fn parent_pos(pos: u64, height: u8) -> u64 {
+pub fn parent_pos(pos: u64, height: u8) -> u64 {
     let next_height = pos_height_in_tree(pos + 1);
     if next_height > height {
         // Current node is a right sibling
@@ -134,7 +142,7 @@ pub(super) fn parent_pos(pos: u64, height: u8) -> u64 {
 /// # Returns
 ///
 /// Position of the sibling node
-pub(super) fn sibling_pos(pos: u64, height: u8) -> u64 {
+pub fn sibling_pos(pos: u64, height: u8) -> u64 {
     let next_height = pos_height_in_tree(pos + 1);
     if next_height > height {
         // Current node is a right sibling
@@ -161,7 +169,7 @@ pub(super) fn sibling_pos(pos: u64, height: u8) -> u64 {
 ///
 /// Peaks: [6]  (single peak at height 2)
 /// ```
-pub(super) fn get_peaks(mmr_size: u64) -> Vec<u64> {
+pub fn get_peaks(mmr_size: u64) -> Vec<u64> {
     if mmr_size == 0 {
         return vec![];
     }
@@ -204,19 +212,22 @@ pub(super) fn get_peaks(mmr_size: u64) -> Vec<u64> {
 ///
 /// Returns the position of the peak that contains the given position.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the position is beyond mmr_size
-pub(super) fn find_peak_for_pos(pos: u64, mmr_size: u64) -> u64 {
+/// Returns `DbError::Other` if the position is beyond mmr_size
+pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
     let peaks = get_peaks(mmr_size);
 
     for &peak_pos in &peaks {
         if pos <= peak_pos {
-            return peak_pos;
+            return Ok(peak_pos);
         }
     }
 
-    panic!("Position {} not found in MMR of size {}", pos, mmr_size);
+    Err(DbError::Other(format!(
+        "Position {} not found in MMR of size {}",
+        pos, mmr_size
+    )))
 }
 
 #[cfg(test)]
@@ -311,10 +322,10 @@ mod tests {
     #[test]
     fn test_find_peak_for_pos() {
         // 11 nodes: peaks [6, 9, 10]
-        assert_eq!(find_peak_for_pos(0, 11), 6); // Leaf 0 is under peak 6
-        assert_eq!(find_peak_for_pos(2, 11), 6); // Node 2 is under peak 6
-        assert_eq!(find_peak_for_pos(6, 11), 6); // Peak 6 itself
-        assert_eq!(find_peak_for_pos(7, 11), 9); // Leaf 7 is under peak 9
-        assert_eq!(find_peak_for_pos(10, 11), 10); // Peak 10 itself
+        assert_eq!(find_peak_for_pos(0, 11).unwrap(), 6); // Leaf 0 is under peak 6
+        assert_eq!(find_peak_for_pos(2, 11).unwrap(), 6); // Node 2 is under peak 6
+        assert_eq!(find_peak_for_pos(6, 11).unwrap(), 6); // Peak 6 itself
+        assert_eq!(find_peak_for_pos(7, 11).unwrap(), 9); // Leaf 7 is under peak 9
+        assert_eq!(find_peak_for_pos(10, 11).unwrap(), 10); // Peak 10 itself
     }
 }

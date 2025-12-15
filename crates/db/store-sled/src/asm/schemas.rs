@@ -1,5 +1,6 @@
 use strata_asm_common::{AnchorState, AsmLogEntry};
-use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
+use typed_sled::codec::{CodecError, KeyCodec};
 
 use crate::{
     define_table_with_integer_key, define_table_with_seek_key_codec, define_table_without_codec,
@@ -18,33 +19,19 @@ define_table_with_seek_key_codec!(
     (AsmLogSchema) L1BlockCommitment => Vec<AsmLogEntry>
 );
 
-// MMR database schemas for aux data resolution (manually defined as public)
+// MMR database schemas for aux data resolution
 
-/// MMR node storage schema: position -> hash. Stores all MMR nodes for proof generation.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AsmMmrNodeSchema;
-
-impl ::typed_sled::Schema for AsmMmrNodeSchema {
-    const TREE_NAME: ::typed_sled::schema::TreeName =
-        ::typed_sled::schema::TreeName("AsmMmrNodeSchema");
-    type Key = u64;
-    type Value = [u8; 32];
-}
-
-impl AsmMmrNodeSchema {
-    const fn tree_name() -> &'static str {
-        "AsmMmrNodeSchema"
-    }
-}
-
-impl_borsh_value_codec!(AsmMmrNodeSchema, [u8; 32]);
+define_table_with_integer_key!(
+    /// MMR node storage schema: position -> hash. Stores all MMR nodes for proof generation.
+    (AsmMmrNodeSchema) u64 => Buf32
+);
 
 /// MMR metadata storage
 #[derive(Debug, Clone, borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct MmrMetadata {
     pub num_leaves: u64,
     pub mmr_size: u64,
-    pub peak_roots: Vec<[u8; 32]>,
+    pub peak_roots: Vec<Buf32>,
 }
 
 /// MMR metadata schema: singleton storage for MMR metadata
@@ -67,16 +54,16 @@ impl AsmMmrMetaSchema {
 impl_borsh_value_codec!(AsmMmrMetaSchema, MmrMetadata);
 
 // Implement KeyCodec for unit type (singleton key)
-impl ::typed_sled::codec::KeyCodec<AsmMmrMetaSchema> for () {
-    fn encode_key(&self) -> Result<Vec<u8>, ::typed_sled::codec::CodecError> {
+impl KeyCodec<AsmMmrMetaSchema> for () {
+    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
         Ok(vec![0u8]) // Single byte for singleton key
     }
 
-    fn decode_key(bytes: &[u8]) -> Result<Self, ::typed_sled::codec::CodecError> {
+    fn decode_key(bytes: &[u8]) -> Result<Self, CodecError> {
         if bytes.len() == 1 && bytes[0] == 0 {
             Ok(())
         } else {
-            Err(::typed_sled::codec::CodecError::InvalidKeyLength {
+            Err(CodecError::InvalidKeyLength {
                 schema: "AsmMmrMetaSchema",
                 expected: 1,
                 actual: bytes.len(),
@@ -87,5 +74,5 @@ impl ::typed_sled::codec::KeyCodec<AsmMmrMetaSchema> for () {
 
 define_table_with_integer_key!(
     /// Manifest hash storage: manifest_index -> hash. Maps leaf indices to manifest hashes.
-    (AsmManifestHashSchema) u64 => [u8; 32]
+    (AsmManifestHashSchema) u64 => Buf32
 );

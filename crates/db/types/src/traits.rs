@@ -374,7 +374,7 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 /// - `append_leaf` is the only way to add data (append-only)
 /// - `num_leaves()` always returns the total number of leaves added
 /// - Proofs are valid against the current `root()`
-pub trait MmrDatabase: Send + Sync {
+pub trait MmrDatabase: Send + Sync + 'static {
     /// Append a new leaf to the MMR
     ///
     /// Returns the index of the newly added leaf.
@@ -388,44 +388,26 @@ pub trait MmrDatabase: Send + Sync {
     /// The index (0-based) of the appended leaf.
     fn append_leaf(&self, hash: [u8; 32]) -> DbResult<u64>;
 
-    /// Generate a Merkle proof for a single leaf position
+    /// Get a node hash by MMR position
     ///
     /// # Arguments
     ///
-    /// * `index` - The leaf index (0-based) to generate a proof for
+    /// * `pos` - The MMR tree position (not leaf index)
     ///
     /// # Returns
     ///
-    /// A `MerkleProof` that can be verified against `root()`.
+    /// The 32-byte hash stored at that position
     ///
     /// # Errors
     ///
-    /// Returns `DbError::MmrLeafNotFound` if `index >= num_leaves()`.
-    fn generate_proof(&self, index: u64) -> DbResult<strata_merkle::MerkleProofB32>;
+    /// Returns `DbError` if the position doesn't exist
+    fn get_node(&self, pos: u64) -> DbResult<[u8; 32]>;
 
-    /// Generate Merkle proofs for a range of leaf positions (batch operation)
-    ///
-    /// This is more efficient than calling `generate_proof` multiple times
-    /// for contiguous ranges.
-    ///
-    /// # Arguments
-    ///
-    /// * `start` - The starting leaf index (inclusive)
-    /// * `end` - The ending leaf index (inclusive)
-    ///
-    /// # Returns
-    ///
-    /// A vector of `MerkleProof`s, one for each index in the range.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DbError::MmrInvalidRange` if `start > end`.
-    /// Returns `DbError::MmrLeafNotFound` if any index is out of bounds.
-    fn generate_proofs(&self, start: u64, end: u64)
-        -> DbResult<Vec<strata_merkle::MerkleProofB32>>;
+    /// Get the total MMR size (number of nodes, not just leaves)
+    fn mmr_size(&self) -> DbResult<u64>;
 
     /// Get the total number of leaves in the MMR
-    fn num_leaves(&self) -> u64;
+    fn num_leaves(&self) -> DbResult<u64>;
 
     /// Get the individual peak roots
     ///

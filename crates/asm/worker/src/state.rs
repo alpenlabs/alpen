@@ -297,7 +297,7 @@ mod tests {
             Ok(())
         }
 
-        fn get_mmr_database(&self) -> WorkerResult<strata_db_store_sled::asm::SledMmrDb> {
+        fn generate_mmr_proof(&self, _index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
             Err(WorkerError::Unimplemented)
         }
 
