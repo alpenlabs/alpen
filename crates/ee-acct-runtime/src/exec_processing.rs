@@ -288,8 +288,10 @@ fn process_block<E: ExecutionEnvironment>(
 fn decode_and_check_commit_block<E: ExecutionEnvironment>(
     block_data: &CommitBlockData,
 ) -> EnvResult<E::Block> {
-    let raw_block_hash = Sha256::digest(block_data.raw_full_block());
-    if raw_block_hash.as_ref() != block_data.package().raw_block_encoded_hash() {
+    let raw_block_hash = Hash::new(<[u8; 32]>::from(Sha256::digest(
+        block_data.raw_full_block(),
+    )));
+    if raw_block_hash != block_data.package().raw_block_encoded_hash() {
         return Err(EnvError::InconsistentCoinput);
     }
 

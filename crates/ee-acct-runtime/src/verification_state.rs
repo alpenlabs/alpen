@@ -1,13 +1,11 @@
 //! Verification state accumulator.
 
-use strata_acct_types::BitcoinAmount;
+use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult};
 use strata_ee_chain_types::BlockOutputs;
 use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
-
-type Hash = [u8; 32];
 
 /// State tracker that accumulates changes that we need to make checks about
 /// later on in update processing.
@@ -155,7 +153,7 @@ impl PendingCommit {
         Self { new_tip_exec_blkid }
     }
 
-    pub(crate) fn new_tip_exec_blkid(&self) -> [u8; 32] {
+    pub(crate) fn new_tip_exec_blkid(&self) -> Hash {
         self.new_tip_exec_blkid
     }
 }

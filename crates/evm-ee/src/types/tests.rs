@@ -99,8 +99,8 @@ fn test_evm_header_exec_header_trait() {
     let evm_header = EvmHeader::new(header.clone());
 
     // Test ExecHeader trait methods
-    assert_eq!(evm_header.get_state_root(), header.state_root.0);
-    assert_eq!(evm_header.compute_block_id(), header.hash_slow().0);
+    assert_eq!(evm_header.get_state_root().0, header.state_root.0);
+    assert_eq!(evm_header.compute_block_id().0, header.hash_slow().0);
     assert_eq!(evm_header.get_intrinsics().number, header.number);
     assert_eq!(evm_header.block_number(), header.number);
 }
@@ -221,10 +221,11 @@ fn test_evm_write_batch_codec_roundtrip() {
     use revm_primitives::alloy_primitives::Bloom;
 
     use super::EvmWriteBatch;
+    use crate::types::Hash;
 
     // Create a simple write batch with default values
     let hashed_post_state = HashedPostState::default();
-    let intrinsics_state_root = [42u8; 32];
+    let intrinsics_state_root = Hash::from([42u8; 32]);
     let logs_bloom = Bloom::from([0xAB; 256]);
 
     let write_batch = EvmWriteBatch::new(hashed_post_state, intrinsics_state_root, logs_bloom);

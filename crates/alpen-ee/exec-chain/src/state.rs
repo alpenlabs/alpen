@@ -205,7 +205,7 @@ mod tests {
             EeAccountState::new(blockhash, BitcoinAmount::ZERO, Vec::new(), Vec::new());
 
         let package = ExecBlockPackage::new(
-            ExecBlockCommitment::new(blockhash, [0; 32]),
+            ExecBlockCommitment::new(blockhash, Hash::new([0; 32])),
             BlockInputs::new_empty(),
             BlockOutputs::new_empty(),
         );

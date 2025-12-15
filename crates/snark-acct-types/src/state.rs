@@ -4,9 +4,6 @@ use strata_acct_types::{AccountTypeId, AccountTypeState, Hash, Mmr64, impl_opaqu
 
 use crate::ssz_generated::ssz::state::*;
 
-/// State root type.
-type Root = Hash;
-
 /// Raw sequence number type.
 type RawSeqno = u64;
 
@@ -34,15 +31,15 @@ impl Seqno {
 
 impl ProofState {
     /// Creates a new proof state.
-    pub fn new(inner_state: Root, next_inbox_msg_idx: u64) -> Self {
+    pub fn new(inner_state: Hash, next_inbox_msg_idx: u64) -> Self {
         Self {
-            inner_state: inner_state.into(),
+            inner_state: Into::<[u8; 32]>::into(inner_state).into(),
             next_inbox_msg_idx,
         }
     }
 
     /// Gets the inner state commitment.
-    pub fn inner_state(&self) -> [u8; 32] {
+    pub fn inner_state(&self) -> Hash {
         self.inner_state
             .as_ref()
             .try_into()

@@ -1,5 +1,6 @@
 //! Builder for constructing update operations for testing.
 
+use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     CommitChainSegment, EeAccountState, ExecBlock, ExecutionEnvironment, UpdateExtraData,
@@ -182,7 +183,7 @@ impl UpdateBuilder {
         // Compute the new state by simulating the update
         // For now we just use a placeholder state
         // TODO: compute actual state root
-        let new_state = ProofState::new([0; 32], 0);
+        let new_state = ProofState::new(Hash::new([0; 32]), 0);
 
         // Encode the previous header and partial state
         let prev_header_buf = encode_to_vec(prev_header)?;

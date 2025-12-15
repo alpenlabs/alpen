@@ -122,7 +122,12 @@ pub mod tests {
     }
 
     fn create_test_ee_account_state() -> EeAccountState {
-        EeAccountState::new([0u8; 32], BitcoinAmount::ZERO, Vec::new(), Vec::new())
+        EeAccountState::new(
+            [0u8; 32].into(),
+            BitcoinAmount::ZERO,
+            Vec::new(),
+            Vec::new(),
+        )
     }
 
     /// Test storing and retrieving EE account state.

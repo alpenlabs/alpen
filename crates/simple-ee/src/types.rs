@@ -4,14 +4,12 @@ use std::collections::BTreeMap;
 
 use digest::Digest;
 use sha2::Sha256;
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SentMessage, SubjectId};
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState,
 };
 use strata_ee_chain_types::BlockOutputs;
-
-pub(crate) type Hash = [u8; 32];
 
 /// Write batch containing the updated account state.
 #[derive(Clone, Debug)]
@@ -74,7 +72,7 @@ impl ExecPartialState for SimplePartialState {
             hasher.update(balance.to_le_bytes());
         }
 
-        Ok(hasher.finalize().into())
+        Ok(<[u8; 32]>::from(hasher.finalize()).into())
     }
 }
 
@@ -130,7 +128,7 @@ impl SimpleHeader {
 
     pub fn genesis() -> Self {
         Self {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             state_root: SimplePartialState::new_empty()
                 .compute_state_root()
                 .expect("genesis state root"),
@@ -158,7 +156,9 @@ impl ExecHeader for SimpleHeader {
     }
 
     fn compute_block_id(&self) -> Hash {
-        strata_acct_types::compute_codec_sha256(self).expect("encode header for block id")
+        strata_acct_types::compute_codec_sha256(self)
+            .expect("encode header for block id")
+            .into()
     }
 }
 

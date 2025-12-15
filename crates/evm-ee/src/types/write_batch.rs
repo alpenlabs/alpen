@@ -2,9 +2,9 @@
 
 use reth_trie::HashedPostState;
 use revm_primitives::alloy_primitives::Bloom;
+use strata_acct_types::Hash;
 use strata_codec::{Codec, CodecError};
 
-use super::Hash;
 use crate::codec_shims::{decode_hashed_post_state, encode_hashed_post_state};
 
 /// Write batch for EVM execution containing state changes.
@@ -74,7 +74,7 @@ impl Codec for EvmWriteBatch {
         encode_hashed_post_state(&self.hashed_post_state, enc)?;
 
         // Encode intrinsics_state_root (32 bytes)
-        enc.write_buf(&self.intrinsics_state_root)?;
+        enc.write_buf(&self.intrinsics_state_root.0)?;
 
         // Encode logs_bloom (256 bytes)
         enc.write_buf(self.logs_bloom.as_slice())?;
@@ -87,8 +87,9 @@ impl Codec for EvmWriteBatch {
         let hashed_post_state = decode_hashed_post_state(dec)?;
 
         // Decode intrinsics_state_root (32 bytes)
-        let mut intrinsics_state_root = [0u8; 32];
-        dec.read_buf(&mut intrinsics_state_root)?;
+        let mut intrinsics_state_root_bytes = [0u8; 32];
+        dec.read_buf(&mut intrinsics_state_root_bytes)?;
+        let intrinsics_state_root = Hash::new(intrinsics_state_root_bytes);
 
         // Decode logs_bloom (256 bytes)
         let mut logs_bloom_bytes = [0u8; 256];

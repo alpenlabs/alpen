@@ -145,8 +145,11 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         let intrinsics_state_root = header_intrinsics.state_root;
 
         // Step 11: Create WriteBatch with intrinsics state root (to be verified during merge)
-        let write_batch =
-            EvmWriteBatch::new(hashed_post_state, intrinsics_state_root.into(), logs_bloom);
+        let write_batch = EvmWriteBatch::new(
+            hashed_post_state,
+            intrinsics_state_root.0.into(),
+            logs_bloom,
+        );
 
         // Step 12: Create BlockOutputs with withdrawal intent messages
         let mut outputs = BlockOutputs::new_empty();
@@ -206,7 +209,7 @@ impl BlockAssembler for EvmExecutionEnvironment {
             parent_hash: intrinsics.parent_hash,
             ommers_hash: intrinsics.ommers_hash,
             beneficiary: intrinsics.beneficiary,
-            state_root: state_root.into(),
+            state_root: state_root.0.into(),
             transactions_root: intrinsics.transactions_root,
             receipts_root: intrinsics.receipts_root,
             logs_bloom,

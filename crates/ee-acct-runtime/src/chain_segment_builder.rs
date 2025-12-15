@@ -2,6 +2,7 @@
 
 use digest::Digest;
 use sha2::Sha256;
+use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     BlockAssembler, CommitBlockData, CommitChainSegment, ExecBlock, ExecHeader, ExecPartialState,
@@ -70,7 +71,7 @@ impl<E: ExecutionEnvironment + BlockAssembler> ChainSegmentBuilder<E> {
     }
 
     /// Returns the new execution tip block ID if there are any blocks.
-    pub fn new_tip_blkid(&self) -> Option<[u8; 32]> {
+    pub fn new_tip_blkid(&self) -> Option<Hash> {
         self.blocks.last().map(|b| b.package().exec_blkid())
     }
 
@@ -123,8 +124,8 @@ impl<E: ExecutionEnvironment + BlockAssembler> ChainSegmentBuilder<E> {
 
         // 7. Compute commitments.
         let exec_blkid = header.compute_block_id();
-        let raw_block_hash = Sha256::digest(&raw_block).into();
-        let commitment = ExecBlockCommitment::new(exec_blkid, raw_block_hash);
+        let raw_block_hash: [u8; 32] = Sha256::digest(&raw_block).into();
+        let commitment = ExecBlockCommitment::new(exec_blkid, Hash::new(raw_block_hash));
 
         // 8. Create the package.
         let package = ExecBlockPackage::new(commitment, inputs, exec_output.outputs().clone());

@@ -20,7 +20,12 @@ pub(crate) fn make_block_commitment(slot: u64, id: u8) -> OLBlockCommitment {
 }
 
 pub(crate) fn make_ee_state(last_exec_blkid: [u8; 32]) -> EeAccountState {
-    EeAccountState::new(last_exec_blkid, BitcoinAmount::zero(), vec![], vec![])
+    EeAccountState::new(
+        last_exec_blkid.into(),
+        BitcoinAmount::zero(),
+        vec![],
+        vec![],
+    )
 }
 
 pub(crate) fn make_state_at_epoch(

@@ -7,10 +7,10 @@ use itertools::Itertools;
 use revm::state::Bytecode;
 use revm_primitives::{B256, map::HashMap};
 use rsp_mpt::EthereumState;
+use strata_acct_types::Hash;
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{EnvResult, ExecPartialState};
 
-use super::Hash;
 use crate::{
     codec_shims::{
         decode_bytes_with_length, decode_ethereum_state, decode_rlp_with_length,
@@ -178,7 +178,7 @@ impl EvmPartialState {
 impl ExecPartialState for EvmPartialState {
     fn compute_state_root(&self) -> EnvResult<Hash> {
         let state_root = self.ethereum_state.state_root();
-        Ok(state_root.into())
+        Ok(state_root.0.into())
     }
 }
 

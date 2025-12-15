@@ -91,7 +91,7 @@ impl BlockAssembler for SimpleExecutionEnvironment {
 mod tests {
     use std::collections::BTreeMap;
 
-    use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
+    use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
     use strata_ee_acct_types::{EnvError, EnvResult, ExecHeader, ExecPartialState, ExecPayload};
     use strata_ee_chain_types::BlockInputs;
 
@@ -162,7 +162,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -208,7 +208,7 @@ mod tests {
         let body = SimpleBlockBody::new(txs);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -239,7 +239,7 @@ mod tests {
 
         let body = SimpleBlockBody::new(vec![]);
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -275,7 +275,7 @@ mod tests {
 
         let body = SimpleBlockBody::new(vec![]);
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -305,7 +305,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -362,7 +362,7 @@ mod tests {
         let body = SimpleBlockBody::new(txs);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -405,7 +405,7 @@ mod tests {
 
         // Block 0 (genesis): empty state
         let mut state = SimplePartialState::new_empty();
-        let mut parent_blkid = [0u8; 32];
+        let mut parent_blkid = Hash::new([0u8; 32]);
         let mut index = 0u64;
 
         // Block 1: Deposit 2000 to alice, 1500 to bob
@@ -619,7 +619,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -643,7 +643,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -669,7 +669,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -693,7 +693,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -719,7 +719,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -777,7 +777,7 @@ mod tests {
         let body = SimpleBlockBody::new(txs);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -806,7 +806,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -838,7 +838,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -908,7 +908,7 @@ mod tests {
         let body = SimpleBlockBody::new(txs);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -968,7 +968,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -994,7 +994,7 @@ mod tests {
         let body = SimpleBlockBody::new(vec![tx]);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
@@ -1053,7 +1053,7 @@ mod tests {
         let body = SimpleBlockBody::new(txs);
         let inputs = BlockInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
-            parent_blkid: [0; 32],
+            parent_blkid: Hash::new([0; 32]),
             index: 1,
         };
 
