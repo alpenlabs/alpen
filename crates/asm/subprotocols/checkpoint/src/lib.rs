@@ -16,4 +16,5 @@ mod state;
 mod subprotocol;
 mod utils;
 
+pub use state::CheckpointConfig;
 pub use subprotocol::CheckpointSubprotocol;

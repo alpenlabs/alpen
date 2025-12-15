@@ -13725,6 +13725,8 @@ version = "0.1.0"
 dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-checkpoint",
+ "strata-checkpoint-types-ssz",
  "strata-l1-txfmt",
  "strata-params",
  "strata-primitives",
@@ -13736,6 +13738,7 @@ version = "0.1.0"
 dependencies = [
  "strata-asm-common",
  "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-checkpoint",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
  "strata-l1-txfmt",

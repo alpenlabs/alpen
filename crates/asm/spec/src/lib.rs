@@ -6,6 +6,8 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
+use strata_asm_proto_checkpoint::{CheckpointConfig, CheckpointSubprotocol};
+use strata_checkpoint_types_ssz::L1Commitment;
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, RollupParams};
 use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
@@ -21,6 +23,7 @@ pub struct StrataAsmSpec {
     // subproto params, which right now currently just contain the genesis data
     // TODO rename these
     bridge_v1_genesis: BridgeV1Config,
+    checkpoint_genesis: CheckpointConfig,
 }
 
 impl AsmSpec for StrataAsmSpec {
@@ -31,10 +34,12 @@ impl AsmSpec for StrataAsmSpec {
     fn load_subprotocols(&self, loader: &mut impl Loader) {
         // TODO avoid clone?
         loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
+        loader.load_subprotocol::<CheckpointSubprotocol>(self.checkpoint_genesis.clone());
     }
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
         stage.invoke_subprotocol::<BridgeV1Subproto>();
+        stage.invoke_subprotocol::<CheckpointSubprotocol>();
     }
 }
 
@@ -43,10 +48,12 @@ impl StrataAsmSpec {
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
         bridge_v1_genesis: BridgeV1Config,
+        checkpoint_genesis: CheckpointConfig,
     ) -> Self {
         Self {
             magic_bytes,
             bridge_v1_genesis,
+            checkpoint_genesis,
         }
     }
 
@@ -66,9 +73,20 @@ impl StrataAsmSpec {
             operator_fee: BitcoinAmount::ZERO,
         };
 
+        let genesis_l1_blk = &params.genesis_l1_view.blk;
+        let checkpoint_genesis = CheckpointConfig {
+            sequencer_cred: params.cred_rule.clone(),
+            checkpoint_predicate: params.checkpoint_predicate.clone(),
+            genesis_l1: L1Commitment {
+                height: genesis_l1_blk.height_u64() as u32,
+                blkid: *genesis_l1_blk.blkid(),
+            },
+        };
+
         Self {
             magic_bytes: params.magic_bytes,
             bridge_v1_genesis,
+            checkpoint_genesis,
         }
     }
 }

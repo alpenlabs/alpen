@@ -20,9 +20,8 @@ pub struct CheckpointState {
     /// `None` before the first checkpoint is verified.
     verified_epoch_summary: Option<EpochSummary>,
 
-    /// L1 block that included the last checkpoint transaction.
-    // TODO: Evaluate exact usage. (if not needed, remove)
-    checkpoint_inclusion_l1: L1Commitment,
+    /// Last L1 commitment covered by checkpoints (seeded from genesis).
+    last_covered_l1: L1Commitment,
 }
 
 impl CheckpointState {
@@ -32,7 +31,7 @@ impl CheckpointState {
             sequencer_cred: config.sequencer_cred.clone(),
             checkpoint_predicate: config.checkpoint_predicate.clone(),
             verified_epoch_summary: None,
-            checkpoint_inclusion_l1: config.genesis_l1,
+            last_covered_l1: config.genesis_l1,
         }
     }
 
@@ -49,11 +48,6 @@ impl CheckpointState {
     /// Returns the verified epoch summary, if any.
     pub fn verified_epoch_summary(&self) -> Option<&EpochSummary> {
         self.verified_epoch_summary.as_ref()
-    }
-
-    /// Returns the L1 block that included the last checkpoint tx.
-    pub fn checkpoint_inclusion_l1(&self) -> &L1Commitment {
-        &self.checkpoint_inclusion_l1
     }
 
     /// Get the expected next epoch number.
@@ -76,10 +70,7 @@ impl CheckpointState {
 
     /// Returns the height of the last L1 block covered by the previous checkpoint.
     pub fn last_covered_l1_height(&self) -> u32 {
-        self.verified_epoch_summary
-            .as_ref()
-            .map(|s| s.new_l1().height)
-            .unwrap_or(0)
+        self.last_covered_l1.height
     }
 
     /// Returns the slot of the last L2 terminal block.
@@ -124,9 +115,8 @@ impl CheckpointState {
         );
 
         self.verified_epoch_summary = Some(epoch_summary);
+        self.last_covered_l1 = batch_info.l1_range.end;
 
-        // TODO: Evaluate exact usage. (if not needed, remove)
-        self.checkpoint_inclusion_l1 = batch_info.l1_range.end;
     }
 }
 
@@ -140,6 +130,5 @@ pub struct CheckpointConfig {
     pub checkpoint_predicate: PredicateKey,
 
     /// Genesis L1 block commitment.
-    // TODO: Clarify exact usage. (if not needed, remove)
     pub genesis_l1: L1Commitment,
 }
