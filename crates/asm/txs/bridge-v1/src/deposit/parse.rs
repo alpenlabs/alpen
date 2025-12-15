@@ -18,7 +18,7 @@ use crate::{
 /// Returns [`DepositTxParseError`] if the auxiliary data cannot be decoded or if the expected
 /// deposit output at index 1 is missing.
 pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
-    // Parse auxiliary data using DepositTxHeaderAux
+    // Parse auxiliary data
     let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
 
     // Extract the deposit output (second output at index 1)
@@ -30,8 +30,11 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, De
         .clone()
         .into();
 
+    // Extract the previous outpoint from the first input
+    let first_inpoint = tx_input.tx().input[0].previous_output.into();
+
     // Construct the validated deposit information
-    Ok(DepositInfo::new(header_aux, deposit_output))
+    Ok(DepositInfo::new(header_aux, deposit_output, first_inpoint))
 }
 
 #[cfg(test)]

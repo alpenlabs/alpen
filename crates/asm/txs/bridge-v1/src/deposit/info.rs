@@ -1,5 +1,6 @@
 use arbitrary::Arbitrary;
-use strata_primitives::l1::{BitcoinAmount, BitcoinTxOut};
+use bitcoin::OutPoint;
+use strata_primitives::l1::{BitcoinAmount, BitcoinOutPoint, BitcoinTxOut};
 
 use crate::deposit::aux::DepositTxHeaderAux;
 
@@ -11,18 +12,30 @@ pub struct DepositInfo {
 
     /// The deposit output containing the deposited amount and its locking script.
     deposit_output: BitcoinTxOut,
+
+    /// Previous outpoint referenced by the first input. This should be the DRT output.
+    first_inpoint: BitcoinOutPoint,
 }
 
 impl DepositInfo {
-    pub fn new(header_aux: DepositTxHeaderAux, txout: BitcoinTxOut) -> Self {
+    pub fn new(
+        header_aux: DepositTxHeaderAux,
+        deposit_output: BitcoinTxOut,
+        first_inpoint: BitcoinOutPoint,
+    ) -> Self {
         Self {
             header_aux,
-            deposit_output: txout,
+            deposit_output,
+            first_inpoint,
         }
     }
 
     pub fn header_aux(&self) -> &DepositTxHeaderAux {
         &self.header_aux
+    }
+
+    pub fn first_inpoint(&self) -> &OutPoint {
+        &self.first_inpoint.0
     }
 
     #[cfg(feature = "test-utils")]

@@ -26,7 +26,7 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, SlashTxParse
     let header_aux: SlashTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
 
     // Extract the previous outpoint from the second input
-    let second_input_outpoint = tx
+    let second_inpoint = tx
         .tx()
         .input
         .get(STAKE_INPUT_INDEX)
@@ -34,7 +34,7 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, SlashTxParse
         .previous_output
         .into();
 
-    let info = SlashInfo::new(header_aux, second_input_outpoint);
+    let info = SlashInfo::new(header_aux, second_inpoint);
 
     Ok(info)
 }

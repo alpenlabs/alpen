@@ -8,7 +8,7 @@ use crate::slash::SlashTxHeaderAux;
 pub struct SlashInfo {
     /// SPS-50 auxiliary data from the transaction tag.
     header_aux: SlashTxHeaderAux,
-    /// Previous outpoint referenced second input (stake connector).
+    /// Previous outpoint referenced by the second input (stake connector).
     second_inpoint: BitcoinOutPoint,
 }
 
