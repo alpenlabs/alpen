@@ -10,7 +10,7 @@ use super::{error::ChainTrackerError, item::ItemEntry};
 
 /// An identifier paired with its index/height.
 #[derive(Debug, Clone)]
-pub(crate) struct IdWithIndex<Id> {
+pub(crate) struct IndexedId<Id> {
     pub id: Id,
     pub index: u64,
 }
@@ -58,9 +58,9 @@ impl<Id> PruneReport<Id> {
 #[derive(Debug)]
 pub(crate) struct UnfinalizedTracker<Id> {
     /// The last finalized item
-    finalized: IdWithIndex<Id>,
+    finalized: IndexedId<Id>,
     /// The current best (highest) chain tip
-    best: IdWithIndex<Id>,
+    best: IndexedId<Id>,
     /// Active chain tips mapping id to index
     tips: HashMap<Id, u64>,
     /// All tracked items mapping id to entry
@@ -79,11 +79,11 @@ impl<Id: Clone + Eq + Hash + Debug> UnfinalizedTracker<Id> {
         let index = finalized_entry.index;
 
         Self {
-            finalized: IdWithIndex {
+            finalized: IndexedId {
                 id: id.clone(),
                 index,
             },
-            best: IdWithIndex {
+            best: IndexedId {
                 id: id.clone(),
                 index,
             },
