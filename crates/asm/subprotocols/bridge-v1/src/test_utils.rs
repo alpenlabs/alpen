@@ -1,14 +1,13 @@
 use std::any::Any;
 
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use rand::Rng;
 use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
 use strata_asm_txs_bridge_v1::{
     deposit::DepositInfo,
-    test_utils::create_test_deposit_tx,
+    test_utils::{create_test_deposit_tx, create_test_operators},
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, WithdrawalFulfillmentTxHeaderAux},
 };
-use strata_crypto::{EvenSecretKey, schnorr::EvenPublicKey};
+use strata_crypto::EvenSecretKey;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use strata_test_utils::ArbitraryGenerator;
 
@@ -52,35 +51,6 @@ pub(crate) fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
     };
     let bridge_state = BridgeV1State::new(&config);
     (bridge_state, privkeys)
-}
-
-/// Helper function to create test operator keys
-///
-/// # Returns
-///
-/// - `Vec<EvenSecretKey>` - Private keys for creating test transactions
-/// - `Vec<EvenPublicKey>` - MuSig2 public keys for bridge configuration
-pub(crate) fn create_test_operators(
-    num_operators: usize,
-) -> (Vec<EvenSecretKey>, Vec<EvenPublicKey>) {
-    let secp = Secp256k1::new();
-    let mut rng = rand::thread_rng();
-
-    // Generate random operator keys
-    let operators_privkeys: Vec<EvenSecretKey> = (0..num_operators)
-        .map(|_| SecretKey::new(&mut rng).into())
-        .collect();
-
-    // Create operator MuSig2 public keys for config
-    let operator_pubkeys: Vec<EvenPublicKey> = operators_privkeys
-        .iter()
-        .map(|sk| {
-            let pk = PublicKey::from_secret_key(&secp, sk);
-            EvenPublicKey::from(pk)
-        })
-        .collect();
-
-    (operators_privkeys, operator_pubkeys)
 }
 
 /// Helper function to add multiple test deposits to the bridge state.

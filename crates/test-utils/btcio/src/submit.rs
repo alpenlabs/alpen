@@ -9,7 +9,7 @@ use strata_crypto::EvenSecretKey;
 use crate::{
     address::{derive_musig2_p2tr_address, derive_p2tr_address},
     funding::create_funding_utxo,
-    signing::{sign_musig2_transaction, sign_taproot_transaction},
+    signing::{sign_musig2_keypath, sign_taproot_transaction},
     utils::block_on,
 };
 
@@ -110,7 +110,7 @@ pub async fn submit_transaction_with_keys(
     }
 
     // Derive MuSig2 aggregated P2TR address
-    let (p2tr_address, aggregated_internal_key) = derive_musig2_p2tr_address(secret_keys)?;
+    let (p2tr_address, _aggregated_internal_key) = derive_musig2_p2tr_address(secret_keys)?;
 
     // Calculate funding amount
     let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();
@@ -183,8 +183,12 @@ pub async fn submit_transaction_with_keys(
 
     // Sign each input in place using the aggregated MuSig2 key.
     for idx in 0..tx.input.len() {
-        let sig =
-            sign_musig2_transaction(tx, secret_keys, &aggregated_internal_key, &prevouts, idx)?;
+        // Skip inputs that already carry a witness (e.g., pre-signed script path spends).
+        if !tx.input[idx].witness.is_empty() {
+            continue;
+        }
+
+        let sig = sign_musig2_keypath(tx, secret_keys, &prevouts, idx)?;
         tx.input[idx].witness.push(sig.as_ref());
     }
 
