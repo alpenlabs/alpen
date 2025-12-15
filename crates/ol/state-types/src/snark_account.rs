@@ -85,7 +85,7 @@ impl ProofState {
         }
     }
 
-    pub fn inner_state_root(&self) -> [u8; 32] {
+    pub fn inner_state_root(&self) -> Hash {
         self.inner_state_root
     }
 

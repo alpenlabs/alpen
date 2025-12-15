@@ -10,7 +10,7 @@ pub async fn ensure_finalized_exec_chain_genesis<TStorage: ExecBlockStorage>(
     config: &AlpenEeConfig,
     storage: &TStorage,
 ) -> eyre::Result<()> {
-    let genesis_ee_blockhash = config.params().genesis_blockhash().into();
+    let genesis_ee_blockhash = config.params().genesis_blockhash().0.into();
     let (genesis_block, genesis_block_payload) = build_genesis_exec_block(config.params());
 
     // If exists, does not overwrite

@@ -1,13 +1,11 @@
+use strata_identifiers::Hash;
+
 use crate::{
     AccountSerial, AccountTypeId, BitcoinAmount, RawAccountTypeId,
     errors::{AcctError, AcctResult},
-    mmr::Hash,
-};
-
-type Root = Hash;
-
-use crate::ssz_generated::ssz::state::{
-    AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState,
+    ssz_generated::ssz::state::{
+        AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState,
+    },
 };
 
 impl EncodedAccountInnerState {
@@ -60,10 +58,10 @@ impl AcctStateSummary {
         self.intrinsics.balance()
     }
 
-    pub fn typed_state_root(&self) -> &Root {
-        // typed_state_root is FixedVector<u8, 32>, convert to &[u8; 32]
-        // SAFETY: FixedVector<u8, 32> has the same layout as [u8; 32]
-        unsafe { &*(self.typed_state_root.as_ref().as_ptr() as *const [u8; 32]) }
+    pub fn typed_state_root(&self) -> &Hash {
+        // typed_state_root is FixedBytes<32>, convert to &Buf32
+        // SAFETY: FixedBytes<32> has the same layout as Buf32
+        unsafe { &*(self.typed_state_root.as_ref().as_ptr() as *const Hash) }
     }
 }
 

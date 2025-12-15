@@ -254,13 +254,16 @@ mod tests {
     use crate::test_utils::*;
 
     mod apply_epoch_operations_tests {
+        use strata_acct_types::Hash;
+
         use super::*;
 
         #[test]
         fn test_apply_empty_operations() {
             // Scenario: Apply empty operations list
             // Expected: State unchanged, returns Ok
-            let mut state = EeAccountState::new([0u8; 32], BitcoinAmount::zero(), vec![], vec![]);
+            let mut state =
+                EeAccountState::new(Hash::new([0u8; 32]), BitcoinAmount::zero(), vec![], vec![]);
             let operations: Vec<UpdateInputData> = vec![];
 
             let result = apply_epoch_operations(&mut state, &operations);

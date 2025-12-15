@@ -9,9 +9,6 @@ use strata_merkle::*;
 // TODO should this be blake3 and be only 20 bytes or something?
 pub type StrataHasher = Sha256Hasher;
 
-/// Universal orchestration layer type.
-pub type Hash = [u8; 32];
-
 /// Compact 64 bit merkle mountain range.
 pub type CompactMmr64 = CompactMmr64B32;
 

@@ -41,11 +41,11 @@ impl ExecHeader for EvmHeader {
     }
 
     fn get_state_root(&self) -> Hash {
-        self.header.state_root.into()
+        self.header.state_root.0.into()
     }
 
     fn compute_block_id(&self) -> Hash {
-        self.header.hash_slow().into()
+        self.header.hash_slow().0.into()
     }
 }
 

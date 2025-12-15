@@ -6,10 +6,10 @@ use crate::ssz_generated::ssz::accumulators::{AccumulatorClaim, MmrEntryProof};
 
 impl AccumulatorClaim {
     /// Creates a new accumulator claim.
-    pub fn new(idx: u64, entry_hash: Hash) -> Self {
+    pub fn new(idx: u64, entry_hash: impl Into<[u8; 32]>) -> Self {
         Self {
             idx,
-            entry_hash: entry_hash.into(),
+            entry_hash: Into::<[u8; 32]>::into(entry_hash).into(),
         }
     }
 
@@ -29,9 +29,9 @@ impl AccumulatorClaim {
 
 impl MmrEntryProof {
     /// Creates a new MMR entry proof.
-    pub fn new(entry_hash: Hash, proof: MerkleProof) -> Self {
+    pub fn new(entry_hash: impl Into<[u8; 32]>, proof: MerkleProof) -> Self {
         Self {
-            entry_hash: entry_hash.into(),
+            entry_hash: Into::<[u8; 32]>::into(entry_hash).into(),
             proof,
         }
     }

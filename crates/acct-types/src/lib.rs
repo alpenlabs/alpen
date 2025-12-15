@@ -29,8 +29,8 @@ mod ssz_generated {
 pub use constants::SYSTEM_RESERVED_ACCTS;
 pub use errors::{AcctError, AcctResult};
 pub use mmr::{
-    CompactMmr64, CompactMmr64Ref, Hash, MerkleProof, MerkleProofRef, Mmr64, Mmr64Ref,
-    RawMerkleProof, RawMerkleProofRef, StrataHasher,
+    CompactMmr64, CompactMmr64Ref, MerkleProof, MerkleProofRef, Mmr64, Mmr64Ref, RawMerkleProof,
+    RawMerkleProofRef, StrataHasher,
 };
 pub use ssz_generated::ssz::{
     self as ssz,
@@ -40,7 +40,7 @@ pub use ssz_generated::ssz::{
 pub use state::AccountTypeState;
 pub use strata_btc_types::BitcoinAmount;
 pub use strata_identifiers::{
-    AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SubjectId,
+    AccountId, AccountSerial, AccountTypeId, Hash, RawAccountTypeId, SubjectId,
 };
 pub use util::compute_codec_sha256;
 pub use varint_vec::{VARINT_MAX, VarVec};

@@ -31,8 +31,8 @@ fn forkchoice_state_from_consensus<N: NodeTypesWithDB + ProviderNodeTypes>(
     head_block_hash: B256,
     provider: &BlockchainProvider<N>,
 ) -> ProviderResult<ForkchoiceState> {
-    let safe_block_hash = B256::from_slice(consensus_state.confirmed());
-    let finalized_block_hash = B256::from_slice(consensus_state.finalized());
+    let safe_block_hash = B256::from_slice(consensus_state.confirmed().as_slice());
+    let finalized_block_hash = B256::from_slice(consensus_state.finalized().as_slice());
 
     let head_block_hash = if is_in_canonical_chain(safe_block_hash, provider)? {
         head_block_hash
@@ -95,7 +95,7 @@ async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: Ex
                 }
                 // got head block from sequencer / p2p
                 let hash = *preconf_rx.borrow_and_update();
-                let next_head_block_hash = B256::from_slice(&hash);
+                let next_head_block_hash = B256::from_slice(hash.as_slice());
 
                 let update = ForkchoiceState {
                     head_block_hash: next_head_block_hash,

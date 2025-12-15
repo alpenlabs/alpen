@@ -249,7 +249,7 @@ pub struct RpcProofState {
 impl From<ProofState> for RpcProofState {
     fn from(state: ProofState) -> Self {
         Self {
-            inner_state: state.inner_state().into(),
+            inner_state: state.inner_state().0.into(),
             next_inbox_msg_idx: state.next_inbox_msg_idx(),
         }
     }
@@ -257,6 +257,6 @@ impl From<ProofState> for RpcProofState {
 
 impl From<RpcProofState> for ProofState {
     fn from(rpc: RpcProofState) -> Self {
-        ProofState::new(rpc.inner_state.into(), rpc.next_inbox_msg_idx)
+        ProofState::new(rpc.inner_state.0.into(), rpc.next_inbox_msg_idx)
     }
 }

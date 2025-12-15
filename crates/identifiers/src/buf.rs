@@ -60,6 +60,7 @@ impl Zeroize for Buf20 {
 /// assert_eq!(buf, Buf32::from([0; 32]));
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[repr(transparent)]
 pub struct Buf32(pub [u8; 32]);
 internal::impl_buf_common!(Buf32, 32);
 internal::impl_buf_serde!(Buf32, 32);

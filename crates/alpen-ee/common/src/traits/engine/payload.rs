@@ -48,7 +48,7 @@ impl EnginePayload for AlpenBuiltPayload {
     }
 
     fn blockhash(&self) -> Hash {
-        self.block().hash().0
+        self.block().hash().0.into()
     }
 
     fn withdrawal_intents(&self) -> &[WithdrawalIntent] {

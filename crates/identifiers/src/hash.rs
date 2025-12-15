@@ -6,6 +6,8 @@ use sha2::Sha256;
 
 use crate::buf::Buf32;
 
+pub type Hash = Buf32;
+
 /// Direct untagged hash.
 pub fn raw(buf: &[u8]) -> Buf32 {
     Buf32::from(<[u8; 32]>::from(Sha256::digest(buf)))

@@ -1,6 +1,6 @@
 use alpen_ee_common::EnginePayload;
 use bitcoin_bosd::Descriptor;
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SentMessage};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::MsgData;
 use strata_ee_acct_types::DecodedEeMessageData;
@@ -60,7 +60,7 @@ pub(crate) fn build_block_package<TPayload: EnginePayload>(
     // 1. build block commitment
     let exec_blkid = payload.blockhash();
     // TODO: get using `EvmExecutionEnvironment`
-    let raw_block_encoded_hash = [0u8; 32];
+    let raw_block_encoded_hash = Hash::new([0u8; 32]);
     let commitment = ExecBlockCommitment::new(exec_blkid, raw_block_encoded_hash);
 
     // 2. build block inputs

@@ -43,7 +43,7 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
     max_deposits_per_block: NonZero<u8>,
     payload_builder: &E,
 ) -> eyre::Result<(E::TEnginePayload, UpdateExtraData)> {
-    let parent = B256::from_slice(&parent_exec_blkid);
+    let parent = B256::from_slice(parent_exec_blkid.as_slice());
     let timestamp_sec = timestamp_ms / 1_000;
 
     let deposits = extract_deposits(account_state.pending_inputs(), max_deposits_per_block);

@@ -24,11 +24,11 @@ impl ExecBlockPackage {
         &self.commitment
     }
 
-    pub fn exec_blkid(&self) -> [u8; 32] {
+    pub fn exec_blkid(&self) -> Hash {
         self.commitment().exec_blkid()
     }
 
-    pub fn raw_block_encoded_hash(&self) -> [u8; 32] {
+    pub fn raw_block_encoded_hash(&self) -> Hash {
         self.commitment().raw_block_encoded_hash()
     }
 
@@ -44,21 +44,21 @@ impl ExecBlockPackage {
 impl ExecBlockCommitment {
     pub fn new(exec_blkid: Hash, raw_block_encoded_hash: Hash) -> Self {
         Self {
-            exec_blkid: exec_blkid.into(),
-            raw_block_encoded_hash: raw_block_encoded_hash.into(),
+            exec_blkid: exec_blkid.0.into(),
+            raw_block_encoded_hash: raw_block_encoded_hash.0.into(),
         }
     }
 
-    pub fn exec_blkid(&self) -> [u8; 32] {
+    pub fn exec_blkid(&self) -> Hash {
         let mut result = [0u8; 32];
         result.copy_from_slice(self.exec_blkid.as_ref());
-        result
+        Hash::new(result)
     }
 
-    pub fn raw_block_encoded_hash(&self) -> [u8; 32] {
+    pub fn raw_block_encoded_hash(&self) -> Hash {
         let mut result = [0u8; 32];
         result.copy_from_slice(self.raw_block_encoded_hash.as_ref());
-        result
+        Hash::new(result)
     }
 }
 
@@ -176,8 +176,8 @@ mod tests {
 
         #[test]
         fn test_new() {
-            let blkid = [0xaa; 32];
-            let hash = [0xbb; 32];
+            let blkid = Hash::new([0xaa; 32]);
+            let hash = Hash::new([0xbb; 32]);
             let commitment = ExecBlockCommitment::new(blkid, hash);
 
             assert_eq!(commitment.exec_blkid(), blkid);
@@ -323,14 +323,14 @@ mod tests {
 
         #[test]
         fn test_new() {
-            let commitment = ExecBlockCommitment::new([0xff; 32], [0x11; 32]);
+            let commitment = ExecBlockCommitment::new(Hash::new([0xff; 32]), Hash::new([0x11; 32]));
             let inputs = BlockInputs::new_empty();
             let outputs = BlockOutputs::new_empty();
 
             let block = ExecBlockPackage::new(commitment, inputs, outputs);
 
-            assert_eq!(block.exec_blkid(), [0xff; 32]);
-            assert_eq!(block.raw_block_encoded_hash(), [0x11; 32]);
+            assert_eq!(block.exec_blkid(), Hash::new([0xff; 32]));
+            assert_eq!(block.raw_block_encoded_hash(), Hash::new([0x11; 32]));
             assert_eq!(block.inputs().total_inputs(), 0);
         }
     }

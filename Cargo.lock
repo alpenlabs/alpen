@@ -14405,6 +14405,7 @@ dependencies = [
  "strata-acct-types",
  "strata-codec",
  "strata-ee-chain-types",
+ "strata-identifiers",
  "strata-msg-fmt",
  "thiserror 2.0.17",
 ]

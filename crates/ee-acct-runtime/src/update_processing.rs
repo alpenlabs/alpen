@@ -10,7 +10,7 @@
 //! state, presumably with information extracted from DA.  This does not require
 //! understanding the execution environment.
 
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash};
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
     DecodedEeMessageData, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
@@ -319,7 +319,7 @@ pub fn apply_final_update_changes(
 
 fn verify_acct_state_matches(
     _astate: &EeAccountState,
-    _exp_new_state: &[u8; 32],
+    _exp_new_state: &Hash,
 ) -> Result<(), EnvError> {
     // TODO use SSZ hash_tree_root
     Ok(())

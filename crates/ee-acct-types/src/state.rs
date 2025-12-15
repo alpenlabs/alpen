@@ -2,8 +2,7 @@
 
 use strata_acct_types::BitcoinAmount;
 use strata_ee_chain_types::SubjectDepositData;
-
-type Hash = [u8; 32];
+use strata_identifiers::Hash;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EeAccountState {

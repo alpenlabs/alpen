@@ -3,7 +3,7 @@
 #![allow(unreachable_pub, reason = "test utilities")]
 #![allow(dead_code, reason = "utilities used by different test files")]
 
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChainSegmentBuilder, UpdateBuilder};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState, ExecHeader, PendingInputEntry};
@@ -56,8 +56,12 @@ pub fn assert_update_paths_match(
 
 /// Creates a simple initial state for testing.
 pub(crate) fn create_initial_state() -> (EeAccountState, SimplePartialState, SimpleHeader) {
-    let ee_state =
-        EeAccountState::new([0u8; 32], BitcoinAmount::from(0u64), Vec::new(), Vec::new());
+    let ee_state = EeAccountState::new(
+        Hash::new([0u8; 32]),
+        BitcoinAmount::from(0u64),
+        Vec::new(),
+        Vec::new(),
+    );
 
     let exec_state = SimplePartialState::new_empty();
     let header = SimpleHeader::genesis();

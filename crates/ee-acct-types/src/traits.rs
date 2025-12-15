@@ -1,9 +1,8 @@
 use strata_codec::Codec;
 use strata_ee_chain_types::BlockInputs;
+use strata_identifiers::Hash;
 
 use crate::{errors::EnvResult, inputs::ExecPayload, outputs::ExecBlockOutput};
-
-type Hash = [u8; 32];
 
 /// Represents a partially-loaded state, including any information we would need
 /// to manipulate it and compute state roots.
