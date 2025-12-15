@@ -3,6 +3,7 @@
 //! Stores pending OL transactions (GenericAccountMessage and SnarkAccountUpdate
 //! without accumulator proofs) before they are included in blocks.
 
+mod best_txs;
 mod command;
 mod error;
 mod handle;
@@ -14,6 +15,7 @@ mod test_utils;
 mod types;
 mod validation;
 
+pub use best_txs::{BestTransactions, BestTransactionsIterator};
 pub use command::MempoolCommand;
 pub use error::OLMempoolError;
 pub use handle::MempoolHandle;

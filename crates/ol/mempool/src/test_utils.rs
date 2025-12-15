@@ -264,7 +264,6 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
         .unwrap()
         .current();
 
-    // Create operation with specific seq_no
     let operation = UpdateOperationData::new(
         seq_no,
         full_payload

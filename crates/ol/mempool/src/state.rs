@@ -1,7 +1,7 @@
 //! Mempool service state management.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -64,6 +64,11 @@ pub(crate) struct MempoolState {
     /// Priority is u128 encoding (primary_key << 64) | insertion_id.
     ordering_index: BTreeMap<u128, OLTxId>,
 
+    /// Per-account transaction index for cascade removal.
+    /// Maps account → set of transaction IDs for that account.
+    /// Used to find and remove subsequent transactions when one fails.
+    by_account: HashMap<AccountId, BTreeSet<OLTxId>>,
+
     /// Next insertion ID for deterministic ordering.
     next_insertion_id: u64,
 
@@ -94,6 +99,7 @@ impl MempoolState {
         Self {
             entries: HashMap::new(),
             ordering_index: BTreeMap::new(),
+            by_account: HashMap::new(),
             next_insertion_id: 0,
             current_tip,
             pending_seq_no: HashMap::new(),
@@ -233,6 +239,10 @@ impl MempoolState {
         // Add to ordering index
         self.ordering_index.insert(priority, txid);
 
+        // Add to per-account index for cascade removal
+        let account_id = entry.tx.target();
+        self.by_account.entry(account_id).or_default().insert(txid);
+
         // Add to entries
         self.entries.insert(txid, entry);
 
@@ -371,6 +381,8 @@ impl MempoolState {
     /// Remove transactions from the mempool.
     ///
     /// Returns the removed transaction IDs.
+    ///
+    /// Also removes from the per-account index.
     pub(crate) fn remove_transactions(
         &mut self,
         ctx: &MempoolContext,
@@ -389,12 +401,12 @@ impl MempoolState {
                 // Recompute priority for ordering index removal
                 let priority = ctx.ordering_strategy.compute_priority(entry);
                 let size_bytes = entry.size_bytes;
+                let account_id = entry.tx.target();
 
                 // Track minimum seq_no for each affected account (for cascade removal)
                 let account_info = if let Some(base_update) = entry.tx.base_update() {
-                    let account = entry.tx.target();
                     let seq_no = base_update.operation().seq_no();
-                    Some((account, seq_no))
+                    Some((account_id, seq_no))
                 } else {
                     None
                 };
@@ -409,6 +421,14 @@ impl MempoolState {
                         .entry(account)
                         .and_modify(|min_seq| *min_seq = (*min_seq).min(seq_no))
                         .or_insert(seq_no);
+                }
+
+                // Remove from per-account index
+                if let Some(account_txs) = self.by_account.get_mut(&account_id) {
+                    account_txs.remove(txid);
+                    if account_txs.is_empty() {
+                        self.by_account.remove(&account_id);
+                    }
                 }
 
                 // Update stats
@@ -440,47 +460,59 @@ impl MempoolState {
         let mut max_remaining_seq: Option<u64> = None;
         let mut to_remove = Vec::new();
 
-        // Collect txids to remove and track max remaining seq_no
-        for (txid, entry) in &self.entries {
-            if entry.tx.target() != account {
-                continue;
+        // Use by_account index if available, otherwise iterate all entries
+        // (by_account may be empty if transactions were already removed in first pass)
+        if let Some(account_txs) = self.by_account.get(&account) {
+            // Collect txids to remove and track max remaining seq_no
+            for txid in account_txs.clone().iter() {
+                if let Some(entry) = self.entries.get(txid)
+                    && let Some(base_update) = entry.tx.base_update()
+                {
+                    let seq_no = base_update.operation().seq_no();
+                    if seq_no >= min_failed_seq {
+                        to_remove.push(*txid);
+                    } else {
+                        max_remaining_seq =
+                            Some(max_remaining_seq.map_or(seq_no, |max| max.max(seq_no)));
+                    }
+                }
             }
 
-            if let Some(base_update) = entry.tx.base_update() {
-                let seq_no = base_update.operation().seq_no();
-                if seq_no >= min_failed_seq {
-                    to_remove.push(*txid);
-                } else {
-                    max_remaining_seq =
-                        Some(max_remaining_seq.map_or(seq_no, |max| max.max(seq_no)));
+            // Remove and update by_account index
+            for txid in to_remove {
+                // Check if entry exists and get necessary data before removing
+                if let Some(entry) = self.entries.get(&txid) {
+                    // Remove from database FIRST (ensures durability - if this fails, memory
+                    // unchanged)
+                    ctx.storage.mempool().del_tx(txid)?;
+
+                    // Compute priority for ordering index removal
+                    let priority = ctx.ordering_strategy.compute_priority(entry);
+                    let size_bytes = entry.size_bytes;
+                    let account_id = entry.tx.target();
+
+                    // Now remove from memory (safe because DB operation succeeded)
+                    self.entries.remove(&txid);
+                    self.ordering_index.remove(&priority);
+
+                    // Remove from by_account index
+                    if let Some(account_txs) = self.by_account.get_mut(&account_id) {
+                        account_txs.remove(&txid);
+                        if account_txs.is_empty() {
+                            self.by_account.remove(&account_id);
+                        }
+                    }
+
+                    // Update stats
+                    self.stats.mempool_size -= 1;
+                    self.stats.total_bytes -= size_bytes;
+
+                    removed.push(txid);
                 }
             }
         }
 
-        // Remove and add to removed list
-        for txid in to_remove {
-            // Check if entry exists and get necessary data before removing
-            if let Some(entry) = self.entries.get(&txid) {
-                // Remove from database FIRST (ensures durability - if this fails, memory unchanged)
-                ctx.storage.mempool().del_tx(txid)?;
-
-                // Compute priority for ordering index removal
-                let priority = ctx.ordering_strategy.compute_priority(entry);
-                let size_bytes = entry.size_bytes;
-
-                // Now remove from memory (safe because DB operation succeeded)
-                self.entries.remove(&txid);
-                self.ordering_index.remove(&priority);
-
-                // Update stats
-                self.stats.mempool_size -= 1;
-                self.stats.total_bytes -= size_bytes;
-
-                removed.push(txid);
-            }
-        }
-
-        // Update pending_seq_no
+        // Update pending_seq_no (always, even if no cascade removal happened)
         if let Some(max_seq) = max_remaining_seq {
             self.pending_seq_no.insert(account, max_seq + 1);
         } else {
@@ -911,15 +943,17 @@ impl MempoolState {
 
         // Step 8: Recalculate pending_seq_no tracking from current mempool transactions
         // (including newly added ones from rolled-back blocks)
-        // With sequential enforcement, we can simply rebuild by iterating in seq_no order
+        // Track maximum seq_no per account, then set pending to max + 1
         self.pending_seq_no.clear();
         for entry in self.entries.values() {
             if let Some(base_update) = entry.tx.base_update() {
                 let target_account = entry.tx.target();
                 let tx_seq_no = base_update.operation().seq_no();
-                let next_expected = tx_seq_no + 1;
-                // Sequential enforcement: just set next_expected
-                self.pending_seq_no.insert(target_account, next_expected);
+                // Track maximum seq_no per account
+                self.pending_seq_no
+                    .entry(target_account)
+                    .and_modify(|pending| *pending = (*pending).max(tx_seq_no + 1))
+                    .or_insert(tx_seq_no + 1);
             }
         }
 
@@ -1079,6 +1113,14 @@ impl MempoolState {
 
             // Add to in-memory indices
             self.ordering_index.insert(priority, tx_data.txid);
+
+            // Add to per-account index
+            let account_id = entry.tx.target();
+            self.by_account
+                .entry(account_id)
+                .or_default()
+                .insert(tx_data.txid);
+
             self.entries.insert(tx_data.txid, entry);
         }
 
@@ -1167,23 +1209,15 @@ impl MempoolServiceState {
     }
 
     /// Handle remove transactions command.
+    ///
+    /// Uses cascade removal to avoid gaps in sequence numbers.
+    /// When a transaction is removed (e.g., included in block or marked invalid),
+    /// all dependent transactions (with higher seq_no from the same account) are also removed.
     pub(crate) fn handle_remove_transactions(
         &mut self,
         ids: Vec<OLTxId>,
     ) -> OLMempoolResult<Vec<OLTxId>> {
-        let mut removed = Vec::new();
-
-        for id in ids {
-            // remove_transactions expects a slice, but we're removing one at a time
-            match self.state.remove_transactions(&self.ctx, &[id]) {
-                Ok(_) => removed.push(id),
-                Err(_e) => {
-                    // Database error - continue with other removals
-                }
-            }
-        }
-
-        Ok(removed)
+        self.state.remove_transactions(&self.ctx, &ids)
     }
 
     /// Handle chain update command.
@@ -1790,5 +1824,110 @@ mod tests {
         let tx_next = create_test_snark_tx_with_seq_no(1, 1);
         let result = state.add_transaction(&ctx, tx_next).await;
         assert!(result.is_ok(), "Should accept seq_no 1 after gap removal");
+    }
+
+    #[tokio::test]
+    async fn test_remove_last_tx_updates_pending_seq_no() {
+        let tip = create_test_block_commitment(100);
+        let ctx = create_test_context_with_state(10, 1_000_000, tip).await;
+        let mut state = MempoolState::new(tip);
+
+        // Add transactions for account 1: seq_no 0, 1, 2
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        let tx2 = create_test_snark_tx_with_seq_no(1, 2);
+
+        state.add_transaction(&ctx, tx0).await.unwrap();
+        state.add_transaction(&ctx, tx1).await.unwrap();
+        let txid2 = state.add_transaction(&ctx, tx2).await.unwrap();
+
+        assert_eq!(state.stats().mempool_size(), 3);
+
+        // Remove last transaction (seq_no 2)
+        let removed = state.remove_transactions(&ctx, &[txid2]).unwrap();
+
+        // Should only remove tx2 (no cascade)
+        assert_eq!(removed.len(), 1);
+        assert!(removed.contains(&txid2));
+        assert_eq!(state.stats().mempool_size(), 2);
+
+        // Verify pending_seq_no is updated to 2 (after max remaining seq_no 1)
+        let tx_next = create_test_snark_tx_with_seq_no(1, 2);
+        let result = state.add_transaction(&ctx, tx_next).await;
+        assert!(
+            result.is_ok(),
+            "Should accept seq_no 2 after removing last tx"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_all_txs_clears_pending_seq_no() {
+        let tip = create_test_block_commitment(100);
+        let ctx = create_test_context_with_state(10, 1_000_000, tip).await;
+        let mut state = MempoolState::new(tip);
+
+        // Add transactions for account 1: seq_no 0, 1, 2
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        let tx2 = create_test_snark_tx_with_seq_no(1, 2);
+
+        let txid0 = state.add_transaction(&ctx, tx0).await.unwrap();
+        let txid1 = state.add_transaction(&ctx, tx1).await.unwrap();
+        let txid2 = state.add_transaction(&ctx, tx2).await.unwrap();
+
+        assert_eq!(state.stats().mempool_size(), 3);
+
+        // Remove all transactions
+        let removed = state
+            .remove_transactions(&ctx, &[txid0, txid1, txid2])
+            .unwrap();
+
+        // Should remove all 3
+        assert_eq!(removed.len(), 3);
+        assert_eq!(state.stats().mempool_size(), 0);
+
+        // Verify pending_seq_no is cleared (can add seq_no 0 again)
+        let tx_new = create_test_snark_tx_with_seq_no(1, 0);
+        let result = state.add_transaction(&ctx, tx_new).await;
+        assert!(
+            result.is_ok(),
+            "Should accept seq_no 0 after removing all txs"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_first_tx_cascades_all() {
+        let tip = create_test_block_commitment(100);
+        let ctx = create_test_context_with_state(10, 1_000_000, tip).await;
+        let mut state = MempoolState::new(tip);
+
+        // Add transactions for account 1: seq_no 0, 1, 2
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        let tx2 = create_test_snark_tx_with_seq_no(1, 2);
+
+        let txid0 = state.add_transaction(&ctx, tx0).await.unwrap();
+        let txid1 = state.add_transaction(&ctx, tx1).await.unwrap();
+        let txid2 = state.add_transaction(&ctx, tx2).await.unwrap();
+
+        assert_eq!(state.stats().mempool_size(), 3);
+
+        // Remove first transaction (seq_no 0)
+        let removed = state.remove_transactions(&ctx, &[txid0]).unwrap();
+
+        // Should cascade-remove all (0, 1, 2)
+        assert_eq!(removed.len(), 3);
+        assert!(removed.contains(&txid0));
+        assert!(removed.contains(&txid1));
+        assert!(removed.contains(&txid2));
+        assert_eq!(state.stats().mempool_size(), 0);
+
+        // Verify pending_seq_no is cleared (can add seq_no 0 again)
+        let tx_new = create_test_snark_tx_with_seq_no(1, 0);
+        let result = state.add_transaction(&ctx, tx_new).await;
+        assert!(
+            result.is_ok(),
+            "Should accept seq_no 0 after cascade removal"
+        );
     }
 }
