@@ -18,7 +18,7 @@ pub struct ItemEntry<Id> {
 
 /// Trait for items that can be tracked in a chain.
 ///
-/// Implementors must provide index, id, and parent_id accessors.
+/// Implementers must provide index, id, and parent_id accessors.
 /// The `Id` type must be cloneable, hashable, and comparable for equality.
 pub trait ChainItem {
     /// The type used to identify items (e.g., block hash)
