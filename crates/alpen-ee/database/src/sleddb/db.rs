@@ -381,6 +381,14 @@ impl EeNodeDb for EeNodeDBSled {
         self.get_exec_block(best_blockhash)
     }
 
+    fn get_finalized_block_at_height(&self, height: u64) -> DbResult<Option<ExecBlockRecord>> {
+        let Some(blockhash) = self.exec_block_finalized_tree.get(&height)? else {
+            return Ok(None);
+        };
+
+        self.get_exec_block(blockhash)
+    }
+
     fn get_finalized_height(&self, hash: Hash) -> DbResult<Option<u64>> {
         // get block data
         let Some(height) = self.exec_block_tree.get(&hash)?.map(|block| block.blocknum) else {

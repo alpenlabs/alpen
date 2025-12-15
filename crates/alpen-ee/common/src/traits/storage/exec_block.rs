@@ -53,6 +53,15 @@ pub trait ExecBlockStorage {
     /// with the highest block number that has been finalized.
     async fn best_finalized_block(&self) -> Result<Option<ExecBlockRecord>, StorageError>;
 
+    /// Get the finalized block at a specific height.
+    ///
+    /// Returns `None` if no block is finalized at the given height. Returns the block
+    /// that is finalized at the specified height.
+    async fn get_finalized_block_at_height(
+        &self,
+        height: u64,
+    ) -> Result<Option<ExecBlockRecord>, StorageError>;
+
     /// Get the finalized height of a block, if it exists on the finalized chain.
     ///
     /// Returns `None` if the block doesn't exist, hasn't been finalized, or exists at a height
