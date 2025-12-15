@@ -1,0 +1,22 @@
+[package]
+name = "strata-checkpoint-types-ssz"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-identifiers.workspace = true
+
+borsh.workspace = true
+serde.workspace = true
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_types.workspace = true
+thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true

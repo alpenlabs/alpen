@@ -13975,6 +13975,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-checkpoint-types-ssz"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "serde",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_types",
+ "strata-identifiers",
+ "thiserror 2.0.17",
+ "tree_hash 0.9.0",
+ "tree_hash_derive 0.9.0",
+]
+
+[[package]]
 name = "strata-cli-common"
 version = "0.3.0-alpha.1"
 
