@@ -19,6 +19,7 @@ zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-cl-stf.workspace = true
+strata-proofimpl-eth-ee-acct.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
 [features]
