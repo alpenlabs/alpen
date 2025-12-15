@@ -33,6 +33,10 @@ pub enum ProofContext {
 
     /// Identifier for a specific checkpoint being proven.
     Checkpoint(u64),
+
+    /// Identifier for the Ethereum Execution Environment (EE) account update proof.
+    /// The u64 represents the update_id.
+    EthEeAcct(u64),
 }
 
 /// Represents the ZkVm host used for proof generation.
