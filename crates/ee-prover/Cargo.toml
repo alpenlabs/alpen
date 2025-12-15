@@ -1,0 +1,33 @@
+[package]
+name = "strata-ee-prover"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Strata crates
+strata-paas.workspace = true
+strata-primitives.workspace = true
+strata-proofimpl-eth-ee-acct = { workspace = true, features = ["host"] }
+strata-zkvm-hosts.workspace = true
+strata-tasks.workspace = true
+
+# zkaleido
+zkaleido-native-adapter.workspace = true
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18", optional = true }
+
+# RSP for genesis types
+rsp-primitives.workspace = true
+
+# Async
+async-trait.workspace = true
+
+# Serialization
+serde.workspace = true
+
+[features]
+default = []
+mock = []
+sp1 = ["dep:zkaleido-sp1-host"]
+
+[lints]
+workspace = true
