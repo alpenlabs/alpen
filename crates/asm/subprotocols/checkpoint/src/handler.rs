@@ -101,23 +101,27 @@ fn verify_signature(
 
 /// Validate that checkpoint start values match expected state.
 fn validate_start_values(state: &CheckpointState, batch_info: &BatchInfo) -> CheckpointResult<()> {
-    // L1 range start must match last covered L1
-    let last_l1_height = state.last_covered_l1_height();
-    let l1_start = batch_info.l1_range.start.height;
-    if l1_start != last_l1_height {
-        return Err(CheckpointError::InvalidL1Progression {
-            previous: last_l1_height,
-            new: l1_start,
+    // L1 range start must match last covered L1 (height + blkid)
+    let last_l1 = state.last_covered_l1();
+    let l1_start = batch_info.l1_range.start;
+    if l1_start != last_l1 {
+        return Err(CheckpointError::InvalidL1Start {
+            expected_height: last_l1.height,
+            expected_blkid: last_l1.blkid,
+            new_height: l1_start.height,
+            new_blkid: l1_start.blkid,
         });
     }
 
-    // L2 range start must match last terminal slot (if any)
-    if let Some(last_l2_slot) = state.last_l2_terminal_slot() {
-        let l2_start = batch_info.l2_range.start.slot();
-        if l2_start != last_l2_slot {
-            return Err(CheckpointError::InvalidL2Progression {
-                previous: last_l2_slot,
-                new: l2_start,
+    // L2 range start must match last terminal commitment (slot + blkid) if any
+    if let Some(last_l2) = state.last_l2_terminal() {
+        let l2_start = batch_info.l2_range.start;
+        if l2_start != last_l2 {
+            return Err(CheckpointError::InvalidL2Start {
+                expected_slot: last_l2.slot(),
+                expected_blkid: *last_l2.blkid(),
+                new_slot: l2_start.slot(),
+                new_blkid: *l2_start.blkid(),
             });
         }
     }

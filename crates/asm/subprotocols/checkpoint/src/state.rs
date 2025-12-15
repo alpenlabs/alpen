@@ -73,12 +73,24 @@ impl CheckpointState {
         self.last_covered_l1.height
     }
 
+    /// Returns the last L1 block commitment covered by the previous checkpoint.
+    pub fn last_covered_l1(&self) -> L1Commitment {
+        self.last_covered_l1
+    }
+
     /// Returns the slot of the last L2 terminal block.
     /// Returns `None` before the first checkpoint is verified.
     pub fn last_l2_terminal_slot(&self) -> Option<u64> {
         self.verified_epoch_summary
             .as_ref()
             .map(|s| s.terminal().slot())
+    }
+
+    /// Returns the last L2 terminal block commitment, if any.
+    pub fn last_l2_terminal(&self) -> Option<OLBlockCommitment> {
+        self.verified_epoch_summary
+            .as_ref()
+            .map(|s| *s.terminal())
     }
 
     /// Returns the pre-state root for the next checkpoint.

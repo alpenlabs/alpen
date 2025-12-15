@@ -13,15 +13,15 @@ MAX_PROOF_LEN = 1 << 12
 
 ### L1 block commitment (height + block ID).
 ###
-### NOTE: This type is defined inline rather than using strata_identifiers::L1BlockCommitment
-### due to a type mismatch issue when the `bitcoin` feature is enabled:
-### - strata_identifiers::L1BlockCommitment uses `absolute::Height` (custom type)
-### - strata_identifiers::L1BlockCommitmentRef::to_owned() returns the SSZ-generated type (u32)
-### - This causes type mismatches in generated code when using `external_kind: container`
-###
-### TODO: Fix ssz_codegen to use trait method (ToOwnedSsz::to_owned) instead of inherent
-### method, which would allow proper type conversion via the From impl in strata_identifiers.
-### Once fixed, this can be replaced with: strata_identifiers.L1BlockCommitment
+# NOTE: This type is defined inline rather than using strata_identifiers::L1BlockCommitment
+# due to a type mismatch issue when the `bitcoin` feature is enabled:
+# - strata_identifiers::L1BlockCommitment uses `absolute::Height` (custom type)
+# - strata_identifiers::L1BlockCommitmentRef::to_owned() returns the SSZ-generated type (u32)
+# - This causes type mismatches in generated code when using `external_kind: container`
+#
+# TODO: Fix ssz_codegen to use trait method (ToOwnedSsz::to_owned) instead of inherent
+# method, which would allow proper type conversion via the From impl in strata_identifiers.
+# Once fixed, this can be replaced with: strata_identifiers.L1BlockCommitment
 #~# derive: Copy, Serialize, Deserialize
 class L1Commitment(Container):
     ### L1 block height

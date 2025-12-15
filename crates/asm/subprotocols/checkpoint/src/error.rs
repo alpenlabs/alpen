@@ -3,7 +3,7 @@
 use strata_asm_common::AuxError;
 use strata_asm_manifest_types::AsmManifestError;
 use strata_asm_proto_checkpoint_txs::CheckpointTxError;
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, L1BlockId, OLBlockId};
 use strata_predicate::PredicateError;
 use thiserror::Error;
 
@@ -24,6 +24,24 @@ pub(crate) enum CheckpointError {
     /// Checkpoint epoch is not sequential.
     #[error("invalid epoch: expected {expected}, got {actual}")]
     InvalidEpoch { expected: Epoch, actual: Epoch },
+
+    /// L1 start did not match previous checkpoint commitment.
+    #[error("L1 start commitment mismatch")]
+    InvalidL1Start {
+        expected_height: u32,
+        expected_blkid: L1BlockId,
+        new_height: u32,
+        new_blkid: L1BlockId,
+    },
+
+    /// L2 start did not match previous checkpoint terminal commitment.
+    #[error("L2 start commitment mismatch")]
+    InvalidL2Start {
+        expected_slot: u64,
+        expected_blkid: OLBlockId,
+        new_slot: u64,
+        new_blkid: OLBlockId,
+    },
 
     /// L1 height did not progress correctly.
     #[error("L1 height did not progress: previous {previous}, new {new}")]

@@ -33,13 +33,13 @@ impl AsmSpec for StrataAsmSpec {
 
     fn load_subprotocols(&self, loader: &mut impl Loader) {
         // TODO avoid clone?
-        loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
         loader.load_subprotocol::<CheckpointSubprotocol>(self.checkpoint_genesis.clone());
+        loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
     }
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
-        stage.invoke_subprotocol::<BridgeV1Subproto>();
         stage.invoke_subprotocol::<CheckpointSubprotocol>();
+        stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
 }
 

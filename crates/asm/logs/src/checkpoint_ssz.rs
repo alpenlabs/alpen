@@ -2,12 +2,11 @@
 //!
 //! This module provides the `CheckpointUpdateSsz` log type for the checkpoint subprotocol,
 //! using the SPS-62 SSZ-based checkpoint types.
-//!
-//! # TODO: cleanup
-//!
-//! Rename `CheckpointUpdateSsz` to `CheckpointUpdate` and remove the
-//! `CHECKPOINT_UPDATE_SSZ_LOG_TYPE` constant when the legacy `CheckpointUpdate` (in
-//! `checkpoint.rs`) is removed after csm-worker deprecation.
+
+// TODO: cleanup
+// Rename `CheckpointUpdateSsz` to `CheckpointUpdate` and remove the
+// `CHECKPOINT_UPDATE_SSZ_LOG_TYPE` constant when the legacy `CheckpointUpdate` (in
+// `checkpoint.rs`) is removed after csm-worker deprecation.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
@@ -21,9 +20,6 @@ use strata_primitives::l1::BitcoinTxid;
 use crate::constants::CHECKPOINT_UPDATE_SSZ_LOG_TYPE;
 
 /// Checkpoint update log details using SSZ types.
-///
-/// This struct uses the new `BatchInfo` and `BatchTransition` types from
-/// `checkpoint-types-ssz` for the checkpoint subprotocol.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Codec)]
 pub struct CheckpointUpdateSsz {
     /// Commitment to the epoch terminal block.
