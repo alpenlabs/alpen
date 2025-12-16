@@ -170,5 +170,5 @@ fn compute_proof_state(_astate: &EeAccountState) -> ProofState {
     // For next_msg_read_idx, need to track message processing progress
     let inner_state_root = [0u8; 32]; // TODO: compute actual hash
     let next_msg_read_idx = 0; // TODO: compute actual index
-    ProofState::new(inner_state_root, next_msg_read_idx)
+    ProofState::new(inner_state_root.into(), next_msg_read_idx)
 }

@@ -102,7 +102,7 @@ fn decode_update_extra_data_ssz(bytes: &[u8]) -> Result<UpdateExtraData, String>
     let processed_fincls = u32::from_le_bytes([bytes[36], bytes[37], bytes[38], bytes[39]]);
 
     Ok(UpdateExtraData::new(
-        new_tip_blkid,
+        new_tip_blkid.into(),
         processed_inputs,
         processed_fincls,
     ))
@@ -117,13 +117,13 @@ mod tests {
 
     // Strategy for generating random ProofState
     fn arb_proof_state() -> impl Strategy<Value = ProofState> {
-        (any::<[u8; 32]>(), any::<u64>()).prop_map(|(root, idx)| ProofState::new(root, idx))
+        (any::<[u8; 32]>(), any::<u64>()).prop_map(|(root, idx)| ProofState::new(root.into(), idx))
     }
 
     // Strategy for generating random UpdateExtraData
     fn arb_update_extra_data() -> impl Strategy<Value = UpdateExtraData> {
         (any::<[u8; 32]>(), any::<u32>(), any::<u32>())
-            .prop_map(|(blkid, inputs, fincls)| UpdateExtraData::new(blkid, inputs, fincls))
+            .prop_map(|(blkid, inputs, fincls)| UpdateExtraData::new(blkid.into(), inputs, fincls))
     }
 
     // Strategy for generating random EthEeAcctProofOutput
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_update_extra_data_edge_cases() {
         // Test all zeros
-        let zeros = UpdateExtraData::new([0u8; 32], 0, 0);
+        let zeros = UpdateExtraData::new([0u8; 32].into(), 0, 0);
         let encoded = encode_update_extra_data_ssz(&zeros);
         let decoded = decode_update_extra_data_ssz(&encoded).expect("Failed to decode zeros");
         assert_eq!(decoded.new_tip_blkid(), zeros.new_tip_blkid());
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(decoded.processed_fincls(), zeros.processed_fincls());
 
         // Test max values
-        let max_vals = UpdateExtraData::new([0xffu8; 32], u32::MAX, u32::MAX);
+        let max_vals = UpdateExtraData::new([0xffu8; 32].into(), u32::MAX, u32::MAX);
         let encoded = encode_update_extra_data_ssz(&max_vals);
         let decoded = decode_update_extra_data_ssz(&encoded).expect("Failed to decode max values");
         assert_eq!(decoded.new_tip_blkid(), max_vals.new_tip_blkid());
