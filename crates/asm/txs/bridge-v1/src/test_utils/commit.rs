@@ -12,10 +12,13 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
     let mut tx = create_dummy_tx(1, 2);
 
     // Encode auxiliary data and construct SPS 50 op_return script
-    let td = commit_info.header_aux().build_tag_data().unwrap();
+    let td = commit_info
+        .header_aux()
+        .build_tag_data()
+        .expect("commit header must serialize");
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
-        .unwrap();
+        .expect("encoding SPS50 script must succeed");
 
     // The first output is SPS 50 header
     tx.output[0].script_pubkey = sps_50_script;

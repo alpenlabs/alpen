@@ -26,7 +26,8 @@ use bitcoin::{
 ///   This represents the bridge operators' ability to create the Deposit Transaction.
 ///
 /// * `recovery_delay` - The number of blocks that must pass before the depositor can use the
-///   recovery path. This period should be sufficient for bridge operators to process the deposit.
+///   recovery path. This period should be sufficient for bridge operators to process the deposit
+///   and the deposit request transaction is not spent.
 ///
 /// # Returns
 ///

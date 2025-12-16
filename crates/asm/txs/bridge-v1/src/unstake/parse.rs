@@ -72,7 +72,7 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        build_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data,
+        create_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data,
         parse_sps50_tx,
     };
 
@@ -81,7 +81,7 @@ mod tests {
     fn create_slash_tx_with_info() -> (UnstakeInfo, Transaction) {
         let header_aux: UnstakeTxHeaderAux = ArbitraryGenerator::new().generate();
         let (sks, _) = create_test_operators(3);
-        let (_stake_tx, unstake_tx) = build_connected_stake_and_unstake_txs(&header_aux, &sks);
+        let (_stake_tx, unstake_tx) = create_connected_stake_and_unstake_txs(&header_aux, &sks);
         let nn_key = create_agg_pubkey_from_privkeys(&sks);
         let info = UnstakeInfo::new(header_aux, nn_key);
         (info, unstake_tx)

@@ -11,9 +11,12 @@ use crate::test_utils::TEST_MAGIC_BYTES;
 // Helper function to mutate SPS 50 transaction auxiliary data
 pub fn mutate_aux_data(tx: &mut Transaction, new_aux: Vec<u8>) {
     let config = ParseConfig::new(*TEST_MAGIC_BYTES);
-    let td = config.try_parse_tx(tx).unwrap();
-    let new_td = TagData::new(td.subproto_id(), td.tx_type(), new_aux).unwrap();
-    let new_scriptbuf = config.encode_script_buf(&new_td.as_ref()).unwrap();
+    let td = config.try_parse_tx(tx).expect("dummy tx must parse");
+    let new_td = TagData::new(td.subproto_id(), td.tx_type(), new_aux)
+        .expect("tag data construction must succeed");
+    let new_scriptbuf = config
+        .encode_script_buf(&new_td.as_ref())
+        .expect("encoding SPS50 script must succeed");
     tx.output[0].script_pubkey = new_scriptbuf
 }
 

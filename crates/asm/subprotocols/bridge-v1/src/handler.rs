@@ -151,8 +151,8 @@ mod tests {
         parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
         test_utils::{
-            build_connected_stake_and_unstake_txs, create_connected_drt_and_dt,
-            create_connected_stake_and_slash_txs, parse_sps50_tx,
+            create_connected_drt_and_dt, create_connected_stake_and_slash_txs,
+            create_connected_stake_and_unstake_txs, parse_sps50_tx,
         },
         unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
     };
@@ -213,7 +213,7 @@ mod tests {
         let unstake_header = UnstakeTxHeaderAux::new(operator_idx);
 
         let (stake_tx, unstake_tx) =
-            build_connected_stake_and_unstake_txs(&unstake_header, &operators);
+            create_connected_stake_and_unstake_txs(&unstake_header, &operators);
 
         // 3. Prepare ParsedTx
         // We need to re-parse the slash tx to get the correct SlashInfo with updated input
