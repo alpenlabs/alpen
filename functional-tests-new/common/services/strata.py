@@ -2,7 +2,7 @@
 Strata service wrapper with Strata-specific health checks.
 """
 
-from typing import TypedDict, cast
+from typing import TypedDict
 
 from common.rpc import JsonRpcClient
 from common.services.base import RpcService

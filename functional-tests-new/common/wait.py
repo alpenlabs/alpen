@@ -2,12 +2,13 @@
 Waiting utilities for test synchronization.
 """
 
+import logging
 import math
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from common.test_logging import get_test_logger
+logger = logging.getLogger(__name__)
 
 
 def wait_until(
@@ -26,7 +27,7 @@ def wait_until(
                 return
         except Exception as e:
             ety = type(e)
-            get_test_logger().warning(f"caught exception {ety}, will still wait for timeout: {e}")
+            logger.warning(f"caught exception {ety}, will still wait for timeout: {e}")
         time.sleep(step)
     raise AssertionError(error_with)
 
@@ -55,7 +56,7 @@ def wait_until_with_value(
                 return r
         except Exception as e:
             ety = type(e)
-            get_test_logger().warning(f"caught exception {ety}, will still wait for timeout: {e}")
+            logger.warning(f"caught exception {ety}, will still wait for timeout: {e}")
 
         time.sleep(step)
     raise AssertionError(error_with)

@@ -2,7 +2,6 @@
 Base test class with common utilities.
 """
 
-import logging
 from typing import Literal, overload
 
 import flexitest
@@ -12,7 +11,6 @@ from common.services import (
     BitcoinService,
     StrataService,
 )
-from common.test_logging import get_test_logger
 
 
 class BaseTest(flexitest.Test):
@@ -34,31 +32,6 @@ class BaseTest(flexitest.Test):
         Things that need to be done before we run the test.
         """
         self.runctx = ctx
-
-    @property
-    def logger(self) -> logging.Logger:
-        """Get the current test's logger from thread-local context."""
-        return get_test_logger()
-
-    @property
-    def debug(self):
-        """Log at DEBUG level."""
-        return self.logger.debug
-
-    @property
-    def info(self):
-        """Log at INFO level."""
-        return self.logger.info
-
-    @property
-    def warning(self):
-        """Log at WARNING level."""
-        return self.logger.warning
-
-    @property
-    def error(self):
-        """Log at ERROR level."""
-        return self.logger.error
 
     # Overriding here to have `self.get_service` return a `ServiceWrapper[Rpc]` without boilerplate.
     def main(self, ctx) -> bool:  # type: ignore[override]

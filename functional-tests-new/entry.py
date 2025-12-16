@@ -23,6 +23,7 @@ from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
 
 # Import environments
 from common.runtime import TestRuntimeWithLogging
+from common.test_logging import TestNameFilter
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
@@ -48,12 +49,14 @@ def disabled_tests() -> frozenset[str]:
 
 
 def setup_logging() -> None:
-    """Configure root logger."""
+    """Configure root logger with test name filter."""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - [%(test_name)s] - %(name)s - %(levelname)s - %(message)s",
     )
+    for handler in logging.root.handlers:
+        handler.addFilter(TestNameFilter())
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

@@ -1,45 +1,30 @@
 """
-Thread-local test logger context for use across the codebase.
+Test name injection for logging across the codebase.
 
-Provides a global logger that's automatically set per-test by the runtime,
-allowing library functions to log without tight coupling to test instances.
+Provides a logging filter that automatically tags all logs with the current test name.
 """
 
-import contextvars
 import logging
-from collections.abc import Generator
-from contextlib import contextmanager
 
-_current_test_logger: contextvars.ContextVar[logging.Logger | None] = contextvars.ContextVar(
-    "test_logger", default=None
-)
+_current_test_name: str | None = None
 
 
-def get_test_logger() -> logging.Logger:
+class TestNameFilter(logging.Filter):
     """
-    Get the current test's logger from anywhere in the codebase.
-
-    Raises RuntimeError if called outside a test context.
+    Logging filter that injects current test name into all log records.
     """
-    logger = _current_test_logger.get()
-    if logger is None:
-        raise RuntimeError("No test logger set. Are you calling this outside a test context?")
-    return logger
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.test_name = _current_test_name or "no-test"
+        return True
 
 
-@contextmanager
-def test_logger_context(test_name: str) -> Generator[logging.Logger, None, None]:
+def set_current_test(test_name: str | None) -> None:
     """
-    Context manager that sets up a test-specific logger for the duration of a test.
+    Set the current test name for logging.
 
-    Usage:
-        with test_logger_context("test_foo"):
-            # Now get_test_logger() will work anywhere
-            run_test()
+    This is called by the test runtime before each test execution.
+    All logs will be tagged with this test name until it's cleared.
     """
-    logger = logging.getLogger(f"test.{test_name}")
-    token = _current_test_logger.set(logger)
-    try:
-        yield logger
-    finally:
-        _current_test_logger.reset(token)
+    global _current_test_name
+    _current_test_name = test_name

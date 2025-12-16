@@ -1,9 +1,13 @@
 """Basic node functionality tests."""
 
+import logging
+
 import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
+
+logger = logging.getLogger(__name__)
 
 
 # NOTE: this is redundant and is just for setting up the func tests infra. Remove later.
@@ -21,14 +25,14 @@ class TestNodeVersion(StrataNodeTest):
         # Create RPC clients
         strata_rpc = strata.create_rpc()
 
-        self.info("Waiting for Strata RPC to be ready...")
+        logger.info("Waiting for Strata RPC to be ready...")
         strata.wait_for_rpc_ready(timeout=10)
 
         # Test protocol version
-        self.info("Checking protocol version...")
+        logger.info("Checking protocol version...")
         version = strata_rpc.strata_protocolVersion()
-        self.info(f"Protocol version: {version}")
+        logger.info(f"Protocol version: {version}")
         assert version == 1, f"Expected version 1, got {version}"
 
-        self.info("Test passed!")
+        logger.info("Test passed!")
         return True
