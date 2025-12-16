@@ -4,13 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Strata crates (for host module)
-strata-acct-types = { workspace = true, optional = true }
-
 # Strata crates (for guest processing)
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
 strata-evm-ee = { path = "../../evm-ee" }
+strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
 # Reth for ChainSpec
@@ -28,15 +27,14 @@ borsh.workspace = true
 ssz.workspace = true
 strata-codec.workspace = true
 
-# Error handling (for host module)
-thiserror = { workspace = true, optional = true }
+# Hashing (for guest block verification)
+sha2.workspace = true
+
+# Error handling
+thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-
-[features]
-default = []
-host = ["dep:thiserror", "dep:strata-acct-types"]
 
 [lints]
 workspace = true

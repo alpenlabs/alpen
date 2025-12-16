@@ -26,8 +26,9 @@ pub struct EthEeAcctInput {
     /// Coinput witness data for messages
     pub coinputs: Vec<Vec<u8>>,
 
-    /// Each CommitChainSegment encoded as SSZ bytes
-    pub commit_segments_ssz: Vec<Vec<u8>>,
+    /// Serialized blocks for building CommitChainSegment in guest
+    /// Each Vec<u8> is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+    pub serialized_blocks: Vec<Vec<u8>>,
 
     /// Previous header (raw bytes)
     pub raw_prev_header: Vec<u8>,
@@ -72,10 +73,11 @@ impl ZkVmProgram for EthEeAcctProgram {
         // Write coinputs (Vec<Vec<u8>>) with borsh
         input_builder.write_borsh(&input.coinputs)?;
 
-        // Write number of segments, then each segment buffer
-        input_builder.write_borsh(&(input.commit_segments_ssz.len() as u32))?;
-        for segment_ssz in &input.commit_segments_ssz {
-            input_builder.write_buf(segment_ssz)?;
+        // Write number of blocks, then each block's data
+        // Each block is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+        input_builder.write_borsh(&(input.serialized_blocks.len() as u32))?;
+        for block_data in &input.serialized_blocks {
+            input_builder.write_buf(block_data)?;
         }
 
         // Write raw byte buffers

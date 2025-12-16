@@ -16,13 +16,18 @@ use reth_chainspec::ChainSpec;
 use ssz::Decode;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_runtime::{SharedPrivateInput, verify_and_apply_update_operation};
-use strata_ee_acct_types::{CommitChainSegment, EeAccountState, UpdateExtraData};
+use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_snark_acct_types::{MessageEntry, OutputMessage, ProofState, UpdateOperationData};
 use zkaleido::ZkVmEnv;
 
+use crate::guest_builder::build_commit_segments_from_blocks;
+
 // Borsh serialization implementation
 mod borsh_impl;
+
+// Guest-side block building
+mod guest_builder;
 
 // ZkVmProgram implementation
 pub mod program;
@@ -84,20 +89,17 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     // Coinputs is Vec<Vec<u8>> so we read it with borsh
     let coinputs: Vec<Vec<u8>> = zkvm.read_borsh();
 
-    // Read number of commit segments, then read each one
-    let num_segments: u32 = zkvm.read_borsh();
-    let mut commit_segments_ssz = Vec::with_capacity(num_segments as usize);
-    for _ in 0..num_segments {
-        commit_segments_ssz.push(zkvm.read_buf());
+    // Read number of blocks, then read each block's data
+    // Each block is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+    let num_blocks: u32 = zkvm.read_borsh();
+    let mut serialized_blocks = Vec::with_capacity(num_blocks as usize);
+    for _ in 0..num_blocks {
+        serialized_blocks.push(zkvm.read_buf());
     }
-    // 3. Build SharedPrivateInput from components
-    // FIXME: it should be constructed from blocks passed in serialized form
-    let commit_segments: Vec<CommitChainSegment> = commit_segments_ssz
-        .iter()
-        .map(|bytes| {
-            CommitChainSegment::decode(bytes).expect("Failed to decode CommitChainSegment")
-        })
-        .collect();
+
+    // Build CommitChainSegment from blocks
+    let commit_segments = build_commit_segments_from_blocks(serialized_blocks)
+        .expect("Failed to build commit segments from blocks");
 
     // Already raw bytes
     let raw_prev_header = zkvm.read_buf();
