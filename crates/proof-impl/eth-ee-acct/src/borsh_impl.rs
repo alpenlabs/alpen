@@ -110,9 +110,10 @@ fn decode_update_extra_data_ssz(bytes: &[u8]) -> Result<UpdateExtraData, String>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use proptest::prelude::*;
     use strata_snark_acct_types::ProofState;
+
+    use super::*;
 
     // Strategy for generating random ProofState
     fn arb_proof_state() -> impl Strategy<Value = ProofState> {
@@ -242,8 +243,7 @@ mod tests {
         // Test max values
         let max_vals = UpdateExtraData::new([0xffu8; 32], u32::MAX, u32::MAX);
         let encoded = encode_update_extra_data_ssz(&max_vals);
-        let decoded =
-            decode_update_extra_data_ssz(&encoded).expect("Failed to decode max values");
+        let decoded = decode_update_extra_data_ssz(&encoded).expect("Failed to decode max values");
         assert_eq!(decoded.new_tip_blkid(), max_vals.new_tip_blkid());
         assert_eq!(decoded.processed_inputs(), max_vals.processed_inputs());
         assert_eq!(decoded.processed_fincls(), max_vals.processed_fincls());
