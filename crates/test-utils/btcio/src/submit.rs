@@ -112,10 +112,9 @@ pub async fn submit_transaction_with_keys(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        Amount, BlockHash, TxOut, absolute::LockTime, secp256k1::Secp256k1, transaction::Version,
-    };
+    use bitcoin::{Amount, BlockHash, TxOut, absolute::LockTime, transaction::Version};
     use bitcoind_async_client::traits::{Reader, Wallet};
+    use musig2::secp256k1::SECP256K1;
 
     use super::*;
     use crate::{client::get_bitcoind_and_client, mining::mine_blocks};
@@ -129,8 +128,7 @@ mod tests {
         let _ = mine_blocks(&node, &client, 101, None).await.unwrap();
 
         // Generate a random keypair
-        let secp = Secp256k1::new();
-        let (secret_key, _public_key) = secp.generate_keypair(&mut rand::thread_rng());
+        let (secret_key, _public_key) = SECP256K1.generate_keypair(&mut rand::thread_rng());
         let even_secret_key: EvenSecretKey = secret_key.into();
 
         // Create the transaction with desired outputs
@@ -179,11 +177,10 @@ mod tests {
         let _ = mine_blocks(&node, &client, 101, None).await.unwrap();
 
         // Generate multiple random keypairs for MuSig2
-        let secp = Secp256k1::new();
         let num_signers = 3;
         let secret_keys: Vec<EvenSecretKey> = (0..num_signers)
             .map(|_| {
-                let (sk, _pk) = secp.generate_keypair(&mut rand::thread_rng());
+                let (sk, _pk) = SECP256K1.generate_keypair(&mut rand::thread_rng());
                 EvenSecretKey::from(sk)
             })
             .collect();

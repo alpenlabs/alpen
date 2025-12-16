@@ -9,7 +9,7 @@ use bitcoin::{
     key::TapTweak,
     opcodes::all::OP_RETURN,
     script::{self, PushBytesBuf},
-    secp256k1::{Keypair, Message, Secp256k1},
+    secp256k1::{Keypair, Message, SECP256K1},
     sighash::{Prevouts, SighashCache},
     Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
     Transaction, TxIn, TxOut, Witness,
@@ -89,12 +89,11 @@ pub fn create_test_deposit_tx(
     let mut previous_output: BitcoinOutPoint = ArbitraryGenerator::new().generate();
     previous_output.0.vout = 0;
 
-    let secp = Secp256k1::new();
     let (xpk, _) = keypair.x_only_public_key();
     let tapscript_root = TapNodeHash::from_byte_array(*tapnode_hash); // since there is only one
                                                                       // script node
     let sbuf = ScriptBuf::new_p2tr(
-        &secp,
+        SECP256K1,
         xpk,
         Some(TapNodeHash::from_byte_array(*tapnode_hash)),
     );
@@ -141,10 +140,10 @@ pub fn create_test_deposit_tx(
 
     let msg = Message::from_digest(*sighash.as_ref());
 
-    let tweaked_pair = keypair.tap_tweak(&secp, Some(tapscript_root));
+    let tweaked_pair = keypair.tap_tweak(SECP256K1, Some(tapscript_root));
 
     // Sign the sighash
-    let sig = secp.sign_schnorr(&msg, &tweaked_pair.to_keypair());
+    let sig = SECP256K1.sign_schnorr(&msg, &tweaked_pair.to_keypair());
 
     tx.input[0].witness.push(sig.as_ref());
 

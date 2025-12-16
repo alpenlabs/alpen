@@ -1,9 +1,10 @@
 use bitcoin::{
     TapSighashType, Transaction, TxOut, XOnlyPublicKey,
-    secp256k1::{Keypair, Message, Secp256k1, schnorr::Signature},
+    secp256k1::{Keypair, Message, schnorr::Signature},
     sighash::{Prevouts, SighashCache},
     taproot::TapTweakHash,
 };
+use musig2::secp256k1::SECP256K1;
 use strata_crypto::{
     EvenSecretKey,
     test_utils::schnorr::{Musig2Tweak, create_musig2_signature},
@@ -17,11 +18,9 @@ pub fn sign_taproot_transaction(
     prev_output: &TxOut,
     input_index: usize,
 ) -> anyhow::Result<Signature> {
-    let secp = Secp256k1::new();
-
     // Apply BIP341 taproot tweak
     let tweak = TapTweakHash::from_key_and_tweak(*internal_key, None);
-    let tweaked_keypair = keypair.add_xonly_tweak(&secp, &tweak.to_scalar())?;
+    let tweaked_keypair = keypair.add_xonly_tweak(SECP256K1, &tweak.to_scalar())?;
 
     let prevouts = vec![prev_output.clone()];
     let prevouts_ref = Prevouts::All(&prevouts);
@@ -33,7 +32,7 @@ pub fn sign_taproot_transaction(
     )?;
 
     let msg = Message::from_digest_slice(sighash.as_ref())?;
-    let signature = secp.sign_schnorr_no_aux_rand(&msg, &tweaked_keypair);
+    let signature = SECP256K1.sign_schnorr_no_aux_rand(&msg, &tweaked_keypair);
 
     Ok(signature)
 }

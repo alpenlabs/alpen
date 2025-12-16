@@ -191,7 +191,7 @@ fn build_envelope_script(payload: &[u8]) -> ScriptBuf {
 mod tests {
     use std::num::NonZero;
 
-    use bitcoin::secp256k1::{PublicKey, Secp256k1};
+    use bitcoin::secp256k1::PublicKey;
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
     use strata_crypto::threshold_signature::{
@@ -208,13 +208,12 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let seqno = 1;
         let threshold = NonZero::new(2).unwrap();
-        let secp = Secp256k1::new();
 
         // Generate test private keys
         let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
         let pubkeys: Vec<CompressedPublicKey> = privkeys
             .iter()
-            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(SECP256K1, sk)))
             .collect();
         let config = ThresholdConfig::try_new(pubkeys, threshold).unwrap();
 
@@ -242,13 +241,12 @@ mod tests {
         let mut arb = ArbitraryGenerator::new();
         let seqno = 1;
         let threshold = NonZero::new(2).unwrap();
-        let secp = Secp256k1::new();
 
         // Generate test private keys
         let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
         let pubkeys: Vec<CompressedPublicKey> = privkeys
             .iter()
-            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
+            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(SECP256K1, sk)))
             .collect();
         let config = ThresholdConfig::try_new(pubkeys, threshold).unwrap();
 
