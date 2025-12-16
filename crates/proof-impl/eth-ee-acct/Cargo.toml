@@ -8,10 +8,10 @@ edition = "2024"
 strata-acct-types = { workspace = true, optional = true }
 
 # Strata crates (for guest processing)
-strata-ee-acct-types.workspace = true
 strata-ee-acct-runtime.workspace = true
-strata-snark-acct-types.workspace = true
+strata-ee-acct-types.workspace = true
 strata-evm-ee = { path = "../../evm-ee" }
+strata-snark-acct-types.workspace = true
 
 # Reth for ChainSpec
 reth-chainspec.workspace = true
@@ -25,16 +25,18 @@ zkaleido-native-adapter.workspace = true
 
 # Serialization (used by guest deserialization)
 borsh.workspace = true
+ssz.workspace = true
+strata-codec.workspace = true
 
 # Error handling (for host module)
 thiserror = { workspace = true, optional = true }
 
+[dev-dependencies]
+proptest.workspace = true
+
 [features]
 default = []
-host = [
-    "dep:thiserror",
-    "dep:strata-acct-types",
-]
+host = ["dep:thiserror", "dep:strata-acct-types"]
 
 [lints]
 workspace = true

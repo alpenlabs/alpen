@@ -4,14 +4,14 @@
 //! proof generation framework.
 
 use std::{
-    panic::{catch_unwind, AssertUnwindSafe},
+    panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
 };
 
 use zkaleido::{ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
-use crate::process_eth_ee_acct_update;  // From lib.rs
+use crate::{EthEeAcctProofOutput, process_eth_ee_acct_update}; // From lib.rs
 
 /// Input for ETH-EE account proof generation
 /// This is the high-level input that the host provides
@@ -41,11 +41,7 @@ pub struct EthEeAcctInput {
 
 /// Output from ETH-EE account proof
 /// This is the public output committed by the guest
-#[derive(Clone, Debug)]
-pub struct EthEeAcctOutput {
-    /// Hash of the new EE account state after update
-    pub new_state_hash: [u8; 32],
-}
+pub type EthEeAcctOutput = EthEeAcctProofOutput;
 
 /// The proof program for ETH-EE account updates
 #[derive(Debug)]
@@ -96,9 +92,9 @@ impl ZkVmProgram for EthEeAcctProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        // The guest commits the state hash as [u8; 32] using borsh
-        let new_state_hash: [u8; 32] = H::extract_borsh_public_output(public_values)?;
-        Ok(EthEeAcctOutput { new_state_hash })
+        // The guest commits the full EthEeAcctProofOutput using borsh
+        let proof_output: EthEeAcctProofOutput = H::extract_borsh_public_output(public_values)?;
+        Ok(proof_output)
     }
 }
 
