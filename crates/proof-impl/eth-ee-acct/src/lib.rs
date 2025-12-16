@@ -1,11 +1,14 @@
 //! ETH-EE Account Proof Implementation
 //!
-//! This crate implements proof generation for ETH-EE account updates, following the pattern
-//! established in other proof-impl crates. It provides:
+//! This crate implements the **guest-side** proof generation for ETH-EE account updates.
+//! It provides:
 //!
-//! - Data fetching layer (`data_provider`)
-//! - ZkVM program definition (`program`)
-//! - Guest processing logic (this module)
+//! - Guest processing logic (`process_eth_ee_acct_update`)
+//! - ZkVM program definition (`EthEeAcctProgram`)
+//! - Input/Output types (`EthEeAcctInput`, `EthEeAcctOutput`)
+//!
+//! **Note**: Host-side data fetching logic should be implemented by the application
+//! using this crate. See README.md for the expected data provider trait.
 
 use std::sync::Arc;
 
