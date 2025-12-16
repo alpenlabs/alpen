@@ -10,19 +10,13 @@
 use std::sync::Arc;
 
 use reth_chainspec::ChainSpec;
+use ssz::Decode;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_runtime::{SharedPrivateInput, verify_and_apply_update_operation};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState, UpdateExtraData};
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_snark_acct_types::{MessageEntry, OutputMessage, ProofState, UpdateOperationData};
 use zkaleido::ZkVmEnv;
-
-// Host-side module (data fetching and proof input preparation)
-#[cfg(all(feature = "host", not(target_os = "zkvm")))]
-pub mod data_provider;
-
-#[cfg(all(feature = "host", not(target_os = "zkvm")))]
-pub use data_provider::{DataProviderError, EthEeAcctDataProvider, UpdateId, prepare_proof_input};
 
 // Borsh serialization implementation
 mod borsh_impl;
@@ -77,12 +71,11 @@ pub struct EthEeAcctProofOutput {
 /// let astate = EeAccountState::from_ssz_bytes(&astate_ssz)?;  // Decode SSZ
 /// ```
 pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
-    // 1. Read raw SSZ bytes from zkVM
+    // 1. Read raw SSZ bytes from zkVM and decode them
     // Each field is passed as raw bytes using write_buf/read_buf
-    // TODO: Replace with actual SSZ deserialization once available
-    let mut astate = decode_ee_account_state_ssz(&zkvm.read_buf())
+    let mut astate = EeAccountState::from_ssz_bytes(&zkvm.read_buf())
         .expect("Failed to decode EeAccountState from SSZ");
-    let operation = decode_update_operation_ssz(&zkvm.read_buf())
+    let operation = UpdateOperationData::from_ssz_bytes(&zkvm.read_buf())
         .expect("Failed to decode UpdateOperationData from SSZ");
 
     // Coinputs is Vec<Vec<u8>> so we read it with borsh
@@ -95,6 +88,7 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
         commit_segments_ssz.push(zkvm.read_buf());
     }
     // 3. Build SharedPrivateInput from components
+    // FIXME: it should be constructed from blocks passed in serialized form
     let commit_segments: Vec<CommitChainSegment> = commit_segments_ssz
         .iter()
         .map(|bytes| {
@@ -147,18 +141,6 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
 
     // Commit the complete output
     zkvm.commit_borsh(&proof_output);
-}
-
-/// Decode EeAccountState from SSZ bytes
-/// TODO: Replace with actual SSZ decode once EeAccountState has SSZ support
-fn decode_ee_account_state_ssz(_bytes: &[u8]) -> Result<EeAccountState, String> {
-    Err("SSZ decoding for EeAccountState not yet implemented".to_string())
-}
-
-/// Decode UpdateOperationData from SSZ bytes
-/// TODO: Replace with actual SSZ decode (UpdateOperationData already has SSZ Encode/Decode)
-fn decode_update_operation_ssz(_bytes: &[u8]) -> Result<UpdateOperationData, String> {
-    Err("SSZ decoding for UpdateOperationData not yet implemented".to_string())
 }
 
 /// Compute the ProofState from the EE account state
