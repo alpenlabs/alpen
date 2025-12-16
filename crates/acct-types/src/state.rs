@@ -2,13 +2,10 @@ use strata_identifiers::Hash;
 
 use crate::{
     AccountSerial, AccountTypeId, BitcoinAmount, RawAccountTypeId,
-    errors::{AcctError, AcctResult},
     ssz_generated::ssz::state::{
         AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState,
     },
 };
-
-type Root = Hash;
 
 impl EncodedAccountInnerState {
     pub fn raw_ty(&self) -> RawAccountTypeId {

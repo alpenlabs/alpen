@@ -84,7 +84,7 @@ impl SAStateSetOp {
     }
 
     pub fn state(&self) -> [u8; 32] {
-        self.state
+        self.state.into()
     }
 
     pub fn next_read_idx(&self) -> u64 {
@@ -137,7 +137,7 @@ impl SAStateUpdateOp {
     }
 
     pub fn inner_state(&self) -> [u8; 32] {
-        self.inner_state
+        self.inner_state.into()
     }
 
     pub fn next_read_idx(&self) -> u64 {
