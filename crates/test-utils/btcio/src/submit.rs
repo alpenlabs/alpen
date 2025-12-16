@@ -1,18 +1,15 @@
 use std::collections::HashMap;
 
-use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-    absolute::LockTime, transaction::Version,
-};
-use bitcoind_async_client::{Client, traits::Reader};
+use bitcoin::{OutPoint, Transaction, Txid};
+use bitcoind_async_client::Client;
 use corepc_node::Node;
 use strata_crypto::{EvenSecretKey, test_utils::schnorr::Musig2Tweak};
 
 use crate::{
     address::{derive_musig2_p2tr_address, derive_p2tr_address},
-    funding::create_funding_utxo,
+    funding::add_funding_input,
     signing::{sign_musig2_keypath, sign_taproot_transaction},
-    utils::block_on,
+    transaction::{broadcast_transaction, collect_prevouts, ensure_standard_transaction},
 };
 
 /// Helper to sign and broadcast a transaction using a specific private key.
@@ -36,50 +33,30 @@ pub async fn submit_transaction_with_key(
     bitcoind: &Node,
     client: &Client,
     secret_key: &EvenSecretKey,
-    mut tx: Transaction,
+    tx: &mut Transaction,
 ) -> anyhow::Result<Txid> {
-    if tx.output.is_empty() {
-        return Err(anyhow::anyhow!("Transaction must have at least one output"));
-    }
+    ensure_standard_transaction(tx)?;
 
     // Derive P2TR address from secret key
     let (p2tr_address, keypair, internal_key) = derive_p2tr_address(secret_key);
 
-    // Calculate funding amount
-    let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();
-    let estimated_fee = 1000u64; // Conservative estimate in sats
-    let funding_amount = Amount::from_sat(total_output_value + estimated_fee);
-
-    // Create and confirm funding UTXO
-    let (funding_txid, prev_vout, prev_output) =
-        create_funding_utxo(bitcoind, client, &p2tr_address, funding_amount).await?;
-
-    // Add input to the transaction
-    tx.input = vec![TxIn {
-        previous_output: OutPoint::new(funding_txid, prev_vout),
-        script_sig: ScriptBuf::default(),
-        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-        witness: Witness::new(),
-    }];
-
-    // Ensure transaction has proper version and locktime
-    tx.version = Version::TWO;
-    tx.lock_time = LockTime::ZERO;
+    let funding_index = add_funding_input(bitcoind, client, tx, &p2tr_address).await?;
+    let prevouts = collect_prevouts(client, &tx.input, &HashMap::new()).await?;
 
     // Sign the transaction
-    let signature = sign_taproot_transaction(&tx, &keypair, &internal_key, &prev_output, 0)?;
+    let signature = sign_taproot_transaction(
+        tx,
+        &keypair,
+        &internal_key,
+        &prevouts[funding_index],
+        funding_index,
+    )?;
 
     // Add the signature to the witness (Taproot key-spend signatures are 64 bytes, no sighash type
     // appended for Default)
-    tx.input[0].witness.push(signature.as_ref());
+    tx.input[funding_index].witness.push(signature.as_ref());
 
-    // Broadcast the transaction
-    let txid_wrapper = bitcoind.client.send_raw_transaction(&tx)?;
-    let core_txid = txid_wrapper.0;
-    let txid_str = core_txid.to_string();
-    let txid: Txid = txid_str.parse()?;
-
-    Ok(txid)
+    broadcast_transaction(bitcoind, tx)
 }
 
 /// Helper to sign and broadcast a transaction using multiple secret keys with MuSig2 aggregation.
@@ -104,85 +81,16 @@ pub async fn submit_transaction_with_keys(
     tx: &mut Transaction,
     input_tweaks: Option<&HashMap<OutPoint, Musig2Tweak>>,
 ) -> anyhow::Result<Txid> {
-    if tx.output.is_empty() {
-        return Err(anyhow::anyhow!("Transaction must have at least one output"));
-    }
-
     if secret_keys.is_empty() {
         return Err(anyhow::anyhow!("At least one secret key is required"));
     }
+    ensure_standard_transaction(tx)?;
 
     // Derive MuSig2 aggregated P2TR address
     let (p2tr_address, _aggregated_internal_key) = derive_musig2_p2tr_address(secret_keys)?;
 
-    // Calculate funding amount
-    let total_output_value: u64 = tx.output.iter().map(|out| out.value.to_sat()).sum();
-    let estimated_fee = 1000u64; // Conservative estimate in sats
-    let funding_amount = Amount::from_sat(total_output_value + estimated_fee);
-
-    // Create and confirm funding UTXO
-    let (funding_txid, prev_vout, funding_prev_output) =
-        create_funding_utxo(bitcoind, client, &p2tr_address, funding_amount).await?;
-
-    // Replace a null outpoint with the funding input; if none exist, append at the end to preserve
-    // the ordering of existing inputs.
-    let funding_input = TxIn {
-        previous_output: OutPoint::new(funding_txid, prev_vout),
-        script_sig: ScriptBuf::default(),
-        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-        witness: Witness::new(),
-    };
-
-    if let Some((idx, _)) = tx
-        .input
-        .iter()
-        .enumerate()
-        .find(|(_, inp)| inp.previous_output == OutPoint::null())
-    {
-        tx.input[idx] = funding_input;
-    } else {
-        tx.input.push(funding_input);
-    }
-
-    // Bail out if any null outpoints remain; we cannot sign or broadcast them.
-    if let Some(idx) = tx
-        .input
-        .iter()
-        .position(|inp| inp.previous_output == OutPoint::null())
-    {
-        return Err(anyhow::anyhow!(
-            "Cannot submit transaction: input {} still has a null outpoint",
-            idx
-        ));
-    }
-
-    // Ensure transaction has proper version and locktime
-    tx.version = Version::TWO;
-    tx.lock_time = LockTime::ZERO;
-
-    // Collect prevouts in input order so signatures can be produced without reordering txins.
-    let mut prevouts: Vec<TxOut> = Vec::with_capacity(tx.input.len());
-    for txin in &tx.input {
-        if txin.previous_output.txid == funding_txid && txin.previous_output.vout == prev_vout {
-            prevouts.push(funding_prev_output.clone());
-        } else {
-            // Fetch the prevout from the node to sign the existing input.
-            let raw_tx = client
-                .get_raw_transaction_verbosity_zero(&txin.previous_output.txid)
-                .await?
-                .transaction()
-                .map_err(|e| anyhow::anyhow!("Failed to decode prev transaction: {}", e))?;
-
-            let prev_out = raw_tx
-                .output
-                .get(txin.previous_output.vout as usize)
-                .cloned()
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Prevout not found for {:?}", txin.previous_output)
-                })?;
-            prevouts.push(prev_out);
-        }
-    }
+    let _funding_index = add_funding_input(bitcoind, client, tx, &p2tr_address).await?;
+    let prevouts = collect_prevouts(client, &tx.input, &HashMap::new()).await?;
 
     // Sign each input in place using the aggregated MuSig2 key.
     for idx in 0..tx.input.len() {
@@ -199,34 +107,14 @@ pub async fn submit_transaction_with_keys(
         tx.input[idx].witness.push(sig.as_ref());
     }
 
-    // Broadcast the transaction
-    let txid_wrapper = bitcoind.client.send_raw_transaction(tx)?;
-    let core_txid = txid_wrapper.0;
-    let txid_str = core_txid.to_string();
-    let txid: Txid = txid_str.parse()?;
-
-    Ok(txid)
-}
-
-pub fn submit_transaction_with_keys_blocking(
-    bitcoind: &Node,
-    client: &Client,
-    secret_keys: &[EvenSecretKey],
-    tx: &mut Transaction,
-    input_tweaks: Option<&HashMap<OutPoint, Musig2Tweak>>,
-) -> anyhow::Result<Txid> {
-    block_on(submit_transaction_with_keys(
-        bitcoind,
-        client,
-        secret_keys,
-        tx,
-        input_tweaks,
-    ))
+    broadcast_transaction(bitcoind, tx)
 }
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{BlockHash, TxOut, secp256k1::Secp256k1};
+    use bitcoin::{
+        Amount, BlockHash, TxOut, absolute::LockTime, secp256k1::Secp256k1, transaction::Version,
+    };
     use bitcoind_async_client::traits::{Reader, Wallet};
 
     use super::*;
@@ -248,7 +136,7 @@ mod tests {
         // Create the transaction with desired outputs
         let output_amount = Amount::from_sat(50_000);
         let recipient_address = client.get_new_address().await.unwrap();
-        let tx = Transaction {
+        let mut tx = Transaction {
             version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: vec![], // Will be populated by submit_transaction_with_key
@@ -259,7 +147,7 @@ mod tests {
         };
 
         // Submit the transaction using the new function
-        let txid = submit_transaction_with_key(&node, &client, &even_secret_key, tx)
+        let txid = submit_transaction_with_key(&node, &client, &even_secret_key, &mut tx)
             .await
             .unwrap();
         println!("Transaction submitted with txid: {}", txid);

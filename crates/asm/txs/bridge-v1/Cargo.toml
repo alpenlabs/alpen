@@ -9,7 +9,6 @@ workspace = true
 [dependencies]
 arbitrary.workspace = true
 bitcoin.workspace = true
-secp256k1.workspace = true
 thiserror.workspace = true
 
 strata-asm-common.workspace = true

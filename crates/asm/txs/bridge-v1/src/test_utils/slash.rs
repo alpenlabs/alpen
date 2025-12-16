@@ -1,10 +1,7 @@
-use bitcoin::{Amount, OutPoint, Transaction, constants::COINBASE_MATURITY};
+use bitcoin::{Amount, OutPoint, Transaction};
 use strata_crypto::EvenSecretKey;
 use strata_l1_txfmt::ParseConfig;
-use strata_test_utils_btcio::{
-    address::derive_musig2_p2tr_address, get_bitcoind_and_client, mining::mine_blocks_blocking,
-    submit::submit_transaction_with_keys_blocking,
-};
+use strata_test_utils_btcio::{BtcioTestHarness, address::derive_musig2_p2tr_address};
 
 use crate::{
     slash::{SlashInfo, SlashTxHeaderAux},
@@ -40,9 +37,7 @@ pub fn create_connected_stake_and_slash_txs(
     header_aux: &SlashTxHeaderAux,
     operator_keys: &[EvenSecretKey],
 ) -> (Transaction, Transaction) {
-    let (bitcoind, client) = get_bitcoind_and_client();
-    let _ =
-        mine_blocks_blocking(&bitcoind, &client, (COINBASE_MATURITY + 1) as usize, None).unwrap();
+    let harness = BtcioTestHarness::new_with_coinbase_maturity().unwrap();
 
     // 1. Create a "stake transaction" to act as the funding source. This simulates the N-of-N
     //    multisig UTXO that the slash transaction spends.
@@ -51,27 +46,17 @@ pub fn create_connected_stake_and_slash_txs(
     stake_tx.output[0].script_pubkey = address.script_pubkey();
     stake_tx.output[0].value = Amount::from_sat(1_000);
 
-    let stake_txid = submit_transaction_with_keys_blocking(
-        &bitcoind,
-        &client,
-        operator_keys,
-        &mut stake_tx,
-        None,
-    )
-    .unwrap();
+    let stake_txid = harness
+        .submit_transaction_with_keys_blocking(operator_keys, &mut stake_tx, None)
+        .unwrap();
 
     // 2. Create the base slash transaction using the provided metadata.
     let slash_info = SlashInfo::new(header_aux.clone(), OutPoint::new(stake_txid, 0).into());
     let mut slash_tx = create_test_slash_tx(&slash_info);
 
-    let _ = submit_transaction_with_keys_blocking(
-        &bitcoind,
-        &client,
-        operator_keys,
-        &mut slash_tx,
-        None,
-    )
-    .unwrap();
+    let _ = harness
+        .submit_transaction_with_keys_blocking(operator_keys, &mut slash_tx, None)
+        .unwrap();
 
     (stake_tx, slash_tx)
 }
