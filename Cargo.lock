@@ -14944,9 +14944,12 @@ name = "strata-proofimpl-eth-ee-acct"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "proptest",
  "reth-chainspec",
  "rsp-primitives",
+ "ssz",
  "strata-acct-types",
+ "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
  "strata-evm-ee",
