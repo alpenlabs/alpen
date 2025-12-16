@@ -40,8 +40,8 @@ pub use ssz_generated::ssz::{
     },
     log::{OLLog, OLLogRef},
     transaction::{
-        GamTxPayload, GamTxPayloadRef, GenericAccountMessage, OLTransaction, OLTransactionRef,
-        SnarkAccountUpdate, SnarkAccountUpdateTxPayload, SnarkAccountUpdateTxPayloadRef,
-        TransactionAttachment, TransactionAttachmentRef, TransactionPayload, TransactionPayloadRef,
+        GamTxPayload, GamTxPayloadRef, OLTransaction, OLTransactionRef,
+        SnarkAccountUpdateTxPayload, SnarkAccountUpdateTxPayloadRef, TransactionAttachment,
+        TransactionAttachmentRef, TransactionPayload, TransactionPayloadRef,
     },
 };

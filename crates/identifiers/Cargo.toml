@@ -7,7 +7,13 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types = { workspace = true, features = ["serde"] }
 strata-codec.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
 
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
@@ -18,11 +24,6 @@ hex.workspace = true
 int-enum.workspace = true
 serde.workspace = true
 sha2.workspace = true
-ssz.workspace = true
-ssz_derive.workspace = true
-ssz_types = { workspace = true, features = ["serde"] }
-tree_hash.workspace = true
-tree_hash_derive.workspace = true
 zeroize.workspace = true
 
 [build-dependencies]

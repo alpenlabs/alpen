@@ -8,6 +8,7 @@ edition = "2024"
 [dependencies]
 ssz.workspace = true
 ssz_derive.workspace = true
+ssz_primitives.workspace = true
 ssz_types.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true

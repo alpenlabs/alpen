@@ -1,0 +1,33 @@
+import strata_acct_types
+import strata_ee_chain_types
+
+MAX_PENDING_INPUTS = 1 << 16
+MAX_PENDING_FINCLS = 1 << 16
+
+### Pending input we expect to see in a block
+class PendingInputEntry(Union):
+    ### Pending deposit
+    #~# external_kind: container
+    Deposit: strata_ee_chain_types.SubjectDepositData
+
+### A pending forced inclusion that's been accepted by the EE account but not included in a block yet
+class PendingFinclEntry(Container):
+    ### Epoch number when forced inclusion was requested
+    epoch: uint32
+
+    ### Raw transaction hash
+    raw_tx_hash: Bytes32
+
+### EE account internal state
+class EeAccountState(Container):
+    ### ID of the last execution block that we've processed
+    last_exec_blkid: Bytes32
+
+    ### Tracked balance bridged into execution env, according to processed messages
+    tracked_balance: strata_acct_types.BitcoinAmount
+
+    ### Pending inputs that haven't been accepted into a block (must be processed in order)
+    pending_inputs: List[PendingInputEntry, MAX_PENDING_INPUTS]
+
+    ### Pending forced inclusions that haven't been included in a block (separate from pending inputs as they're not an input but a requirement to check about blocks)
+    pending_fincls: List[PendingFinclEntry, MAX_PENDING_FINCLS]
