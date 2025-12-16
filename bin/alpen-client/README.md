@@ -1,4 +1,4 @@
-# Alpen EE Client Architecture
+# Alpen EE Client
 
 This document provides a high-level overview of the Alpen Execution Environment (EE) client, a Reth-based node that serves as either a sequencer or fullnode for an EVM-based execution layer on Strata Orchestration Layer (OL).
 
