@@ -3,38 +3,28 @@ use strata_codec::decode_buf_exact;
 
 use crate::{
     commit::{CommitInfo, aux::CommitTxHeaderAux},
-    errors::{CommitParseError, Mismatch},
+    constants::BridgeTxType,
+    errors::TxStructureError,
 };
-
-/// Expected number of inputs in a commit transaction.
-const EXPECTED_COMMIT_TX_INPUT_COUNT: usize = 1;
 
 /// Parses a commit transaction into [`CommitInfo`], decoding the SPS-50 auxiliary data as
 /// [`CommitTxHeaderAux`] (via [`strata_codec::Codec`]) and validating basic structure.
 ///
 /// # Errors
 ///
-/// Returns [`CommitParseError`] if the transaction does not have exactly one input, the auxiliary
-/// data fails to decode into [`CommitTxHeaderAux`], or the required N/N output at index 1 is
-/// missing.
-pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, CommitParseError> {
+/// Returns [`TxStructureError`] if the auxiliary data fails to decode into [`CommitTxHeaderAux`],
+/// or the required N/N output at index 1 is missing.
+pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, TxStructureError> {
     // Parse auxiliary data using CommitTxHeaderAux
-    let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
-
-    // Validate that the transaction has exactly one input
-    if tx.tx().input.len() != EXPECTED_COMMIT_TX_INPUT_COUNT {
-        return Err(CommitParseError::InvalidInputCount(Mismatch {
-            expected: EXPECTED_COMMIT_TX_INPUT_COUNT,
-            got: tx.tx().input.len(),
-        }));
-    }
+    let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())
+        .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Commit, e))?;
 
     // Extract the N/N output script from the second output (index 1)
     let second_output_script = tx
         .tx()
         .output
         .get(1)
-        .ok_or(CommitParseError::MissingNnOutput)?
+        .ok_or_else(|| TxStructureError::missing_output(BridgeTxType::Commit, 1, "N/N lock output"))?
         .script_pubkey
         .clone();
 
@@ -95,7 +85,11 @@ mod tests {
         let tx_input = parse_sps50_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::Commit);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
 
         // Mutate the OP_RETURN output to have longer aux len
         let longer_aux = vec![0u8; COMMIT_TX_AUX_DATA_LEN + 1];
@@ -103,6 +97,10 @@ mod tests {
 
         let tx_input = parse_sps50_tx(&tx);
         let err = parse_commit_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, CommitParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::Commit);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
     }
 }

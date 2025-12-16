@@ -25,14 +25,14 @@ pub fn create_connected_stake_and_unstake_txs(
     header_aux: &UnstakeTxHeaderAux,
     operator_keys: &[EvenSecretKey],
 ) -> (Transaction, Transaction) {
-    let harness = BtcioTestHarness::new_with_coinbase_maturity()
-        .expect("regtest harness should start");
+    let harness =
+        BtcioTestHarness::new_with_coinbase_maturity().expect("regtest harness should start");
 
     // Deterministic preimage ensures stake connector hash stays stable for tests.
     let preimage = [1u8; 32];
     let stake_hash = sha256::Hash::hash(&preimage).to_byte_array();
-    let (_, nn_key) = derive_musig2_p2tr_address(operator_keys)
-        .expect("operator keys must aggregate");
+    let (_, nn_key) =
+        derive_musig2_p2tr_address(operator_keys).expect("operator keys must aggregate");
     let (address, spend_info) = create_stake_connector_taproot_addr(stake_hash, nn_key);
 
     // 1. Create a stake transaction.

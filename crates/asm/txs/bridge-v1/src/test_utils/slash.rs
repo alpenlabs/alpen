@@ -40,14 +40,14 @@ pub fn create_connected_stake_and_slash_txs(
     header_aux: &SlashTxHeaderAux,
     operator_keys: &[EvenSecretKey],
 ) -> (Transaction, Transaction) {
-    let harness = BtcioTestHarness::new_with_coinbase_maturity()
-        .expect("regtest harness should start");
+    let harness =
+        BtcioTestHarness::new_with_coinbase_maturity().expect("regtest harness should start");
 
     // 1. Create a "stake transaction" to act as the funding source. This simulates the N-of-N
     //    multisig UTXO that the slash transaction spends.
     let mut stake_tx = create_dummy_tx(0, 1);
-    let (address, _) = derive_musig2_p2tr_address(operator_keys)
-        .expect("operator keys must aggregate");
+    let (address, _) =
+        derive_musig2_p2tr_address(operator_keys).expect("operator keys must aggregate");
     stake_tx.output[0].script_pubkey = address.script_pubkey();
     stake_tx.output[0].value = Amount::from_sat(1_000);
 

@@ -2,8 +2,9 @@ use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 
 use crate::{
+    constants::BridgeTxType,
     deposit::{DEPOSIT_OUTPUT_INDEX, DepositInfo, aux::DepositTxHeaderAux},
-    errors::DepositTxParseError,
+    errors::TxStructureError,
 };
 
 /// Parses deposit transaction to extract [`DepositInfo`].
@@ -15,18 +16,25 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns [`DepositTxParseError`] if the auxiliary data cannot be decoded or if the expected
+/// Returns [`TxStructureError`] if the auxiliary data cannot be decoded or if the expected
 /// deposit output at index 1 is missing.
-pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
+pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, TxStructureError> {
     // Parse auxiliary data
-    let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
+    let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())
+        .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Deposit, e))?;
 
     // Extract the deposit output (second output at index 1)
     let deposit_output = tx_input
         .tx()
         .output
         .get(DEPOSIT_OUTPUT_INDEX)
-        .ok_or(DepositTxParseError::MissingDepositOutput)?
+        .ok_or_else(|| {
+            TxStructureError::missing_output(
+                BridgeTxType::Deposit,
+                DEPOSIT_OUTPUT_INDEX,
+                "deposit output",
+            )
+        })?
         .clone()
         .into();
 

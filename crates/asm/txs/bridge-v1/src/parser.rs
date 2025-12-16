@@ -27,7 +27,7 @@ pub enum ParsedTx {
 /// Parses a transaction into a structured format based on its type.
 ///
 /// This function examines the transaction type from the tag and extracts relevant
-/// information for either deposit or withdrawal fulfillment transactions.
+/// information for bridge transactions that are directly processed by the subprotocol.
 ///
 /// # Arguments
 ///
@@ -35,15 +35,18 @@ pub enum ParsedTx {
 ///
 /// # Returns
 ///
-/// * `Ok(ParsedTx::Deposit)` - For deposit transactions with extracted deposit information
-/// * `Ok(ParsedTx::WithdrawalFulfillment)` - For withdrawal transactions with extracted withdrawal
-///   information
-/// * `Err(BridgeSubprotocolError::UnsupportedTxType)` - For unsupported transaction types
+/// Returns a [`ParsedTx`] variant containing the extracted transaction information:
+/// * `Ok(ParsedTx::Deposit)` - For deposit transactions
+/// * `Ok(ParsedTx::WithdrawalFulfillment)` - For withdrawal fulfillment transactions
+/// * `Ok(ParsedTx::Slash)` - For slash transactions
+/// * `Ok(ParsedTx::Unstake)` - For unstake transactions
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - The transaction type is not supported by the bridge subprotocol
+/// Returns [`BridgeTxParseError`] if:
+/// - The transaction type is not directly processed (e.g., `DepositRequest` - fetched as auxiliary
+///   data)
+/// - The transaction type is not supported by the bridge subprotocol (e.g., `Commit`)
 /// - The transaction data extraction fails (malformed transaction structure)
 pub fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx, BridgeTxParseError> {
     match tx.tag().tx_type().try_into() {
@@ -63,7 +66,14 @@ pub fn parse_tx<'t>(tx: &'t TxInputRef<'t>) -> Result<ParsedTx, BridgeTxParseErr
             let info = parse_unstake_tx(tx)?;
             Ok(ParsedTx::Unstake(info))
         }
-        Ok(BridgeTxType::DepositRequest | BridgeTxType::Commit) => {
+        Ok(BridgeTxType::DepositRequest) => {
+            // DepositRequest transactions are not parsed at this stage.
+            // They are requested as auxiliary input during preprocessing when we encounter
+            // a BridgeTxType::Deposit transaction, then parsed on-demand using parse_drt().
+            Err(BridgeTxParseError::NotDirectlyProcessed(tx.tag().tx_type()))
+        }
+        Ok(BridgeTxType::Commit) => {
+            // Commit transactions are not currently supported by the bridge subprotocol.
             Err(BridgeTxParseError::UnsupportedTxType(tx.tag().tx_type()))
         }
         Err(unsupported_type) => Err(BridgeTxParseError::UnsupportedTxType(unsupported_type)),

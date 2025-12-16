@@ -4,23 +4,43 @@ use strata_codec::CodecError;
 use strata_l1_txfmt::{TxFmtError, TxType};
 use thiserror::Error;
 
+use crate::constants::BridgeTxType;
+
 /// Errors that can occur when parsing bridge transaction
 #[derive(Debug, Error)]
 pub enum BridgeTxParseError {
-    #[error("failed to parse deposit tx: {0}")]
-    DepositTxParse(#[from] DepositTxParseError),
+    #[error("invalid bridge tx structure: {0}")]
+    InvalidStructure(#[from] TxStructureError),
 
-    #[error("failed to parse withdrawal fulfillment tx: {0}")]
-    WithdrawalTxParse(#[from] WithdrawalParseError),
-
-    #[error("failed to parse slash tx: {0}")]
-    SlashTxParse(#[from] SlashTxParseError),
-
-    #[error("failed to parse unstake tx: {0}")]
-    UnstakeTxParse(#[from] UnstakeTxParseError),
+    #[error("tx type {0} is not directly processed (fetched as auxiliary data)")]
+    NotDirectlyProcessed(TxType),
 
     #[error("unsupported tx type {0}")]
     UnsupportedTxType(TxType),
+}
+
+/// Specific reasons for a structural error when parsing bridge transactions.
+#[derive(Debug, Error)]
+pub enum TxStructureErrorKind {
+    /// Missing input at the expected index.
+    #[error("missing input at index {index}")]
+    MissingInput { index: usize },
+
+    /// Missing output at the expected index.
+    #[error("missing output at index {index}")]
+    MissingOutput { index: usize },
+
+    /// Transaction format is invalid (failed SPS-50 parsing).
+    #[error("invalid transaction format: {0}")]
+    InvalidTxFormat(#[from] TxFmtError),
+
+    /// Auxiliary data failed to decode.
+    #[error("invalid auxiliary data: {0}")]
+    InvalidAuxiliaryData(#[from] CodecError),
+
+    /// Witness data failed validation.
+    #[error("invalid witness: {0}")]
+    InvalidWitness(#[from] WitnessError),
 }
 
 /// A generic "expected vs got" error.
@@ -36,105 +56,107 @@ where
     pub got: T,
 }
 
-/// Errors that can occur when parsing deposit request transactions (DRT).
+/// Common structural parsing errors shared by bridge transactions.
 #[derive(Debug, Error)]
-pub enum DepositRequestParseError {
-    /// The auxiliary data in the deposit request transaction tag is invalid.
-    #[error("Invalid auxiliary data: {0}")]
-    InvalidAuxiliaryData(#[from] CodecError),
-
-    /// Transaction is missing the required P2TR deposit request output at index 1.
-    #[error("Missing P2TR deposit request output at index 1")]
-    MissingDRTOutput,
-
-    /// OP_RETURN output missing or not at index 0 as required by spec.
-    #[error("OP_RETURN output must be at index 0")]
-    NoOpReturnOutput,
-
-    /// Failed to parse the SPS-50 transaction format.
-    #[error("Failed to parse SPS-50 transaction: {0}")]
-    Sps50ParseError(String),
+#[error("{tx_type} tx structure error: {kind}{}", context_suffix(.context))]
+pub struct TxStructureError {
+    tx_type: BridgeTxType,
+    #[source]
+    kind: TxStructureErrorKind,
+    context: Option<&'static str>,
 }
 
-/// Errors that can occur when parsing deposit transactions.
-///
-/// When these parsing errors occur, they are logged and the transaction is skipped.
-/// No further processing is performed on transactions that fail to parse.
+fn context_suffix(context: &Option<&'static str>) -> String {
+    context
+        .map(|c| format!(" (context: {})", c))
+        .unwrap_or_default()
+}
+
+impl TxStructureError {
+    /// Create a new error for the provided transaction type and reason, with optional context.
+    fn new_with_context(
+        tx_type: BridgeTxType,
+        kind: TxStructureErrorKind,
+        context: Option<&'static str>,
+    ) -> Self {
+        Self {
+            tx_type,
+            kind,
+            context,
+        }
+    }
+
+    /// Transaction type associated with the error.
+    pub fn tx_type(&self) -> BridgeTxType {
+        self.tx_type
+    }
+
+    /// Reason describing the structural failure.
+    pub fn kind(&self) -> &TxStructureErrorKind {
+        &self.kind
+    }
+
+    /// Additional context for the error, if any.
+    pub fn context(&self) -> Option<&'static str> {
+        self.context
+    }
+
+    /// Missing input at the expected index.
+    pub fn missing_input(tx_type: BridgeTxType, index: usize, context: &'static str) -> Self {
+        Self::new_with_context(
+            tx_type,
+            TxStructureErrorKind::MissingInput { index },
+            Some(context),
+        )
+    }
+
+    /// Missing output at the expected index.
+    pub fn missing_output(tx_type: BridgeTxType, index: usize, context: &'static str) -> Self {
+        Self::new_with_context(
+            tx_type,
+            TxStructureErrorKind::MissingOutput { index },
+            Some(context),
+        )
+    }
+
+    /// Transaction format is invalid (failed SPS-50 parsing).
+    pub fn invalid_tx_format(tx_type: BridgeTxType, err: TxFmtError) -> Self {
+        Self::new_with_context(tx_type, TxStructureErrorKind::InvalidTxFormat(err), None)
+    }
+
+    /// Auxiliary data failed to decode.
+    pub fn invalid_auxiliary_data(tx_type: BridgeTxType, err: CodecError) -> Self {
+        Self::new_with_context(
+            tx_type,
+            TxStructureErrorKind::InvalidAuxiliaryData(err),
+            None,
+        )
+    }
+
+    /// Witness data failed validation.
+    pub fn invalid_witness(
+        tx_type: BridgeTxType,
+        err: WitnessError,
+        context: &'static str,
+    ) -> Self {
+        Self::new_with_context(
+            tx_type,
+            TxStructureErrorKind::InvalidWitness(err),
+            Some(context),
+        )
+    }
+}
+
+/// Further details for invalid witness errors.
 #[derive(Debug, Error)]
-pub enum DepositTxParseError {
-    /// The auxiliary data in the deposit transaction tag is invalid.
-    #[error("Invalid auxiliary data: {0}")]
-    InvalidAuxiliaryData(#[from] CodecError),
+pub enum WitnessError {
+    /// Witness length did not match expected layout.
+    #[error("invalid witness length: expected {expected}, got {actual}")]
+    InvalidLength { expected: usize, actual: usize },
 
-    /// Transaction is missing the required P2TR deposit output at index 1.
-    #[error("Missing P2TR deposit output")]
-    MissingDepositOutput,
-}
-
-/// Errors that can occur during DRT (Deposit Request Transaction) spending signature validation.
-#[derive(Debug, Error, Clone)]
-pub enum DrtSignatureError {
-    /// No witness data found in the transaction input.
-    #[error("No witness data found in transaction input")]
-    MissingWitness,
-
-    /// Failed to parse the taproot signature from witness data.
-    #[error("Failed to parse taproot signature: {0}")]
-    InvalidSignatureFormat(String),
-
-    /// Schnorr signature verification failed against the expected key.
-    #[error("Schnorr signature verification failed: {0}")]
-    SchnorrVerificationFailed(String),
-}
-
-/// Errors that can occur during deposit output lock validation.
-#[derive(Debug, Error, Clone)]
-pub enum DepositOutputError {
-    /// The operator public key is malformed or invalid.
-    #[error("Invalid operator public key")]
-    InvalidOperatorKey,
-
-    /// The deposit output is not locked to the expected aggregated operator key.
-    #[error("Deposit output is not locked to the aggregated operator key")]
-    WrongOutputLock,
-
-    /// Missing deposit output at the expected index.
-    #[error("Missing deposit output at index {0}")]
-    MissingDepositOutput(usize),
-}
-
-/// Errors that can occur when parsing withdrawal fulfillment transactions.
-///
-/// When these parsing errors occur, they are logged and the transaction is skipped.
-/// No further processing is performed on transactions that fail to parse.
-#[derive(Debug, Error)]
-pub enum WithdrawalParseError {
-    /// The auxiliary data in the withdrawal fulfillment transaction is invalid.
-    #[error("Invalid auxiliary data: {0}")]
-    InvalidAuxiliaryData(#[from] CodecError),
-
-    /// Transaction is missing output that fulfilled user withdrawal request.
-    #[error("Transaction is missing output that fulfilled user withdrawal request")]
-    MissingUserFulfillmentOutput,
-}
-
-/// Errors that can occur when parsing commit transactions.
-///
-/// When these parsing errors occur, they are logged and the transaction is skipped.
-/// No further processing is performed on transactions that fail to parse.
-#[derive(Debug, Error)]
-pub enum CommitParseError {
-    /// The auxiliary data in the commit transaction is invalid.
-    #[error("Invalid auxiliary data: {0}")]
-    InvalidAuxiliaryData(#[from] CodecError),
-
-    /// The commit transaction does not have the expected number of inputs.
-    #[error("Invalid input count: {0}")]
-    InvalidInputCount(Mismatch<usize>),
-
-    /// Missing N/N output at index 1.
-    #[error("Missing N/N output at index 1")]
-    MissingNnOutput,
+    /// Witness script bytes failed validation.
+    #[error("invalid witness script structure")]
+    InvalidScriptStructure,
 }
 
 /// Errors that can occur when building transaction tag data for any bridge v1 transaction type.
@@ -150,42 +172,4 @@ pub enum TagDataError {
     /// Failed to create tag data.
     #[error("Failed to create tag data: {0}")]
     TagDataCreation(#[from] TxFmtError),
-}
-
-/// Errors that can occur when parsing slash transaction.
-#[derive(Debug, Error)]
-pub enum SlashTxParseError {
-    /// The auxiliary data in the slash transaction is invalid
-    #[error("Invalid auxiliary data")]
-    InvalidAuxiliaryData(#[from] CodecError),
-
-    #[error("Missing input at index {0}")]
-    MissingInput(usize),
-}
-
-/// Errors that can occur when parsing unstake transaction.
-#[derive(Debug, Error)]
-pub enum UnstakeTxParseError {
-    /// The auxiliary data in the unstake transaction is invalid
-    #[error("Invalid auxiliary data")]
-    InvalidAuxiliaryData(#[from] CodecError),
-
-    #[error("Missing input at index {0}")]
-    MissingInput(usize),
-
-    /// Stake connector witness is missing the script leaf.
-    #[error("Missing stake connector script in witness")]
-    MissingStakeScript,
-
-    /// Could not parse the N/N pubkey from the stake connector script.
-    #[error("Invalid N/N pubkey in stake connector script")]
-    InvalidNnPubkey,
-
-    /// Witness length did not match the expected layout for a stake-connector spend.
-    #[error("Invalid stake connector witness length: expected {expected}, got {actual}")]
-    InvalidStakeWitnessLen { expected: usize, actual: usize },
-
-    /// Stake connector script does not match expected pattern.
-    #[error("Invalid stake connector script structure")]
-    InvalidStakeScript,
 }

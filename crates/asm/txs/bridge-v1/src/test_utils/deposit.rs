@@ -14,7 +14,8 @@ use crate::{
     test_utils::{TEST_MAGIC_BYTES, create_dummy_tx, create_test_deposit_request_tx},
 };
 
-/// Creates a deposit request transaction and its matching deposit transaction, wiring them together.
+/// Creates a deposit request transaction and its matching deposit transaction, wiring them
+/// together.
 ///
 /// Returns the tuple `(drt, dt)` so test cases can inspect both the funding request and the final
 /// deposit submission.
@@ -46,11 +47,8 @@ pub fn create_connected_drt_and_dt(
 
     // Keep the Musig2 tweaks we need to sign the deposit transaction after the DRT confirms.
     let mut input_tweaks = HashMap::new();
-    let spend_info = build_deposit_request_spend_info(
-        drt_header_aux.recovery_pk(),
-        internal_key,
-        RECOVER_DELAY,
-    );
+    let spend_info =
+        build_deposit_request_spend_info(drt_header_aux.recovery_pk(), internal_key, RECOVER_DELAY);
     if let Some(root) = spend_info.merkle_root() {
         input_tweaks.insert(
             drt_inpoint,

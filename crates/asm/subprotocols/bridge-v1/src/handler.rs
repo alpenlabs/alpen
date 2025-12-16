@@ -131,7 +131,12 @@ pub(crate) fn preprocess_parsed_tx(
     collector: &mut AuxRequestCollector,
 ) {
     match parsed_tx {
-        ParsedTx::Deposit(_) => {}
+        ParsedTx::Deposit(info) => {
+            // Request the Deposit Request Transaction (DRT) as auxiliary data.
+            // We need this to verify the deposit chain and validate the DRT output locking script
+            // during the main processing phase.
+            collector.request_bitcoin_tx(info.first_inpoint().txid);
+        }
         ParsedTx::WithdrawalFulfillment(_) => {}
         ParsedTx::Slash(info) => {
             // Requests the Bitcoin transaction spent by the stake connector (second input). We need

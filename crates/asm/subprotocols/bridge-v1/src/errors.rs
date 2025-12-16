@@ -2,9 +2,7 @@ use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
 use strata_asm_common::AuxError;
-use strata_asm_txs_bridge_v1::errors::{
-    BridgeTxParseError, DepositOutputError, DrtSignatureError, Mismatch, WithdrawalParseError,
-};
+use strata_asm_txs_bridge_v1::errors::{BridgeTxParseError, Mismatch};
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::BitcoinAmount;
 use thiserror::Error;
@@ -16,9 +14,6 @@ pub enum BridgeSubprotocolError {
 
     #[error("failed to process deposit tx")]
     DepositTxProcess(#[from] DepositValidationError),
-
-    #[error("failed to parse withdrawal fulfillment tx")]
-    WithdrawalTxParse(#[from] WithdrawalParseError),
 
     #[error("failed to parse withdrawal fulfillment tx")]
     WithdrawalTxProcess(#[from] WithdrawalValidationError),
@@ -39,10 +34,6 @@ pub enum BridgeSubprotocolError {
 /// transaction parsing and cryptographic validation.
 #[derive(Debug, Error)]
 pub enum DepositValidationError {
-    /// DRT spending signature validation failed.
-    #[error("DRT spending signature validation failed")]
-    DrtSignature(#[from] DrtSignatureError),
-
     /// The deposit output is not locked to the expected aggregated operator key.
     #[error("Deposit output is not locked to the aggregated operator key")]
     WrongOutputLock,
@@ -68,6 +59,22 @@ pub enum DepositValidationError {
     /// The DRT output script does not match the expected locking script.
     #[error("DRT output script mismatch")]
     DrtOutputScriptMismatch(Mismatch<ScriptBuf>),
+}
+
+/// Errors that can occur during deposit output lock validation.
+#[derive(Debug, Error, Clone)]
+pub enum DepositOutputError {
+    /// The operator public key is malformed or invalid.
+    #[error("Invalid operator public key")]
+    InvalidOperatorKey,
+
+    /// The deposit output is not locked to the expected aggregated operator key.
+    #[error("Deposit output is not locked to the aggregated operator key")]
+    WrongOutputLock,
+
+    /// Missing deposit output at the expected index.
+    #[error("Missing deposit output at index {0}")]
+    MissingDepositOutput(usize),
 }
 
 /// Errors that can occur when validating withdrawal fulfillment transactions.
