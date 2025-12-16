@@ -40,9 +40,14 @@ pub fn build_connected_stake_and_unstake_txs(
     stake_tx.output[0].script_pubkey = address.script_pubkey();
     stake_tx.output[0].value = Amount::from_sat(1_000);
 
-    let stake_txid =
-        submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut stake_tx)
-            .unwrap();
+    let stake_txid = submit_transaction_with_keys_blocking(
+        &bitcoind,
+        &client,
+        operator_keys,
+        &mut stake_tx,
+        None,
+    )
+    .unwrap();
 
     // 2. Create the base unstake transaction using the provided metadata.
     let unstake_info = UnstakeInfo::new(header_aux.clone(), nn_key);

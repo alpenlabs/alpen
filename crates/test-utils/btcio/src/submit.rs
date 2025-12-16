@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
     absolute::LockTime, transaction::Version,
 };
 use bitcoind_async_client::{Client, traits::Reader};
 use corepc_node::Node;
-use strata_crypto::EvenSecretKey;
+use strata_crypto::{EvenSecretKey, test_utils::schnorr::Musig2Tweak};
 
 use crate::{
     address::{derive_musig2_p2tr_address, derive_p2tr_address},
@@ -100,6 +102,7 @@ pub async fn submit_transaction_with_keys(
     client: &Client,
     secret_keys: &[EvenSecretKey],
     tx: &mut Transaction,
+    input_tweaks: Option<&HashMap<OutPoint, Musig2Tweak>>,
 ) -> anyhow::Result<Txid> {
     if tx.output.is_empty() {
         return Err(anyhow::anyhow!("Transaction must have at least one output"));
@@ -188,7 +191,11 @@ pub async fn submit_transaction_with_keys(
             continue;
         }
 
-        let sig = sign_musig2_keypath(tx, secret_keys, &prevouts, idx)?;
+        let tweak = input_tweaks
+            .and_then(|map| map.get(&tx.input[idx].previous_output))
+            .copied()
+            .unwrap_or(Musig2Tweak::TaprootKeySpend);
+        let sig = sign_musig2_keypath(tx, secret_keys, &prevouts, idx, tweak)?;
         tx.input[idx].witness.push(sig.as_ref());
     }
 
@@ -206,12 +213,14 @@ pub fn submit_transaction_with_keys_blocking(
     client: &Client,
     secret_keys: &[EvenSecretKey],
     tx: &mut Transaction,
+    input_tweaks: Option<&HashMap<OutPoint, Musig2Tweak>>,
 ) -> anyhow::Result<Txid> {
     block_on(submit_transaction_with_keys(
         bitcoind,
         client,
         secret_keys,
         tx,
+        input_tweaks,
     ))
 }
 
@@ -307,7 +316,7 @@ mod tests {
         };
 
         // Submit the transaction using MuSig2 aggregation
-        let txid = submit_transaction_with_keys(&node, &client, &secret_keys, &mut tx)
+        let txid = submit_transaction_with_keys(&node, &client, &secret_keys, &mut tx, None)
             .await
             .unwrap();
         println!("MuSig2 transaction submitted with txid: {}", txid);

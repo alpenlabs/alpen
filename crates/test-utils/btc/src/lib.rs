@@ -14,7 +14,7 @@ use bitcoin::{
     Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
     Transaction, TxIn, TxOut, Witness,
 };
-use strata_asm_txs_bridge_v1::constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType};
+use strata_asm_txs_bridge_v1::constants::{BridgeTxType, BRIDGE_V1_SUBPROTOCOL_ID};
 use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,

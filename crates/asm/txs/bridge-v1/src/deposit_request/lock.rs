@@ -3,7 +3,7 @@ use bitcoin::{
     opcodes::all::{OP_CHECKSIGVERIFY, OP_CSV},
     script::Builder,
     secp256k1::Secp256k1,
-    taproot::TaprootBuilder,
+    taproot::{TaprootBuilder, TaprootSpendInfo},
 };
 
 /// Creates the locking script for the Deposit Request Transaction (DRT) output.
@@ -41,7 +41,17 @@ pub fn create_deposit_request_locking_script(
     recovery_delay: u32,
 ) -> ScriptBuf {
     let secp = Secp256k1::new();
+    let spend_info = build_deposit_request_spend_info(recovery_pk, internal_key, recovery_delay);
+    ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root())
+}
 
+/// Build the taproot spend info for the deposit request locking script.
+pub fn build_deposit_request_spend_info(
+    recovery_pk: &[u8; 32],
+    internal_key: XOnlyPublicKey,
+    recovery_delay: u32,
+) -> TaprootSpendInfo {
+    let secp = Secp256k1::new();
     let tapscript = Builder::new()
         .push_slice(recovery_pk)
         .push_opcode(OP_CHECKSIGVERIFY)
@@ -49,12 +59,9 @@ pub fn create_deposit_request_locking_script(
         .push_opcode(OP_CSV)
         .into_script();
 
-    let taproot_builder = TaprootBuilder::new()
+    TaprootBuilder::new()
         .add_leaf(0, tapscript)
-        .expect("valid tapscript leaf");
-    let spend_info = taproot_builder
+        .expect("valid tapscript leaf")
         .finalize(&secp, internal_key)
-        .expect("taproot finalization should succeed");
-
-    ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root())
+        .expect("taproot finalization should succeed")
 }

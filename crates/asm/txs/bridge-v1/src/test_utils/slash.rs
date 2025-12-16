@@ -51,16 +51,27 @@ pub fn create_connected_stake_and_slash_txs(
     stake_tx.output[0].script_pubkey = address.script_pubkey();
     stake_tx.output[0].value = Amount::from_sat(1_000);
 
-    let stake_txid =
-        submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut stake_tx)
-            .unwrap();
+    let stake_txid = submit_transaction_with_keys_blocking(
+        &bitcoind,
+        &client,
+        operator_keys,
+        &mut stake_tx,
+        None,
+    )
+    .unwrap();
 
     // 2. Create the base slash transaction using the provided metadata.
     let slash_info = SlashInfo::new(header_aux.clone(), OutPoint::new(stake_txid, 0).into());
     let mut slash_tx = create_test_slash_tx(&slash_info);
 
-    let _ = submit_transaction_with_keys_blocking(&bitcoind, &client, operator_keys, &mut slash_tx)
-        .unwrap();
+    let _ = submit_transaction_with_keys_blocking(
+        &bitcoind,
+        &client,
+        operator_keys,
+        &mut slash_tx,
+        None,
+    )
+    .unwrap();
 
     (stake_tx, slash_tx)
 }

@@ -66,13 +66,13 @@ pub fn sign_musig2_keypath(
     secret_keys: &[EvenSecretKey],
     prevouts: &[TxOut],
     input_index: usize,
+    tweak: Musig2Tweak,
 ) -> anyhow::Result<Signature> {
     let sighash_bytes = compute_taproot_sighash(tx, prevouts, input_index)?;
 
     // Taproot key-path spend without a script tree uses the standard tweak with an empty merkle
     // root. Musig2 helper applies that tweak when using the TaprootKeySpend variant.
-    let compact_sig =
-        create_musig2_signature(secret_keys, &sighash_bytes, Musig2Tweak::TaprootKeySpend);
+    let compact_sig = create_musig2_signature(secret_keys, &sighash_bytes, tweak);
 
     // Convert CompactSignature to bitcoin::secp256k1::schnorr::Signature
     let sig = Signature::from_slice(&compact_sig.serialize())?;

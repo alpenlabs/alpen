@@ -250,7 +250,6 @@ mod tests {
         let (mut state, operators) = create_test_state();
 
         // 2. Prepare DRT and DT
-
         let mut arb = ArbitraryGenerator::new();
         let drt_aux: DrtHeaderAux = arb.generate();
         let dt_aux: DepositTxHeaderAux = arb.generate();
@@ -266,7 +265,7 @@ mod tests {
         // We need to re-parse the slash tx to get the correct SlashInfo with updated input
         // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
         let dt_input = parse_sps50_tx(&dt);
-        let parsed_dt = parse_deposit_tx(&dt_input).expect("Should parse slash tx");
+        let parsed_dt = parse_deposit_tx(&dt_input).expect("Should parse deposit tx");
         let parsed_tx = ParsedTx::Deposit(parsed_dt);
 
         // 4. Prepare VerifiedAuxData containing the stake transaction
