@@ -1,10 +1,9 @@
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, Hash};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState};
 use strata_snark_acct_types::UpdateOperationData;
 
 use crate::program::EthEeAcctInput;
 
-pub type Hash = [u8; 32];
 pub type UpdateId = u64;
 
 #[derive(Debug, thiserror::Error)]
