@@ -24,10 +24,10 @@ pub fn create_test_commit_tx(commit_info: &CommitInfo) -> Transaction {
     tx.output[0].script_pubkey = sps_50_script;
 
     // The second output is the payout script
-    tx.output[1].script_pubkey = commit_info.second_output_script().clone();
+    tx.output[1].script_pubkey = commit_info.nn_script().clone();
 
     // The first input is the stake connector
-    tx.input[0].previous_output = *commit_info.first_input_outpoint().outpoint();
+    tx.input[0].previous_output = *commit_info.stake_inpoint().outpoint();
 
     tx
 }

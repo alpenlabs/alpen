@@ -55,14 +55,6 @@ pub fn create_connected_drt_and_dt(
             Musig2Tweak::TaprootScript(root.to_raw_hash().to_byte_array()),
         );
     }
-    dbg!(&drt);
-    dbg!(&drt.compute_txid());
-    dbg!(&drt.compute_wtxid());
-
-    dbg!(&dt);
-    dbg!(&dt.compute_txid());
-    dbg!(&dt.compute_wtxid());
-
     let _ = harness
         .submit_transaction_with_keys_blocking(operator_keys, &mut dt, Some(&input_tweaks))
         .expect("DT submission should succeed");

@@ -27,7 +27,7 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
     tx.output[0].script_pubkey = op_return_script;
 
     // The second input (index 1) is the stake connector.
-    tx.input[1].previous_output = info.second_inpoint().0;
+    tx.input[1].previous_output = info.stake_inpoint().0;
 
     tx
 }

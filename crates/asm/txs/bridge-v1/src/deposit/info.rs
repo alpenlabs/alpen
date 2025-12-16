@@ -13,20 +13,20 @@ pub struct DepositInfo {
     /// The deposit output containing the deposited amount and its locking script.
     deposit_output: BitcoinTxOut,
 
-    /// Previous outpoint referenced by the first input. This should be the DRT output.
-    first_inpoint: BitcoinOutPoint,
+    /// Previous outpoint referenced by the DRT input.
+    drt_inpoint: BitcoinOutPoint,
 }
 
 impl DepositInfo {
     pub fn new(
         header_aux: DepositTxHeaderAux,
         deposit_output: BitcoinTxOut,
-        first_inpoint: BitcoinOutPoint,
+        drt_inpoint: BitcoinOutPoint,
     ) -> Self {
         Self {
             header_aux,
             deposit_output,
-            first_inpoint,
+            drt_inpoint,
         }
     }
 
@@ -34,8 +34,8 @@ impl DepositInfo {
         &self.header_aux
     }
 
-    pub fn first_inpoint(&self) -> &OutPoint {
-        &self.first_inpoint.0
+    pub fn drt_inpoint(&self) -> &OutPoint {
+        &self.drt_inpoint.0
     }
 
     #[cfg(feature = "test-utils")]

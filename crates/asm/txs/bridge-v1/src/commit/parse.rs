@@ -7,6 +7,12 @@ use crate::{
     errors::TxStructureError,
 };
 
+/// Index of the commit transaction input that spends the stake transaction output.
+const STAKE_INPUT_INDEX: usize = 0;
+
+/// Index of the commit transaction output that should be locked to N/N address.
+const NN_OUTPUT_INDEX: usize = 1;
+
 /// Parses a commit transaction into [`CommitInfo`], decoding the SPS-50 auxiliary data as
 /// [`CommitTxHeaderAux`] (via [`strata_codec::Codec`]) and validating basic structure.
 ///
@@ -19,23 +25,33 @@ pub fn parse_commit_tx<'t>(tx: &TxInputRef<'t>) -> Result<CommitInfo, TxStructur
     let header_aux: CommitTxHeaderAux = decode_buf_exact(tx.tag().aux_data())
         .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Commit, e))?;
 
+    // Extract the previous outpoint from the first (and only) input
+    let stake_inpoint = tx
+        .tx()
+        .input
+        .get(STAKE_INPUT_INDEX)
+        .ok_or_else(|| {
+            TxStructureError::missing_input(BridgeTxType::Commit, STAKE_INPUT_INDEX, "stake input")
+        })?
+        .previous_output
+        .into();
+
     // Extract the N/N output script from the second output (index 1)
-    let second_output_script = tx
+    let nn_script = tx
         .tx()
         .output
-        .get(1)
-        .ok_or_else(|| TxStructureError::missing_output(BridgeTxType::Commit, 1, "N/N lock output"))?
+        .get(NN_OUTPUT_INDEX)
+        .ok_or_else(|| {
+            TxStructureError::missing_output(
+                BridgeTxType::Commit,
+                NN_OUTPUT_INDEX,
+                "N/N lock output",
+            )
+        })?
         .script_pubkey
         .clone();
 
-    // Extract the previous outpoint from the first (and only) input
-    let first_input_outpoint = tx.tx().input[0].previous_output.into();
-
-    Ok(CommitInfo::new(
-        header_aux,
-        first_input_outpoint,
-        second_output_script,
-    ))
+    Ok(CommitInfo::new(header_aux, stake_inpoint, nn_script))
 }
 
 #[cfg(test)]

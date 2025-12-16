@@ -10,25 +10,25 @@ pub struct CommitInfo {
     /// Parsed SPS-50 auxiliary data.
     header_aux: CommitTxHeaderAux,
 
-    /// The outpoint spent by the first input.
+    /// The outpoint spent by the stake connector input.
     /// Must be validated that it spends from an N/N-locked output during transaction validation.
-    first_input_outpoint: BitcoinOutPoint,
+    stake_inpoint: BitcoinOutPoint,
 
     /// The script from the second output (index 1).
     /// Must be validated as N/N-locked during transaction validation.
-    second_output_script: ScriptBuf,
+    nn_script: ScriptBuf,
 }
 
 impl CommitInfo {
     pub fn new(
         header_aux: CommitTxHeaderAux,
-        first_input_outpoint: BitcoinOutPoint,
-        second_output_script: ScriptBuf,
+        stake_inpoint: BitcoinOutPoint,
+        nn_script: ScriptBuf,
     ) -> Self {
         Self {
             header_aux,
-            first_input_outpoint,
-            second_output_script,
+            stake_inpoint,
+            nn_script,
         }
     }
 
@@ -41,25 +41,25 @@ impl CommitInfo {
         &mut self.header_aux
     }
 
-    pub fn first_input_outpoint(&self) -> &BitcoinOutPoint {
-        &self.first_input_outpoint
+    pub fn stake_inpoint(&self) -> &BitcoinOutPoint {
+        &self.stake_inpoint
     }
 
-    pub fn second_output_script(&self) -> &ScriptBuf {
-        &self.second_output_script
+    pub fn nn_script(&self) -> &ScriptBuf {
+        &self.nn_script
     }
 }
 
 impl<'a> Arbitrary<'a> for CommitInfo {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let header_aux = CommitTxHeaderAux::arbitrary(u)?;
-        let first_input_outpoint = BitcoinOutPoint::arbitrary(u)?;
-        let second_output_script = ScriptBuf::new();
+        let stake_inpoint = BitcoinOutPoint::arbitrary(u)?;
+        let nn_script = ScriptBuf::new();
 
         Ok(CommitInfo {
             header_aux,
-            first_input_outpoint,
-            second_output_script,
+            stake_inpoint,
+            nn_script,
         })
     }
 }

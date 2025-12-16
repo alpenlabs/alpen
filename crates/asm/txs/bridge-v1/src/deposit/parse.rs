@@ -7,23 +7,26 @@ use crate::{
     errors::TxStructureError,
 };
 
+/// Index of the deposit transaction input that spends the DRT (Deposit Request Transaction)
+/// output.
+const DRT_INPUT_INDEX: usize = 0;
+
 /// Parses deposit transaction to extract [`DepositInfo`].
 ///
 /// Parses a deposit transaction following the SPS-50 specification and extracts the decoded
-/// auxiliary data ([`DepositTxHeaderAux`]) along with the deposit amount and outpoint. The
-/// auxiliary data is encoded with [`strata_codec::Codec`] and includes the deposit index, DRT
-/// tapscript merkle root, and destination bytes.
+/// auxiliary data ([`DepositTxHeaderAux`]) along with the deposit output and DRT inpoint. The
+/// auxiliary data is encoded with [`strata_codec::Codec`] and includes the deposit index.
 ///
 /// # Errors
 ///
 /// Returns [`TxStructureError`] if the auxiliary data cannot be decoded or if the expected
-/// deposit output at index 1 is missing.
+/// deposit output at index [`DEPOSIT_OUTPUT_INDEX`] is missing.
 pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, TxStructureError> {
     // Parse auxiliary data
     let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())
         .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Deposit, e))?;
 
-    // Extract the deposit output (second output at index 1)
+    // Extract the deposit output
     let deposit_output = tx_input
         .tx()
         .output
@@ -38,11 +41,19 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, Tx
         .clone()
         .into();
 
-    // Extract the previous outpoint from the first input
-    let first_inpoint = tx_input.tx().input[0].previous_output.into();
+    // Extract the DRT inpoint
+    let drt_inpoint = tx_input
+        .tx()
+        .input
+        .get(DRT_INPUT_INDEX)
+        .ok_or_else(|| {
+            TxStructureError::missing_input(BridgeTxType::Deposit, DRT_INPUT_INDEX, "drt input")
+        })?
+        .previous_output
+        .into();
 
     // Construct the validated deposit information
-    Ok(DepositInfo::new(header_aux, deposit_output, first_inpoint))
+    Ok(DepositInfo::new(header_aux, deposit_output, drt_inpoint))
 }
 
 // #[cfg(test)]

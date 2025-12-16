@@ -27,8 +27,8 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, TxStructureE
     let header_aux: SlashTxHeaderAux = decode_buf_exact(tx.tag().aux_data())
         .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Slash, e))?;
 
-    // Extract the previous outpoint from the second input
-    let second_inpoint = tx
+    // Extract the stake inpoint (previous outpoint from the second input)
+    let stake_inpoint = tx
         .tx()
         .input
         .get(STAKE_INPUT_INDEX)
@@ -42,7 +42,7 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, TxStructureE
         .previous_output
         .into();
 
-    let info = SlashInfo::new(header_aux, second_inpoint);
+    let info = SlashInfo::new(header_aux, stake_inpoint);
 
     Ok(info)
 }

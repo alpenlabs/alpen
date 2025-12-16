@@ -37,7 +37,7 @@ pub(crate) fn handle_parsed_tx(
             }
 
             // Retrieve the Deposit Request Transaction (DRT) from auxiliary data
-            let drt = verified_aux_data.get_bitcoin_tx(info.first_inpoint().txid)?;
+            let drt = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
             let drt_info = parse_drt(drt).unwrap();
 
             // Construct the expected locking script for the DRT output
@@ -81,7 +81,7 @@ pub(crate) fn handle_parsed_tx(
         }
         ParsedTx::Slash(info) => {
             let stake_connector_script = &verified_aux_data
-                .get_bitcoin_txout(info.second_inpoint().outpoint())?
+                .get_bitcoin_txout(info.stake_inpoint().outpoint())?
                 .script_pubkey;
 
             // Validate that the stake connector (second input) is locked to a known N/N multisig
@@ -135,13 +135,13 @@ pub(crate) fn preprocess_parsed_tx(
             // Request the Deposit Request Transaction (DRT) as auxiliary data.
             // We need this to verify the deposit chain and validate the DRT output locking script
             // during the main processing phase.
-            collector.request_bitcoin_tx(info.first_inpoint().txid);
+            collector.request_bitcoin_tx(info.drt_inpoint().txid);
         }
         ParsedTx::WithdrawalFulfillment(_) => {}
         ParsedTx::Slash(info) => {
             // Requests the Bitcoin transaction spent by the stake connector (second input). We need
             // this information to verify the stake connector is locked to a known N/N multisig.
-            collector.request_bitcoin_tx(info.second_inpoint().0.txid);
+            collector.request_bitcoin_tx(info.stake_inpoint().0.txid);
         }
         ParsedTx::Unstake(_) => {}
     }
