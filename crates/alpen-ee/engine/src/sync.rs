@@ -118,7 +118,7 @@ where
     if sync_from_height as u64 > latest_height {
         info!("all finalized blocks already in engine");
         // Still need to check unfinalized blocks
-        sync_unfinalized_blocks(storage, checker, engine, &best_finalized).await?;
+        sync_unfinalized_blocks(storage, checker, engine).await?;
         return Ok(());
     }
 
@@ -181,7 +181,7 @@ where
     info!(blocks_synced = %blocks_to_sync, "finalized chainstate sync completed");
 
     // Sync unfinalized blocks (blocks above best finalized height)
-    sync_unfinalized_blocks(storage, checker, engine, &best_finalized).await?;
+    sync_unfinalized_blocks(storage, checker, engine).await?;
 
     Ok(())
 }
@@ -241,7 +241,6 @@ async fn sync_unfinalized_blocks<C, E, S>(
     storage: &S,
     checker: &C,
     engine: &E,
-    best_finalized: &alpen_ee_common::ExecBlockRecord,
 ) -> Result<(), SyncError>
 where
     C: BlockExistenceChecker,
@@ -257,8 +256,6 @@ where
     }
 
     info!(count = %unfinalized_hashes.len(), "found unfinalized blocks");
-
-    let best_finalized_hash = best_finalized.blockhash();
 
     for hash in unfinalized_hashes {
         // Check if block exists in Reth
@@ -283,12 +280,12 @@ where
 
         engine.submit_payload(engine_payload).await?;
 
-        // For unfinalized blocks, update forkchoice with head=hash,
-        // finalized=best_finalized
+        // For unfinalized blocks, only update head. Pass ZERO for safe/finalized
+        // to retain previous values (per Reth forkchoice API).
         let forkchoice_state = ForkchoiceState {
             head_block_hash: B256::from_slice(hash.as_ref()),
-            safe_block_hash: B256::from_slice(hash.as_ref()),
-            finalized_block_hash: B256::from_slice(best_finalized_hash.as_ref()),
+            safe_block_hash: B256::ZERO,
+            finalized_block_hash: B256::ZERO,
         };
         engine.update_consensus_state(forkchoice_state).await?;
 
@@ -1074,15 +1071,12 @@ mod tests {
             assert_eq!(payloads[0].blocknum(), 3);
             assert_eq!(payloads[1].blocknum(), 4);
 
-            // Verify forkchoice state for unfinalized blocks uses best finalized as
-            // finalized_block_hash
+            // Verify forkchoice state for unfinalized blocks uses ZERO for safe/finalized
+            // to retain previous values (per Reth forkchoice API)
             let forkchoice_updates = mock_engine.forkchoice_updates();
-            let best_finalized_hash = hash_from_u8(2);
             for fc in forkchoice_updates.iter() {
-                assert_eq!(
-                    fc.finalized_block_hash,
-                    B256::from_slice(best_finalized_hash.as_ref())
-                );
+                assert_eq!(fc.safe_block_hash, B256::ZERO);
+                assert_eq!(fc.finalized_block_hash, B256::ZERO);
             }
         }
 
