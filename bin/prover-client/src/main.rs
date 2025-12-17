@@ -58,7 +58,25 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         lconfig.set_otlp_url(url.clone());
     }
 
+    // Configure file logging if log directory provided via env var
+    let file_logging_config = env_args.get_file_logging_config();
+    if let Some(file_config) = &file_logging_config {
+        lconfig = lconfig.with_file_logging(file_config.clone());
+    }
+
     logging::init(lconfig);
+
+    // Log configuration after init
+    if let Some(url) = &env_args.otlp_url {
+        info!(%url, "using OpenTelemetry tracing output");
+    }
+    if let Some(file_config) = &file_logging_config {
+        info!(
+            log_dir = %file_config.directory.display(),
+            log_prefix = %file_config.file_name_prefix,
+            "file logging enabled"
+        );
+    }
 
     // Resolve configuration from TOML file and CLI arguments
     let config = args

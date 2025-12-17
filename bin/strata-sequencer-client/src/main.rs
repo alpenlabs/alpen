@@ -100,14 +100,27 @@ fn init_logging(rt: &Handle) {
         lconfig.set_otlp_url(url.clone());
     }
 
+    // Configure file logging if log directory provided via env var
+    let file_logging_config = env_args.get_file_logging_config();
+    if let Some(file_config) = &file_logging_config {
+        lconfig = lconfig.with_file_logging(file_config.clone());
+    }
+
     {
         // Need to set the runtime context because of nonsense.
         let _g = rt.enter();
         logging::init(lconfig);
     }
 
-    // Have to log this after we start the logging formally.
+    // Log configuration after init
     if let Some(url) = &env_args.otlp_url {
         info!(%url, "using OpenTelemetry tracing output");
+    }
+    if let Some(file_config) = &file_logging_config {
+        info!(
+            log_dir = %file_config.directory.display(),
+            log_prefix = %file_config.file_name_prefix,
+            "file logging enabled"
+        );
     }
 }
