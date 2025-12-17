@@ -17,6 +17,7 @@ strata-ol-da.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-snark-acct-types.workspace = true
+strata-snark-acct-sys.workspace = true
 
 thiserror.workspace = true
 

@@ -6,7 +6,7 @@ use strata_ledger_types::{Coin, IAccountStateMut, ISnarkAccountStateMut, IStateA
 use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
 use strata_ol_msg_types::OLMessageExt;
-use strata_snark_acct_types::MessageEntry;
+use strata_snark_acct_sys as snark_sys;
 
 use crate::{
     constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
@@ -121,11 +121,7 @@ fn handle_snark_account_message<S: ISnarkAccountStateMut>(
     payload: &MsgPayload,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // Construct the message entry to insert.
-    let msg_ent = MessageEntry::new(sender, context.epoch(), payload.clone());
-
-    // And then just insert it.
-    sastate.insert_inbox_message(msg_ent)?;
-
+    let cur_epoch = context.epoch();
+    snark_sys::handle_snark_msg(cur_epoch, sastate, sender, payload)?;
     Ok(())
 }

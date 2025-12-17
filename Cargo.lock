@@ -14926,6 +14926,7 @@ dependencies = [
  "strata-ol-da",
  "strata-ol-msg-types",
  "strata-ol-state-types",
+ "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
@@ -15287,6 +15288,17 @@ dependencies = [
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
+]
+
+[[package]]
+name = "strata-snark-acct-sys"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "strata-acct-types",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-snark-acct-types",
 ]
 
 [[package]]

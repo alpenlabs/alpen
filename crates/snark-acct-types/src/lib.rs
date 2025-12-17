@@ -2,6 +2,7 @@
 
 mod accumulators;
 mod error;
+mod ledger;
 mod messages;
 mod outputs;
 mod proof_interface;
