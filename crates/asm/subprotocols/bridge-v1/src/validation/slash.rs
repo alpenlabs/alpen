@@ -28,3 +28,31 @@ pub(crate) fn validate_slash_info(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        SlashValidationError,
+        test_utils::{create_test_state, setup_slash_test},
+        validation::validate_slash_info,
+    };
+
+    #[test]
+    fn test_slash_tx_validation_success() {
+        let (state, operators) = create_test_state();
+        let (info, aux) = setup_slash_test(1, &operators);
+        validate_slash_info(&state, &info, &aux).expect("handling valid slash info should succeed");
+    }
+
+    #[test]
+    fn test_slash_tx_invalid_signers() {
+        let (state, mut operators) = create_test_state();
+        operators.pop();
+        let (info, aux) = setup_slash_test(1, &operators);
+        let err = validate_slash_info(&state, &info, &aux).unwrap_err();
+        assert!(matches!(
+            err,
+            SlashValidationError::InvalidStakeConnectorScript
+        ));
+    }
+}

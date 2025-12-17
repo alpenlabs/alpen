@@ -1,13 +1,20 @@
 use std::any::Any;
 
 use rand::Rng;
-use strata_asm_common::{AsmCompactMmr, AsmLogEntry, AsmMmr, AuxData, InterprotoMsg, MsgRelayer, VerifiedAuxData};
+use strata_asm_common::{
+    AsmCompactMmr, AsmLogEntry, AsmMmr, AuxData, InterprotoMsg, MsgRelayer, VerifiedAuxData,
+};
 use strata_asm_txs_bridge_v1::{
     deposit::{DepositInfo, parse_deposit_tx},
     deposit_request::DrtHeaderAux,
-    test_utils::{create_connected_drt_and_dt, create_test_operators, parse_sps50_tx},
+    slash::{SlashInfo, SlashTxHeaderAux, parse_slash_tx},
+    test_utils::{
+        create_connected_drt_and_dt, create_connected_stake_and_slash_txs, create_test_operators,
+        parse_sps50_tx,
+    },
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, WithdrawalFulfillmentTxHeaderAux},
 };
+use strata_bridge_types::OperatorIdx;
 use strata_btc_types::RawBitcoinTx;
 use strata_crypto::EvenSecretKey;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
@@ -124,49 +131,89 @@ pub(crate) fn create_withdrawal_info_from_assignment(
     )
 }
 
+/// Helper function to create `VerifiedAuxData` from a list of Bitcoin transactions.
+///
+/// Creates a dummy MMR and wraps the provided transactions in `AuxData`, then
+/// verifies it. This is useful for tests that need to provide auxiliary transaction
+/// data for validation.
+pub(crate) fn create_verified_aux_data(txs: Vec<RawBitcoinTx>) -> VerifiedAuxData {
+    let aux_data = AuxData::new(vec![], txs);
+    let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup in tests
+    let compact_mmr: AsmCompactMmr = mmr.into();
+    VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data")
+}
+
 /// Helper function to setup a complete deposit test scenario.
 ///
-/// Creates a bridge state with test operators, generates connected DRT and DT transactions,
-/// parses the deposit info, and prepares the verified auxiliary data needed for validation.
-/// This consolidates the common setup logic used across deposit-related tests.
+/// Generates connected DRT and DT transactions, parses the deposit info, and prepares
+/// the verified auxiliary data needed for validation. This consolidates the common
+/// setup logic used across deposit-related tests.
 ///
 /// # Parameters
 ///
 /// - `drt_aux` - The deposit request transaction header auxiliary data
+/// - `denomination` - The bridge denomination to use for the deposit
+/// - `operators` - The operator private keys for signing transactions
 ///
 /// # Returns
 ///
 /// A tuple containing:
-/// - `BridgeV1State` - The initialized bridge state with test operators
 /// - `VerifiedAuxData` - The verified auxiliary data containing the DRT
 /// - `DepositInfo` - The parsed deposit information from the deposit transaction
 pub(crate) fn setup_deposit_test(
     drt_aux: &DrtHeaderAux,
-) -> (BridgeV1State, VerifiedAuxData, DepositInfo) {
-    // 1. Setup Bridge State
-    let (state, operators) = create_test_state();
-
-    // 2. Prepare DRT & DT
+    denomination: BitcoinAmount,
+    operators: &[EvenSecretKey],
+) -> (VerifiedAuxData, DepositInfo) {
+    // 1. Prepare DRT & DT
     let dt_aux = ArbitraryGenerator::new().generate();
 
-    let (drt, dt) = create_connected_drt_and_dt(
-        drt_aux,
-        dt_aux,
-        (*state.denomination()).into(),
-        &operators,
-    );
+    let (drt, dt) = create_connected_drt_and_dt(drt_aux, dt_aux, denomination.into(), operators);
 
-    // 3. Extract DepositInfo
+    // 2. Extract DepositInfo
     let dt_input = parse_sps50_tx(&dt);
     let info = parse_deposit_tx(&dt_input).expect("Should parse deposit tx");
 
-    // 4. Prepare VerifiedAuxData containing the DRT
+    // 3. Prepare VerifiedAuxData containing the DRT
     let raw_drt: RawBitcoinTx = drt.clone().into();
-    let aux_data = AuxData::new(vec![], vec![raw_drt]);
-    let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
-    let compact_mmr: AsmCompactMmr = mmr.into();
-    let verified_aux_data =
-        VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
+    let verified_aux_data = create_verified_aux_data(vec![raw_drt]);
 
-    (state, verified_aux_data, info)
+    (verified_aux_data, info)
+}
+
+/// Helper function to setup a complete slash test scenario.
+///
+/// Generates connected stake and slash transactions, parses the slash info, and prepares
+/// the verified auxiliary data needed for validation. This consolidates the common
+/// setup logic used across slash-related tests.
+///
+/// # Parameters
+///
+/// - `operator_idx` - The index of the operator being slashed
+/// - `operators` - The operator private keys for signing transactions
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `SlashInfo` - The parsed slash information from the slash transaction
+/// - `VerifiedAuxData` - The verified auxiliary data containing the stake transaction
+pub(crate) fn setup_slash_test(
+    operator_idx: OperatorIdx,
+    operators: &[EvenSecretKey],
+) -> (SlashInfo, VerifiedAuxData) {
+    // 1. Prepare Slash Info and Transactions
+    let slash_header = SlashTxHeaderAux::new(operator_idx);
+    let (stake_tx, slash_tx) = create_connected_stake_and_slash_txs(&slash_header, operators);
+
+    // 2. Prepare ParsedTx
+    // We need to re-parse the slash tx to get the correct SlashInfo with updated input
+    // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
+    let slash_tx_input = parse_sps50_tx(&slash_tx);
+    let parsed_slash_info = parse_slash_tx(&slash_tx_input).expect("Should parse slash tx");
+
+    // 3. Prepare VerifiedAuxData containing the stake transaction
+    let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();
+    let verified_aux_data = create_verified_aux_data(vec![raw_stake_tx]);
+
+    (parsed_slash_info, verified_aux_data)
 }

@@ -66,13 +66,16 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{
-        DepositValidationError, test_utils::setup_deposit_test, validation::validate_deposit_info,
+        DepositValidationError,
+        test_utils::{create_test_state, setup_deposit_test},
+        validation::validate_deposit_info,
     };
 
     #[test]
     fn test_validate_deposit_tx_success() {
+        let (state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (state, aux, info) = setup_deposit_test(&drt_aux);
+        let (aux, info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
 
         validate_deposit_info(&state, &info, &aux)
             .expect("handling valid deposit tx should succeed");
@@ -80,8 +83,9 @@ mod tests {
 
     #[test]
     fn test_old_deposit_tx() {
+        let (mut state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (mut state, aux, info) = setup_deposit_test(&drt_aux);
+        let (aux, info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
 
         let old_script = state.operators().current_nn_script().clone();
         state.remove_operator(1);
@@ -98,8 +102,9 @@ mod tests {
 
     #[test]
     fn test_old_signing_set() {
+        let (mut state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (mut state, aux, mut info) = setup_deposit_test(&drt_aux);
+        let (aux, mut info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
 
         let old_agg_key = *state.operators().agg_key();
         state.remove_operator(1);
@@ -130,8 +135,9 @@ mod tests {
 
     #[test]
     fn test_invalid_deposit_amount() {
+        let (state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (state, aux, mut info) = setup_deposit_test(&drt_aux);
+        let (aux, mut info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
 
         let actual_amt = info.amt();
         let modified_amt: BitcoinAmount = ArbitraryGenerator::new().generate();

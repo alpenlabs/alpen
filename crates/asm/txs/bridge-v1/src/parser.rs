@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Represents a parsed transaction that can be either a deposit or withdrawal fulfillment.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ParsedTx {
     /// A deposit transaction that locks Bitcoin funds in the bridge
     Deposit(DepositInfo),

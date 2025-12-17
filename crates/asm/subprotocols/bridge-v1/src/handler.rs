@@ -30,7 +30,6 @@ pub(crate) fn handle_parsed_tx(
     match parsed_tx {
         ParsedTx::Deposit(info) => {
             validate_deposit_info(state, &info, verified_aux_data)?;
-
             state.add_deposit(&info)?;
             Ok(())
         }
@@ -54,16 +53,12 @@ pub(crate) fn handle_parsed_tx(
         }
         ParsedTx::Slash(info) => {
             validate_slash_info(state, &info, verified_aux_data)?;
-
             state.remove_operator(info.header_aux().operator_idx());
-
             Ok(())
         }
         ParsedTx::Unstake(info) => {
             validate_unstake_info(state, &info)?;
-
             state.remove_operator(info.header_aux().operator_idx());
-
             Ok(())
         }
     }
@@ -101,10 +96,9 @@ mod tests {
     use strata_asm_txs_bridge_v1::{
         deposit_request::DrtHeaderAux,
         parser::ParsedTx,
-        slash::{SlashTxHeaderAux, parse_slash_tx},
         test_utils::{
-            create_connected_stake_and_slash_txs, create_connected_stake_and_unstake_txs,
-            create_test_withdrawal_fulfillment_tx, parse_sps50_tx,
+            create_connected_stake_and_unstake_txs, create_test_withdrawal_fulfillment_tx,
+            parse_sps50_tx,
         },
         unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
         withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
@@ -115,96 +109,16 @@ mod tests {
     use super::handle_parsed_tx;
     use crate::test_utils::{
         MockMsgRelayer, add_deposits_and_assignments, create_test_state,
-        create_withdrawal_info_from_assignment,
+        create_withdrawal_info_from_assignment, setup_slash_test,
     };
-
-    #[test]
-    fn test_handle_slash_tx_success() {
-        // 1. Setup Bridge State
-        let (mut state, operators) = create_test_state();
-
-        // 2. Prepare Slash Info and Transactions
-        // We act as if the first operator (index 0) is being slashed.
-        let operator_idx = 0;
-        let slash_header = SlashTxHeaderAux::new(operator_idx);
-
-        let (stake_tx, slash_tx) = create_connected_stake_and_slash_txs(&slash_header, &operators);
-
-        // 3. Prepare ParsedTx
-        // We need to re-parse the slash tx to get the correct SlashInfo with updated input
-        // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
-        let slash_tx_input = parse_sps50_tx(&slash_tx);
-        let parsed_slash_info = parse_slash_tx(&slash_tx_input).expect("Should parse slash tx");
-        let parsed_tx = ParsedTx::Slash(parsed_slash_info);
-
-        // 4. Prepare VerifiedAuxData containing the stake transaction
-        let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();
-        let aux_data = AuxData::new(vec![], vec![raw_stake_tx]);
-        let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
-        let compact_mmr: AsmCompactMmr = mmr.into();
-        let verified_aux_data =
-            VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
-
-        // 5. Handle the transaction
-        let mut relayer = MockMsgRelayer;
-        let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
-
-        assert!(result.is_ok(), "Handle parsed tx should succeed");
-
-        // 6. Verify the operator is removed
-        assert!(
-            !state.operators().is_in_current_multisig(operator_idx),
-            "Operator should be removed"
-        );
-    }
-
-    #[test]
-    fn test_handle_unstake_tx_success() {
-        // 1. Setup Bridge State
-        let (mut state, operators) = create_test_state();
-
-        // 2. Prepare Slash Info and Transactions
-        // We act as if the first operator (index 0) is being slashed.
-        let operator_idx = 0;
-        let unstake_header = UnstakeTxHeaderAux::new(operator_idx);
-
-        let (stake_tx, unstake_tx) =
-            create_connected_stake_and_unstake_txs(&unstake_header, &operators);
-
-        // 3. Prepare ParsedTx
-        // We need to re-parse the slash tx to get the correct SlashInfo with updated input
-        // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
-        let unstake_tx_input = parse_sps50_tx(&unstake_tx);
-        let parsed_unstake_info =
-            parse_unstake_tx(&unstake_tx_input).expect("Should parse slash tx");
-        let parsed_tx = ParsedTx::Unstake(parsed_unstake_info);
-
-        // 4. Prepare VerifiedAuxData containing the stake transaction
-        let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();
-        let aux_data = AuxData::new(vec![], vec![raw_stake_tx]);
-        let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
-        let compact_mmr: AsmCompactMmr = mmr.into();
-        let verified_aux_data =
-            VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
-
-        // 5. Handle the transaction
-        let mut relayer = MockMsgRelayer;
-        let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
-
-        assert!(result.is_ok(), "Handle parsed tx should succeed");
-
-        // 6. Verify the operator is removed
-        assert!(
-            !state.operators().is_in_current_multisig(operator_idx),
-            "Operator should be removed"
-        );
-    }
 
     #[test]
     fn test_handle_deposit_tx_success() {
         // 1. Setup deposit test scenario
+        let (mut state, operators) = create_test_state();
         let drt_aux: DrtHeaderAux = ArbitraryGenerator::new().generate();
-        let (mut state, verified_aux_data, info) = crate::test_utils::setup_deposit_test(&drt_aux);
+        let (verified_aux_data, info) =
+            crate::test_utils::setup_deposit_test(&drt_aux, *state.denomination(), &operators);
 
         // 2. Prepare ParsedTx
         let parsed_tx = ParsedTx::Deposit(info.clone());
@@ -273,5 +187,98 @@ mod tests {
                 "assignment should be removed after fulfillment"
             );
         }
+    }
+
+    #[test]
+    fn test_handle_slash_tx_success() {
+        let operator_idx = 1;
+        let (mut state, operators) = create_test_state();
+        let (info, aux) = setup_slash_test(operator_idx, &operators);
+
+        assert!(
+            state.operators().is_in_current_multisig(operator_idx),
+            "Operator should be removed"
+        );
+
+        // 5. Handle the transaction
+        let parsed_tx = ParsedTx::Slash(info);
+        let mut relayer = MockMsgRelayer;
+        let result = handle_parsed_tx(&mut state, parsed_tx, &aux, &mut relayer);
+
+        assert!(result.is_ok(), "Handle parsed tx should succeed");
+
+        // 6. Verify the operator is removed
+        assert!(
+            !state.operators().is_in_current_multisig(operator_idx),
+            "Operator should be removed"
+        );
+    }
+
+    #[test]
+    fn test_handle_two_slash_txs() {
+        let operator_idx = 1;
+        let (mut state, operators) = create_test_state();
+        let (info, aux) = setup_slash_test(operator_idx, &operators);
+
+        let parsed_tx = ParsedTx::Slash(info);
+        let mut relayer = MockMsgRelayer;
+        handle_parsed_tx(&mut state, parsed_tx.clone(), &aux, &mut relayer)
+            .expect("valid slash tx must succeed");
+
+        // Verify the operator is removed
+        assert!(
+            !state.operators().is_in_current_multisig(operator_idx),
+            "Operator should be removed"
+        );
+
+        handle_parsed_tx(&mut state, parsed_tx, &aux, &mut relayer)
+            .expect("duplicate slash tx must succeed");
+        // Verify the operator is still removed
+        assert!(
+            !state.operators().is_in_current_multisig(operator_idx),
+            "Operator should be removed"
+        );
+    }
+
+    #[test]
+    fn test_handle_unstake_tx_success() {
+        // 1. Setup Bridge State
+        let (mut state, operators) = create_test_state();
+
+        // 2. Prepare Slash Info and Transactions
+        // We act as if the first operator (index 0) is being slashed.
+        let operator_idx = 0;
+        let unstake_header = UnstakeTxHeaderAux::new(operator_idx);
+
+        let (stake_tx, unstake_tx) =
+            create_connected_stake_and_unstake_txs(&unstake_header, &operators);
+
+        // 3. Prepare ParsedTx
+        // We need to re-parse the slash tx to get the correct SlashInfo with updated input
+        // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
+        let unstake_tx_input = parse_sps50_tx(&unstake_tx);
+        let parsed_unstake_info =
+            parse_unstake_tx(&unstake_tx_input).expect("Should parse slash tx");
+        let parsed_tx = ParsedTx::Unstake(parsed_unstake_info);
+
+        // 4. Prepare VerifiedAuxData containing the stake transaction
+        let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();
+        let aux_data = AuxData::new(vec![], vec![raw_stake_tx]);
+        let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
+        let compact_mmr: AsmCompactMmr = mmr.into();
+        let verified_aux_data =
+            VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
+
+        // 5. Handle the transaction
+        let mut relayer = MockMsgRelayer;
+        let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
+
+        assert!(result.is_ok(), "Handle parsed tx should succeed");
+
+        // 6. Verify the operator is removed
+        assert!(
+            !state.operators().is_in_current_multisig(operator_idx),
+            "Operator should be removed"
+        );
     }
 }
