@@ -162,6 +162,17 @@ impl ExecBlockStorage for EeNodeStorage {
             .map_err(Into::into)
     }
 
+    /// Get the finalized block at a specific height.
+    async fn get_finalized_block_at_height(
+        &self,
+        height: u64,
+    ) -> Result<Option<ExecBlockRecord>, StorageError> {
+        self.ops
+            .get_finalized_block_at_height_async(height)
+            .await
+            .map_err(Into::into)
+    }
+
     /// Get height of block if it exists in local view of canonical chain.
     async fn get_finalized_height(&self, hash: Hash) -> Result<Option<u64>, StorageError> {
         self.ops
