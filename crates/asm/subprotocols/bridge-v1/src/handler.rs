@@ -4,7 +4,7 @@ use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::ParsedTx};
 
 use crate::{
     errors::BridgeSubprotocolError,
-    state::{BridgeV1State, withdrawal::OperatorClaimUnlock},
+    state::{BridgeV1State, OperatorClaimUnlock},
     validation::{
         validate_deposit_info, validate_slash_info, validate_unstake_info,
         validate_withdrawal_fulfillment_info,
