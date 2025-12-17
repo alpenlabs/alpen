@@ -9,6 +9,7 @@ strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-evm-ee = { path = "../../evm-ee" }
+strata-identifiers.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
@@ -27,8 +28,9 @@ borsh.workspace = true
 ssz.workspace = true
 strata-codec.workspace = true
 
-# Hashing (for guest block verification)
+# Hashing (for guest block verification and state hashing)
 sha2.workspace = true
+tree_hash.workspace = true
 
 # Error handling
 thiserror.workspace = true

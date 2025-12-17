@@ -23,11 +23,15 @@ pub struct EthEeAcctInput {
     /// UpdateOperationData encoded as SSZ bytes
     pub operation_ssz: Vec<u8>,
 
+    /// Previous ProofState (before the update) encoded as SSZ bytes
+    /// The guest will verify that tree_hash_root(astate) matches this state
+    pub prev_proof_state_ssz: Vec<u8>,
+
     /// Coinput witness data for messages
     pub coinputs: Vec<Vec<u8>>,
 
     /// Serialized blocks for building CommitChainSegment in guest
-    /// Each Vec<u8> is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+    /// Each `Vec<u8>` is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
     pub serialized_blocks: Vec<Vec<u8>>,
 
     /// Previous header (raw bytes)
@@ -69,6 +73,7 @@ impl ZkVmProgram for EthEeAcctProgram {
         // Write SSZ-encoded data as raw buffers
         input_builder.write_buf(&input.astate_ssz)?;
         input_builder.write_buf(&input.operation_ssz)?;
+        input_builder.write_buf(&input.prev_proof_state_ssz)?;
 
         // Write coinputs (Vec<Vec<u8>>) with borsh
         input_builder.write_borsh(&input.coinputs)?;

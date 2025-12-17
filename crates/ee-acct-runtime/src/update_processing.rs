@@ -20,6 +20,7 @@ use strata_ee_chain_types::SubjectDepositData;
 use strata_snark_acct_types::{
     LedgerRefs, MessageEntry, UpdateInputData, UpdateOperationData, UpdateOutputs,
 };
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::{
     exec_processing::process_segments,
@@ -318,10 +319,17 @@ pub fn apply_final_update_changes(
 }
 
 fn verify_acct_state_matches(
-    _astate: &EeAccountState,
-    _exp_new_state: &Hash,
+    astate: &EeAccountState,
+    exp_new_state: &Hash,
 ) -> Result<(), EnvError> {
-    // TODO use SSZ hash_tree_root
+    // Compute SSZ tree_hash_root
+    // REVIEW: should we use Sha256Hasher or Sha256MerkleHasher?
+    let computed_root = TreeHash::<Sha256Hasher>::tree_hash_root(astate);
+    let computed_hash = Hash::from(computed_root.0);
+
+    if computed_hash != *exp_new_state {
+        return Err(EnvError::InvalidBlock);
+    }
     Ok(())
 }
 
