@@ -1,0 +1,14 @@
+[package]
+name = "strata-snark-acct-sys"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ssz.workspace = true
+strata-acct-types.workspace = true
+strata-ledger-types.workspace = true
+strata-snark-acct-types.workspace = true
+strata-merkle.workspace = true
+
+[lints]
+workspace = true
