@@ -193,11 +193,17 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 /// Sets up the logging system given a handle to a runtime context to possibly
 /// start the OTLP output on.
 fn init_logging(rt: &Handle) {
-    let mut lconfig = logging::LoggerConfig::with_base_name("strata-client");
+    // Load environment variables through EnvArgs
+    let env_args = args::EnvArgs::from_env();
 
-    // Set the OpenTelemetry URL if set.
-    let otlp_url = logging::get_otlp_url_from_env();
-    if let Some(url) = &otlp_url {
+    // Construct service name with optional label using library utility
+    let service_name =
+        logging::format_service_name("strata-client", env_args.service_label.as_deref());
+
+    let mut lconfig = logging::LoggerConfig::new(service_name);
+
+    // Configure OTLP if URL provided via env var
+    if let Some(url) = &env_args.otlp_url {
         lconfig.set_otlp_url(url.clone());
     }
 
@@ -208,7 +214,7 @@ fn init_logging(rt: &Handle) {
     }
 
     // Have to log this after we start the logging formally.
-    if let Some(url) = &otlp_url {
+    if let Some(url) = &env_args.otlp_url {
         info!(%url, "using OpenTelemetry tracing output");
     }
 }

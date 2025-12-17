@@ -44,9 +44,21 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn main_inner(args: Args) -> anyhow::Result<()> {
-    logging::init(logging::LoggerConfig::with_base_name(
-        "strata-prover-client",
-    ));
+    // Load environment variables through EnvArgs
+    let env_args = args::EnvArgs::from_env();
+
+    // Construct service name with optional label using library utility
+    let service_name =
+        logging::format_service_name("strata-prover-client", env_args.service_label.as_deref());
+
+    let mut lconfig = logging::LoggerConfig::new(service_name);
+
+    // Configure OTLP if URL provided via env var
+    if let Some(url) = &env_args.otlp_url {
+        lconfig.set_otlp_url(url.clone());
+    }
+
+    logging::init(lconfig);
 
     // Resolve configuration from TOML file and CLI arguments
     let config = args

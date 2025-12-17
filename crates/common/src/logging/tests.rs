@@ -1,13 +1,9 @@
 //! Unit tests for the logging subsystem.
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-use opentelemetry::KeyValue;
+use opentelemetry::{global, trace::TraceContextExt, KeyValue};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry::global;
-use opentelemetry::trace::TraceContextExt;
-use std::collections::HashMap;
-
 
 use super::types::*;
 
@@ -56,10 +52,14 @@ fn test_resource_config_build_with_all_semantic_conventions() {
     assert!(attrs
         .iter()
         .any(|(key, value)| key.as_str() == "service.version" && value.as_str() == "1.0.0"));
-    assert!(attrs.iter().any(|(key, value)| key.as_str() == "deployment.environment"
-        && value.as_str() == "production"));
-    assert!(attrs.iter().any(|(key, value)| key.as_str() == "service.instance.id"
-        && value.as_str() == "instance-123"));
+    assert!(attrs
+        .iter()
+        .any(|(key, value)| key.as_str() == "deployment.environment"
+            && value.as_str() == "production"));
+    assert!(attrs
+        .iter()
+        .any(|(key, value)| key.as_str() == "service.instance.id"
+            && value.as_str() == "instance-123"));
     assert!(attrs
         .iter()
         .any(|(key, value)| key.as_str() == "custom.key1" && value.as_str() == "value1"));
@@ -111,7 +111,6 @@ fn test_trace_context_propagation() {
     assert!(context.span().span_context().is_valid());
 }
 
-
 #[test]
 fn test_logger_config_with_otlp_export_config() {
     let export_config = OtlpExportConfig {
@@ -119,8 +118,8 @@ fn test_logger_config_with_otlp_export_config() {
         max_retries: 5,
     };
 
-    let config =
-        LoggerConfig::new("test-service".to_string()).with_otlp_export_config(export_config.clone());
+    let config = LoggerConfig::new("test-service".to_string())
+        .with_otlp_export_config(export_config.clone());
 
     assert_eq!(config.otlp_export_config.timeout, export_config.timeout);
     assert_eq!(

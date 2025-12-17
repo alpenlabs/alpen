@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 use argh::FromArgs;
 use toml::value::Table;
@@ -8,13 +8,19 @@ use crate::errors::{ConfigError, InitError};
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
 pub(crate) struct EnvArgs {
-    // TODO: relevant items that will be populated from env vars
+    /// OpenTelemetry OTLP endpoint URL
+    pub otlp_url: Option<String>,
+    /// Service label to include in service name
+    pub service_label: Option<String>,
 }
 
 impl EnvArgs {
     pub(crate) fn from_env() -> Self {
         // Here we load particular env vars that should probably override the config.
-        Self {}
+        Self {
+            otlp_url: env::var("STRATA_OTLP_URL").ok(),
+            service_label: env::var("STRATA_SVC_LABEL").ok(),
+        }
     }
 
     /// Get strings of overrides gathered from env.

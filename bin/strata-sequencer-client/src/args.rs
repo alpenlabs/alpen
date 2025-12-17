@@ -1,6 +1,24 @@
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 use argh::FromArgs;
+
+/// Configs overridable by environment. Mostly for sensitive data.
+#[derive(Debug, Clone)]
+pub(crate) struct EnvArgs {
+    /// OpenTelemetry OTLP endpoint URL
+    pub otlp_url: Option<String>,
+    /// Service label to include in service name
+    pub service_label: Option<String>,
+}
+
+impl EnvArgs {
+    pub(crate) fn from_env() -> Self {
+        Self {
+            otlp_url: env::var("STRATA_OTLP_URL").ok(),
+            service_label: env::var("STRATA_SVC_LABEL").ok(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, FromArgs)]
 #[argh(description = "Alpen Strata sequencer")]

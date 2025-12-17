@@ -1,7 +1,6 @@
 //! Configuration types for the logging subsystem.
 
-use std::path::PathBuf;
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
@@ -162,6 +161,12 @@ impl LoggerConfig {
             file_logging_config: None,
             otlp_export_config: OtlpExportConfig::default(),
         }
+    }
+
+    /// Creates a new configuration with a base service name
+    /// (alias for `new()` for backwards compatibility)
+    pub fn with_base_name(service_name: impl Into<String>) -> Self {
+        Self::new(service_name.into())
     }
 
     /// Set OTLP endpoint URL

@@ -30,8 +30,8 @@ fn main() -> Result<()> {
     let args: Args = from_env();
 
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(args)
-        .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
+    let nodectx =
+        init_node_context(args).map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     init_logging(nodectx.executor.handle());
 
@@ -62,10 +62,8 @@ fn init_logging(rt: &Handle) {
     let env_args = args::EnvArgs::from_env();
 
     // Construct service name with optional label using library utility
-    let service_name = logging::format_service_name(
-        "strata-client",
-        env_args.service_label.as_deref(),
-    );
+    let service_name =
+        logging::format_service_name("strata-client", env_args.service_label.as_deref());
 
     let mut lconfig = LoggerConfig::new(service_name);
 

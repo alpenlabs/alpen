@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, env, fs, path::PathBuf};
 
 use argh::FromArgs;
 use serde_json::from_str;
@@ -6,6 +6,24 @@ use strata_params::RollupParams;
 use strata_primitives::proof::ProofZkVm;
 
 use crate::config::ProverConfig;
+
+/// Configs overridable by environment. Mostly for sensitive data.
+#[derive(Debug, Clone)]
+pub(crate) struct EnvArgs {
+    /// OpenTelemetry OTLP endpoint URL
+    pub otlp_url: Option<String>,
+    /// Service label to include in service name
+    pub service_label: Option<String>,
+}
+
+impl EnvArgs {
+    pub(crate) fn from_env() -> Self {
+        Self {
+            otlp_url: env::var("STRATA_OTLP_URL").ok(),
+            service_label: env::var("STRATA_SVC_LABEL").ok(),
+        }
+    }
+}
 
 /// Command-line arguments used to configure the prover-client in both development and production
 /// modes.
