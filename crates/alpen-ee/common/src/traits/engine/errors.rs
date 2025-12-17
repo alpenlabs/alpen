@@ -22,11 +22,11 @@ pub enum ExecutionEngineError {
     EngineSyncing(String),
 
     /// Communication error with the engine.
-    #[error("engine communication error: {0}")]
+    #[error("engine communication failure: {0}")]
     Communication(String),
 
     /// Other unspecified engine error.
-    #[error("engine error: {0}")]
+    #[error("engine failure: {0}")]
     Other(String),
 }
 
