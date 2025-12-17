@@ -14699,6 +14699,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-ol-state-types",
+ "strata-predicate",
  "strata-snark-acct-types",
  "tracing",
 ]
