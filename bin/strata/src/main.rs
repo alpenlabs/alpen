@@ -29,11 +29,15 @@ mod services;
 fn main() -> Result<()> {
     let args: Args = from_env();
 
-    // Validate params, configs and create node context.
-    let nodectx =
-        init_node_context(args).map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
+    // Load config early to initialize logging with config settings
+    let config = context::load_config_early(&args)
+        .map_err(|e| anyhow!("Failed to load configuration: {e}"))?;
 
-    init_logging(nodectx.executor.handle());
+    // Validate params, configs and create node context.
+    let nodectx = init_node_context(args, config.clone())
+        .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
+
+    init_logging(nodectx.executor.handle(), &config);
 
     do_startup_checks(&nodectx)?;
 
@@ -57,25 +61,36 @@ fn do_startup_checks(_ctx: &NodeContext) -> Result<()> {
     Ok(())
 }
 
-fn init_logging(rt: &Handle) {
-    // Load environment variables through EnvArgs
-    let env_args = args::EnvArgs::from_env();
-
-    // Construct service name with optional label using library utility
+fn init_logging(rt: &Handle, config: &strata_config::Config) {
+    // Construct service name with optional label from config
     let service_name =
-        logging::format_service_name("strata-client", env_args.service_label.as_deref());
+        logging::format_service_name("strata-client", config.logging.service_label.as_deref());
 
     let mut lconfig = LoggerConfig::new(service_name);
 
-    // Configure OTLP if URL provided via env var
-    if let Some(url) = &env_args.otlp_url {
+    // Configure OTLP if URL provided in config
+    if let Some(url) = &config.logging.otlp_url {
         lconfig.set_otlp_url(url.clone());
     }
 
-    // Configure file logging if log directory provided via env var
-    let file_logging_config = env_args.get_file_logging_config();
+    // Configure file logging if log directory provided in config
+    let file_logging_config = config.logging.log_dir.as_ref().map(|dir| {
+        let prefix = config
+            .logging
+            .log_file_prefix
+            .as_deref()
+            .unwrap_or("alpen")
+            .to_string();
+        logging::FileLoggingConfig::new(dir.clone(), prefix)
+    });
+
     if let Some(file_config) = &file_logging_config {
         lconfig = lconfig.with_file_logging(file_config.clone());
+    }
+
+    // Configure JSON format if specified in config
+    if let Some(json_format) = config.logging.json_format {
+        lconfig = lconfig.with_json_logging(json_format);
     }
 
     {
@@ -84,7 +99,7 @@ fn init_logging(rt: &Handle) {
     }
 
     // Log configuration after init
-    if let Some(url) = &env_args.otlp_url {
+    if let Some(url) = &config.logging.otlp_url {
         info!(%url, "using OpenTelemetry tracing output");
     }
     if let Some(file_config) = &file_logging_config {

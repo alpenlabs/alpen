@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 use argh::FromArgs;
 use toml::value::Table;
@@ -7,39 +7,12 @@ use crate::errors::{ConfigError, InitError};
 
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
-pub(crate) struct EnvArgs {
-    /// OpenTelemetry OTLP endpoint URL
-    pub otlp_url: Option<String>,
-    /// Log directory for file logging
-    pub log_dir: Option<PathBuf>,
-    /// Log file prefix for file logging
-    pub log_file_prefix: Option<String>,
-    /// Service label to include in service name
-    pub service_label: Option<String>,
-}
+pub(crate) struct EnvArgs {}
 
 impl EnvArgs {
     pub(crate) fn from_env() -> Self {
         // Here we load particular env vars that should probably override the config.
-        Self {
-            otlp_url: env::var("STRATA_OTLP_URL").ok(),
-            log_dir: env::var("STRATA_LOG_DIR").ok().map(PathBuf::from),
-            log_file_prefix: env::var("STRATA_LOG_FILE_PREFIX").ok(),
-            service_label: env::var("STRATA_SVC_LABEL").ok(),
-        }
-    }
-
-    /// Get file logging configuration if log directory is set.
-    /// Uses "strata-client" as default prefix if STRATA_LOG_FILE_PREFIX is not set.
-    pub(crate) fn get_file_logging_config(&self) -> Option<strata_common::logging::FileLoggingConfig> {
-        self.log_dir.as_ref().map(|dir| {
-            let prefix = self
-                .log_file_prefix
-                .as_deref()
-                .unwrap_or("strata-client")
-                .to_string();
-            strata_common::logging::FileLoggingConfig::new(dir.clone(), prefix)
-        })
+        Self {}
     }
 
     /// Get strings of overrides gathered from env.
@@ -210,6 +183,7 @@ mod test {
                 l1_follow_distance: 1,
                 client_checkpoint_interval: 2,
             },
+            logging: Default::default(),
         }
     }
 

@@ -6,6 +6,30 @@ use crate::args::Args;
 
 const DEFAULT_DUTY_POLL_INTERVAL: u64 = 1000;
 
+/// Logging configuration for the sequencer client.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct LoggingConfig {
+    /// Service label to append to the service name (e.g., "prod", "dev").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_label: Option<String>,
+
+    /// OpenTelemetry OTLP endpoint URL for distributed tracing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub otlp_url: Option<String>,
+
+    /// Directory path for file-based logging.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_dir: Option<PathBuf>,
+
+    /// Prefix for log file names (defaults to "strata-sequencer" if not set).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_file_prefix: Option<String>,
+
+    /// Use JSON format for logs instead of compact format.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_format: Option<bool>,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct Config {
     pub sequencer_key: PathBuf,
@@ -13,6 +37,10 @@ pub(crate) struct Config {
     pub rpc_port: u16,
     pub duty_poll_interval: u64,
     pub epoch_gas_limit: Option<u64>,
+
+    /// Logging configuration (optional).
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 impl Config {
@@ -32,6 +60,8 @@ impl Config {
                 .duty_poll_interval
                 .unwrap_or(DEFAULT_DUTY_POLL_INTERVAL),
             epoch_gas_limit: args.epoch_gas_limit,
+            // Logging config defaults to empty - will be populated from env vars
+            logging: LoggingConfig::default(),
         })
     }
 
