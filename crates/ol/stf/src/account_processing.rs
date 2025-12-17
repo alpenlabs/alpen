@@ -1,13 +1,11 @@
 //! Account-specific interaction handling, such as messages.
 
-use strata_acct_types::{AccountId, AcctError, MsgPayload};
+use strata_acct_types::{AccountId, MsgPayload};
 use strata_codec::encode_to_vec;
-use strata_ledger_types::{
-    AccountTypeState, Coin, IAccountState, ISnarkAccountState, StateAccessor,
-};
-use strata_msg_fmt::{Msg, MsgRef};
+use strata_ledger_types::{Coin, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
+use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
-use strata_ol_msg_types::{OLMessageExt, WITHDRAWAL_MSG_TYPE_ID};
+use strata_ol_msg_types::OLMessageExt;
 use strata_snark_acct_types::MessageEntry;
 
 use crate::{
@@ -22,7 +20,7 @@ use crate::{
 ///
 /// This takes a [`EpochContext`] because messages can be issued both in regular
 /// block processing and at epoch sealing.
-pub(crate) fn process_message<S: StateAccessor>(
+pub(crate) fn process_message<S: IStateAccessor>(
     state: &mut S,
     sender: AccountId,
     target: AccountId,
@@ -32,53 +30,42 @@ pub(crate) fn process_message<S: StateAccessor>(
     match target {
         // Bridge gateway messages.
         BRIDGE_GATEWAY_ACCT_ID => {
-            handle_bridge_gateway_message(state, sender, msg, context)?;
+            handle_bridge_gateway_message(sender, msg, context)?;
         }
 
         // Any other address we assume is a ledger account, so we have to look it up.
         _ => {
-            // TODO adapt the account state traits to make this all more
-            // amendable to avoiding copies/clones
-
-            // Make a copy of the account state.  I don't love this.
-            let Some(mut acct_state) = state.get_account_state(target)?.cloned() else {
+            // Check if the account exists first.
+            if !state.check_account_exists(target)? {
                 // If we don't find it then we can just ignore it.
                 // TODO do something with the funds we're throwing away by doing this
                 return Ok(());
-            };
-
-            // First, just increase the balance right now.
-            let coin = Coin::new_unchecked(msg.value());
-            acct_state.add_balance(coin);
-
-            // Then depending on the type we call a different handler function
-            // for postprocessing.
-            let mut tystate = acct_state.get_type_state().expect("stf/acct: type state");
-            match &mut tystate {
-                AccountTypeState::Empty => {
-                    // Do nothing.
-                }
-
-                AccountTypeState::Snark(sastate) => {
-                    // Call the handler fn now that we've increased the balance.
-                    handle_snark_account_message(state, sastate, sender, msg, context)?;
-                }
             }
 
-            // Update with the now-modified type state.
-            acct_state.set_type_state(tystate)?;
+            // Update the account within a closure.
+            state.update_account(target, |acct_state| -> ExecResult<()> {
+                // First, just increase the balance right now.
+                let coin = Coin::new_unchecked(msg.value());
+                acct_state.add_balance(coin);
 
-            // Then write the whole account back with the changes.
-            state.update_account_state(target, acct_state)?;
+                // Then depending on the type we call a different handler function
+                // for postprocessing.
+                if let Ok(sastate) = acct_state.as_snark_account_mut() {
+                    // Call the handler fn now that we've increased the balance.
+                    handle_snark_account_message(sastate, sender, &msg, context)?;
+                }
+                // Empty accounts don't need any additional processing.
+
+                Ok(())
+            })??;
         }
     }
 
     Ok(())
 }
 
-fn handle_bridge_gateway_message<S: StateAccessor>(
-    state: &mut S,
-    sender: AccountId,
+fn handle_bridge_gateway_message(
+    _sender: AccountId,
     payload: MsgPayload,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
@@ -120,15 +107,14 @@ fn handle_bridge_gateway_message<S: StateAccessor>(
     Ok(())
 }
 
-fn handle_snark_account_message<S: StateAccessor>(
-    state: &mut S,
-    mut sastate: &mut <S::AccountState as IAccountState>::SnarkAccountState,
+fn handle_snark_account_message<S: ISnarkAccountStateMut>(
+    sastate: &mut S,
     sender: AccountId,
-    payload: MsgPayload,
+    payload: &MsgPayload,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Construct the message entry to insert.
-    let msg_ent = MessageEntry::new(sender, context.epoch(), payload);
+    let msg_ent = MessageEntry::new(sender, context.epoch(), payload.clone());
 
     // And then just insert it.
     sastate.insert_inbox_message(msg_ent)?;

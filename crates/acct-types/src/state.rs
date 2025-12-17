@@ -2,7 +2,6 @@ use strata_identifiers::Hash;
 
 use crate::{
     AccountSerial, AccountTypeId, BitcoinAmount, RawAccountTypeId,
-    errors::{AcctError, AcctResult},
     ssz_generated::ssz::state::{
         AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState,
     },
@@ -13,8 +12,8 @@ impl EncodedAccountInnerState {
         self.intrinsics.raw_ty()
     }
 
-    /// Attempts to parse the type into a valid [`AccountTypeId`].
-    pub fn ty(&self) -> AcctResult<AccountTypeId> {
+    /// Gets the type as a valid [`AccountTypeId`].
+    pub fn ty(&self) -> AccountTypeId {
         self.intrinsics.ty()
     }
 
@@ -29,19 +28,6 @@ impl EncodedAccountInnerState {
     // should this even be exposed?
     pub fn encoded_state_buf(&self) -> &[u8] {
         &self.encoded_state
-    }
-
-    /// Attempts to decode the account state as a concrete account type.
-    ///
-    /// This MUST match, returns error otherwise.
-    pub fn decode_as_type<T: AccountTypeState>(&self) -> AcctResult<T> {
-        let real_ty = self.ty()?;
-        if T::ID != real_ty {
-            return Err(AcctError::MismatchedType(real_ty, T::ID));
-        }
-
-        // TODO
-        unimplemented!()
     }
 }
 
@@ -94,8 +80,8 @@ impl AccountIntrinsicState {
     }
 
     /// Attempts to parse the type into a valid [`AccountTypeId`].
-    pub fn ty(&self) -> AcctResult<AccountTypeId> {
-        AccountTypeId::try_from(self.raw_ty()).map_err(AcctError::InvalidAcctTypeId)
+    pub fn ty(&self) -> AccountTypeId {
+        AccountTypeId::try_from(self.raw_ty()).expect("acct: invalid id")
     }
 
     pub fn serial(&self) -> AccountSerial {

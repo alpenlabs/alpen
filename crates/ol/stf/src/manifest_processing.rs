@@ -4,7 +4,7 @@ use strata_acct_types::{AccountId, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_manifest_types::{CheckpointAckLogData, DepositIntentLogData};
 use strata_identifiers::{EpochCommitment, L1Height};
-use strata_ledger_types::{IL1ViewState, StateAccessor};
+use strata_ledger_types::IStateAccessor;
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
 use strata_ol_chain_types_new::{OLL1ManifestContainer, OLL1Update};
 
@@ -19,15 +19,15 @@ use crate::{
 /// processing.
 ///
 /// This does NOT check the preseal root.
-pub fn process_block_manifests<S: StateAccessor>(
+pub fn process_block_manifests<S: IStateAccessor>(
     state: &mut S,
     mf_cont: &OLL1ManifestContainer,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    let terminating_epoch = state.l1_view().cur_epoch();
+    let terminating_epoch = state.cur_epoch();
 
     // 1. Process all the manifests.
-    let orig_l1_height = state.l1_view().last_l1_height();
+    let orig_l1_height = state.last_l1_height();
     let mut last = None;
 
     for (i, mf) in mf_cont.manifests().iter().enumerate() {
@@ -42,31 +42,29 @@ pub fn process_block_manifests<S: StateAccessor>(
     }
 
     // 2. Finally, we can update the epoch to get it ready for the next epoch.
-    state.l1_view_mut().set_cur_epoch(terminating_epoch + 1);
+    state.set_cur_epoch(terminating_epoch + 1);
 
     Ok(())
 }
 
-fn process_asm_manifest<S: StateAccessor>(
+fn process_asm_manifest<S: IStateAccessor>(
     state: &mut S,
     real_height: L1Height,
     mf: &AsmManifest,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    let estate = state.l1_view();
-
     // 1. Process each of the logs.
     for log in mf.logs() {
         process_asm_log(state, log, real_height, context)?;
     }
 
     // 2. Accept the manifest into the ASM MMR.
-    state.l1_view_mut().append_manifest(real_height, mf.clone());
+    state.append_manifest(real_height, mf.clone());
 
     Ok(())
 }
 
-fn process_asm_log<S: StateAccessor>(
+fn process_asm_log<S: IStateAccessor>(
     state: &mut S,
     log: &AsmLogEntry,
     real_height: L1Height,
@@ -104,7 +102,7 @@ fn process_asm_log<S: StateAccessor>(
     Ok(())
 }
 
-fn process_deposit_intent_log<S: StateAccessor>(
+fn process_deposit_intent_log<S: IStateAccessor>(
     state: &mut S,
     data: &DepositIntentLogData,
     context: &BasicExecContext<'_>,
@@ -139,15 +137,15 @@ fn process_deposit_intent_log<S: StateAccessor>(
     Ok(())
 }
 
-fn process_checkpoint_ack_log<S: StateAccessor>(
+fn process_checkpoint_ack_log<S: IStateAccessor>(
     state: &mut S,
     data: &CheckpointAckLogData,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // Update the L1 view state with the acknowledged epoch.
+    // Update the epochal state with the acknowledged epoch.
     //
     // This records that a checkpoint has been observed on L1.
-    state.l1_view_mut().set_asm_recorded_epoch(data.epoch());
+    state.set_asm_recorded_epoch(data.epoch());
 
     Ok(())
 }

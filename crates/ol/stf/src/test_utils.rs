@@ -5,7 +5,7 @@
 use strata_acct_types::AccountId;
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
-use strata_ledger_types::{IGlobalState, IL1ViewState, StateAccessor};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLBlockHeader;
 use strata_ol_state_types::OLState;
 
@@ -135,21 +135,17 @@ pub fn assert_block_position(header: &OLBlockHeader, expected_epoch: u64, expect
 /// Assert that the state has been properly updated after block execution.
 pub fn assert_state_updated(state: &mut OLState, expected_epoch: u64, expected_slot: u64) {
     assert_eq!(
-        state.l1_view().cur_epoch() as u64,
+        state.cur_epoch() as u64,
         expected_epoch,
         "test: state epoch mismatch"
     );
-    assert_eq!(
-        state.global_mut().cur_slot(),
-        expected_slot,
-        "test: state slot mismatch"
-    );
+    assert_eq!(state.cur_slot(), expected_slot, "test: state slot mismatch");
 }
 
 // ===== Verification Test Utilities =====
 
 /// Assert that block verification succeeds.
-pub fn assert_verification_succeeds<S: StateAccessor>(
+pub fn assert_verification_succeeds<S: IStateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
@@ -165,7 +161,7 @@ pub fn assert_verification_succeeds<S: StateAccessor>(
 
 /// Assert that block verification fails with a specific error.
 pub fn assert_verification_fails_with(
-    state: &mut impl StateAccessor,
+    state: &mut impl IStateAccessor,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,

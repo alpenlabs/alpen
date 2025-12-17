@@ -1,7 +1,7 @@
 use strata_acct_types::{AcctResult, Hash, Mmr64};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_utils::CodecSsz;
-use strata_ledger_types::ISnarkAccountState;
+use strata_ledger_types::*;
 use strata_merkle::CompactMmr64B32;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 use tree_hash::TreeHash;
@@ -40,6 +40,12 @@ impl ISnarkAccountState for NativeSnarkAccountState {
         self.proof_state.inner_state_root
     }
 
+    fn inbox_mmr(&self) -> &Mmr64 {
+        &self.inbox_mmr
+    }
+}
+
+impl ISnarkAccountStateMut for NativeSnarkAccountState {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
         self.proof_state = ProofState::new(state, next_read_idx);
         self.seqno = seqno;
@@ -55,10 +61,6 @@ impl ISnarkAccountState for NativeSnarkAccountState {
         // Set the proof state but ignore extra data in this context.
         self.set_proof_state_directly(state, next_read_idx, seqno);
         Ok(())
-    }
-
-    fn inbox_mmr(&self) -> &Mmr64 {
-        &self.inbox_mmr
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
@@ -94,7 +96,6 @@ impl ProofState {
     }
 }
 
-// Codec implementation for NativeSnarkAccountState
 impl Codec for NativeSnarkAccountState {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.seqno.encode(enc)?;
