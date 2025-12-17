@@ -1,7 +1,7 @@
 //! Deposit request transaction building utilities
 
-use arbitrary::{Arbitrary, Unstructured};
-use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
+use arbitrary::Arbitrary;
+use strata_codec::{Codec, encode_to_vec};
 use strata_l1_txfmt::TagData;
 
 use crate::{
@@ -10,15 +10,16 @@ use crate::{
 };
 
 /// Auxiliary data in the SPS-50 header for [`BridgeTxType::DepositRequest`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Codec, Arbitrary)]
 pub struct DrtHeaderAux {
     recovery_pk: [u8; 32],
-    ee_address: Vec<u8>,
+    // TODO:PG - Intentionally using 20 bytes for now. Will be properly handled as part of https://alpenlabs.atlassian.net/browse/STR-1950
+    ee_address: [u8; 20],
 }
 
 impl DrtHeaderAux {
     /// Creates new deposit request metadata
-    pub fn new(recovery_pk: [u8; 32], ee_address: Vec<u8>) -> Self {
+    pub fn new(recovery_pk: [u8; 32], ee_address: [u8; 20]) -> Self {
         Self {
             recovery_pk,
             ee_address,
@@ -31,7 +32,7 @@ impl DrtHeaderAux {
     }
 
     /// Returns the execution environment address
-    pub fn ee_address(&self) -> &[u8] {
+    pub fn ee_address(&self) -> &[u8; 20] {
         &self.ee_address
     }
 
@@ -53,44 +54,5 @@ impl DrtHeaderAux {
             aux_data,
         )?;
         Ok(tag)
-    }
-}
-
-impl Codec for DrtHeaderAux {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.recovery_pk.encode(enc)?;
-        enc.write_buf(&self.ee_address)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let recovery_pk = <[u8; 32]>::decode(dec)?;
-
-        // Read remaining bytes as address - we need to read from a buffer
-        // Since Decoder doesn't provide a way to read all remaining bytes,
-        // this decode assumes the input has already been sized correctly
-        let mut ee_address = Vec::new();
-        // Try to read bytes until we hit end of buffer
-        while let Ok(byte) = dec.read_arr::<1>() {
-            ee_address.push(byte[0]);
-        }
-
-        Ok(DrtHeaderAux::new(recovery_pk, ee_address))
-    }
-}
-
-impl<'a> Arbitrary<'a> for DrtHeaderAux {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let recovery_pk = <[u8; 32]>::arbitrary(u)?;
-        // Generate address between 20 and 42 bytes
-        let addr_len = u.int_in_range(20..=42)?;
-        let ee_address = (0..addr_len)
-            .map(|_| u8::arbitrary(u))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(DrtHeaderAux {
-            recovery_pk,
-            ee_address,
-        })
     }
 }

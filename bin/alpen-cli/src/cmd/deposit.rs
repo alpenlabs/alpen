@@ -133,12 +133,9 @@ pub async fn deposit(
         .expect("magic_bytes validated to be 4 bytes");
 
     // Construct the DRT metadata using the canonical builder
-    let drt_sps50_tag = DrtHeaderAux::new(
-        recovery_public_key.serialize(),
-        alpen_address.as_slice().to_vec(),
-    )
-    .build_tag_data()
-    .expect("tag data should be created");
+    let drt_sps50_tag = DrtHeaderAux::new(recovery_public_key.serialize(), alpen_address.into())
+        .build_tag_data()
+        .expect("tag data should be created");
 
     let sps50_script = ParseConfig::new(magic_bytes)
         .encode_script_buf(&drt_sps50_tag.as_ref())

@@ -7,13 +7,12 @@ use bdk_wallet::bitcoin::{
     consensus::deserialize,
     hashes::Hash,
     sighash::{Prevouts, SighashCache},
-    taproot::LeafVersion,
     OutPoint, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
 };
 use secp256k1::SECP256K1;
 use strata_asm_txs_bridge_v1::{
     deposit::DepositTxHeaderAux,
-    deposit_request::{create_deposit_request_locking_script, parse_drt},
+    deposit_request::{build_deposit_request_spend_info, parse_drt},
     test_utils::create_dummy_tx,
 };
 use strata_crypto::{
@@ -60,15 +59,16 @@ pub(crate) fn create_deposit_transaction_cli(
     let drt_data =
         parse_drt(&drt_tx).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
 
-    let takeback_script = create_deposit_request_locking_script(
+    let takeback_hash = build_deposit_request_spend_info(
         drt_data.header_aux().recovery_pk(),
         agg_pubkey,
         RECOVER_DELAY,
-    );
-    let takeback_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
+    )
+    .merkle_root()
+    .ok_or_else(|| Error::TxBuilder("Missing takeback script merkle root".to_string()))?;
 
     // Use canonical OP_RETURN construction from asm/txs/bridge-v1
-    let dt_tag = DepositTxHeaderAux::new(dt_index)
+    let dt_tag = DepositTxHeaderAux::new(dt_index, *drt_data.header_aux().ee_address())
         .build_tag_data()
         .map_err(|e| Error::TxBuilder(e.to_string()))?;
     let sps50_script = ParseConfig::new(*MAGIC_BYTES)

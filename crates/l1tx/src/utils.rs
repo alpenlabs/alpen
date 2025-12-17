@@ -4,7 +4,7 @@ use bitcoin::{
     script::{Instruction, Instructions},
     secp256k1::SECP256K1,
     taproot::TaprootBuilder,
-    Address, Network, Opcode, OutPoint, Txid, XOnlyPublicKey,
+    Address, Network, Opcode, Txid, XOnlyPublicKey,
 };
 use strata_asm_txs_bridge_v1::{
     deposit::DepositInfo as BridgeV1DepositInfo,
@@ -156,8 +156,8 @@ pub(crate) fn convert_bridge_v1_deposit_to_protocol_deposit(
     DepositInfo {
         deposit_idx: bridge_v1_deposit.header_aux().deposit_idx(),
         amt: bridge_v1_deposit.amt(),
-        outpoint: OutPoint::null().into(),
-        address: [0u8; 20].to_vec(), // FIXME:PG
+        outpoint: (*bridge_v1_deposit.drt_inpoint()).into(),
+        address: bridge_v1_deposit.header_aux().ee_address().to_vec(),
     }
 }
 
