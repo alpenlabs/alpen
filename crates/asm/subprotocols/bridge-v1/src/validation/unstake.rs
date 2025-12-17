@@ -32,3 +32,31 @@ pub(crate) fn validate_unstake_info(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        UnstakeValidationError,
+        test_utils::{create_test_state, setup_unstake_test},
+        validation::validate_unstake_info,
+    };
+
+    #[test]
+    fn test_unstake_tx_validation_success() {
+        let (state, operators) = create_test_state();
+        let (info, _aux) = setup_unstake_test(1, &operators);
+        validate_unstake_info(&state, &info).expect("handling valid unstake info should succeed");
+    }
+
+    #[test]
+    fn test_unstake_tx_invalid_signers() {
+        let (state, mut operators) = create_test_state();
+        operators.pop();
+        let (info, _aux) = setup_unstake_test(1, &operators);
+        let err = validate_unstake_info(&state, &info).unwrap_err();
+        assert!(matches!(
+            err,
+            UnstakeValidationError::InvalidStakeConnectorScript
+        ));
+    }
+}

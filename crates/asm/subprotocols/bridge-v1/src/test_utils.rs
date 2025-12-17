@@ -9,9 +9,10 @@ use strata_asm_txs_bridge_v1::{
     deposit_request::DrtHeaderAux,
     slash::{SlashInfo, SlashTxHeaderAux, parse_slash_tx},
     test_utils::{
-        create_connected_drt_and_dt, create_connected_stake_and_slash_txs, create_test_operators,
-        parse_sps50_tx,
+        create_connected_drt_and_dt, create_connected_stake_and_slash_txs,
+        create_connected_stake_and_unstake_txs, create_test_operators, parse_sps50_tx,
     },
+    unstake::{UnstakeInfo, UnstakeTxHeaderAux, parse_unstake_tx},
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, WithdrawalFulfillmentTxHeaderAux},
 };
 use strata_bridge_types::OperatorIdx;
@@ -216,4 +217,41 @@ pub(crate) fn setup_slash_test(
     let verified_aux_data = create_verified_aux_data(vec![raw_stake_tx]);
 
     (parsed_slash_info, verified_aux_data)
+}
+
+/// Helper function to setup a complete unstake test scenario.
+///
+/// Generates connected stake and unstake transactions, parses the unstake info, and prepares
+/// the verified auxiliary data needed for validation. This consolidates the common
+/// setup logic used across unstake-related tests.
+///
+/// # Parameters
+///
+/// - `operator_idx` - The index of the operator being unstaked
+/// - `operators` - The operator private keys for signing transactions
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `UnstakeInfo` - The parsed unstake information from the unstake transaction
+/// - `VerifiedAuxData` - The verified auxiliary data containing the stake transaction
+pub(crate) fn setup_unstake_test(
+    operator_idx: OperatorIdx,
+    operators: &[EvenSecretKey],
+) -> (UnstakeInfo, VerifiedAuxData) {
+    // 1. Prepare Unstake Info and Transactions
+    let unstake_header = UnstakeTxHeaderAux::new(operator_idx);
+    let (stake_tx, unstake_tx) = create_connected_stake_and_unstake_txs(&unstake_header, operators);
+
+    // 2. Prepare ParsedTx
+    // We need to re-parse the unstake tx to get the correct UnstakeInfo with updated input
+    // (create_connected_stake_and_unstake_txs updates the input to point to stake_tx)
+    let unstake_tx_input = parse_sps50_tx(&unstake_tx);
+    let parsed_unstake_info = parse_unstake_tx(&unstake_tx_input).expect("Should parse unstake tx");
+
+    // 3. Prepare VerifiedAuxData containing the stake transaction
+    let raw_stake_tx: RawBitcoinTx = stake_tx.clone().into();
+    let verified_aux_data = create_verified_aux_data(vec![raw_stake_tx]);
+
+    (parsed_unstake_info, verified_aux_data)
 }
