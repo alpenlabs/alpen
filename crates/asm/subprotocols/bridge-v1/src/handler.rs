@@ -1,6 +1,6 @@
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
-use strata_asm_txs_bridge_v1::parser::ParsedTx;
+use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::ParsedTx};
 
 use crate::{
     errors::BridgeSubprotocolError,
@@ -45,8 +45,9 @@ pub(crate) fn handle_parsed_tx(
             let unlock =
                 OperatorClaimUnlock::new(deposit_idx, fulfilled_assignment.current_assignee());
 
-            let container_id = 0; // Replace with actual logic to determine container ID
-            let withdrawal_processed_log = NewExportEntry::new(container_id, unlock.compute_hash());
+            // Use SubprotocolId as the containerId.
+            let withdrawal_processed_log =
+                NewExportEntry::new(BRIDGE_V1_SUBPROTOCOL_ID, unlock.compute_hash());
             relayer.emit_log(AsmLogEntry::from_log(&withdrawal_processed_log).expect("FIXME:PG"));
 
             Ok(())
@@ -104,15 +105,20 @@ mod tests {
         slash::{SlashTxHeaderAux, parse_slash_tx},
         test_utils::{
             create_connected_drt_and_dt, create_connected_stake_and_slash_txs,
-            create_connected_stake_and_unstake_txs, parse_sps50_tx,
+            create_connected_stake_and_unstake_txs, create_test_withdrawal_fulfillment_tx,
+            parse_sps50_tx,
         },
         unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
+        withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
     };
     use strata_btc_types::RawBitcoinTx;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::handle_parsed_tx;
-    use crate::test_utils::{MockMsgRelayer, create_test_state};
+    use crate::test_utils::{
+        MockMsgRelayer, add_deposits_and_assignments, create_test_state,
+        create_withdrawal_info_from_assignment,
+    };
 
     #[test]
     fn test_handle_slash_tx_success() {
@@ -233,5 +239,53 @@ mod tests {
         let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
 
         assert!(result.is_ok(), "Handle parsed tx should succeed");
+    }
+
+    #[test]
+    fn test_handle_withdrawal_fulfillment_tx_success() {
+        // 1. Setup Bridge State with deposits and assignments
+        let (mut state, _) = create_test_state();
+
+        let count = 3;
+        add_deposits_and_assignments(&mut state, count);
+
+        for _ in 0..count {
+            let assignment = state.assignments().assignments().first().unwrap().clone();
+
+            assert!(
+                state
+                    .assignments()
+                    .get_assignment(assignment.deposit_idx())
+                    .is_some(),
+                "should have assignment before fulfillment"
+            );
+
+            // 2. Prepare ParsedTx
+            let withdrawal_info = create_withdrawal_info_from_assignment(&assignment);
+            let tx = create_test_withdrawal_fulfillment_tx(&withdrawal_info);
+            let tx_input = parse_sps50_tx(&tx);
+            let parsed_info = parse_withdrawal_fulfillment_tx(&tx_input)
+                .expect("should parse wthdrawal fulfillment tx");
+            let parsed_tx = ParsedTx::WithdrawalFulfillment(parsed_info);
+
+            let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
+            let compact_mmr: AsmCompactMmr = mmr.into();
+            let verified_aux_data = VerifiedAuxData::try_new(&AuxData::default(), &compact_mmr)
+                .expect("Should verify aux data");
+
+            let mut relayer = MockMsgRelayer;
+
+            // 3. Handle the transaction
+            handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer)
+                .expect("handling deposit tx should success");
+
+            assert!(
+                state
+                    .assignments()
+                    .get_assignment(assignment.deposit_idx())
+                    .is_none(),
+                "assignment should be removed after fulfillment"
+            );
+        }
     }
 }
