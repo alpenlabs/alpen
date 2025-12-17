@@ -136,13 +136,13 @@ impl AsmDatabase for AsmDBSled {
         Ok(result)
     }
 
-    fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> DbResult<()> {
-        self.manifest_hash_tree.insert(&index, &Buf32(hash))?;
+    fn store_manifest_hash(&self, index: u64, hash: Buf32) -> DbResult<()> {
+        self.manifest_hash_tree.insert(&index, &hash)?;
         Ok(())
     }
 
-    fn get_manifest_hash(&self, index: u64) -> DbResult<Option<[u8; 32]>> {
-        Ok(self.manifest_hash_tree.get(&index)?.map(|buf| buf.0))
+    fn get_manifest_hash(&self, index: u64) -> DbResult<Option<Buf32>> {
+        Ok(self.manifest_hash_tree.get(&index)?)
     }
 }
 

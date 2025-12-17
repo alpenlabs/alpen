@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_db_types::{traits::AsmDatabase, DbResult};
-use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::asm_state::AsmState;
 use threadpool::ThreadPool;
 
@@ -51,12 +51,12 @@ impl AsmStateManager {
     }
 
     /// Stores a manifest hash at the given MMR leaf index
-    pub fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> DbResult<()> {
+    pub fn store_manifest_hash(&self, index: u64, hash: Buf32) -> DbResult<()> {
         self.ops.store_manifest_hash_blocking(index, hash)
     }
 
     /// Gets a manifest hash by MMR leaf index
-    pub fn get_manifest_hash(&self, index: u64) -> DbResult<Option<[u8; 32]>> {
+    pub fn get_manifest_hash(&self, index: u64) -> DbResult<Option<Buf32>> {
         self.ops.get_manifest_hash_blocking(index)
     }
 }

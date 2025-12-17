@@ -115,7 +115,7 @@ impl WorkerContext for AsmWorkerCtx {
 
     fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> WorkerResult<()> {
         self.asmman
-            .store_manifest_hash(index, hash)
+            .store_manifest_hash(index, Buf32(hash))
             .map_err(conv_db_err)
     }
 
@@ -127,7 +127,10 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>> {
-        self.asmman.get_manifest_hash(index).map_err(conv_db_err)
+        self.asmman
+            .get_manifest_hash(index)
+            .map(|opt| opt.map(|buf| buf.0))
+            .map_err(conv_db_err)
     }
 }
 

@@ -62,12 +62,12 @@ pub trait AsmDatabase: Send + Sync + 'static {
     ///
     /// This is called after appending a manifest to the MMR to maintain
     /// a fast lookup index from leaf index to manifest hash.
-    fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> DbResult<()>;
+    fn store_manifest_hash(&self, index: u64, hash: Buf32) -> DbResult<()>;
 
     /// Gets a manifest hash by MMR leaf index.
     ///
     /// Used by aux data resolver to retrieve manifest hashes for subprotocols.
-    fn get_manifest_hash(&self, index: u64) -> DbResult<Option<[u8; 32]>>;
+    fn get_manifest_hash(&self, index: u64) -> DbResult<Option<Buf32>>;
 }
 
 /// Database interface to control our view of L1 data.
