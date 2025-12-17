@@ -38,5 +38,9 @@ thiserror.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 
+[features]
+default = []
+host = []
+
 [lints]
 workspace = true
