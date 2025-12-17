@@ -14361,6 +14361,7 @@ dependencies = [
  "strata-simple-ee",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
+ "tree_hash 0.11.0",
 ]
 
 [[package]]
@@ -14868,9 +14869,11 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-evm-ee",
+ "strata-identifiers",
  "strata-primitives",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
+ "tree_hash 0.11.0",
  "zkaleido",
  "zkaleido-native-adapter",
 ]

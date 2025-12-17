@@ -19,6 +19,7 @@ use strata_ee_acct_runtime::{SharedPrivateInput, verify_and_apply_update_operati
 use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_snark_acct_types::{MessageEntry, OutputMessage, ProofState, UpdateOperationData};
+use tree_hash::{Sha256Hasher, TreeHash};
 use zkaleido::ZkVmEnv;
 
 use crate::guest_builder::build_commit_segments_from_blocks;
@@ -85,6 +86,11 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
         .expect("Failed to decode EeAccountState from SSZ");
     let operation = UpdateOperationData::from_ssz_bytes(&zkvm.read_buf())
         .expect("Failed to decode UpdateOperationData from SSZ");
+    let prev_proof_state =
+        ProofState::from_ssz_bytes(&zkvm.read_buf()).expect("Failed to decode ProofState from SSZ");
+
+    // Verify that the initial astate matches the claimed prev_proof_state
+    verify_proof_state_matches(&astate, &prev_proof_state);
 
     // Coinputs is Vec<Vec<u8>> so we read it with borsh
     let coinputs: Vec<Vec<u8>> = zkvm.read_borsh();
@@ -113,9 +119,6 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     let shared_private =
         SharedPrivateInput::new(commit_segments, raw_prev_header, raw_partial_pre_state);
 
-    // Capture state before the update
-    let prev_state = compute_proof_state(&astate);
-
     // Verify and apply the update operation
     // This internally verifies the extra_data fields (processed_inputs, etc.)
     verify_and_apply_update_operation(
@@ -127,8 +130,8 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     )
     .expect("Update verification failed");
 
-    // Capture state after the update
-    let final_state = compute_proof_state(&astate);
+    // The operation already contains the correct final ProofState
+    let final_proof_state = operation.new_state();
 
     // Extract UpdateExtraData from the operation (already verified by runtime)
     let extra_data = decode_buf_exact::<UpdateExtraData>(operation.extra_data())
@@ -136,8 +139,8 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
 
     // Build the complete public output
     let proof_output = EthEeAcctProofOutput {
-        prev_state,
-        final_state,
+        prev_state: prev_proof_state,
+        final_state: final_proof_state,
         da_commitments: Vec::new(), // Empty for now, TODO: when do we actually fill it??
         output_messages: operation.outputs().messages().to_vec(),
         input_messages: operation.processed_messages().to_vec(),
@@ -148,14 +151,20 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     zkvm.commit_borsh(&proof_output);
 }
 
-/// Compute the ProofState from the EE account state
-/// TODO: Implement proper state hashing using SSZ hash_tree_root and compute next_msg_read_idx
-/// This should match the verification in verify_acct_state_matches()
-fn compute_proof_state(_astate: &EeAccountState) -> ProofState {
-    // This is critical for proof correctness!
-    // Must use SSZ hash_tree_root once EeAccountState has SSZ support
-    // For next_msg_read_idx, need to track message processing progress
-    let inner_state_root = [0u8; 32]; // TODO: compute actual hash
-    let next_msg_read_idx = 0; // TODO: compute actual index
-    ProofState::new(inner_state_root.into(), next_msg_read_idx)
+/// Verify that the astate hash matches the expected ProofState
+///
+/// This ensures that the initial account state matches what the proof claims as the starting point.
+fn verify_proof_state_matches(astate: &EeAccountState, expected_proof_state: &ProofState) {
+    // Compute tree_hash_root of the astate
+    let computed_hash = TreeHash::<Sha256Hasher>::tree_hash_root(astate);
+    let computed_hash = strata_identifiers::Hash::from(computed_hash.0);
+
+    // Compare with the expected inner_state from ProofState
+    if computed_hash != expected_proof_state.inner_state() {
+        panic!(
+            "Account state hash mismatch: computed {:?}, expected {:?}",
+            computed_hash,
+            expected_proof_state.inner_state()
+        );
+    }
 }
