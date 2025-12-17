@@ -216,89 +216,11 @@ impl BridgeV1State {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_txs_bridge_v1::deposit::DepositInfo;
     use strata_primitives::l1::L1BlockCommitment;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::test_utils::{add_deposits, create_test_state};
-
-    /// Test successful deposit transaction processing.
-    ///
-    /// Verifies that valid deposits with correct amounts and signatures are processed
-    /// successfully and stored in the deposits table with the correct information.
-    #[test]
-    fn test_process_deposit_tx_success() {
-        let (mut bridge_state, _privkeys) = create_test_state();
-        for i in 0..5 {
-            let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-            deposit_info.set_amt(bridge_state.denomination);
-
-            // Process the deposit
-            let result = bridge_state.add_deposit(&deposit_info);
-            assert!(
-                result.is_ok(),
-                "Valid deposit should be processed successfully"
-            );
-
-            // Verify the deposit was added to the state
-            assert_eq!(bridge_state.deposits().len(), i + 1);
-            let stored_deposit = bridge_state
-                .deposits()
-                .get_deposit(deposit_info.header_aux().deposit_idx())
-                .unwrap();
-            assert_eq!(
-                stored_deposit.idx(),
-                deposit_info.header_aux().deposit_idx()
-            );
-            assert_eq!(stored_deposit.amt(), deposit_info.amt());
-        }
-    }
-
-    /// Test deposit transaction rejection due to invalid amount.
-    ///
-    /// Verifies that deposits with amounts that don't match the bridge's expected
-    /// denomination are rejected with the appropriate error type.
-    #[test]
-    fn test_process_deposit_tx_invalid_amount() {
-        let (mut bridge_state, _privkeys) = create_test_state();
-        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-
-        let err = bridge_state.add_deposit(&deposit_info).unwrap_err();
-        assert!(matches!(
-            err,
-            DepositValidationError::MismatchDepositAmount(_)
-        ));
-        if let DepositValidationError::MismatchDepositAmount(mismatch) = err {
-            assert_eq!(mismatch.expected, bridge_state.denomination.to_sat());
-            assert_eq!(mismatch.got, deposit_info.amt().to_sat());
-        }
-
-        // Verify no deposit was added
-        assert_eq!(bridge_state.deposits().len(), 0);
-    }
-
-    /// Test deposit transaction rejection due to invalid signature.
-    ///
-    /// Verifies that deposits signed with incomplete or incorrect operator keys
-    /// are rejected during signature validation.
-    #[test]
-    fn test_process_deposit_tx_invalid_signing_set() {
-        let (mut bridge_state, mut privkeys) = create_test_state();
-
-        let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-        deposit_info.set_amt(bridge_state.denomination);
-
-        privkeys.pop();
-
-        let _err = bridge_state.add_deposit(&deposit_info).unwrap_err();
-
-        // FIXME:
-        // assert!(matches!(err, DepositValidationError::DrtSignature(_)));
-
-        // Verify no deposit was added
-        assert_eq!(bridge_state.deposits().len(), 0);
-    }
 
     /// Test successful withdrawal assignment creation.
     ///

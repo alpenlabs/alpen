@@ -1,12 +1,14 @@
 use std::any::Any;
 
 use rand::Rng;
-use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
+use strata_asm_common::{AsmCompactMmr, AsmLogEntry, AsmMmr, AuxData, InterprotoMsg, MsgRelayer, VerifiedAuxData};
 use strata_asm_txs_bridge_v1::{
-    deposit::DepositInfo,
-    test_utils::create_test_operators,
+    deposit::{DepositInfo, parse_deposit_tx},
+    deposit_request::DrtHeaderAux,
+    test_utils::{create_connected_drt_and_dt, create_test_operators, parse_sps50_tx},
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, WithdrawalFulfillmentTxHeaderAux},
 };
+use strata_btc_types::RawBitcoinTx;
 use strata_crypto::EvenSecretKey;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use strata_test_utils::ArbitraryGenerator;
@@ -120,4 +122,51 @@ pub(crate) fn create_withdrawal_info_from_assignment(
         assignment.withdrawal_command().destination().to_script(),
         assignment.withdrawal_command().net_amount(),
     )
+}
+
+/// Helper function to setup a complete deposit test scenario.
+///
+/// Creates a bridge state with test operators, generates connected DRT and DT transactions,
+/// parses the deposit info, and prepares the verified auxiliary data needed for validation.
+/// This consolidates the common setup logic used across deposit-related tests.
+///
+/// # Parameters
+///
+/// - `drt_aux` - The deposit request transaction header auxiliary data
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `BridgeV1State` - The initialized bridge state with test operators
+/// - `VerifiedAuxData` - The verified auxiliary data containing the DRT
+/// - `DepositInfo` - The parsed deposit information from the deposit transaction
+pub(crate) fn setup_deposit_test(
+    drt_aux: &DrtHeaderAux,
+) -> (BridgeV1State, VerifiedAuxData, DepositInfo) {
+    // 1. Setup Bridge State
+    let (state, operators) = create_test_state();
+
+    // 2. Prepare DRT & DT
+    let dt_aux = ArbitraryGenerator::new().generate();
+
+    let (drt, dt) = create_connected_drt_and_dt(
+        drt_aux,
+        dt_aux,
+        (*state.denomination()).into(),
+        &operators,
+    );
+
+    // 3. Extract DepositInfo
+    let dt_input = parse_sps50_tx(&dt);
+    let info = parse_deposit_tx(&dt_input).expect("Should parse deposit tx");
+
+    // 4. Prepare VerifiedAuxData containing the DRT
+    let raw_drt: RawBitcoinTx = drt.clone().into();
+    let aux_data = AuxData::new(vec![], vec![raw_drt]);
+    let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
+    let compact_mmr: AsmCompactMmr = mmr.into();
+    let verified_aux_data =
+        VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
+
+    (state, verified_aux_data, info)
 }

@@ -99,14 +99,12 @@ pub(crate) fn preprocess_parsed_tx(
 mod tests {
     use strata_asm_common::{AsmCompactMmr, AsmMmr, AuxData, VerifiedAuxData};
     use strata_asm_txs_bridge_v1::{
-        deposit::{DepositTxHeaderAux, parse_deposit_tx},
         deposit_request::DrtHeaderAux,
         parser::ParsedTx,
         slash::{SlashTxHeaderAux, parse_slash_tx},
         test_utils::{
-            create_connected_drt_and_dt, create_connected_stake_and_slash_txs,
-            create_connected_stake_and_unstake_txs, create_test_withdrawal_fulfillment_tx,
-            parse_sps50_tx,
+            create_connected_stake_and_slash_txs, create_connected_stake_and_unstake_txs,
+            create_test_withdrawal_fulfillment_tx, parse_sps50_tx,
         },
         unstake::{UnstakeTxHeaderAux, parse_unstake_tx},
         withdrawal_fulfillment::parse_withdrawal_fulfillment_tx,
@@ -204,41 +202,30 @@ mod tests {
 
     #[test]
     fn test_handle_deposit_tx_success() {
-        // 1. Setup Bridge State
-        let (mut state, operators) = create_test_state();
+        // 1. Setup deposit test scenario
+        let drt_aux: DrtHeaderAux = ArbitraryGenerator::new().generate();
+        let (mut state, verified_aux_data, info) = crate::test_utils::setup_deposit_test(&drt_aux);
 
-        // 2. Prepare DRT and DT
-        let mut arb = ArbitraryGenerator::new();
-        let drt_aux: DrtHeaderAux = arb.generate();
-        let dt_aux: DepositTxHeaderAux = arb.generate();
+        // 2. Prepare ParsedTx
+        let parsed_tx = ParsedTx::Deposit(info.clone());
+        let deposit_idx = info.header_aux().deposit_idx();
 
-        let (drt, dt) = create_connected_drt_and_dt(
-            drt_aux,
-            dt_aux,
-            (*state.denomination()).into(),
-            &operators,
+        // 3. Deposits table doesn't have the deposit entry
+        assert!(
+            state.deposits().get_deposit(deposit_idx).is_none(),
+            "entry should not exist"
         );
 
-        // 3. Prepare ParsedTx
-        // We need to re-parse the slash tx to get the correct SlashInfo with updated input
-        // (create_connected_stake_and_slash_txs updates the input to point to stake_tx)
-        let dt_input = parse_sps50_tx(&dt);
-        let parsed_dt = parse_deposit_tx(&dt_input).expect("Should parse deposit tx");
-        let parsed_tx = ParsedTx::Deposit(parsed_dt);
-
-        // 4. Prepare VerifiedAuxData containing the stake transaction
-        let raw_drt: RawBitcoinTx = drt.clone().into();
-        let aux_data = AuxData::new(vec![], vec![raw_drt]);
-        let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup
-        let compact_mmr: AsmCompactMmr = mmr.into();
-        let verified_aux_data =
-            VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data");
-
-        // 5. Handle the transaction
+        // 4. Handle the transaction
         let mut relayer = MockMsgRelayer;
-        let result = handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer);
+        handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer)
+            .expect("handling valid deposit tx should succeed");
 
-        assert!(result.is_ok(), "Handle parsed tx should succeed");
+        // 5. Should add a new entry in the deposits table
+        assert!(
+            state.deposits().get_deposit(deposit_idx).is_some(),
+            "entry should be added"
+        );
     }
 
     #[test]
@@ -251,14 +238,6 @@ mod tests {
 
         for _ in 0..count {
             let assignment = state.assignments().assignments().first().unwrap().clone();
-
-            assert!(
-                state
-                    .assignments()
-                    .get_assignment(assignment.deposit_idx())
-                    .is_some(),
-                "should have assignment before fulfillment"
-            );
 
             // 2. Prepare ParsedTx
             let withdrawal_info = create_withdrawal_info_from_assignment(&assignment);
@@ -273,9 +252,16 @@ mod tests {
             let verified_aux_data = VerifiedAuxData::try_new(&AuxData::default(), &compact_mmr)
                 .expect("Should verify aux data");
 
-            let mut relayer = MockMsgRelayer;
+            assert!(
+                state
+                    .assignments()
+                    .get_assignment(assignment.deposit_idx())
+                    .is_some(),
+                "should have assignment before fulfillment"
+            );
 
             // 3. Handle the transaction
+            let mut relayer = MockMsgRelayer;
             handle_parsed_tx(&mut state, parsed_tx, &verified_aux_data, &mut relayer)
                 .expect("handling deposit tx should success");
 

@@ -62,4 +62,16 @@ impl DepositInfo {
     pub fn locked_script(&self) -> &ScriptBuf {
         &self.deposit_output.inner().script_pubkey
     }
+
+    #[cfg(feature = "test-utils")]
+    pub fn set_locked_script(&mut self, new_script_pubkey: ScriptBuf) {
+        use bitcoin::TxOut;
+
+        let txout = self.deposit_output.inner().clone();
+        let new_txout = TxOut {
+            value: txout.value,
+            script_pubkey: new_script_pubkey,
+        };
+        self.deposit_output = new_txout.into();
+    }
 }

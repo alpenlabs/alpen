@@ -35,8 +35,8 @@ pub enum BridgeSubprotocolError {
 #[derive(Debug, Error)]
 pub enum DepositValidationError {
     /// The deposit output is not locked to the expected aggregated operator key.
-    #[error("Deposit output is not locked to the aggregated operator key")]
-    WrongOutputLock,
+    #[error("Deposit output lock mismatch")]
+    WrongOutputLock(Mismatch<ScriptBuf>),
 
     /// Deposit output lock validation failed.
     #[error("Deposit output lock validation failed")]

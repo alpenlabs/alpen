@@ -20,7 +20,7 @@ use crate::{
 /// Returns the tuple `(drt, dt)` so test cases can inspect both the funding request and the final
 /// deposit submission.
 pub fn create_connected_drt_and_dt(
-    drt_header_aux: DrtHeaderAux,
+    drt_header_aux: &DrtHeaderAux,
     dt_header_aux: DepositTxHeaderAux,
     deposit_amount: Amount,
     operator_keys: &[EvenSecretKey],
@@ -30,7 +30,7 @@ pub fn create_connected_drt_and_dt(
 
     let (nn_address, internal_key) =
         derive_musig2_p2tr_address(operator_keys).expect("operator keys must aggregate");
-    let mut drt = create_test_deposit_request_tx(&drt_header_aux, internal_key, deposit_amount);
+    let mut drt = create_test_deposit_request_tx(drt_header_aux, internal_key, deposit_amount);
 
     let drt_txid = harness
         .submit_transaction_with_keys_blocking(operator_keys, &mut drt, None)
