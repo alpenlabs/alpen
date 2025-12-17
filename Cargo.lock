@@ -13929,7 +13929,6 @@ dependencies = [
  "strata-test-utils",
  "strata-test-utils-btcio",
  "strata-test-utils-l2",
- "strata-test-utils-tx-indexer",
  "thiserror 2.0.17",
  "threadpool",
  "tokio",
@@ -15356,18 +15355,6 @@ dependencies = [
  "proptest",
  "ssz",
  "tree_hash 0.11.0",
-]
-
-[[package]]
-name = "strata-test-utils-tx-indexer"
-version = "0.3.0-alpha.1"
-dependencies = [
- "bitcoin",
- "strata-asm-types",
- "strata-l1tx",
- "strata-primitives",
- "strata-test-utils-btc",
- "strata-test-utils-l2",
 ]
 
 [[package]]
