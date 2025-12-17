@@ -1061,7 +1061,7 @@ mod tests {
         match &writes.snark_state_updates()[0] {
             SnarkAcctStateUpdate::DirectSet(s) => {
                 assert_eq!(s.account_id(), account_id);
-                assert_eq!(s.state(), new_hash);
+                assert_eq!(s.state(), new_hash.0);
                 assert_eq!(s.next_read_idx(), next_read_idx);
                 assert_eq!(s.seqno(), seqno);
             }
@@ -1102,7 +1102,7 @@ mod tests {
         match &writes.snark_state_updates()[0] {
             SnarkAcctStateUpdate::Update(s) => {
                 assert_eq!(s.account_id(), account_id);
-                assert_eq!(s.inner_state(), inner_state);
+                assert_eq!(s.inner_state(), inner_state.0);
                 assert_eq!(s.next_read_idx(), next_read_idx);
                 assert_eq!(s.seqno(), seqno);
                 assert_eq!(s.extra_data(), extra_data);
