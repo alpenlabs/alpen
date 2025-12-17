@@ -9,6 +9,7 @@ strata-asm-manifest-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-state-types.workspace = true
+strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 tracing = { workspace = true, optional = true }
 

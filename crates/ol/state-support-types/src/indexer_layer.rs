@@ -15,6 +15,7 @@ use strata_ledger_types::{
     AccountTypeStateRef, Coin, IAccountState, IAccountStateMut, ISnarkAccountState,
     ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::index_types::*;
@@ -81,8 +82,16 @@ impl<S: ISnarkAccountStateMut + Clone> Clone for IndexerSnarkAccountStateMut<S> 
 }
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMut<S> {
+    fn verification_key(&self) -> &PredicateKey {
+        self.inner.verification_key()
+    }
+
     fn seqno(&self) -> Seqno {
         self.inner.seqno()
+    }
+
+    fn next_inbox_idx(&self) -> u64 {
+        self.inner.next_inbox_idx()
     }
 
     fn inner_state_root(&self) -> Hash {
@@ -421,6 +430,10 @@ where
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.inner.set_total_ledger_balance(amt);
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        self.inner.asm_manifests_mmr()
     }
 
     // ===== Account methods =====

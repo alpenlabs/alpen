@@ -1,8 +1,7 @@
 //! Toplevel state.
 
 use bitcoin::absolute;
-use ssz::Encode;
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
+use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_crypto::hash::raw;
 use strata_identifiers::{
@@ -30,6 +29,7 @@ impl OLState {
                     L1BlockId::from(Buf32::zero()),
                 ),
                 EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
+                Mmr64::new(64),
             ),
             global: GlobalState::new(0),
             ledger: TsnlLedgerAccountsTable::new_empty(),
@@ -47,6 +47,7 @@ impl OLState {
                     L1BlockId::from(Buf32::zero()),
                 ),
                 EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
+                Mmr64::new(64),
             ),
             global: GlobalState::new(slot),
             ledger: TsnlLedgerAccountsTable::new_empty(),
@@ -200,6 +201,10 @@ impl IStateAccessor for OLState {
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.epoch.set_total_ledger_balance(amt);
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        self.epoch.asm_manifests_mmr()
     }
 
     // ===== Account methods =====

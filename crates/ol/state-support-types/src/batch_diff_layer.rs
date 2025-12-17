@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
+use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{IStateAccessor, NewAccountData};
@@ -133,6 +133,13 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn set_total_ledger_balance(&mut self, _amt: BitcoinAmount) {
         #[cfg(feature = "tracing")]
         tracing::error!("BatchDiffState::set_total_ledger_balance called on read-only state");
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        self.batches
+            .last()
+            .map(|b| b.epochal().asm_manifests_mmr())
+            .unwrap_or_else(|| self.base.asm_manifests_mmr())
     }
 
     // ===== Account methods =====

@@ -88,6 +88,10 @@ class EpochalState(Container):
     #~# external_kind: container
     checkpointed_epoch: strata_identifiers.EpochCommitment
 
+    ### Manifests MMR
+    #~# external_kind: container
+    inbox_mmr: strata_acct_types.Mmr64
+
 ### Global state tracking current slot
 class GlobalState(Container):
     ### Current slot number
