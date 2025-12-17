@@ -1,0 +1,34 @@
+use strata_asm_txs_bridge_v1::unstake::UnstakeInfo;
+use strata_primitives::l1::BitcoinXOnlyPublicKey;
+
+use crate::{
+    errors::UnstakeValidationError,
+    state::{BridgeV1State, operator::build_nn_script},
+};
+
+/// Validates the parsed [`UnstakeInfo`].
+///
+/// The checks performed are:
+/// 1. The witness-pushed pubkey corresponds to a valid historical N/N pubkey.
+///
+/// Validation is performed by constructing a key-path-only P2TR script using [`build_nn_script`]
+/// from the extracted pubkey and checking if it matches any historical operator set scripts stored
+/// in state. Since we don't store historical pubkeys directly (only their P2TR representations),
+/// we create a P2TR script from the extracted pubkey for comparison.
+pub(crate) fn validate_unstake_info(
+    state: &BridgeV1State,
+    info: &UnstakeInfo,
+) -> Result<(), UnstakeValidationError> {
+    let witness_pubkey = BitcoinXOnlyPublicKey::from(*info.witness_pushed_pubkey());
+    let expected_script = build_nn_script(&witness_pubkey);
+
+    if !state
+        .operators()
+        .historical_nn_scripts()
+        .any(|script| script == expected_script.inner())
+    {
+        return Err(UnstakeValidationError::InvalidStakeConnectorScript);
+    }
+
+    Ok(())
+}

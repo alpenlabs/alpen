@@ -1,16 +1,14 @@
-use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::NewExportEntry;
-use strata_asm_txs_bridge_v1::{
-    deposit_request::{create_deposit_request_locking_script, parse_drt},
-    errors::Mismatch,
-    parser::ParsedTx,
-};
-use strata_primitives::constants::RECOVER_DELAY;
+use strata_asm_txs_bridge_v1::parser::ParsedTx;
 
 use crate::{
-    DepositValidationError, SlashValidationError, errors::BridgeSubprotocolError,
-    state::BridgeV1State,
+    errors::BridgeSubprotocolError,
+    state::{BridgeV1State, withdrawal::OperatorClaimUnlock},
+    validation::{
+        validate_deposit_info, validate_slash_info, validate_unstake_info,
+        validate_withdrawal_fulfillment_info,
+    },
 };
 
 /// Handles parsed bridge transactions.
@@ -31,47 +29,21 @@ pub(crate) fn handle_parsed_tx(
 ) -> Result<(), BridgeSubprotocolError> {
     match parsed_tx {
         ParsedTx::Deposit(info) => {
-            // Verify the deposit output is locked to the current N/N multisig script
-            if info.locked_script() != state.operators().current_nn_script() {
-                return Err(DepositValidationError::WrongOutputLock)?;
-            }
-
-            // Retrieve the Deposit Request Transaction (DRT) from auxiliary data
-            let drt = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
-            let drt_info = parse_drt(drt).unwrap();
-
-            // Construct the expected locking script for the DRT output
-            let expected_drt_script = create_deposit_request_locking_script(
-                drt_info.header_aux().recovery_pk(),
-                state.operators().agg_key().to_xonly_public_key(),
-                RECOVER_DELAY,
-            );
-            let actual_script = &drt_info.deposit_request_output().inner().script_pubkey;
-
-            // Verify the DRT output script matches what we expect
-            if actual_script != &expected_drt_script {
-                return Err(DepositValidationError::DrtOutputScriptMismatch(Mismatch {
-                    expected: expected_drt_script,
-                    got: actual_script.clone(),
-                })
-                .into());
-            }
-
-            // Verify the deposit amount matches the bridge's expected amount
-            let expected_amount = state.denomination().to_sat();
-            if info.amt().to_sat() != expected_amount {
-                return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
-                    expected: expected_amount,
-                    got: info.amt().to_sat(),
-                })
-                .into());
-            }
+            validate_deposit_info(state, &info, verified_aux_data)?;
 
             state.add_deposit(&info)?;
             Ok(())
         }
         ParsedTx::WithdrawalFulfillment(info) => {
-            let unlock = state.process_withdrawal_fulfillment_tx(&info)?;
+            validate_withdrawal_fulfillment_info(state, &info)?;
+            let deposit_idx = info.header_aux().deposit_idx();
+
+            let fulfilled_assignment = state
+                .remove_assignment(deposit_idx)
+                .expect("validation checks that the assignment exists");
+
+            let unlock =
+                OperatorClaimUnlock::new(deposit_idx, fulfilled_assignment.current_assignee());
 
             let container_id = 0; // Replace with actual logic to determine container ID
             let withdrawal_processed_log = NewExportEntry::new(container_id, unlock.compute_hash());
@@ -80,39 +52,14 @@ pub(crate) fn handle_parsed_tx(
             Ok(())
         }
         ParsedTx::Slash(info) => {
-            let stake_connector_script = &verified_aux_data
-                .get_bitcoin_txout(info.stake_inpoint().outpoint())?
-                .script_pubkey;
+            validate_slash_info(state, &info, verified_aux_data)?;
 
-            // Validate that the stake connector (second input) is locked to a known N/N multisig
-            // script from any recorded configuration.
-            if !state
-                .operators()
-                .historical_nn_scripts()
-                .any(|script| script == stake_connector_script)
-            {
-                return Err(SlashValidationError::InvalidStakeConnectorScript.into());
-            };
-
-            // Remove the slashed operator
             state.remove_operator(info.header_aux().operator_idx());
 
             Ok(())
         }
         ParsedTx::Unstake(info) => {
-            // Build P2TR scriptPubKey from the extracted pubkey. This needs to be validated against
-            // known operator configurations.
-            let extracted_pubkey_script =
-                ScriptBuf::new_p2tr(SECP256K1, *info.witness_pushed_pubkey(), None);
-
-            // Verify the extracted pubkey corresponds to a known operator configuration.
-            if !state
-                .operators()
-                .historical_nn_scripts()
-                .any(|script| script == &extracted_pubkey_script)
-            {
-                return Err(SlashValidationError::InvalidStakeConnectorScript.into());
-            };
+            validate_unstake_info(state, &info)?;
 
             state.remove_operator(info.header_aux().operator_idx());
 

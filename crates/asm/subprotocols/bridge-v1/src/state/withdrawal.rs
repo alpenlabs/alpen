@@ -101,6 +101,13 @@ pub struct OperatorClaimUnlock {
 }
 
 impl OperatorClaimUnlock {
+    pub fn new(deposit_idx: u32, operator_idx: OperatorIdx) -> Self {
+        Self {
+            deposit_idx,
+            operator_idx,
+        }
+    }
+
     pub fn compute_hash(&self) -> [u8; 32] {
         let buf = encode_to_vec(self).expect("failed to encode OperatorClaimUnlock");
         hash::raw(&buf).0

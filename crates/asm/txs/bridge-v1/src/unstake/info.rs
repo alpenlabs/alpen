@@ -12,6 +12,9 @@ pub struct UnstakeInfo {
     /// SPS-50 auxiliary data from the transaction tag.
     header_aux: UnstakeTxHeaderAux,
     /// Pubkey extracted from the stake-connector script (witness element 2).
+    ///
+    /// During validation, this pubkey is converted to a key-path-only P2TR script using
+    /// this key as internal key, then checked against historical operator set scripts in state.
     witness_pushed_pubkey: XOnlyPublicKey,
 }
 

@@ -70,8 +70,8 @@ impl OperatorEntry {
     }
 }
 
-/// Builds a P2TR script for the provided aggregated operator key.
-fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptBuf {
+/// Builds a key-path-only P2TR script for the provided aggregated operator key.
+pub(crate) fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptBuf {
     BitcoinScriptBuf::from(ScriptBuf::new_p2tr(
         SECP256K1,
         agg_key.to_xonly_public_key(),
@@ -139,8 +139,11 @@ pub struct OperatorTable {
     /// Historical N/N multisig scripts from previous operator set configurations.
     ///
     /// This vector tracks all P2TR scripts that represented the bridge across membership changes
-    /// due to operator entries/exits. By storing the ScriptBuf directly instead of just keys, we
-    /// avoid recomputing P2TR scripts during validation, improving performance.
+    /// due to operator entries/exits. Each script is a key-path-only P2TR output (merkle root =
+    /// None) constructed from the aggregated public key of the operator set at that time.
+    ///
+    /// By storing the ScriptBuf directly instead of just keys, we avoid recomputing P2TR scripts
+    /// during validation, improving performance.
     historical_nn_scripts: Vec<BitcoinScriptBuf>,
 }
 

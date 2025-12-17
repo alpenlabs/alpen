@@ -23,6 +23,7 @@ mod errors;
 mod handler;
 mod state;
 mod subprotocol;
+mod validation;
 
 #[cfg(test)]
 mod test_utils;

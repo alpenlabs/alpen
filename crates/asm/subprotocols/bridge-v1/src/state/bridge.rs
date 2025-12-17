@@ -9,7 +9,7 @@ use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use crate::{
     errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
     state::{
-        assignment::AssignmentTable,
+        assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
@@ -249,6 +249,11 @@ impl BridgeV1State {
         }
 
         Ok(())
+    }
+
+    /// Removes the assignment from the assignment table
+    pub fn remove_assignment(&mut self, deposit_idx: u32) -> Option<AssignmentEntry> {
+        self.assignments.remove_assignment(deposit_idx)
     }
 
     /// Processes a withdrawal fulfillment transaction by validating it, and removing the

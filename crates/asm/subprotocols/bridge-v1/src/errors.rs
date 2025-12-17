@@ -59,6 +59,10 @@ pub enum DepositValidationError {
     /// The DRT output script does not match the expected locking script.
     #[error("DRT output script mismatch")]
     DrtOutputScriptMismatch(Mismatch<ScriptBuf>),
+
+    /// Failed to fetch required auxiliary data (e.g., Deposit Request Tx).
+    #[error("auxiliary data lookup failed")]
+    Aux(#[from] AuxError),
 }
 
 /// Errors that can occur during deposit output lock validation.
@@ -101,6 +105,10 @@ pub enum SlashValidationError {
     /// Stake connector input is not locked to the expected N/N multisig script
     #[error("stake connector not locked to N/N multisig script")]
     InvalidStakeConnectorScript,
+
+    /// Failed to retrieve the stake connector from auxiliary data.
+    #[error("auxiliary data lookup failed")]
+    Aux(#[from] AuxError),
 }
 
 #[derive(Debug, Error)]
