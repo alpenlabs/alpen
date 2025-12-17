@@ -16,6 +16,7 @@ alloy-rpc-types-engine.workspace = true
 async-trait.workspace = true
 reth-node-builder.workspace = true
 reth-provider.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

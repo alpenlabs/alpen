@@ -1179,6 +1179,7 @@ dependencies = [
  "reth-node-builder",
  "reth-provider",
  "strata-acct-types",
+ "thiserror 2.0.17",
  "tokio",
  "tracing",
 ]
