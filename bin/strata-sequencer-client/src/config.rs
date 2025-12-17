@@ -60,7 +60,6 @@ impl Config {
                 .duty_poll_interval
                 .unwrap_or(DEFAULT_DUTY_POLL_INTERVAL),
             epoch_gas_limit: args.epoch_gas_limit,
-            // Logging config defaults to empty - will be populated from env vars
             logging: LoggingConfig::default(),
         })
     }

@@ -7,7 +7,9 @@ use crate::errors::{ConfigError, InitError};
 
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
-pub(crate) struct EnvArgs {}
+pub(crate) struct EnvArgs {
+    // TODO: relevant items that will be populated from env vars
+}
 
 impl EnvArgs {
     pub(crate) fn from_env() -> Self {

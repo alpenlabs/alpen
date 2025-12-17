@@ -7,7 +7,6 @@ use strata_primitives::proof::ProofZkVm;
 
 use crate::config::ProverConfig;
 
-
 /// Command-line arguments used to configure the prover-client in both development and production
 /// modes.
 ///

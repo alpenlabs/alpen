@@ -106,33 +106,31 @@ impl ResourceConfig {
 
     /// Build OpenTelemetry Resource from config
     pub fn build_resource(&self) -> Resource {
-        match self {
-            ResourceConfig {
-                service_name,
-                service_version,
-                deployment_environment,
-                service_instance_id,
-                custom_attributes,
-            } => {
-                let mut attributes = vec![KeyValue::new("service.name", service_name.clone())];
+        let ResourceConfig {
+            service_name,
+            service_version,
+            deployment_environment,
+            service_instance_id,
+            custom_attributes,
+        } = self;
 
-                if let Some(version) = service_version {
-                    attributes.push(KeyValue::new("service.version", version.clone()));
-                }
+        let mut attributes = vec![KeyValue::new("service.name", service_name.clone())];
 
-                if let Some(env) = deployment_environment {
-                    attributes.push(KeyValue::new("deployment.environment", env.clone()));
-                }
-
-                if let Some(instance_id) = service_instance_id {
-                    attributes.push(KeyValue::new("service.instance.id", instance_id.clone()));
-                }
-
-                attributes.extend(custom_attributes.iter().cloned());
-
-                Resource::new(attributes)
-            }
+        if let Some(version) = service_version {
+            attributes.push(KeyValue::new("service.version", version.clone()));
         }
+
+        if let Some(env) = deployment_environment {
+            attributes.push(KeyValue::new("deployment.environment", env.clone()));
+        }
+
+        if let Some(instance_id) = service_instance_id {
+            attributes.push(KeyValue::new("service.instance.id", instance_id.clone()));
+        }
+
+        attributes.extend(custom_attributes.iter().cloned());
+
+        Resource::new(attributes)
     }
 }
 
@@ -161,12 +159,6 @@ impl LoggerConfig {
             file_logging_config: None,
             otlp_export_config: OtlpExportConfig::default(),
         }
-    }
-
-    /// Creates a new configuration with a base service name
-    /// (alias for `new()` for backwards compatibility)
-    pub fn with_base_name(service_name: impl Into<String>) -> Self {
-        Self::new(service_name.into())
     }
 
     /// Set OTLP endpoint URL

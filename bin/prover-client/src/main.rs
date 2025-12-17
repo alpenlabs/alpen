@@ -44,7 +44,6 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn main_inner(args: Args) -> anyhow::Result<()> {
-    // Load base config from file first (includes logging settings)
     let base_config = if let Some(config_path) = &args.config {
         config::ProverConfig::from_file(config_path)?
     } else {

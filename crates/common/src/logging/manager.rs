@@ -138,9 +138,6 @@ pub fn finalize_with_timeout(timeout: Duration) {
     info!(?timeout, "shutting down logging with custom timeout");
 
     if let Some(provider) = TRACER_PROVIDER.get() {
-        // Note: The TracerProvider::shutdown() doesn't accept a timeout parameter directly.
-        // The timeout for batch span processor is configured at initialization.
-        // We're using the shutdown method which will respect the configured timeouts.
         match provider.shutdown() {
             Ok(()) => {
                 info!("tracer provider shut down successfully");

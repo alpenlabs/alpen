@@ -1,15 +1,16 @@
 //! CLI argument parsing and environment variable handling.
 
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 use argh::FromArgs;
-use strata_common::logging::FileLoggingConfig;
 
 use crate::errors::*;
 
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
-pub(crate) struct EnvArgs {}
+pub(crate) struct EnvArgs {
+    // TODO: relevant items that will be populated from env vars
+}
 
 impl EnvArgs {
     pub(crate) fn from_env() -> Self {
