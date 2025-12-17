@@ -15,6 +15,36 @@ from utils.constants import *
 from utils.wait import ProverWaiter, RethWaiter, StrataWaiter
 
 
+def _retry_bitcoind_rpc(
+    logger: logging.Logger,
+    desc: str,
+    fn,
+    *,
+    timeout_s: float = 180.0,
+    interval_s: float = 1.0,
+):
+    """
+    Best-effort retry wrapper for bitcoind JSON-RPC calls.
+
+    We use it during env init to reduce flakiness when bitcoind is still warming up
+    (especially when CI runs each test in its own fresh runner).
+    """
+    deadline = time.monotonic() + timeout_s
+    last_exc: Exception | None = None
+
+    while time.monotonic() < deadline:
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 - broad retry is intentional for test harness
+            last_exc = e
+            logger.info(f"bitcoind RPC '{desc}' failed; retrying in {interval_s:.1f}s: {e!r}")
+            time.sleep(interval_s)
+
+    raise RuntimeError(
+        f"bitcoind RPC '{desc}' did not succeed within {timeout_s:.0f}s"
+    ) from last_exc
+
+
 class StrataTestBase(flexitest.Test):
     """
     Class to be used instead of flexitest.Test for accessing logger
@@ -197,10 +227,12 @@ class BasicEnvConfig(flexitest.EnvConfig):
         svcs["bitcoin"] = bitcoind
         time.sleep(BLOCK_GENERATION_INTERVAL_SECS)
 
-        brpc = bitcoind.create_rpc()
+        brpc = _retry_bitcoind_rpc(logger, "create_rpc", bitcoind.create_rpc, timeout_s=180.0)
         walletname = bitcoind.get_prop("walletname")
-        brpc.proxy.createwallet(walletname)
-        seqaddr = brpc.proxy.getnewaddress()
+        _retry_bitcoind_rpc(
+            logger, f"createwallet({walletname})", lambda: brpc.proxy.createwallet(walletname)
+        )
+        seqaddr = _retry_bitcoind_rpc(logger, "getnewaddress", brpc.proxy.getnewaddress)
 
         # Generate enough blocks to ensure we can fetch the genesis trigger block
         # The default genesis trigger height is 100, so we need at least that many blocks
@@ -210,7 +242,11 @@ class BasicEnvConfig(flexitest.EnvConfig):
             f"Generating {min_blocks_needed} blocks for genesis trigger height "
             f"{settings.genesis_trigger}"
         )
-        brpc.proxy.generatetoaddress(min_blocks_needed, seqaddr)
+        _retry_bitcoind_rpc(
+            logger,
+            f"generatetoaddress({min_blocks_needed})",
+            lambda: brpc.proxy.generatetoaddress(min_blocks_needed, seqaddr),
+        )
 
         # Now generate params with Bitcoin RPC available
         params_gen_data = generate_simple_params(
@@ -241,17 +277,26 @@ class BasicEnvConfig(flexitest.EnvConfig):
                 batch_size = min(self.pre_generate_blocks, 500)
 
                 logger.info(f"Pre generating {batch_size} blocks to address {seqaddr}")
-                brpc.proxy.generatetoaddress(batch_size, seqaddr)
+                _retry_bitcoind_rpc(
+                    logger,
+                    f"generatetoaddress({batch_size})",
+                    lambda batch_size=batch_size: brpc.proxy.generatetoaddress(batch_size, seqaddr),
+                )
                 self.pre_generate_blocks -= batch_size
 
             if self.pre_fund_addrs:
                 # Send funds for btc external and recovery addresses used in the test logic.
                 # Generate one more block so the transaction is on the blockchain.
-                brpc.proxy.sendmany(
-                    "",
-                    {get_address(i): 20 for i in range(20)},
+                _retry_bitcoind_rpc(
+                    logger,
+                    "sendmany(prefund)",
+                    lambda: brpc.proxy.sendmany("", {get_address(i): 20 for i in range(20)}),
                 )
-                brpc.proxy.generatetoaddress(1, seqaddr)
+                _retry_bitcoind_rpc(
+                    logger,
+                    "generatetoaddress(1)",
+                    lambda: brpc.proxy.generatetoaddress(1, seqaddr),
+                )
 
         # generate blocks every 500 millis
         if self.auto_generate_blocks:
@@ -328,16 +373,22 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         # wait for services to to startup
         time.sleep(BLOCK_GENERATION_INTERVAL_SECS)
 
-        brpc = bitcoind.create_rpc()
+        brpc = _retry_bitcoind_rpc(logger, "create_rpc", bitcoind.create_rpc, timeout_s=180.0)
 
         walletname = bitcoind.get_prop("walletname")
-        brpc.proxy.createwallet(walletname)
+        _retry_bitcoind_rpc(
+            logger, f"createwallet({walletname})", lambda: brpc.proxy.createwallet(walletname)
+        )
 
-        seqaddr = brpc.proxy.getnewaddress()
+        seqaddr = _retry_bitcoind_rpc(logger, "getnewaddress", brpc.proxy.getnewaddress)
 
         if self.pre_generate_blocks > 0:
             logger.info(f"Pre generating {self.pre_generate_blocks} blocks to address {seqaddr}")
-            brpc.proxy.generatetoaddress(self.pre_generate_blocks, seqaddr)
+            _retry_bitcoind_rpc(
+                logger,
+                f"generatetoaddress({self.pre_generate_blocks})",
+                lambda: brpc.proxy.generatetoaddress(self.pre_generate_blocks, seqaddr),
+            )
 
         # generate blocks every 500 millis
         if self.auto_generate_blocks:

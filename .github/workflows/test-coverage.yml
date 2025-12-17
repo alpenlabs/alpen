@@ -38,11 +38,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download functional test coverage
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
-        with:
-          name: functional-lcov
-
       - name: Download unit test coverage
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
@@ -56,7 +51,15 @@ jobs:
           flags: unit
           name: unit-coverage
 
+      # Functional test coverage is only generated on main branch (PRs run parallel without coverage)
+      - name: Download functional test coverage
+        if: github.ref == 'refs/heads/main'
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: functional-lcov
+
       - name: Publish Functional Test Coverage
+        if: github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

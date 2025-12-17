@@ -7,6 +7,7 @@ from gevent import monkey
 monkey.patch_all()
 
 import argparse
+import json
 import os
 import sys
 import types
@@ -36,6 +37,10 @@ Spins up the whole environment as defined by the `env_name` passed as a paramete
 Keeps alive all the services in the specified env until the execution is interrupted.
 Internally runs against a mock test that does nothing and just hangs.
 This mechanism can be used for local setup, fast prototyping and testing.""")
+parser.add_argument(
+    "--list-tests",
+    action="store_true",
+    help="List all available tests in JSON format for CI matrix generation")
 
 
 def disabled_tests() -> list[str]:
@@ -61,6 +66,19 @@ def load_keepalive_mock_test(env_name):
 
     # Return the class object so it can be loaded by the runtime directly.
     return getattr(mod, KEEP_ALIVE_TEST_NAME)
+
+
+def get_test_path_for_matrix(test_name, path, root_dir):
+    """
+    Converts a test module path to the format used in GitHub Actions matrix.
+    Returns the test identifier as used with -t flag (e.g., 'client_status' or 'bridge/bridge_test').
+    """
+    test_dir = os.path.join(root_dir, TEST_DIR)
+    # Get relative path from test_dir
+    rel_path = os.path.relpath(path, test_dir)
+    # Remove .py extension and convert to the format used in matrix
+    test_path = rel_path.removesuffix(".py")
+    return test_path
 
 
 def filter_tests(parsed_args, modules):
@@ -106,6 +124,22 @@ def main(argv):
     parsed_args = parser.parse_args(argv[1:])
 
     root_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Handle --list-tests flag
+    if parsed_args.list_tests:
+        test_dir = os.path.join(root_dir, TEST_DIR)
+        modules = flexitest.runtime.scan_dir_for_modules(test_dir)
+        disabled = disabled_tests()
+        test_list = []
+        for test_name, path in modules.items():
+            if test_name not in disabled:
+                test_path = get_test_path_for_matrix(test_name, path, root_dir)
+                test_list.append(test_path)
+        # Sort for consistent output
+        test_list.sort()
+        # Output as JSON array for GitHub Actions matrix
+        print(json.dumps(test_list))
+        return 0
 
     # Handle args and prepare tests accordingly.
     is_keep_alive_execution = parsed_args.env is not None
