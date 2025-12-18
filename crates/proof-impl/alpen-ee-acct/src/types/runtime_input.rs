@@ -15,7 +15,8 @@ pub struct RuntimeUpdateInput {
 
     /// Serialized block packages for building CommitChainSegment in guest.
     /// Each package contains execution metadata and raw block body.
-    blocks: Vec<CommitBlockPackage>,
+    /// TODO: still not sure with the name, even for the Data type.
+    commit_block_packages: Vec<CommitBlockPackage>,
 
     /// Previous header (raw bytes)
     raw_prev_header: Vec<u8>,
@@ -29,14 +30,14 @@ impl RuntimeUpdateInput {
     pub fn new(
         operation_ssz: Vec<u8>,
         coinputs: Vec<Vec<u8>>,
-        blocks: Vec<CommitBlockPackage>,
+        commit_block_packages: Vec<CommitBlockPackage>,
         raw_prev_header: Vec<u8>,
         raw_partial_pre_state: Vec<u8>,
     ) -> Self {
         Self {
             operation_ssz,
             coinputs,
-            blocks,
+            commit_block_packages,
             raw_prev_header,
             raw_partial_pre_state,
         }
@@ -52,9 +53,9 @@ impl RuntimeUpdateInput {
         &self.coinputs
     }
 
-    /// Get reference to blocks
-    pub fn blocks(&self) -> &[CommitBlockPackage] {
-        &self.blocks
+    /// Get reference to commit block packages
+    pub fn commit_block_packages(&self) -> &[CommitBlockPackage] {
+        &self.commit_block_packages
     }
 
     /// Get reference to raw previous header
@@ -84,11 +85,11 @@ impl Codec for RuntimeUpdateInput {
             enc.write_buf(coinput)?;
         }
 
-        // Encode blocks (Vec<CommitBlockPackage>)
-        let blocks_len = self.blocks.len() as u32;
-        blocks_len.encode(enc)?;
-        for block in &self.blocks {
-            block.encode(enc)?;
+        // Encode commit_block_packages (Vec<CommitBlockPackage>)
+        let packages_len = self.commit_block_packages.len() as u32;
+        packages_len.encode(enc)?;
+        for package in &self.commit_block_packages {
+            package.encode(enc)?;
         }
 
         // Encode raw_prev_header
@@ -120,12 +121,12 @@ impl Codec for RuntimeUpdateInput {
             coinputs.push(coinput);
         }
 
-        // Decode blocks
-        let blocks_len = u32::decode(dec)? as usize;
-        let mut blocks = Vec::with_capacity(blocks_len);
-        for _ in 0..blocks_len {
-            let block = CommitBlockPackage::decode(dec)?;
-            blocks.push(block);
+        // Decode commit_block_packages
+        let packages_len = u32::decode(dec)? as usize;
+        let mut commit_block_packages = Vec::with_capacity(packages_len);
+        for _ in 0..packages_len {
+            let package = CommitBlockPackage::decode(dec)?;
+            commit_block_packages.push(package);
         }
 
         // Decode raw_prev_header
@@ -141,7 +142,7 @@ impl Codec for RuntimeUpdateInput {
         Ok(Self {
             operation_ssz,
             coinputs,
-            blocks,
+            commit_block_packages,
             raw_prev_header,
             raw_partial_pre_state,
         })

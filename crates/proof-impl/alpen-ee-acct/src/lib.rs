@@ -115,8 +115,9 @@ pub fn process_alpen_ee_proof_update(zkvm: &impl ZkVmEnv) {
         .expect("Failed to decode UpdateOperationData from SSZ");
 
     // Build CommitChainSegment from blocks
-    let commit_segments = build_commit_segments_from_blocks(runtime_input.blocks().to_vec())
-        .expect("Failed to build commit segments from blocks");
+    let commit_segments =
+        build_commit_segments_from_blocks(runtime_input.commit_block_packages().to_vec())
+            .expect("Failed to build commit segments from blocks");
 
     // 4. Create execution environment
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().expect("Invalid genesis"));
