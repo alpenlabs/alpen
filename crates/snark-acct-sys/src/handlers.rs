@@ -20,5 +20,6 @@ pub fn handle_snark_transfer(
     _amt: BitcoinAmount,
 ) -> AcctResult<()> {
     // Nothing to do yet, the balance should be already updated.
+    // TODO: anything more to be done?
     Ok(())
 }

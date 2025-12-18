@@ -8,7 +8,7 @@ use strata_ol_chain_types_new::{
     TransactionPayload,
 };
 use strata_snark_acct_sys as snark_sys;
-use strata_snark_acct_types::{Seqno, SnarkAccountUpdateContainer};
+use strata_snark_acct_types::{LedgerInterface, SnarkAccountUpdateContainer};
 
 use crate::{
     account_processing,
@@ -98,6 +98,20 @@ impl AcctInteractionBuffer {
     }
 }
 
+impl LedgerInterface for AcctInteractionBuffer {
+    type Error = std::convert::Infallible;
+
+    fn send_transfer(&mut self, dest: AccountId, value: BitcoinAmount) -> Result<(), Self::Error> {
+        self.send_transfer_to(dest, value);
+        Ok(())
+    }
+
+    fn send_message(&mut self, dest: AccountId, payload: MsgPayload) -> Result<(), Self::Error> {
+        self.send_message_to(dest, payload);
+        Ok(())
+    }
+}
+
 fn process_update_tx<S: IStateAccessor>(
     state: &mut S,
     target: AccountId,
@@ -146,14 +160,10 @@ fn process_update_tx<S: IStateAccessor>(
             operation.extra_data(),
         )?;
 
-        // Collect effects
+        // Collect effects using snark-acct-sys
         let mut fx_buf = AcctInteractionBuffer::new_empty();
-        for m in verified_update.operation().outputs().messages() {
-            fx_buf.send_message_to(m.dest(), m.payload().clone());
-        }
-        for t in verified_update.operation().outputs().transfers() {
-            fx_buf.send_transfer_to(t.dest(), t.value());
-        }
+        snark_sys::apply_update_outputs(&mut fx_buf, verified_update)
+            .expect("AcctInteractionBuffer operations are infallible");
 
         Ok((fx_buf, astate.serial()))
     })??;
