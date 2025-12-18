@@ -3,6 +3,7 @@
 pub mod chainstate;
 pub mod errors;
 pub mod mmr_helpers;
+mod ol_state;
 pub mod traits;
 pub mod types;
 
@@ -13,3 +14,4 @@ pub mod stubs;
 pub type DbResult<T> = anyhow::Result<T, errors::DbError>;
 
 pub use errors::DbError;
+pub use ol_state::{OLFinalizedState, OLStateDatabase, OLWriteBatch};
