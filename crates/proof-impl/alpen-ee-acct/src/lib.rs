@@ -34,8 +34,11 @@ mod guest_builder;
 // ZkVmProgram implementation
 mod program;
 
-pub use guest_builder::CommitBlockPackage;
-pub use program::{AlpenEeProofInput, AlpenEeProofProgramOutput, AlpenEeProofProgram};
+// Input types
+mod types;
+
+pub use program::{AlpenEeProofProgram, AlpenEeProofProgramOutput};
+pub use types::{AlpenEeProofInput, CommitBlockPackage, EeAccountInit, RuntimeUpdateInput};
 
 /// Public output committed by the Alpen EVM EE account update proof
 #[derive(Clone, Debug)]
@@ -59,76 +62,78 @@ pub struct AlpenEeProofOutput {
     pub extra_data: UpdateExtraData,
 }
 
-/// Processes an Alpen EVM EE account update operation in the zkVM.
+/// Processes an Alpen EVM EE account update operation in the zkVM guest.
 ///
-/// This function:
-/// 1. Reads SSZ-encoded raw bytes from zkVM using read_buf()
-/// 2. Manually deserializes SSZ bytes to actual types
-/// 3. Builds SharedPrivateInput from components
-/// 4. Creates EvmExecutionEnvironment
-/// 5. Calls verify_and_apply_update_operation
-/// 6. Commits the new state hash as output
+/// This is the main guest entry point that verifies and applies an EE account state
+/// transition. It deserializes inputs provided by the host, verifies state consistency,
+/// processes the update through the EVM execution environment, and commits the final
+/// state as proof output.
 ///
-/// # zkVM I/O Pattern
+/// # Execution Flow
 ///
-/// The host uses `write_buf()` to pass raw SSZ bytes:
-/// ```ignore
-/// input_builder.write_buf(&astate_ssz)?;  // Raw SSZ bytes for EeAccountState
-/// ```
+/// 1. **Deserialize inputs**: Reads Codec-serialized [`EeAccountInit`] and [`RuntimeUpdateInput`]
+///    structures, plus genesis configuration
+/// 2. **Verify initial state**: Ensures the account state hash matches the claimed previous proof
+///    state
+/// 3. **Build execution context**: Constructs [`SharedPrivateInput`] from commit segments, headers,
+///    and partial state
+/// 4. **Apply update**: Calls [`verify_and_apply_update_operation`] which validates the operation
+///    and executes EVM blocks
+/// 5. **Commit output**: Serializes and commits the complete proof output including state
+///    transitions, messages, and metadata
 ///
-/// The guest uses `read_buf()` to receive raw bytes, then deserializes SSZ:
-/// ```ignore
-/// let astate_ssz = zkvm.read_buf();  // Get raw SSZ bytes
-/// let astate = EeAccountState::from_ssz_bytes(&astate_ssz)?;  // Decode SSZ
-/// ```
+/// # Input Encoding
+///
+/// The host provides three inputs via zkVM buffers:
+/// - **Account init** (Codec): Initial account state and previous proof state
+/// - **Runtime input** (Codec): Update operation, coinputs, blocks, and EVM state
+/// - **Genesis** (Serde): Chain configuration for EVM execution environment
+///
+/// # Panics
+///
+/// Panics if any deserialization fails, state verification fails, or the update
+/// operation is invalid. These represent proof generation failures.
 pub fn process_alpen_ee_proof_update(zkvm: &impl ZkVmEnv) {
-    // 1. Read raw SSZ bytes from zkVM and decode them
-    // Each field is passed as raw bytes using write_buf/read_buf
-    let mut astate = EeAccountState::from_ssz_bytes(&zkvm.read_buf())
+    // 1. Deserialize grouped input structures using Codec
+    let account_init: EeAccountInit =
+        decode_buf_exact(&zkvm.read_buf()).expect("Failed to decode EeAccountInit");
+    let runtime_input: RuntimeUpdateInput =
+        decode_buf_exact(&zkvm.read_buf()).expect("Failed to decode RuntimeUpdateInput");
+    let genesis: Genesis = zkvm.read_serde();
+
+    // 2. Extract and decode individual components from account initialization
+    let mut astate = EeAccountState::from_ssz_bytes(account_init.astate_ssz())
         .expect("Failed to decode EeAccountState from SSZ");
-    let operation = UpdateOperationData::from_ssz_bytes(&zkvm.read_buf())
-        .expect("Failed to decode UpdateOperationData from SSZ");
-    let prev_proof_state =
-        ProofState::from_ssz_bytes(&zkvm.read_buf()).expect("Failed to decode ProofState from SSZ");
+    let prev_proof_state = ProofState::from_ssz_bytes(account_init.prev_proof_state_ssz())
+        .expect("Failed to decode ProofState from SSZ");
 
     // Verify that the initial astate matches the claimed prev_proof_state
     verify_proof_state_matches(&astate, &prev_proof_state);
 
-    // Read coinputs (Vec<Vec<u8>>) with SSZ
-    let coinputs: Vec<Vec<u8>> = Vec::<Vec<u8>>::from_ssz_bytes(&zkvm.read_buf())
-        .expect("Failed to decode coinputs from SSZ");
-
-    // Read number of blocks with SSZ, then read each block's data
-    // Each block is a CommitBlockPackage: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
-    let num_blocks: u32 =
-        u32::from_ssz_bytes(&zkvm.read_buf()).expect("Failed to decode num_blocks from SSZ");
-    let mut blocks = Vec::with_capacity(num_blocks as usize);
-    for _ in 0..num_blocks {
-        blocks.push(CommitBlockPackage::new(zkvm.read_buf()));
-    }
+    // 3. Extract components from runtime update input
+    let operation = UpdateOperationData::from_ssz_bytes(runtime_input.operation_ssz())
+        .expect("Failed to decode UpdateOperationData from SSZ");
 
     // Build CommitChainSegment from blocks
-    let commit_segments = build_commit_segments_from_blocks(blocks)
+    let commit_segments = build_commit_segments_from_blocks(runtime_input.blocks().to_vec())
         .expect("Failed to build commit segments from blocks");
 
-    // Already raw bytes
-    let raw_prev_header = zkvm.read_buf();
-    let raw_partial_pre_state = zkvm.read_buf();
-
-    // Read genesis data for ChainSpec construction
-    let genesis: Genesis = zkvm.read_serde();
+    // 4. Create execution environment
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().expect("Invalid genesis"));
     let ee = EvmExecutionEnvironment::new(chain_spec);
 
-    let shared_private =
-        SharedPrivateInput::new(commit_segments, raw_prev_header, raw_partial_pre_state);
+    let shared_private = SharedPrivateInput::new(
+        commit_segments,
+        runtime_input.raw_prev_header().to_vec(),
+        runtime_input.raw_partial_pre_state().to_vec(),
+    );
 
-    // Verify and apply the update operation
+    // 5. Verify and apply the update operation
     // This internally verifies the extra_data fields (processed_inputs, etc.)
     verify_and_apply_update_operation(
         &mut astate,
         &operation,
-        coinputs.iter().map(|v| v.as_slice()),
+        runtime_input.coinputs().iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
     )
