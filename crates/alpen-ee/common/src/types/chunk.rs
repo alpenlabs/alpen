@@ -2,6 +2,8 @@ use std::iter;
 
 use strata_acct_types::Hash;
 
+use crate::ProofId;
+
 /// Lifecycle states for chunk
 #[derive(Debug)]
 pub enum ChunkStatus {
@@ -10,8 +12,7 @@ pub enum ChunkStatus {
     /// Proving started. Pending proof generation.
     PendingProof(String),
     /// Valid proof ready.
-    /// TODO: correct proof type
-    ProofReady(Vec<u8>),
+    ProofReady(ProofId),
 }
 
 /// Unique identifier for a chunk
@@ -51,7 +52,7 @@ impl Chunk {
         self.proof_status = ChunkStatus::PendingProof(proof_task_id);
     }
 
-    pub fn set_proof(&mut self, proof: Vec<u8>) {
+    pub fn set_proof(&mut self, proof: ProofId) {
         self.proof_status = ChunkStatus::ProofReady(proof);
     }
 

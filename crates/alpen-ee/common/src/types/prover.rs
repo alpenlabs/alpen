@@ -1,9 +1,9 @@
 use strata_acct_types::Hash;
 
-/// Unique identifier to a persisted proof.
+/// Unique identifier to a proof.
 pub type ProofId = Hash;
 
-/// TODO: proper proof type
+// TODO: proper proof type
 #[expect(dead_code, reason = "wip")]
 #[derive(Debug)]
 pub struct Proof(Vec<u8>);

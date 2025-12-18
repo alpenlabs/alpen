@@ -15,8 +15,6 @@ pub enum ProofGenerationStatus {
 }
 
 /// Interface between Prover and Batch assembly
-/// Note: In case of reorgs, `EeUpdateId` is unique enough to not conflict between forks.
-/// Note2: eyre::Result<> is here mainly to pass back db related and other errors.
 #[async_trait]
 pub trait EeUpdateProver: Sized {
     /// Request proof generation for ee_update_id.
@@ -32,7 +30,7 @@ pub trait EeUpdateProver: Sized {
         ee_update_id: EeUpdateId,
     ) -> eyre::Result<ProofGenerationStatus>;
 
-    /// Get a persisted proof
+    /// Get a proof from persistence storage.
     ///
     /// None -> proofId not found
     async fn get_proof(&self, proof_id: ProofId) -> eyre::Result<Option<Proof>>;

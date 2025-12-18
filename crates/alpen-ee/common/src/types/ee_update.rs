@@ -4,6 +4,8 @@ use bitcoin::Txid;
 use strata_acct_types::Hash;
 use strata_identifiers::L1BlockCommitment;
 
+use crate::ProofId;
+
 /// Unique identifier for an EeUpdate
 #[derive(Debug)]
 pub struct EeUpdateId {
@@ -34,8 +36,7 @@ pub enum EeUpdateStatus {
         proof_job_id: String,
     },
     /// Proof ready
-    /// TODO: correct proof type
-    ProofReady { da: Vec<L1DaRef>, proof: Vec<u8> },
+    ProofReady { da: Vec<L1DaRef>, proof: ProofId },
 }
 
 /// Represents a sequence of blocks that are treated as a unit for DA and posting updates to OL.
