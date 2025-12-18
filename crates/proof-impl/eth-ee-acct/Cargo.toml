@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Strata crates (for guest processing)
+ssz.workspace = true
+strata-codec.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
@@ -12,27 +13,15 @@ strata-evm-ee = { path = "../../evm-ee" }
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
-
-# Reth for ChainSpec
-reth-chainspec.workspace = true
-
-# RSP primitives for Genesis
-rsp-primitives.workspace = true
-
-# zkVM environment
+tree_hash.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
-# Serialization (used by guest deserialization)
+# External dependencies
 borsh.workspace = true
-ssz.workspace = true
-strata-codec.workspace = true
-
-# Hashing (for guest block verification and state hashing)
+reth-chainspec.workspace = true
+rsp-primitives.workspace = true
 sha2.workspace = true
-tree_hash.workspace = true
-
-# Error handling
 thiserror.workspace = true
 
 [dev-dependencies]

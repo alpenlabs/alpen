@@ -1,11 +1,11 @@
-//! Borsh serialization implementation for EthEeAcctProofOutput
+//! Borsh serialization implementation for AlpenEeProofOutput
 //!
 //! This module provides Borsh serialization by wrapping SSZ-encoded bytes.
 //!
 //! Current approach: Each field is serialized to SSZ individually, then wrapped in Borsh.
 //!
 //! Once all inner types have proper SSZ support, this can be simplified to:
-//! - Derive SSZ Encode/Decode for the entire EthEeAcctProofOutput struct
+//! - Derive SSZ Encode/Decode for the entire AlpenEeProofOutput struct
 //! - Serialize the whole struct to SSZ bytes in one call
 //! - Wrap those single SSZ bytes in Borsh (much simpler than current per-field approach)
 
@@ -15,9 +15,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::{Decode, Encode};
 use strata_ee_acct_types::UpdateExtraData;
 
-use crate::EthEeAcctProofOutput;
+use crate::AlpenEeProofOutput;
 
-impl BorshSerialize for EthEeAcctProofOutput {
+impl BorshSerialize for AlpenEeProofOutput {
     fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         // Serialize all fields as SSZ bytes wrapped in Borsh
         let prev_state_bytes = self.prev_state.as_ssz_bytes();
@@ -41,7 +41,7 @@ impl BorshSerialize for EthEeAcctProofOutput {
     }
 }
 
-impl BorshDeserialize for EthEeAcctProofOutput {
+impl BorshDeserialize for AlpenEeProofOutput {
     fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
         // Deserialize all fields from SSZ bytes wrapped in Borsh
         let prev_state_bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
@@ -126,8 +126,8 @@ mod tests {
             .prop_map(|(blkid, inputs, fincls)| UpdateExtraData::new(blkid.into(), inputs, fincls))
     }
 
-    // Strategy for generating random EthEeAcctProofOutput
-    fn arb_eth_ee_acct_proof_output() -> impl Strategy<Value = EthEeAcctProofOutput> {
+    // Strategy for generating random AlpenEeProofOutput
+    fn arb_alpen_ee_proof_output() -> impl Strategy<Value = AlpenEeProofOutput> {
         (
             arb_proof_state(),
             arb_proof_state(),
@@ -135,7 +135,7 @@ mod tests {
             arb_update_extra_data(),
         )
             .prop_map(|(prev_state, final_state, da_commitments, extra_data)| {
-                EthEeAcctProofOutput {
+                AlpenEeProofOutput {
                     prev_state,
                     final_state,
                     da_commitments,
@@ -148,12 +148,12 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_borsh_roundtrip_proptest(output in arb_eth_ee_acct_proof_output()) {
+        fn test_borsh_roundtrip_proptest(output in arb_alpen_ee_proof_output()) {
             // Serialize
             let serialized = borsh::to_vec(&output).expect("Failed to serialize");
 
             // Deserialize
-            let deserialized: EthEeAcctProofOutput =
+            let deserialized: AlpenEeProofOutput =
                 borsh::from_slice(&serialized).expect("Failed to deserialize");
 
             // Verify round-trip for all fields

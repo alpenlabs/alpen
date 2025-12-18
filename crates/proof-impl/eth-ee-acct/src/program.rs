@@ -3,6 +3,8 @@
 //! This module defines the proof program structure that integrates with zkaleido's
 //! proof generation framework.
 
+use rsp_primitives::genesis::Genesis;
+use ssz::Encode;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
@@ -11,53 +13,80 @@ use std::{
 use zkaleido::{ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
-use crate::{EthEeAcctProofOutput, process_eth_ee_acct_update}; // From lib.rs
+use crate::{AlpenEeProofOutput, CommitBlockPackage, process_alpen_ee_proof_update}; // From lib.rs
 
-/// Input for ETH-EE account proof generation
-/// This is the high-level input that the host provides
+/// Private inputs to the proof for an Alpen EVM EE (runtime) account update.
+///
+/// This struct contains all the data needed by the guest zkVM to verify and apply
+/// an EE account update operation for Alpen's EVM execution environment.
 #[derive(Debug)]
-pub struct EthEeAcctInput {
+pub struct AlpenEeProofInput {
     /// EeAccountState encoded as SSZ bytes
-    pub astate_ssz: Vec<u8>,
+    astate_ssz: Vec<u8>,
 
     /// UpdateOperationData encoded as SSZ bytes
-    pub operation_ssz: Vec<u8>,
+    operation_ssz: Vec<u8>,
 
     /// Previous ProofState (before the update) encoded as SSZ bytes
     /// The guest will verify that tree_hash_root(astate) matches this state
-    pub prev_proof_state_ssz: Vec<u8>,
+    prev_proof_state_ssz: Vec<u8>,
 
     /// Coinput witness data for messages
-    pub coinputs: Vec<Vec<u8>>,
+    coinputs: Vec<Vec<u8>>,
 
-    /// Serialized blocks for building CommitChainSegment in guest
-    /// Each `Vec<u8>` is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
-    pub serialized_blocks: Vec<Vec<u8>>,
+    /// Serialized block packages for building CommitChainSegment in guest.
+    /// Each package contains execution metadata and raw block body.
+    blocks: Vec<CommitBlockPackage>,
 
     /// Previous header (raw bytes)
-    pub raw_prev_header: Vec<u8>,
+    raw_prev_header: Vec<u8>,
 
     /// Partial pre-state (raw bytes)
-    pub raw_partial_pre_state: Vec<u8>,
+    raw_partial_pre_state: Vec<u8>,
 
     /// Genesis data for constructing ChainSpec (serde-serialized)
-    pub genesis: rsp_primitives::genesis::Genesis,
+    genesis: Genesis,
 }
 
-/// Output from ETH-EE account proof
-/// This is the public output committed by the guest
-pub type EthEeAcctOutput = EthEeAcctProofOutput;
+impl AlpenEeProofInput {
+    /// Create a new AlpenEeProofInput
+    pub fn new(
+        astate_ssz: Vec<u8>,
+        operation_ssz: Vec<u8>,
+        prev_proof_state_ssz: Vec<u8>,
+        coinputs: Vec<Vec<u8>>,
+        blocks: Vec<CommitBlockPackage>,
+        raw_prev_header: Vec<u8>,
+        raw_partial_pre_state: Vec<u8>,
+        genesis: Genesis,
+    ) -> Self {
+        Self {
+            astate_ssz,
+            operation_ssz,
+            prev_proof_state_ssz,
+            coinputs,
+            blocks,
+            raw_prev_header,
+            raw_partial_pre_state,
+            genesis,
+        }
+    }
+}
 
-/// The proof program for ETH-EE account updates
+/// Output from Alpen EE account proof.
+/// This is the public output committed by the guest.
+pub type AlpenEeProofProgramOutput = AlpenEeProofOutput;
+
+/// The proof program for Alpen EVM EE account updates.
 #[derive(Debug)]
-pub struct EthEeAcctProgram;
+pub struct AlpenEeProofProgram;
 
-impl ZkVmProgram for EthEeAcctProgram {
-    type Input = EthEeAcctInput;
-    type Output = EthEeAcctOutput;
+impl ZkVmProgram for AlpenEeProofProgram {
+    type Input = AlpenEeProofInput;
+    type Output = AlpenEeProofProgramOutput;
 
     fn name() -> String {
-        "ETH-EE Account STF".to_string()
+        "Alpen EVM EE Account STF".to_string()
     }
 
     fn proof_type() -> ProofType {
@@ -75,14 +104,15 @@ impl ZkVmProgram for EthEeAcctProgram {
         input_builder.write_buf(&input.operation_ssz)?;
         input_builder.write_buf(&input.prev_proof_state_ssz)?;
 
-        // Write coinputs (Vec<Vec<u8>>) with borsh
-        input_builder.write_borsh(&input.coinputs)?;
+        // Write coinputs (Vec<Vec<u8>>) with SSZ
+        input_builder.write_buf(&input.coinputs.as_ssz_bytes())?;
 
-        // Write number of blocks, then each block's data
-        // Each block is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
-        input_builder.write_borsh(&(input.serialized_blocks.len() as u32))?;
-        for block_data in &input.serialized_blocks {
-            input_builder.write_buf(block_data)?;
+        // Write number of blocks with SSZ, then each block's data
+        // Each block is a CommitBlockPackage: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+        let num_blocks = input.blocks.len() as u32;
+        input_builder.write_buf(&num_blocks.as_ssz_bytes())?;
+        for block in &input.blocks {
+            input_builder.write_buf(block.as_bytes())?;
         }
 
         // Write raw byte buffers
@@ -99,19 +129,19 @@ impl ZkVmProgram for EthEeAcctProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        // The guest commits the full EthEeAcctProofOutput using borsh
-        let proof_output: EthEeAcctProofOutput = H::extract_borsh_public_output(public_values)?;
+        // The guest commits the full AlpenEeProofOutput using borsh
+        let proof_output: AlpenEeProofOutput = H::extract_borsh_public_output(public_values)?;
         Ok(proof_output)
     }
 }
 
-impl EthEeAcctProgram {
+impl AlpenEeProofProgram {
     /// Create a native host for testing without SP1
     pub fn native_host() -> NativeHost {
         NativeHost {
             process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
                 catch_unwind(AssertUnwindSafe(|| {
-                    process_eth_ee_acct_update(zkvm);
+                    process_alpen_ee_proof_update(zkvm);
                 }))
                 .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
                 Ok(())

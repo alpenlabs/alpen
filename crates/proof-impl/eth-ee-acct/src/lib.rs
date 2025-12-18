@@ -1,11 +1,11 @@
-//! ETH-EE Account Proof Implementation
+//! Alpen EVM EE Account Proof Implementation
 //!
-//! This crate implements the **guest-side** proof generation for ETH-EE account updates.
+//! This crate implements the **guest-side** proof generation for Alpen EVM EE account updates.
 //! It provides:
 //!
-//! - Guest processing logic (`process_eth_ee_acct_update`)
-//! - ZkVM program definition (`EthEeAcctProgram`)
-//! - Input/Output types (`EthEeAcctInput`, `EthEeAcctOutput`)
+//! - Guest processing logic (`process_alpen_ee_proof_update`)
+//! - ZkVM program definition (`AlpenEeProofProgram`)
+//! - Input/Output types (`AlpenEeProofInput`, `AlpenEeProofProgramOutput`)
 //!
 //! **Note**: Host-side data fetching logic should be implemented by the application
 //! using this crate. See README.md for the expected data provider trait.
@@ -13,6 +13,7 @@
 use std::sync::Arc;
 
 use reth_chainspec::ChainSpec;
+use rsp_primitives::genesis::Genesis;
 use ssz::Decode;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_runtime::{SharedPrivateInput, verify_and_apply_update_operation};
@@ -31,13 +32,14 @@ mod borsh_impl;
 mod guest_builder;
 
 // ZkVmProgram implementation
-pub mod program;
+mod program;
 
-pub use program::{EthEeAcctInput, EthEeAcctOutput, EthEeAcctProgram};
+pub use guest_builder::CommitBlockPackage;
+pub use program::{AlpenEeProofInput, AlpenEeProofProgramOutput, AlpenEeProofProgram};
 
-/// Public output committed by the ETH-EE account update proof
+/// Public output committed by the Alpen EVM EE account update proof
 #[derive(Clone, Debug)]
-pub struct EthEeAcctProofOutput {
+pub struct AlpenEeProofOutput {
     /// Previous account state before the update
     pub prev_state: ProofState,
 
@@ -57,7 +59,7 @@ pub struct EthEeAcctProofOutput {
     pub extra_data: UpdateExtraData,
 }
 
-/// Processes an EE account update operation in the zkVM
+/// Processes an Alpen EVM EE account update operation in the zkVM.
 ///
 /// This function:
 /// 1. Reads SSZ-encoded raw bytes from zkVM using read_buf()
@@ -79,7 +81,7 @@ pub struct EthEeAcctProofOutput {
 /// let astate_ssz = zkvm.read_buf();  // Get raw SSZ bytes
 /// let astate = EeAccountState::from_ssz_bytes(&astate_ssz)?;  // Decode SSZ
 /// ```
-pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
+pub fn process_alpen_ee_proof_update(zkvm: &impl ZkVmEnv) {
     // 1. Read raw SSZ bytes from zkVM and decode them
     // Each field is passed as raw bytes using write_buf/read_buf
     let mut astate = EeAccountState::from_ssz_bytes(&zkvm.read_buf())
@@ -92,19 +94,21 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     // Verify that the initial astate matches the claimed prev_proof_state
     verify_proof_state_matches(&astate, &prev_proof_state);
 
-    // Coinputs is Vec<Vec<u8>> so we read it with borsh
-    let coinputs: Vec<Vec<u8>> = zkvm.read_borsh();
+    // Read coinputs (Vec<Vec<u8>>) with SSZ
+    let coinputs: Vec<Vec<u8>> = Vec::<Vec<u8>>::from_ssz_bytes(&zkvm.read_buf())
+        .expect("Failed to decode coinputs from SSZ");
 
-    // Read number of blocks, then read each block's data
-    // Each block is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
-    let num_blocks: u32 = zkvm.read_borsh();
-    let mut serialized_blocks = Vec::with_capacity(num_blocks as usize);
+    // Read number of blocks with SSZ, then read each block's data
+    // Each block is a CommitBlockPackage: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+    let num_blocks: u32 =
+        u32::from_ssz_bytes(&zkvm.read_buf()).expect("Failed to decode num_blocks from SSZ");
+    let mut blocks = Vec::with_capacity(num_blocks as usize);
     for _ in 0..num_blocks {
-        serialized_blocks.push(zkvm.read_buf());
+        blocks.push(CommitBlockPackage::new(zkvm.read_buf()));
     }
 
     // Build CommitChainSegment from blocks
-    let commit_segments = build_commit_segments_from_blocks(serialized_blocks)
+    let commit_segments = build_commit_segments_from_blocks(blocks)
         .expect("Failed to build commit segments from blocks");
 
     // Already raw bytes
@@ -112,7 +116,7 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
     let raw_partial_pre_state = zkvm.read_buf();
 
     // Read genesis data for ChainSpec construction
-    let genesis: rsp_primitives::genesis::Genesis = zkvm.read_serde();
+    let genesis: Genesis = zkvm.read_serde();
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().expect("Invalid genesis"));
     let ee = EvmExecutionEnvironment::new(chain_spec);
 
@@ -138,7 +142,7 @@ pub fn process_eth_ee_acct_update(zkvm: &impl ZkVmEnv) {
         .expect("Failed to decode UpdateExtraData");
 
     // Build the complete public output
-    let proof_output = EthEeAcctProofOutput {
+    let proof_output = AlpenEeProofOutput {
         prev_state: prev_proof_state,
         final_state: final_proof_state,
         da_commitments: Vec::new(), // Empty for now, TODO: when do we actually fill it??
