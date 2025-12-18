@@ -323,7 +323,6 @@ fn verify_acct_state_matches(
     exp_new_state: &Hash,
 ) -> Result<(), EnvError> {
     // Compute SSZ tree_hash_root
-    // REVIEW: should we use Sha256Hasher or Sha256MerkleHasher?
     let computed_root = TreeHash::<Sha256Hasher>::tree_hash_root(astate);
     let computed_hash = Hash::from(computed_root.0);
 

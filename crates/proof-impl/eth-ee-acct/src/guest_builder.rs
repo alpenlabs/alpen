@@ -1,28 +1,78 @@
 //! Guest-side block deserialization and chain segment building
 //!
 //! This module handles:
-//! - Deserializing blocks from host: [exec_block_package (SSZ)][raw_block_body (codec)]
+//! - Deserializing blocks from host: `[exec_block_package (SSZ)][raw_block_body (codec)]`
 //! - Building CommitBlockData with verified commitments
 //! - Assembling CommitChainSegment from multiple blocks
+
+use std::result::Result as StdResult;
 
 use sha2::{Digest, Sha256};
 use ssz::{Decode, Encode};
 use strata_ee_acct_types::{CommitBlockData, CommitChainSegment};
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_primitives::buf::Buf32;
+use thiserror::Error;
 
-#[derive(Debug, thiserror::Error)]
+/// Serialized block package containing execution metadata and raw block body.
+///
+/// This type represents a block in serialized form, combining two parts:
+/// 1. **ExecBlockPackage** (SSZ-encoded): Contains block execution metadata including
+///    commitments and hashes
+/// 2. **Raw block body** (strata_codec-encoded): The actual block content/transactions
+///
+/// # Format
+/// The internal bytes are laid out as:
+/// ```text
+/// [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+/// ```
+///
+/// # Usage
+/// This type is used to pass serialized block data from the host to the guest zkVM.
+/// The guest deserializes it into [`CommitBlockData`] which is then used to build
+/// [`CommitChainSegment`] for state transition verification.
+///
+/// # Verification
+/// When deserialized, the SHA256 hash of the raw block body is verified against
+/// the commitment in the ExecBlockPackage to ensure data integrity.
+#[derive(Debug, Clone)]
+pub struct CommitBlockPackage(Vec<u8>);
+
+impl CommitBlockPackage {
+    /// Creates a new CommitBlockPackage from raw serialized bytes.
+    ///
+    /// # Parameters
+    /// * `data` - Concatenated bytes of `[exec_block_package (SSZ)][raw_block_body (codec)]`
+    pub fn new(data: Vec<u8>) -> Self {
+        Self(data)
+    }
+
+    /// Gets a reference to the underlying serialized bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Consumes self and returns the underlying serialized bytes.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+#[derive(Debug, Error)]
 pub(crate) enum GuestBuilderError {
-    #[error("SSZ decode error")]
+    /// Failed to decode input using SSZ
+    #[error("SSZ decode failed")]
     SszDecode,
+    /// Failed to decode input using Codec
     #[expect(dead_code, reason = "Reserved for future codec decoding errors")]
-    #[error("Codec decode error: {0}")]
+    #[error("Codec decode failed: {0}")]
     CodecDecode(String),
+    /// Expected and computed hash mismatched
     #[error("Block hash mismatch: expected {expected:?}, computed {computed:?}")]
     HashMismatch { expected: Buf32, computed: Buf32 },
 }
 
-pub(crate) type Result<T> = std::result::Result<T, GuestBuilderError>;
+pub(crate) type Result<T> = StdResult<T, GuestBuilderError>;
 
 /// Deserialize and build CommitBlockData from host-provided bytes (GUEST-SIDE)
 ///
@@ -38,10 +88,10 @@ pub(crate) type Result<T> = std::result::Result<T, GuestBuilderError>;
 /// Note: We only verify the raw_block_encoded_hash (the cryptographic commitment).
 ///
 /// # Arguments
-/// * `bytes` - Concatenated bytes from host: [exec_block_package][raw_block_body]
+/// * `bytes` - Concatenated bytes from host: `[exec_block_package][raw_block_body]`
 ///
 /// # Returns
-/// CommitBlockData ready to be added to CommitChainSegment
+/// `CommitBlockData` ready to be added to `CommitChainSegment`
 fn deserialize_and_build_block_data(bytes: &[u8]) -> Result<CommitBlockData> {
     // Decode ExecBlockPackage from SSZ
     let package =
@@ -74,19 +124,18 @@ fn deserialize_and_build_block_data(bytes: &[u8]) -> Result<CommitBlockData> {
 /// This is the main entry point for processing blocks from the host.
 ///
 /// # Arguments
-/// * `block_data_bytes` - Vec of serialized blocks, each in format
-///   [exec_block_package][raw_block_body]
+/// * `blocks` - Vec of [`CommitBlockPackage`] containing serialized block data
 ///
 /// # Returns
 /// Vec<CommitChainSegment> - Currently returns one segment containing all blocks
 pub(crate) fn build_commit_segments_from_blocks(
-    block_data_bytes: Vec<Vec<u8>>,
+    blocks: Vec<CommitBlockPackage>,
 ) -> Result<Vec<CommitChainSegment>> {
     // Deserialize and verify each block
-    let block_data_list = block_data_bytes
+    let block_data_list = blocks
         .into_iter()
-        .map(|bytes| deserialize_and_build_block_data(&bytes))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|block| deserialize_and_build_block_data(block.as_bytes()))
+        .collect::<Result<Vec<_>>>()?;
     
     // Build one CommitChainSegment from all blocks
     let segment = CommitChainSegment::new(block_data_list);
