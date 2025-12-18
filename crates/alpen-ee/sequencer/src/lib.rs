@@ -1,6 +1,5 @@
 //! Sequencer specific workers and utils.
 
-mod batch_builder;
 mod block_builder;
 mod ol_chain_tracker;
 
