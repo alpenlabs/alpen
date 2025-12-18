@@ -1,33 +1,29 @@
 //! Proof interface types.
 
+// Import the SSZ-generated UpdateProofPubParams
+pub use crate::ssz_generated::ssz::update::UpdateProofPubParams;
 use crate::{LedgerRefs, MessageEntry, ProofState, UpdateOutputs};
 
-/// Public params that we provide as the claim the proof must prove the relate
-/// to each other correctly.
-#[derive(Clone, Debug)]
-pub struct UpdateProofPubParams {
-    /// Current state we're extending.
-    cur_state: ProofState,
-
-    /// New state we're trying to prove.
-    new_state: ProofState,
-
-    /// Messages from the inbox we're accepting.
-    message_inputs: Vec<MessageEntry>,
-
-    /// Checked claims for other accumulators/state on the ledger.
-    ledger_refs: LedgerRefs,
-
-    /// Outputs from the account which will be applied, modifying the state of
-    /// the ledger.
-    outputs: UpdateOutputs,
-
-    /// The extra data field from the update operation which will be persisted
-    /// in DA.
-    extra_data: Vec<u8>,
-}
-
 impl UpdateProofPubParams {
+    /// Creates a new UpdateProofPubParams
+    pub fn new(
+        cur_state: ProofState,
+        new_state: ProofState,
+        message_inputs: Vec<MessageEntry>,
+        ledger_refs: LedgerRefs,
+        outputs: UpdateOutputs,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            cur_state,
+            new_state,
+            message_inputs: message_inputs.into(),
+            ledger_refs,
+            outputs,
+            extra_data: extra_data.into(),
+        }
+    }
+
     pub fn cur_state(&self) -> ProofState {
         self.cur_state.clone()
     }
@@ -37,7 +33,7 @@ impl UpdateProofPubParams {
     }
 
     pub fn message_inputs(&self) -> &[MessageEntry] {
-        &self.message_inputs
+        self.message_inputs.as_ref()
     }
 
     pub fn ledger_refs(&self) -> &LedgerRefs {
@@ -49,6 +45,6 @@ impl UpdateProofPubParams {
     }
 
     pub fn extra_data(&self) -> &[u8] {
-        &self.extra_data
+        self.extra_data.as_ref()
     }
 }
