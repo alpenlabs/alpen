@@ -4,7 +4,7 @@ use bitcoin_bosd::Descriptor;
 use strata_acct_types::Hash;
 use strata_identifiers::L1BlockCommitment;
 
-/// Unique identier for an EeUpdate
+/// Unique identifier for an EeUpdate
 #[derive(Debug)]
 pub struct EeUpdateId {
     pub prev_block: Hash,

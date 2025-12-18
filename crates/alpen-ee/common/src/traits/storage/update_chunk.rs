@@ -38,7 +38,7 @@ pub trait UpdateChunkStorage {
     async fn get_latest_ee_update(&self) -> Result<Option<EeUpdate>, StorageError>;
 
     /// Save the next chunk
-    /// The entry must extend the last chunk presentin storage.
+    /// The entry must extend the last chunk present in storage.
     async fn save_next_chunk(&self, chunk: Chunk) -> Result<(), StorageError>;
     /// Update an existing chunk's status
     async fn update_chunk_status(

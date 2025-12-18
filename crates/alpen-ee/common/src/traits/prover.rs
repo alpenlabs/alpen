@@ -8,7 +8,7 @@ pub enum ProofGenerationStatus {
     Pending,
     /// Proof is ready and can be fetched using proof_id
     Ready { proof_id: ProofId },
-    /// Proof generation has not been triggerd for provided ee_update_id.
+    /// Proof generation has not been triggered for provided ee_update_id.
     Invalid,
     /// Cannot generate proof for some reason. All retries exhausted, etc.
     Failed { reason: String },
