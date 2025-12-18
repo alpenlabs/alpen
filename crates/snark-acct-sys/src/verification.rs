@@ -60,7 +60,7 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
     // 5. Verify the witness check
-    verify_update_witness(sender, snark_state, update.base_update(), state_accessor)?;
+    verify_update_witness(sender, snark_state, update.base_update())?;
 
     Ok(VerifiedUpdate { operation })
 }
@@ -85,7 +85,7 @@ fn verify_ledger_refs(
     Ok(())
 }
 
-pub fn verify_input_mmr_proofs(
+pub(crate) fn verify_input_mmr_proofs(
     account_id: AccountId,
     state: &impl ISnarkAccountState,
     msg_proofs: &[MessageEntryProof],
@@ -96,7 +96,7 @@ pub fn verify_input_mmr_proofs(
         let msg_bytes: Vec<u8> = msg_proof.entry().as_ssz_bytes();
         let hash = StrataHasher::hash_leaf(&msg_bytes);
 
-        let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes().iter().copied().collect();
+        let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes().to_vec();
         let proof = strata_merkle::MerkleProof::from_cohashes(cohashes, cur_index);
 
         if !generic_mmr.verify(&proof, &hash) {
@@ -111,11 +111,10 @@ pub fn verify_input_mmr_proofs(
     Ok(())
 }
 
-pub fn verify_update_witness<S: IStateAccessor>(
+pub(crate) fn verify_update_witness(
     sender: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdate,
-    _state_accessor: &S,
 ) -> AcctResult<()> {
     let vk = snark_state.verification_key();
     let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
