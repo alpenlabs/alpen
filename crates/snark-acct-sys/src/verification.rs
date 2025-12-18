@@ -154,15 +154,15 @@ fn verify_update_outputs_safe<S: IStateAccessor>(
     let transfers = outputs.transfers();
     let messages = outputs.messages();
 
-    // Check if receivers exist
+    // Check if receivers exist (skip special/system accounts)
     for t in transfers {
-        if !state_accessor.check_account_exists(t.dest())? {
+        if !t.dest().is_special() && !state_accessor.check_account_exists(t.dest())? {
             return Err(AcctError::NonExistentAccount(t.dest()));
         }
     }
 
     for m in messages {
-        if !state_accessor.check_account_exists(m.dest())? {
+        if !m.dest().is_special() && !state_accessor.check_account_exists(m.dest())? {
             return Err(AcctError::NonExistentAccount(m.dest()));
         }
     }

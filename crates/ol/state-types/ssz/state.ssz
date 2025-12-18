@@ -1,6 +1,7 @@
 import strata_acct_types
 import strata_identifiers
 import strata_asm_manifest_types
+import strata_predicate
 import strata_snark_acct_types
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
@@ -54,6 +55,10 @@ class OLAccountTypeState(Union):
 
 ### Snark account state
 class OLSnarkAccountState(Container):
+    ### Verifying Key
+    #~# external_kind: container
+    verifying_key: strata_predicate.PredicateKey
+
     ### Sequence number
     seqno: strata_snark_acct_types.Seqno
 

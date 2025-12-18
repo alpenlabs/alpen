@@ -1,6 +1,7 @@
 use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher};
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 use tree_hash::TreeHash;
 
@@ -8,7 +9,12 @@ use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};
 
 impl OLSnarkAccountState {
     /// Creates an account instance with specific values.
-    pub(crate) fn new(seqno: Seqno, proof_state: ProofState, inbox_mmr: Mmr64) -> Self {
+    pub(crate) fn new(
+        vk: PredicateKey,
+        seqno: Seqno,
+        proof_state: ProofState,
+        inbox_mmr: Mmr64,
+    ) -> Self {
         Self {
             seqno,
             proof_state,
@@ -18,11 +24,11 @@ impl OLSnarkAccountState {
 
     /// Creates a new fresh instance with a particular initial state, but other
     /// bookkeeping set to 0.
-    pub fn new_fresh(initial_state_root: Hash) -> Self {
+    pub fn new_fresh(vk: PredicateKey, initial_state_root: Hash) -> Self {
         let ps = ProofState::new(initial_state_root, 0);
         let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
         let mmr64 = Mmr64::from_generic(&generic_mmr);
-        Self::new(Seqno::zero(), ps, mmr64)
+        Self::new(vk, Seqno::zero(), ps, mmr64)
     }
 }
 
