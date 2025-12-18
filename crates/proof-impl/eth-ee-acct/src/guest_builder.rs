@@ -82,14 +82,12 @@ fn deserialize_and_build_block_data(bytes: &[u8]) -> Result<CommitBlockData> {
 pub(crate) fn build_commit_segments_from_blocks(
     block_data_bytes: Vec<Vec<u8>>,
 ) -> Result<Vec<CommitChainSegment>> {
-    let mut block_data_list = Vec::new();
-
     // Deserialize and verify each block
-    for bytes in block_data_bytes {
-        let block_data = deserialize_and_build_block_data(&bytes)?;
-        block_data_list.push(block_data);
-    }
-
+    let block_data_list = block_data_bytes
+        .into_iter()
+        .map(|bytes| deserialize_and_build_block_data(&bytes))
+        .collect::<Result<Vec<_>, _>>()?;
+    
     // Build one CommitChainSegment from all blocks
     let segment = CommitChainSegment::new(block_data_list);
 
