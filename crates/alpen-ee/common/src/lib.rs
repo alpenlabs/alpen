@@ -10,6 +10,7 @@ pub use traits::{
         chain_status_checked, get_inbox_messages_checked, OLBlockData, OLClient, OLClientError,
         SequencerOLClient,
     },
+    prover::{EeUpdateProver, ProofGenerationStatus},
     storage::{ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError, UpdateChunkStorage},
 };
 #[cfg(feature = "test-utils")]
@@ -29,6 +30,7 @@ pub use types::{
     ol_account_epoch_summary::OLEpochSummary,
     ol_chain_status::{OLChainStatus, OLFinalizedStatus},
     payload_builder::{DepositInfo, PayloadBuildAttributes},
+    prover::{Proof, ProofId},
 };
 pub use utils::{
     clock::{Clock, SystemClock},
