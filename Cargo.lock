@@ -14550,6 +14550,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-identifiers",
+ "strata-predicate",
  "strata-snark-acct-types",
 ]
 
@@ -14717,6 +14718,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
+ "strata-predicate",
  "strata-snark-acct-types",
  "tree_hash 0.11.0",
 ]
