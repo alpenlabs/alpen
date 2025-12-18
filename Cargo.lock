@@ -14916,6 +14916,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-alpen-ee-acct"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "proptest",
+ "reth-chainspec",
+ "rsp-primitives",
+ "sha2",
+ "ssz",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-evm-ee",
+ "strata-identifiers",
+ "strata-primitives",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tree_hash 0.11.0",
+ "zkaleido",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
 name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -14936,30 +14960,6 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-params",
  "strata-primitives",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
-name = "strata-proofimpl-eth-ee-acct"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "proptest",
- "reth-chainspec",
- "rsp-primitives",
- "sha2",
- "ssz",
- "strata-codec",
- "strata-ee-acct-runtime",
- "strata-ee-acct-types",
- "strata-ee-chain-types",
- "strata-evm-ee",
- "strata-identifiers",
- "strata-primitives",
- "strata-snark-acct-types",
- "thiserror 2.0.17",
- "tree_hash 0.11.0",
  "zkaleido",
  "zkaleido-native-adapter",
 ]

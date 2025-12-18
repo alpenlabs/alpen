@@ -1885,10 +1885,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-sp1-eth-ee-acct"
+name = "guest-sp1-alpen-ee-acct"
 version = "0.1.0"
 dependencies = [
- "strata-proofimpl-eth-ee-acct",
+ "strata-proofimpl-alpen-ee-acct",
  "zkaleido-sp1-guest-env",
 ]
 
@@ -4487,6 +4487,7 @@ dependencies = [
  "strata-ee-chain-types",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
+ "tree_hash",
 ]
 
 [[package]]
@@ -4641,18 +4642,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-eth-ee-acct"
+name = "strata-proofimpl-alpen-ee-acct"
 version = "0.1.0"
 dependencies = [
  "borsh",
  "reth-chainspec",
  "rsp-primitives",
+ "sha2",
  "ssz",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
+ "strata-ee-chain-types",
  "strata-evm-ee",
+ "strata-identifiers",
+ "strata-primitives",
  "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tree_hash",
  "zkaleido",
  "zkaleido-native-adapter",
 ]

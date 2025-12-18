@@ -5,9 +5,9 @@
 #![no_main]
 zkaleido_sp1_guest_env::entrypoint!(main);
 
-use strata_proofimpl_eth_ee_acct::process_eth_ee_acct_update;
+use strata_proofimpl_alpen_ee_acct::process_alpen_ee_proof_update;
 use zkaleido_sp1_guest_env::Sp1ZkVmEnv;
 
 fn main() {
-    process_eth_ee_acct_update(&Sp1ZkVmEnv)
+    process_alpen_ee_proof_update(&Sp1ZkVmEnv)
 }
