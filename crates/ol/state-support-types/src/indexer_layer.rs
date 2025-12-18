@@ -90,10 +90,6 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
         self.inner.seqno()
     }
 
-    fn next_inbox_idx(&self) -> u64 {
-        self.inner.next_inbox_idx()
-    }
-
     fn inner_state_root(&self) -> Hash {
         self.inner.inner_state_root()
     }

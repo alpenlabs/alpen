@@ -3,11 +3,13 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_utils::CodecSsz;
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64B32;
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 use tree_hash::TreeHash;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeSnarkAccountState {
+    verification_key: PredicateKey,
     seqno: Seqno,
     proof_state: ProofState,
     inbox_mmr: Mmr64,
@@ -15,8 +17,14 @@ pub struct NativeSnarkAccountState {
 
 impl NativeSnarkAccountState {
     /// Creates an account instance with specific values.
-    pub(crate) fn new(seqno: Seqno, proof_state: ProofState, inbox_mmr: Mmr64) -> Self {
+    pub(crate) fn new(
+        verification_key: PredicateKey,
+        seqno: Seqno,
+        proof_state: ProofState,
+        inbox_mmr: Mmr64,
+    ) -> Self {
         Self {
+            verification_key,
             seqno,
             proof_state,
             inbox_mmr,
@@ -25,13 +33,17 @@ impl NativeSnarkAccountState {
 
     /// Creates a new fresh instance with a particular initial state, but other
     /// bookkeeping set to 0.
-    pub fn new_fresh(initial_state_root: Hash) -> Self {
+    pub fn new_fresh(verification_key: PredicateKey, initial_state_root: Hash) -> Self {
         let ps = ProofState::new(initial_state_root, 0);
-        Self::new(Seqno::zero(), ps, Mmr64::new(64))
+        Self::new(verification_key, Seqno::zero(), ps, Mmr64::new(64))
     }
 }
 
 impl ISnarkAccountState for NativeSnarkAccountState {
+    fn verification_key(&self) -> &PredicateKey {
+        &self.verification_key
+    }
+
     fn seqno(&self) -> Seqno {
         self.seqno
     }
@@ -98,6 +110,11 @@ impl ProofState {
 
 impl Codec for NativeSnarkAccountState {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode PredicateKey using SSZ
+        let vk_bytes = ssz::Encode::as_ssz_bytes(&self.verification_key);
+        let wrapped_vk = CodecSsz::new(vk_bytes);
+        wrapped_vk.encode(enc)?;
+
         self.seqno.encode(enc)?;
         self.proof_state.encode(enc)?;
 
@@ -110,6 +127,12 @@ impl Codec for NativeSnarkAccountState {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        // Decode PredicateKey from SSZ bytes
+        let wrapped_vk: CodecSsz<Vec<u8>> = CodecSsz::decode(dec)?;
+        let vk_bytes = wrapped_vk.inner();
+        let verification_key = ssz::Decode::from_ssz_bytes(vk_bytes)
+            .map_err(|_| CodecError::InvalidVariant("PredicateKey"))?;
+
         let seqno = Seqno::decode(dec)?;
         let proof_state = ProofState::decode(dec)?;
 
@@ -119,6 +142,7 @@ impl Codec for NativeSnarkAccountState {
         let inbox_mmr = Mmr64::from_compact(compact_mmr);
 
         Ok(Self {
+            verification_key,
             seqno,
             proof_state,
             inbox_mmr,

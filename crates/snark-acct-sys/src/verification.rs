@@ -1,6 +1,6 @@
 use ssz::Encode as _;
 use strata_acct_types::{AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher};
-use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
+use strata_ledger_types::{ISnarkAccountState, ISnarkAccountStateExt, IStateAccessor};
 use strata_merkle::{MerkleProof, hasher::MerkleHasher};
 use strata_snark_acct_types::{
     LedgerRefProofs, MessageEntryProof, ProofState, SnarkAccountUpdate,
@@ -30,7 +30,7 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     }
 
     // 2. Check message counts / proof indices line up
-    let cur_idx = snark_state.next_inbox_idx();
+    let cur_idx = snark_state.get_next_inbox_msg_idx();
     let new_idx = operation.new_state().next_inbox_msg_idx();
     let processed_len = operation.processed_messages().len() as u64;
 
@@ -91,7 +91,7 @@ pub(crate) fn verify_input_mmr_proofs(
     msg_proofs: &[MessageEntryProof],
 ) -> AcctResult<()> {
     let generic_mmr = state.inbox_mmr().to_generic();
-    let mut cur_index = state.next_inbox_idx();
+    let mut cur_index = state.get_next_inbox_msg_idx();
     for msg_proof in msg_proofs {
         let msg_bytes: Vec<u8> = msg_proof.entry().as_ssz_bytes();
         let hash = StrataHasher::hash_leaf(&msg_bytes);
@@ -134,7 +134,10 @@ fn compute_update_claim(
     operation: &UpdateOperationData,
 ) -> Vec<u8> {
     // Use new state, processed messages, old state, refs and outputs to compute claim
-    let cur_state = ProofState::new(snark_state.inner_state_root(), snark_state.next_inbox_idx());
+    let cur_state = ProofState::new(
+        snark_state.inner_state_root(),
+        snark_state.get_next_inbox_msg_idx(),
+    );
     let pub_params = UpdateProofPubParams::new(
         cur_state,
         operation.new_state(),

@@ -66,8 +66,8 @@ fn setup_genesis_with_snark_account(
     // Execute genesis block (terminal with manifest)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis_components = BlockComponents::new_manifests(vec![manifest]);
-    let genesis_block =
-        execute_block(state, &genesis_info, None, genesis_components).expect("Genesis should execute");
+    let genesis_block = execute_block(state, &genesis_info, None, genesis_components)
+        .expect("Genesis should execute");
 
     (genesis_block.header().clone(), snark_serial)
 }
@@ -319,23 +319,27 @@ fn test_snark_update_invalid_sequence_number() {
     let mut state = OLState::new_genesis();
     let snark_id = test_account_id(100);
     let recipient_id = test_account_id(200);
-    
+
     // Setup: genesis with snark account + deposit
-    let (genesis_header, _snark_serial) = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
-    
+    let (genesis_header, _snark_serial) =
+        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
-    
+
     // Try to submit update with wrong sequence number (should be 1, but we use 5)
     let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(10_000_000))],
+        vec![OutputTransfer::new(
+            recipient_id,
+            BitcoinAmount::from_sat(10_000_000),
+        )],
         vec![],
     );
     let bad_tx = create_update_tx(snark_id, 5, Hash::from([2u8; 32]), 0, outputs);
-    
+
     // Execute and expect failure
     let result = execute_tx_in_block(&mut state, &genesis_header, bad_tx);
-    
+
     assert!(result.is_err(), "Update with wrong sequence should fail");
     match result.unwrap_err() {
         ExecError::Acct(AcctError::InvalidUpdateSequence { expected, got, .. }) => {
@@ -351,25 +355,35 @@ fn test_snark_update_insufficient_balance() {
     let mut state = OLState::new_genesis();
     let snark_id = test_account_id(100);
     let recipient_id = test_account_id(200);
-    
+
     // Setup: genesis with snark account + deposit of only 50M sats
-    let (genesis_header, _snark_serial) = setup_genesis_with_snark_account(&mut state, snark_id, 50_000_000);
-    
+    let (genesis_header, _snark_serial) =
+        setup_genesis_with_snark_account(&mut state, snark_id, 50_000_000);
+
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
-    
+
     // Try to send 100M sats (more than balance)
     let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(100_000_000))],
+        vec![OutputTransfer::new(
+            recipient_id,
+            BitcoinAmount::from_sat(100_000_000),
+        )],
         vec![],
     );
     let bad_tx = create_update_tx(snark_id, 1, Hash::from([2u8; 32]), 0, outputs);
-    
+
     let result = execute_tx_in_block(&mut state, &genesis_header, bad_tx);
-    
-    assert!(result.is_err(), "Update with insufficient balance should fail");
+
+    assert!(
+        result.is_err(),
+        "Update with insufficient balance should fail"
+    );
     match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance { requested, available }) => {
+        ExecError::Acct(AcctError::InsufficientBalance {
+            requested,
+            available,
+        }) => {
             assert_eq!(requested, BitcoinAmount::from_sat(100_000_000));
             assert_eq!(available, BitcoinAmount::from_sat(50_000_000));
         }
@@ -382,20 +396,27 @@ fn test_snark_update_nonexistent_recipient() {
     let mut state = OLState::new_genesis();
     let snark_id = test_account_id(100);
     let nonexistent_id = test_account_id(999); // Not created
-    
+
     // Setup: genesis with snark account + deposit
-    let (genesis_header, _snark_serial) = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
-    
+    let (genesis_header, _snark_serial) =
+        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
     // Try to send to non-existent account
     let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(nonexistent_id, BitcoinAmount::from_sat(10_000_000))],
+        vec![OutputTransfer::new(
+            nonexistent_id,
+            BitcoinAmount::from_sat(10_000_000),
+        )],
         vec![],
     );
     let bad_tx = create_update_tx(snark_id, 1, Hash::from([2u8; 32]), 0, outputs);
-    
+
     let result = execute_tx_in_block(&mut state, &genesis_header, bad_tx);
-    
-    assert!(result.is_err(), "Update to non-existent account should fail");
+
+    assert!(
+        result.is_err(),
+        "Update to non-existent account should fail"
+    );
     match result.unwrap_err() {
         ExecError::Acct(AcctError::NonExistentAccount(id)) => {
             assert_eq!(id, nonexistent_id);
@@ -409,20 +430,24 @@ fn test_snark_update_invalid_message_index() {
     let mut state = OLState::new_genesis();
     let snark_id = test_account_id(100);
     let recipient_id = test_account_id(200);
-    
+
     // Setup: genesis with snark account + deposit
-    let (genesis_header, _snark_serial) = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
-    
+    let (genesis_header, _snark_serial) =
+        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
-    
+
     // Create update claiming to have processed 5 messages (but inbox is empty)
     // next_inbox_msg_idx jumps from 0 to 5, but processed_messages is empty
     let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(10_000_000))],
+        vec![OutputTransfer::new(
+            recipient_id,
+            BitcoinAmount::from_sat(10_000_000),
+        )],
         vec![],
     );
-    
+
     let new_proof_state = ProofState::new(Hash::from([2u8; 32]), 5); // Claim we're at idx 5
     let operation_data = UpdateOperationData::new(
         1,
@@ -432,19 +457,25 @@ fn test_snark_update_invalid_message_index() {
         outputs,
         vec![],
     );
-    
+
     let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
     let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
     let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let bad_tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(snark_id, update_container));
-    
+    let bad_tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
+        snark_id,
+        update_container,
+    ));
+
     let result = execute_tx_in_block(&mut state, &genesis_header, bad_tx);
-    
-    assert!(result.is_err(), "Update with wrong message index should fail");
+
+    assert!(
+        result.is_err(),
+        "Update with wrong message index should fail"
+    );
     match result.unwrap_err() {
         ExecError::Acct(AcctError::InvalidMsgIndex { expected, got, .. }) => {
             assert_eq!(expected, 0); // Should stay at 0
-            assert_eq!(got, 5);      // But claimed 5
+            assert_eq!(got, 5); // But claimed 5
         }
         err => panic!("Expected InvalidMsgIndex, got: {:?}", err),
     }
@@ -455,24 +486,32 @@ fn test_snark_update_success_with_transfer() {
     let mut state = OLState::new_genesis();
     let snark_id = test_account_id(100);
     let recipient_id = test_account_id(200);
-    
+
     // Setup: genesis with snark account + deposit
-    let (genesis_header, _snark_serial) = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
-    
+    let (genesis_header, _snark_serial) =
+        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
-    
+
     // Create valid update with transfer
     let transfer_amount = 30_000_000u64;
     let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(transfer_amount))],
+        vec![OutputTransfer::new(
+            recipient_id,
+            BitcoinAmount::from_sat(transfer_amount),
+        )],
         vec![],
     );
     let tx = create_update_tx(snark_id, 1, Hash::from([2u8; 32]), 0, outputs);
-    
+
     let result = execute_tx_in_block(&mut state, &genesis_header, tx);
-    assert!(result.is_ok(), "Valid update should succeed: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Valid update should succeed: {:?}",
+        result.err()
+    );
+
     // Verify balances
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
     assert_eq!(
@@ -480,7 +519,7 @@ fn test_snark_update_success_with_transfer() {
         BitcoinAmount::from_sat(70_000_000),
         "Snark account balance should be 100M - 30M"
     );
-    
+
     let recipient_account = state.get_account_state(recipient_id).unwrap().unwrap();
     assert_eq!(
         recipient_account.balance(),
