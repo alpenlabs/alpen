@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_db_types::{traits::AsmDatabase, DbResult};
-use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::asm_state::AsmState;
 use threadpool::ThreadPool;
 
@@ -48,5 +48,15 @@ impl AsmStateManager {
         max_count: usize,
     ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>> {
         self.ops.get_asm_states_from_blocking(from_block, max_count)
+    }
+
+    /// Stores a manifest hash at the given MMR leaf index
+    pub fn store_manifest_hash(&self, index: u64, hash: Buf32) -> DbResult<()> {
+        self.ops.store_manifest_hash_blocking(index, hash)
+    }
+
+    /// Gets a manifest hash by MMR leaf index
+    pub fn get_manifest_hash(&self, index: u64) -> DbResult<Option<Buf32>> {
+        self.ops.get_manifest_hash_blocking(index)
     }
 }

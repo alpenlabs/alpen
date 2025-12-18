@@ -206,14 +206,14 @@ macro_rules! define_sled_database {
     (
         $(#[$meta:meta])*
         pub struct $db_name:ident {
-            $($field:ident: $schema:ty),* $(,)?
+            $($vis:vis $field:ident: $schema:ty),* $(,)?
         }
     ) => {
         $(#[$meta])*
         #[derive(Debug)]
         pub struct $db_name {
             $(
-                $field: typed_sled::SledTree<$schema>,
+                $vis $field: typed_sled::SledTree<$schema>,
             )*
             #[allow(dead_code, clippy::allow_attributes, reason = "some generated code is not used")]
             config: $crate::SledDbConfig,

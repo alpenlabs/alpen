@@ -9,6 +9,7 @@ strata-asm-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
+strata-merkle.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-paas.workspace = true
@@ -21,6 +22,7 @@ anyhow.workspace = true
 bincode.workspace = true
 borsh.workspace = true
 sled.workspace = true
+ssz_types.workspace = true
 
 [dev-dependencies]
 strata-db-tests.workspace = true

@@ -2,6 +2,7 @@
 
 pub mod chainstate;
 pub mod errors;
+pub mod mmr_helpers;
 pub mod traits;
 pub mod types;
 

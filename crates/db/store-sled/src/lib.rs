@@ -19,7 +19,7 @@ pub mod writer;
 use std::{path::Path, sync::Arc};
 
 // Re-exports
-use asm::AsmDBSled;
+pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
@@ -127,5 +127,14 @@ impl DatabaseBackend for SledBackend {
 
     fn broadcast_db(&self) -> Arc<impl strata_db_types::traits::L1BroadcastDatabase> {
         self.broadcast_db.clone()
+    }
+}
+
+impl SledBackend {
+    /// Get the MMR database
+    ///
+    /// Returns the ASM database which implements the MmrDatabase trait.
+    pub fn mmr_db(&self) -> Arc<AsmDBSled> {
+        self.asm_db.clone()
     }
 }

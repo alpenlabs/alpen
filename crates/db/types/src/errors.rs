@@ -113,6 +113,14 @@ pub enum DbError {
     #[error("not yet implemented")]
     Unimplemented,
 
+    /// MMR leaf not found at index
+    #[error("MMR leaf not found at index {0}")]
+    MmrLeafNotFound(u64),
+
+    /// Invalid MMR index range
+    #[error("Invalid MMR index range: {start}..{end}")]
+    MmrInvalidRange { start: u64, end: u64 },
+
     #[error("{0}")]
     Other(String),
 }
