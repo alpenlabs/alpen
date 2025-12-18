@@ -1,6 +1,6 @@
 use std::iter;
 
-use bitcoin_bosd::Descriptor;
+use bitcoin::Txid;
 use strata_acct_types::Hash;
 use strata_identifiers::L1BlockCommitment;
 
@@ -15,7 +15,7 @@ pub struct EeUpdateId {
 #[derive(Debug)]
 pub struct L1DaRef {
     pub block: L1BlockCommitment,
-    pub txns: Vec<Descriptor>,
+    pub txns: Vec<Txid>,
     // inclusion merkle proof ?
 }
 
@@ -25,7 +25,7 @@ pub enum EeUpdateStatus {
     /// Newly created
     Init,
     /// DA started, waiting for block
-    DaPending { txids: Vec<Descriptor> },
+    DaPending { txids: Vec<Txid> },
     /// DA complete
     DaComplete { da: Vec<L1DaRef> },
     /// Proving started, waiting for proof

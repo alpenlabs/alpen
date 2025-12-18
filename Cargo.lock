@@ -1120,7 +1120,7 @@ dependencies = [
  "alpen-reth-node",
  "async-trait",
  "bincode",
- "bitcoin-bosd",
+ "bitcoin",
  "eyre",
  "mockall",
  "reth-ethereum-engine-primitives",

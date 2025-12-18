@@ -23,7 +23,7 @@ alloy-primitives.workspace = true
 alloy-rpc-types-engine.workspace = true
 async-trait.workspace = true
 bincode.workspace = true
-bitcoin-bosd.workspace = true
+bitcoin.workspace = true
 eyre.workspace = true
 mockall = { workspace = true, optional = true }
 reth-ethereum-engine-primitives.workspace = true
