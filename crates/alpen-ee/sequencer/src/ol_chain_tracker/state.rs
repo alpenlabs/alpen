@@ -5,31 +5,46 @@ use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::MessageEntry;
 use tracing::warn;
 
+/// Inbox messages within some range of blocks and the next expected inbox message idx of the last
+/// block of the range
+#[derive(Debug)]
+pub struct InboxMessages {
+    messages: Vec<MessageEntry>,
+    next_inbox_msg_idx: u64,
+}
+
+impl InboxMessages {
+    pub fn new_empty(next_inbox_msg_idx: u64) -> Self {
+        Self {
+            messages: vec![],
+            next_inbox_msg_idx,
+        }
+    }
+
+    pub fn messages(&self) -> &[MessageEntry] {
+        &self.messages
+    }
+
+    pub fn next_inbox_msg_idx(&self) -> u64 {
+        self.next_inbox_msg_idx
+    }
+
+    pub fn into_parts(self) -> (Vec<MessageEntry>, u64) {
+        (self.messages, self.next_inbox_msg_idx)
+    }
+}
+
+/// New inbox messages in a block and the next expected inbox message idx
 #[derive(Debug)]
 pub(crate) struct BlockInfo {
-    pub messages: Vec<MessageEntry>,
-    pub next_inbox_msg_idx: u64,
+    pub(crate) messages: Vec<MessageEntry>,
+    pub(crate) next_inbox_msg_idx: u64,
 }
 
 impl BlockInfo {
     fn new(messages: Vec<MessageEntry>, next_inbox_msg_idx: u64) -> Self {
         Self {
             messages,
-            next_inbox_msg_idx,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct InboxMessages {
-    pub messages: Vec<MessageEntry>,
-    pub next_inbox_msg_idx: u64,
-}
-
-impl InboxMessages {
-    pub fn empty(next_inbox_msg_idx: u64) -> Self {
-        Self {
-            messages: vec![],
             next_inbox_msg_idx,
         }
     }
@@ -149,10 +164,7 @@ impl OLChainTrackerState {
             (Some(min_block), Some(max_block)) => (min_block.slot(), max_block.slot()),
             _ => {
                 warn!("requested inbox messages from empty tracker");
-                return Ok(InboxMessages {
-                    messages: vec![],
-                    next_inbox_msg_idx: self.base_block_next_inbox_msg_idx,
-                });
+                return Ok(InboxMessages::new_empty(self.base_block_next_inbox_msg_idx));
             }
         };
         if from_slot < min_slot {

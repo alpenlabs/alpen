@@ -215,7 +215,7 @@ mod tests {
 
             // Verify messages were stored
             let messages = state.get_inbox_messages(11, 13).unwrap();
-            assert_eq!(messages.messages.len(), 3);
+            assert_eq!(messages.messages().len(), 3);
         }
 
         #[tokio::test]

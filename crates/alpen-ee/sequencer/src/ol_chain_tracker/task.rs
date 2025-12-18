@@ -473,7 +473,7 @@ mod tests {
             // The base should now be slot 13
             let messages = state.get_inbox_messages(11, 13);
             assert!(messages.is_ok());
-            assert!(messages.unwrap().messages.is_empty()); // These were pruned or clamped
+            assert!(messages.unwrap().messages().is_empty()); // These were pruned or clamped
         }
 
         #[tokio::test]

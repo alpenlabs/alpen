@@ -15,10 +15,7 @@ use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 use tracing::{error, info, warn};
 
-use crate::{
-    block_builder::BlockBuilderConfig,
-    ol_chain_tracker::{InboxMessages, OLChainTrackerHandle},
-};
+use crate::{block_builder::BlockBuilderConfig, ol_chain_tracker::OLChainTrackerHandle};
 
 /// Error type for block builder that distinguishes retriable from real errors.
 #[derive(Debug, Error)]
@@ -239,16 +236,17 @@ async fn build_next_block(
         .get_finalized_block()
         .await
         .context("build_next_block: failed to get finalized OL block")?;
-    let InboxMessages {
-        messages: inbox_messages,
-        next_inbox_msg_idx,
-    } = if should_fetch_inbox_messages(last_local_block.ol_block().blkid(), best_ol_block.blkid()) {
+    let (inbox_messages, next_inbox_msg_idx) = if should_fetch_inbox_messages(
+        last_local_block.ol_block().blkid(),
+        best_ol_block.blkid(),
+    ) {
         ol_chain_handle
             .get_inbox_messages(last_local_block.ol_block().slot(), best_ol_block.slot())
             .await
             .context("build_next_block: failed to get inbox messages")?
+            .into_parts()
     } else {
-        InboxMessages::empty(last_local_block.next_inbox_msg_idx())
+        (vec![], last_local_block.next_inbox_msg_idx())
     };
 
     // build next block
