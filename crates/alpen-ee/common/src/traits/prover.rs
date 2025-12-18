@@ -9,7 +9,7 @@ pub enum ProofGenerationStatus {
     /// Proof is ready and can be fetched using proof_id
     Ready { proof_id: ProofId },
     /// Proof generation has not been triggered for provided ee_update_id.
-    Invalid,
+    Unproven,
     /// Cannot generate proof for some reason. All retries exhausted, etc.
     Failed { reason: String },
 }
