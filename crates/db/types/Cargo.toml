@@ -10,9 +10,11 @@ workspace = true
 strata-asm-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-csm-types.workspace = true
+strata-identifiers.workspace = true
 strata-merkle = { workspace = true, features = ["ssz"] }
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-ol-state-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-storage-common.workspace = true

@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountId, AccountSerial};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 /// Describes a map of contiguous serials to account IDs, ensuring O(1) lookups.
 ///
@@ -154,6 +155,27 @@ impl SerialMap {
 impl Default for SerialMap {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Codec for SerialMap {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.first.encode(enc)?;
+        (self.ids.len() as u64).encode(enc)?;
+        for id in &self.ids {
+            id.encode(enc)?;
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let first = AccountSerial::decode(dec)?;
+        let len = u64::decode(dec)? as usize;
+        let mut ids = Vec::with_capacity(len);
+        for _ in 0..len {
+            ids.push(AccountId::decode(dec)?);
+        }
+        Ok(Self { first, ids })
     }
 }
 

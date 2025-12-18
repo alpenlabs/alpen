@@ -8,7 +8,9 @@ use serde::Serialize;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
+use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types::L2BlockBundle;
+use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
 use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
@@ -31,6 +33,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
     fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
+    fn ol_state_db(&self) -> Arc<impl OLStateDatabase>;
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
@@ -440,4 +443,40 @@ pub trait MmrDatabase: Send + Sync + 'static {
     /// assert_eq!(mmr.num_leaves(), 1);
     /// ```
     fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>>;
+}
+
+/// Database trait for toplevel OL state storage.
+///
+/// Stores OLState snapshots keyed by OLBlockCommitment (block ID + slot).
+/// This allows retrieving state for any block in the chain.
+pub trait OLStateDatabase: Send + Sync + 'static {
+    /// Stores a toplevel OLState snapshot for a given block commitment.
+    fn put_toplevel_ol_state(&self, commitment: OLBlockCommitment, state: OLState) -> DbResult<()>;
+
+    /// Retrieves a toplevel OLState snapshot for a given block commitment.
+    fn get_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<Option<OLState>>;
+
+    /// Gets the latest toplevel OLState (highest slot).
+    fn get_latest_toplevel_ol_state(&self) -> DbResult<Option<(OLBlockCommitment, OLState)>>;
+
+    /// Deletes a toplevel OLState snapshot for a given block commitment.
+    fn del_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<()>;
+
+    /// Stores an OL write batch for a given block commitment.
+    ///
+    /// Write batches represent state changes that can be applied to a state.
+    fn put_ol_write_batch(
+        &self,
+        commitment: OLBlockCommitment,
+        wb: WriteBatch<NativeAccountState>,
+    ) -> DbResult<()>;
+
+    /// Retrieves an OL write batch for a given block commitment.
+    fn get_ol_write_batch(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<Option<WriteBatch<NativeAccountState>>>;
+
+    /// Deletes an OL write batch for a given block commitment.
+    fn del_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<()>;
 }
