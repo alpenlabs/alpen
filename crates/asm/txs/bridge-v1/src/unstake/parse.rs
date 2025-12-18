@@ -115,7 +115,7 @@ mod tests {
     fn test_parse_unstake_missing_stake_input() {
         let (_info, mut tx) = create_slash_tx_with_info();
 
-        // Remove the stake connector to force an input count mismatch
+        // Remove the stake connector
         tx.input.pop();
 
         let tx_input = parse_sps50_tx(&tx);

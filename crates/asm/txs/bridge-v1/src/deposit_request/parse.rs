@@ -44,3 +44,82 @@ pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, TxStructureErro
     // Construct the validated deposit request information
     Ok(DepositRequestInfo::new(aux_data, drt_output))
 }
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::Transaction;
+    use strata_primitives::l1::BitcoinAmount;
+    use strata_test_utils::ArbitraryGenerator;
+
+    use crate::{
+        constants::BridgeTxType,
+        deposit::DepositTxHeaderAux,
+        deposit_request::{DRT_OUTPUT_INDEX, DepositRequestInfo, DrtHeaderAux, parse_drt},
+        errors::TxStructureErrorKind,
+        test_utils::{create_connected_drt_and_dt, create_test_operators, mutate_aux_data},
+    };
+
+    const AUX_LEN: usize = std::mem::size_of::<DrtHeaderAux>();
+
+    fn create_drt_tx_with_info() -> (DepositRequestInfo, Transaction) {
+        let mut arb = ArbitraryGenerator::new();
+        let drt_aux: DrtHeaderAux = arb.generate();
+        let dt_aux: DepositTxHeaderAux = arb.generate();
+        let amount = BitcoinAmount::from_sat(100_000);
+        let (sks, _) = create_test_operators(3);
+
+        let (drt, _dt) = create_connected_drt_and_dt(&drt_aux, dt_aux, amount.into(), &sks);
+        let info = DepositRequestInfo::new(drt_aux, drt.output[DRT_OUTPUT_INDEX].clone().into());
+
+        (info, drt)
+    }
+
+    #[test]
+    fn test_parse_dt_success() {
+        let (info, tx) = create_drt_tx_with_info();
+        let parsed = parse_drt(&tx).expect("should parse deposit request tx");
+        assert_eq!(info, parsed);
+    }
+
+    #[test]
+    fn test_parse_missing_output() {
+        let (_, mut tx) = create_drt_tx_with_info();
+
+        // Remove the deposit output
+        tx.output.pop();
+
+        let err = parse_drt(&tx).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::DepositRequest);
+        assert!(matches!(
+            err.kind(),
+            TxStructureErrorKind::MissingOutput {
+                index: DRT_OUTPUT_INDEX
+            }
+        ))
+    }
+
+    #[test]
+    fn test_parse_invalid_aux() {
+        let (_, mut tx) = create_drt_tx_with_info();
+
+        let larger_aux = [0u8; AUX_LEN + 1].to_vec();
+        mutate_aux_data(&mut tx, larger_aux);
+
+        let err = parse_drt(&tx).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::DepositRequest);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
+
+        let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
+        mutate_aux_data(&mut tx, smaller_aux);
+
+        let err = parse_drt(&tx).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::DepositRequest);
+        assert!(matches!(
+            err.kind(),
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
+    }
+}
