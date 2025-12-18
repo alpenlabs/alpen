@@ -14919,8 +14919,6 @@ dependencies = [
 name = "strata-proofimpl-alpen-ee-acct"
 version = "0.1.0"
 dependencies = [
- "borsh",
- "proptest",
  "reth-chainspec",
  "rsp-primitives",
  "sha2",

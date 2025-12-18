@@ -14,19 +14,16 @@ use std::sync::Arc;
 
 use reth_chainspec::ChainSpec;
 use rsp_primitives::genesis::Genesis;
-use ssz::Decode;
+use ssz::{Decode, Encode};
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_runtime::{SharedPrivateInput, verify_and_apply_update_operation};
-use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
+use strata_ee_acct_types::EeAccountState;
 use strata_evm_ee::EvmExecutionEnvironment;
-use strata_snark_acct_types::{MessageEntry, OutputMessage, ProofState, UpdateOperationData};
+use strata_snark_acct_types::{ProofState, UpdateOperationData, UpdateProofPubParams};
 use tree_hash::{Sha256Hasher, TreeHash};
 use zkaleido::ZkVmEnv;
 
 use crate::guest_builder::build_commit_segments_from_blocks;
-
-// Borsh serialization implementation
-mod borsh_impl;
 
 // Guest-side block building
 mod guest_builder;
@@ -39,28 +36,6 @@ mod types;
 
 pub use program::{AlpenEeProofProgram, AlpenEeProofProgramOutput};
 pub use types::{AlpenEeProofInput, CommitBlockPackage, EeAccountInit, RuntimeUpdateInput};
-
-/// Public output committed by the Alpen EVM EE account update proof
-#[derive(Clone, Debug)]
-pub struct AlpenEeProofOutput {
-    /// Previous account state before the update
-    pub prev_state: ProofState,
-
-    /// New account state after the update
-    pub final_state: ProofState,
-
-    /// DA commitments (currently empty, will be populated by outer proof)
-    pub da_commitments: Vec<[u8; 32]>,
-
-    /// Output messages generated during update
-    pub output_messages: Vec<OutputMessage>,
-
-    /// Input messages processed during update
-    pub input_messages: Vec<MessageEntry>,
-
-    /// Update metadata (new tip, processed counts)
-    pub extra_data: UpdateExtraData,
-}
 
 /// Processes an Alpen EVM EE account update operation in the zkVM guest.
 ///
@@ -140,25 +115,19 @@ pub fn process_alpen_ee_proof_update(zkvm: &impl ZkVmEnv) {
     )
     .expect("Update verification failed");
 
-    // The operation already contains the correct final ProofState
-    let final_proof_state = operation.new_state();
+    // Build the proof output using the standard UpdateProofPubParams interface
+    let proof_output = UpdateProofPubParams::new(
+        prev_proof_state,                        // Starting state (cur_state)
+        operation.new_state(),                   // Resulting state (new_state)
+        operation.processed_messages().to_vec(), // Processed inbox messages
+        operation.ledger_refs().clone(),         // Ledger accumulator references
+        operation.outputs().clone(),             // Account outputs (messages + transfers)
+        operation.extra_data().to_vec(),         // Application-specific extra data
+    );
 
-    // Extract UpdateExtraData from the operation (already verified by runtime)
-    let extra_data = decode_buf_exact::<UpdateExtraData>(operation.extra_data())
-        .expect("Failed to decode UpdateExtraData");
-
-    // Build the complete public output
-    let proof_output = AlpenEeProofOutput {
-        prev_state: prev_proof_state,
-        final_state: final_proof_state,
-        da_commitments: Vec::new(), // Empty for now, TODO: when do we actually fill it??
-        output_messages: operation.outputs().messages().to_vec(),
-        input_messages: operation.processed_messages().to_vec(),
-        extra_data,
-    };
-
-    // Commit the complete output
-    zkvm.commit_borsh(&proof_output);
+    // Commit the output as SSZ-serialized bytes
+    let output_bytes = proof_output.as_ssz_bytes();
+    zkvm.commit_buf(&output_bytes);
 }
 
 /// Verify that the astate hash matches the expected ProofState

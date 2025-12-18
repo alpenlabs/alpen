@@ -8,17 +8,19 @@ use std::{
     sync::Arc,
 };
 
+use ssz::Decode;
 use strata_codec::encode_to_vec;
+use strata_snark_acct_types::UpdateProofPubParams;
 use zkaleido::{
     ProofType, PublicValues, ZkVmError, ZkVmInputError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
-use crate::{AlpenEeProofOutput, process_alpen_ee_proof_update, types::AlpenEeProofInput};
+use crate::{process_alpen_ee_proof_update, types::AlpenEeProofInput};
 
 /// Output from Alpen EE account proof.
-/// This is the public output committed by the guest.
-pub type AlpenEeProofProgramOutput = AlpenEeProofOutput;
+/// This is the public output committed by the guest using the standard proof interface.
+pub type AlpenEeProofProgramOutput = UpdateProofPubParams;
 
 /// The proof program for Alpen EVM EE account updates.
 #[derive(Debug)]
@@ -64,8 +66,10 @@ impl ZkVmProgram for AlpenEeProofProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        // The guest commits the full AlpenEeProofOutput using borsh
-        let proof_output: AlpenEeProofOutput = H::extract_borsh_public_output(public_values)?;
+        // The guest commits UpdateProofPubParams using SSZ serialization
+        let output_bytes = public_values.as_bytes();
+        let proof_output = UpdateProofPubParams::from_ssz_bytes(output_bytes)
+            .map_err(|e| ZkVmError::Other(format!("Failed to decode SSZ output: {:?}", e)))?;
         Ok(proof_output)
     }
 }
