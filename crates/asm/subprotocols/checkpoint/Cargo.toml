@@ -24,3 +24,12 @@ strata-primitives.workspace = true
 
 borsh.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+strata-asm-proto-checkpoint-txs = { workspace = true, features = [
+  "test-utils",
+] }
+strata-asm-common = { workspace = true, features = ["test-utils"] }
+strata-btcio = { workspace = true, features = ["test_utils"] }
+strata-l1-txfmt.workspace = true
+strata-codec.workspace = true

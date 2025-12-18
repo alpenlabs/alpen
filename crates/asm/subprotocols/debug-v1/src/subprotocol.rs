@@ -4,6 +4,7 @@
 //! with the Strata Anchor State Machine (ASM).
 
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
+use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
     TxInputRef, VerifiedAuxData, logging,
@@ -71,7 +72,7 @@ fn process_parsed_debug_tx(
     relayer: &mut impl MsgRelayer,
 ) -> Result<(), AsmError> {
     match parsed_tx {
-        ParsedDebugTx::MockAsmLog(log_info) => {
+        ParsedDebugTx::AsmLog(log_info) => {
             logging::info!("Processing ASM log injection");
 
             // Create log entry directly from raw bytes
@@ -82,7 +83,7 @@ fn process_parsed_debug_tx(
             logging::info!("Successfully emitted ASM log");
         }
 
-        ParsedDebugTx::MockWithdrawIntent(withdraw_output) => {
+        ParsedDebugTx::WithdrawIntent(withdraw_output) => {
             logging::info!(
                 amount = withdraw_output.amt.to_sat(),
                 "Processing mock withdrawal"
@@ -95,6 +96,18 @@ fn process_parsed_debug_tx(
             relayer.relay_msg(&bridge_msg);
 
             logging::info!("Successfully sent mock withdrawal intent to bridge");
+        }
+
+        ParsedDebugTx::UpdateSequencerKey(new_key) => {
+            logging::info!("Processing mock checkpoint sequencer key update");
+            let checkpoint_msg = CheckpointIncomingMsg::UpdateSequencerKey(new_key);
+            relayer.relay_msg(&checkpoint_msg);
+        }
+
+        ParsedDebugTx::UpdateCheckpointPredicate(predicate) => {
+            logging::info!("Processing mock checkpoint predicate update");
+            let checkpoint_msg = CheckpointIncomingMsg::UpdateCheckpointPredicate(predicate);
+            relayer.relay_msg(&checkpoint_msg);
         }
     }
 

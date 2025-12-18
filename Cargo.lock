@@ -13682,10 +13682,12 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-txs",
+ "strata-btcio",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-ol-chain-types-new",
  "strata-ol-stf",
  "strata-predicate",
@@ -13698,10 +13700,15 @@ name = "strata-asm-proto-checkpoint-txs"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "rand 0.8.5",
  "ssz",
  "strata-asm-common",
+ "strata-btc-types",
  "strata-checkpoint-types-ssz",
+ "strata-crypto",
+ "strata-identifiers",
  "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
  "thiserror 2.0.17",
 ]
 
@@ -13712,9 +13719,12 @@ dependencies = [
  "borsh",
  "serde",
  "strata-asm-bridge-msgs",
+ "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.17",
 ]
@@ -14008,12 +14018,13 @@ dependencies = [
  "ssz",
  "ssz_codegen",
  "ssz_derive",
+ "ssz_primitives",
  "ssz_types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "thiserror 2.0.17",
- "tree_hash 0.9.0",
- "tree_hash_derive 0.9.0",
+ "tree_hash 0.11.0",
+ "tree_hash_derive 0.11.0",
 ]
 
 [[package]]

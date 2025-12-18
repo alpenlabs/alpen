@@ -3,6 +3,16 @@ name = "strata-asm-proto-checkpoint-txs"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+test-utils = [
+  "rand",
+  "strata-btc-types",
+  "strata-crypto",
+  "strata-identifiers",
+  "strata-l1-txfmt",
+]
+
 [lints]
 workspace = true
 
@@ -14,3 +24,9 @@ strata-l1-envelope-fmt.workspace = true
 bitcoin.workspace = true
 ssz.workspace = true
 thiserror.workspace = true
+
+rand = { workspace = true, optional = true }
+strata-btc-types = { workspace = true, optional = true }
+strata-crypto = { workspace = true, optional = true }
+strata-identifiers = { workspace = true, optional = true }
+strata-l1-txfmt = { workspace = true, optional = true }

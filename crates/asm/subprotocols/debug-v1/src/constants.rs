@@ -9,6 +9,12 @@ pub(crate) const MOCK_ASM_LOG_TX_TYPE: TxType = 1;
 /// Transaction type for mock withdrawal intent creation.
 pub(crate) const MOCK_WITHDRAW_INTENT_TX_TYPE: TxType = 2;
 
+/// Transaction type for updating the checkpoint sequencer key.
+pub(crate) const MOCK_UPDATE_SEQUENCER_KEY_TX_TYPE: TxType = 3;
+
+/// Transaction type for updating the checkpoint predicate.
+pub(crate) const MOCK_UPDATE_CHECKPOINT_PREDICATE_TX_TYPE: TxType = 4;
+
 // Auxiliary data parsing constants
 
 /// Size of amount field in bytes.

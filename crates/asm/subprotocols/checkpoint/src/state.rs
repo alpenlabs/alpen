@@ -88,9 +88,7 @@ impl CheckpointState {
 
     /// Returns the last L2 terminal block commitment, if any.
     pub fn last_l2_terminal(&self) -> Option<OLBlockCommitment> {
-        self.verified_epoch_summary
-            .as_ref()
-            .map(|s| *s.terminal())
+        self.verified_epoch_summary.as_ref().map(|s| *s.terminal())
     }
 
     /// Returns the pre-state root for the next checkpoint.
@@ -128,7 +126,6 @@ impl CheckpointState {
 
         self.verified_epoch_summary = Some(epoch_summary);
         self.last_covered_l1 = batch_info.l1_range.end;
-
     }
 }
 

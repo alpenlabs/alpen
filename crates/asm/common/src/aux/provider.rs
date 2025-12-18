@@ -175,6 +175,31 @@ impl VerifiedAuxData {
             .map(|idx| self.get_manifest_hash(idx))
             .collect()
     }
+
+    // TODO(aux-test-infra): Remove `new_unchecked` and `empty` once proper aux data test
+    // infrastructure is available. These are temporary helpers for checkpoint subprotocol
+    // unit tests that need to provide mock manifest hashes without real MMR proofs.
+
+    /// Constructs verified aux data without performing any verification.
+    ///
+    /// This is intended for tests where the auxiliary data has been crafted
+    /// within the test itself and does not need to be re-verified.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_unchecked(
+        txs: HashMap<Txid, Transaction>,
+        manifest_hashes: HashMap<u64, Hash32>,
+    ) -> Self {
+        Self {
+            txs,
+            manifest_hashes,
+        }
+    }
+
+    /// Returns an empty verified aux data instance for testing.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn empty() -> Self {
+        Self::new_unchecked(HashMap::new(), HashMap::new())
+    }
 }
 
 #[cfg(test)]
