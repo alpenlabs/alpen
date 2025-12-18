@@ -42,6 +42,7 @@ pub async fn chain_status_checked(client: &impl OLClient) -> Result<OLChainStatu
 pub struct OLBlockData {
     pub commitment: OLBlockCommitment,
     pub inbox_messages: Vec<MessageEntry>,
+    pub next_inbox_msg_idx: u64,
 }
 
 /// Client interface for sequencer-specific OL chain interactions.

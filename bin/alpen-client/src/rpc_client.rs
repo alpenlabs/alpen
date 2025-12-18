@@ -99,6 +99,7 @@ impl SequencerOLClient for RpcOLClient {
             .into_iter()
             .map(|block_summary| OLBlockData {
                 commitment: block_summary.block_commitment,
+                next_inbox_msg_idx: block_summary.next_inbox_msg_idx(),
                 inbox_messages: block_summary
                     .new_inbox_messages
                     .into_iter()

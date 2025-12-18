@@ -2,11 +2,13 @@ use std::{future::Future, sync::Arc};
 
 use alpen_ee_common::{ExecBlockStorage, OLFinalizedStatus, SequencerOLClient};
 use strata_identifiers::OLBlockCommitment;
-use strata_snark_acct_types::MessageEntry;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::task::OLChainTrackerQuery;
-use crate::{ol_chain_tracker::task::ol_chain_tracker_task, OLChainTrackerState};
+use crate::{
+    ol_chain_tracker::{state::InboxMessages, task::ol_chain_tracker_task},
+    OLChainTrackerState,
+};
 
 #[derive(Debug)]
 pub struct OLChainTrackerHandle {
@@ -26,7 +28,7 @@ impl OLChainTrackerHandle {
         &self,
         from_slot: u64,
         to_slot: u64,
-    ) -> eyre::Result<Vec<MessageEntry>> {
+    ) -> eyre::Result<InboxMessages> {
         let (tx, rx) = oneshot::channel();
         self.query_tx
             .send(OLChainTrackerQuery::GetInboxMessages {

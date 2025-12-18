@@ -16,17 +16,10 @@ pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: Se
         .ok_or(eyre!("finalized block missing"))?;
     let local_finalized_ol_block = *finalized_exec_block.ol_block();
 
-    let mut state = OLChainTrackerState::new_empty(local_finalized_ol_block);
-
     // chain status according to OL
     // TODO: retry
     let ol_chain_status = ol_client.chain_status().await?;
     let remote_finalized_ol_block = ol_chain_status.finalized().to_block_commitment();
-
-    if remote_finalized_ol_block == local_finalized_ol_block {
-        // no new finalized blocks available to be processed.
-        return Ok(state);
-    }
 
     if remote_finalized_ol_block.slot() < local_finalized_ol_block.slot() {
         // Block height that is considered finalized locally is not considered finalized on OL.
@@ -76,9 +69,18 @@ pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: Se
         ));
     }
 
+    let mut state = OLChainTrackerState::new_empty(
+        local_finalized_ol_block,
+        block_at_finalized_height.next_inbox_msg_idx,
+    );
+
     // Everything looks ok now. Build local state.
     for block in blocks {
-        state.append_block(block.commitment, block.inbox_messages)?;
+        state.append_block(
+            block.commitment,
+            block.inbox_messages,
+            block.next_inbox_msg_idx,
+        )?;
     }
 
     Ok(state)
@@ -152,12 +154,16 @@ mod tests {
             let finalized_block = make_block_with_id(10, 10);
             let exec_record = create_mock_exec_record(finalized_block);
             let chain_status = make_chain_status(finalized_block);
+            // When local == remote, get_inbox_messages_checked(10, 10) is called
+            // which returns a single block (the finalized block itself)
+            let block_data = vec![make_block_data(finalized_block, vec![], 0)];
 
             let mut mock_storage = MockExecBlockStorage::new();
             let mut mock_client = MockSequencerOLClient::new();
 
             setup_mock_storage_finalized(&mut mock_storage, exec_record);
             setup_mock_client_chain_status(&mut mock_client, chain_status);
+            setup_mock_client_inbox_messages(&mut mock_client, block_data);
 
             let state = init_ol_chain_tracker_state(&mock_storage, &mock_client)
                 .await
@@ -185,7 +191,7 @@ mod tests {
             let ol_blocks: Vec<_> = (10..=13)
                 .map(|slot| make_block_with_id(slot, slot as u8))
                 .collect();
-            let block_data = create_block_data_chain(&ol_blocks);
+            let block_data = create_block_data_chain(&ol_blocks, 0);
 
             let exec_record = create_mock_exec_record(local_finalized);
             let chain_status = make_chain_status(remote_finalized);
@@ -209,7 +215,7 @@ mod tests {
 
             // Verify messages were stored
             let messages = state.get_inbox_messages(11, 13).unwrap();
-            assert_eq!(messages.len(), 3);
+            assert_eq!(messages.messages.len(), 3);
         }
 
         #[tokio::test]
@@ -284,8 +290,8 @@ mod tests {
             let remote_block_at_10 = make_block_with_id(10, 0xBB);
             let remote_block_at_11 = make_block_with_id(11, 11);
             let block_data = vec![
-                make_block_data(remote_block_at_10, vec![]),
-                make_block_data(remote_block_at_11, vec![]),
+                make_block_data(remote_block_at_10, vec![], 0),
+                make_block_data(remote_block_at_11, vec![], 0),
             ];
 
             let exec_record = create_mock_exec_record(local_finalized);

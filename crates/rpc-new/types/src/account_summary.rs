@@ -95,6 +95,8 @@ pub struct RpcAccountBlockSummary {
     pub updates: Vec<RpcUpdateInputData>,
     /// New messages added to account's inbox in this block.
     pub new_inbox_messages: Vec<RpcMessageEntry>,
+    /// Next expected message inbox accumulator index after block execution.
+    pub next_inbox_msg_idx: u64,
 }
 
 impl RpcAccountBlockSummary {
@@ -106,6 +108,7 @@ impl RpcAccountBlockSummary {
         next_seq_no: u64,
         updates: Vec<UpdateInputData>,
         new_inbox_messages: Vec<MessageEntry>,
+        next_inbox_msg_idx: u64,
     ) -> Self {
         Self {
             account: account.into_inner().into(),
@@ -114,6 +117,7 @@ impl RpcAccountBlockSummary {
             next_seq_no,
             updates: updates.into_iter().map(Into::into).collect(),
             new_inbox_messages: new_inbox_messages.into_iter().map(Into::into).collect(),
+            next_inbox_msg_idx,
         }
     }
 
@@ -145,6 +149,10 @@ impl RpcAccountBlockSummary {
     /// Returns the new messages added to account's inbox in this block.
     pub fn new_inbox_messages(&self) -> &[RpcMessageEntry] {
         &self.new_inbox_messages
+    }
+
+    pub fn next_inbox_msg_idx(&self) -> u64 {
+        self.next_inbox_msg_idx
     }
 }
 

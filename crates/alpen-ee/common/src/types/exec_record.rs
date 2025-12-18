@@ -21,6 +21,8 @@ struct ExecPackageMetadata {
     /// 2. This does not uniquely identify a package or exec block. One `ol_block` can be linked
     ///    with multiple records.
     ol_block: OLBlockCommitment,
+    /// Next inbox index at this ol_block.
+    next_inbox_msg_idx: u64,
 }
 
 /// `ExecBlockPackage` with additional block metadata
@@ -42,6 +44,7 @@ impl ExecBlockRecord {
         ol_block: OLBlockCommitment,
         timestamp_ms: u64,
         parent_blockhash: Hash,
+        next_inbox_msg_idx: u64,
     ) -> Self {
         Self {
             package,
@@ -51,6 +54,7 @@ impl ExecBlockRecord {
                 ol_block,
                 timestamp_ms,
                 parent_blockhash,
+                next_inbox_msg_idx,
             },
         }
     }
@@ -81,6 +85,10 @@ impl ExecBlockRecord {
 
     pub fn parent_blockhash(&self) -> Hash {
         self.metadata.parent_blockhash
+    }
+
+    pub fn next_inbox_msg_idx(&self) -> u64 {
+        self.metadata.next_inbox_msg_idx
     }
 
     pub fn into_parts(self) -> (ExecBlockPackage, EeAccountState) {

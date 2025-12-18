@@ -5,7 +5,6 @@ use alpen_ee_common::{
 };
 use eyre::eyre;
 use strata_identifiers::OLBlockCommitment;
-use strata_snark_acct_types::MessageEntry;
 use tokio::{
     select,
     sync::{mpsc, oneshot, watch},
@@ -13,13 +12,14 @@ use tokio::{
 use tracing::{error, warn};
 
 use super::state::OLChainTrackerState;
+use crate::ol_chain_tracker::state::InboxMessages;
 
 pub(crate) enum OLChainTrackerQuery {
     GetFinalizedBlock(oneshot::Sender<OLBlockCommitment>),
     GetInboxMessages {
         from_slot: u64,
         to_slot: u64,
-        response_tx: oneshot::Sender<eyre::Result<Vec<MessageEntry>>>,
+        response_tx: oneshot::Sender<eyre::Result<InboxMessages>>,
     },
 }
 
@@ -83,9 +83,11 @@ async fn handle_chain_update(
             for OLBlockData {
                 commitment,
                 inbox_messages,
+                next_inbox_msg_idx,
             } in ol_blocks
             {
-                if let Err(err) = state.append_block(commitment, inbox_messages) {
+                if let Err(err) = state.append_block(commitment, inbox_messages, next_inbox_msg_idx)
+                {
                     // As blocks are expected to be in order, if one block cannot be appended,
                     // the remaining blocks will also fail.
                     // So skip rest of the updates and retry in in next cycle.
@@ -226,7 +228,7 @@ mod tests {
             // Expected: Extend(vec![]) - nothing to do
 
             let block = make_block(10);
-            let state = OLChainTrackerState::new_empty(block);
+            let state = OLChainTrackerState::new_empty(block, 0);
             let ol_status = make_finalized_status(block);
 
             let mock_client = MockSequencerOLClient::new();
@@ -253,7 +255,7 @@ mod tests {
             let local_block = make_block(15);
             let remote_block = make_block(10);
 
-            let state = OLChainTrackerState::new_empty(local_block);
+            let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
             let mock_client = MockSequencerOLClient::new();
@@ -280,7 +282,7 @@ mod tests {
             let local_block = make_block_with_id(10, 0xAA);
             let remote_block = make_block_with_id(10, 0xBB);
 
-            let state = OLChainTrackerState::new_empty(local_block);
+            let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
             let mock_client = MockSequencerOLClient::new();
@@ -309,12 +311,12 @@ mod tests {
             let local_block = make_block(10);
             let remote_block = make_block(13);
 
-            let state = OLChainTrackerState::new_empty(local_block);
+            let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
             // Create block chain from slot 10 to 13
             let ol_blocks = create_ol_block_chain(10, 4); // slots 10, 11, 12, 13
-            let block_data = create_block_data_chain(&ol_blocks);
+            let block_data = create_block_data_chain(&ol_blocks, 0);
 
             let mut mock_client = MockSequencerOLClient::new();
             mock_client
@@ -352,16 +354,16 @@ mod tests {
             let local_block = make_block_with_id(10, 0xAA);
             let remote_block = make_block(13);
 
-            let state = OLChainTrackerState::new_empty(local_block);
+            let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
             // Remote has a different block at slot 10
             let remote_block_at_10 = make_block_with_id(10, 0xBB);
             let block_data = vec![
-                make_block_data(remote_block_at_10, vec![]),
-                make_block_data(make_block(11), vec![]),
-                make_block_data(make_block(12), vec![]),
-                make_block_data(make_block(13), vec![]),
+                make_block_data(remote_block_at_10, vec![], 0),
+                make_block_data(make_block(11), vec![], 0),
+                make_block_data(make_block(12), vec![], 0),
+                make_block_data(make_block(13), vec![], 0),
             ];
 
             let mut mock_client = MockSequencerOLClient::new();
@@ -395,7 +397,7 @@ mod tests {
             let local_block = make_block(10);
             let remote_block = make_block(15);
 
-            let state = OLChainTrackerState::new_empty(local_block);
+            let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
             let mut mock_client = MockSequencerOLClient::new();
@@ -440,11 +442,11 @@ mod tests {
             // Expected: Prune up to slot=13, leaving slots 14, 15 in state
 
             let base = make_block(10);
-            let mut state = OLChainTrackerState::new_empty(base);
+            let mut state = OLChainTrackerState::new_empty(base, 0);
 
             let blocks = create_ol_block_chain(11, 5); // slots 11, 12, 13, 14, 15
             for block in &blocks {
-                state.append_block(*block, vec![]).unwrap();
+                state.append_block(*block, vec![], 0).unwrap();
             }
 
             // OL block at slot 13 was included in the finalized exec block
@@ -471,7 +473,7 @@ mod tests {
             // The base should now be slot 13
             let messages = state.get_inbox_messages(11, 13);
             assert!(messages.is_ok());
-            assert!(messages.unwrap().is_empty()); // These were pruned or clamped
+            assert!(messages.unwrap().messages.is_empty()); // These were pruned or clamped
         }
 
         #[tokio::test]
@@ -484,9 +486,9 @@ mod tests {
             // Expected: Error "finalized exec block not found"
 
             let base = make_block(10);
-            let mut state = OLChainTrackerState::new_empty(base);
+            let mut state = OLChainTrackerState::new_empty(base, 0);
 
-            state.append_block(make_block(11), vec![]).unwrap();
+            state.append_block(make_block(11), vec![], 0).unwrap();
 
             let ee_block_hash = Hash::from(Buf32::new([0x99; 32]));
 
@@ -517,9 +519,9 @@ mod tests {
             // Expected: Error propagated from storage
 
             let base = make_block(10);
-            let mut state = OLChainTrackerState::new_empty(base);
+            let mut state = OLChainTrackerState::new_empty(base, 0);
 
-            state.append_block(make_block(11), vec![]).unwrap();
+            state.append_block(make_block(11), vec![], 0).unwrap();
 
             let ee_block_hash = Hash::from(Buf32::new([0x99; 32]));
 
