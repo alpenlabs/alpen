@@ -14916,6 +14916,8 @@ dependencies = [
 name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
+ "ssz",
+ "ssz_primitives",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-manifest-types",
