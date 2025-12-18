@@ -3,75 +3,18 @@
 //! This module defines the proof program structure that integrates with zkaleido's
 //! proof generation framework.
 
-use rsp_primitives::genesis::Genesis;
-use ssz::Encode;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
 };
 
-use zkaleido::{ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
+use strata_codec::encode_to_vec;
+use zkaleido::{
+    ProofType, PublicValues, ZkVmError, ZkVmInputError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
+};
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
-use crate::{AlpenEeProofOutput, CommitBlockPackage, process_alpen_ee_proof_update}; // From lib.rs
-
-/// Private inputs to the proof for an Alpen EVM EE (runtime) account update.
-///
-/// This struct contains all the data needed by the guest zkVM to verify and apply
-/// an EE account update operation for Alpen's EVM execution environment.
-#[derive(Debug)]
-pub struct AlpenEeProofInput {
-    /// EeAccountState encoded as SSZ bytes
-    astate_ssz: Vec<u8>,
-
-    /// UpdateOperationData encoded as SSZ bytes
-    operation_ssz: Vec<u8>,
-
-    /// Previous ProofState (before the update) encoded as SSZ bytes
-    /// The guest will verify that tree_hash_root(astate) matches this state
-    prev_proof_state_ssz: Vec<u8>,
-
-    /// Coinput witness data for messages
-    coinputs: Vec<Vec<u8>>,
-
-    /// Serialized block packages for building CommitChainSegment in guest.
-    /// Each package contains execution metadata and raw block body.
-    blocks: Vec<CommitBlockPackage>,
-
-    /// Previous header (raw bytes)
-    raw_prev_header: Vec<u8>,
-
-    /// Partial pre-state (raw bytes)
-    raw_partial_pre_state: Vec<u8>,
-
-    /// Genesis data for constructing ChainSpec (serde-serialized)
-    genesis: Genesis,
-}
-
-impl AlpenEeProofInput {
-    /// Create a new AlpenEeProofInput
-    pub fn new(
-        astate_ssz: Vec<u8>,
-        operation_ssz: Vec<u8>,
-        prev_proof_state_ssz: Vec<u8>,
-        coinputs: Vec<Vec<u8>>,
-        blocks: Vec<CommitBlockPackage>,
-        raw_prev_header: Vec<u8>,
-        raw_partial_pre_state: Vec<u8>,
-        genesis: Genesis,
-    ) -> Self {
-        Self {
-            astate_ssz,
-            operation_ssz,
-            prev_proof_state_ssz,
-            coinputs,
-            blocks,
-            raw_prev_header,
-            raw_partial_pre_state,
-            genesis,
-        }
-    }
-}
+use crate::{AlpenEeProofOutput, process_alpen_ee_proof_update, types::AlpenEeProofInput};
 
 /// Output from Alpen EE account proof.
 /// This is the public output committed by the guest.
@@ -99,28 +42,20 @@ impl ZkVmProgram for AlpenEeProofProgram {
     {
         let mut input_builder = B::new();
 
-        // Write SSZ-encoded data as raw buffers
-        input_builder.write_buf(&input.astate_ssz)?;
-        input_builder.write_buf(&input.operation_ssz)?;
-        input_builder.write_buf(&input.prev_proof_state_ssz)?;
+        // Serialize and write account initialization data as a single Codec blob
+        let account_init_bytes = encode_to_vec(input.account_init()).map_err(|e| {
+            ZkVmInputError::InputBuild(format!("Failed to encode account_init: {}", e))
+        })?;
+        input_builder.write_buf(&account_init_bytes)?;
 
-        // Write coinputs (Vec<Vec<u8>>) with SSZ
-        input_builder.write_buf(&input.coinputs.as_ssz_bytes())?;
-
-        // Write number of blocks with SSZ, then each block's data
-        // Each block is a CommitBlockPackage: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
-        let num_blocks = input.blocks.len() as u32;
-        input_builder.write_buf(&num_blocks.as_ssz_bytes())?;
-        for block in &input.blocks {
-            input_builder.write_buf(block.as_bytes())?;
-        }
-
-        // Write raw byte buffers
-        input_builder.write_buf(&input.raw_prev_header)?;
-        input_builder.write_buf(&input.raw_partial_pre_state)?;
+        // Serialize and write runtime update input as a single Codec blob
+        let runtime_input_bytes = encode_to_vec(input.runtime_input()).map_err(|e| {
+            ZkVmInputError::InputBuild(format!("Failed to encode runtime_input: {}", e))
+        })?;
+        input_builder.write_buf(&runtime_input_bytes)?;
 
         // Write genesis data (serde-serialized)
-        input_builder.write_serde(&input.genesis)?;
+        input_builder.write_serde(input.genesis())?;
 
         input_builder.build()
     }
