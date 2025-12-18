@@ -1,12 +1,12 @@
 [package]
 edition = "2021"
-name = "guest-sp1-eth-ee-acct"
+name = "guest-sp1-alpen-ee-acct"
 version = "0.1.0"
 
 [workspace]
 
 [dependencies]
-strata-proofimpl-eth-ee-acct = { path = "../../../crates/proof-impl/eth-ee-acct" }
+strata-proofimpl-alpen-ee-acct = { path = "../../../crates/proof-impl/alpen-ee-acct" }
 zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
 
 [patch.crates-io]

@@ -20,7 +20,7 @@ cfg_if! {
 const EVM_EE_STF: &str = "guest-evm-ee-stf";
 const CL_STF: &str = "guest-cl-stf";
 const CHECKPOINT: &str = "guest-checkpoint";
-const ETH_EE_ACCT: &str = "guest-eth-ee-acct";
+const ETH_EE_ACCT: &str = "guest-alpen-ee-acct";
 
 /// Returns a map of program dependencies.
 fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
