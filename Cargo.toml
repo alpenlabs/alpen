@@ -244,8 +244,8 @@ strata-rpc-types-new = { path = "crates/rpc-new/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
 strata-simple-ee = { path = "crates/simple-ee" }
-strata-snark-acct-types = { path = "crates/snark-acct-types" }
 strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
+strata-snark-acct-types = { path = "crates/snark-acct-types" }
 strata-state = { path = "crates/state" }
 strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }

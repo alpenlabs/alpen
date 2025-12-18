@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::coin::Coin;
@@ -122,6 +123,9 @@ pub enum AccountTypeStateMut<'a, T: IAccountState> {
 /// Abstract snark account state.
 pub trait ISnarkAccountState: Sized {
     // Proof state accessors
+
+    /// Gets the verification key for this snark account.
+    fn verification_key(&self) -> &PredicateKey;
 
     /// Gets the update seqno.
     fn seqno(&self) -> Seqno;

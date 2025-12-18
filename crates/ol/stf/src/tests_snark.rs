@@ -464,7 +464,7 @@ fn test_snark_update_invalid_message_index() {
     let bad_tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
         snark_id,
         update_container,
-));
+    ));
     let result = execute_tx_in_block(&mut state, &genesis_header, bad_tx);
 
     assert!(
@@ -509,7 +509,8 @@ fn test_snark_update_success_with_transfer() {
         result.is_ok(),
         "Valid update should succeed: {:?}",
         result.err()
-);
+    );
+
     // Verify balances
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
     assert_eq!(

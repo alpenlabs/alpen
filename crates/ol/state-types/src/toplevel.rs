@@ -260,6 +260,7 @@ impl IStateAccessor for OLState {
 mod tests {
     use strata_acct_types::BitcoinAmount;
     use strata_ledger_types::{AccountTypeState, IAccountState, NewAccountData};
+    use strata_predicate::PredicateKey;
 
     use super::*;
     use crate::{OLAccountTypeState, OLSnarkAccountState};
@@ -303,7 +304,8 @@ mod tests {
         let mut batch = WriteBatch::new_from_state(&state);
 
         // Create a new account in the batch.
-        let snark_state = OLSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
@@ -329,7 +331,8 @@ mod tests {
         let account_id = test_account_id(1);
 
         // Create an account directly in state.
-        let snark_state = OLSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
@@ -338,7 +341,8 @@ mod tests {
 
         // Create a batch that updates the account.
         let mut batch = WriteBatch::new_from_state(&state);
-        let snark_state_updated = OLSnarkAccountState::new_fresh([1u8; 32].into());
+        let snark_state_updated =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
         let updated_account = OLAccountState::new(
             serial,
             BitcoinAmount::from_sat(2000),
@@ -371,7 +375,8 @@ mod tests {
         batch.epochal_mut().set_cur_epoch(10);
 
         // Create two new accounts.
-        let snark_state_1 = OLSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state_1 =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
         let new_acct_1 = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state_1),
@@ -381,7 +386,8 @@ mod tests {
             .ledger_mut()
             .create_account_from_data(account_id_1, new_acct_1, serial_1);
 
-        let snark_state_2 = OLSnarkAccountState::new_fresh([1u8; 32].into());
+        let snark_state_2 =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
         let new_acct_2 = NewAccountData::new(
             BitcoinAmount::from_sat(2000),
             AccountTypeState::Snark(snark_state_2),
@@ -416,7 +422,8 @@ mod tests {
         let new_id = test_account_id(2);
 
         // Create an existing account in state first.
-        let snark_state = OLSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
@@ -427,7 +434,8 @@ mod tests {
         let mut batch = WriteBatch::new_from_state(&state);
 
         // Update the existing account.
-        let updated_snark = OLSnarkAccountState::new_fresh([1u8; 32].into());
+        let updated_snark =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
         let updated_account = OLAccountState::new(
             existing_serial,
             BitcoinAmount::from_sat(5000),
@@ -438,7 +446,8 @@ mod tests {
             .update_account(existing_id, updated_account);
 
         // Create a new account.
-        let new_snark = OLSnarkAccountState::new_fresh([2u8; 32].into());
+        let new_snark =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [2u8; 32].into());
         let new_acct_data = NewAccountData::new(
             BitcoinAmount::from_sat(3000),
             AccountTypeState::Snark(new_snark),
