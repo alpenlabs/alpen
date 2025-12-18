@@ -26,7 +26,7 @@ pub(crate) type Result<T> = std::result::Result<T, GuestBuilderError>;
 
 /// Deserialize and build CommitBlockData from host-provided bytes (GUEST-SIDE)
 ///
-/// The bytes format is: [exec_block_package (SSZ)][raw_block_body (strata_codec)]
+/// The bytes format is: `[exec_block_package (SSZ)][raw_block_body (strata_codec)]`
 ///
 /// This function:
 /// 1. Deserializes ExecBlockPackage from SSZ
