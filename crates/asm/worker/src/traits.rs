@@ -1,6 +1,7 @@
 //! Traits for the chain worker to interface with the underlying system.
 
 use bitcoin::{Block, Network};
+use strata_asm_common::AsmManifest;
 use strata_btc_types::BitcoinTxid;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
@@ -21,6 +22,11 @@ pub trait WorkerContext {
     /// Puts the [`AsmState`] into DB.
     fn store_anchor_state(&self, blockid: &L1BlockCommitment, state: &AsmState)
     -> WorkerResult<()>;
+
+    /// Stores an [`AsmManifest`] to the L1 database.
+    ///
+    /// This should be called after each STF execution with the produced manifest.
+    fn store_l1_manifest(&self, manifest: AsmManifest, height: u64) -> WorkerResult<()>;
 
     /// A Bitcoin network identifier.
     fn get_network(&self) -> WorkerResult<Network>;
