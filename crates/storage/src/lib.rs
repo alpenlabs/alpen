@@ -11,6 +11,7 @@ use anyhow::Context;
 pub use managers::{
     asm::AsmStateManager, chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
     client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager, mmr::MmrManager,
+    ol_state::OLStateManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_types::traits::DatabaseBackend;
@@ -35,6 +36,7 @@ pub struct NodeStorage {
     checkpoint_manager: Arc<CheckpointDbManager>,
 
     mmr_manager: Arc<MmrManager>,
+    ol_state_manager: Arc<OLStateManager>,
 }
 
 impl Clone for NodeStorage {
@@ -47,6 +49,7 @@ impl Clone for NodeStorage {
             client_state_manager: self.client_state_manager.clone(),
             checkpoint_manager: self.checkpoint_manager.clone(),
             mmr_manager: self.mmr_manager.clone(),
+            ol_state_manager: self.ol_state_manager.clone(),
         }
     }
 }
@@ -79,6 +82,10 @@ impl NodeStorage {
     pub fn mmr(&self) -> &Arc<MmrManager> {
         &self.mmr_manager
     }
+
+    pub fn ol_state(&self) -> &Arc<OLStateManager> {
+        &self.ol_state_manager
+    }
 }
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
@@ -95,6 +102,7 @@ pub fn create_node_storage(
     let client_state_db = db.client_state_db();
     let checkpoint_db = db.checkpoint_db();
     let mmr_db = db.mmr_db();
+    let ol_state_db = db.ol_state_db();
 
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
@@ -107,7 +115,8 @@ pub fn create_node_storage(
 
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
-    let mmr_manager = Arc::new(MmrManager::new(pool, mmr_db));
+    let mmr_manager = Arc::new(MmrManager::new(pool.clone(), mmr_db));
+    let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db));
 
     Ok(NodeStorage {
         asm_state_manager: asm_manager,
@@ -117,5 +126,6 @@ pub fn create_node_storage(
         client_state_manager,
         checkpoint_manager,
         mmr_manager,
+        ol_state_manager,
     })
 }
