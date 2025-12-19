@@ -1,3 +1,5 @@
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 // Re-export from the separate logs crate
 use strata_codec::{Codec, decode_buf_exact};
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg, TypeId};
@@ -93,6 +95,20 @@ impl AsmLogEntry {
 
 // Borsh implementations are a shim over SSZ with length-prefixing to support nested structs
 strata_identifiers::impl_borsh_via_ssz!(AsmLogEntry);
+
+// Manual Arbitrary implementation for testing/benchmarking
+#[cfg(feature = "arbitrary")]
+impl<'a> Arbitrary<'a> for AsmLogEntry {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate a small random byte vec for the log data
+        let len = u.int_in_range(0..=256)?;
+        let mut bytes = Vec::with_capacity(len);
+        for _ in 0..len {
+            bytes.push(u8::arbitrary(u)?);
+        }
+        Ok(AsmLogEntry::from_raw(bytes))
+    }
+}
 
 #[cfg(test)]
 mod tests {
