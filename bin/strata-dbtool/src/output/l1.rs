@@ -1,26 +1,27 @@
 //! L1 block formatting implementations
 
-use strata_asm_types::{L1Tx, ProtocolOperation};
+use strata_ol_chain_types::AsmManifest;
 use strata_primitives::l1::L1BlockId;
 
-use super::{checkpoint::format_signed_checkpoint, helpers::porcelain_field, traits::Formattable};
-
-/// Transaction information with computed IDs
-#[derive(serde::Serialize)]
-pub(crate) struct TransactionInfo {
-    pub index: usize,
-    pub txid: String,
-    pub wtxid: String,
-    pub protocol_ops_count: usize,
-}
+use super::{helpers::porcelain_field, traits::Formattable};
 
 /// L1 block information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct L1BlockInfo<'a> {
     pub block_id: &'a L1BlockId,
-    pub transactions: &'a [L1Tx],
     pub height: u64,
-    pub transaction_infos: Vec<TransactionInfo>,
+    pub logs_count: usize,
+}
+
+impl<'a> L1BlockInfo<'a> {
+    /// Create L1BlockInfo from an AsmManifest
+    pub(crate) fn from_manifest(block_id: &'a L1BlockId, manifest: &AsmManifest) -> Self {
+        Self {
+            block_id,
+            height: manifest.height(),
+            logs_count: manifest.logs().len(),
+        }
+    }
 }
 
 /// L1 summary information displayed to the user
@@ -51,67 +52,7 @@ impl<'a> Formattable for L1BlockInfo<'a> {
 
         output.push(porcelain_field("block_id", format!("{:?}", self.block_id)));
         output.push(porcelain_field("height", self.height));
-        output.push(porcelain_field(
-            "transaction_count",
-            self.transactions.len(),
-        ));
-
-        // Add transaction information
-        for (index, tx_info) in self.transaction_infos.iter().enumerate() {
-            let tx_prefix = format!("tx_{index}");
-            output.push(porcelain_field(&format!("{tx_prefix}.txid"), &tx_info.txid));
-            output.push(porcelain_field(
-                &format!("{tx_prefix}.wtxid"),
-                &tx_info.wtxid,
-            ));
-            output.push(porcelain_field(
-                &format!("{tx_prefix}.protocol_ops_count"),
-                tx_info.protocol_ops_count,
-            ));
-
-            // Add protocol operation details
-            if let Some(tx) = self.transactions.get(index) {
-                for (op_index, op) in tx.protocol_ops().iter().enumerate() {
-                    let op_prefix = format!("{tx_prefix}.protocol_op_{op_index}");
-                    match op {
-                        ProtocolOperation::Checkpoint(signed_checkpoint) => {
-                            let prefix = format!("{op_prefix}.checkpoint");
-                            output.extend(format_signed_checkpoint(signed_checkpoint, &prefix));
-                        }
-                        ProtocolOperation::DaCommitment(da_commitment) => {
-                            output.push(porcelain_field(
-                                &format!("{op_prefix}.da_commitment"),
-                                format!("{da_commitment:?}"),
-                            ));
-                        }
-                        ProtocolOperation::Deposit(deposit_info) => {
-                            output.push(porcelain_field(
-                                &format!("{op_prefix}.deposit"),
-                                format!("{deposit_info:?}"),
-                            ));
-                        }
-                        ProtocolOperation::DepositRequest(deposit_request) => {
-                            output.push(porcelain_field(
-                                &format!("{op_prefix}.deposit_request"),
-                                format!("{deposit_request:?}"),
-                            ));
-                        }
-                        ProtocolOperation::WithdrawalFulfillment(withdrawal_fulfillment) => {
-                            output.push(porcelain_field(
-                                &format!("{op_prefix}.withdrawal_fulfillment"),
-                                format!("{withdrawal_fulfillment:?}"),
-                            ));
-                        }
-                        ProtocolOperation::DepositSpent(deposit_spent) => {
-                            output.push(porcelain_field(
-                                &format!("{op_prefix}.deposit_spent"),
-                                format!("{deposit_spent:?}"),
-                            ));
-                        }
-                    }
-                }
-            }
-        }
+        output.push(porcelain_field("logs_count", self.logs_count));
 
         output.join("\n")
     }

@@ -202,7 +202,7 @@ impl StrataApiServer for StrataRpcImpl {
                 .await;
 
             if let Ok(Some(block)) = manifest {
-                buried_l1_block = Some(block.into());
+                buried_l1_block = L1BlockCommitment::from_height_u64(buried_height, *block.blkid());
             }
         }
 
@@ -654,10 +654,13 @@ impl StrataApiServer for StrataRpcImpl {
             // TODO: better error?
             .ok_or(Error::MissingL1BlockManifest(0))?;
 
+        let commitment = L1BlockCommitment::from_height_u64(manifest.height(), *manifest.blkid())
+            .ok_or(Error::MissingL1BlockManifest(0))?;
+
         Ok(self
             .storage
             .client_state()
-            .get_update_blocking(&manifest.into())
+            .get_update_blocking(&commitment)
             .map_err(Error::Db)?)
     }
 }
@@ -972,10 +975,13 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
             // TODO: better error?
             .ok_or(Error::MissingL1BlockManifest(0))?;
 
+        let commitment = L1BlockCommitment::from_height_u64(manifest.height(), *manifest.blkid())
+            .ok_or(Error::MissingL1BlockManifest(0))?;
+
         Ok(self
             .storage
             .client_state()
-            .get_state_async(manifest.into())
+            .get_state_async(commitment)
             .map_err(Error::Db)
             .await?)
     }

@@ -1,12 +1,10 @@
 use argh::FromArgs;
-use strata_asm_types::ProtocolOperation;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{
     traits::{CheckpointDatabase, DatabaseBackend},
     types::CheckpointEntry,
 };
 
-use super::l1::{get_l1_block_id_at_height, get_l1_block_manifest, get_l1_chain_tip};
 use crate::{
     cli::OutputFormat,
     output::{
@@ -158,51 +156,12 @@ pub(crate) fn get_checkpoints_summary(
     }
     let checkpoints_found_in_db = checkpoint_commitments.len() as u64;
 
-    // Check if all checkpoints are present in L1 blocks
-    // Use helper function to get L1 tip
-    let (l1_tip_height, _) = get_l1_chain_tip(db)?;
-
-    let mut found_checkpoints = 0;
-    let mut unexpected_checkpoints = Vec::new();
-
-    for l1_height in args.height_from..=l1_tip_height {
-        // Use helper functions to get block ID and manifest
-        let block_id = get_l1_block_id_at_height(db, l1_height)?;
-        let Some(manifest) = get_l1_block_manifest(db, block_id)? else {
-            // Skip this block if manifest is missing
-            continue;
-        };
-
-        manifest
-            .txs()
-            .iter()
-            .flat_map(|tx| tx.protocol_ops())
-            .filter_map(|op| match op {
-                ProtocolOperation::Checkpoint(signed_checkpoint) => Some((
-                    signed_checkpoint.checkpoint().commitment(),
-                    signed_checkpoint.checkpoint().batch_info().epoch(),
-                )),
-                _ => None,
-            })
-            .for_each(|(commitment, checkpoint_index)| {
-                if !checkpoint_commitments.contains(commitment) {
-                    unexpected_checkpoints.push((checkpoint_index, l1_height));
-                } else {
-                    found_checkpoints += 1;
-                }
-            });
-    }
-
-    let checkpoints_in_l1_blocks = found_checkpoints as u64;
-
-    // Convert unexpected checkpoints to the expected format
-    let unexpected_checkpoints_info: Vec<UnexpectedCheckpointInfo> = unexpected_checkpoints
-        .into_iter()
-        .map(|(checkpoint_index, l1_height)| UnexpectedCheckpointInfo {
-            checkpoint_index: checkpoint_index as u64,
-            l1_height,
-        })
-        .collect();
+    // Note: L1 checkpoint verification via transaction scanning is no longer available
+    // in the ASM-based flow. Checkpoint detection is now done via ASM logs
+    // (CheckpointAckLogData). The L1 blocks now contain AsmManifest with logs, not
+    // protocol operations in transactions.
+    let checkpoints_in_l1_blocks = 0u64;
+    let unexpected_checkpoints_info: Vec<UnexpectedCheckpointInfo> = Vec::new();
 
     // Create the output data structure
     let summary_info = CheckpointsSummaryInfo {

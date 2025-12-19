@@ -1,12 +1,13 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{DatabaseBackend, L1Database};
+use strata_ol_chain_types::AsmManifest;
 use strata_primitives::l1::L1BlockId;
 
 use crate::{
     cli::OutputFormat,
     output::{
-        l1::{L1BlockInfo, L1SummaryInfo, TransactionInfo},
+        l1::{L1BlockInfo, L1SummaryInfo},
         output,
     },
     utils::block_id::parse_l1_block_id,
@@ -70,7 +71,7 @@ pub(crate) fn get_l1_block_id_at_height(
 pub(crate) fn get_l1_block_manifest(
     db: &impl DatabaseBackend,
     block_id: L1BlockId,
-) -> Result<Option<strata_asm_types::L1BlockManifest>, DisplayedError> {
+) -> Result<Option<AsmManifest>, DisplayedError> {
     db.l1_db()
         .get_block_manifest(block_id)
         .internal_error(format!("Failed to get block manifest for id {block_id:?}",))
@@ -92,24 +93,8 @@ pub(crate) fn get_l1_manifest(
         )
     })?;
 
-    // Compute transaction IDs and create transaction infos
-    let mut transaction_infos = Vec::new();
-    for (index, tx) in l1_block_manifest.txs().iter().enumerate() {
-        transaction_infos.push(TransactionInfo {
-            index,
-            txid: format!("tx_{index}"),   // Simplified for now
-            wtxid: format!("wtx_{index}"), // Simplified for now
-            protocol_ops_count: tx.protocol_ops().len(),
-        });
-    }
-
-    // Create the output data structure
-    let block_info = L1BlockInfo {
-        block_id: &block_id,
-        transactions: l1_block_manifest.txs(),
-        height: l1_block_manifest.height(),
-        transaction_infos,
-    };
+    // Create the output data structure using the new ASM manifest
+    let block_info = L1BlockInfo::from_manifest(&block_id, &l1_block_manifest);
 
     // Use the output utility
     output(&block_info, args.output_format)
