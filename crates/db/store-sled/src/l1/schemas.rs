@@ -1,4 +1,5 @@
-use strata_asm_types::{L1BlockManifest, L1Tx};
+use strata_asm_common::AsmManifest;
+use strata_asm_types::L1Tx;
 use strata_primitives::l1::L1BlockId;
 
 use crate::{
@@ -7,8 +8,8 @@ use crate::{
 };
 
 define_table_with_default_codec!(
-    /// A table to store L1 Block data. Maps block id to header
-    (L1BlockSchema) L1BlockId => L1BlockManifest
+    /// A table to store L1 Block data (as ASM Manifest). Maps block id to manifest
+    (L1BlockSchema) L1BlockId => AsmManifest
 );
 
 define_table_with_integer_key!(

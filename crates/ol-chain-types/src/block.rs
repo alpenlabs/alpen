@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_asm_types::L1BlockManifest;
+use strata_asm_common::AsmManifest;
 use strata_primitives::prelude::*;
 use strata_state::exec_update::ExecUpdate;
 
@@ -88,16 +88,9 @@ impl L2BlockBody {
     }
 }
 
-/// Container for additional messages that we've observed from the L1, if there
+/// Container for [`AsmManifest`]s that we've observed from the L1, if there
 /// are any.
-///
-/// Soon this will be refactored so that it only includes the new tip's
-/// `L1BlockCommitment` and we will "sideload" the blocks in the epoch
-/// finalization.  So the manifests here contains kinda a lot of data, but it
-/// won't be present in DA payloads so it's fine.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct L1Segment {
     /// New L1 block height.  This should correspond with the last manifest in
     /// the new_manifests, or the current chainstate height if it's not being
@@ -107,34 +100,49 @@ pub struct L1Segment {
     /// block heights wrong.
     new_height: u64,
 
-    /// New manifests that we've seen from L1 that we didn't see in the previous
+    /// New [`AsmManifest`]s that we've seen from L1 that we didn't see in the previous
     /// L2 block.
-    new_manifests: Vec<L1BlockManifest>,
+    new_manifests: Vec<AsmManifest>,
+}
+
+// Manual Arbitrary implementation since AsmManifest doesn't derive Arbitrary
+impl<'a> Arbitrary<'a> for L1Segment {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(L1Segment {
+            new_height: u64::arbitrary(u)?,
+            // For testing, just use an empty vec of manifests since AsmManifest doesn't implement
+            // Arbitrary
+            new_manifests: Vec::new(),
+        })
+    }
 }
 
 impl L1Segment {
-    /// Constructs a new instance.  These new manifests MUST be sorted in order
+    /// Constructs a new instance. These new [`AsmManifest`]s MUST be sorted in order
     /// of block height.
-    pub fn new(new_height: u64, new_manifests: Vec<L1BlockManifest>) -> Self {
+    pub fn new(new_height: u64, new_manifests: Vec<AsmManifest>) -> Self {
         Self {
             new_height,
             new_manifests,
         }
     }
 
+    /// Constructs a new empty instance of [`L1Segment`] at the given height.
     pub fn new_empty(cur_height: u64) -> Self {
         Self::new(cur_height, Vec::new())
     }
 
+    /// Returns the new height of the [`L1Segment`].
     pub fn new_height(&self) -> u64 {
         self.new_height
     }
 
-    pub fn new_manifests(&self) -> &[L1BlockManifest] {
+    /// Returns the new [`AsmManifest`]s of the [`L1Segment`].
+    pub fn new_manifests(&self) -> &[AsmManifest] {
         &self.new_manifests
     }
 
-    /// Returns a the new tip L1 blkid, if there is one and this is
+    /// Returns a the new tip [`L1BlockId`], if there is one and this is
     /// well-formed.
     pub fn new_tip_blkid(&self) -> Option<L1BlockId> {
         self.new_manifests().last().map(|mf| *mf.blkid())

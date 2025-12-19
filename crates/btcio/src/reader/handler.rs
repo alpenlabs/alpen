@@ -1,6 +1,8 @@
-use bitcoin::{consensus::serialize, hashes::Hash, Block};
+use bitcoin::hashes::Hash;
 use bitcoind_async_client::traits::Reader;
-use strata_asm_types::{generate_l1_tx, L1BlockManifest, L1HeaderRecord, L1Tx};
+use strata_asm_common::AsmManifest;
+use strata_asm_spec::StrataAsmSpec;
+use strata_asm_stf::{pre_process_asm, AsmStfInput};
 use strata_identifiers::{Buf32, Epoch, L1BlockCommitment};
 use strata_state::BlockSubmitter;
 use tracing::*;
@@ -43,7 +45,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
 async fn handle_blockdata<R: Reader>(
     ctx: &ReaderContext<R>,
     blockdata: BlockData,
-    epoch: Epoch,
+    _epoch: Epoch,
 ) -> anyhow::Result<Option<L1BlockCommitment>> {
     let ReaderContext {
         params, storage, ..
@@ -58,54 +60,56 @@ async fn handle_blockdata<R: Reader>(
         return Ok(Option::None);
     }
 
-    let txs: Vec<_> = generate_l1txs(&blockdata);
-    let num_txs = txs.len();
-    let manifest = generate_block_manifest(blockdata.block(), txs, epoch, height);
-    let l1blockid = *manifest.blkid();
+    let block = blockdata.block();
+    let blkid: Buf32 = block.block_hash().into();
+    let l1blockid = blkid.into();
 
-    storage.l1().put_block_data_async(manifest).await?;
+    // Get current ASM state from storage
+    let asm_state = storage
+        .asm()
+        .fetch_most_recent_state()?
+        .map(|(_, state)| state)
+        .ok_or_else(|| anyhow::anyhow!("No ASM state available"))?;
+
+    // Create ASM spec
+    let asm_spec = StrataAsmSpec::from_params(params.rollup());
+
+    // Pre-process the block through ASM STF
+    let pre_process = pre_process_asm(&asm_spec, asm_state.state(), block)?;
+
+    // For now, we create a minimal aux_data - full resolution happens in ASM worker
+    let aux_data = Default::default();
+
+    // Get witness root
+    let wtxids_root: Buf32 = block
+        .witness_root()
+        .map(|root| root.as_raw_hash().to_byte_array())
+        .unwrap_or_else(|| block.header.merkle_root.as_raw_hash().to_byte_array())
+        .into();
+
+    let stf_input = AsmStfInput {
+        protocol_txs: pre_process.txs,
+        header: &block.header,
+        wtxids_root,
+        aux_data,
+    };
+
+    // Compute ASM transition to get manifest
+    let stf_output =
+        strata_asm_stf::compute_asm_transition(&asm_spec, asm_state.state(), stf_input)?;
+    let manifest: AsmManifest = stf_output.manifest;
+    let num_logs = manifest.logs().len();
+
+    // Store manifest in L1 database
+    storage.l1().put_block_data_async(manifest, height).await?;
     storage
         .l1()
-        .extend_canonical_chain_async(&l1blockid)
+        .extend_canonical_chain_async(&l1blockid, height)
         .await?;
-    info!(%height, %l1blockid, txs = %num_txs, "wrote L1 block manifest");
+    info!(%height, %l1blockid, logs = %num_logs, "wrote L1 ASM manifest");
 
-    // Create a sync event if it's something we care about.
-    let blkid: Buf32 = blockdata.block().block_hash().into();
+    // Create a sync event
     Ok(Option::Some(
         L1BlockCommitment::from_height_u64(height, blkid.into()).expect("valid height"),
     ))
-}
-
-/// Given a block, generates a manifest of the parts we care about that we can
-/// store in the database.
-fn generate_block_manifest(
-    block: &Block,
-    txs: Vec<L1Tx>,
-    epoch: Epoch,
-    height: u64,
-) -> L1BlockManifest {
-    let blockid = block.block_hash().into();
-    let root = block
-        .witness_root()
-        .map(|x| x.to_byte_array())
-        .unwrap_or_default();
-    let header = serialize(&block.header);
-
-    let rec = L1HeaderRecord::new(blockid, header, Buf32::from(root));
-    L1BlockManifest::new(rec, txs, epoch, height)
-}
-
-fn generate_l1txs(blockdata: &BlockData) -> Vec<L1Tx> {
-    blockdata
-        .relevant_txs()
-        .iter()
-        .map(|tx_entry| {
-            generate_l1_tx(
-                blockdata.block(),
-                *tx_entry.index(),
-                tx_entry.item().protocol_ops().to_vec(),
-            )
-        })
-        .collect()
 }

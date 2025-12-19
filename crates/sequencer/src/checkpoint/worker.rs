@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use strata_asm_types::L1BlockManifest;
+use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
 use strata_db_types::{types::CheckpointEntry, DbError};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader, L2BlockId, L2Header};
@@ -349,7 +349,7 @@ fn fetch_l2_block(blkid: &L2BlockId, l2man: &L2BlockManager) -> anyhow::Result<L
         .ok_or(Error::MissingL2Block(*blkid))?)
 }
 
-fn fetch_l1_block_manifest(height: u64, l1man: &L1BlockManager) -> anyhow::Result<L1BlockManifest> {
+fn fetch_l1_block_manifest(height: u64, l1man: &L1BlockManager) -> anyhow::Result<AsmManifest> {
     Ok(l1man
         .get_block_manifest_at_height(height)?
         .ok_or(DbError::MissingL1Block(height))?)
