@@ -30,10 +30,14 @@ pub(crate) fn get_client_state_update(
     args: GetClientStateUpdateArgs,
 ) -> Result<(), DisplayedError> {
     let block_id = parse_l1_block_id(&args.block_id)?;
-    let block_mf = get_l1_block_manifest(db, block_id)?;
-    let block_commitment: L1BlockCommitment = block_mf
-        .ok_or(DisplayedError::InternalError("".to_string(), Box::new(())))?
-        .into();
+    let block_mf = get_l1_block_manifest(db, block_id)?.ok_or(DisplayedError::InternalError(
+        "Block manifest not found".to_string(),
+        Box::new(()),
+    ))?;
+    let block_commitment =
+        L1BlockCommitment::from_height_u64(block_mf.height(), *block_mf.blkid()).ok_or(
+            DisplayedError::InternalError("Invalid height".to_string(), Box::new(())),
+        )?;
 
     let (client_state, actions) = db
         .client_state_db()
