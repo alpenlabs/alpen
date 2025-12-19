@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use strata_acct_types::{AccountId, AccountSerial};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::L1BlockCommitment;
 use strata_ledger_types::{IAccountStateConstructible, IStateAccessor, NewAccountData};
 
@@ -199,5 +200,212 @@ impl<A> Default for LedgerWriteBatch<A> {
             account_writes: BTreeMap::new(),
             serial_to_id: SerialMap::new(),
         }
+    }
+}
+
+// Manual implementation of Codec for WriteBatch since it has a `BTreeMap<T>` field.
+impl<A: Codec> Codec for WriteBatch<A> {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.global.encode(enc)?;
+        self.epochal.encode(enc)?;
+        self.ledger.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let global = GlobalState::decode(dec)?;
+        let epochal = EpochalState::decode(dec)?;
+        let ledger = LedgerWriteBatch::decode(dec)?;
+        Ok(Self {
+            global,
+            epochal,
+            ledger,
+        })
+    }
+}
+
+impl<A: Codec> Codec for LedgerWriteBatch<A> {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        (self.account_writes.len() as u64).encode(enc)?;
+        for (id, state) in &self.account_writes {
+            id.encode(enc)?;
+            state.encode(enc)?;
+        }
+        self.serial_to_id.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let account_writes_len = u64::decode(dec)? as usize;
+        let mut account_writes = BTreeMap::new();
+        for _ in 0..account_writes_len {
+            let id = AccountId::decode(dec)?;
+            let state = A::decode(dec)?;
+            account_writes.insert(id, state);
+        }
+        let serial_to_id = SerialMap::decode(dec)?;
+        Ok(Self {
+            account_writes,
+            serial_to_id,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment};
+    use strata_ledger_types::IAccountState;
+
+    use super::*;
+    use crate::account::{NativeAccountState, NativeAccountTypeState};
+
+    fn test_account_id(seed: u8) -> AccountId {
+        let mut bytes = [0u8; 32];
+        bytes[0] = seed;
+        AccountId::from(bytes)
+    }
+
+    fn create_test_global_state() -> GlobalState {
+        GlobalState::new(42)
+    }
+
+    fn create_test_epochal_state() -> EpochalState {
+        let blkid = Buf32::zero().into();
+        let l1_block =
+            L1BlockCommitment::from_height_u64(100, blkid).expect("valid L1 block commitment");
+        let epoch_commitment = EpochCommitment::null();
+        EpochalState::new(BitcoinAmount::from_sat(1000), 5, l1_block, epoch_commitment)
+    }
+
+    fn create_test_account_state(serial: AccountSerial, balance: u64) -> NativeAccountState {
+        NativeAccountState::new(
+            serial,
+            BitcoinAmount::from_sat(balance),
+            NativeAccountTypeState::Empty,
+        )
+    }
+
+    #[test]
+    fn test_serial_map_codec_roundtrip_empty() {
+        let map = SerialMap::new();
+        let encoded = encode_to_vec(&map).expect("Failed to encode SerialMap");
+        let decoded: SerialMap = decode_buf_exact(&encoded).expect("Failed to decode SerialMap");
+
+        assert!(decoded.is_empty());
+        assert_eq!(decoded.len(), 0);
+    }
+
+    #[test]
+    fn test_serial_map_codec_roundtrip_with_entries() {
+        let id1 = test_account_id(1);
+        let id2 = test_account_id(2);
+        let id3 = test_account_id(3);
+
+        let map = SerialMap::new_first(AccountSerial::from(10u32), id1);
+        let mut map = map;
+        map.insert_next(AccountSerial::from(11u32), id2);
+        map.insert_next(AccountSerial::from(12u32), id3);
+
+        let encoded = encode_to_vec(&map).expect("Failed to encode SerialMap");
+        let decoded: SerialMap = decode_buf_exact(&encoded).expect("Failed to decode SerialMap");
+
+        assert_eq!(decoded.len(), 3);
+        assert_eq!(decoded.first_serial(), Some(AccountSerial::from(10u32)));
+        assert_eq!(decoded.last_serial(), Some(AccountSerial::from(12u32)));
+        assert_eq!(decoded.get(AccountSerial::from(10u32)), Some(&id1));
+        assert_eq!(decoded.get(AccountSerial::from(11u32)), Some(&id2));
+        assert_eq!(decoded.get(AccountSerial::from(12u32)), Some(&id3));
+    }
+
+    #[test]
+    fn test_ledger_write_batch_codec_roundtrip_empty() {
+        let batch: LedgerWriteBatch<NativeAccountState> = LedgerWriteBatch::new();
+        let encoded = encode_to_vec(&batch).expect("Failed to encode LedgerWriteBatch");
+        let decoded: LedgerWriteBatch<NativeAccountState> =
+            decode_buf_exact(&encoded).expect("Failed to decode LedgerWriteBatch");
+
+        assert!(decoded.serial_to_id.is_empty());
+        assert_eq!(decoded.account_writes.len(), 0);
+    }
+
+    #[test]
+    fn test_ledger_write_batch_codec_roundtrip_with_accounts() {
+        let mut batch: LedgerWriteBatch<NativeAccountState> = LedgerWriteBatch::new();
+
+        let id1 = test_account_id(1);
+        let id2 = test_account_id(2);
+        let serial1 = AccountSerial::from(100u32);
+        let serial2 = AccountSerial::from(101u32);
+        let state1 = create_test_account_state(serial1, 1000);
+        let state2 = create_test_account_state(serial2, 2000);
+
+        batch.create_account_raw(id1, state1.clone(), serial1);
+        batch.create_account_raw(id2, state2.clone(), serial2);
+
+        let encoded = encode_to_vec(&batch).expect("Failed to encode LedgerWriteBatch");
+        let decoded: LedgerWriteBatch<NativeAccountState> =
+            decode_buf_exact(&encoded).expect("Failed to decode LedgerWriteBatch");
+
+        assert_eq!(decoded.serial_to_id.len(), 2);
+        assert_eq!(decoded.account_writes.len(), 2);
+
+        let decoded_state1 = decoded.get_account(&id1).expect("Account 1 not found");
+        let decoded_state2 = decoded.get_account(&id2).expect("Account 2 not found");
+        assert_eq!(decoded_state1.serial(), state1.serial());
+        assert_eq!(decoded_state1.balance(), state1.balance());
+        assert_eq!(decoded_state2.serial(), state2.serial());
+        assert_eq!(decoded_state2.balance(), state2.balance());
+    }
+
+    #[test]
+    fn test_write_batch_codec_roundtrip_empty() {
+        let global = create_test_global_state();
+        let epochal = create_test_epochal_state();
+        let batch: WriteBatch<NativeAccountState> =
+            WriteBatch::new(global.clone(), epochal.clone());
+
+        let encoded = encode_to_vec(&batch).expect("Failed to encode WriteBatch");
+        let decoded: WriteBatch<NativeAccountState> =
+            decode_buf_exact(&encoded).expect("Failed to decode WriteBatch");
+
+        assert_eq!(decoded.global().get_cur_slot(), global.get_cur_slot());
+        assert_eq!(decoded.epochal().cur_epoch(), epochal.cur_epoch());
+        assert!(decoded.ledger().serial_to_id.is_empty());
+    }
+
+    #[test]
+    fn test_write_batch_codec_roundtrip_with_accounts() {
+        let global = create_test_global_state();
+        let epochal = create_test_epochal_state();
+        let mut batch: WriteBatch<NativeAccountState> = WriteBatch::new(global, epochal);
+
+        let id1 = test_account_id(1);
+        let serial1 = AccountSerial::from(100u32);
+        let state1 = create_test_account_state(serial1, 5000);
+
+        batch
+            .ledger_mut()
+            .create_account_raw(id1, state1.clone(), serial1);
+
+        let encoded = encode_to_vec(&batch).expect("Failed to encode WriteBatch");
+        let decoded: WriteBatch<NativeAccountState> =
+            decode_buf_exact(&encoded).expect("Failed to decode WriteBatch");
+
+        // Verify global state
+        assert_eq!(decoded.global().get_cur_slot(), 42);
+
+        // Verify epochal state
+        assert_eq!(decoded.epochal().cur_epoch(), 5);
+
+        // Verify ledger
+        assert_eq!(decoded.ledger().serial_to_id.len(), 1);
+        let decoded_state = decoded
+            .ledger()
+            .get_account(&id1)
+            .expect("Account not found");
+        assert_eq!(decoded_state.serial(), state1.serial());
+        assert_eq!(decoded_state.balance(), state1.balance());
     }
 }

@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountId, AccountSerial};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 /// Describes a map of contiguous serials to account IDs, ensuring O(1) lookups.
 ///
@@ -154,6 +155,28 @@ impl SerialMap {
 impl Default for SerialMap {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Manual implementation of Codec for SerialMap since it has a `Vec<T>` field.
+impl Codec for SerialMap {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.first.encode(enc)?;
+        (self.ids.len() as u64).encode(enc)?;
+        for id in &self.ids {
+            id.encode(enc)?;
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let first = AccountSerial::decode(dec)?;
+        let ids_len = u64::decode(dec)? as usize;
+        let mut ids = Vec::with_capacity(ids_len);
+        for _ in 0..ids_len {
+            ids.push(AccountId::decode(dec)?);
+        }
+        Ok(Self { first, ids })
     }
 }
 
@@ -402,5 +425,40 @@ mod tests {
         assert_eq!(entries[0], (AccountSerial::from(100u32), &id1));
         assert_eq!(entries[1], (AccountSerial::from(101u32), &id2));
         assert_eq!(entries[2], (AccountSerial::from(102u32), &id3));
+    }
+
+    #[test]
+    fn test_codec_roundtrip_empty() {
+        use strata_codec::{decode_buf_exact, encode_to_vec};
+
+        let map = SerialMap::new();
+        let encoded = encode_to_vec(&map).expect("Failed to encode SerialMap");
+        let decoded: SerialMap = decode_buf_exact(&encoded).expect("Failed to decode SerialMap");
+
+        assert!(decoded.is_empty());
+        assert_eq!(decoded.len(), 0);
+    }
+
+    #[test]
+    fn test_codec_roundtrip_with_entries() {
+        use strata_codec::{decode_buf_exact, encode_to_vec};
+
+        let id1 = test_account_id(1);
+        let id2 = test_account_id(2);
+        let id3 = test_account_id(3);
+
+        let mut map = SerialMap::new_first(AccountSerial::from(10u32), id1);
+        map.insert_next(AccountSerial::from(11u32), id2);
+        map.insert_next(AccountSerial::from(12u32), id3);
+
+        let encoded = encode_to_vec(&map).expect("Failed to encode SerialMap");
+        let decoded: SerialMap = decode_buf_exact(&encoded).expect("Failed to decode SerialMap");
+
+        assert_eq!(decoded.len(), 3);
+        assert_eq!(decoded.first_serial(), Some(AccountSerial::from(10u32)));
+        assert_eq!(decoded.last_serial(), Some(AccountSerial::from(12u32)));
+        assert_eq!(decoded.get(AccountSerial::from(10u32)), Some(&id1));
+        assert_eq!(decoded.get(AccountSerial::from(11u32)), Some(&id2));
+        assert_eq!(decoded.get(AccountSerial::from(12u32)), Some(&id3));
     }
 }
