@@ -193,54 +193,17 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 /// Sets up the logging system given a handle to a runtime context to possibly
 /// start the OTLP output on.
 fn init_logging(rt: &Handle, config: &Config) {
-    // Construct service name with optional label from config
-    let service_name =
-        logging::format_service_name("strata-client", config.logging.service_label.as_deref());
-
-    let mut lconfig = logging::LoggerConfig::new(service_name);
-
-    // Configure OTLP if URL provided in config
-    if let Some(url) = &config.logging.otlp_url {
-        lconfig.set_otlp_url(url.clone());
-    }
-
-    // Configure file logging if log directory provided in config
-    let file_logging_config = config.logging.log_dir.as_ref().map(|dir| {
-        let prefix = config
-            .logging
-            .log_file_prefix
-            .as_deref()
-            .unwrap_or("strata-client")
-            .to_string();
-        logging::FileLoggingConfig::new(dir.clone(), prefix)
+    // Need to set the runtime context for async OTLP setup
+    let _g = rt.enter();
+    logging::init_logging_from_config(logging::LoggingInitConfig {
+        service_base_name: "strata-client",
+        service_label: config.logging.service_label.as_deref(),
+        otlp_url: config.logging.otlp_url.as_deref(),
+        log_dir: config.logging.log_dir.as_ref(),
+        log_file_prefix: config.logging.log_file_prefix.as_deref(),
+        json_format: config.logging.json_format,
+        default_log_prefix: "strata-client",
     });
-
-    if let Some(file_config) = &file_logging_config {
-        lconfig = lconfig.with_file_logging(file_config.clone());
-    }
-
-    // Configure JSON format if specified in config
-    if let Some(json_format) = config.logging.json_format {
-        lconfig = lconfig.with_json_logging(json_format);
-    }
-
-    {
-        // Need to set the runtime context because of nonsense.
-        let _g = rt.enter();
-        logging::init(lconfig);
-    }
-
-    // Log configuration after init
-    if let Some(url) = &config.logging.otlp_url {
-        info!(%url, "using OpenTelemetry tracing output");
-    }
-    if let Some(file_config) = &file_logging_config {
-        info!(
-            log_dir = %file_config.directory.display(),
-            log_prefix = %file_config.file_name_prefix,
-            "file logging enabled"
-        );
-    }
 }
 
 /// Shared low-level services that secondary services depend on.

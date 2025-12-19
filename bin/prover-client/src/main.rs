@@ -50,52 +50,16 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         config::ProverConfig::default()
     };
 
-    // Construct service name with optional label from config
-    let service_name = logging::format_service_name(
-        "strata-prover-client",
-        base_config.logging.service_label.as_deref(),
-    );
-
-    let mut lconfig = logging::LoggerConfig::new(service_name);
-
-    // Configure OTLP if URL provided in config
-    if let Some(url) = &base_config.logging.otlp_url {
-        lconfig.set_otlp_url(url.clone());
-    }
-
-    // Configure file logging if log directory provided in config
-    let file_logging_config = base_config.logging.log_dir.as_ref().map(|dir| {
-        let prefix = base_config
-            .logging
-            .log_file_prefix
-            .as_deref()
-            .unwrap_or("alpen")
-            .to_string();
-        logging::FileLoggingConfig::new(dir.clone(), prefix)
+    // Initialize logging using common service
+    logging::init_logging_from_config(logging::LoggingInitConfig {
+        service_base_name: "strata-prover-client",
+        service_label: base_config.logging.service_label.as_deref(),
+        otlp_url: base_config.logging.otlp_url.as_deref(),
+        log_dir: base_config.logging.log_dir.as_ref(),
+        log_file_prefix: base_config.logging.log_file_prefix.as_deref(),
+        json_format: base_config.logging.json_format,
+        default_log_prefix: "alpen",
     });
-
-    if let Some(file_config) = &file_logging_config {
-        lconfig = lconfig.with_file_logging(file_config.clone());
-    }
-
-    // Configure JSON format if specified in config
-    if let Some(json_format) = base_config.logging.json_format {
-        lconfig = lconfig.with_json_logging(json_format);
-    }
-
-    logging::init(lconfig);
-
-    // Log configuration after init
-    if let Some(url) = &base_config.logging.otlp_url {
-        info!(%url, "using OpenTelemetry tracing output");
-    }
-    if let Some(file_config) = &file_logging_config {
-        info!(
-            log_dir = %file_config.directory.display(),
-            log_prefix = %file_config.file_name_prefix,
-            "file logging enabled"
-        );
-    }
 
     // Resolve configuration from TOML file and CLI arguments
     let config = args

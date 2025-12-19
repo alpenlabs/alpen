@@ -1,6 +1,7 @@
 //! Logging subsystem with OpenTelemetry support.
 
 pub mod manager;
+pub mod service;
 pub mod types;
 
 #[cfg(test)]
@@ -8,6 +9,7 @@ mod tests;
 
 // Re-export main types and functions
 pub use manager::{finalize, finalize_with_timeout, init};
+pub use service::{init_logging_from_config, LoggingInitConfig};
 // Re-export tracing-appender types for convenience
 pub use tracing_appender::rolling::Rotation;
 pub use types::{FileLoggingConfig, LoggerConfig, OtlpExportConfig, ResourceConfig, StdoutConfig};
