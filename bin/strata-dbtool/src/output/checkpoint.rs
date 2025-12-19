@@ -1,8 +1,6 @@
 //! Checkpoint formatting implementations
 
-use strata_checkpoint_types::{
-    BatchInfo, BatchTransition, Checkpoint, EpochSummary, SignedCheckpoint,
-};
+use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, EpochSummary};
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::types::{CheckpointConfStatus, CheckpointProvingStatus};
 
@@ -39,27 +37,6 @@ pub(crate) struct CheckpointsSummaryInfo {
 pub(crate) struct UnexpectedCheckpointInfo {
     pub checkpoint_index: u64,
     pub l1_height: u64,
-}
-
-/// Format checkpoint signature for porcelain output
-pub(crate) fn format_signed_checkpoint(
-    signed_checkpoint: &SignedCheckpoint,
-    prefix: &str,
-) -> Vec<String> {
-    let mut output = Vec::new();
-
-    output.push(porcelain_field(
-        &format!("{prefix}.signature"),
-        format!("{:?}", signed_checkpoint.signature()),
-    ));
-
-    let batch_info = signed_checkpoint.checkpoint().batch_info();
-    output.extend(format_batch_info(batch_info, prefix));
-
-    let batch_transition = signed_checkpoint.checkpoint().batch_transition();
-    output.extend(format_batch_transition(batch_transition, prefix));
-
-    output
 }
 
 /// Format batch info for porcelain output
