@@ -226,7 +226,7 @@ async fn poll_for_new_blocks<R: Reader>(
     for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, ev)) => {
-                // Note: checkpoint detection is now handled by the ASM STF via logs,
+                // Note: Checkpoint detection is now handled by the ASM STF via logs,
                 // so we no longer update filter_config based on checkpoints here.
                 events.push(ev);
                 info!(%fetch_height, %blkid, "accepted new block");

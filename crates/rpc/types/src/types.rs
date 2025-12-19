@@ -6,7 +6,8 @@
 
 use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::{DepositEntry, DepositState, OperatorIdx, WithdrawalIntent};
+use strata_asm_proto_bridge_v1::{DepositEntry, OperatorBitmap};
+use strata_bridge_types::WithdrawalIntent;
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
 use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry};
@@ -14,9 +15,8 @@ use strata_ol_chain_types::L2BlockId;
 pub use strata_primitives::serde_helpers::serde_hex_bytes::{HexBytes, HexBytes32, HexBytes64};
 use strata_primitives::{
     bitcoin_bosd::Descriptor,
-    buf::Buf32,
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, BitcoinOutPoint, L1BlockCommitment},
+    l1::{BitcoinAmount, L1BlockCommitment},
     l2::L2BlockCommitment,
 };
 
@@ -295,14 +295,12 @@ impl From<CheckpointEntry> for RpcCheckpointInfo {
 pub struct RpcWithdrawalAssignment {
     /// Corresponding deposit id
     pub deposit_idx: u32,
-    /// Corresponding deposit txid
-    pub deposit_txid: Txid,
     /// Quantity of L1 asset, for Bitcoin this is sats
     pub amt: BitcoinAmount,
     /// Destination [`Descriptor`] for the withdrawal
     pub destination: Descriptor,
     /// operator index
-    pub operator_idx: OperatorIdx,
+    pub operator_idx: u32,
 }
 
 /// Deposit entry for RPC corresponding to [`DepositEntry`].
@@ -310,32 +308,25 @@ pub struct RpcWithdrawalAssignment {
 pub struct RpcDepositEntry {
     deposit_idx: u32,
 
-    /// The outpoint that this deposit entry references.
-    output: BitcoinOutPoint,
-
-    /// List of notary operators, by their indexes.
-    // TODO convert this to a windowed bitmap or something
-    notary_operators: Vec<OperatorIdx>,
+    /// Historical set of operators that formed the N/N multisig for this deposit.
+    ///
+    /// This preserves the specific operators who controlled the multisig when the
+    /// deposit was locked, since the active operator set may change over time.
+    /// Any one honest operator from this set can process user withdrawals.
+    ///
+    /// Uses a memory-efficient bitmap representation instead of storing operator indices.
+    notary_operators: OperatorBitmap,
 
     /// Deposit amount, in the native asset.
     amt: BitcoinAmount,
-
-    /// Deposit state.
-    state: DepositState,
-
-    /// Withdrawal request transaction id
-    withdrawal_request_txid: Option<Buf32>,
 }
 
 impl RpcDepositEntry {
     pub fn from_deposit_entry(ent: &DepositEntry) -> Self {
         Self {
             deposit_idx: ent.idx(),
-            output: *ent.output(),
-            notary_operators: ent.notary_operators().to_vec(),
+            notary_operators: ent.notary_operators().clone(),
             amt: ent.amt(),
-            state: ent.deposit_state().clone(),
-            withdrawal_request_txid: ent.withdrawal_request_txid(),
         }
     }
 }

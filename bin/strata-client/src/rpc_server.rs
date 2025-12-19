@@ -7,7 +7,7 @@ use jsonrpsee::core::RpcResult;
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
-use strata_bridge_types::{DepositEntry, OperatorIdx, PublickeyTable, WithdrawalIntent};
+use strata_bridge_types::{PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
@@ -437,10 +437,7 @@ impl StrataApiServer for StrataRpcImpl {
             .ok_or(Error::UnknownIdx(deposit_id))
             .map_err(to_jsonrpsee_error("deposit not found"))?;
 
-        // Convert ASM notary bitmap to operator idx vec expected by bridge-types
-        let notary_ops: Vec<OperatorIdx> = dep.notary_operators().active_indices().collect();
-        let shim = DepositEntry::new(dep.idx(), *dep.output(), notary_ops, dep.amt(), None);
-        Ok(RpcDepositEntry::from_deposit_entry(&shim))
+        Ok(RpcDepositEntry::from_deposit_entry(dep))
     }
 
     async fn get_current_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
@@ -453,7 +450,6 @@ impl StrataApiServer for StrataRpcImpl {
             .iter()
             .map(|a| RpcWithdrawalAssignment {
                 deposit_idx: a.deposit_idx(),
-                deposit_txid: a.deposit_txid().into(),
                 amt: a.withdrawal_command().net_amount(),
                 destination: a.withdrawal_command().destination().clone(),
                 operator_idx: a.current_assignee(),
@@ -544,7 +540,7 @@ impl StrataApiServer for StrataRpcImpl {
             .fetch_bridge_state_from_asm()
             .map_err(to_jsonrpsee_error("failed to load BridgeV1 state"))?;
         let operator_table = bridge.operators();
-        let operator_map: BTreeMap<OperatorIdx, EvenPublicKey> = operator_table
+        let operator_map: BTreeMap<u32, EvenPublicKey> = operator_table
             .operators()
             .iter()
             .map(|entry| (entry.idx(), *entry.musig2_pk()))
