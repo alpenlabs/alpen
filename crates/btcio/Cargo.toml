@@ -37,7 +37,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-borsh.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
 strata-checkpoint-types.workspace = true

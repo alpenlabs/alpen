@@ -60,6 +60,7 @@ pub fn build_empty_chain(
     // Execute genesis block (always terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis_manifest = AsmManifest::new(
+        0,
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
@@ -84,6 +85,7 @@ pub fn build_empty_chain(
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
+                0,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
