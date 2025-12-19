@@ -321,3 +321,88 @@ class StrataWaiter(RpcWaiter):
             timeout=timeout,
             error_with=f"Timeout: Checkpoint index did not increment to expected value({idx})",
         )
+
+    def wait_until_asm_ready(
+        self,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until ASM state is available and operational.
+        This should be called after genesis before attempting to access bridge data.
+
+        The ASM worker processes L1 blocks asynchronously to build manifests and
+        subprotocol state (like BridgeV1). This method ensures the ASM state is
+        initialized and ready for queries.
+        """
+        msg = message or "Timeout waiting for ASM state to be ready"
+
+        def _check():
+            try:
+                # Try to fetch current deposits - this will fail if ASM state isn't ready
+                self.rpc_client.strata_getCurrentDeposits()
+                self.logger.info("ASM state is ready and operational")
+                return True
+            except RpcError as e:
+                # ASM state not found or not ready yet
+                error_str = str(e)
+                if any(
+                    phrase in error_str
+                    for phrase in [
+                        "ASM state",
+                        "BridgeV1 section not found",
+                        "failed to load BridgeV1 state",
+                    ]
+                ):
+                    self.logger.debug(f"ASM not ready yet: {error_str}")
+                    return False
+                # Re-raise if it's a different error
+                raise e
+
+        self._wait_until(_check, timeout=timeout, step=interval, error_with=msg)
+
+    def wait_until_bridge_operational(
+        self,
+        timeout: int | None = None,
+        interval: float | None = None,
+        message: str | None = None,
+    ):
+        """
+        Waits until the BridgeV1 subprotocol is operational within the ASM state.
+
+        This is a more specific check than wait_until_asm_ready, ensuring that
+        not only is the ASM state available, but the BridgeV1 section specifically
+        is initialized and can be queried.
+        """
+        msg = message or "Timeout waiting for BridgeV1 subprotocol to be operational"
+
+        def _check():
+            try:
+                # Try multiple bridge-related queries to ensure full operability
+                deposits = self.rpc_client.strata_getCurrentDeposits()
+                withdrawals = self.rpc_client.strata_getCurWithdrawalAssignments()
+                operators = self.rpc_client.strata_getActiveOperatorChainPubkeySet()
+
+                self.logger.info(
+                    f"Bridge operational: {len(deposits)} deposits, "
+                    f"{len(withdrawals)} withdrawals, {len(operators)} operators"
+                )
+                return True
+            except RpcError as e:
+                error_str = str(e)
+                # Check for ASM/Bridge-related errors
+                if any(
+                    phrase in error_str
+                    for phrase in [
+                        "ASM state",
+                        "BridgeV1 section",
+                        "failed to load BridgeV1",
+                    ]
+                ):
+                    self.logger.debug(f"Bridge not operational yet: {error_str}")
+                    return False
+                # Re-raise if it's a different error
+                raise e
+
+        self._wait_until(_check, timeout=timeout, step=interval, error_with=msg)

@@ -5,12 +5,11 @@ from web3.middleware.signing import SignAndSendRawMiddlewareBuilder
 
 from envs.rollup_params_cfg import RollupConfig
 from factory.test_cli import create_deposit_transaction, create_withdrawal_fulfillment
-from utils.utils import SATS_TO_WEI, wait_until, wait_until_with_value
+from utils.utils import SATS_TO_WEI, retry_rpc_with_asm_backoff, wait_until, wait_until_with_value
 from utils.wait import StrataWaiter
 
 from . import BaseMixin
 
-# Local constants
 # Ethereum Private Key
 # NOTE: don't use this private key in production
 ETH_PRIVATE_KEY = "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -31,6 +30,15 @@ class BridgeMixin(BaseMixin):
         self.w3.middleware_onion.add(SignAndSendRawMiddlewareBuilder.build(self.bridge_eth_account))
         self.web3 = self.w3
 
+        # Wait for ASM to be operational before running bridge tests
+        # The ASM worker needs time to process L1 blocks and build the BridgeV1 state
+        strata_waiter = StrataWaiter(self.seqrpc, self.logger, timeout=60, interval=2)
+        self.info("Waiting for genesis...")
+        strata_waiter.wait_until_genesis()
+        self.info("Waiting for ASM state to be ready...")
+        strata_waiter.wait_until_asm_ready(timeout=120)
+        self.info("ASM state is ready, bridge operations can proceed")
+
     def deposit(
         self, ctx: flexitest.RunContext, el_address: str, priv_keys: list[Any]
     ) -> tuple[str, str]:
@@ -43,8 +51,13 @@ class BridgeMixin(BaseMixin):
         cfg: RollupConfig = ctx.env.rollup_cfg()
         deposit_amount = cfg.deposit_amount
 
-        # Get initial state
-        initial_deposits = len(self.seqrpc.strata_getCurrentDeposits())
+        # Get initial state with retry logic for ASM-dependent calls
+
+        initial_deposits = len(
+            retry_rpc_with_asm_backoff(
+                lambda: self.seqrpc.strata_getCurrentDeposits(), timeout=30, step=1.0
+            )
+        )
         initial_balance = int(self.rethrpc.eth_getBalance(el_address), 16)
         self.info(f"Initial deposit count: {initial_deposits}")
         self.info(f"Initial EL balance: {initial_balance}")
@@ -62,8 +75,15 @@ class BridgeMixin(BaseMixin):
 
         # Wait for exactly one new deposit to appear
         expected_deposit_count = initial_deposits + 1
+
+        def check_deposits():
+            deposits = retry_rpc_with_asm_backoff(
+                lambda: self.seqrpc.strata_getCurrentDeposits(), timeout=10, step=0.5
+            )
+            return len(deposits) >= expected_deposit_count
+
         wait_until(
-            lambda: len(self.seqrpc.strata_getCurrentDeposits()) >= expected_deposit_count,
+            check_deposits,
             error_with=(
                 f"Timeout waiting for deposit to appear (expected {expected_deposit_count})"
             ),
@@ -97,8 +117,12 @@ class BridgeMixin(BaseMixin):
         Returns (l2_tx_hash, tx_receipt, total_gas_used)
         """
 
-        # Get initial withdrawal intent count
-        initial_intents = len(self.seqrpc.strata_getCurWithdrawalAssignments())
+        # Get initial withdrawal intent count with retry logic
+        initial_intents = len(
+            retry_rpc_with_asm_backoff(
+                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=30, step=1.0
+            )
+        )
         self.info(f"Initial withdrawal intent count: {initial_intents}")
 
         # Make withdrawal transaction
@@ -160,8 +184,15 @@ class BridgeMixin(BaseMixin):
             f"Checkpoint created, now waiting for withdrawal intent to appear "
             f"(expected {expected_intent_count})"
         )
+
+        def check_intents():
+            intents = retry_rpc_with_asm_backoff(
+                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=10, step=0.5
+            )
+            return len(intents) >= expected_intent_count
+
         wait_until(
-            lambda: len(self.seqrpc.strata_getCurWithdrawalAssignments()) >= expected_intent_count,
+            check_intents,
             error_with=(
                 f"Timeout waiting for withdrawal intent after checkpoint creation "
                 f"(expected {expected_intent_count})"
@@ -247,8 +278,10 @@ class BridgeMixin(BaseMixin):
         btc_user = self.btc.get_prop("rpc_user")
         btc_password = self.btc.get_prop("rpc_password")
 
-        # Get initial withdrawal intents from sequencer
-        initial_withdrawal_intents = self.seqrpc.strata_getCurWithdrawalAssignments()
+        # Get initial withdrawal intents from sequencer with retry logic
+        initial_withdrawal_intents = retry_rpc_with_asm_backoff(
+            lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=30, step=1.0
+        )
         initial_intent_count = len(initial_withdrawal_intents)
         self.info(f"Found {initial_intent_count} withdrawal intents to fulfill")
 
@@ -292,11 +325,13 @@ class BridgeMixin(BaseMixin):
         )
 
         def intent_waiter():
-            intents = self.seqrpc.strata_getCurWithdrawalAssignments()
+            intents = retry_rpc_with_asm_backoff(
+                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=10, step=0.5
+            )
             return len(intents) <= expected_final_count
 
         wait_until(
-            lambda: intent_waiter,
+            intent_waiter,
             error_with=(
                 f"Timeout waiting for withdrawal intents to be processed "
                 f"(expected <= {expected_final_count})"
@@ -305,7 +340,11 @@ class BridgeMixin(BaseMixin):
             step=2,
         )
 
-        final_intent_count = len(self.seqrpc.strata_getCurWithdrawalAssignments())
+        final_intent_count = len(
+            retry_rpc_with_asm_backoff(
+                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=30, step=1.0
+            )
+        )
         self.info(
             f"Withdrawal fulfillment complete: {initial_intent_count} -> "
             f"{final_intent_count} intents"
