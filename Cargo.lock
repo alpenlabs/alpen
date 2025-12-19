@@ -985,7 +985,7 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "criterion",
- "strata-asm-types",
+ "strata-asm-manifest-types",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-ol-chain-types",
