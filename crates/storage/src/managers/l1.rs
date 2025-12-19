@@ -47,20 +47,16 @@ impl L1BlockManager {
     }
 
     /// Append [`L1BlockId`] to tracked canonical chain at the specified height.
-    /// [`AsmManifest`] for this `blockid` must be present in database.
+    // Note: In the new architecture, btcio stores chain tracking data first,
+    // then the ASM worker stores manifests asynchronously.
     pub fn extend_canonical_chain(&self, blockid: &L1BlockId, height: u64) -> DbResult<()> {
-        let _new_block = self
-            .get_block_manifest(blockid)?
-            .ok_or(DbError::MissingL1BlockManifest(*blockid))?;
-
         if let Some((tip_height, _tip_blockid)) = self.get_canonical_chain_tip()? {
             if height != tip_height + 1 {
                 error!(expected = %(tip_height + 1), got = %height, "attempted to extend canonical chain out of order");
                 return Err(DbError::OooInsert("l1block", height));
             }
 
-            // Note: ASM manifests don't track parent, so we can't validate chain continuity here
-            // That's handled by the ASM STF's PoW validation
+            // Note: Chain continuity validation happens in the ASM STF's PoW verification
         };
 
         self.ops
@@ -68,25 +64,20 @@ impl L1BlockManager {
     }
 
     /// Append [`L1BlockId`] to tracked canonical chain at the specified height.
-    /// [`AsmManifest`] for this `blockid` must be present in database.
+    // Note: In the new architecture, btcio stores chain tracking data first,
+    // then the ASM worker stores manifests asynchronously.
     pub async fn extend_canonical_chain_async(
         &self,
         blockid: &L1BlockId,
         height: u64,
     ) -> DbResult<()> {
-        let _new_block = self
-            .get_block_manifest_async(blockid)
-            .await?
-            .ok_or(DbError::MissingL1BlockManifest(*blockid))?;
-
         if let Some((tip_height, _tip_blockid)) = self.get_canonical_chain_tip_async().await? {
             if height != tip_height + 1 {
                 error!(expected = %(tip_height + 1), got = %height, "attempted to extend canonical chain out of order");
                 return Err(DbError::OooInsert("l1block", height));
             }
 
-            // Note: ASM manifests don't track parent, so we can't validate chain continuity here
-            // That's handled by the ASM STF's PoW validation
+            // Note: Chain continuity validation happens in the ASM STF's PoW verification
         };
 
         self.ops

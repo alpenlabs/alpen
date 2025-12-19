@@ -7,9 +7,6 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-asm-common.workspace = true
-strata-asm-spec.workspace = true
-strata-asm-stf.workspace = true
 strata-asm-types.workspace = true
 strata-config.workspace = true
 strata-csm-types.workspace = true
