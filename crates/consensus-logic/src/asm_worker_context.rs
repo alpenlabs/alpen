@@ -44,15 +44,30 @@ impl AsmWorkerCtx {
 
 impl WorkerContext for AsmWorkerCtx {
     fn get_l1_block(&self, blockid: &L1BlockId) -> WorkerResult<bitcoin::Block> {
-        let l1_mf = self
-            .l1man
-            .get_block_manifest(blockid)
-            .map_err(conv_db_err)?
-            .ok_or(WorkerError::MissingL1Block(*blockid))?;
+        // With ASM manifests, we don't store height in the manifest anymore
+        // We need to search the canonical chain to find the height
+        let tip_opt = self.l1man.get_canonical_chain_tip().map_err(conv_db_err)?;
+        let Some((tip_height, _)) = tip_opt else {
+            return Err(WorkerError::MissingL1Block(*blockid));
+        };
 
-        self.handle
-            .block_on(self.bitcoin_client.get_block_at(l1_mf.height()))
-            .map_err(|_| WorkerError::MissingL1Block(*blockid))
+        // Search backwards from tip to find the block
+        for height in (0..=tip_height).rev() {
+            if let Some(bid) = self
+                .l1man
+                .get_canonical_blockid_at_height(height)
+                .map_err(conv_db_err)?
+            {
+                if bid == *blockid {
+                    return self
+                        .handle
+                        .block_on(self.bitcoin_client.get_block_at(height))
+                        .map_err(|_| WorkerError::MissingL1Block(*blockid));
+                }
+            }
+        }
+
+        Err(WorkerError::MissingL1Block(*blockid))
     }
 
     fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AsmState)>> {

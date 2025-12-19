@@ -1,6 +1,5 @@
 use bitcoin::Block;
 use strata_identifiers::{Epoch, L1BlockCommitment};
-use strata_l1tx::messages::RelevantTxEntry;
 
 /// L1 events that we observe and want the persistence task to work on.
 #[derive(Clone, Debug)]
@@ -21,20 +20,12 @@ pub(crate) struct BlockData {
     block_num: u64,
 
     /// Raw block data.
-    // TODO remove?
     block: Block,
-
-    /// Transactions in the block that contain protocol operations
-    relevant_txs: Vec<RelevantTxEntry>,
 }
 
 impl BlockData {
-    pub(crate) fn new(block_num: u64, block: Block, relevant_txs: Vec<RelevantTxEntry>) -> Self {
-        Self {
-            block_num,
-            block,
-            relevant_txs,
-        }
+    pub(crate) fn new(block_num: u64, block: Block) -> Self {
+        Self { block_num, block }
     }
 
     pub(crate) fn block_num(&self) -> u64 {
@@ -43,9 +34,5 @@ impl BlockData {
 
     pub(crate) fn block(&self) -> &Block {
         &self.block
-    }
-
-    pub(crate) fn relevant_txs(&self) -> &[RelevantTxEntry] {
-        &self.relevant_txs
     }
 }
