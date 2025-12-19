@@ -120,7 +120,7 @@ class BridgeMixin(BaseMixin):
         # Get initial withdrawal intent count with retry logic
         initial_intents = len(
             retry_rpc_with_asm_backoff(
-                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=30, step=1.0
+                lambda: self.seqrpc.strata_getCurrentWithdrawalAssignments(), timeout=30, step=1.0
             )
         )
         self.info(f"Initial withdrawal intent count: {initial_intents}")
@@ -187,7 +187,7 @@ class BridgeMixin(BaseMixin):
 
         def check_intents():
             intents = retry_rpc_with_asm_backoff(
-                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=10, step=0.5
+                lambda: self.seqrpc.strata_getCurrentWithdrawalAssignments(), timeout=10, step=0.5
             )
             return len(intents) >= expected_intent_count
 
@@ -280,7 +280,7 @@ class BridgeMixin(BaseMixin):
 
         # Get initial withdrawal intents from sequencer with retry logic
         initial_withdrawal_intents = retry_rpc_with_asm_backoff(
-            lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=30, step=1.0
+            lambda: self.seqrpc.strata_getCurrentWithdrawalAssignments(), timeout=30, step=1.0
         )
         initial_intent_count = len(initial_withdrawal_intents)
         self.info(f"Found {initial_intent_count} withdrawal intents to fulfill")
@@ -326,7 +326,7 @@ class BridgeMixin(BaseMixin):
 
         def intent_waiter():
             intents = retry_rpc_with_asm_backoff(
-                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=10, step=0.5
+                lambda: self.seqrpc.strata_getCurrentWithdrawalAssignments(), timeout=10, step=0.5
             )
             return len(intents) <= expected_final_count
 
@@ -342,7 +342,7 @@ class BridgeMixin(BaseMixin):
 
         final_intent_count = len(
             retry_rpc_with_asm_backoff(
-                lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=30, step=1.0
+                lambda: self.seqrpc.strata_getCurrentWithdrawalAssignments(), timeout=30, step=1.0
             )
         )
         self.info(

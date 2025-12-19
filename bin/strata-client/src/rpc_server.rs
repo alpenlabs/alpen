@@ -443,7 +443,7 @@ impl StrataApiServer for StrataRpcImpl {
         Ok(RpcDepositEntry::from_deposit_entry(&shim))
     }
 
-    async fn get_cur_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
+    async fn get_current_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
         let bridge = self
             .fetch_bridge_state_from_asm()
             .map_err(to_jsonrpsee_error("failed to load BridgeV1 state"))?;
