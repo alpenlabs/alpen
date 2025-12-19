@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = []
 db = [
-  "dep:strata-asm-types",
+  "dep:strata-asm-manifest-types",
   "dep:strata-db-types",
   "dep:strata-primitives",
   "dep:strata-state",
@@ -34,7 +34,9 @@ bitcoin = { workspace = true }
 criterion = { workspace = true }
 tempfile = { workspace = true, optional = true }
 
-strata-asm-types = { workspace = true, optional = true }
+strata-asm-manifest-types = { workspace = true, optional = true, features = [
+  "arbitrary",
+] }
 strata-db-store-sled = { workspace = true, optional = true }
 strata-db-types = { workspace = true, optional = true }
 strata-ol-chain-types = { workspace = true, optional = true }
