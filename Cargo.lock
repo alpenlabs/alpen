@@ -1039,7 +1039,7 @@ dependencies = [
  "strata-primitives",
  "terrors",
  "tokio",
- "toml 0.8.23",
+ "toml 0.5.11",
  "zeroize",
  "zxcvbn",
 ]

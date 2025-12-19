@@ -42,9 +42,9 @@ make_buf.workspace = true
 rand_core.workspace = true
 reqwest.workspace = true
 serde.workspace = true
-sha2 = { version = "0.10.8", features = ["loongarch64_asm"] }
+sha2 = { workspace = true, features = ["loongarch64_asm"] }
 shrex.workspace = true
-sled = "0.34.7"
+sled.workspace = true
 terrors.workspace = true
 tokio.workspace = true
 zeroize.workspace = true
@@ -52,7 +52,7 @@ zxcvbn = "3.1.0"
 
 # sha2 fails to compile on windows with the "asm" feature
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-sha2 = { version = "0.10.8", features = ["asm", "loongarch64_asm"] }
+sha2 = { workspace = true, features = ["asm", "loongarch64_asm"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 keyring = { version = "3.3.0", default-features = false, features = [
@@ -65,7 +65,7 @@ keyring = { version = "3.3.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
-toml = "0.8.20"
+toml.workspace = true
 
 [features]
 test-mode = []

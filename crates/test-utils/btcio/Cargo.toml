@@ -13,10 +13,8 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 anyhow.workspace = true
 bitcoin = { workspace = true, features = ["rand"] }
 bitcoind-async-client.workspace = true
+corepc-node.workspace = true
 musig2.workspace = true
-
-# update bitcoind version in CI to match corepc-node feature
-corepc-node = { version = "0.8.0", features = ["29_0"] }
 
 [dev-dependencies]
 rand.workspace = true
