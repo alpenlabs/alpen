@@ -14640,7 +14640,10 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-mempool",
+ "strata-params",
+ "strata-storage",
  "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]

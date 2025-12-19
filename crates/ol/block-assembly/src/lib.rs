@@ -3,5 +3,5 @@
 mod context;
 mod error;
 
-pub use context::BlockAssemblyContext;
+pub use context::{BlockAssemblyContext, BlockAssemblyContextImpl};
 pub use error::BlockAssemblyError;

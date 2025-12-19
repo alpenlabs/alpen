@@ -11,5 +11,8 @@ strata-asm-common.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-mempool.workspace = true
+strata-params.workspace = true
+strata-storage.workspace = true
 
 thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
