@@ -13594,6 +13594,7 @@ dependencies = [
 name = "strata-asm-manifest-types"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "borsh",
  "proptest",
  "serde",

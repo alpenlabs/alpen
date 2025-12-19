@@ -1,3 +1,5 @@
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use strata_identifiers::{L1BlockId, WtxidsRoot};
 use tree_hash::{Sha256Hasher, TreeHash};
 
@@ -56,6 +58,25 @@ impl AsmManifest {
 // Borsh implementations are a shim over SSZ with length-prefixing to support nested structs
 strata_identifiers::impl_borsh_via_ssz!(AsmManifest);
 
+// Manual Arbitrary implementation for testing/benchmarking
+#[cfg(feature = "arbitrary")]
+impl<'a> Arbitrary<'a> for AsmManifest {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let height = u64::arbitrary(u)?;
+        let blkid = L1BlockId::arbitrary(u)?;
+        let wtxids_root = WtxidsRoot::arbitrary(u)?;
+
+        // Generate a small number of logs for testing
+        let num_logs = u.int_in_range(0..=10)?;
+        let mut logs = Vec::with_capacity(num_logs);
+        for _ in 0..num_logs {
+            logs.push(AsmLogEntry::arbitrary(u)?);
+        }
+
+        Ok(AsmManifest::new(height, blkid, wtxids_root, logs))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
@@ -84,11 +105,14 @@ mod tests {
 
     fn asm_manifest_strategy() -> impl Strategy<Value = AsmManifest> {
         (
+            any::<u64>(),
             l1_block_id_strategy(),
             wtxids_root_strategy(),
             prop::collection::vec(asm_log_entry_strategy(), 0..10),
         )
-            .prop_map(|(blkid, wtxids_root, logs)| AsmManifest::new(blkid, wtxids_root, logs))
+            .prop_map(|(height, blkid, wtxids_root, logs)| {
+                AsmManifest::new(height, blkid, wtxids_root, logs)
+            })
     }
 
     mod asm_manifest {
