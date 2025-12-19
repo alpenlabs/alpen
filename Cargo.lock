@@ -14784,13 +14784,20 @@ dependencies = [
 name = "strata-ol-block-assembly"
 version = "0.1.0"
 dependencies = [
- "strata-asm-common",
+ "async-trait",
+ "strata-acct-types",
+ "strata-asm-manifest-types",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
- "strata-primitives",
+ "strata-ol-state-types",
+ "strata-snark-acct-types",
+ "strata-storage",
  "thiserror 2.0.18",
+ "threadpool",
 ]
 
 [[package]]
