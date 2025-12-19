@@ -1,7 +1,7 @@
 //! Error types for block assembly operations.
 
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Hash};
+use strata_identifiers::{AccountId, Hash, OLBlockId};
 use strata_ol_mempool::OLMempoolError;
 
 /// Errors that can occur during block assembly operations.
@@ -57,6 +57,30 @@ pub enum BlockAssemblyError {
     /// Inbox MMR proof count mismatch.
     #[error("inbox MMR proof count mismatch (expected {expected}, got {got})")]
     InboxProofCountMismatch { expected: usize, got: usize },
+
+    /// Unknown template ID (template not found in pending templates).
+    #[error("no pending template found for id: {0}")]
+    UnknownTemplateId(OLBlockId),
+
+    /// No mapping found in parent block ID -> template ID cache.
+    #[error("no pending template found for parent id: {0}")]
+    NoPendingTemplateForParent(OLBlockId),
+
+    /// Invalid signature for block template completion.
+    #[error("invalid signature for template: {0}")]
+    InvalidSignature(OLBlockId),
+
+    /// Block timestamp is too early (violates minimum block time).
+    #[error("block timestamp too early: {0}")]
+    TimestampTooEarly(u64),
+
+    /// Request channel closed (service shutdown).
+    #[error("request channel closed")]
+    RequestChannelClosed,
+
+    /// Response channel closed (oneshot sender dropped).
+    #[error("response channel closed")]
+    ResponseChannelClosed,
 
     /// Other unexpected error.
     #[error("other: {0}")]

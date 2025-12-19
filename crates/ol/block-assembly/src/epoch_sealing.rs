@@ -11,7 +11,7 @@ use strata_identifiers::Slot;
 ///
 /// Implementations define the threshold logic for determining when an epoch
 /// should be sealed (e.g., by slot count, DA size, or a combination).
-pub trait EpochSealingPolicy: Send + Sync + Debug {
+pub trait EpochSealingPolicy: Send + Sync + Debug + 'static {
     /// Returns `true` if a terminal block should be created at this slot.
     fn should_seal_epoch(&self, slot: Slot) -> bool;
 }
