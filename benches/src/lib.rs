@@ -26,7 +26,7 @@ use criterion as _;
     clippy::allow_attributes,
     reason = "used for benchmarking"
 )]
-use strata_asm_types as _;
+use strata_asm_manifest_types as _;
 #[cfg(feature = "db")]
 #[allow(
     unused_imports,
