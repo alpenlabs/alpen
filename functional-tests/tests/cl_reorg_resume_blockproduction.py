@@ -43,6 +43,8 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
 
         seq_waiter = self.create_strata_waiter(seqrpc)
         seq_waiter.wait_until_genesis()
+        # Wait for ASM to be ready
+        seq_waiter.wait_until_asm_ready()
 
         # workaround for issue restarting reth with no transactions
         for _ in range(3):
