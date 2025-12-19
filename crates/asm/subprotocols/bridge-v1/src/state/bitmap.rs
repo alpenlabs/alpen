@@ -6,6 +6,7 @@
 use arbitrary::Arbitrary;
 use bitvec::prelude::*;
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
 
 use crate::BitmapError;
@@ -22,7 +23,7 @@ use crate::BitmapError;
 /// - **Operator Table**: Track which operators are in the current N/N multisig
 /// - **Deposit Entries**: Store historical notary operators for each deposit
 /// - **Assignment Creation**: Efficiently select operators for new tasks
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OperatorBitmap {
     /// Bitmap where bit `i` is set if operator index `i` is active.
     /// Uses `BitVec<u8>` for dynamic sizing and memory efficiency.

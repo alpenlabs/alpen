@@ -6,5 +6,7 @@ pub(crate) mod deposit;
 pub(crate) mod operator;
 pub(crate) mod withdrawal;
 
+pub use bitmap::OperatorBitmap;
 pub use bridge::BridgeV1State;
 pub use config::BridgeV1Config;
+pub use deposit::DepositEntry;

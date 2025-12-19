@@ -15012,6 +15012,7 @@ dependencies = [
  "jsonrpsee",
  "serde",
  "serde_json",
+ "strata-asm-proto-bridge-v1",
  "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-csm-types",
