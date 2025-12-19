@@ -11,6 +11,7 @@ pub mod l1;
 pub mod l2;
 pub mod macros;
 pub mod mempool;
+pub mod ol;
 pub mod ol_state;
 pub mod prover;
 #[cfg(feature = "test_utils")]
@@ -30,10 +31,11 @@ pub use config::SledDbConfig;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use mempool::db::MempoolDBSled;
+use ol::db::OLBlockDBSled;
 use ol_state::db::OLStateDBSled;
 use strata_db_types::{
     DbResult,
-    traits::{DatabaseBackend, OLStateDatabase},
+    traits::{DatabaseBackend, OLBlockDatabase, OLStateDatabase},
 };
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
@@ -65,6 +67,7 @@ pub struct SledBackend {
     l2_db: Arc<L2DBSled>,
     client_state_db: Arc<ClientStateDBSled>,
     chain_state_db: Arc<ChainstateDBSled>,
+    ol_block_db: Arc<OLBlockDBSled>,
     ol_state_db: Arc<OLStateDBSled>,
     checkpoint_db: Arc<CheckpointDBSled>,
     writer_db: Arc<L1WriterDBSled>,
@@ -83,6 +86,7 @@ impl SledBackend {
         let l2_db = Arc::new(L2DBSled::new(db_ref.clone(), config_ref.clone())?);
         let client_state_db = Arc::new(ClientStateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let chain_state_db = Arc::new(ChainstateDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let ol_block_db = Arc::new(OLBlockDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_state_db = Arc::new(OLStateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
@@ -95,6 +99,7 @@ impl SledBackend {
             l2_db,
             client_state_db,
             chain_state_db,
+            ol_block_db,
             ol_state_db,
             checkpoint_db,
             writer_db,
@@ -124,6 +129,10 @@ impl DatabaseBackend for SledBackend {
 
     fn chain_state_db(&self) -> Arc<impl strata_db_types::chainstate::ChainstateDatabase> {
         self.chain_state_db.clone()
+    }
+
+    fn ol_block_db(&self) -> Arc<impl OLBlockDatabase> {
+        self.ol_block_db.clone()
     }
 
     fn ol_state_db(&self) -> Arc<impl OLStateDatabase> {

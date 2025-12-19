@@ -8,8 +8,9 @@ use serde::Serialize;
 use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::{OLBlockCommitment, OLTxId};
+use strata_identifiers::{OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ol_chain_types::L2BlockBundle;
+use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
 use strata_primitives::{
     prelude::*,
@@ -32,6 +33,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn l1_db(&self) -> Arc<impl L1Database>;
     fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
+    fn ol_block_db(&self) -> Arc<impl OLBlockDatabase>;
     fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
     fn ol_state_db(&self) -> Arc<impl OLStateDatabase>;
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
@@ -504,4 +506,33 @@ pub trait MempoolDatabase: Send + Sync + 'static {
     ///
     /// Returns true if the transaction existed and was deleted, false otherwise.
     fn del_tx(&self, txid: OLTxId) -> DbResult<bool>;
+}
+
+/// OL data store for OL blocks. Does not store anything about what we think
+/// the OL chain tip is, that's controlled by the consensus state.
+///
+/// This stores OL blocks (header + body) keyed by block commitment (slot + block ID).
+pub trait OLBlockDatabase: Send + Sync + 'static {
+    /// Stores an OL block for a given block commitment. Also sets the block's status to
+    /// "unchecked".
+    fn put_block_data(&self, commitment: OLBlockCommitment, block: OLBlock) -> DbResult<()>;
+
+    /// Retrieves an OL block for a given block commitment.
+    fn get_block_data(&self, commitment: OLBlockCommitment) -> DbResult<Option<OLBlock>>;
+
+    /// Deletes an OL block for a given block commitment.
+    fn del_block_data(&self, commitment: OLBlockCommitment) -> DbResult<()>;
+
+    /// Sets the block's validity status.
+    fn set_block_status(&self, id: OLBlockId, status: BlockStatus) -> DbResult<()>;
+
+    /// Gets the OL block IDs that we have at some slot, in case there's more
+    /// than one on competing forks.
+    fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>>;
+
+    /// Gets the validity status of a block.
+    fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
+
+    /// Returns the latest valid OL block ID, or an error at genesis or when no valid block exists.
+    fn get_tip_block(&self) -> DbResult<OLBlockId>;
 }
