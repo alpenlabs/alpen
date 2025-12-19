@@ -14636,16 +14636,22 @@ dependencies = [
 name = "strata-ol-block-assembly"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "serde",
+ "ssz",
  "strata-asm-common",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ol-chain-types",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
  "strata-params",
+ "strata-service",
  "strata-storage",
+ "strata-tasks",
  "thiserror 2.0.17",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
