@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 
 use bitcoin::BlockHash;
 use strata_identifiers::Epoch;
-use strata_l1tx::filter::types::TxFilterConfig;
 
 /// State we use in various parts of the reader.
 #[derive(Debug)]
@@ -16,9 +15,6 @@ pub(crate) struct ReaderState {
     /// Depth at which we start pulling recent blocks out of the front of the queue.
     max_depth: usize,
 
-    /// Current transaction filtering config.
-    filter_config: TxFilterConfig,
-
     /// Current epoch.
     epoch: Epoch,
 }
@@ -30,7 +26,6 @@ impl ReaderState {
         next_height: u64,
         max_depth: usize,
         recent_blocks: VecDeque<BlockHash>,
-        filter_config: TxFilterConfig,
         epoch: Epoch,
     ) -> Self {
         assert!(!recent_blocks.is_empty());
@@ -38,7 +33,6 @@ impl ReaderState {
             next_height,
             max_depth,
             recent_blocks,
-            filter_config,
             epoch,
         }
     }
@@ -57,14 +51,6 @@ impl ReaderState {
 
     pub(crate) fn best_block_idx(&self) -> u64 {
         self.next_height - 1
-    }
-
-    pub(crate) fn filter_config(&self) -> &TxFilterConfig {
-        &self.filter_config
-    }
-
-    pub(crate) fn filter_config_mut(&mut self) -> &mut TxFilterConfig {
-        &mut self.filter_config
     }
 
     /// Accepts a new block and possibly purges a buried one.

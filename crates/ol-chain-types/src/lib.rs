@@ -11,4 +11,5 @@ mod validation;
 pub use block::*;
 pub use header::*;
 pub use id::*;
+pub use strata_asm_common::AsmManifest;
 pub use validation::*;

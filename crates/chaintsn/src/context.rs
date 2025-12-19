@@ -1,6 +1,6 @@
 //! Interfaces to expose the context in which a block is being validated.
 
-use strata_asm_types::L1BlockManifest;
+use strata_asm_common::AsmManifest;
 use strata_identifiers::Epoch;
 use strata_ol_chain_types::{L2BlockHeader, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
@@ -135,13 +135,13 @@ pub trait StateAccessor {
     // TODO
 }
 
-/// Provider for queries to sideloaded state like L1 block manifests.
+/// Provider for queries to sideloaded state like ASM manifests.
 pub trait AuxProvider {
     /// Returns the height of the new tip.
     fn get_l1_tip_height(&self) -> u64;
 
-    /// Fetches an L1 block manifest by height.
-    fn get_l1_block_manifest(&self, height: u64) -> ProviderResult<L1BlockManifest>;
+    /// Fetches an ASM manifest by height.
+    fn get_l1_block_manifest(&self, height: u64) -> ProviderResult<AsmManifest>;
 }
 
 pub type ProviderResult<T> = Result<T, ProviderError>;

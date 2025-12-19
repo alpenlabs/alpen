@@ -1,19 +1,20 @@
 use std::{thread, time};
 
-use strata_asm_types::{L1BlockManifest, ProtocolOperation};
+use strata_asm_common::AsmManifest;
+use strata_asm_manifest_types::{CheckpointAckLogData, CHECKPOINT_ACK_ASM_LOG_TYPE_ID};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
 use strata_checkpoint_types::Checkpoint;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_consensus_logic::checkpoint_verification;
 use strata_db_types::DbError;
 use strata_eectl::{
     engine::{ExecEngineCtl, PayloadStatus},
     errors::EngineError,
     messages::{ExecPayloadData, PayloadEnv},
 };
+use strata_msg_fmt::Msg;
 use strata_ol_chain_types::{
     ExecSegment, L1Segment, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2BlockId,
     L2Header,
@@ -251,19 +252,29 @@ fn prepare_l1_segment(
     }
 }
 
-/// Check if block has the checkpoint we are expecting and checkpoint is valid.
+/// Check if ASM manifest has the checkpoint acknowledgment we are expecting.
 fn has_expected_checkpoint(
-    rec: &L1BlockManifest,
+    manifest: &AsmManifest,
     expected_checkpoint: Option<&Checkpoint>,
-    params: &RollupParams,
+    _params: &RollupParams,
 ) -> bool {
-    for op in rec.txs().iter().flat_map(|tx| tx.protocol_ops()) {
-        let ProtocolOperation::Checkpoint(signed_checkpoint) = op else {
+    // Look for checkpoint ack logs in the ASM manifest
+    for log in manifest.logs() {
+        // Try to parse as SPS-52 message
+        let Some(msg) = log.try_as_msg() else {
             continue;
         };
 
-        // L1 Reader only adds a checkpoint ProtocolOperation if checkpoint signature valid.
-        let checkpoint = signed_checkpoint.checkpoint();
+        // Check if this is a checkpoint ack log
+        if msg.ty() != CHECKPOINT_ACK_ASM_LOG_TYPE_ID {
+            continue;
+        }
+
+        // Try to decode checkpoint ack data
+        let Ok(ack_data) = log.try_into_log::<CheckpointAckLogData>() else {
+            warn!(blockid = %manifest.blkid(), "failed to decode checkpoint ack log");
+            continue;
+        };
 
         // Must have expected checkpoint.
         // Can be None before first checkpoint creation, where we dont care about this.
@@ -271,34 +282,24 @@ fn has_expected_checkpoint(
             continue;
         };
 
-        // Must get expected checkpoint.
-        if expected.commitment() != checkpoint.commitment() {
-            warn!(got = ?checkpoint, ?expected, "got unexpected checkpoint");
-            continue;
+        // Check if the ack epoch matches our expected checkpoint
+        if ack_data.epoch().epoch() == expected.batch_info().epoch() {
+            // Found checkpoint ack for expected epoch. Should end current epoch.
+            debug!(epoch = %ack_data.epoch(), "found checkpoint ack in ASM manifest");
+            return true;
         }
-
-        // Proof inside checkpoint must be valid.
-        let proof_receipt = checkpoint_verification::construct_receipt(checkpoint);
-        if let Err(err) = checkpoint_verification::verify_proof(checkpoint, &proof_receipt, params)
-        {
-            warn!(?err, blockid = %rec.blkid(), "checkpoint proof verification failed");
-            continue;
-        }
-
-        // Found valid checkpoint for previous epoch. Should end current epoch.
-        return true;
     }
 
-    // Scanned all txn and did not find checkpoint
+    // Scanned all logs and did not find matching checkpoint ack
     false
 }
 
 #[expect(unused, reason = "used for fetching manifest")]
-fn fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<L1BlockManifest, Error> {
+fn fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<AsmManifest, Error> {
     try_fetch_manifest(h, l1man)?.ok_or(Error::MissingL1BlockHeight(h))
 }
 
-fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<L1BlockManifest>, Error> {
+fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<AsmManifest>, Error> {
     Ok(l1man.get_block_manifest_at_height(h)?)
 }
 
