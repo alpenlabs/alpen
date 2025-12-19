@@ -51,6 +51,9 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
             error_with="Prover did not start on time",
         )
 
+        # Wait for ASM to be ready
+        seq_waiter.wait_until_asm_ready()
+
         epoch = seq_waiter.wait_until_next_chain_epoch()
         logging.info(f"it's now epoch {epoch}")
         epoch = seq_waiter.wait_until_next_chain_epoch()

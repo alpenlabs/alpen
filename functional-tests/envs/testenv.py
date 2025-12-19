@@ -325,6 +325,16 @@ class BasicEnvConfig(flexitest.EnvConfig):
         if self.auto_generate_blocks:
             time.sleep(BLOCK_GENERATION_INTERVAL_SECS * 10)
 
+        # Wait for sequencer to be ready and ASM to initialize
+        logger.info("Waiting for sequencer to be ready...")
+        seq_waiter = StrataWaiter(sequencer.create_rpc(), logger, timeout=60, interval=2)
+        seq_waiter.wait_until_client_ready()
+        logger.info("Waiting for genesis...")
+        seq_waiter.wait_until_genesis()
+        logger.info("Waiting for ASM worker to initialize and be ready...")
+        seq_waiter.wait_until_asm_ready(timeout=60)
+        logger.info("ASM worker is operational, environment is ready")
+
         prover_client_fac = ctx.get_factory("prover_client")
         prover_client_settings = self.prover_client_settings or ProverClientSettings.new_default()
         prover_client = prover_client_fac.create_prover_client(
@@ -476,8 +486,13 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
             "prover_client": prover_client,
         }
 
-        seq_waiter = StrataWaiter(sequencer.create_rpc(), logger, timeout=30, interval=2)
+        seq_waiter = StrataWaiter(sequencer.create_rpc(), logger, timeout=60, interval=2)
         seq_waiter.wait_until_client_ready()
+        seq_waiter.wait_until_genesis()
+        logger.info("Waiting for ASM worker to initialize...")
+        seq_waiter.wait_until_asm_ready(timeout=60)
+        logger.info("ASM worker is operational")
+
         fn_waiter = StrataWaiter(fullnode.create_rpc(), logger, timeout=30, interval=2)
         fn_waiter.wait_until_client_ready()
         # TODO: add others like prover, reth, btc

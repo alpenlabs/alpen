@@ -1,3 +1,5 @@
+import logging
+
 import flexitest
 from bitcoinlib.services.bitcoind import BitcoindClient
 
@@ -11,6 +13,7 @@ from utils import (
     wait_until,
     wait_until_with_value,
 )
+from utils.wait import StrataWaiter
 
 
 @flexitest.register
@@ -31,6 +34,10 @@ class ResubmitCheckpointTest(testenv.StrataTestBase):
         seq = ctx.get_service("sequencer")
         btcrpc: BitcoindClient = btc.create_rpc()
         seqrpc = seq.create_rpc()
+
+        # Wait for ASM to be ready before proceeding
+        strata_waiter = StrataWaiter(seqrpc, logging.getLogger(__name__), timeout=60, interval=2)
+        strata_waiter.wait_until_asm_ready()
 
         # generate 5 btc blocks
         generate_n_blocks(btcrpc, 5)

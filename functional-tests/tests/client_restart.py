@@ -28,6 +28,9 @@ class BlockFinalizationSeqRestartTest(testenv.StrataTestBase):
 
         strata_waiter.wait_until_genesis()
 
+        # Wait for ASM to be ready
+        strata_waiter.wait_until_asm_ready()
+
         # Wait for prover
         prover_waiter = ProverWaiter(prover_rpc, self.logger, timeout=30, interval=2)
         prover_waiter.wait_until_prover_ready()

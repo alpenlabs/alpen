@@ -4,6 +4,7 @@ import flexitest
 
 from utils import *
 from utils.constants import *
+from utils.wait import StrataWaiter
 
 from . import BaseMixin
 
@@ -20,6 +21,11 @@ class SeqCrashMixin(BaseMixin):
         self.debug("checking connectivity")
         protocol_version = self.seqrpc.strata_protocolVersion()
         assert protocol_version is not None, "Sequencer RPC inactive"
+
+        # Wait for ASM to be ready
+        strata_waiter = StrataWaiter(self.seqrpc, self.logger, timeout=60, interval=2)
+        strata_waiter.wait_until_asm_ready()
+        self.debug("ASM state is ready")
 
     def handle_bail(self, bail_tag: Callable[[], str], **kwargs) -> int:
         """
