@@ -8,12 +8,23 @@ use crate::{
 
 impl AsmManifest {
     /// Creates a new ASM manifest.
-    pub fn new(blkid: L1BlockId, wtxids_root: WtxidsRoot, logs: Vec<AsmLogEntry>) -> Self {
+    pub fn new(
+        height: u64,
+        blkid: L1BlockId,
+        wtxids_root: WtxidsRoot,
+        logs: Vec<AsmLogEntry>,
+    ) -> Self {
         Self {
+            height,
             blkid,
             wtxids_root,
             logs: logs.into(),
         }
+    }
+
+    /// Returns the L1 block height.
+    pub fn height(&self) -> u64 {
+        self.height
     }
 
     /// Returns the L1 block identifier.
@@ -88,12 +99,14 @@ mod tests {
         #[test]
         fn test_empty_logs() {
             let manifest = AsmManifest::new(
+                100,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([1u8; 32])),
                 vec![],
             );
             let encoded = manifest.as_ssz_bytes();
             let decoded = AsmManifest::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(manifest.height(), decoded.height());
             assert_eq!(manifest.blkid(), decoded.blkid());
             assert_eq!(manifest.wtxids_root(), decoded.wtxids_root());
             assert_eq!(manifest.logs().len(), decoded.logs().len());
@@ -106,12 +119,14 @@ mod tests {
                 AsmLogEntry::from_raw(vec![4, 5, 6]),
             ];
             let manifest = AsmManifest::new(
+                200,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([1u8; 32])),
                 logs.clone(),
             );
             let encoded = manifest.as_ssz_bytes();
             let decoded = AsmManifest::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(manifest.height(), decoded.height());
             assert_eq!(manifest.logs().len(), decoded.logs().len());
             for (original, decoded_log) in manifest.logs().iter().zip(decoded.logs()) {
                 assert_eq!(original.as_bytes(), decoded_log.as_bytes());
@@ -121,6 +136,7 @@ mod tests {
         #[test]
         fn test_compute_hash_deterministic() {
             let manifest = AsmManifest::new(
+                100,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([1u8; 32])),
                 vec![AsmLogEntry::from_raw(vec![1, 2, 3])],
@@ -133,11 +149,13 @@ mod tests {
         #[test]
         fn test_compute_hash_different_for_different_manifests() {
             let manifest1 = AsmManifest::new(
+                100,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([1u8; 32])),
                 vec![AsmLogEntry::from_raw(vec![1, 2, 3])],
             );
             let manifest2 = AsmManifest::new(
+                100,
                 L1BlockId::from(Buf32::from([1u8; 32])),
                 WtxidsRoot::from(Buf32::from([1u8; 32])),
                 vec![AsmLogEntry::from_raw(vec![1, 2, 3])],

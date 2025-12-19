@@ -15,8 +15,10 @@ use bitcoind_async_client::{
     },
     ClientResult,
 };
-use strata_asm_types::{HeaderVerificationState, L1BlockManifest, L1HeaderRecord};
+use strata_asm_common::AsmManifest;
+use strata_asm_types::{HeaderVerificationState, L1HeaderRecord};
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
+use strata_identifiers::WtxidsRoot;
 use strata_primitives::{buf::Buf32, l1::GenesisL1View};
 
 #[derive(Debug)]
@@ -129,9 +131,14 @@ impl BtcChainSegment {
         Ok(self.headers[*idx])
     }
 
-    pub fn get_block_manifest(&self, height: u64) -> L1BlockManifest {
+    pub fn get_block_manifest(&self, height: u64) -> AsmManifest {
         let rec = self.get_header_record(height).unwrap();
-        L1BlockManifest::new(rec, Vec::new(), 1, height)
+        AsmManifest::new(
+            height,
+            *rec.blkid(),
+            WtxidsRoot::from(*rec.wtxs_root()),
+            Vec::new(),
+        )
     }
 }
 
@@ -246,7 +253,7 @@ impl BtcChainSegment {
     pub fn get_block_manifest_by_blockhash(
         &self,
         blockhash: &BlockHash,
-    ) -> Result<L1BlockManifest, Error> {
+    ) -> Result<AsmManifest, Error> {
         let Some(idx) = self.idx_by_blockhash.get(blockhash) else {
             return Err(ClientError::Body(format!(
                 "Block header for blockhash {} not available",
@@ -255,20 +262,15 @@ impl BtcChainSegment {
         };
         let height = self.start + *idx as u64;
 
-        let header = self.headers[*idx];
-        let header_record = L1HeaderRecord::new(
-            header.block_hash().into(),
-            serialize(&header),
-            Buf32::from(header.merkle_root.as_raw_hash().to_byte_array()),
-        );
-        Ok(L1BlockManifest::new(header_record, Vec::new(), 0, height))
+        let manifest = self.get_block_manifest(height);
+        Ok(manifest)
     }
 
     pub fn get_block_manifests(
         &self,
         from_height: u64,
         len: usize,
-    ) -> Result<Vec<L1BlockManifest>, Error> {
+    ) -> Result<Vec<AsmManifest>, Error> {
         let mut manifests = Vec::with_capacity(len);
         for i in 0..len {
             let height = from_height + i as u64;
