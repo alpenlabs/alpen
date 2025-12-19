@@ -1,7 +1,6 @@
 use bitcoin::{hashes::Hash, Amount};
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::{DepositEntry, DepositState};
-use strata_ol_chainstate_types::Chainstate;
 use strata_params::{DepositTxParams, RollupParams};
 use strata_primitives::{
     block_credential::CredRule,
@@ -80,33 +79,6 @@ impl TxFilterConfig {
             expected_withdrawal_fulfillments: FlatTable::new_empty(),
             deposit_config,
         })
-    }
-
-    pub fn update_from_chainstate(&mut self, chainstate: &Chainstate) {
-        // Watch all withdrawals that have been ordered.
-        let exp_fulfillments = chainstate
-            .deposits_table()
-            .deposits()
-            .flat_map(conv_deposit_to_fulfillment)
-            .collect::<Vec<_>>();
-
-        self.expected_withdrawal_fulfillments = FlatTable::try_from_unsorted(exp_fulfillments)
-            .expect(
-                "types: duplicate/unsorted deposit indexes? (expected_withdrawal_fulfillments)?",
-            );
-
-        // Watch all utxos we have in our deposit table.
-        let exp_outpoints = chainstate
-            .deposits_table()
-            .deposits()
-            .map(|deposit| DepositUtxoInfo {
-                deposit_idx: deposit.idx(),
-                output: *deposit.output(),
-            })
-            .collect::<Vec<_>>();
-
-        self.expected_outpoints = FlatTable::try_from_unsorted(exp_outpoints)
-            .expect("types: duplicate/unsorted deposit indexes? (expected_outpoints)");
     }
 }
 

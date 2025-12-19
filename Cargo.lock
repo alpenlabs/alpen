@@ -13997,8 +13997,6 @@ dependencies = [
  "strata-predicate",
  "strata-primitives",
  "strata-state",
- "strata-test-utils",
- "strata-test-utils-l2",
  "thiserror 2.0.17",
  "tracing",
 ]
@@ -14695,7 +14693,6 @@ dependencies = [
  "strata-identifiers",
  "strata-primitives",
  "strata-state",
- "tracing",
 ]
 
 [[package]]
@@ -15179,7 +15176,6 @@ dependencies = [
 name = "strata-status"
 version = "0.3.0-alpha.1"
 dependencies = [
- "strata-bridge-types",
  "strata-csm-types",
  "strata-identifiers",
  "strata-ol-chain-types",
