@@ -14639,9 +14639,7 @@ dependencies = [
  "strata-asm-common",
  "strata-db-types",
  "strata-identifiers",
- "strata-ol-chain-types-new",
  "strata-ol-mempool",
- "strata-primitives",
  "thiserror 2.0.17",
 ]
 

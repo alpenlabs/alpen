@@ -1,9 +1,8 @@
 //! Block assembly context trait.
 
 use strata_asm_common::AsmLogEntry;
-use strata_identifiers::OLTxId;
-use strata_ol_chain_types_new::OLTransaction;
-use strata_primitives::l1::L1BlockCommitment;
+use strata_identifiers::L1BlockCommitment;
+use strata_ol_mempool::BestTransactions;
 
 use crate::error::BlockAssemblyError;
 
@@ -21,6 +20,17 @@ use crate::error::BlockAssemblyError;
 ///
 /// The context provides access to external resources
 /// without owning or mutating them directly.
+///
+/// # Transaction Flow
+///
+/// Block assembly retrieves `OLMempoolTransaction` entries (without accumulator proofs),
+/// generates accumulator proofs during block assembly, then converts them to `OLTransaction`
+/// (with proofs) for inclusion in blocks.
+///
+/// Transactions are retrieved via `get_mempool_transactions()` which returns an iterator. During
+/// iteration, block assembly can mark transactions as invalid using `mark_invalid()`. After
+/// iteration completes, call `remove_mempool_transactions()` to remove all marked transactions
+/// from the mempool.
 pub trait BlockAssemblyContext {
     /// Gets ASM's latest processed L1 block commitment (tip).
     ///
@@ -44,33 +54,43 @@ pub trait BlockAssemblyContext {
         to_block: L1BlockCommitment,
     ) -> Result<Vec<(L1BlockCommitment, Vec<AsmLogEntry>)>, BlockAssemblyError>;
 
-    /// Gets pending [`OLTransaction`] entries from mempool (up to `limit`).
+    /// Gets an iterator over pending [`OLMempoolTransaction`] entries from mempool.
     ///
-    /// Returns transactions with their [`OLTxId`] values.
-    /// Returns empty [`Vec`] if no transactions available (not an error).
+    /// Returns an iterator that yields transactions in priority order with their [`OLTxId`] values.
+    /// Block assembly can mark transactions as invalid during iteration, then call
+    /// [`remove_mempool_transactions`] to remove them after iteration completes.
+    ///
+    /// # Usage
+    ///
+    /// ```rust,no_run
+    /// let mut iter = ctx.get_mempool_transactions()?;
+    /// while let Some((txid, tx)) = iter.next() {
+    ///     match validate_and_execute(tx) {
+    ///         Ok(_) => include_in_block(tx),
+    ///         Err(_) => iter.mark_invalid(&txid),
+    ///     }
+    /// }
+    /// let invalid_txids = iter.marked_invalid();
+    /// ctx.remove_mempool_transactions(&invalid_txids)?;
+    /// ```
     ///
     /// # Errors
     ///
     /// - [`BlockAssemblyError::Mempool`] - if mempool error occurs
     fn get_mempool_transactions(
         &self,
-        limit: u64,
-    ) -> Result<Vec<(OLTxId, OLTransaction)>, BlockAssemblyError>;
+    ) -> Result<Box<dyn BestTransactions + Send>, BlockAssemblyError>;
 
-    /// Removes included transactions from mempool.
+    /// Removes transactions from mempool by their IDs.
     ///
-    /// Attempts to clear each transaction with the given [`OLTxId`].
     /// Returns the list of transaction IDs that were successfully removed.
-    /// Returns empty [`Vec`] if no transactions were removed.
-    ///
-    /// This operation is idempotent - already-removed transactions will simply
-    /// not appear in the returned list.
+    /// Transaction IDs that don't exist in the mempool are silently ignored.
     ///
     /// # Errors
     ///
-    /// - [`BlockAssemblyError::Mempool`] - if mempool error occurs (connectivity, internal error)
-    fn clear_mempool_transactions(
+    /// - [`BlockAssemblyError::Mempool`] - if mempool error occurs
+    fn remove_mempool_transactions(
         &self,
-        txids: &[OLTxId],
-    ) -> Result<Vec<OLTxId>, BlockAssemblyError>;
+        txids: &[strata_identifiers::OLTxId],
+    ) -> Result<Vec<strata_identifiers::OLTxId>, BlockAssemblyError>;
 }
