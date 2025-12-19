@@ -79,7 +79,7 @@ class BridgeTest(bridge_mixin.BridgeMixin):
 
         # Check final state
         remaining_intents = retry_rpc_with_asm_backoff(
-            lambda: self.seqrpc.strata_getCurWithdrawalAssignments(), timeout=30, step=1.0
+            lambda: self.seqrpc.strata_getCurrentWithdrawalAssignments(), timeout=30, step=1.0
         )
         print(f"Remaining withdrawal intents: {remaining_intents}")
         final_deposits = retry_rpc_with_asm_backoff(

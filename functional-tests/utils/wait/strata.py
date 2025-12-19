@@ -381,7 +381,7 @@ class StrataWaiter(RpcWaiter):
             try:
                 # Try multiple bridge-related queries to ensure full operability
                 deposits = self.rpc_client.strata_getCurrentDeposits()
-                withdrawals = self.rpc_client.strata_getCurWithdrawalAssignments()
+                withdrawals = self.rpc_client.strata_getCurrentWithdrawalAssignments()
                 operators = self.rpc_client.strata_getActiveOperatorChainPubkeySet()
 
                 self.logger.info(
