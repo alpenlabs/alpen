@@ -2,7 +2,7 @@
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_bridge_types::{DepositsTable, OperatorTable, WithdrawalIntent};
+use strata_bridge_types::WithdrawalIntent;
 use strata_identifiers::Epoch;
 use strata_primitives::{
     buf::Buf32,
@@ -59,12 +59,6 @@ pub struct Chainstate {
     /// Execution environment state.  This is just for the single EE we support
     /// right now.
     pub(crate) exec_env_state: exec_env::ExecEnvState,
-
-    /// Operator table we store registered operators for.
-    pub(crate) operator_table: OperatorTable,
-
-    /// Deposits table tracking each deposit's state.
-    pub(crate) deposits_table: DepositsTable,
 }
 
 impl Chainstate {
@@ -80,8 +74,6 @@ impl Chainstate {
             l1_state: gdata.l1_state().clone(),
             pending_withdraws: StateQueue::new_empty(),
             exec_env_state: gdata.exec_state().clone(),
-            operator_table: gdata.operator_table().clone(),
-            deposits_table: DepositsTable::new_empty(),
         }
     }
 
@@ -130,26 +122,8 @@ impl Chainstate {
             l1_state_hash: compute_borsh_hash(&self.l1_state),
             pending_withdraws_hash: compute_borsh_hash(&self.pending_withdraws),
             exec_env_hash: compute_borsh_hash(&self.exec_env_state),
-            operators_hash: compute_borsh_hash(&self.operator_table),
-            deposits_hash: compute_borsh_hash(&self.deposits_table),
         };
         compute_borsh_hash(&hashed_state)
-    }
-
-    pub fn operator_table(&self) -> &OperatorTable {
-        &self.operator_table
-    }
-
-    pub fn operator_table_mut(&mut self) -> &mut OperatorTable {
-        &mut self.operator_table
-    }
-
-    pub fn deposits_table(&self) -> &DepositsTable {
-        &self.deposits_table
-    }
-
-    pub fn deposits_table_mut(&mut self) -> &mut DepositsTable {
-        &mut self.deposits_table
     }
 
     pub fn exec_env_state(&self) -> &ExecEnvState {
@@ -181,8 +155,6 @@ pub struct HashedChainState {
     pub l1_state_hash: Buf32,
     pub pending_withdraws_hash: Buf32,
     pub exec_env_hash: Buf32,
-    pub operators_hash: Buf32,
-    pub deposits_hash: Buf32,
 }
 
 impl<'a> Arbitrary<'a> for Chainstate {

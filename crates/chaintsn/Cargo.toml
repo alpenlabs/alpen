@@ -27,10 +27,6 @@ rand_core.workspace = true
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 
-[dev-dependencies]
-strata-test-utils.workspace = true
-strata-test-utils-l2.workspace = true
-
 [features]
 default = ["fullstd"]
 fullstd = ["dep:tracing"]
