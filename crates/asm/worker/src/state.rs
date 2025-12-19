@@ -144,6 +144,7 @@ mod tests {
         traits::{Reader, Wallet},
     };
     use corepc_node::Node;
+    use strata_asm_common::AsmManifest;
     use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
     use strata_primitives::{L1BlockId, l1::GenesisL1View};
     use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
@@ -278,6 +279,11 @@ mod tests {
                 .unwrap()
                 .insert(*blockid, state.clone());
             *self.latest_asm_state.lock().unwrap() = Some((*blockid, state.clone()));
+            Ok(())
+        }
+
+        fn store_l1_manifest(&self, _manifest: AsmManifest, _height: u64) -> WorkerResult<()> {
+            // Mock implementation - no-op for tests
             Ok(())
         }
 
