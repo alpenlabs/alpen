@@ -10,6 +10,7 @@ mod init;
 pub mod l1;
 pub mod l2;
 pub mod macros;
+mod ol_state;
 pub mod prover;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
@@ -33,6 +34,7 @@ use writer::db::L1WriterDBSled;
 
 pub use crate::{
     init::{init_core_dbs, open_sled_database},
+    ol_state::OLStateDBSled,
     prover::ProofDBSled,
 };
 
@@ -62,6 +64,11 @@ pub struct SledBackend {
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
+    #[expect(
+        dead_code,
+        reason = "Will be used in future database backend trait implementation"
+    )]
+    ol_state_db: Arc<OLStateDBSled>,
 }
 
 impl SledBackend {
@@ -77,7 +84,8 @@ impl SledBackend {
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
-        let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
+        let broadcast_db = Arc::new(L1BroadcastDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let ol_state_db = Arc::new(OLStateDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
             l1_db,
@@ -88,6 +96,7 @@ impl SledBackend {
             writer_db,
             prover_db,
             broadcast_db,
+            ol_state_db,
         })
     }
 }
