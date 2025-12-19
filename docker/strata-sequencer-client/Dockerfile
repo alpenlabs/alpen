@@ -18,15 +18,9 @@ COPY . .
 RUN rustup toolchain install
 
 # Build dependencies in release mode
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cargo build --release --bin strata-sequencer-client
+RUN cargo build --release --bin strata-sequencer-client
 
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cp /app/target/release/strata-sequencer-client /app/strata-sequencer-client
+RUN cp /app/target/release/strata-sequencer-client /app/strata-sequencer-client
 
 RUN ls /app/strata-sequencer-client
 

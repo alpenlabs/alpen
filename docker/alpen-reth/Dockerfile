@@ -19,21 +19,12 @@ COPY . .
 RUN rustup toolchain install
 
 # Build dependencies in release mode
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cargo fetch
+RUN cargo fetch
 
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cargo build --release --bin alpen-reth
+RUN cargo build --release --bin alpen-reth
 
 
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cp /app/target/release/alpen-reth /app/alpen-reth
+RUN cp /app/target/release/alpen-reth /app/alpen-reth
 
 FROM ubuntu:24.04 AS runtime
 WORKDIR /app

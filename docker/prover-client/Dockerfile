@@ -28,15 +28,9 @@ RUN rustup toolchain install
 ARG PROVER_FEATURES=""
 
 # Build dependencies in release mode
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cargo build --release --bin strata-prover-client -F ${PROVER_FEATURES}
+RUN cargo build --release --bin strata-prover-client -F ${PROVER_FEATURES}
 
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cp /app/target/release/strata-prover-client /app/strata-prover-client
+RUN cp /app/target/release/strata-prover-client /app/strata-prover-client
 
 FROM --platform=linux/amd64 ubuntu:24.04 AS runtime
 WORKDIR /app

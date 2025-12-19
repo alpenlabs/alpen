@@ -18,15 +18,9 @@ COPY . .
 RUN rustup toolchain install
 
 # Build dependencies in release mode
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cargo build --release --bin strata-client
+RUN cargo build --release --bin strata-client
 
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cp /app/target/release/strata-client /app/strata-client
+RUN cp /app/target/release/strata-client /app/strata-client
 
 FROM ubuntu:24.04 AS runtime
 WORKDIR /app
