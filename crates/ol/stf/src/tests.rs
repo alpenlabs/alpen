@@ -15,6 +15,7 @@ use crate::{
 // Helper function to create genesis block components with a manifest (making it terminal)
 fn genesis_block_components() -> BlockComponents {
     let dummy_manifest = AsmManifest::new(
+        0,
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
@@ -133,6 +134,7 @@ fn test_genesis_with_initial_transactions() {
 
     // Create genesis components with both transactions and manifest (to make it terminal)
     let dummy_manifest = AsmManifest::new(
+        0,
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
@@ -332,6 +334,7 @@ fn test_process_chain_with_multiple_epochs() {
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
+                0,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
@@ -594,6 +597,7 @@ fn test_multi_block_chain_verification() {
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
+                0,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
@@ -650,6 +654,7 @@ fn test_verify_block_with_transactions() {
 
     // Assemble genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
+        0,
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
@@ -976,6 +981,7 @@ fn test_verify_rejects_mismatched_logs_root() {
 
     // Create genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
+        0,
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],

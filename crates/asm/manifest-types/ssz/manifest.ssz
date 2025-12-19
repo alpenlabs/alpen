@@ -9,6 +9,9 @@ MAX_LOGS_PER_MANIFEST = 1 << 10
 ### containing the essential commitments and execution logs needed.
 #~# derive: Serialize, Deserialize
 class AsmManifest(Container):
+    ### The L1 block height
+    height: uint64
+
     ### The L1 block identifier, essentially a bitcoin::BlockHash
     blkid: strata_identifiers.L1BlockId
 
