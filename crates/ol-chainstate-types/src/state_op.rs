@@ -6,19 +6,13 @@
 
 use bitcoin::block::Header;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_types::{L1VerificationError, WithdrawalFulfillmentInfo};
-use strata_bridge_types::{
-    DepositEntry, DepositIntent, DepositState, DispatchCommand, DispatchedState, FulfilledState,
-    OperatorIdx, OperatorPubkeys,
-};
+use strata_asm_types::L1VerificationError;
+use strata_bridge_types::DepositIntent;
 use strata_identifiers::Epoch;
 use strata_primitives::{
-    buf::Buf32,
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, BitcoinBlockHeight, BitcoinOutPoint},
     l2::{L2BlockCommitment, L2BlockId},
 };
-use tracing::warn;
 
 use crate::{Chainstate, ChainstateEntry};
 
@@ -198,132 +192,6 @@ impl StateCache {
             .pop_front_n_vec(to_drop_count as usize) // ensures to_drop_idx < front_idx + len
             .expect("stateop: unable to consume deposit intent");
     }
-
-    /// Inserts a new operator with the specified pubkeys into the operator table.
-    pub fn insert_operator(&mut self, signing_pk: Buf32, wallet_pk: Buf32) {
-        let state = self.state_mut();
-        let operator_pubkeys = OperatorPubkeys::new(signing_pk, wallet_pk);
-        state.operator_table.insert(operator_pubkeys);
-    }
-
-    /// Inserts a new deposit with some settings.
-    pub fn insert_deposit_entry(
-        &mut self,
-        idx: u32,
-        tx_ref: BitcoinOutPoint,
-        amt: BitcoinAmount,
-        operators: Vec<OperatorIdx>,
-    ) -> bool {
-        let dt = self.state_mut().deposits_table_mut();
-        dt.try_create_deposit_at(idx, tx_ref, operators, amt)
-    }
-
-    /// Assigns a withdrawal command to a deposit, with an expiration.
-    pub fn assign_withdrawal_command(
-        &mut self,
-        deposit_idx: u32,
-        operator_idx: OperatorIdx,
-        cmd: DispatchCommand,
-        exec_height: BitcoinBlockHeight,
-        withdrawal_txid: Buf32,
-    ) {
-        let deposit_ent = self
-            .state_mut()
-            .deposits_table_mut()
-            .get_deposit_mut(deposit_idx)
-            .expect("stateop: missing deposit idx");
-
-        let state =
-            DepositState::Dispatched(DispatchedState::new(cmd.clone(), operator_idx, exec_height));
-        deposit_ent.set_state(state);
-        deposit_ent.set_withdrawal_request_txid(Some(withdrawal_txid));
-    }
-
-    /// Updates the deposit assignee and expiration date.
-    pub fn reset_deposit_assignee(
-        &mut self,
-        deposit_idx: u32,
-        operator_idx: OperatorIdx,
-        new_exec_height: BitcoinBlockHeight,
-    ) {
-        let deposit_ent = self
-            .state_mut()
-            .deposits_table_mut()
-            .get_deposit_mut(deposit_idx)
-            .expect("stateop: missing deposit idx");
-
-        if let DepositState::Dispatched(dstate) = deposit_ent.deposit_state_mut() {
-            dstate.set_assignee(operator_idx);
-            dstate.set_fulfillment_deadline(new_exec_height);
-        } else {
-            panic!("stateop: unexpected deposit state");
-        };
-    }
-
-    /// Returns if the deposit with some idx exists or not.
-    pub fn check_deposit_exists(&self, deposit_idx: u32) -> bool {
-        self.state()
-            .deposits_table()
-            .get_deposit(deposit_idx)
-            .is_some()
-    }
-
-    /// Validates that a withdrawal fulfillment is valid for the given deposit.
-    ///
-    /// A withdrawal is valid if the deposit is in Dispatched state (has an assigned operator).
-    pub fn is_valid_withdrawal_fulfillment(&self, deposit_idx: u32) -> bool {
-        let Some(deposit_ent) = self.state().deposits_table().get_deposit(deposit_idx) else {
-            return false;
-        };
-        // Check that the deposit is in Dispatched state (has an assigned operator)
-        matches!(deposit_ent.deposit_state(), DepositState::Dispatched(_))
-    }
-
-    /// Updates the deposit state to `Fulfilled`.
-    ///
-    /// # Panics
-    ///
-    /// If the deposit idx being referenced by the withdrawal fulfillment info
-    /// does not exist, or if the deposit is not in Dispatched state.
-    pub fn mark_deposit_fulfilled(&mut self, winfo: &WithdrawalFulfillmentInfo) {
-        let deposit_ent = self.deposit_entry_mut_expect(winfo.deposit_idx);
-
-        // Derive operator_idx from the deposit's Dispatched state
-        let oidx = match deposit_ent.deposit_state() {
-            DepositState::Dispatched(dispatched) => dispatched.assignee(),
-            _ => panic!("stateop: deposit must be in Dispatched state to be fulfilled"),
-        };
-
-        deposit_ent.set_state(DepositState::Fulfilled(FulfilledState::new(
-            oidx, winfo.amt, winfo.txid,
-        )));
-    }
-
-    /// Updates the deposit state as `Reimbursed`.
-    ///
-    /// # Panics
-    ///
-    /// If the deposit idx being referenced by the withdrawal fulfillment info
-    /// does not exist.
-    pub fn mark_deposit_reimbursed(&mut self, deposit_idx: u32) {
-        let deposit_ent = self.deposit_entry_mut_expect(deposit_idx);
-
-        if !matches!(deposit_ent.deposit_state(), DepositState::Fulfilled(_)) {
-            // TODO: handle this better after TN1 bridge is integrated
-            warn!("stateop: deposit spent at unexpected state");
-        }
-
-        deposit_ent.set_state(DepositState::Reimbursed);
-    }
-
-    fn deposit_entry_mut_expect(&mut self, deposit_idx: u32) -> &mut DepositEntry {
-        self.state_mut()
-            .deposits_table_mut()
-            .get_deposit_mut(deposit_idx)
-            .expect("stateop: missing deposit idx")
-    }
-
-    // TODO add more manipulator functions
 }
 
 #[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
