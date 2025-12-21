@@ -1,8 +1,7 @@
 //! Legacy routines extracted from `StateCache`.
 
-use bitcoin::block::Header;
-use strata_asm_types::L1VerificationError;
 use strata_bridge_types::DepositIntent;
+use strata_identifiers::L1BlockCommitment;
 use strata_ol_chainstate_types::Chainstate;
 
 use crate::context::StateAccessor;
@@ -34,11 +33,8 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
     }
 
     /// Update HeaderVerificationState
-    pub fn update_header_vs(&mut self, header: &Header) -> Result<(), L1VerificationError> {
-        self.state_mut()
-            .l1_view_mut()
-            .header_vs_mut()
-            .check_and_update(header)
+    pub fn update_verified_blk(&mut self, blk: L1BlockCommitment) {
+        self.state_mut().l1_view_mut().update_verified_blk(blk);
     }
 
     /// Writes a deposit intent into an execution environment's input queue.

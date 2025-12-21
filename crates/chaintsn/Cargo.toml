@@ -20,11 +20,13 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 
-bitcoin.workspace = true
 rand_chacha.workspace = true
 rand_core.workspace = true
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+bitcoin.workspace = true
 
 [features]
 default = ["fullstd"]
