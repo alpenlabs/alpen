@@ -15047,7 +15047,7 @@ dependencies = [
  "borsh",
  "serde",
  "strata-asm-common",
- "strata-asm-manifest-types",
+ "strata-asm-logs",
  "strata-chainexec",
  "strata-chaintsn",
  "strata-checkpoint-types",
