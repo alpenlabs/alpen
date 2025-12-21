@@ -10,7 +10,7 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
     let mf = AsmManifest::new(idx, arb.generate(), arb.generate(), vec![]);
 
     // Insert block data
-    let res = db.put_block_data(mf.clone(), idx);
+    let res = db.put_block_data(mf.clone());
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
     let res = db.set_canonical_chain_entry(idx, *mf.blkid());
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
@@ -20,7 +20,7 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
     let mf = AsmManifest::new(idx, arb.generate(), arb.generate(), vec![]);
 
     // Insert block data
-    let res = db.put_block_data(mf.clone(), idx);
+    let res = db.put_block_data(mf.clone());
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
     let res = db.set_canonical_chain_entry(idx, *mf.blkid());
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
@@ -33,7 +33,7 @@ pub fn test_insert_into_canonical_chain(db: &impl L1Database) {
         let mut arb = ArbitraryGenerator::new();
         let mf = AsmManifest::new(*height, arb.generate(), arb.generate(), vec![]);
         let blockid = *mf.blkid();
-        db.put_block_data(mf, *height).unwrap();
+        db.put_block_data(mf).unwrap();
         assert!(db.set_canonical_chain_entry(*height, blockid).is_ok());
         blockids.push(blockid);
     }
@@ -136,7 +136,7 @@ fn insert_block_data(height: u64, db: &impl L1Database) -> AsmManifest {
     let mf = AsmManifest::new(height, arb.generate(), arb.generate(), vec![]);
 
     // Insert block data
-    let res = db.put_block_data(mf.clone(), height);
+    let res = db.put_block_data(mf.clone());
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());
     let res = db.set_canonical_chain_entry(height, *mf.blkid());
     assert!(res.is_ok(), "put should work but got: {}", res.unwrap_err());

@@ -91,14 +91,8 @@ impl WorkerContext for AsmWorkerCtx {
             .map_err(conv_db_err)
     }
 
-    fn store_l1_manifest(
-        &self,
-        manifest: strata_asm_common::AsmManifest,
-        height: u64,
-    ) -> WorkerResult<()> {
-        self.l1man
-            .put_block_data(manifest, height)
-            .map_err(conv_db_err)
+    fn store_l1_manifest(&self, manifest: strata_asm_common::AsmManifest) -> WorkerResult<()> {
+        self.l1man.put_block_data(manifest).map_err(conv_db_err)
     }
 
     fn get_network(&self) -> WorkerResult<bitcoin::Network> {

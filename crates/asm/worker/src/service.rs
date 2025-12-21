@@ -87,14 +87,12 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             info!(%block_id, "ASM transition attempt");
             match state.transition(block) {
                 Ok(asm_stf_out) => {
-                    let height = block_id.height_u64();
-
                     // Extract manifest and compute its hash
                     let manifest = asm_stf_out.manifest.clone();
                     let manifest_hash = manifest.compute_hash();
 
                     // Store manifest to L1 database (for chaintsn and other consumers)
-                    state.context.store_l1_manifest(manifest, height)?;
+                    state.context.store_l1_manifest(manifest)?;
 
                     // Append manifest hash to MMR database
                     let leaf_index = state.context.append_manifest_to_mmr(manifest_hash)?;
