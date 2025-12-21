@@ -399,7 +399,7 @@ bincode = "1.3"
 bitcoin = { version = "0.32.6", features = ["serde"] }
 bitcoin-bosd = { version = "0.4.0", default-features = false }
 bitcoind-async-client = "0.1.1"
-bitvec = "1.0.1"
+bitvec = { version = "1.0.1", features = ["serde"] }
 borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.6.0"
 cfg-if = "1.0.0"
