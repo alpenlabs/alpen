@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-asm-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-csm-types.workspace = true

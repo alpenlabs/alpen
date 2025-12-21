@@ -3,7 +3,7 @@ use strata_db_types::{DbResult, traits::*};
 use strata_primitives::l1::L1BlockId;
 use typed_sled::batch::SledBatch;
 
-use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
+use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema};
 use crate::{
     define_sled_database,
     utils::{first, to_db_error},
@@ -14,7 +14,6 @@ define_sled_database!(
         l1_blk_tree: L1BlockSchema,
         l1_canonical_tree: L1CanonicalBlockSchema,
         l1_blks_height_tree: L1BlocksByHeightSchema,
-        txn_tree: TxnSchema,
     }
 );
 
@@ -70,11 +69,10 @@ impl L1Database for L1DBSled {
             .with_retry(
                 (
                     &self.l1_blk_tree,
-                    &self.txn_tree,
                     &self.l1_blks_height_tree,
                     &self.l1_canonical_tree,
                 ),
-                |(bt, tt, bht, ct)| {
+                |(bt, bht, ct)| {
                     for height in start_height..=end_height {
                         let blocks = bht.get(&height)?.unwrap_or_default();
 
@@ -82,7 +80,6 @@ impl L1Database for L1DBSled {
                         ct.remove(&height)?;
                         for blockid in blocks {
                             bt.remove(&blockid)?;
-                            tt.remove(&blockid)?;
                         }
                     }
 
