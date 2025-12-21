@@ -108,6 +108,7 @@ impl SubprotoManager {
     /// an `AuxRequestCollector`, and then reinserts the handler.
     pub(crate) fn invoke_pre_process_txs<S: Subprotocol>(
         &mut self,
+        aux_collector: &mut AuxRequestCollector,
         txs: &[TxInputRef<'_>],
         anchor_pre: &AnchorState,
     ) {
@@ -119,8 +120,7 @@ impl SubprotoManager {
             .expect("asm: unloaded subprotocol");
 
         // Invoke the preprocess function.
-        let mut acol = AuxRequestCollector::new();
-        h.pre_process_txs(txs, &mut acol, anchor_pre);
+        h.pre_process_txs(txs, aux_collector, anchor_pre);
         self.insert_handler(h);
     }
 

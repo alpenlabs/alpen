@@ -132,7 +132,7 @@ mod tests {
         use strata_asm_logs::deposit::DepositLog;
 
         // Step 1: Create a real DepositLog
-        let original_deposit_log = DepositLog::new(42, 100_000, b"test_address".to_vec());
+        let original_deposit_log = DepositLog::new(42, 100_000, [0u8; 20]);
 
         // Step 2: Convert it to bytes using AsmLogEntry::from_log
         let log_entry = AsmLogEntry::from_log(&original_deposit_log).unwrap();

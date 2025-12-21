@@ -1,5 +1,5 @@
 use strata_asm_common::AsmLog;
-use strata_codec::{Codec, VarVec};
+use strata_codec::Codec;
 use strata_msg_fmt::TypeId;
 
 use crate::constants::DEPOSIT_LOG_TYPE_ID;
@@ -12,16 +12,16 @@ pub struct DepositLog {
     /// Amount in satoshis.
     pub amount: u64,
     /// Serialized address for the operation.
-    pub addr: VarVec<u8>,
+    pub addr: [u8; 20],
 }
 
 impl DepositLog {
     /// Create a new DepositLog instance.
-    pub fn new(ee_id: u64, amount: u64, addr: Vec<u8>) -> Self {
+    pub fn new(ee_id: u64, amount: u64, addr: [u8; 20]) -> Self {
         Self {
             ee_id,
             amount,
-            addr: VarVec::from_vec(addr).expect("address too large for VarVec"),
+            addr,
         }
     }
 }
