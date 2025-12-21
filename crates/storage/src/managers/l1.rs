@@ -33,17 +33,17 @@ impl L1BlockManager {
     }
 
     /// Save an [`AsmManifest`] to database. Does not add block to tracked canonical chain.
-    pub fn put_block_data(&self, manifest: AsmManifest, height: u64) -> DbResult<()> {
+    pub fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()> {
         let blockid = manifest.blkid();
         self.manifest_cache.purge_blocking(blockid);
-        self.ops.put_block_data_blocking(manifest, height)
+        self.ops.put_block_data_blocking(manifest)
     }
 
     /// Save an [`AsmManifest`] to database. Does not add block to tracked canonical chain.
-    pub async fn put_block_data_async(&self, manifest: AsmManifest, height: u64) -> DbResult<()> {
+    pub async fn put_block_data_async(&self, manifest: AsmManifest) -> DbResult<()> {
         let blockid = manifest.blkid();
         self.manifest_cache.purge_async(blockid).await;
-        self.ops.put_block_data_async(manifest, height).await
+        self.ops.put_block_data_async(manifest).await
     }
 
     /// Append [`L1BlockId`] to tracked canonical chain at the specified height.

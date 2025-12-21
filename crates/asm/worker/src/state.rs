@@ -282,7 +282,7 @@ mod tests {
             Ok(())
         }
 
-        fn store_l1_manifest(&self, _manifest: AsmManifest, _height: u64) -> WorkerResult<()> {
+        fn store_l1_manifest(&self, _manifest: AsmManifest) -> WorkerResult<()> {
             // Mock implementation - no-op for tests
             Ok(())
         }

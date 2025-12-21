@@ -25,8 +25,9 @@ impl L1DBSled {
 }
 
 impl L1Database for L1DBSled {
-    fn put_block_data(&self, manifest: AsmManifest, height: u64) -> DbResult<()> {
+    fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()> {
         let blockid = manifest.blkid();
+        let height = manifest.height();
 
         self.config
             .with_retry(
