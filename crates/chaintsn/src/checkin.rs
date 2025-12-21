@@ -1,8 +1,14 @@
 //! L1 check-in logic.
 
 use strata_asm_common::AsmManifest;
+use strata_asm_logs::{
+    constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
+    CheckpointUpdate, DepositLog,
+};
+use strata_bridge_types::DepositIntent;
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
+use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
     context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},
@@ -58,7 +64,7 @@ impl<'b> AuxProvider for SegmentAuxData<'b> {
 pub fn process_l1_view_update<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
     prov: &impl AuxProvider,
-    params: &RollupParams,
+    _params: &RollupParams,
 ) -> Result<bool, TsnError> {
     let l1v = state.state().l1_view();
 
@@ -86,7 +92,7 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
         // Note: PoW checks are done in ASM STF when the manifest is created
         // We don't need to validate headers here anymore
 
-        process_asm_logs(state, &mf, params)?;
+        process_asm_logs(state, &mf)?;
     }
 
     // If prev_finalized_epoch is null, i.e. this is the genesis batch, it is
@@ -114,52 +120,49 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
 fn process_asm_logs<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
     manifest: &AsmManifest,
-    params: &RollupParams,
 ) -> Result<(), TsnError> {
-    use strata_asm_manifest_types::{CheckpointAckLogData, CHECKPOINT_ACK_ASM_LOG_TYPE_ID};
-    use strata_msg_fmt::Msg;
-
-    // Iterate through ASM logs looking for checkpoint acknowledgments
-    let in_blkid = manifest.blkid();
     for log in manifest.logs() {
-        // Try to parse as SPS-52 message
-        let Some(msg) = log.try_as_msg() else {
-            continue;
-        };
-
-        // Check if this is a checkpoint ack log
-        if msg.ty() != CHECKPOINT_ACK_ASM_LOG_TYPE_ID {
-            continue;
-        }
-
-        // Try to decode checkpoint ack data
-        let Ok(ack_data) = log.try_into_log::<CheckpointAckLogData>() else {
-            warn!(%in_blkid, "failed to decode checkpoint ack log");
-            continue;
-        };
-
-        // Process the checkpoint acknowledgment
-        if let Err(e) = process_checkpoint_ack(state, &ack_data, params) {
-            warn!(?ack_data, %in_blkid, %e, "invalid checkpoint ack");
+        match log.ty() {
+            Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
+                if let Ok(ckpt_update) = log.try_into_log::<CheckpointUpdate>() {
+                    if let Err(e) = process_l1_checkpoint(state, &ckpt_update) {
+                        warn!(%e, "failed to process L1 checkpoint");
+                    }
+                }
+            }
+            Some(DEPOSIT_LOG_TYPE_ID) => {
+                if let Ok(deposit) = log.try_into_log::<DepositLog>() {
+                    if let Err(e) = process_l1_deposit(state, deposit) {
+                        warn!(%e, "failed to process L1 deposit");
+                    }
+                }
+            }
+            _ => {
+                warn!("invalid log type");
+            }
         }
     }
 
     Ok(())
 }
 
-fn process_checkpoint_ack<'s, S: StateAccessor>(
-    _state: &mut FauxStateCache<'s, S>,
-    ack_data: &strata_asm_manifest_types::CheckpointAckLogData,
-    _params: &RollupParams,
+fn process_l1_checkpoint<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
+    ckpt_update: &CheckpointUpdate,
 ) -> Result<(), OpError> {
-    // The checkpoint ack tells us that a checkpoint for a specific epoch was observed on L1
-    let ack_epoch = ack_data.epoch();
+    let new_fin_epoch = ckpt_update.epoch_commitment();
+    state.inner_mut().set_finalized_epoch(new_fin_epoch);
+    trace!(?new_fin_epoch, "observed finalized checkpoint");
+    Ok(())
+}
 
-    // TODO: This needs proper implementation to verify the checkpoint
-    // For now, we just accept checkpoint acks from ASM logs as they've been validated by ASM STF
-
-    // This is a placeholder - the actual logic needs to verify against stored checkpoints
-    trace!(%ack_epoch, "observed checkpoint acknowledgment");
-
+fn process_l1_deposit<'s, S: StateAccessor>(
+    state: &mut FauxStateCache<'s, S>,
+    deposit: DepositLog,
+) -> Result<(), OpError> {
+    let amt = BitcoinAmount::from_sat(deposit.amount);
+    let dest_ident = deposit.addr.into_inner();
+    let intent = DepositIntent::new(amt, dest_ident);
+    state.insert_deposit_intent(0, intent);
     Ok(())
 }
