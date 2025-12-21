@@ -26,7 +26,7 @@ pub trait WorkerContext {
     /// Stores an [`AsmManifest`] to the L1 database.
     ///
     /// This should be called after each STF execution with the produced manifest.
-    fn store_l1_manifest(&self, manifest: AsmManifest, height: u64) -> WorkerResult<()>;
+    fn store_l1_manifest(&self, manifest: AsmManifest) -> WorkerResult<()>;
 
     /// A Bitcoin network identifier.
     fn get_network(&self) -> WorkerResult<Network>;

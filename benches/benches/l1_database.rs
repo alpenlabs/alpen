@@ -92,9 +92,7 @@ fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                                 .expect("Failed to generate AsmManifest");
                             (setup, manifest)
                         },
-                        |(setup, manifest)| {
-                            black_box(setup.db.put_block_data(manifest, 0)).unwrap()
-                        },
+                        |(setup, manifest)| black_box(setup.db.put_block_data(manifest)).unwrap(),
                     );
                 }
             },
@@ -125,7 +123,7 @@ fn bench_get_block_manifest_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let manifest = AsmManifest::arbitrary(&mut unstructured)
                                 .expect("Failed to generate AsmManifest");
                             let blockid = *manifest.blkid();
-                            setup.db.put_block_data(manifest, 0).unwrap();
+                            setup.db.put_block_data(manifest).unwrap();
                             (setup, blockid)
                         },
                         |(setup, blockid)| black_box(setup.db.get_block_manifest(blockid)).unwrap(),
@@ -166,7 +164,7 @@ fn bench_get_canonical_blockid_at_height_impl(backend: DatabaseBackend, c: &mut 
                                 blocks.push(manifest);
                             }
                             for (i, block) in blocks.iter().enumerate() {
-                                setup.db.put_block_data(block.clone(), i as u64).unwrap();
+                                setup.db.put_block_data(block.clone()).unwrap();
                                 setup
                                     .db
                                     .set_canonical_chain_entry(i as u64, *block.blkid())

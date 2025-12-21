@@ -8,7 +8,7 @@ use crate::exec::*;
 
 inst_ops_simple! {
     (<D: L1Database> => L1DataOps) {
-        put_block_data(manifest: AsmManifest, height: u64) => ();
+        put_block_data(manifest: AsmManifest) => ();
         // put_mmr_checkpoint(blockid: L1BlockId, mmr: CompactMmr) => ();
         set_canonical_chain_entry(height: u64, blockid: L1BlockId) => ();
         remove_canonical_chain_entries(start_height: u64, end_height: u64) => ();

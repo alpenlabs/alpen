@@ -77,9 +77,9 @@ pub trait AsmDatabase: Send + Sync + 'static {
 /// Operations are NOT VALIDATED at this level.
 /// Ensure all operations are done through `L1BlockManager`
 pub trait L1Database: Send + Sync + 'static {
-    /// Stores an ASM manifest for a given L1 block at the specified height.
+    /// Stores an ASM manifest for a given L1 block.
     /// Returns error if provided out-of-order.
-    fn put_block_data(&self, manifest: AsmManifest, height: u64) -> DbResult<()>;
+    fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()>;
 
     /// Set a specific height, blockid in canonical chain records.
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()>;
