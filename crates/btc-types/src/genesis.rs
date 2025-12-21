@@ -3,7 +3,7 @@ use bitcoin::absolute;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
 
-use crate::TIMESTAMPS_FOR_MEDIAN;
+pub const TIMESTAMPS_FOR_MEDIAN: usize = 11;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GenesisL1View {

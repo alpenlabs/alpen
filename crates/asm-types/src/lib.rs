@@ -3,8 +3,7 @@
 // Re-export bitcoin verification from btc-verification crate
 // Re-export L1 block types and utilities from btc-types crate
 pub use strata_btc_types::{
-    generate_l1_tx, DaCommitment, DepositInfo, DepositRequestInfo, DepositSpendInfo,
-    L1BlockManifest, L1HeaderRecord, L1Tx, L1TxInclusionProof, L1TxProof, L1TxRef, L1WtxProof,
+    DaCommitment, DepositInfo, DepositRequestInfo, DepositSpendInfo, L1HeaderRecord, L1TxRef,
     ProtocolOperation, TxIdComputable, TxIdMarker, WithdrawalFulfillmentInfo, WtxIdMarker,
 };
 pub use strata_btc_verification::{
