@@ -14126,7 +14126,6 @@ dependencies = [
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
- "strata-asm-types",
  "strata-asm-worker",
  "strata-bridge-types",
  "strata-btc-types",
@@ -14685,9 +14684,7 @@ name = "strata-ol-chainstate-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bitcoin",
  "borsh",
- "strata-asm-types",
  "strata-bridge-types",
  "strata-identifiers",
  "strata-primitives",

@@ -8,7 +8,7 @@ use strata_asm_logs::{
 use strata_bridge_types::DepositIntent;
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
-use strata_primitives::l1::BitcoinAmount;
+use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
     context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},
@@ -70,6 +70,9 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
 
     // If there's no new blocks we can abort.
     let new_tip_height = prov.get_l1_tip_height();
+    dbg!(&new_tip_height);
+    dbg!(&l1v.safe_height());
+
     if prov.get_l1_tip_height() == l1v.safe_height() {
         return Ok(false);
     }
@@ -93,6 +96,11 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
         // We don't need to validate headers here anymore
 
         process_asm_logs(state, &mf)?;
+
+        // Advance the verified L1 tip to the latest manifest we've processed.
+        let verified_blk = L1BlockCommitment::from_height_u64(mf.height(), *mf.blkid())
+            .expect("height should be valid");
+        state.update_verified_blk(verified_blk);
     }
 
     // If prev_finalized_epoch is null, i.e. this is the genesis batch, it is
@@ -150,9 +158,9 @@ fn process_l1_checkpoint<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
     ckpt_update: &CheckpointUpdate,
 ) -> Result<(), OpError> {
+    debug!(?ckpt_update, "observed l1 checkpoint");
     let new_fin_epoch = ckpt_update.epoch_commitment();
     state.inner_mut().set_finalized_epoch(new_fin_epoch);
-    trace!(?new_fin_epoch, "observed finalized checkpoint");
     Ok(())
 }
 

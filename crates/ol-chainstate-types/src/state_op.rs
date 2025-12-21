@@ -4,9 +4,7 @@
 //! decide to expand the chain state in the future such that we can't keep it
 //! entire in memory.
 
-use bitcoin::block::Header;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_types::L1VerificationError;
 use strata_bridge_types::DepositIntent;
 use strata_identifiers::Epoch;
 use strata_primitives::{
@@ -157,12 +155,6 @@ impl StateCache {
 
     pub fn should_finish_epoch(&self) -> bool {
         self.state().is_epoch_finishing
-    }
-
-    /// Update HeaderVerificationState
-    pub fn update_header_vs(&mut self, header: &Header) -> Result<(), L1VerificationError> {
-        let state = self.state_mut();
-        state.l1_state.header_vs.check_and_update(header)
     }
 
     /// Writes a deposit intent into an execution environment's input queue.
