@@ -178,7 +178,7 @@ fn prepare_l1_segment(
     // everything we know about.
     let cur_safe_height = prev_chstate.l1_view().safe_height();
     let cur_next_exp_height = prev_chstate.l1_view().next_expected_height();
-    let l1_verified_block = prev_chstate.l1_view().header_vs().last_verified_block;
+    let l1_verified_block = prev_chstate.l1_view().safe_blkid();
     debug!(%target_height, %cur_safe_height, %cur_next_exp_height, "figuring out which blocks to include in L1 segment");
     debug!(?l1_verified_block, "last verified L1 block");
 
