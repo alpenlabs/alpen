@@ -1,7 +1,7 @@
 use std::{thread, time};
 
 use strata_asm_common::AsmManifest;
-use strata_asm_manifest_types::{CheckpointAckLogData, CHECKPOINT_ACK_ASM_LOG_TYPE_ID};
+use strata_asm_logs::{constants::CHECKPOINT_UPDATE_LOG_TYPE, CheckpointUpdate};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
 use strata_checkpoint_types::Checkpoint;
@@ -179,8 +179,8 @@ fn prepare_l1_segment(
     let cur_safe_height = prev_chstate.l1_view().safe_height();
     let cur_next_exp_height = prev_chstate.l1_view().next_expected_height();
     let l1_verified_block = prev_chstate.l1_view().header_vs().last_verified_block;
-    trace!(%target_height, %cur_safe_height, %cur_next_exp_height, "figuring out which blocks to include in L1 segment");
-    trace!(?l1_verified_block, "last verified L1 block");
+    debug!(%target_height, %cur_safe_height, %cur_next_exp_height, "figuring out which blocks to include in L1 segment");
+    debug!(?l1_verified_block, "last verified L1 block");
 
     // If there isn't any new blocks to pull then we just give nothing.
     if target_height <= cur_next_exp_height {
@@ -222,6 +222,8 @@ fn prepare_l1_segment(
         let Some(rec) = try_fetch_manifest(height, l1man)? else {
             // If we are missing a record, then something is weird, but it would
             // still be safe to abort.
+            // NOTE: This is now expected because the target height is written by btcio handler, but
+            // ASM processing and manifest generation is happening on it's own.
             warn!(%height, "missing expected L1 block during assembly");
             break;
         };
@@ -266,12 +268,12 @@ fn has_expected_checkpoint(
         };
 
         // Check if this is a checkpoint ack log
-        if msg.ty() != CHECKPOINT_ACK_ASM_LOG_TYPE_ID {
+        if msg.ty() != CHECKPOINT_UPDATE_LOG_TYPE {
             continue;
         }
 
         // Try to decode checkpoint ack data
-        let Ok(ack_data) = log.try_into_log::<CheckpointAckLogData>() else {
+        let Ok(ack_data) = log.try_into_log::<CheckpointUpdate>() else {
             warn!(blockid = %manifest.blkid(), "failed to decode checkpoint ack log");
             continue;
         };
@@ -283,9 +285,9 @@ fn has_expected_checkpoint(
         };
 
         // Check if the ack epoch matches our expected checkpoint
-        if ack_data.epoch().epoch() == expected.batch_info().epoch() {
+        if ack_data.epoch_commitment().epoch() == expected.batch_info().epoch() {
             // Found checkpoint ack for expected epoch. Should end current epoch.
-            debug!(epoch = %ack_data.epoch(), "found checkpoint ack in ASM manifest");
+            debug!(epoch = %ack_data.epoch_commitment(), "found checkpoint ack in ASM manifest");
             return true;
         }
     }
