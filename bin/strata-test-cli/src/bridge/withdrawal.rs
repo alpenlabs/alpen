@@ -59,7 +59,7 @@ fn create_withdrawal_fulfillment_inner(
     // Parse inputs
     let amount = Amount::from_sat(amount);
 
-    // Create withdrawal metadata
+    // Create withdrawal fulfillment SPS50 tag
     let sps50_tag = WithdrawalFulfillmentTxHeaderAux::new(deposit_idx)
         .build_tag_data()
         .map_err(|e| Error::TxBuilder(e.to_string()))?;

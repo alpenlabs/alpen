@@ -1,4 +1,3 @@
-mod commit;
 mod deposit;
 mod deposit_request;
 mod slash;
@@ -8,7 +7,6 @@ mod withdrawal_fulfillment;
 
 pub const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
 
-pub use commit::create_test_commit_tx;
 pub use deposit::create_connected_drt_and_dt;
 pub use deposit_request::create_test_deposit_request_tx;
 pub use slash::{create_connected_stake_and_slash_txs, create_test_slash_tx};
