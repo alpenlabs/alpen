@@ -8,6 +8,7 @@ use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot,
 };
 use strata_ledger_types::*;
+use strata_merkle::CompactMmr64;
 
 use crate::{
     WriteBatch,
@@ -29,7 +30,7 @@ impl OLState {
                     L1BlockId::from(Buf32::zero()),
                 ),
                 EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
-                Mmr64::new(64),
+                Mmr64::from_generic(&CompactMmr64::new(64)),
             ),
             global: GlobalState::new(0),
             ledger: TsnlLedgerAccountsTable::new_empty(),
@@ -47,7 +48,7 @@ impl OLState {
                     L1BlockId::from(Buf32::zero()),
                 ),
                 EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
-                Mmr64::new(64),
+                Mmr64::from_generic(&CompactMmr64::new(64)),
             ),
             global: GlobalState::new(slot),
             ledger: TsnlLedgerAccountsTable::new_empty(),

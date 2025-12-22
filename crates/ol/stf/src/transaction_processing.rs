@@ -1,6 +1,8 @@
 //! Block transactional processing.
 
-use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, MsgPayload, SentMessage};
+use strata_acct_types::{
+    AccountId, AccountTypeId, AcctError, BitcoinAmount, MsgPayload, SentMessage,
+};
 use strata_codec::{CodecError, encode_to_vec};
 use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
 use strata_ol_chain_types_new::{
@@ -153,6 +155,7 @@ fn process_update_tx<S: IStateAccessor>(
         // Validate sequence number
         let current_seqno = *sastate.seqno().inner();
         check_snark_account_seq_no(target, seqno, current_seqno)?;
+
         sastate.update_inner_state(
             operation.new_state().inner_state(),
             operation.new_state().next_inbox_msg_idx(),

@@ -2,9 +2,11 @@
 //!
 //! This can be completely omitted from DA.
 
-use strata_acct_types::{BitcoinAmount, Mmr64};
+use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
+use strata_merkle::Mmr;
+use tree_hash::TreeHash;
 
 use crate::ssz_generated::ssz::state::EpochalState;
 
@@ -50,9 +52,9 @@ impl EpochalState {
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
     /// block height and other fields.
     pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        let manifest_hash = mf.blkid().as_ref();
-        self.manifest_mmr
-            .add_leaf(*manifest_hash)
+        let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
+
+        Mmr::<StrataHasher>::add_leaf(self.manifest_mmr.inner_mut(), manifest_hash.into_inner())
             .expect("MMR capacity exceeded");
         // FIXME make this conversion less weird
         self.last_l1_block = L1BlockCommitment::from_height_u64(height as u64, *mf.blkid())

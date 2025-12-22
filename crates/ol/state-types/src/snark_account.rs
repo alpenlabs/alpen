@@ -1,3 +1,4 @@
+use ssz_derive::{Decode, Encode};
 use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher};
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr};
@@ -10,16 +11,16 @@ use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};
 impl OLSnarkAccountState {
     /// Creates an account instance with specific values.
     pub(crate) fn new(
-        verification_key: PredicateKey,
+        vk: PredicateKey,
         seqno: Seqno,
         proof_state: ProofState,
         inbox_mmr: Mmr64,
     ) -> Self {
         Self {
-            verification_key,
-            seqno,
-            proof_state,
-            inbox_mmr,
+            verification_key: CodecSsz::new(vk),
+            seqno: CodecSsz::new(seqno),
+            proof_state: CodecSsz::new(proof_state),
+            inbox_mmr: CodecSsz::new(inbox_mmr),
         }
     }
 
@@ -36,11 +37,11 @@ impl OLSnarkAccountState {
 
 impl ISnarkAccountState for NativeSnarkAccountState {
     fn verification_key(&self) -> &PredicateKey {
-        &self.verification_key
+        self.verification_key.inner()
     }
 
     fn seqno(&self) -> Seqno {
-        self.seqno
+        *self.seqno.inner()
     }
 
     fn inner_state_root(&self) -> Hash {
@@ -48,14 +49,15 @@ impl ISnarkAccountState for NativeSnarkAccountState {
     }
 
     fn inbox_mmr(&self) -> &Mmr64 {
-        &self.inbox_mmr
+        self.inbox_mmr.inner()
     }
 }
 
 impl ISnarkAccountStateMut for OLSnarkAccountState {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        self.proof_state = ProofState::new(state, next_read_idx);
-        self.seqno = seqno;
+        let ps = ProofState::new(state, next_read_idx);
+        self.proof_state = CodecSsz::new(ps);
+        self.seqno = CodecSsz::new(seqno);
     }
 
     fn update_inner_state(
@@ -73,7 +75,7 @@ impl ISnarkAccountStateMut for OLSnarkAccountState {
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
         // TODO maybe document this a little better?
         let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
-        Mmr::<StrataHasher>::add_leaf(&mut self.inbox_mmr, hash.into_inner())
+        Mmr::<StrataHasher>::add_leaf(self.inbox_mmr.inner_mut(), hash.into_inner())
             .expect("ol/state: mmr add_leaf");
         Ok(())
     }

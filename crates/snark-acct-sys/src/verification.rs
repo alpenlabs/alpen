@@ -75,7 +75,7 @@ fn verify_ledger_refs(
         let hash = proof.entry_hash();
         let cohashes: Vec<[u8; 32]> = proof.proof().cohashes().to_vec();
         let generic_proof = MerkleProof::from_cohashes(cohashes, proof.entry_idx());
-        if !generic_mmr.verify(&generic_proof, hash.as_ref()) {
+        if !generic_mmr.verify::<StrataHasher>(&generic_proof, hash.as_ref()) {
             return Err(AcctError::InvalidLedgerReference {
                 account_id: account,
                 ref_idx: proof.entry_idx(),
@@ -99,7 +99,7 @@ pub(crate) fn verify_input_mmr_proofs(
         let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes().to_vec();
         let proof = strata_merkle::MerkleProof::from_cohashes(cohashes, cur_index);
 
-        if !generic_mmr.verify(&proof, &hash) {
+        if !generic_mmr.verify::<StrataHasher>(&proof, &hash) {
             return Err(AcctError::InvalidMessageProof {
                 account_id,
                 msg_idx: cur_index,
