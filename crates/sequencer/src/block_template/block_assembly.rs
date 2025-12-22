@@ -220,11 +220,11 @@ fn prepare_l1_segment(
     // block assemblies.
     for height in cur_next_exp_height..=target_height {
         let Some(rec) = try_fetch_manifest(height, l1man)? else {
-            // If we are missing a record, then something is weird, but it would
-            // still be safe to abort.
-            // NOTE: This is now expected because the target height is written by btcio handler, but
-            // ASM processing and manifest generation is happening on it's own.
-            warn!(%height, "missing expected L1 block during assembly");
+            // This is expected: the btcio handler updates the canonical chain tip immediately
+            // when new L1 blocks arrive, but the ASM worker processes blocks asynchronously
+            // to generate manifests. We may be ahead of manifest generation, so just stop here
+            // and include only the blocks we have manifests for.
+            debug!(%height, "L1 manifest not yet available, ASM worker still processing");
             break;
         };
 
