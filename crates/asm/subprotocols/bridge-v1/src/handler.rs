@@ -84,8 +84,6 @@ pub(crate) fn preprocess_parsed_tx(
             // Request the Deposit Request Transaction (DRT) as auxiliary data.
             // We need this to verify the deposit chain and validate the DRT output locking script
             // during the main processing phase.
-            dbg!("requesting tx");
-            dbg!(&info.drt_inpoint().txid);
             collector.request_bitcoin_tx(info.drt_inpoint().txid);
         }
         ParsedTx::WithdrawalFulfillment(_) => {}

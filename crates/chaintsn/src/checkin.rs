@@ -69,14 +69,11 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
     let l1v = state.state().l1_view();
 
     // If there's no new blocks we can abort.
-    let new_tip_height = prov.get_l1_tip_height();
-    dbg!(&new_tip_height);
-    dbg!(&l1v.safe_height());
-
     if prov.get_l1_tip_height() == l1v.safe_height() {
         return Ok(false);
     }
 
+    let new_tip_height = prov.get_l1_tip_height();
     let cur_safe_height = l1v.safe_height();
 
     // Validate the new blocks actually extend the tip.  This is what we have to tweak to make
