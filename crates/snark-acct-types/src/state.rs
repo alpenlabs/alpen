@@ -1,5 +1,6 @@
 //! Snark account state types.
 
+use ssz_derive::{Decode, Encode};
 use strata_acct_types::{AccountTypeId, AccountTypeState, Hash, Mmr64, impl_opaque_thin_wrapper};
 
 use crate::ssz_generated::ssz::state::*;
@@ -8,7 +9,7 @@ use crate::ssz_generated::ssz::state::*;
 type RawSeqno = u64;
 
 /// Account sequence number type.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
 pub struct Seqno(RawSeqno);
 
 impl_opaque_thin_wrapper!(Seqno => RawSeqno);
