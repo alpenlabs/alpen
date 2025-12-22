@@ -273,7 +273,8 @@ pub fn get_relative_difficulty_adjustment_height(idx: u64, start: u64, params: &
 #[cfg(test)]
 mod tests {
 
-    use bitcoin::params::MAINNET;
+    use bitcoin::{BlockHash, CompactTarget, hashes::Hash, params::MAINNET};
+    use borsh::{BorshDeserialize, BorshSerialize};
     use rand::{Rng, rngs::OsRng};
     use strata_test_utils_btc::segment::BtcChainSegment;
 
@@ -304,7 +305,7 @@ mod tests {
     #[test]
     fn test_hash() {
         let chain = BtcChainSegment::load();
-        let r1 = 45000;
+        let r1 = 45_000;
         let verification_state = chain.get_verification_state(r1).unwrap();
         let hash = verification_state.compute_hash();
         assert!(hash.is_ok());
@@ -322,29 +323,30 @@ mod tests {
     // - Bitcoin Developer Guide: https://developer.bitcoin.org/devguide/block_chain.html#target-nbits
     // - Difficulty Adjustment Algorithm: https://en.bitcoin.it/wiki/Difficulty
     // - Protocol Rules: https://github.com/bitcoin/bitcoin/blob/master/src/pow.cpp
+    // - Btc Optech: https://bitcoinops.org/en/topics/difficulty-adjustment-algorithms/
     // ========================================================================
 
-    /// Test that difficulty adjustment happens at exactly the right block height (40320).
-    /// Block 40320 is the first difficulty adjustment in our test data (40320 = 20 * 2016).
+    /// Test that difficulty adjustment happens at exactly the right block height (40,320).
+    /// Block 40,320 is the first difficulty adjustment in our test data (`40_320 = 20 * 2016`).
     #[test]
     fn test_difficulty_adjustment_at_boundary_block() {
         let chain = BtcChainSegment::load();
 
         // Start verification just before the difficulty adjustment block
-        let adjustment_height = 40320;
+        let adjustment_height = 40_320;
         let mut verification_state = chain.get_verification_state(adjustment_height - 1).unwrap();
 
         let _target_before = verification_state.get_next_block_target();
         let _epoch_start_before = verification_state.get_epoch_start_timestamp();
 
-        // Process the adjustment block (40320)
+        // Process the adjustment block (40,320)
         let adjustment_header = chain.get_block_header_at(adjustment_height).unwrap();
         verification_state
             .check_and_update(&adjustment_header)
             .expect("Difficulty adjustment block should be valid");
 
-        // After processing block 40320, the epoch_start_timestamp should be updated
-        // to the timestamp of block 40320
+        // After processing block 40,320, the epoch_start_timestamp should be updated
+        // to the timestamp of block 40,320
         assert_eq!(
             verification_state.get_epoch_start_timestamp(),
             adjustment_header.time,
@@ -367,15 +369,15 @@ mod tests {
     fn test_target_before_adjustment_boundary() {
         let chain = BtcChainSegment::load();
 
-        // Block 40319 is right before the adjustment at 40320
-        let pre_adjustment_height = 40319;
+        // Block 40,319 is right before the adjustment at 40,320
+        let pre_adjustment_height = 40_319;
         let mut verification_state = chain
             .get_verification_state(pre_adjustment_height - 1)
             .unwrap();
 
         let expected_target = verification_state.get_next_block_target();
 
-        // Process block 40319 (one before adjustment)
+        // Process block 40,319 (one before adjustment)
         let header = chain.get_block_header_at(pre_adjustment_height).unwrap();
 
         // The header should have the same target as expected
@@ -389,11 +391,11 @@ mod tests {
             .check_and_update(&header)
             .expect("Block before adjustment should validate");
 
-        // After processing 40319, we're now at height 40319
-        // The next_block_target will be calculated for block 40320, which IS an adjustment block
+        // After processing 40,319, we're now at height 40,319
+        // The next_block_target will be calculated for block 40,320, which IS an adjustment block
         // So the target WILL change - this is expected behavior
-        // Let's verify that the next block (40320) validates with the new target
-        let adjustment_header = chain.get_block_header_at(40320).unwrap();
+        // Let's verify that the next block (40,320) validates with the new target
+        let adjustment_header = chain.get_block_header_at(40_320).unwrap();
         let new_target = verification_state.get_next_block_target();
 
         assert_eq!(
@@ -541,15 +543,14 @@ mod tests {
 
         // Modify the bits to be incorrect
         let correct_bits = header.bits;
-        header.bits = bitcoin::CompactTarget::from_consensus(correct_bits.to_consensus() + 1);
+        header.bits = CompactTarget::from_consensus(correct_bits.to_consensus() + 1);
 
         let result = verification_state.check_and_update(&header);
 
         assert!(result.is_err(), "Invalid target should be rejected");
 
         // Verify it's the PowMismatch error by checking the error message
-        let err = result.unwrap_err();
-        let err_str = format!("{}", err);
+        let err_str = format!("{}", result.unwrap_err());
         assert!(
             err_str.contains("Proof-of-Work") && err_str.contains("does not match"),
             "Expected PowMismatch error, got: {}",
@@ -830,7 +831,7 @@ mod tests {
         // Multiply target by 2 makes it easier, divide makes it harder
         let _current_bits = header.bits.to_consensus();
         // Set an impossibly hard target by manipulating the compact target
-        header.bits = bitcoin::CompactTarget::from_consensus(0x01010000); // Very hard target
+        header.bits = CompactTarget::from_consensus(0x01010000); // Very hard target
 
         let result = verification_state.check_and_update(&header);
 
@@ -875,10 +876,7 @@ mod tests {
             verification_state
                 .check_and_update(&header)
                 .unwrap_or_else(|e| {
-                    panic!(
-                        "Valid Bitcoin block at height {} should pass PoW: {:?}",
-                        height, e
-                    )
+                    panic!("Valid Bitcoin block at height {height} should pass PoW: {e:?}")
                 });
         }
     }
@@ -908,8 +906,7 @@ mod tests {
         let mut header = chain.get_block_header_at(height + 1).unwrap();
 
         // Corrupt the previous block hash
-        use bitcoin::hashes::Hash;
-        header.prev_blockhash = bitcoin::BlockHash::from_slice(&[0u8; 32]).unwrap();
+        header.prev_blockhash = BlockHash::from_slice(&[0u8; 32]).unwrap();
 
         let result = verification_state.check_and_update(&header);
 
@@ -917,8 +914,7 @@ mod tests {
         let err_str = format!("{}", result.unwrap_err());
         assert!(
             err_str.contains("continuity"),
-            "Expected ContinuityError, got: {}",
-            err_str
+            "Expected ContinuityError, got: {err_str}",
         );
     }
 
@@ -933,8 +929,7 @@ mod tests {
         let mut header = chain.get_block_header_at(height + 1).unwrap();
 
         // Set a different (wrong) previous hash
-        use bitcoin::hashes::Hash;
-        header.prev_blockhash = bitcoin::BlockHash::from_slice(&[0xab; 32]).unwrap();
+        header.prev_blockhash = BlockHash::from_slice(&[0xab; 32]).unwrap();
 
         let result = verification_state.check_and_update(&header);
 
@@ -944,8 +939,7 @@ mod tests {
         // Error should mention both expected and found hashes
         assert!(
             err_str.contains("expected") || err_str.contains("found"),
-            "Error should contain hash information: {}",
-            err_str
+            "Error should contain hash information: {err_str}"
         );
     }
 
@@ -964,23 +958,18 @@ mod tests {
             let prev_hash = header.prev_blockhash;
             let expected_hash = verification_state.last_verified_block.blkid();
 
-            use bitcoin::hashes::Hash;
             let prev_hash_bytes = prev_hash.as_raw_hash().as_byte_array();
             let expected_bytes = expected_hash.as_ref();
 
             assert_eq!(
                 *prev_hash_bytes, *expected_bytes,
-                "Block {} should reference previous block correctly",
-                height
+                "Block {height} should reference previous block correctly"
             );
 
             verification_state
                 .check_and_update(&header)
                 .unwrap_or_else(|e| {
-                    panic!(
-                        "Valid chain should maintain continuity at height {}: {:?}",
-                        height, e
-                    )
+                    panic!("Valid chain should maintain continuity at height {height}: {e:?}")
                 });
         }
     }
@@ -1040,8 +1029,6 @@ mod tests {
     /// Test that serialization round-trip preserves state.
     #[test]
     fn test_state_serialization_roundtrip() {
-        use borsh::{BorshDeserialize, BorshSerialize};
-
         let chain = BtcChainSegment::load();
         let height = 40_100;
         let original_state = chain.get_verification_state(height).unwrap();
