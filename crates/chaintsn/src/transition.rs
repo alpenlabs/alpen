@@ -6,6 +6,7 @@ use strata_ol_chain_types::{L2BlockBody, L2BlockHeader, L2Header};
 use strata_params::RollupParams;
 use strata_predicate::PredicateResult;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
+use strata_state::prelude::StateQueue;
 use tracing::warn;
 
 use crate::{
@@ -60,6 +61,15 @@ pub fn process_block(
         state.set_epoch_finishing_flag(true);
     }
 
+    // After processing L1 segment, extract and add withdrawals from exec segment
+    // TODO: remove ASAP
+    for intent in body.exec_segment().update().output().withdrawals() {
+        state
+            .state_mut_untracked()
+            .pending_withdraws_mut()
+            .push_back(intent.clone());
+    }
+
     Ok(())
 }
 
@@ -104,5 +114,10 @@ fn advance_epoch_tracking(state: &mut impl StateAccessor) -> Result<(), TsnError
     state.set_prev_epoch(ended_epoch);
     state.set_cur_epoch(cur_epoch + 1);
     state.set_epoch_finishing_flag(false);
+
+    // TODO: remove ASAP
+    // Clear pending withdrawals at the start of each new epoch
+    *state.state_mut_untracked().pending_withdraws_mut() = StateQueue::new_empty();
+
     Ok(())
 }

@@ -141,6 +141,11 @@ impl Chainstate {
     pub fn pending_withdraws(&self) -> &StateQueue<WithdrawalIntent> {
         &self.pending_withdraws
     }
+
+    // TODO: remove ASAP
+    pub fn pending_withdraws_mut(&mut self) -> &mut StateQueue<WithdrawalIntent> {
+        &mut self.pending_withdraws
+    }
 }
 
 /// Hashed Chain State. This is used to compute the state root of the [`Chainstate`]
