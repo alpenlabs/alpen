@@ -5,12 +5,13 @@
 //! entire in memory.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_bridge_types::DepositIntent;
+use strata_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_identifiers::Epoch;
 use strata_primitives::{
     epoch::EpochCommitment,
     l2::{L2BlockCommitment, L2BlockId},
 };
+use strata_state::prelude::StateQueue;
 
 use crate::{Chainstate, ChainstateEntry};
 
@@ -183,6 +184,20 @@ impl StateCache {
         deposits
             .pop_front_n_vec(to_drop_count as usize) // ensures to_drop_idx < front_idx + len
             .expect("stateop: unable to consume deposit intent");
+    }
+
+    /// Writes a withdrawal intent into the pending withdrawals queue.
+    // TODO: remove ASAP
+    pub fn insert_withdrawal_intent(&mut self, intent: WithdrawalIntent) {
+        let state = self.state_mut();
+        state.pending_withdraws_mut().push_back(intent);
+    }
+
+    /// Clears all pending withdrawals. Used at epoch start to reset for new epoch.
+    // TODO: remove ASAP
+    pub fn clear_pending_withdraws(&mut self) {
+        let state = self.state_mut();
+        *state.pending_withdraws_mut() = StateQueue::new_empty();
     }
 }
 

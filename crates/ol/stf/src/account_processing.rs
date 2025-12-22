@@ -30,7 +30,7 @@ pub(crate) fn process_message<S: IStateAccessor>(
     match target {
         // Bridge gateway messages.
         BRIDGE_GATEWAY_ACCT_ID => {
-            handle_bridge_gateway_message(sender, msg, context)?;
+            handle_bridge_gateway_message(state, sender, msg, context)?;
         }
 
         // Any other address we assume is a ledger account, so we have to look it up.
@@ -64,7 +64,8 @@ pub(crate) fn process_message<S: IStateAccessor>(
     Ok(())
 }
 
-fn handle_bridge_gateway_message(
+fn handle_bridge_gateway_message<S: IStateAccessor>(
+    state: &mut S,
     _sender: AccountId,
     payload: MsgPayload,
     context: &BasicExecContext<'_>,
@@ -92,6 +93,13 @@ fn handle_bridge_gateway_message(
     if !withdrawal_denoms.contains(&withdrawal_amt.into()) {
         return Ok(());
     }
+
+    // TODO: remove ASAP
+    // Record the withdrawal in the legacy chainstate (hack until #1209)
+    state.record_withdrawal_intent(
+        withdrawal_amt.into(),
+        withdrawal_data.clone().into_dest_desc().to_vec(),
+    );
 
     // If it is, then we can emit a OL log with the amount and destination.
     let log_data = SimpleWithdrawalIntentLogData {
