@@ -1,7 +1,7 @@
 //! Block transactional processing.
 
 use strata_acct_types::{
-    AccountId, AccountTypeId, AcctError, BitcoinAmount, MsgPayload, SentMessage,
+    AccountId, AccountTypeId, AcctError, BitcoinAmount, MsgPayload, SentMessage, SentTransfer,
 };
 use strata_codec::{CodecError, encode_to_vec};
 use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
@@ -76,7 +76,7 @@ pub fn process_single_tx<S: IStateAccessor>(
 #[derive(Clone, Debug)]
 struct AcctInteractionBuffer {
     messages: Vec<SentMessage>,
-    transfers: Vec<(AccountId, BitcoinAmount)>,
+    transfers: Vec<SentTransfer>,
 }
 
 impl AcctInteractionBuffer {
@@ -96,12 +96,12 @@ impl AcctInteractionBuffer {
     }
 
     fn send_transfer_to(&mut self, dest: AccountId, amount: BitcoinAmount) {
-        self.transfers.push((dest, amount));
+        self.transfers.push(SentTransfer::new(dest, amount));
     }
 }
 
 impl LedgerInterface for AcctInteractionBuffer {
-    type Error = std::convert::Infallible;
+    type Error = ExecError;
 
     fn send_transfer(&mut self, dest: AccountId, value: BitcoinAmount) -> Result<(), Self::Error> {
         self.send_transfer_to(dest, value);
@@ -126,17 +126,18 @@ fn process_update_tx<S: IStateAccessor>(
     let account_state = state
         .get_account_state(target)?
         .ok_or(ExecError::UnknownAccount(target))?;
-    let snark_state = account_state
+    let acc_serial = account_state.serial();
+    let snark_acct_state = account_state
         .as_snark_account()
         .map_err(|_| ExecError::IncorrectTxTargetType)?;
     let cur_balance = account_state.balance();
 
     // Step 2: Verify the update (needs state.asm_manifests_mmr())
     let verified_update =
-        snark_sys::verify_update_correctness(state, target, snark_state, update, cur_balance)?;
+        snark_sys::verify_update_correctness(state, target, snark_acct_state, update, cur_balance)?;
 
     // Step 3: Mutate and collect effects (inside closure)
-    let (fx_buf, account_serial) = state.update_account(target, |astate| -> ExecResult<_> {
+    let fx_buf = state.update_account(target, |astate| -> ExecResult<_> {
         // Deduct balance for all outputs first
         let total_sent = operation
             .outputs()
@@ -165,10 +166,9 @@ fn process_update_tx<S: IStateAccessor>(
 
         // Collect effects using snark-acct-sys
         let mut fx_buf = AcctInteractionBuffer::new_empty();
-        snark_sys::apply_update_outputs(&mut fx_buf, verified_update)
-            .expect("AcctInteractionBuffer operations are infallible");
+        snark_sys::apply_update_outputs(&mut fx_buf, verified_update)?;
 
-        Ok((fx_buf, astate.serial()))
+        Ok(fx_buf)
     })??;
 
     // Step 4: Apply effects
@@ -179,12 +179,10 @@ fn process_update_tx<S: IStateAccessor>(
         operation.new_state().next_inbox_msg_idx(),
         operation.extra_data().to_vec(),
     )
-    .ok_or(ExecError::Codec(
-        strata_codec::CodecError::OverflowContainer,
-    ))?;
+    .ok_or(ExecError::Codec(CodecError::OverflowContainer))?;
 
     let log_payload = encode_to_vec(&log_data)?;
-    let log = OLLog::new(account_serial, log_payload);
+    let log = OLLog::new(acc_serial, log_payload);
     context.emit_log(log);
 
     Ok(())
@@ -197,9 +195,8 @@ fn apply_interactions<S: IStateAccessor>(
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Process transfers: pure value transfers with no message data
-    for (dest, amount) in fx_buf.transfers {
-        let payload = MsgPayload::new(amount, vec![]);
-        account_processing::process_message(state, source, dest, payload, context)?;
+    for t in fx_buf.transfers {
+        account_processing::process_transfer(state, source, t.dest, t.value, context)?;
     }
 
     // Process messages: carry both value and data

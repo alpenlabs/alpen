@@ -467,7 +467,7 @@ fn test_snark_update_nonexistent_recipient() {
         "Update to non-existent account should fail"
     );
     match result.unwrap_err() {
-        ExecError::Acct(AcctError::NonExistentAccount(id)) => {
+        ExecError::Acct(AcctError::MissingExpectedAccount(id)) => {
             assert_eq!(id, nonexistent_id);
         }
         err => panic!("Expected NonExistentAccount, got: {:?}", err),

@@ -11,7 +11,7 @@ use strata_snark_acct_types::{
 /// snark account, including checking account balances.
 pub fn verify_update_correctness<'a, S: IStateAccessor>(
     state_accessor: &S,
-    sender: AccountId,
+    target: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &'a SnarkAccountUpdateContainer,
     cur_balance: BitcoinAmount,
@@ -23,7 +23,7 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     let expected_seq = snark_state.seqno().incr();
     if operation.seq_no() != *expected_seq.inner() {
         return Err(AcctError::InvalidUpdateSequence {
-            account_id: sender,
+            account_id: target,
             expected: *expected_seq.inner(),
             got: operation.seq_no(),
         });
@@ -36,10 +36,10 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
 
     let expected_idx = cur_idx
         .checked_add(processed_len)
-        .ok_or(AcctError::MsgIndexOverflow { account_id: sender })?;
+        .expect("msg index overflow");
     if expected_idx != new_idx {
         return Err(AcctError::InvalidMsgIndex {
-            account_id: sender,
+            account_id: target,
             expected: expected_idx,
             got: new_idx,
         });
@@ -48,19 +48,19 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     let accum_proofs = update.accumulator_proofs();
     // 3. Verify ledger references using the provided state accessor
     verify_ledger_refs(
-        sender,
+        target,
         state_accessor.asm_manifests_mmr(),
         accum_proofs.ledger_ref_proofs(),
     )?;
 
     // 4. Verify input mmr proofs
-    verify_input_mmr_proofs(sender, snark_state, accum_proofs.inbox_proofs())?;
+    verify_input_mmr_proofs(target, snark_state, accum_proofs.inbox_proofs())?;
 
     // 4. Verify outputs can be applied safely
     verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
     // 5. Verify the witness check
-    verify_update_witness(sender, snark_state, update.base_update())?;
+    verify_update_witness(target, snark_state, update.base_update())?;
 
     Ok(VerifiedUpdate { operation })
 }
@@ -73,7 +73,7 @@ fn verify_ledger_refs(
     let generic_mmr = mmr.to_generic();
     for proof in ledger_ref_proofs.l1_headers_proofs() {
         let hash = proof.entry_hash();
-        let cohashes: Vec<[u8; 32]> = proof.proof().cohashes().to_vec();
+        let cohashes = proof.proof().cohashes();
         let generic_proof = MerkleProof::from_cohashes(cohashes, proof.entry_idx());
         if !generic_mmr.verify::<StrataHasher>(&generic_proof, hash.as_ref()) {
             return Err(AcctError::InvalidLedgerReference {
@@ -96,8 +96,8 @@ pub(crate) fn verify_input_mmr_proofs(
         let msg_bytes: Vec<u8> = msg_proof.entry().as_ssz_bytes();
         let hash = StrataHasher::hash_leaf(&msg_bytes);
 
-        let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes().to_vec();
-        let proof = strata_merkle::MerkleProof::from_cohashes(cohashes, cur_index);
+        let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes();
+        let proof = MerkleProof::from_cohashes(cohashes, cur_index);
 
         if !generic_mmr.verify::<StrataHasher>(&proof, &hash) {
             return Err(AcctError::InvalidMessageProof {
@@ -112,7 +112,7 @@ pub(crate) fn verify_input_mmr_proofs(
 }
 
 pub(crate) fn verify_update_witness(
-    sender: AccountId,
+    target: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdate,
 ) -> AcctResult<()> {
@@ -123,7 +123,7 @@ pub(crate) fn verify_update_witness(
         .is_ok();
 
     if !is_valid {
-        return Err(AcctError::InvalidUpdateProof { account_id: sender });
+        return Err(AcctError::InvalidUpdateProof { account_id: target });
     }
 
     Ok(())
@@ -146,7 +146,7 @@ fn compute_update_claim(
         operation.outputs().clone(),
         operation.extra_data().to_vec(),
     );
-    pub_params.to_ssz_bytes()
+    pub_params.as_ssz_bytes()
 }
 
 fn verify_update_outputs_safe<S: IStateAccessor>(
@@ -160,13 +160,13 @@ fn verify_update_outputs_safe<S: IStateAccessor>(
     // Check if receivers exist (skip special/system accounts)
     for t in transfers {
         if !t.dest().is_special() && !state_accessor.check_account_exists(t.dest())? {
-            return Err(AcctError::NonExistentAccount(t.dest()));
+            return Err(AcctError::MissingExpectedAccount(t.dest()));
         }
     }
 
     for m in messages {
         if !m.dest().is_special() && !state_accessor.check_account_exists(m.dest())? {
-            return Err(AcctError::NonExistentAccount(m.dest()));
+            return Err(AcctError::MissingExpectedAccount(m.dest()));
         }
     }
 

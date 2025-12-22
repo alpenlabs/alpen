@@ -47,12 +47,6 @@ impl UpdateProofPubParams {
     pub fn extra_data(&self) -> &[u8] {
         &self.extra_data
     }
-
-    pub fn to_ssz_bytes(&self) -> Vec<u8> {
-        // TODO: Implement proper SSZ serialization for UpdateProofPubParams
-        // For now, return dummy bytes since we use PredicateKey::always_accept() in tests
-        vec![0u8; 32]
-    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use ssz_types::VariableList;
 use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 
 use crate::{
-    AccountId, BitcoinAmount,
+    AccountId, BitcoinAmount, SentTransfer,
     ssz_generated::ssz::messages::{MsgPayload, ReceivedMessage, SentMessage},
 };
 
@@ -19,6 +19,20 @@ impl SentMessage {
 
     pub fn payload(&self) -> &MsgPayload {
         &self.payload
+    }
+}
+
+impl SentTransfer {
+    pub fn new(dest: AccountId, value: BitcoinAmount) -> Self {
+        Self { dest, value }
+    }
+
+    pub fn dest(&self) -> AccountId {
+        self.dest
+    }
+
+    pub fn value(&self) -> BitcoinAmount {
+        self.value
     }
 }
 

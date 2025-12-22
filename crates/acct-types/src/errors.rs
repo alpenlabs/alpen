@@ -76,9 +76,6 @@ pub enum AcctError {
     #[error("Bitcoin amount overflow")]
     BitcoinAmountOverflow,
 
-    #[error("Account {0:?} does not exist")]
-    NonExistentAccount(AccountId),
-
     #[error("operation not supported in this context")]
     Unsupported,
 }

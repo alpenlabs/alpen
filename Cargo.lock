@@ -14904,7 +14904,6 @@ dependencies = [
  "strata-crypto",
  "strata-identifiers",
  "strata-ledger-types",
- "strata-merkle",
  "strata-predicate",
  "strata-snark-acct-types",
  "strata-test-utils-ssz",

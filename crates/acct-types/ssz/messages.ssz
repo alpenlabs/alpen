@@ -16,6 +16,15 @@ class SentMessage(Container):
     ### Message payload.
     payload: MsgPayload
 
+### Describes a transfer we're getting ready to send.
+class SentTransfer(Container):
+    ### Destination orchestration layer account ID.
+    dest: strata_identifiers.AccountId
+
+    ### Value sent.
+    value: strata_btc_types.BitcoinAmount
+
+
 ### Describes a message being received by an account.
 class ReceivedMessage(Container):
     source: strata_identifiers.AccountId
