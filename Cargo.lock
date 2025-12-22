@@ -14718,7 +14718,6 @@ dependencies = [
  "strata-codec-utils",
  "strata-identifiers",
  "strata-ledger-types",
- "strata-merkle",
  "strata-predicate",
  "strata-snark-acct-types",
  "tree_hash 0.11.0",

@@ -1,6 +1,6 @@
 //! Account-specific interaction handling, such as messages.
 
-use strata_acct_types::{AccountId, MsgPayload};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_codec::encode_to_vec;
 use strata_ledger_types::{Coin, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
 use strata_msg_fmt::MsgRef;
@@ -17,9 +17,6 @@ use crate::{
 
 /// Processes a message by delivering it to its destination, which might involve
 /// touching the ledger state.
-///
-/// This takes a [`EpochContext`] because messages can be issued both in regular
-/// block processing and at epoch sealing.
 pub(crate) fn process_message<S: IStateAccessor>(
     state: &mut S,
     sender: AccountId,
@@ -64,8 +61,42 @@ pub(crate) fn process_message<S: IStateAccessor>(
     Ok(())
 }
 
-fn handle_bridge_gateway_message<S: IStateAccessor>(
+pub(crate) fn process_transfer<S: IStateAccessor>(
     state: &mut S,
+    sender: AccountId,
+    target: AccountId,
+    value: BitcoinAmount,
+    context: &BasicExecContext<'_>,
+) -> ExecResult<()> {
+    match target {
+        // Bridge gateway transfer.
+        BRIDGE_GATEWAY_ACCT_ID => {
+            // TODO: what do we do with direct tranferes to bridge accounts? Emit log?
+        }
+
+        // Any other address we assume is a ledger account, so we have to look it up.
+        _ => {
+            // Check if the account exists first.
+            if !state.check_account_exists(target)? {
+                // If we don't find it then we can just ignore it.
+                // TODO: do something with the funds we're throwing away by doing this
+                return Ok(());
+            }
+
+            // Update the account within a closure.
+            state.update_account(target, |acct_state| -> ExecResult<()> {
+                // First, just increase the balance right now.
+                let coin = Coin::new_unchecked(value);
+                acct_state.add_balance(coin);
+                Ok(())
+            })??;
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_bridge_gateway_message(
     _sender: AccountId,
     payload: MsgPayload,
     context: &BasicExecContext<'_>,

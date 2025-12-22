@@ -1,10 +1,12 @@
 //! Proof interface types.
 
+use ssz_derive::{Decode, Encode};
+
 use crate::{LedgerRefs, MessageEntry, ProofState, UpdateOutputs};
 
 /// Public params that we provide as the claim the proof must prove the relate
 /// to each other correctly.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct UpdateProofPubParams {
     /// Current state we're extending.
     cur_state: ProofState,
@@ -68,11 +70,5 @@ impl UpdateProofPubParams {
 
     pub fn extra_data(&self) -> &[u8] {
         &self.extra_data
-    }
-
-    pub fn to_ssz_bytes(&self) -> Vec<u8> {
-        // TODO: Implement proper SSZ serialization for UpdateProofPubParams
-        // For now, return dummy bytes since we use PredicateKey::always_accept() in tests
-        vec![0u8; 32]
     }
 }
