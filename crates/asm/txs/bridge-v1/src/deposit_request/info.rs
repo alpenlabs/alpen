@@ -10,9 +10,6 @@ pub struct DepositRequestInfo {
     header_aux: DrtHeaderAux,
 
     /// The deposit request output containing the amount and its locking script.
-    ///
-    /// The amount must be larger than the bridge denomination amount to cover
-    /// the mining fee required to settle the deposit transaction.
     deposit_request_output: BitcoinTxOut,
 }
 

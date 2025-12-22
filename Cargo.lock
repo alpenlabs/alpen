@@ -13788,6 +13788,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
+ "proptest",
  "rand 0.8.5",
  "strata-asm-common",
  "strata-bridge-types",

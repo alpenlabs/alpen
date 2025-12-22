@@ -61,3 +61,54 @@ impl std::fmt::Display for BridgeTxType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    impl Arbitrary for BridgeTxType {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                Just(BridgeTxType::DepositRequest),
+                Just(BridgeTxType::Deposit),
+                Just(BridgeTxType::WithdrawalFulfillment),
+                Just(BridgeTxType::Commit),
+                Just(BridgeTxType::Slash),
+                Just(BridgeTxType::Unstake),
+            ]
+            .boxed()
+        }
+    }
+
+    #[test]
+    fn test_bridge_tx_type_discriminants() {
+        // Explicitly verify the discriminant values are correct
+        assert_eq!(BridgeTxType::DepositRequest as u8, 0);
+        assert_eq!(BridgeTxType::Deposit as u8, 1);
+        assert_eq!(BridgeTxType::WithdrawalFulfillment as u8, 2);
+        assert_eq!(BridgeTxType::Commit as u8, 3);
+        assert_eq!(BridgeTxType::Slash as u8, 4);
+        assert_eq!(BridgeTxType::Unstake as u8, 5);
+    }
+
+    proptest! {
+        #[test]
+        fn test_bridge_tx_type_roundtrip(tx_type: BridgeTxType) {
+            // Test that converting to u8 and back preserves the value
+            let as_u8: u8 = tx_type.into();
+            let back_to_enum = BridgeTxType::try_from(as_u8)
+                .expect("roundtrip conversion should succeed");
+            prop_assert_eq!(tx_type, back_to_enum);
+        }
+
+        #[test]
+        fn test_bridge_tx_type_invalid_values(value in 6u8..=255u8) {
+            // Test that all invalid u8 values return an error
+            prop_assert!(BridgeTxType::try_from(value).is_err());
+        }
+    }
+}
