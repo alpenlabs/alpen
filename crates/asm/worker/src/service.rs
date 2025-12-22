@@ -82,9 +82,10 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         info!(%pivot_block, "ASM found pivot anchor state");
 
         // Special handling for genesis block - its anchor state was created during init
-        // but its manifest wasn't (because Bitcoin block wasn't available yet)
-        if skipped_blocks.is_empty() && pivot_block.height() == genesis_height {
-            // Check if we need to create the genesis manifest
+        // but its manifest wasn't (because Bitcoin block wasn't available yet).
+        // This must happen BEFORE processing skipped_blocks so genesis gets index 0.
+        // Only create it if it doesn't exist yet (idempotency check via MMR leaf index 0).
+        if pivot_block.height() == genesis_height && ctx.get_manifest_hash(0)?.is_none() {
             // Fetch the genesis block (should work now since L1 reader processed it)
             let genesis_block = ctx.get_l1_block(pivot_block.blkid())?;
 
