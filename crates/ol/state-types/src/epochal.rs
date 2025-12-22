@@ -2,19 +2,20 @@
 //!
 //! This can be completely omitted from DA.
 
-use strata_acct_types::{BitcoinAmount, CompactMmr64, Mmr64};
+use ssz_derive::{Decode, Encode};
+use strata_acct_types::{BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::Codec;
 use strata_codec_utils::CodecSsz;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Codec, Decode, Encode)]
 pub struct EpochalState {
     total_ledger_funds: BitcoinAmount,
     cur_epoch: u32,
     last_l1_block: L1BlockCommitment,
     checkpointed_epoch: EpochCommitment,
-    manifest_mmr: Mmr64,
+    manifest_mmr: CodecSsz<Mmr64>,
 }
 
 impl EpochalState {
@@ -31,7 +32,7 @@ impl EpochalState {
             cur_epoch,
             last_l1_block,
             checkpointed_epoch,
-            manifest_mmr,
+            manifest_mmr: CodecSsz::new(manifest_mmr),
         }
     }
 
@@ -61,6 +62,7 @@ impl EpochalState {
     pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
         let manifest_hash = mf.blkid().as_ref();
         self.manifest_mmr
+            .inner_mut()
             .add_leaf(*manifest_hash)
             .expect("MMR capacity exceeded");
         // FIXME make this conversion less weird
@@ -96,40 +98,6 @@ impl EpochalState {
 
     /// Gets the ASM manifests MMR.
     pub fn asm_manifests_mmr(&self) -> &Mmr64 {
-        &self.manifest_mmr
-    }
-}
-
-impl Codec for EpochalState {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.total_ledger_funds.encode(enc)?;
-        self.cur_epoch.encode(enc)?;
-        self.last_l1_block.encode(enc)?;
-        self.checkpointed_epoch.encode(enc)?;
-
-        let compact_mmr = self.manifest_mmr.to_compact();
-        let wrapped_mmr = CodecSsz::new(compact_mmr);
-        wrapped_mmr.encode(enc)?;
-
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let total_ledger_funds = BitcoinAmount::decode(dec)?;
-        let cur_epoch = u32::decode(dec)?;
-        let last_l1_block = L1BlockCommitment::decode(dec)?;
-        let checkpointed_epoch = EpochCommitment::decode(dec)?;
-
-        let wrapped_mmr: CodecSsz<CompactMmr64> = CodecSsz::decode(dec)?;
-        let compact_mmr = wrapped_mmr.inner();
-        let manifest_mmr = Mmr64::from_compact(compact_mmr);
-
-        Ok(Self {
-            total_ledger_funds,
-            cur_epoch,
-            last_l1_block,
-            checkpointed_epoch,
-            manifest_mmr,
-        })
+        self.manifest_mmr.inner()
     }
 }

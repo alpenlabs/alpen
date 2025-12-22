@@ -14711,6 +14711,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "ssz",
+ "ssz_derive",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",

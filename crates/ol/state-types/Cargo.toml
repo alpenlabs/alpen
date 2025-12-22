@@ -16,6 +16,7 @@ strata-snark-acct-types.workspace = true
 
 bitcoin.workspace = true
 ssz.workspace = true
+ssz_derive.workspace = true
 tree_hash.workspace = true
 
 [lints]
