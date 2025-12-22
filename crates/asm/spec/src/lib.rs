@@ -8,8 +8,10 @@ use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
 use strata_asm_proto_checkpoint::{CheckpointConfig, CheckpointSubprotocol};
 use strata_checkpoint_types_ssz::L1Commitment;
+use strata_identifiers::CredRule;
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, RollupParams};
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
 
 /// ASM specification for the Strata protocol.
@@ -74,8 +76,9 @@ impl StrataAsmSpec {
         };
 
         let genesis_l1_blk = &params.genesis_l1_view.blk;
+        let sequencer_predicate = cred_rule_to_predicate(&params.cred_rule);
         let checkpoint_genesis = CheckpointConfig {
-            sequencer_cred: params.cred_rule.clone(),
+            sequencer_predicate,
             checkpoint_predicate: params.checkpoint_predicate.clone(),
             genesis_l1: L1Commitment {
                 height: genesis_l1_blk.height_u64() as u32,
@@ -87,6 +90,16 @@ impl StrataAsmSpec {
             magic_bytes: params.magic_bytes,
             bridge_v1_genesis,
             checkpoint_genesis,
+        }
+    }
+}
+
+/// Convert a `CredRule` to a `PredicateKey` for sequencer signature verification.
+fn cred_rule_to_predicate(cred_rule: &CredRule) -> PredicateKey {
+    match cred_rule {
+        CredRule::Unchecked => PredicateKey::always_accept(),
+        CredRule::SchnorrKey(pubkey) => {
+            PredicateKey::new(PredicateTypeId::Bip340Schnorr, pubkey.as_ref().to_vec())
         }
     }
 }

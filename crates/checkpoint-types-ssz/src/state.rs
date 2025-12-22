@@ -9,14 +9,14 @@ impl EpochSummary {
         epoch: Epoch,
         terminal: OLBlockCommitment,
         prev_terminal: OLBlockCommitment,
-        new_l1: L1Commitment,
+        l1_end: L1Commitment,
         final_state: Buf32,
     ) -> Self {
         Self {
             epoch,
             terminal,
             prev_terminal,
-            new_l1,
+            l1_end,
             final_state,
         }
     }
@@ -33,8 +33,8 @@ impl EpochSummary {
         &self.prev_terminal
     }
 
-    pub fn new_l1(&self) -> &L1Commitment {
-        &self.new_l1
+    pub fn l1_end(&self) -> &L1Commitment {
+        &self.l1_end
     }
 
     pub fn final_state(&self) -> &Buf32 {
@@ -67,14 +67,14 @@ impl EpochSummary {
     pub fn create_next_epoch_summary(
         &self,
         new_terminal: OLBlockCommitment,
-        new_l1: L1Commitment,
+        l1_end: L1Commitment,
         new_state: Buf32,
     ) -> EpochSummary {
         EpochSummary::new(
             self.epoch + 1,
             new_terminal,
             self.terminal,
-            new_l1,
+            l1_end,
             new_state,
         )
     }

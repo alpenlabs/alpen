@@ -1,5 +1,6 @@
 #![cfg(any(test, feature = "test-utils"))]
 
+use k256::schnorr::{SigningKey, signature::Signer};
 use rand::{RngCore, rngs::OsRng};
 use ssz::Encode;
 use strata_btc_types::payload::L1Payload;
@@ -7,44 +8,49 @@ use strata_checkpoint_types_ssz::{
     BatchInfo, BatchTransition, CheckpointCommitment, CheckpointPayload, CheckpointSidecar,
     L1BlockRange, L1Commitment, L2BlockRange, OLLog, SignedCheckpointPayload,
 };
-use strata_crypto::schnorr::sign_schnorr_sig;
-use strata_identifiers::{
-    Buf32, Buf64, CredRule, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment,
-};
+use strata_identifiers::{Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment};
 use strata_l1_txfmt::TagData;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 
 /// Sequencer keypair helper for signing checkpoint payloads.
+///
+/// Uses k256 for signing to be compatible with the predicate framework's
+/// Schnorr BIP-340 verifier, which signs/verifies raw message bytes.
 #[derive(Clone, Debug)]
 pub struct SequencerKeypair {
-    secret_key: Buf32,
+    secret_key_bytes: [u8; 32],
     public_key: Buf32,
 }
 
 impl SequencerKeypair {
     /// Generate a random sequencer keypair.
     pub fn random() -> Self {
-        let mut sk_bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut sk_bytes);
+        let mut secret_key_bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut secret_key_bytes);
 
-        let secret_key: Buf32 = sk_bytes.into();
-        let secp_key = bitcoin::secp256k1::SecretKey::from_slice(&sk_bytes)
-            .expect("random bytes should form a valid secret key");
-        let keypair =
-            bitcoin::secp256k1::Keypair::from_secret_key(bitcoin::secp256k1::SECP256K1, &secp_key);
-        let (x_only_pk, _) = bitcoin::secp256k1::XOnlyPublicKey::from_keypair(&keypair);
-        let public_key: Buf32 = x_only_pk.serialize().into();
+        let signing_key = SigningKey::from_bytes(&secret_key_bytes)
+            .expect("random bytes should form a valid signing key");
+        let pk_bytes: [u8; 32] = signing_key.verifying_key().to_bytes().into();
+        let public_key: Buf32 = pk_bytes.into();
 
         Self {
-            secret_key,
+            secret_key_bytes,
             public_key,
         }
     }
 
     /// Sign a checkpoint payload with the sequencer key.
+    ///
+    /// Signs the raw SSZ-encoded payload bytes (not pre-hashed).
+    /// This is compatible with the predicate framework's Schnorr BIP-340 verifier.
     pub fn sign(&self, payload: &CheckpointPayload) -> Buf64 {
-        sign_schnorr_sig(&payload.compute_hash(), &self.secret_key)
+        let signing_key = SigningKey::from_bytes(&self.secret_key_bytes)
+            .expect("secret key bytes should be valid");
+        let payload_bytes = payload.as_ssz_bytes();
+        let signature: k256::schnorr::Signature = signing_key.sign(&payload_bytes);
+        Buf64::from(signature.to_bytes())
     }
 
     /// Get the public key.
@@ -52,9 +58,14 @@ impl SequencerKeypair {
         self.public_key
     }
 
-    /// Get the credential rule for this keypair.
-    pub fn cred_rule(&self) -> CredRule {
-        CredRule::SchnorrKey(self.public_key)
+    /// Get the sequencer predicate for this keypair.
+    ///
+    /// Returns a `PredicateKey` with type `Bip340Schnorr` containing the public key.
+    pub fn sequencer_predicate(&self) -> PredicateKey {
+        PredicateKey::new(
+            PredicateTypeId::Bip340Schnorr,
+            self.public_key.as_ref().to_vec(),
+        )
     }
 }
 

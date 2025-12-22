@@ -51,6 +51,13 @@ pub(crate) enum CheckpointError {
     #[error("L2 slot did not progress: previous {previous}, new {new}")]
     InvalidL2Progression { previous: u64, new: u64 },
 
+    /// Pre-state root in signed payload does not match expected state.
+    #[error("pre-state root mismatch: expected {expected}, got {actual}")]
+    InvalidPreStateRoot {
+        expected: strata_identifiers::Buf32,
+        actual: strata_identifiers::Buf32,
+    },
+
     /// Failed to retrieve manifest hashes from auxiliary data.
     #[error("auxiliary data error: {0}")]
     AuxData(#[from] AuxError),

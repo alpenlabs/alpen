@@ -109,8 +109,8 @@ impl Subprotocol for CheckpointSubprotocol {
         for msg in msgs {
             match msg {
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
-                    logging::info!(%new_key, "Updating sequencer credential");
-                    state.update_sequencer_cred(*new_key);
+                    logging::info!(%new_key, "Updating sequencer predicate");
+                    state.update_sequencer_predicate(new_key.as_ref());
                 }
                 CheckpointIncomingMsg::UpdateCheckpointPredicate(new_predicate) => {
                     logging::info!("Updating checkpoint predicate");

@@ -15,7 +15,6 @@ strata-asm-manifest-types.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
 strata-checkpoint-types-ssz.workspace = true
 strata-codec.workspace = true
-strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-stf.workspace = true
@@ -23,6 +22,7 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 
 borsh.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

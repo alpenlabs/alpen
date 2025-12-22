@@ -6,11 +6,12 @@ edition = "2024"
 [features]
 default = []
 test-utils = [
-  "rand",
-  "strata-btc-types",
-  "strata-crypto",
-  "strata-identifiers",
-  "strata-l1-txfmt",
+  "dep:k256",
+  "dep:rand",
+  "dep:strata-btc-types",
+  "dep:strata-identifiers",
+  "dep:strata-l1-txfmt",
+  "dep:strata-predicate",
 ]
 
 [lints]
@@ -25,8 +26,9 @@ bitcoin.workspace = true
 ssz.workspace = true
 thiserror.workspace = true
 
+k256 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 strata-btc-types = { workspace = true, optional = true }
-strata-crypto = { workspace = true, optional = true }
 strata-identifiers = { workspace = true, optional = true }
 strata-l1-txfmt = { workspace = true, optional = true }
+strata-predicate = { workspace = true, optional = true }

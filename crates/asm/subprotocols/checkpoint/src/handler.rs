@@ -3,14 +3,16 @@
 //! This module handles the processing of individual checkpoint transactions,
 //! coordinating verification, state updates, and message forwarding.
 
+use ssz::Encode;
 use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
 use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_logs::CheckpointUpdateSsz;
 use strata_asm_proto_checkpoint_txs::extract_signed_checkpoint_from_envelope;
-use strata_checkpoint_types_ssz::{BatchInfo, CheckpointClaim, CheckpointPayload};
+use strata_checkpoint_types_ssz::{
+    BatchInfo, CheckpointClaim, CheckpointCommitment, CheckpointPayload,
+};
 use strata_codec::decode_buf_exact;
-use strata_crypto::schnorr::verify_schnorr_sig;
-use strata_identifiers::CredRule;
+use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinTxid};
@@ -26,13 +28,14 @@ use crate::{
 /// Steps:
 /// 1. Extract signed checkpoint from envelope
 /// 2. Verify signature
-/// 3. Validate state transitions (epoch, L1/L2 progression)
-/// 4. Validate start values match expected state
-/// 5. Get manifest hashes from auxiliary data
-/// 6. Construct claim and verify proof
-/// 7. Update state with verified checkpoint
-/// 8. Forward withdrawal intents to bridge
-/// 9. Emit checkpoint update log
+/// 3. Validate start values match expected state
+/// 4. Validate state transitions (epoch, L1/L2 progression)
+/// 5. Validate pre-state root matches expected state
+/// 6. Get manifest hashes from auxiliary data
+/// 7. Construct claim and verify proof
+/// 8. Update state with verified checkpoint
+/// 9. Forward withdrawal intents to bridge
+/// 10. Emit checkpoint update log
 pub(crate) fn handle_checkpoint_tx(
     state: &mut CheckpointState,
     tx: &TxInputRef<'_>,
@@ -41,25 +44,23 @@ pub(crate) fn handle_checkpoint_tx(
 ) -> CheckpointResult<()> {
     // 1. Extract signed checkpoint from envelope
     let signed_checkpoint = extract_signed_checkpoint_from_envelope(tx)?;
-
-    // 2. Verify signature
-    let payload_hash = signed_checkpoint.inner.compute_hash();
-    if !verify_signature(
-        &payload_hash,
-        &signed_checkpoint.signature,
-        state.sequencer_cred(),
-    ) {
-        return Err(CheckpointError::InvalidSignature);
-    }
-
     let checkpoint_payload = &signed_checkpoint.inner;
+
+    // 2. Verify signature using predicate framework.
+    // The predicate verifier expects raw payload bytes (not pre-hashed) because
+    // BIP-340 Schnorr verification hashes the message internally using tagged hashing.
+    let payload_bytes = checkpoint_payload.as_ssz_bytes();
+    state
+        .sequencer_predicate()
+        .verify_claim_witness(&payload_bytes, signed_checkpoint.signature.as_ref())
+        .map_err(|_| CheckpointError::InvalidSignature)?;
     let batch_info = &checkpoint_payload.commitment.batch_info;
 
     // 3. Validate start values match expected state
     validate_start_values(state, batch_info)?;
 
-    // 4. Validate state transitions (epoch, L1/L2 progression)
-    validate_state_transitions(state, batch_info)?;
+    // 4. Validate state transitions (epoch, L1/L2 progression, pre-state root)
+    validate_state_transitions(state, &checkpoint_payload.commitment)?;
 
     // 5. Get manifest hashes from auxiliary data
     let manifest_hashes = get_manifest_hashes(state, batch_info, verified_aux_data)?;
@@ -87,18 +88,6 @@ pub(crate) fn handle_checkpoint_tx(
     Ok(())
 }
 
-/// Verify the checkpoint signature based on the credential rule.
-fn verify_signature(
-    payload_hash: &strata_identifiers::Buf32,
-    signature: &strata_identifiers::Buf64,
-    cred_rule: &CredRule,
-) -> bool {
-    match cred_rule {
-        CredRule::SchnorrKey(pk) => verify_schnorr_sig(signature, payload_hash, pk),
-        _ => false,
-    }
-}
-
 /// Validate that checkpoint start values match expected state.
 fn validate_start_values(state: &CheckpointState, batch_info: &BatchInfo) -> CheckpointResult<()> {
     // L1 range start must match last covered L1 (height + blkid)
@@ -113,27 +102,31 @@ fn validate_start_values(state: &CheckpointState, batch_info: &BatchInfo) -> Che
         });
     }
 
-    // L2 range start must match last terminal commitment (slot + blkid) if any
-    if let Some(last_l2) = state.last_l2_terminal() {
-        let l2_start = batch_info.l2_range.start;
-        if l2_start != last_l2 {
-            return Err(CheckpointError::InvalidL2Start {
-                expected_slot: last_l2.slot(),
-                expected_blkid: *last_l2.blkid(),
-                new_slot: l2_start.slot(),
-                new_blkid: *l2_start.blkid(),
-            });
-        }
+    // L2 range start must match last terminal commitment (or null for first checkpoint)
+    let expected_l2_start = state
+        .last_l2_terminal()
+        .unwrap_or_else(OLBlockCommitment::null);
+    let l2_start = batch_info.l2_range.start;
+    if l2_start != expected_l2_start {
+        return Err(CheckpointError::InvalidL2Start {
+            expected_slot: expected_l2_start.slot(),
+            expected_blkid: *expected_l2_start.blkid(),
+            new_slot: l2_start.slot(),
+            new_blkid: *l2_start.blkid(),
+        });
     }
 
     Ok(())
 }
 
-/// Validate state transitions: epoch sequence, L1 height progression, L2 slot progression.
+/// Validate state transitions: epoch sequence, L1 height progression, L2 slot progression,
+/// and pre-state root consistency.
 fn validate_state_transitions(
     state: &CheckpointState,
-    batch_info: &BatchInfo,
+    commitment: &CheckpointCommitment,
 ) -> CheckpointResult<()> {
+    let batch_info = &commitment.batch_info;
+
     // Epoch must be sequential
     let expected_epoch = state.expected_next_epoch();
     if batch_info.epoch != expected_epoch {
@@ -162,6 +155,18 @@ fn validate_state_transitions(
                 new: l2_end,
             });
         }
+    }
+
+    // Pre-state root in signed payload must match expected state.
+    // This ensures the sequencer cannot sign a payload with an arbitrary pre-state
+    // while providing a proof for the correct local state.
+    let expected_pre_state = state.pre_state_root();
+    let payload_pre_state = commitment.transition.pre_state_root;
+    if payload_pre_state != expected_pre_state {
+        return Err(CheckpointError::InvalidPreStateRoot {
+            expected: expected_pre_state,
+            actual: payload_pre_state,
+        });
     }
 
     Ok(())
@@ -302,7 +307,7 @@ mod tests {
         let signed_checkpoint = SignedCheckpointPayload::new(payload.clone(), signature);
         let l1_payload = build_l1_payload(&signed_checkpoint);
         let mut state = CheckpointState::new(&CheckpointConfig {
-            sequencer_cred: keypair.cred_rule(),
+            sequencer_predicate: keypair.sequencer_predicate(),
             checkpoint_predicate: PredicateKey::always_accept(),
             genesis_l1,
         });
@@ -348,7 +353,7 @@ mod tests {
         let signed_checkpoint = SignedCheckpointPayload::new(payload.clone(), signature);
         let l1_payload = build_l1_payload(&signed_checkpoint);
         let mut state = CheckpointState::new(&CheckpointConfig {
-            sequencer_cred: signer.cred_rule(),
+            sequencer_predicate: signer.sequencer_predicate(),
             checkpoint_predicate: PredicateKey::always_accept(),
             genesis_l1,
         });
@@ -378,7 +383,7 @@ mod tests {
         let signed_checkpoint = SignedCheckpointPayload::new(payload.clone(), signature);
         let l1_payload = build_l1_payload(&signed_checkpoint);
         let mut state = CheckpointState::new(&CheckpointConfig {
-            sequencer_cred: keypair.cred_rule(),
+            sequencer_predicate: keypair.sequencer_predicate(),
             checkpoint_predicate: PredicateKey::always_accept(),
             genesis_l1,
         });
@@ -413,7 +418,7 @@ mod tests {
         let signed_checkpoint = SignedCheckpointPayload::new(payload.clone(), signature);
         let l1_payload = build_l1_payload(&signed_checkpoint);
         let mut state = CheckpointState::new(&CheckpointConfig {
-            sequencer_cred: keypair.cred_rule(),
+            sequencer_predicate: keypair.sequencer_predicate(),
             checkpoint_predicate: PredicateKey::always_accept(),
             genesis_l1,
         });
@@ -428,6 +433,40 @@ mod tests {
         let err = handle_checkpoint_tx(&mut state, &tx_ref, &verified_aux, &mut relayer)
             .expect_err("invalid start should be rejected");
         assert!(matches!(err, CheckpointError::InvalidL1Start { .. }));
+        assert!(state.verified_epoch_summary().is_none());
+        assert!(relayer.logs.is_empty());
+    }
+
+    #[test]
+    fn test_invalid_pre_state_root_rejected() {
+        let keypair = SequencerKeypair::random();
+        let genesis_l1 = genesis_l1();
+        let generator = CheckpointGenerator::new(genesis_l1);
+        let mut payload = generator.gen_payload(1, 1, vec![]);
+
+        // Tamper the pre-state root to mismatch expected state.
+        // This simulates a malicious sequencer signing a payload with wrong pre-state.
+        payload.commitment.transition.pre_state_root = Buf32::from([0xAB; 32]);
+
+        let signature = keypair.sign(&payload);
+        let signed_checkpoint = SignedCheckpointPayload::new(payload.clone(), signature);
+        let l1_payload = build_l1_payload(&signed_checkpoint);
+        let mut state = CheckpointState::new(&CheckpointConfig {
+            sequencer_predicate: keypair.sequencer_predicate(),
+            checkpoint_predicate: PredicateKey::always_accept(),
+            genesis_l1,
+        });
+        let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
+        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+            .try_parse_tx(&tx)
+            .expect("tag data");
+        let tx_ref = TxInputRef::new(&tx, tag);
+        let verified_aux = verified_aux_for(&state, &payload.commitment.batch_info);
+        let mut relayer = TestRelayer::new();
+
+        let err = handle_checkpoint_tx(&mut state, &tx_ref, &verified_aux, &mut relayer)
+            .expect_err("invalid pre-state root should be rejected");
+        assert!(matches!(err, CheckpointError::InvalidPreStateRoot { .. }));
         assert!(state.verified_epoch_summary().is_none());
         assert!(relayer.logs.is_empty());
     }
@@ -450,7 +489,7 @@ mod tests {
             strata_checkpoint_types_ssz::SignedCheckpointPayload::new(payload.clone(), signature);
         let l1_payload = build_l1_payload(&signed_checkpoint);
         let mut state = CheckpointState::new(&CheckpointConfig {
-            sequencer_cred: keypair.cred_rule(),
+            sequencer_predicate: keypair.sequencer_predicate(),
             checkpoint_predicate: PredicateKey::always_accept(),
             genesis_l1,
         });
