@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::{EeUpdateId, Proof, ProofId};
+use crate::{BatchId, Proof, ProofId};
 
 #[derive(Debug)]
 pub enum ProofGenerationStatus {
@@ -8,7 +8,7 @@ pub enum ProofGenerationStatus {
     Pending,
     /// Proof is ready and can be fetched using proof_id.
     Ready { proof_id: ProofId },
-    /// Proof generation has not been requested for provided ee_update_id.
+    /// Proof generation has not been requested for provided batch_id.
     NotStarted,
     /// Cannot generate proof for some reason. All retries exhausted, etc.
     Failed { reason: String },
@@ -16,19 +16,16 @@ pub enum ProofGenerationStatus {
 
 /// Interface between Prover and Batch assembly
 #[async_trait]
-pub trait EeUpdateProver: Sized {
-    /// Request proof generation for ee_update_id.
+pub trait BatchProver: Sized {
+    /// Request proof generation for batch_id.
     /// Ok(()) -> proof generation has been queued
-    async fn request_proof_generation(&self, ee_update_id: EeUpdateId) -> eyre::Result<()>;
+    async fn request_proof_generation(&self, batch_id: BatchId) -> eyre::Result<()>;
 
-    /// Check if proof is generated for ee_update_id.
+    /// Check if proof is generated for batch_id.
     ///
     /// The generated proof is expected to be persisted, available to be fetched at any time
     /// afterwards with the returned proof_id.
-    async fn check_proof_status(
-        &self,
-        ee_update_id: EeUpdateId,
-    ) -> eyre::Result<ProofGenerationStatus>;
+    async fn check_proof_status(&self, batch_id: BatchId) -> eyre::Result<ProofGenerationStatus>;
 
     /// Get a previously generated proof by id.
     ///

@@ -6,14 +6,14 @@ use strata_identifiers::L1BlockCommitment;
 
 use crate::ProofId;
 
-/// Unique, deterministic identifier for an EeUpdate
+/// Unique, deterministic identifier for an Batch
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EeUpdateId {
+pub struct BatchId {
     prev_block: Hash,
     last_block: Hash,
 }
 
-impl EeUpdateId {
+impl BatchId {
     fn new(prev_block: Hash, last_block: Hash) -> Self {
         Self {
             prev_block,
@@ -22,7 +22,7 @@ impl EeUpdateId {
     }
 }
 
-/// EeUpdate-DA related data in an L1 block
+/// Batch-DA related data in an L1 block
 #[derive(Debug, Clone)]
 pub struct L1DaBlockRef {
     /// L1 block holding DA txns.
@@ -32,9 +32,9 @@ pub struct L1DaBlockRef {
     // inclusion merkle proof ?
 }
 
-/// EeUpdate lifecycle states
+/// Batch lifecycle states
 #[derive(Debug, Clone)]
-pub enum EeUpdateStatus {
+pub enum BatchStatus {
     /// Newly created
     Init,
     /// DA txn(s) posted, waiting for inclusion in block.
@@ -55,7 +55,7 @@ pub enum EeUpdateStatus {
 
 /// Represents a sequence of blocks that are treated as a unit for DA and posting updates to OL.
 #[derive(Debug)]
-pub struct EeUpdate {
+pub struct Batch {
     /// Sequential update index, also used in
     idx: u64,
     /// last block of (idx - 1)th update
@@ -65,14 +65,14 @@ pub struct EeUpdate {
     /// rest of the blocks in this update.
     /// cached here for easier processing.
     inner_blocks: Vec<Hash>,
-    /// state of this EeUpdate
-    status: EeUpdateStatus,
+    /// state of this Batch
+    status: BatchStatus,
 }
 
-impl EeUpdate {
-    /// Create a new EeUpdate.
+impl Batch {
+    /// Create a new Batch.
     ///
-    /// Newly created updates are in [`EeUpdateStatus::Init`] state.
+    /// Newly created updates are in [`BatchStatus::Init`] state.
     pub fn new(idx: u64, prev_block: Hash, last_block: Hash, inner_blocks: Vec<Hash>) -> Self {
         debug_assert_ne!(prev_block, last_block);
         Self {
@@ -80,18 +80,18 @@ impl EeUpdate {
             prev_block,
             last_block,
             inner_blocks,
-            status: EeUpdateStatus::Init,
+            status: BatchStatus::Init,
         }
     }
 
     /// Set status.
-    pub fn set_status(&mut self, status: EeUpdateStatus) {
+    pub fn set_status(&mut self, status: BatchStatus) {
         self.status = status
     }
 
     /// Get deterministic id.
-    pub fn id(&self) -> EeUpdateId {
-        EeUpdateId::new(self.prev_block, self.last_block)
+    pub fn id(&self) -> BatchId {
+        BatchId::new(self.prev_block, self.last_block)
     }
 
     /// Get sequential index.
@@ -100,17 +100,17 @@ impl EeUpdate {
         self.idx
     }
 
-    /// last block of the previous EeUpdate.
+    /// last block of the previous Batch.
     pub fn prev_block(&self) -> Hash {
         self.prev_block
     }
 
-    /// last block of this EeUpdate
+    /// last block of this Batch
     pub fn last_block(&self) -> Hash {
         self.last_block
     }
 
-    /// Iterate over all blocks in range of this EeUpdate.
+    /// Iterate over all blocks in range of this Batch.
     pub fn blocks_iter(&self) -> impl Iterator<Item = Hash> + '_ {
         self.inner_blocks
             .iter()
@@ -118,8 +118,8 @@ impl EeUpdate {
             .chain(iter::once(self.last_block()))
     }
 
-    /// Get status of this EeUpdate.
-    pub fn status(&self) -> &EeUpdateStatus {
+    /// Get status of this Batch.
+    pub fn status(&self) -> &BatchStatus {
         &self.status
     }
 }

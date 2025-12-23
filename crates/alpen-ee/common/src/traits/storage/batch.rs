@@ -1,42 +1,41 @@
 use async_trait::async_trait;
 
-use crate::{Chunk, ChunkId, ChunkStatus, EeUpdate, EeUpdateId, EeUpdateStatus, StorageError};
+use crate::{Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, StorageError};
 
-/// Storage for EeUpdates and Chunks
+/// Storage for Batches and Chunks
 ///
-/// EeUpdates are units for DA and posting proven state updates to OL, typically limited by DA size
-/// constraints.
-/// Chunks are units for proving ee chain execution, typically limited by prover constraints.
+/// A batch is a contiguous group of blocks. One batch corresponds to one Account Update Operation
+/// sent to OL, and batch size should typically be limited by DA size constraints.
 ///
-/// An EeUpdate will consist of 1 or more chunks.
-/// These chunks can be generated before or after updates, but the chunks must fit inside EeUpdate
+/// Chunks are subsets of blocks in a batch, and units for proving ee chain execution, typically
+/// limited by prover constraints.
+///
+/// An Batch will consist of 1 or more chunks.
+/// These chunks can be generated before or after updates, but the chunks must fit inside Batch
 /// boundaries.
-/// ... | ----------- EeUpdate 1 ----------- | ------- EeUpdate 2 ------ | ...
+/// ... | ----------- Batch 1 ----------- | ------- Batch 2 ------ | ...
 /// ... | --- Chunk 1 ---- | --- Chunk 2 --- | -------- Chunk 3 -------- | ...
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
-pub trait UpdateChunkStorage {
+pub trait BatchStorage {
     /// Save the next ee update
     ///
-    /// The entry must extend the last ee_update present in storage.
-    async fn save_next_ee_update(&self, ee_update: EeUpdate) -> Result<(), StorageError>;
+    /// The entry must extend the last batch present in storage.
+    async fn save_next_batch(&self, batch: Batch) -> Result<(), StorageError>;
     /// Update an existing ee update's status
-    async fn update_ee_update_status(
+    async fn update_batch_status(
         &self,
-        ee_update_id: EeUpdateId,
-        status: EeUpdateStatus,
+        batch_id: BatchId,
+        status: BatchStatus,
     ) -> Result<(), StorageError>;
     /// Remove all ee updates where idx > to_idx
-    async fn revert_ee_update(&self, to_idx: u64) -> Result<(), StorageError>;
+    async fn revert_batch(&self, to_idx: u64) -> Result<(), StorageError>;
     /// Get an ee update by its id, if it exists
-    async fn get_ee_update_by_id(
-        &self,
-        ee_update_id: EeUpdateId,
-    ) -> Result<Option<EeUpdate>, StorageError>;
+    async fn get_batch_by_id(&self, batch_id: BatchId) -> Result<Option<Batch>, StorageError>;
     /// Get an ee update by its idx, if it exists
-    async fn get_ee_update_by_idx(&self, idx: u64) -> Result<Option<EeUpdate>, StorageError>;
+    async fn get_batch_by_idx(&self, idx: u64) -> Result<Option<Batch>, StorageError>;
     /// Get the ee update with the highest idx, if it exists.
-    async fn get_latest_ee_update(&self) -> Result<Option<EeUpdate>, StorageError>;
+    async fn get_latest_batch(&self) -> Result<Option<Batch>, StorageError>;
 
     /// Save the next chunk
     ///
@@ -56,10 +55,10 @@ pub trait UpdateChunkStorage {
     async fn get_chunk_by_idx(&self, idx: u64) -> Result<Option<Chunk>, StorageError>;
     /// Get the chunk with the highest id, if it exists.
     async fn get_latest_chunk(&self) -> Result<Option<Chunk>, StorageError>;
-    /// Set or update EeUpdate and Chunk association
-    async fn set_ee_update_chunks(
+    /// Set or update Batch and Chunk association
+    async fn set_batch_chunks(
         &self,
-        ee_update_id: EeUpdateId,
+        batch_id: BatchId,
         chunks: Vec<ChunkId>,
     ) -> Result<(), StorageError>;
 }
