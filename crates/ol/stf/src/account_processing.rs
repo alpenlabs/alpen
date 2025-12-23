@@ -96,7 +96,8 @@ pub(crate) fn process_transfer<S: IStateAccessor>(
     Ok(())
 }
 
-fn handle_bridge_gateway_message(
+fn handle_bridge_gateway_message<S: IStateAccessor>(
+    state: &mut S,
     _sender: AccountId,
     payload: MsgPayload,
     context: &BasicExecContext<'_>,
