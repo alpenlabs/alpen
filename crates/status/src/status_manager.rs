@@ -1,7 +1,6 @@
 //! Manages and updates unified status bundles
 use std::sync::Arc;
 
-use strata_bridge_types::{DepositsTable, OperatorTable};
 use strata_csm_types::{CheckpointState, ClientState, L1Checkpoint, L1Status};
 use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
@@ -96,18 +95,6 @@ impl StatusChannel {
                 *css.new_status().tip_blkid(),
             )
         })
-    }
-
-    /// Gets the latest operator table.
-    pub fn cur_tip_operator_table(&self) -> Option<OperatorTable> {
-        self.get_cur_tip_chainstate()
-            .map(|chs| chs.operator_table().clone())
-    }
-
-    /// Gets the latest deposits table.
-    pub fn cur_tip_deposits_table(&self) -> Option<DepositsTable> {
-        self.get_cur_tip_chainstate()
-            .map(|chs| chs.deposits_table().clone())
     }
 
     /// Gets the latest [`L1Status`].

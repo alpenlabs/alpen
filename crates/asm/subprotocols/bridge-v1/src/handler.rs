@@ -1,5 +1,5 @@
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
-use strata_asm_logs::NewExportEntry;
+use strata_asm_logs::{DepositLog, NewExportEntry};
 use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::ParsedTx};
 
 use crate::{
@@ -31,6 +31,12 @@ pub(crate) fn handle_parsed_tx(
         ParsedTx::Deposit(info) => {
             validate_deposit_info(state, &info, verified_aux_data)?;
             state.add_deposit(&info)?;
+
+            let deposit_log =
+                DepositLog::new(0, info.amt().to_sat(), *info.header_aux().ee_address());
+            relayer
+                .emit_log(AsmLogEntry::from_log(&deposit_log).expect("deposit log must not fail"));
+
             Ok(())
         }
         ParsedTx::WithdrawalFulfillment(info) => {

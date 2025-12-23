@@ -1,19 +1,20 @@
 use std::{thread, time};
 
-use strata_asm_types::{L1BlockManifest, ProtocolOperation};
+use strata_asm_common::AsmManifest;
+use strata_asm_logs::{constants::CHECKPOINT_UPDATE_LOG_TYPE, CheckpointUpdate};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::context::StateAccessor;
 use strata_checkpoint_types::Checkpoint;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
-use strata_consensus_logic::checkpoint_verification;
 use strata_db_types::DbError;
 use strata_eectl::{
     engine::{ExecEngineCtl, PayloadStatus},
     errors::EngineError,
     messages::{ExecPayloadData, PayloadEnv},
 };
+use strata_msg_fmt::Msg;
 use strata_ol_chain_types::{
     ExecSegment, L1Segment, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2BlockId,
     L2Header,
@@ -71,6 +72,7 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
 /// Build contents for a new L2 block with the provided configuration.
 /// Needs to be signed to be a valid L2Block.
 // TODO use parent block chainstate
+#[instrument(skip_all, fields(prev_slot = prev_block.header().slot(), prev_blkid = %prev_block.header().get_blockid()))]
 pub fn prepare_block(
     prev_block: L2BlockBundle,
     ts: u64,
@@ -79,9 +81,6 @@ pub fn prepare_block(
     engine: &impl ExecEngineCtl,
     params: &Params,
 ) -> Result<(L2BlockHeader, L2BlockBody, L2BlockAccessory), Error> {
-    let prev_blkid = prev_block.header().get_blockid();
-    let prev_slot = prev_block.header().slot();
-    debug!(%prev_slot, %prev_blkid, "preparing block");
     let l1man = storage.l1();
     let chsman = storage.chainstate();
     let ckptman = storage.checkpoint();
@@ -92,6 +91,7 @@ pub fn prepare_block(
     // TODO make this get the prev block slot from somewhere more reliable in
     // case we skip slots
     let prev_blkid = prev_block.header().get_blockid();
+    let prev_slot = prev_block.header().slot();
     let prev_chstate = chsman
         .get_slot_write_batch_blocking(prev_blkid)?
         .ok_or(Error::MissingBlockChainstate(prev_blkid))?
@@ -161,6 +161,7 @@ pub fn prepare_block(
     Ok((header, body, block_acc))
 }
 
+#[instrument(skip_all, fields(cur_safe_height = prev_chstate.l1_view().safe_height(), cur_next_exp_height = prev_chstate.l1_view().next_expected_height()))]
 fn prepare_l1_segment(
     prev_chstate: &Chainstate,
     l1man: &L1BlockManager,
@@ -177,9 +178,11 @@ fn prepare_l1_segment(
     // everything we know about.
     let cur_safe_height = prev_chstate.l1_view().safe_height();
     let cur_next_exp_height = prev_chstate.l1_view().next_expected_height();
-    let l1_verified_block = prev_chstate.l1_view().header_vs().last_verified_block;
-    trace!(%target_height, %cur_safe_height, %cur_next_exp_height, "figuring out which blocks to include in L1 segment");
-    trace!(?l1_verified_block, "last verified L1 block");
+    let l1_verified_block = prev_chstate.l1_view().safe_blkid();
+    debug!(
+        %target_height, %cur_safe_height, %cur_next_exp_height, ?l1_verified_block,
+        "figuring out which blocks to include in L1 segment"
+    );
 
     // If there isn't any new blocks to pull then we just give nothing.
     if target_height <= cur_next_exp_height {
@@ -219,9 +222,11 @@ fn prepare_l1_segment(
     // block assemblies.
     for height in cur_next_exp_height..=target_height {
         let Some(rec) = try_fetch_manifest(height, l1man)? else {
-            // If we are missing a record, then something is weird, but it would
-            // still be safe to abort.
-            warn!(%height, "missing expected L1 block during assembly");
+            // This is expected: the btcio handler updates the canonical chain tip immediately
+            // when new L1 blocks arrive, but the ASM worker processes blocks asynchronously
+            // to generate manifests. We may be ahead of manifest generation, so just stop here
+            // and include only the blocks we have manifests for.
+            trace!(%height, "L1 manifest not yet available, ASM worker still processing");
             break;
         };
 
@@ -251,19 +256,29 @@ fn prepare_l1_segment(
     }
 }
 
-/// Check if block has the checkpoint we are expecting and checkpoint is valid.
+/// Check if ASM manifest has the checkpoint acknowledgment we are expecting.
 fn has_expected_checkpoint(
-    rec: &L1BlockManifest,
+    manifest: &AsmManifest,
     expected_checkpoint: Option<&Checkpoint>,
-    params: &RollupParams,
+    _params: &RollupParams,
 ) -> bool {
-    for op in rec.txs().iter().flat_map(|tx| tx.protocol_ops()) {
-        let ProtocolOperation::Checkpoint(signed_checkpoint) = op else {
+    // Look for checkpoint ack logs in the ASM manifest
+    for log in manifest.logs() {
+        // Try to parse as SPS-52 message
+        let Some(msg) = log.try_as_msg() else {
             continue;
         };
 
-        // L1 Reader only adds a checkpoint ProtocolOperation if checkpoint signature valid.
-        let checkpoint = signed_checkpoint.checkpoint();
+        // Check if this is a checkpoint ack log
+        if msg.ty() != CHECKPOINT_UPDATE_LOG_TYPE {
+            continue;
+        }
+
+        // Try to decode checkpoint ack data
+        let Ok(ack_data) = log.try_into_log::<CheckpointUpdate>() else {
+            warn!(blockid = %manifest.blkid(), "failed to decode checkpoint ack log");
+            continue;
+        };
 
         // Must have expected checkpoint.
         // Can be None before first checkpoint creation, where we dont care about this.
@@ -271,38 +286,29 @@ fn has_expected_checkpoint(
             continue;
         };
 
-        // Must get expected checkpoint.
-        if expected.commitment() != checkpoint.commitment() {
-            warn!(got = ?checkpoint, ?expected, "got unexpected checkpoint");
-            continue;
+        // Check if the ack epoch matches our expected checkpoint
+        if ack_data.epoch_commitment().epoch() == expected.batch_info().epoch() {
+            // Found checkpoint ack for expected epoch. Should end current epoch.
+            debug!(epoch = %ack_data.epoch_commitment(), "found checkpoint ack in ASM manifest");
+            return true;
         }
-
-        // Proof inside checkpoint must be valid.
-        let proof_receipt = checkpoint_verification::construct_receipt(checkpoint);
-        if let Err(err) = checkpoint_verification::verify_proof(checkpoint, &proof_receipt, params)
-        {
-            warn!(?err, blockid = %rec.blkid(), "checkpoint proof verification failed");
-            continue;
-        }
-
-        // Found valid checkpoint for previous epoch. Should end current epoch.
-        return true;
     }
 
-    // Scanned all txn and did not find checkpoint
+    // Scanned all logs and did not find matching checkpoint ack
     false
 }
 
 #[expect(unused, reason = "used for fetching manifest")]
-fn fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<L1BlockManifest, Error> {
+fn fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<AsmManifest, Error> {
     try_fetch_manifest(h, l1man)?.ok_or(Error::MissingL1BlockHeight(h))
 }
 
-fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<L1BlockManifest>, Error> {
+fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<AsmManifest>, Error> {
     Ok(l1man.get_block_manifest_at_height(h)?)
 }
 
 /// Prepares the execution segment for the block.
+#[instrument(skip_all, fields(timestamp, %prev_l2_blkid))]
 #[expect(clippy::too_many_arguments, reason = "used for preparing exec data")]
 fn prepare_exec_data<E: ExecEngineCtl>(
     _slot: u64,
@@ -315,8 +321,6 @@ fn prepare_exec_data<E: ExecEngineCtl>(
     params: &RollupParams,
     remaining_gas_limit: Option<u64>,
 ) -> Result<(ExecSegment, L2BlockAccessory), Error> {
-    trace!("preparing exec payload");
-
     // Start preparing the EL payload.
 
     // construct el_ops by looking at chainstate

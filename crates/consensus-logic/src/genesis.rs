@@ -1,4 +1,3 @@
-use strata_asm_types::HeaderVerificationState;
 use strata_bridge_types::OperatorTable;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types::errors::DbError;
@@ -148,9 +147,7 @@ fn make_genesis_chainstate(gblock: &L2BlockBundle, params: &Params) -> Chainstat
     let gees =
         ExecEnvState::from_base_input(geui.clone(), params.rollup.evm_genesis_block_state_root);
 
-    let genesis_l1_view = &params.rollup().genesis_l1_view;
-    let gheader_vs = HeaderVerificationState::new(params.network(), genesis_l1_view);
-    let l1vs = L1ViewState::new_at_genesis(genesis_l1_view.height_u64(), gheader_vs);
+    let l1vs = L1ViewState::new_at_genesis(params.rollup().genesis_l1_view.blk);
 
     let optbl = construct_operator_table(&params.rollup().operator_config);
     let gdata = GenesisStateData::new(l1vs, optbl, gees);

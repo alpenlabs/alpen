@@ -7,6 +7,8 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-common.workspace = true
+strata-asm-logs.workspace = true
 strata-asm-types.workspace = true
 strata-bridge-types.workspace = true
 strata-checkpoint-types.workspace = true
@@ -18,15 +20,13 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 
-bitcoin.workspace = true
 rand_chacha.workspace = true
 rand_core.workspace = true
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
-strata-test-utils.workspace = true
-strata-test-utils-l2.workspace = true
+bitcoin.workspace = true
 
 [features]
 default = ["fullstd"]

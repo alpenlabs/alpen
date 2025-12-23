@@ -8,6 +8,7 @@ from factory.test_cli import (
 )
 from mixins import bridge_mixin
 from utils import *
+from utils.utils import retry_rpc_with_asm_backoff
 
 
 @flexitest.register
@@ -63,20 +64,27 @@ class BridgeTest(bridge_mixin.BridgeMixin):
         print(f"Second deposit: DRT={drt_tx_id_2}, DT={dt_tx_id_2}")
 
         # Verify deposits are tracked
-        print(f"Current deposits from RPC: {self.seqrpc.strata_getCurrentDeposits()}")
+        deposits = retry_rpc_with_asm_backoff(
+            lambda: self.seqrpc.strata_getCurrentDeposits(), timeout=30, step=1.0
+        )
+        print(f"Current deposits from RPC: {deposits}")
 
         # Create withdrawal using improved bridge manager (includes block generation and waiting)
         l2_tx_hash, _, total_gas_used = self.withdraw(el_address)
         print(f"Withdrawal L2 hash: {l2_tx_hash}, gas used: {total_gas_used}")
 
-        # # # Use bridge manager to fulfill all withdrawals (includes synchronization)
+        # Use bridge manager to fulfill all withdrawals (includes synchronization)
         fulfillment_txids = self.fulfill_withdrawal_intents(ctx)
         print(f"Fulfillment txids: {fulfillment_txids}")
-        #
-        # # Check final state
-        remaining_intents = self.seqrpc.strata_getCurWithdrawalAssignments()
+
+        # Check final state
+        remaining_intents = retry_rpc_with_asm_backoff(
+            lambda: self.seqrpc.strata_getCurrentWithdrawalAssignments(), timeout=30, step=1.0
+        )
         print(f"Remaining withdrawal intents: {remaining_intents}")
-        final_deposits = self.seqrpc.strata_getCurrentDeposits()
+        final_deposits = retry_rpc_with_asm_backoff(
+            lambda: self.seqrpc.strata_getCurrentDeposits(), timeout=30, step=1.0
+        )
         print(f"Final deposits: {final_deposits}")
 
         return True

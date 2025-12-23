@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arbitrary = { workspace = true, optional = true }
 borsh.workspace = true
 serde.workspace = true
 ssz.workspace = true
@@ -23,6 +24,9 @@ ssz_codegen.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 strata-test-utils-ssz.workspace = true
+
+[features]
+arbitrary = ["dep:arbitrary"]
 
 [lints]
 workspace = true

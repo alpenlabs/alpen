@@ -15,7 +15,7 @@ use arbitrary::Arbitrary;
 )]
 use bitcoin as _;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use strata_asm_types::L1BlockManifest;
+use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::traits::L1Database;
 #[allow(
     unused_imports,
@@ -88,8 +88,8 @@ fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L1BenchSetupSled::new();
                             let seed_data = vec![tx_count as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let manifest = L1BlockManifest::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L1BlockManifest");
+                            let manifest = AsmManifest::arbitrary(&mut unstructured)
+                                .expect("Failed to generate AsmManifest");
                             (setup, manifest)
                         },
                         |(setup, manifest)| black_box(setup.db.put_block_data(manifest)).unwrap(),
@@ -120,8 +120,8 @@ fn bench_get_block_manifest_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let setup = L1BenchSetupSled::new();
                             let seed_data = vec![(tx_count + 1) as u8; 1024];
                             let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                            let manifest = L1BlockManifest::arbitrary(&mut unstructured)
-                                .expect("Failed to generate L1BlockManifest");
+                            let manifest = AsmManifest::arbitrary(&mut unstructured)
+                                .expect("Failed to generate AsmManifest");
                             let blockid = *manifest.blkid();
                             setup.db.put_block_data(manifest).unwrap();
                             (setup, blockid)
@@ -159,8 +159,8 @@ fn bench_get_canonical_blockid_at_height_impl(backend: DatabaseBackend, c: &mut 
                             for i in 0..block_count {
                                 let seed_data = vec![(i % 256) as u8; 1024];
                                 let mut unstructured = arbitrary::Unstructured::new(&seed_data);
-                                let manifest = L1BlockManifest::arbitrary(&mut unstructured)
-                                    .expect("Failed to generate L1BlockManifest");
+                                let manifest = AsmManifest::arbitrary(&mut unstructured)
+                                    .expect("Failed to generate AsmManifest");
                                 blocks.push(manifest);
                             }
                             for (i, block) in blocks.iter().enumerate() {

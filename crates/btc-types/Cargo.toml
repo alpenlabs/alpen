@@ -37,7 +37,6 @@ bitcoin = ["dep:bitcoin"]
 
 [dev-dependencies]
 strata-test-utils.workspace = true
-strata-test-utils-btc.workspace = true
 strata-test-utils-ssz.workspace = true
 
 borsh.workspace = true

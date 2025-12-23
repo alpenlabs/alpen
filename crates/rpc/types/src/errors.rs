@@ -70,6 +70,15 @@ pub enum RpcServerError {
     #[error("Checkpoint retrieval failed: {0}")]
     Checkpoint(String),
 
+    #[error("ASM state not found")]
+    MissingAsmState,
+
+    #[error("BridgeV1 subprotocol section not found in ASM state")]
+    MissingBridgeV1Section,
+
+    #[error("failed to decode BridgeV1 state: {0}")]
+    BridgeV1DecodeError(String),
+
     /// Generic internal error message.  If this is used often it should be made
     /// into its own error type.
     #[error("{0}")]
@@ -103,6 +112,9 @@ impl RpcServerError {
             Self::InvalidCheckpointSignature(_) => -32616,
             Self::CheckpointAlreadyPosted(_) => -32617,
             Self::MissingClientState => -32618,
+            Self::MissingAsmState => -32619,
+            Self::MissingBridgeV1Section => -32620,
+            Self::BridgeV1DecodeError(_) => -32621,
             Self::Other(_) => -32000,
             Self::OtherEx(_, _) => -32001,
             Self::BlockingAbort(_) => -32002,

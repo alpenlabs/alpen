@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
-use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
+use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::OLBlockCommitment;
@@ -77,10 +77,9 @@ pub trait AsmDatabase: Send + Sync + 'static {
 /// Operations are NOT VALIDATED at this level.
 /// Ensure all operations are done through `L1BlockManager`
 pub trait L1Database: Send + Sync + 'static {
-    /// Atomically extends the chain with a new block, providing the manifest
-    /// and a list of transactions we find relevant.  Returns error if
-    /// provided out-of-order.
-    fn put_block_data(&self, mf: L1BlockManifest) -> DbResult<()>;
+    /// Stores an ASM manifest for a given L1 block.
+    /// Returns error if provided out-of-order.
+    fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()>;
 
     /// Set a specific height, blockid in canonical chain records.
     fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()>;
@@ -96,8 +95,8 @@ pub trait L1Database: Send + Sync + 'static {
     // Gets current chain tip height, blockid
     fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>>;
 
-    /// Gets the block manifest for a blockid.
-    fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<L1BlockManifest>>;
+    /// Gets the ASM manifest for a blockid.
+    fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<AsmManifest>>;
 
     /// Gets the blockid at height for the current chain.
     fn get_canonical_blockid_at_height(&self, height: u64) -> DbResult<Option<L1BlockId>>;
@@ -107,12 +106,6 @@ pub trait L1Database: Send + Sync + 'static {
     /// present.  Otherwise, returns error.
     fn get_canonical_blockid_range(&self, start_idx: u64, end_idx: u64)
         -> DbResult<Vec<L1BlockId>>;
-
-    /// Gets the relevant txs we stored in a block.
-    fn get_block_txs(&self, blockid: L1BlockId) -> DbResult<Option<Vec<L1TxRef>>>;
-
-    /// Gets the tx with proof given a tx ref, if present.
-    fn get_tx(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>>;
 
     // TODO DA queries
 }

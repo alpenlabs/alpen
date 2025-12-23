@@ -1,9 +1,9 @@
-use strata_asm_types::{L1BlockManifest, L1Tx, L1TxRef};
-use strata_db_types::{DbResult, errors::DbError, traits::*};
+use strata_asm_common::AsmManifest;
+use strata_db_types::{DbResult, traits::*};
 use strata_primitives::l1::L1BlockId;
 use typed_sled::batch::SledBatch;
 
-use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema, TxnSchema};
+use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema};
 use crate::{
     define_sled_database,
     utils::{first, to_db_error},
@@ -14,7 +14,6 @@ define_sled_database!(
         l1_blk_tree: L1BlockSchema,
         l1_canonical_tree: L1CanonicalBlockSchema,
         l1_blks_height_tree: L1BlocksByHeightSchema,
-        txn_tree: TxnSchema,
     }
 );
 
@@ -25,19 +24,18 @@ impl L1DBSled {
 }
 
 impl L1Database for L1DBSled {
-    fn put_block_data(&self, mf: L1BlockManifest) -> DbResult<()> {
-        let blockid = mf.blkid();
-        let height = mf.height();
+    fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()> {
+        let blockid = manifest.blkid();
+        let height = manifest.height();
 
         self.config
             .with_retry(
-                (&self.l1_blk_tree, &self.txn_tree, &self.l1_blks_height_tree),
-                |(bt, tt, bht)| {
+                (&self.l1_blk_tree, &self.l1_blks_height_tree),
+                |(bt, bht)| {
                     let mut blocks_at_height = bht.get(&height)?.unwrap_or_default();
                     blocks_at_height.push(*blockid);
 
-                    bt.insert(blockid, &mf)?;
-                    tt.insert(blockid, mf.txs_vec())?;
+                    bt.insert(blockid, &manifest)?;
                     bht.insert(&height, &blocks_at_height)?;
 
                     Ok(())
@@ -71,11 +69,10 @@ impl L1Database for L1DBSled {
             .with_retry(
                 (
                     &self.l1_blk_tree,
-                    &self.txn_tree,
                     &self.l1_blks_height_tree,
                     &self.l1_canonical_tree,
                 ),
-                |(bt, tt, bht, ct)| {
+                |(bt, bht, ct)| {
                     for height in start_height..=end_height {
                         let blocks = bht.get(&height)?.unwrap_or_default();
 
@@ -83,7 +80,6 @@ impl L1Database for L1DBSled {
                         ct.remove(&height)?;
                         for blockid in blocks {
                             bt.remove(&blockid)?;
-                            tt.remove(&blockid)?;
                         }
                     }
 
@@ -94,34 +90,8 @@ impl L1Database for L1DBSled {
         Ok(())
     }
 
-    fn get_tx(&self, tx_ref: L1TxRef) -> DbResult<Option<L1Tx>> {
-        let (blockid, txindex) = tx_ref.into();
-        let txs = self
-            .l1_blk_tree
-            .get(&blockid)?
-            .and_then(|mf| self.txn_tree.get(mf.blkid()).transpose())
-            .transpose()?;
-
-        // we only save subset of transaction in a block, while the txindex refers to
-        // original position in txblock.
-        // TODO: txs should be hashmap with original index
-        Ok(txs.and_then(|txs| txs.into_iter().find(|tx| tx.proof().position() == txindex)))
-    }
-
     fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>> {
         self.get_latest_block()
-    }
-
-    fn get_block_txs(&self, blockid: L1BlockId) -> DbResult<Option<Vec<L1TxRef>>> {
-        let Some(txs) = self.txn_tree.get(&blockid)? else {
-            return Err(DbError::MissingL1BlockManifest(blockid));
-        };
-        let txrefs = txs
-            .into_iter()
-            .map(|tx| L1TxRef::from((blockid, tx.proof().position())))
-            .collect::<Vec<L1TxRef>>();
-
-        Ok(Some(txrefs))
     }
 
     fn get_canonical_blockid_range(
@@ -142,7 +112,7 @@ impl L1Database for L1DBSled {
         Ok(self.l1_canonical_tree.get(&height)?)
     }
 
-    fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<L1BlockManifest>> {
+    fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<AsmManifest>> {
         Ok(self.l1_blk_tree.get(&blockid)?)
     }
 }

@@ -4,8 +4,10 @@ use async_trait::async_trait;
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
 use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult;
+use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
-use strata_bridge_types::{DepositState, OperatorIdx, PublickeyTable, WithdrawalIntent};
+use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
+use strata_bridge_types::{PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
@@ -110,6 +112,22 @@ impl StrataRpcImpl {
             .map_err(Error::Db)
             .await
     }
+
+    fn fetch_bridge_state_from_asm(&self) -> Result<BridgeV1State, Error> {
+        let opt = self
+            .storage
+            .asm()
+            .fetch_most_recent_state()
+            .map_err(Error::Db)?;
+        let (_blk, asm_state) = opt.ok_or(Error::MissingAsmState)?;
+        let anchor = asm_state.state();
+        let section = anchor
+            .find_section(BRIDGE_V1_SUBPROTOCOL_ID)
+            .ok_or(Error::MissingBridgeV1Section)?;
+        section
+            .try_to_state::<BridgeV1Subproto>()
+            .map_err(|e| Error::BridgeV1DecodeError(e.to_string()))
+    }
 }
 
 fn conv_blk_header_to_rpc(blk_header: &impl L2Header) -> RpcBlockHeader {
@@ -202,7 +220,7 @@ impl StrataApiServer for StrataRpcImpl {
                 .await;
 
             if let Ok(Some(block)) = manifest {
-                buried_l1_block = Some(block.into());
+                buried_l1_block = L1BlockCommitment::from_height_u64(buried_height, *block.blkid());
             }
         }
 
@@ -396,56 +414,47 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_current_deposits(&self) -> RpcResult<Vec<u32>> {
-        let deps = self
-            .status_channel
-            .cur_tip_deposits_table()
-            .ok_or(Error::BeforeGenesis)?;
-
-        Ok(deps.get_all_deposits_idxs_iters_iter().collect())
+        let bridge = self
+            .fetch_bridge_state_from_asm()
+            .map_err(to_jsonrpsee_error("failed to load BridgeV1 state"))?;
+        let ids = bridge
+            .deposits()
+            .deposits()
+            .map(|d| d.idx())
+            .collect::<Vec<u32>>();
+        Ok(ids)
     }
 
     async fn get_current_deposit_by_id(&self, deposit_id: u32) -> RpcResult<RpcDepositEntry> {
-        let deps = self
-            .status_channel
-            .cur_tip_deposits_table()
-            .ok_or(Error::BeforeGenesis)?;
-        Ok(deps
+        // Map ASM Bridge deposit -> legacy RpcDepositEntry via bridge-types compatibility shim
+        let bridge = self
+            .fetch_bridge_state_from_asm()
+            .map_err(to_jsonrpsee_error("failed to load BridgeV1 state"))?;
+        let dep = bridge
+            .deposits()
             .get_deposit(deposit_id)
             .ok_or(Error::UnknownIdx(deposit_id))
-            .map(RpcDepositEntry::from_deposit_entry)?)
+            .map_err(to_jsonrpsee_error("deposit not found"))?;
+
+        Ok(RpcDepositEntry::from_deposit_entry(dep))
     }
 
-    async fn get_cur_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
-        let deps = self
-            .status_channel
-            .get_cur_tip_chainstate()
-            .ok_or(Error::BeforeGenesis)?;
-
-        let pending_withdraws = deps
-            .deposits_table()
-            .deposits()
-            .filter_map(|entry| {
-                if let DepositState::Dispatched(dispatched_state) = entry.deposit_state() {
-                    let withdraw_output = dispatched_state
-                        .cmd()
-                        .withdraw_outputs()
-                        .first()
-                        .expect("Withdraw output is supposed to have single element");
-
-                    Some(RpcWithdrawalAssignment {
-                        amt: withdraw_output.amt(),
-                        destination: withdraw_output.destination().clone(),
-                        operator_idx: dispatched_state.assignee(),
-                        deposit_idx: entry.idx(),
-                        deposit_txid: entry.output().0.txid,
-                    })
-                } else {
-                    None
-                }
+    async fn get_current_withdrawal_assignments(&self) -> RpcResult<Vec<RpcWithdrawalAssignment>> {
+        let bridge = self
+            .fetch_bridge_state_from_asm()
+            .map_err(to_jsonrpsee_error("failed to load BridgeV1 state"))?;
+        let assignments = bridge.assignments();
+        let items = assignments
+            .assignments()
+            .iter()
+            .map(|a| RpcWithdrawalAssignment {
+                deposit_idx: a.deposit_idx(),
+                amt: a.withdrawal_command().net_amount(),
+                destination: a.withdrawal_command().destination().clone(),
+                operator_idx: a.current_assignee(),
             })
-            .collect();
-
-        Ok(pending_withdraws)
+            .collect::<Vec<RpcWithdrawalAssignment>>();
+        Ok(items)
     }
 
     // FIXME: remove deprecated
@@ -526,20 +535,15 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_active_operator_chain_pubkey_set(&self) -> RpcResult<PublickeyTable> {
-        let operator_table = self
-            .status_channel
-            .cur_tip_operator_table()
-            .ok_or(Error::BeforeGenesis)?;
-        let operator_map: BTreeMap<OperatorIdx, EvenPublicKey> = operator_table
+        let bridge = self
+            .fetch_bridge_state_from_asm()
+            .map_err(to_jsonrpsee_error("failed to load BridgeV1 state"))?;
+        let operator_table = bridge.operators();
+        let operator_map: BTreeMap<u32, EvenPublicKey> = operator_table
             .operators()
             .iter()
-            .fold(BTreeMap::new(), |mut map, entry| {
-                let even_pk = EvenPublicKey::try_from(*entry.wallet_pk())
-                    .expect("wallet_pk should be a valid even public key");
-                map.insert(entry.idx(), even_pk);
-                map
-            });
-
+            .map(|entry| (entry.idx(), *entry.musig2_pk()))
+            .collect();
         Ok(operator_map.into())
     }
 
@@ -654,10 +658,13 @@ impl StrataApiServer for StrataRpcImpl {
             // TODO: better error?
             .ok_or(Error::MissingL1BlockManifest(0))?;
 
+        let commitment = L1BlockCommitment::from_height_u64(manifest.height(), *manifest.blkid())
+            .ok_or(Error::MissingL1BlockManifest(0))?;
+
         Ok(self
             .storage
             .client_state()
-            .get_update_blocking(&manifest.into())
+            .get_update_blocking(&commitment)
             .map_err(Error::Db)?)
     }
 }
@@ -972,10 +979,13 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
             // TODO: better error?
             .ok_or(Error::MissingL1BlockManifest(0))?;
 
+        let commitment = L1BlockCommitment::from_height_u64(manifest.height(), *manifest.blkid())
+            .ok_or(Error::MissingL1BlockManifest(0))?;
+
         Ok(self
             .storage
             .client_state()
-            .get_state_async(manifest.into())
+            .get_state_async(commitment)
             .map_err(Error::Db)
             .await?)
     }

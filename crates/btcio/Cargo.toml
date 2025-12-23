@@ -8,14 +8,12 @@ workspace = true
 
 [dependencies]
 strata-asm-types.workspace = true
-strata-checkpoint-types.workspace = true
 strata-config.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
-strata-ol-chainstate-types.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
@@ -26,23 +24,19 @@ strata-tasks.workspace = true
 anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"], optional = true }
 rand.workspace = true
 reqwest.workspace = true
-strata-l1tx.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-borsh.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
-strata-l1tx.workspace = true
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true

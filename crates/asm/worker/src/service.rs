@@ -1,5 +1,6 @@
 //! Service framework integration for ASM.
 
+use bitcoin::hashes::Hash;
 use serde::Serialize;
 use strata_primitives::prelude::*;
 use strata_service::{Response, Service, SyncService};
@@ -79,6 +80,43 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         // Found pivot anchor state - our starting point.
         info!(%pivot_block, "ASM found pivot anchor state");
+
+        // Special handling for genesis block - its anchor state was created during init
+        // but its manifest wasn't (because Bitcoin block wasn't available yet).
+        // This must happen BEFORE processing skipped_blocks so genesis gets index 0.
+        // Only create it if it doesn't exist yet (idempotency check via MMR leaf index 0).
+        if pivot_block.height() == genesis_height && ctx.get_manifest_hash(0)?.is_none() {
+            // Fetch the genesis block (should work now since L1 reader processed it)
+            let genesis_block = ctx.get_l1_block(pivot_block.blkid())?;
+
+            // Compute wtxids_root and create manifest
+            let wtxids_root: strata_primitives::Buf32 = genesis_block
+                .witness_root()
+                .map(|root| root.as_raw_hash().to_byte_array())
+                .unwrap_or_else(|| {
+                    genesis_block
+                        .header
+                        .merkle_root
+                        .as_raw_hash()
+                        .to_byte_array()
+                })
+                .into();
+
+            let genesis_manifest = strata_asm_common::AsmManifest::new(
+                pivot_block.height_u64(),
+                *pivot_block.blkid(),
+                wtxids_root.into(),
+                vec![],
+            );
+
+            let manifest_hash = genesis_manifest.compute_hash();
+            ctx.store_l1_manifest(genesis_manifest)?;
+            let leaf_index = ctx.append_manifest_to_mmr(manifest_hash)?;
+            ctx.store_manifest_hash(leaf_index, manifest_hash)?;
+
+            info!(%pivot_block, leaf_index, "Created genesis manifest");
+        }
+
         state.update_anchor_state(pivot_anchor.unwrap(), pivot_block);
 
         // Process the whole chain of unprocessed blocks, starting from older blocks till
@@ -88,7 +126,11 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             match state.transition(block) {
                 Ok(asm_stf_out) => {
                     // Extract manifest and compute its hash
-                    let manifest_hash = asm_stf_out.manifest.compute_hash();
+                    let manifest = asm_stf_out.manifest.clone();
+                    let manifest_hash = manifest.compute_hash();
+
+                    // Store manifest to L1 database (for chaintsn and other consumers)
+                    state.context.store_l1_manifest(manifest)?;
 
                     // Append manifest hash to MMR database
                     let leaf_index = state.context.append_manifest_to_mmr(manifest_hash)?;
@@ -103,7 +145,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                     state.context.store_anchor_state(block_id, &new_state)?;
                     state.update_anchor_state(new_state, *block_id);
 
-                    info!(%block_id, leaf_index, "MMR updated with manifest");
+                    info!(%block_id, %height, leaf_index, "ASM transition complete, manifest and state stored");
                 }
                 Err(e) => {
                     error!(%e, "ASM transition error");

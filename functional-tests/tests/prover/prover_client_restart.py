@@ -1,3 +1,4 @@
+import logging
 import time
 
 import flexitest
@@ -9,6 +10,7 @@ from utils import (
     wait_until,
     wait_until_with_value,
 )
+from utils.wait import StrataWaiter
 
 
 @flexitest.register
@@ -41,6 +43,12 @@ class ProverClientRestartTest(StrataTestBase):
             lambda: prover_client_rpc.dev_strata_getReport() is not None,
             error_with="Prover did not start on time",
         )
+
+        # Wait for ASM to be ready
+        seq_waiter = StrataWaiter(
+            sequencer_rpc, logging.getLogger(__name__), timeout=60, interval=2
+        )
+        seq_waiter.wait_until_asm_ready()
 
         # Wait for the first checkpoint to be ready and prove it
         latest_checkpoint = sequencer_rpc.strata_getLatestCheckpointIndex()

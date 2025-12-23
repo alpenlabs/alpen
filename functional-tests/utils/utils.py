@@ -17,8 +17,13 @@ import base58
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from factory.config import BitcoindConfig
-from factory.seqrpc import JsonrpcClient
+from factory.seqrpc import JsonrpcClient, RpcError
 from utils.constants import *
+
+# RPC error codes from crates/rpc/types/src/errors.rs
+RPC_ERROR_MISSING_ASM_STATE = -32619  # ASM state not found
+RPC_ERROR_MISSING_BRIDGE_V1_SECTION = -32620  # BridgeV1 section not found in ASM state
+RPC_ERROR_BRIDGE_V1_DECODE_ERROR = -32621  # Failed to decode BridgeV1 state
 
 
 def generate_jwt_secret() -> str:
@@ -851,3 +856,55 @@ def compile_solidity(source: str, contract_name: str | None = None) -> tuple[lis
     finally:
         if temp_file:
             Path(temp_file).unlink(missing_ok=True)
+
+
+def retry_rpc_with_asm_backoff(
+    rpc_fn: Callable[[], T],
+    timeout: int = 30,
+    step: float = 1.0,
+) -> T:
+    """
+    Retry an RPC call with backoff when ASM state is not yet available.
+
+    This helper function wraps RPC calls that depend on ASM state being ready.
+    It will retry the call if it fails with an ASM-related error, allowing
+    time for the ASM worker to process L1 blocks and build state.
+
+    Args:
+        rpc_fn: The RPC function to call
+        timeout: Maximum time to retry (seconds)
+        step: Time between retries (seconds)
+
+    Returns:
+        The result of the RPC call
+
+    Raises:
+        AssertionError: If the timeout is reached without success
+        Exception: Any non-ASM-related exceptions from the RPC call
+    """
+
+    def predicate():
+        try:
+            return rpc_fn()
+        except RpcError as e:
+            # Check if this is an ASM-not-ready error using specific error codes
+            if e.code in (
+                RPC_ERROR_MISSING_ASM_STATE,
+                RPC_ERROR_MISSING_BRIDGE_V1_SECTION,
+                RPC_ERROR_BRIDGE_V1_DECODE_ERROR,
+            ):
+                logging.debug(f"ASM not ready (error code {e.code}), will retry: {e}")
+                return None  # Signal to keep retrying
+            # Re-raise if it's a different error
+            raise
+        except Exception:
+            # Re-raise non-RPC errors
+            raise
+
+    return wait_until_with_value(
+        predicate,
+        lambda v: v is not None,
+        timeout=timeout,
+        step=step,
+        error_with="Timeout waiting for ASM state to be available for RPC call",
+    )

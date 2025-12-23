@@ -47,7 +47,7 @@ impl Stage for PreProcessStage<'_> {
             .unwrap_or(&[]);
 
         self.manager
-            .invoke_pre_process_txs::<S>(txs, self.anchor_state);
+            .invoke_pre_process_txs::<S>(&mut self.aux_collector, txs, self.anchor_state);
     }
 }
 
