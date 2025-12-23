@@ -13,8 +13,12 @@ use crate::{Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, StorageErr
 /// An Batch will consist of 1 or more chunks.
 /// These chunks can be generated before or after updates, but the chunks must fit inside Batch
 /// boundaries.
-/// ... | ----------- Batch 1 ----------- | ------- Batch 2 ------ | ...
+///
+/// ... | ------------ Batch 1 ------------- | --------- Batch 2 ------- | ...
 /// ... | --- Chunk 1 ---- | --- Chunk 2 --- | -------- Chunk 3 -------- | ...
+///
+/// BatchId and ChunkId are deterministic, based on ids of blocks covered, and so are unique across
+/// forks and reorgs.
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 pub trait BatchStorage {
