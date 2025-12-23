@@ -64,8 +64,9 @@ impl std::fmt::Display for BridgeTxType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use proptest::prelude::*;
+
+    use super::*;
 
     impl Arbitrary for BridgeTxType {
         type Parameters = ();
