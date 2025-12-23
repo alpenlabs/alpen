@@ -3,6 +3,33 @@ from typing import Any
 from factory.seqrpc import RpcError
 from utils.wait.base import RpcWaiter
 
+# RPC error codes from crates/rpc/types/src/errors.rs
+RPC_ERROR_MISSING_ASM_STATE = -32619  # ASM state not found
+RPC_ERROR_MISSING_BRIDGE_V1_SECTION = -32620  # BridgeV1 section not found in ASM state
+RPC_ERROR_BRIDGE_V1_DECODE_ERROR = -32621  # Failed to decode BridgeV1 state
+
+
+def is_asm_not_ready_error(error: RpcError) -> bool:
+    """
+    Check if an RPC error indicates that ASM state is not ready.
+
+    ASM state errors are returned with specific error codes:
+    - -32619: ASM state not found
+    - -32620: BridgeV1 section not found in ASM state
+    - -32621: Failed to decode BridgeV1 state
+
+    Args:
+        error: The RPC error to check
+
+    Returns:
+        True if the error indicates ASM is not ready, False otherwise
+    """
+    return error.code in (
+        RPC_ERROR_MISSING_ASM_STATE,
+        RPC_ERROR_MISSING_BRIDGE_V1_SECTION,
+        RPC_ERROR_BRIDGE_V1_DECODE_ERROR,
+    )
+
 
 class StrataWaiter(RpcWaiter):
     def wait_until_genesis(self, message: str | None = None):
@@ -346,16 +373,8 @@ class StrataWaiter(RpcWaiter):
                 return True
             except RpcError as e:
                 # ASM state not found or not ready yet
-                error_str = str(e)
-                if any(
-                    phrase in error_str
-                    for phrase in [
-                        "ASM state",
-                        "BridgeV1 section not found",
-                        "failed to load BridgeV1 state",
-                    ]
-                ):
-                    self.logger.debug(f"ASM not ready yet: {error_str}")
+                if is_asm_not_ready_error(e):
+                    self.logger.debug(f"ASM not ready yet: {e}")
                     return False
                 # Re-raise if it's a different error
                 raise e
@@ -390,17 +409,9 @@ class StrataWaiter(RpcWaiter):
                 )
                 return True
             except RpcError as e:
-                error_str = str(e)
                 # Check for ASM/Bridge-related errors
-                if any(
-                    phrase in error_str
-                    for phrase in [
-                        "ASM state",
-                        "BridgeV1 section",
-                        "failed to load BridgeV1",
-                    ]
-                ):
-                    self.logger.debug(f"Bridge not operational yet: {error_str}")
+                if is_asm_not_ready_error(e):
+                    self.logger.debug(f"Bridge not operational yet: {e}")
                     return False
                 # Re-raise if it's a different error
                 raise e
