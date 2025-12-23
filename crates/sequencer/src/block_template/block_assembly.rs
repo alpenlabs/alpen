@@ -72,6 +72,7 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
 /// Build contents for a new L2 block with the provided configuration.
 /// Needs to be signed to be a valid L2Block.
 // TODO use parent block chainstate
+#[instrument(skip_all, fields(prev_slot = prev_block.header().slot(), prev_blkid = %prev_block.header().get_blockid()))]
 pub fn prepare_block(
     prev_block: L2BlockBundle,
     ts: u64,
@@ -80,9 +81,6 @@ pub fn prepare_block(
     engine: &impl ExecEngineCtl,
     params: &Params,
 ) -> Result<(L2BlockHeader, L2BlockBody, L2BlockAccessory), Error> {
-    let prev_blkid = prev_block.header().get_blockid();
-    let prev_slot = prev_block.header().slot();
-    debug!(%prev_slot, %prev_blkid, "preparing block");
     let l1man = storage.l1();
     let chsman = storage.chainstate();
     let ckptman = storage.checkpoint();
@@ -93,6 +91,7 @@ pub fn prepare_block(
     // TODO make this get the prev block slot from somewhere more reliable in
     // case we skip slots
     let prev_blkid = prev_block.header().get_blockid();
+    let prev_slot = prev_block.header().slot();
     let prev_chstate = chsman
         .get_slot_write_batch_blocking(prev_blkid)?
         .ok_or(Error::MissingBlockChainstate(prev_blkid))?
@@ -162,6 +161,7 @@ pub fn prepare_block(
     Ok((header, body, block_acc))
 }
 
+#[instrument(skip_all, fields(cur_safe_height = prev_chstate.l1_view().safe_height(), cur_next_exp_height = prev_chstate.l1_view().next_expected_height()))]
 fn prepare_l1_segment(
     prev_chstate: &Chainstate,
     l1man: &L1BlockManager,
@@ -179,8 +179,10 @@ fn prepare_l1_segment(
     let cur_safe_height = prev_chstate.l1_view().safe_height();
     let cur_next_exp_height = prev_chstate.l1_view().next_expected_height();
     let l1_verified_block = prev_chstate.l1_view().safe_blkid();
-    debug!(%target_height, %cur_safe_height, %cur_next_exp_height, "figuring out which blocks to include in L1 segment");
-    debug!(?l1_verified_block, "last verified L1 block");
+    debug!(
+        %target_height, %cur_safe_height, %cur_next_exp_height, ?l1_verified_block,
+        "figuring out which blocks to include in L1 segment"
+    );
 
     // If there isn't any new blocks to pull then we just give nothing.
     if target_height <= cur_next_exp_height {
@@ -224,7 +226,7 @@ fn prepare_l1_segment(
             // when new L1 blocks arrive, but the ASM worker processes blocks asynchronously
             // to generate manifests. We may be ahead of manifest generation, so just stop here
             // and include only the blocks we have manifests for.
-            debug!(%height, "L1 manifest not yet available, ASM worker still processing");
+            trace!(%height, "L1 manifest not yet available, ASM worker still processing");
             break;
         };
 
@@ -306,6 +308,7 @@ fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<AsmManife
 }
 
 /// Prepares the execution segment for the block.
+#[instrument(skip_all, fields(timestamp, %prev_l2_blkid))]
 #[expect(clippy::too_many_arguments, reason = "used for preparing exec data")]
 fn prepare_exec_data<E: ExecEngineCtl>(
     _slot: u64,
@@ -318,8 +321,6 @@ fn prepare_exec_data<E: ExecEngineCtl>(
     params: &RollupParams,
     remaining_gas_limit: Option<u64>,
 ) -> Result<(ExecSegment, L2BlockAccessory), Error> {
-    trace!("preparing exec payload");
-
     // Start preparing the EL payload.
 
     // construct el_ops by looking at chainstate
