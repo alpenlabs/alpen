@@ -1,5 +1,6 @@
 use alpen_ee_common::{
-    OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary, SequencerOLClient,
+    OLAccountState, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
+    SequencerOLClient,
 };
 use async_trait::async_trait;
 use ssz::Encode;
@@ -12,9 +13,10 @@ use strata_common::{
 use strata_identifiers::{AccountId, Epoch};
 use strata_rpc_api_new::OLClientRpcClient;
 use strata_rpc_types_new::{
-    RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment, RpcTransactionPayload,
+    OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
+    RpcTransactionPayload,
 };
-use strata_snark_acct_types::{SnarkAccountUpdate, UpdateInputData, UpdateStateData};
+use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData, UpdateStateData};
 
 /// RPC-based OL client that communicates with an OL node via JSON-RPC.
 #[derive(Debug)]
@@ -135,6 +137,24 @@ impl SequencerOLClient for RpcOLClient {
             },
         )
         .await
+    }
+
+    /// Retrieves latest account state in the OL Chain for this account.
+    async fn get_latest_account_state(&self) -> Result<OLAccountState, OLClientError> {
+        let snark_account_state = self
+            .client
+            .get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
+            .await
+            .map_err(|e| OLClientError::rpc(e.to_string()))?
+            .ok_or_else(|| OLClientError::Rpc("missing latest account state".into()))?;
+
+        Ok(OLAccountState {
+            seq_no: snark_account_state.seq_no().into(),
+            proof_state: ProofState::new(
+                snark_account_state.inner_state().0.into(),
+                snark_account_state.next_inbox_msg_idx(),
+            ),
+        })
     }
 
     async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError> {
