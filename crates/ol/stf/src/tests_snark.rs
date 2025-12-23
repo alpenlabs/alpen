@@ -708,16 +708,20 @@ fn test_snark_update_process_inbox_message_with_valid_proof() {
 
     // Debug: compute hashes both ways to see the mismatch
     {
-        use tree_hash::TreeHash;
         use strata_merkle::hasher::MerkleHasher;
+        use tree_hash::TreeHash;
 
-        let tree_hash_result = <MessageEntry as TreeHash>::tree_hash_root(&gam_msg_entry).into_inner();
+        let tree_hash_result =
+            <MessageEntry as TreeHash>::tree_hash_root(&gam_msg_entry).into_inner();
         let msg_bytes: Vec<u8> = gam_msg_entry.as_ssz_bytes();
         let hash_leaf_result = StrataHasher::hash_leaf(&msg_bytes);
 
         eprintln!("DEBUG: TreeHash result    = {:?}", tree_hash_result);
         eprintln!("DEBUG: hash_leaf result   = {:?}", hash_leaf_result);
-        eprintln!("DEBUG: Hashes match? {}", tree_hash_result == hash_leaf_result);
+        eprintln!(
+            "DEBUG: Hashes match? {}",
+            tree_hash_result == hash_leaf_result
+        );
     }
 
     let gam_proof = inbox_tracker.add_message(&gam_msg_entry);

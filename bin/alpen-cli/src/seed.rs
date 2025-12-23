@@ -40,7 +40,10 @@ impl BaseWallet {
 
 #[derive(Clone)]
 #[cfg_attr(feature = "test-mode", derive(Debug))]
-#[cfg_attr(not(feature = "test-mode"), expect(missing_debug_implementations))]
+#[cfg_attr(
+    not(feature = "test-mode"),
+    expect(missing_debug_implementations, reason = "debug not required")
+)]
 // NOTE: This is not a BIP39 seed, instead random bytes of entropy.
 pub struct Seed(Zeroizing<[u8; SEED_LEN]>);
 
