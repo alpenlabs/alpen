@@ -133,6 +133,9 @@ pub trait ISnarkAccountState: Sized {
     /// Gets the inner state root hash.
     fn inner_state_root(&self) -> Hash;
 
+    /// Gets the index of the next message to be read/processed by this account.
+    fn next_msg_read_idx(&self) -> u64;
+
     // Inbox accessors
 
     /// Gets current the inbox MMR state, which we can use to check proofs
@@ -164,6 +167,7 @@ pub trait ISnarkAccountStateMut: ISnarkAccountState {
 }
 
 /// Extension trait for abstract snark account state.
+// TODO: depreciate this, this is just `.inbox_mmr().num_entries()`.
 pub trait ISnarkAccountStateExt: ISnarkAccountState {
     /// Get the index of the next message that would be inserted into the MMR.
     fn get_next_inbox_msg_idx(&self) -> u64;

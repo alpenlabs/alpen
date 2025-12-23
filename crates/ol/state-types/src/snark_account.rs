@@ -1,11 +1,12 @@
+use ssz::Encode as _;
 use ssz_derive::{Decode, Encode};
-use strata_acct_types::{AcctResult, Hash, Mmr64};
+use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher};
 use strata_codec::Codec;
 use strata_codec_utils::CodecSsz;
 use strata_ledger_types::*;
+use strata_merkle::hasher::MerkleHasher as _;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
-use tree_hash::TreeHash;
 
 #[derive(Clone, Debug, Eq, PartialEq, Codec, Decode, Encode)]
 pub struct NativeSnarkAccountState {
@@ -52,6 +53,10 @@ impl ISnarkAccountState for NativeSnarkAccountState {
         self.proof_state.inner().inner_state_root
     }
 
+    fn next_msg_read_idx(&self) -> u64 {
+        self.proof_state.inner().next_msg_read_idx
+    }
+
     fn inbox_mmr(&self) -> &Mmr64 {
         self.inbox_mmr.inner()
     }
@@ -77,11 +82,14 @@ impl ISnarkAccountStateMut for NativeSnarkAccountState {
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
-        // TODO maybe document this a little better?
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
+        // CRITICAL: Must use the SAME hash as verification (verification.rs:93-94)
+        // Verification uses: StrataHasher::hash_leaf(&entry.as_ssz_bytes())
+        let msg_bytes: Vec<u8> = entry.as_ssz_bytes();
+        let hash = StrataHasher::hash_leaf(&msg_bytes);
+
         self.inbox_mmr
             .inner_mut()
-            .add_leaf(hash.into_inner())
+            .add_leaf(hash)
             .expect("ol/state: mmr add_leaf");
         Ok(())
     }

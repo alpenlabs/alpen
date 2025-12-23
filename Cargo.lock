@@ -14718,9 +14718,9 @@ dependencies = [
  "strata-codec-utils",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-merkle",
  "strata-predicate",
  "strata-snark-acct-types",
- "tree_hash 0.11.0",
 ]
 
 [[package]]
@@ -14745,6 +14745,7 @@ dependencies = [
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
+ "tree_hash 0.11.0",
 ]
 
 [[package]]
