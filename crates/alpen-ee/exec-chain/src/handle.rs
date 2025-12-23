@@ -2,12 +2,12 @@ use std::{future::Future, sync::Arc};
 
 use alpen_ee_common::{ConsensusHeads, ExecBlockRecord, ExecBlockStorage};
 use strata_acct_types::Hash;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{oneshot, watch};
 use tracing::warn;
 
 use crate::{
     state::ExecChainState,
-    task::{exec_chain_tracker_task, Message, Query},
+    task::{create_task_channels, exec_chain_tracker_task, Query, TaskSenders},
 };
 
 /// Handle for interacting with the execution chain tracker task.
@@ -15,7 +15,7 @@ use crate::{
 /// Provides methods to query chain state and submit new blocks or consensus updates.
 #[derive(Debug, Clone)]
 pub struct ExecChainHandle {
-    msg_tx: mpsc::Sender<Message>,
+    senders: TaskSenders,
 }
 
 impl ExecChainHandle {
@@ -23,25 +23,25 @@ impl ExecChainHandle {
     pub async fn get_best_block(&self) -> eyre::Result<ExecBlockRecord> {
         let (tx, rx) = oneshot::channel();
 
-        self.msg_tx
-            .send(Message::Query(Query::GetBestBlock(tx)))
-            .await?;
+        self.senders.query_tx.send(Query::GetBestBlock(tx)).await?;
 
         rx.await.map_err(Into::into)
     }
 
     /// Submit new exec block to be tracked.
     pub async fn new_block(&self, hash: Hash) -> eyre::Result<()> {
-        self.msg_tx
-            .send(Message::NewBlock(hash))
+        self.senders
+            .new_block_tx
+            .send(hash)
             .await
             .map_err(Into::into)
     }
 
     /// Submit new OL Consensus state.
     pub async fn new_consensus_state(&self, consensus: ConsensusHeads) -> eyre::Result<()> {
-        self.msg_tx
-            .send(Message::OLConsensusUpdate(consensus))
+        self.senders
+            .ol_update_tx
+            .send(consensus)
             .await
             .map_err(Into::into)
     }
@@ -53,10 +53,10 @@ pub fn build_exec_chain_task<TStorage: ExecBlockStorage>(
     preconf_head_tx: watch::Sender<Hash>,
     storage: Arc<TStorage>,
 ) -> (ExecChainHandle, impl Future<Output = ()>) {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let task_fut = exec_chain_tracker_task(msg_rx, state, preconf_head_tx, storage);
+    let (senders, channels) = create_task_channels(64);
+    let task_fut = exec_chain_tracker_task(channels, state, preconf_head_tx, storage);
 
-    let handle = ExecChainHandle { msg_tx };
+    let handle = ExecChainHandle { senders };
 
     (handle, task_fut)
 }
@@ -66,7 +66,7 @@ pub fn build_exec_chain_consensus_forwarder_task(
     handle: ExecChainHandle,
     mut consensus_watch: watch::Receiver<ConsensusHeads>,
 ) -> impl Future<Output = ()> {
-    let tx = handle.msg_tx.clone();
+    let tx = handle.senders.ol_update_tx.clone();
     async move {
         loop {
             if consensus_watch.changed().await.is_err() {
@@ -75,7 +75,7 @@ pub fn build_exec_chain_consensus_forwarder_task(
                 break;
             }
             let update = consensus_watch.borrow_and_update().clone();
-            if tx.send(Message::OLConsensusUpdate(update)).await.is_err() {
+            if tx.send(update).await.is_err() {
                 warn!(target: "exec_chain_consensus_forwarder", "chain_exec msg channel closed");
                 break;
             }
