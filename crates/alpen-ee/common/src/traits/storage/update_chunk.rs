@@ -4,7 +4,8 @@ use crate::{Chunk, ChunkId, ChunkStatus, EeUpdate, EeUpdateId, EeUpdateStatus, S
 
 /// Storage for EeUpdates and Chunks
 ///
-/// EeUpdates are units for DA and posting updates to OL, typically limited by DA size constraints.
+/// EeUpdates are units for DA and posting proven state updates to OL, typically limited by DA size
+/// constraints.
 /// Chunks are units for proving ee chain execution, typically limited by prover constraints.
 ///
 /// An EeUpdate will consist of 1 or more chunks.
@@ -25,19 +26,20 @@ pub trait UpdateChunkStorage {
         ee_update_id: EeUpdateId,
         status: EeUpdateStatus,
     ) -> Result<(), StorageError>;
-    /// Removes all ee updates where idx > to_idx
+    /// Remove all ee updates where idx > to_idx
     async fn revert_ee_update(&self, to_idx: u64) -> Result<(), StorageError>;
-    /// Gets an ee update by its id, if it exists
+    /// Get an ee update by its id, if it exists
     async fn get_ee_update_by_id(
         &self,
         ee_update_id: EeUpdateId,
     ) -> Result<Option<EeUpdate>, StorageError>;
-    /// Gets an ee update by its idx, if it exists
+    /// Get an ee update by its idx, if it exists
     async fn get_ee_update_by_idx(&self, idx: u64) -> Result<Option<EeUpdate>, StorageError>;
-    /// Gets the ee update with the highest id, if it exists.
+    /// Get the ee update with the highest idx, if it exists.
     async fn get_latest_ee_update(&self) -> Result<Option<EeUpdate>, StorageError>;
 
     /// Save the next chunk
+    ///
     /// The entry must extend the last chunk present in storage.
     async fn save_next_chunk(&self, chunk: Chunk) -> Result<(), StorageError>;
     /// Update an existing chunk's status
@@ -46,13 +48,13 @@ pub trait UpdateChunkStorage {
         chunk_id: ChunkId,
         status: ChunkStatus,
     ) -> Result<(), StorageError>;
-    /// Removes all chunks where idx > to_idx
+    /// Remove all chunks where idx > to_idx
     async fn revert_chunks(&self, to_idx: u64) -> Result<(), StorageError>;
-    /// Gets a chunk by its id, if it exists
+    /// Get a chunk by its id, if it exists
     async fn get_chunk_by_id(&self, chunk_id: ChunkId) -> Result<Option<Chunk>, StorageError>;
-    /// Gets a chunk by its idx, if it exists
+    /// Get a chunk by its idx, if it exists
     async fn get_chunk_by_idx(&self, idx: u64) -> Result<Option<Chunk>, StorageError>;
-    /// Gets the chunk with the highest id, if it exists.
+    /// Get the chunk with the highest id, if it exists.
     async fn get_latest_chunk(&self) -> Result<Option<Chunk>, StorageError>;
     /// Set or update EeUpdate and Chunk association
     async fn set_ee_update_chunks(

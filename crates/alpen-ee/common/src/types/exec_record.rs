@@ -21,7 +21,7 @@ struct ExecPackageMetadata {
     /// 2. This does not uniquely identify a package or exec block. One `ol_block` can be linked
     ///    with multiple records.
     ol_block: OLBlockCommitment,
-    /// Next inbox index at this ol_block.
+    /// Next inbox message index at this ol_block.
     next_inbox_msg_idx: u64,
 }
 

@@ -1,42 +1,56 @@
 use std::iter;
 
-use bitcoin::Txid;
+use bitcoin::{Txid, Wtxid};
 use strata_acct_types::Hash;
 use strata_identifiers::L1BlockCommitment;
 
 use crate::ProofId;
 
-/// Unique identifier for an EeUpdate
-#[derive(Debug)]
+/// Unique, deterministic identifier for an EeUpdate
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EeUpdateId {
-    pub prev_block: Hash,
-    pub last_block: Hash,
+    prev_block: Hash,
+    last_block: Hash,
 }
 
-/// DA related data relevant to EeUpdate
-#[derive(Debug)]
-pub struct L1DaRef {
+impl EeUpdateId {
+    fn new(prev_block: Hash, last_block: Hash) -> Self {
+        Self {
+            prev_block,
+            last_block,
+        }
+    }
+}
+
+/// EeUpdate-DA related data in an L1 block
+#[derive(Debug, Clone)]
+pub struct L1DaBlockRef {
+    /// L1 block holding DA txns.
     pub block: L1BlockCommitment,
-    pub txns: Vec<Txid>,
+    /// relevant transactions in this block.
+    pub txns: Vec<(Txid, Wtxid)>,
     // inclusion merkle proof ?
 }
 
 /// EeUpdate lifecycle states
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EeUpdateStatus {
     /// Newly created
     Init,
-    /// DA started, waiting for block
-    DaPending { txids: Vec<Txid> },
-    /// DA complete
-    DaComplete { da: Vec<L1DaRef> },
-    /// Proving started, waiting for proof
+    /// DA txn(s) posted, waiting for inclusion in block.
+    DaPending { txns: Vec<(Txid, Wtxid)> },
+    /// DA txn(s) included in block(s).
+    DaComplete { da: Vec<L1DaBlockRef> },
+    /// Proving started, waiting for proof generation.
     ProofPending {
-        da: Vec<L1DaRef>,
+        da: Vec<L1DaBlockRef>,
         proof_job_id: String,
     },
-    /// Proof ready
-    ProofReady { da: Vec<L1DaRef>, proof: ProofId },
+    /// Proof ready. Update ready to be posted to OL.
+    ProofReady {
+        da: Vec<L1DaBlockRef>,
+        proof: ProofId,
+    },
 }
 
 /// Represents a sequence of blocks that are treated as a unit for DA and posting updates to OL.
@@ -50,38 +64,61 @@ pub struct EeUpdate {
     last_block: Hash,
     /// rest of the blocks in this update.
     /// cached here for easier processing.
-    blocks: Vec<Hash>,
-    /// Status
+    inner_blocks: Vec<Hash>,
+    /// state of this EeUpdate
     status: EeUpdateStatus,
 }
 
 impl EeUpdate {
-    pub fn id(&self) -> EeUpdateId {
-        EeUpdateId {
-            prev_block: self.prev_block,
-            last_block: self.last_block,
+    /// Create a new EeUpdate.
+    ///
+    /// Newly created updates are in [`EeUpdateStatus::Init`] state.
+    pub fn new(idx: u64, prev_block: Hash, last_block: Hash, inner_blocks: Vec<Hash>) -> Self {
+        debug_assert_ne!(prev_block, last_block);
+        Self {
+            idx,
+            prev_block,
+            last_block,
+            inner_blocks,
+            status: EeUpdateStatus::Init,
         }
     }
 
+    /// Set status.
+    pub fn set_status(&mut self, status: EeUpdateStatus) {
+        self.status = status
+    }
+
+    /// Get deterministic id.
+    pub fn id(&self) -> EeUpdateId {
+        EeUpdateId::new(self.prev_block, self.last_block)
+    }
+
+    /// Get sequential index.
+    /// This should equal the sequence number in account update sent to OL.
     pub fn idx(&self) -> u64 {
         self.idx
     }
 
+    /// last block of the previous EeUpdate.
     pub fn prev_block(&self) -> Hash {
         self.prev_block
     }
 
+    /// last block of this EeUpdate
     pub fn last_block(&self) -> Hash {
         self.last_block
     }
 
+    /// Iterate over all blocks in range of this EeUpdate.
     pub fn blocks_iter(&self) -> impl Iterator<Item = Hash> + '_ {
-        self.blocks
+        self.inner_blocks
             .iter()
             .copied()
             .chain(iter::once(self.last_block()))
     }
 
+    /// Get status of this EeUpdate.
     pub fn status(&self) -> &EeUpdateStatus {
         &self.status
     }
