@@ -119,15 +119,14 @@ impl StrataRpcImpl {
             .asm()
             .fetch_most_recent_state()
             .map_err(Error::Db)?;
-        let (_blk, asm_state) =
-            opt.ok_or_else(|| Error::Other("No ASM state found".to_string()))?;
+        let (_blk, asm_state) = opt.ok_or(Error::MissingAsmState)?;
         let anchor = asm_state.state();
         let section = anchor
             .find_section(BRIDGE_V1_SUBPROTOCOL_ID)
-            .ok_or_else(|| Error::Other("BridgeV1 section not found in ASM state".to_string()))?;
+            .ok_or(Error::MissingBridgeV1Section)?;
         section
             .try_to_state::<BridgeV1Subproto>()
-            .map_err(|e| Error::Other(format!("Failed to decode BridgeV1 state: {e}")))
+            .map_err(|e| Error::BridgeV1DecodeError(e.to_string()))
     }
 }
 
