@@ -13,4 +13,8 @@ strata-ol-chain-types-new.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
+hex.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
