@@ -15012,7 +15012,9 @@ dependencies = [
 name = "strata-rpc-types-new"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "serde",
+ "serde_json",
  "strata-acct-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
