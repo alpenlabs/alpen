@@ -1038,6 +1038,7 @@ dependencies = [
  "strata-cli-common",
  "strata-l1-txfmt",
  "strata-primitives",
+ "strata-test-utils-btcio",
  "terrors",
  "tokio",
  "toml 0.5.11",

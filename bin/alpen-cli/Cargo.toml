@@ -66,6 +66,7 @@ keyring = { version = "3.3.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+strata-test-utils-btcio.workspace = true
 toml.workspace = true
 
 [features]
