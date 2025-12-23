@@ -36,7 +36,10 @@ pub struct AsmWorkerServiceState<W> {
     asm_spec: StrataAsmSpec,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
+impl<W> AsmWorkerServiceState<W>
+where
+    W: WorkerContext + Send + Sync + 'static,
+{
     /// A new (uninitialized) instance of the service state.
     pub fn new(context: W, params: Arc<Params>) -> Self {
         let asm_spec = StrataAsmSpec::from_params(params.rollup());
@@ -138,7 +141,7 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     use async_trait::async_trait;
-    use bitcoin::{BlockHash, Network, absolute::Height, block::Header};
+    use bitcoin::{Block, BlockHash, Network, absolute::Height, block::Header};
     use bitcoind_async_client::{
         Client,
         traits::{Reader, Wallet},
@@ -344,4 +347,28 @@ mod tests {
             }
         }
     }
+
+    // TODO(checkpoint-e2e): The following E2E tests are commented out because they require
+    // proper auxiliary data infrastructure with MMR proof verification. Once Evgeniy's PR
+    // for aux data resolution is merged, these tests should be re-enabled.
+    //
+    // These tests validate the checkpoint subprotocol integration with the ASM worker:
+    //
+    // 1. `test_checkpoint_via_debug_updates`:
+    //    - Uses DebugAsmSpec to rotate sequencer key and checkpoint predicate via debug txs
+    //    - Applies a checkpoint signed with the new sequencer key
+    //    - Verifies checkpoint state updates (last_covered_l1, verified_epoch_summary)
+    //    - Verifies CheckpointUpdateSsz log emission
+    //
+    // 2. `test_checkpoint_with_ol_logs_and_debug_manifest_logs`:
+    //    - Same setup as above with key/predicate rotation
+    //    - Includes OL logs (withdrawal intents) in the checkpoint sidecar
+    //    - Injects a mock deposit log via debug subprotocol
+    //    - Verifies both checkpoint and deposit logs are emitted
+    //    - Verifies withdrawal intent forwarding from OL logs
+    //
+    // Requirements for re-enabling:
+    // - VerifiedAuxData must be constructible with proper manifest hash MMR proofs
+    // - Need helper functions to generate valid aux data for test blocks
+    // - Consider using test fixtures or builders from strata-asm-common test-utils
 }

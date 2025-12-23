@@ -3,15 +3,19 @@
 //! This module implements parsing for debug transaction types that allow
 //! injection of test data into the ASM for testing purposes.
 
+use borsh::BorshDeserialize;
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::TxInputRef;
+use strata_identifiers::Buf32;
 use strata_l1_txfmt::TxType;
+use strata_predicate::PredicateKey;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
 
 use crate::constants::{
     AMOUNT_OFFSET, AMOUNT_SIZE, DESCRIPTOR_OFFSET, MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
-    MOCK_ASM_LOG_TX_TYPE, MOCK_WITHDRAW_INTENT_TX_TYPE,
+    MOCK_ASM_LOG_TX_TYPE, MOCK_UPDATE_CHECKPOINT_PREDICATE_TX_TYPE,
+    MOCK_UPDATE_SEQUENCER_KEY_TX_TYPE, MOCK_WITHDRAW_INTENT_TX_TYPE,
 };
 
 /// Errors that can occur during debug transaction parsing.
@@ -25,26 +29,40 @@ pub(crate) enum DebugTxParseError {
     #[error("auxiliary data too short: expected at least {expected} bytes, got {actual} bytes")]
     AuxDataTooShort { expected: usize, actual: usize },
 
+    /// The auxiliary data length does not match the expected size.
+    #[error("auxiliary data length mismatch: expected {expected} bytes, got {actual} bytes")]
+    AuxDataInvalidLength { expected: usize, actual: usize },
+
     /// Invalid descriptor format.
     #[error("invalid descriptor format: {0}")]
     InvalidDescriptorFormat(String),
+
+    /// Failed to decode checkpoint predicate auxiliary data.
+    #[error("invalid checkpoint predicate: {0}")]
+    InvalidPredicate(String),
 }
 
 /// Info for mock ASM log injection.
-pub(crate) struct MockAsmLogInfo {
+pub(crate) struct AsmLogInfo {
     pub bytes: Vec<u8>,
 }
 
 /// Type alias for mock withdrawal info.
-pub(crate) type MockWithdrawInfo = WithdrawOutput;
+pub(crate) type WithdrawInfo = WithdrawOutput;
 
 /// Parsed debug transaction types.
 pub(crate) enum ParsedDebugTx {
     /// ASM log injection transaction.
-    MockAsmLog(MockAsmLogInfo),
+    AsmLog(AsmLogInfo),
 
     /// Mock withdrawal creation transaction.
-    MockWithdrawIntent(MockWithdrawInfo),
+    WithdrawIntent(WithdrawInfo),
+
+    /// Mock update to the checkpoint sequencer key.
+    UpdateSequencerKey(Buf32),
+
+    /// Mock update to the checkpoint predicate.
+    UpdateCheckpointPredicate(PredicateKey),
 }
 
 /// Parses a debug transaction from the given transaction input.
@@ -55,13 +73,15 @@ pub(crate) fn parse_debug_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, Debug
     match tx.tag().tx_type() {
         MOCK_ASM_LOG_TX_TYPE => parse_mock_asm_log_tx(tx),
         MOCK_WITHDRAW_INTENT_TX_TYPE => parse_mock_withdraw_intent_tx(tx),
+        MOCK_UPDATE_SEQUENCER_KEY_TX_TYPE => parse_update_sequencer_key_tx(tx),
+        MOCK_UPDATE_CHECKPOINT_PREDICATE_TX_TYPE => parse_update_checkpoint_predicate_tx(tx),
         tx_type => Err(DebugTxParseError::UnsupportedTxType(tx_type)),
     }
 }
 
 /// Extracts raw log bytes from auxiliary data.
 /// The auxiliary data directly contains the raw log bytes - no parsing needed.
-fn extract_log_bytes_from_aux_data(aux_data: &[u8]) -> Result<MockAsmLogInfo, DebugTxParseError> {
+fn extract_log_bytes_from_aux_data(aux_data: &[u8]) -> Result<AsmLogInfo, DebugTxParseError> {
     if aux_data.is_empty() {
         return Err(DebugTxParseError::AuxDataTooShort {
             expected: 1, // At least 1 byte
@@ -70,7 +90,7 @@ fn extract_log_bytes_from_aux_data(aux_data: &[u8]) -> Result<MockAsmLogInfo, De
     }
 
     // The auxiliary data directly contains the raw log bytes
-    Ok(MockAsmLogInfo {
+    Ok(AsmLogInfo {
         bytes: aux_data.to_vec(),
     })
 }
@@ -82,7 +102,7 @@ fn extract_log_bytes_from_aux_data(aux_data: &[u8]) -> Result<MockAsmLogInfo, De
 fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
     let aux_data = tx.tag().aux_data();
     let asm_log_info = extract_log_bytes_from_aux_data(aux_data)?;
-    Ok(ParsedDebugTx::MockAsmLog(asm_log_info))
+    Ok(ParsedDebugTx::AsmLog(asm_log_info))
 }
 
 /// Parses withdrawal data from auxiliary data bytes.
@@ -117,7 +137,33 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
 fn parse_mock_withdraw_intent_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
     let aux_data = tx.tag().aux_data();
     let withdraw_output = parse_withdrawal_from_aux_data(aux_data)?;
-    Ok(ParsedDebugTx::MockWithdrawIntent(withdraw_output))
+    Ok(ParsedDebugTx::WithdrawIntent(withdraw_output))
+}
+
+/// Parses an update to the checkpoint sequencer key.
+fn parse_update_sequencer_key_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
+    let aux_data = tx.tag().aux_data();
+    if aux_data.len() != Buf32::LEN {
+        return Err(DebugTxParseError::AuxDataInvalidLength {
+            expected: Buf32::LEN,
+            actual: aux_data.len(),
+        });
+    }
+
+    let mut key_bytes = [0u8; 32];
+    key_bytes.copy_from_slice(aux_data);
+    Ok(ParsedDebugTx::UpdateSequencerKey(key_bytes.into()))
+}
+
+/// Parses an update to the checkpoint predicate.
+fn parse_update_checkpoint_predicate_tx(
+    tx: &TxInputRef<'_>,
+) -> Result<ParsedDebugTx, DebugTxParseError> {
+    let aux_data = tx.tag().aux_data();
+    let predicate = PredicateKey::deserialize_reader(&mut &*aux_data)
+        .map_err(|e| DebugTxParseError::InvalidPredicate(e.to_string()))?;
+
+    Ok(ParsedDebugTx::UpdateCheckpointPredicate(predicate))
 }
 
 #[cfg(test)]
