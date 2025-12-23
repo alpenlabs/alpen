@@ -13,7 +13,7 @@ pub struct DepositInfo {
     /// The deposit output containing the deposited amount and its locking script.
     deposit_output: BitcoinTxOut,
 
-    /// Previous outpoint referenced by the DRT input.
+    /// Previous outpoint referenced by the DT input.
     drt_inpoint: BitcoinOutPoint,
 }
 

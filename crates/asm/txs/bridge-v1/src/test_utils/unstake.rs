@@ -96,10 +96,7 @@ fn create_dummy_unstake_tx(info: &UnstakeInfo) -> Transaction {
     let mut tx = create_dummy_tx(1, 1);
 
     // Encode auxiliary data and construct SPS 50 op_return script.
-    let tag_data = info
-        .header_aux()
-        .build_tag_data()
-        .expect("unstake header aux serialization must succeed");
+    let tag_data = info.header_aux().build_tag_data();
     let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&tag_data.as_ref())
         .expect("encoding SPS50 script must succeed");

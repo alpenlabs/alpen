@@ -17,10 +17,7 @@ pub fn create_test_withdrawal_fulfillment_tx(
 ) -> Transaction {
     // Create a dummy tx with one input and two outputs.
     let mut tx = create_dummy_tx(1, 2);
-    let td = withdrawal_info
-        .header_aux()
-        .build_tag_data()
-        .expect("withdrawal header aux serialization must succeed");
+    let td = withdrawal_info.header_aux().build_tag_data();
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&td.as_ref())
         .expect("encoding SPS50 script must succeed");

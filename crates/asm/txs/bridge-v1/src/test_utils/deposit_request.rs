@@ -16,9 +16,7 @@ pub fn create_test_deposit_request_tx(
     // Create a tx with one input and two outputs.
     let mut tx = create_dummy_tx(1, 2);
 
-    let tag_data = header_aux
-        .build_tag_data()
-        .expect("DRT header aux should serialize in tests");
+    let tag_data = header_aux.build_tag_data();
     let sps50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&tag_data.as_ref())
         .expect("encoding SPS50 header script must succeed");

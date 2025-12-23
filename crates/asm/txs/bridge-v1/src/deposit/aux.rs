@@ -2,7 +2,7 @@ use arbitrary::Arbitrary;
 use strata_codec::{Codec, encode_to_vec};
 use strata_l1_txfmt::TagData;
 
-use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::BridgeTxType, errors::TagDataError};
+use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::BridgeTxType};
 
 /// Auxiliary data in the SPS-50 header for [`BridgeTxType::Deposit`].
 #[derive(Debug, Clone, PartialEq, Eq, Arbitrary, Codec)]
@@ -35,18 +35,39 @@ impl DepositTxHeaderAux {
     /// This method encodes the auxiliary data and constructs the tag data for inclusion
     /// in the SPS-50 OP_RETURN output.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns [`TagDataError`] if:
-    /// - Encoding the auxiliary data fails
-    /// - The encoded auxiliary data exceeds the maximum allowed size (74 bytes)
-    pub fn build_tag_data(&self) -> Result<TagData, TagDataError> {
-        let aux_data = encode_to_vec(self)?;
-        let tag = TagData::new(
+    /// Panics if encoding fails or if the encoded auxiliary data violates SPS-50 size
+    /// limits.
+    pub fn build_tag_data(&self) -> TagData {
+        let aux_data = encode_to_vec(self).expect("auxiliary data encoding should be infallible");
+        TagData::new(
             BRIDGE_V1_SUBPROTOCOL_ID,
             BridgeTxType::Deposit as u8,
             aux_data,
-        )?;
-        Ok(tag)
+        )
+        .expect("deposit tag data should always fit within SPS-50 limits")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn bytes_20() -> impl Strategy<Value = [u8; 20]> {
+        prop::collection::vec(any::<u8>(), 20)
+            .prop_map(|bytes| bytes.try_into().expect("length is fixed"))
+    }
+
+    proptest! {
+        #[test]
+        fn build_tag_data_is_infallible(deposit_idx in any::<u32>(), ee_address in bytes_20()) {
+            let aux = DepositTxHeaderAux::new(deposit_idx, ee_address);
+            let tag = aux.build_tag_data();
+            prop_assert_eq!(tag.subproto_id(), BRIDGE_V1_SUBPROTOCOL_ID);
+            prop_assert_eq!(tag.tx_type(), BridgeTxType::Deposit as u8);
+        }
     }
 }

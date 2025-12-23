@@ -70,9 +70,7 @@ fn create_test_deposit_tx(
 ) -> Transaction {
     let mut tx = create_dummy_tx(1, 2);
 
-    let tag = dt_header_aux
-        .build_tag_data()
-        .expect("deposit tag must serialize");
+    let tag = dt_header_aux.build_tag_data();
     let sps_50_script = ParseConfig::new(*TEST_MAGIC_BYTES)
         .encode_script_buf(&tag.as_ref())
         .expect("encoding SPS50 script must succeed");

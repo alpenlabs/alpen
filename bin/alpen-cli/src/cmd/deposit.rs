@@ -56,9 +56,7 @@ fn build_deposit_request_tx(
     magic_bytes: [u8; 4],
     fee_rate: FeeRate,
 ) -> Result<Transaction, DisplayedError> {
-    let drt_sps50_tag = header_aux
-        .build_tag_data()
-        .expect("tag data should be created");
+    let drt_sps50_tag = header_aux.build_tag_data();
 
     let sps50_script = ParseConfig::new(magic_bytes)
         .encode_script_buf(&drt_sps50_tag.as_ref())

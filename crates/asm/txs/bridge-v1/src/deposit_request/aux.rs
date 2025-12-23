@@ -4,10 +4,7 @@ use arbitrary::Arbitrary;
 use strata_codec::{Codec, encode_to_vec};
 use strata_l1_txfmt::TagData;
 
-use crate::{
-    constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType},
-    errors::TagDataError,
-};
+use crate::constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType};
 
 /// Auxiliary data in the SPS-50 header for [`BridgeTxType::DepositRequest`].
 #[derive(Debug, Clone, PartialEq, Eq, Codec, Arbitrary)]
@@ -41,18 +38,44 @@ impl DrtHeaderAux {
     /// This method encodes the auxiliary data and constructs the tag data for inclusion
     /// in the SPS-50 OP_RETURN output.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns [`TagDataError`] if:
-    /// - Encoding the auxiliary data fails
-    /// - The encoded auxiliary data exceeds the maximum allowed size (74 bytes)
-    pub fn build_tag_data(&self) -> Result<TagData, TagDataError> {
-        let aux_data = encode_to_vec(self)?;
-        let tag = TagData::new(
+    /// Panics if encoding fails or if the encoded auxiliary data violates SPS-50 size
+    /// limits.
+    pub fn build_tag_data(&self) -> TagData {
+        let aux_data = encode_to_vec(self).expect("auxiliary data encoding should be infallible");
+        TagData::new(
             BRIDGE_V1_SUBPROTOCOL_ID,
             BridgeTxType::DepositRequest as u8,
             aux_data,
-        )?;
-        Ok(tag)
+        )
+        .expect("deposit request tag data should always fit within SPS-50 limits")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn bytes_20() -> impl Strategy<Value = [u8; 20]> {
+        prop::collection::vec(any::<u8>(), 20)
+            .prop_map(|bytes| bytes.try_into().expect("length is fixed"))
+    }
+
+    fn bytes_32() -> impl Strategy<Value = [u8; 32]> {
+        prop::collection::vec(any::<u8>(), 32)
+            .prop_map(|bytes| bytes.try_into().expect("length is fixed"))
+    }
+
+    proptest! {
+        #[test]
+        fn build_tag_data_is_infallible(recovery_pk in bytes_32(), ee_address in bytes_20()) {
+            let aux = DrtHeaderAux::new(recovery_pk, ee_address);
+            let tag = aux.build_tag_data();
+            prop_assert_eq!(tag.subproto_id(), BRIDGE_V1_SUBPROTOCOL_ID);
+            prop_assert_eq!(tag.tx_type(), BridgeTxType::DepositRequest as u8);
+        }
     }
 }
