@@ -15,6 +15,7 @@ strata-codec-utils.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
+strata-merkle.workspace = true
 strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 tree_hash.workspace = true

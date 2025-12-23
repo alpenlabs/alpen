@@ -25,6 +25,7 @@ thiserror.workspace = true
 ssz.workspace = true
 ssz_primitives.workspace = true
 strata-predicate.workspace = true
+tree_hash.workspace = true
 
 [lints]
 workspace = true

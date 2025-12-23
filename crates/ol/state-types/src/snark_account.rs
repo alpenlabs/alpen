@@ -1,10 +1,10 @@
+use ssz::Encode as _;
 use ssz_derive::{Decode, Encode};
 use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher};
 use strata_ledger_types::*;
-use strata_merkle::{CompactMmr64, Mmr};
+use strata_merkle::{CompactMmr64, Mmr, hasher::MerkleHasher as _};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
-use tree_hash::TreeHash;
 
 use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};
 
@@ -46,6 +46,10 @@ impl ISnarkAccountState for NativeSnarkAccountState {
 
     fn inner_state_root(&self) -> Hash {
         self.proof_state.inner_state_root()
+    }
+
+    fn next_msg_read_idx(&self) -> u64 {
+        self.proof_state.inner().next_msg_read_idx
     }
 
     fn inbox_mmr(&self) -> &Mmr64 {
