@@ -402,3 +402,25 @@ pub(crate) async fn create_test_context_with_state(
     setup_test_state_for_tip(&ctx.storage, tip).await;
     ctx
 }
+
+/// Create a test generic account message transaction for a specific account.
+/// Uses an attachment without slot restrictions (min_slot=None, max_slot=None).
+/// Uses a unique payload per account to ensure unique transaction IDs.
+pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLMempoolTransaction {
+    let attachment = create_test_attachment_with_slots(None, None);
+    let target = create_test_account_id_with(account_id);
+    // Use account_id in payload to ensure unique transaction IDs
+    let payload = vec![account_id, 1, 2, 3];
+    OLMempoolTransaction::new_generic_account_message(target, payload, attachment)
+        .expect("Should create transaction")
+}
+
+/// Create a test snark transaction with specific seq_no and slot bounds for expiry testing.
+pub(crate) fn create_test_tx_with_expiry(
+    account_id: u8,
+    min_slot: Option<u64>,
+    max_slot: Option<u64>,
+    seq_no: u64,
+) -> OLMempoolTransaction {
+    create_test_snark_tx_with_seq_no_and_slots(account_id, seq_no, min_slot, max_slot)
+}
