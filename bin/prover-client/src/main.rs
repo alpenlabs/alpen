@@ -73,6 +73,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         config.bitcoind_password.clone(),
         Some(config.bitcoin_retry_count),
         Some(config.bitcoin_retry_interval),
+        None,
     )
     .context("Failed to connect to the Bitcoin client")?;
 

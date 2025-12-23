@@ -125,6 +125,7 @@ pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Resu
         config.rpc_password.clone(),
         config.retry_count,
         config.retry_interval,
+        None,
     )
     .map_err(anyhow::Error::from)?;
 

@@ -112,7 +112,7 @@ pub async fn submit_transaction_with_keys(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{Amount, BlockHash, TxOut, absolute::LockTime, transaction::Version};
+    use bitcoin::{Amount, TxOut, absolute::LockTime, transaction::Version};
     use bitcoind_async_client::traits::{Reader, Wallet};
     use musig2::secp256k1::SECP256K1;
 
@@ -153,7 +153,7 @@ mod tests {
 
         // Verify the transaction is confirmed
         let blockchain_info = client.get_blockchain_info().await.unwrap();
-        let block_hash: BlockHash = blockchain_info.best_block_hash.parse().unwrap();
+        let block_hash = blockchain_info.best_block_hash;
         let block = client.get_block(&block_hash).await.unwrap();
 
         // Check that our transaction is in the block
@@ -209,7 +209,7 @@ mod tests {
 
         // Verify the transaction is confirmed
         let blockchain_info = client.get_blockchain_info().await.unwrap();
-        let block_hash: BlockHash = blockchain_info.best_block_hash.parse().unwrap();
+        let block_hash = blockchain_info.best_block_hash;
         let block = client.get_block(&block_hash).await.unwrap();
 
         // Check that our transaction is in the block

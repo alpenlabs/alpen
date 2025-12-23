@@ -140,10 +140,12 @@ async fn check_tx_confirmations(
             // So set it to Unpublished.
             (0, _) => Ok(L1TxStatus::Unpublished),
 
-            (confirmations, _) if confirmations >= reorg_safe_depth => {
-                Ok(L1TxStatus::Finalized { confirmations })
-            }
-            (confirmations, _) => Ok(L1TxStatus::Confirmed { confirmations }),
+            (confirmations, _) if confirmations >= reorg_safe_depth => Ok(L1TxStatus::Finalized {
+                confirmations: confirmations as u64,
+            }),
+            (confirmations, _) => Ok(L1TxStatus::Confirmed {
+                confirmations: confirmations as u64,
+            }),
         },
         Err(e) => {
             // If for some reasons tx is not found even if it was already

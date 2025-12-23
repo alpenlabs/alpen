@@ -148,6 +148,7 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, Ini
         config.rpc_password.clone(),
         config.retry_count,
         config.retry_interval,
+        None,
     )
     .map_err(|e| InitError::BitcoinClientCreation(e.to_string()))?;
 

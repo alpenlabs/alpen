@@ -119,6 +119,7 @@ fn create_client(config: &BitcoindConfig) -> anyhow::Result<Client> {
         config.rpc_password.clone(),
         None,
         None,
+        None,
     )
     .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))
 }

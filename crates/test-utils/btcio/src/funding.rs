@@ -31,8 +31,7 @@ pub async fn add_funding_input(
         let prev_tx = client
             .get_raw_transaction_verbosity_zero(&input.previous_output.txid)
             .await?
-            .transaction()
-            .map_err(|e| anyhow::anyhow!("Failed to decode prev transaction: {}", e))?;
+            .0;
 
         if let Some(prev_out) = prev_tx.output.get(input.previous_output.vout as usize) {
             existing_value = existing_value.saturating_add(prev_out.value.to_sat());
@@ -85,8 +84,7 @@ async fn create_funding_utxo(
     let funding_tx = client
         .get_raw_transaction_verbosity_zero(&funding_txid)
         .await?
-        .transaction()
-        .map_err(|e| anyhow::anyhow!("Failed to decode funding transaction: {}", e))?;
+        .0;
 
     let prev_vout = funding_tx
         .output

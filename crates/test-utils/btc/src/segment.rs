@@ -7,13 +7,10 @@ use bitcoin::{
     hashes::Hash,
     Block, BlockHash, Network, Txid,
 };
-use bitcoind_async_client::{
-    error::ClientError,
-    traits::Reader,
-    types::{
-        GetBlockchainInfo, GetRawTransactionVerbosityOne, GetRawTransactionVerbosityZero, GetTxOut,
-    },
-    ClientResult,
+use bitcoind_async_client::{error::ClientError, traits::Reader, ClientResult};
+use corepc_types::model::{
+    GetBlockchainInfo, GetMempoolInfo, GetRawMempool, GetRawMempoolVerbose, GetRawTransaction,
+    GetRawTransactionVerbose, GetTxOut,
 };
 use strata_asm_common::AsmManifest;
 use strata_asm_types::{HeaderVerificationState, L1HeaderRecord};
@@ -146,8 +143,8 @@ impl BtcChainSegment {
 impl Reader for BtcChainSegment {
     /// Return a default fee estimate.
     async fn estimate_smart_fee(&self, _conf_target: u16) -> ClientResult<u64> {
-        // Return a default fee (e.g., 1000 satoshis per kB)
-        Ok(1000)
+        // Return a default fee (e.g., 1 satoshis per vB)
+        Ok(1)
     }
 
     /// Look up a block by its hash in our custom blocks.
@@ -212,16 +209,25 @@ impl Reader for BtcChainSegment {
     }
 
     /// Return an empty mempool.
-    async fn get_raw_mempool(&self) -> ClientResult<Vec<Txid>> {
-        // For our in-memory segment, we assume there are no unconfirmed transactions.
-        Ok(vec![])
+    async fn get_raw_mempool(&self) -> ClientResult<GetRawMempool> {
+        unimplemented!()
+    }
+
+    /// Returns an empty raw mempool verbose.
+    async fn get_raw_mempool_verbose(&self) -> ClientResult<GetRawMempoolVerbose> {
+        unimplemented!()
+    }
+
+    /// Returns details on the active state of the mempool.
+    async fn get_mempool_info(&self) -> ClientResult<GetMempoolInfo> {
+        unimplemented!()
     }
 
     /// Gets a raw transaction by its [`Txid`].
     async fn get_raw_transaction_verbosity_zero(
         &self,
         _txid: &Txid,
-    ) -> ClientResult<GetRawTransactionVerbosityZero> {
+    ) -> ClientResult<GetRawTransaction> {
         unimplemented!()
     }
 
@@ -229,7 +235,7 @@ impl Reader for BtcChainSegment {
     async fn get_raw_transaction_verbosity_one(
         &self,
         _txid: &Txid,
-    ) -> ClientResult<GetRawTransactionVerbosityOne> {
+    ) -> ClientResult<GetRawTransactionVerbose> {
         unimplemented!()
     }
 

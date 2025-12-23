@@ -157,9 +157,8 @@ async fn init_reader_state<R: Reader>(
     let start_height = (target - lookback as i64)
         .max(pre_genesis as i64)
         .min(chain_info.blocks as i64) as u64;
-    let end_height = chain_info
-        .blocks
-        .min(pre_genesis.max(target_next_block.saturating_sub(1)));
+    let end_height =
+        (chain_info.blocks as u64).min(pre_genesis.max(target_next_block.saturating_sub(1)));
     debug!(%start_height, %end_height, "queried L1 client, have init range");
 
     // Loop through the range we've determined to be okay and pull the blocks we want to look back
@@ -191,7 +190,7 @@ async fn poll_for_new_blocks<R: Reader>(
     let chain_info = ctx.client.get_blockchain_info().await?;
     status_updates.push(L1StatusUpdate::RpcConnected(true));
     let client_height = chain_info.blocks;
-    let fresh_best_block = chain_info.best_block_hash.parse::<BlockHash>()?;
+    let fresh_best_block = chain_info.best_block_hash;
 
     if fresh_best_block == *state.best_block() {
         trace!("polled client, nothing to do");
@@ -223,7 +222,7 @@ async fn poll_for_new_blocks<R: Reader>(
 
     // Now process each block we missed.
     let scan_start_height = state.next_height();
-    for fetch_height in scan_start_height..=client_height {
+    for fetch_height in scan_start_height..=(client_height as u64) {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, ev)) => {
                 // Note: Checkpoint detection is now handled by the ASM STF via logs,

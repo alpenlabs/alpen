@@ -24,6 +24,6 @@ pub fn get_bitcoind_and_client() -> (Node, Client) {
     let bitcoind = Node::new("bitcoind").unwrap();
     let url = bitcoind.rpc_url();
     let (user, password) = get_auth(&bitcoind);
-    let client = Client::new(url, user, password, None, None).unwrap();
+    let client = Client::new(url, user, password, None, None, None).unwrap();
     (bitcoind, client)
 }
