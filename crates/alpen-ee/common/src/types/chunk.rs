@@ -42,14 +42,10 @@ pub struct Chunk {
     last_block: Hash,
     /// rest of the blocks in the chunk.
     inner_blocks: Vec<Hash>,
-    /// status
-    proof_status: ChunkStatus,
 }
 
 impl Chunk {
     /// Create a new chunk.
-    ///
-    /// Newly created chunks are in [`ChunkStatus::ProvingNotStarted`] state.
     pub fn new(idx: u64, prev_block: Hash, last_block: Hash, inner_blocks: Vec<Hash>) -> Self {
         debug_assert_ne!(prev_block, last_block);
         Self {
@@ -57,18 +53,7 @@ impl Chunk {
             prev_block,
             last_block,
             inner_blocks,
-            proof_status: ChunkStatus::ProvingNotStarted,
         }
-    }
-
-    /// Set chunk status to proof pending, with an identifier to the proving task.
-    pub fn set_proof_pending(&mut self, proof_task_id: String) {
-        self.proof_status = ChunkStatus::ProofPending(proof_task_id);
-    }
-
-    /// Set chunk status to proof ready, with an identifier to the generated proof.
-    pub fn set_proof(&mut self, proof: ProofId) {
-        self.proof_status = ChunkStatus::ProofReady(proof);
     }
 
     /// Deterministic chunk id
@@ -89,11 +74,6 @@ impl Chunk {
     /// last block of this chunk.
     pub fn last_block(&self) -> Hash {
         self.last_block
-    }
-
-    /// Status of this chunk.
-    pub fn status(&self) -> &ChunkStatus {
-        &self.proof_status
     }
 
     /// Iterate over all blocks in this chunk.

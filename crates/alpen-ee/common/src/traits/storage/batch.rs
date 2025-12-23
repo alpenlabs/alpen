@@ -31,11 +31,17 @@ pub trait BatchStorage {
     /// Remove all ee updates where idx > to_idx
     async fn revert_batch(&self, to_idx: u64) -> Result<(), StorageError>;
     /// Get an ee update by its id, if it exists
-    async fn get_batch_by_id(&self, batch_id: BatchId) -> Result<Option<Batch>, StorageError>;
+    async fn get_batch_by_id(
+        &self,
+        batch_id: BatchId,
+    ) -> Result<Option<(Batch, BatchStatus)>, StorageError>;
     /// Get an ee update by its idx, if it exists
-    async fn get_batch_by_idx(&self, idx: u64) -> Result<Option<Batch>, StorageError>;
+    async fn get_batch_by_idx(
+        &self,
+        idx: u64,
+    ) -> Result<Option<(Batch, BatchStatus)>, StorageError>;
     /// Get the ee update with the highest idx, if it exists.
-    async fn get_latest_batch(&self) -> Result<Option<Batch>, StorageError>;
+    async fn get_latest_batch(&self) -> Result<Option<(Batch, BatchStatus)>, StorageError>;
 
     /// Save the next chunk
     ///
@@ -50,11 +56,17 @@ pub trait BatchStorage {
     /// Remove all chunks where idx > to_idx
     async fn revert_chunks(&self, to_idx: u64) -> Result<(), StorageError>;
     /// Get a chunk by its id, if it exists
-    async fn get_chunk_by_id(&self, chunk_id: ChunkId) -> Result<Option<Chunk>, StorageError>;
+    async fn get_chunk_by_id(
+        &self,
+        chunk_id: ChunkId,
+    ) -> Result<Option<(Chunk, ChunkStatus)>, StorageError>;
     /// Get a chunk by its idx, if it exists
-    async fn get_chunk_by_idx(&self, idx: u64) -> Result<Option<Chunk>, StorageError>;
+    async fn get_chunk_by_idx(
+        &self,
+        idx: u64,
+    ) -> Result<Option<(Chunk, ChunkStatus)>, StorageError>;
     /// Get the chunk with the highest id, if it exists.
-    async fn get_latest_chunk(&self) -> Result<Option<Chunk>, StorageError>;
+    async fn get_latest_chunk(&self) -> Result<Option<(Chunk, ChunkStatus)>, StorageError>;
     /// Set or update Batch and Chunk association
     async fn set_batch_chunks(
         &self,

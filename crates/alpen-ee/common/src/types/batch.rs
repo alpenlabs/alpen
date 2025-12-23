@@ -65,14 +65,10 @@ pub struct Batch {
     /// rest of the blocks in this update.
     /// cached here for easier processing.
     inner_blocks: Vec<Hash>,
-    /// state of this Batch
-    status: BatchStatus,
 }
 
 impl Batch {
     /// Create a new Batch.
-    ///
-    /// Newly created updates are in [`BatchStatus::Init`] state.
     pub fn new(idx: u64, prev_block: Hash, last_block: Hash, inner_blocks: Vec<Hash>) -> Self {
         debug_assert_ne!(prev_block, last_block);
         Self {
@@ -80,13 +76,7 @@ impl Batch {
             prev_block,
             last_block,
             inner_blocks,
-            status: BatchStatus::Init,
         }
-    }
-
-    /// Set status.
-    pub fn set_status(&mut self, status: BatchStatus) {
-        self.status = status
     }
 
     /// Get deterministic id.
@@ -116,10 +106,5 @@ impl Batch {
             .iter()
             .copied()
             .chain(iter::once(self.last_block()))
-    }
-
-    /// Get status of this Batch.
-    pub fn status(&self) -> &BatchStatus {
-        &self.status
     }
 }
