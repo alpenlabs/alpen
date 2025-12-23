@@ -8,11 +8,13 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_tasks::{TaskExecutor, TaskManager};
+use tokio::runtime::Runtime;
 
 /// Holds handles and monitors for all running services.
 #[expect(unused, reason = "will be used later")]
 pub(crate) struct RunContext {
     // Common items.
+    pub runtime: Runtime,
     pub executor: TaskExecutor,
     pub task_manager: TaskManager,
     pub params: Arc<Params>,
