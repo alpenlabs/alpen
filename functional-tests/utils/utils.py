@@ -17,8 +17,13 @@ import base58
 from bitcoinlib.services.bitcoind import BitcoindClient
 
 from factory.config import BitcoindConfig
-from factory.seqrpc import JsonrpcClient
+from factory.seqrpc import JsonrpcClient, RpcError
 from utils.constants import *
+
+# RPC error codes from crates/rpc/types/src/errors.rs
+RPC_ERROR_MISSING_ASM_STATE = -32619  # ASM state not found
+RPC_ERROR_MISSING_BRIDGE_V1_SECTION = -32620  # BridgeV1 section not found in ASM state
+RPC_ERROR_BRIDGE_V1_DECODE_ERROR = -32621  # Failed to decode BridgeV1 state
 
 
 def generate_jwt_secret() -> str:
@@ -857,7 +862,6 @@ def retry_rpc_with_asm_backoff(
     rpc_fn: Callable[[], T],
     timeout: int = 30,
     step: float = 1.0,
-    asm_error_messages: list[str] | None = None,
 ) -> T:
     """
     Retry an RPC call with backoff when ASM state is not yet available.
@@ -870,7 +874,6 @@ def retry_rpc_with_asm_backoff(
         rpc_fn: The RPC function to call
         timeout: Maximum time to retry (seconds)
         step: Time between retries (seconds)
-        asm_error_messages: List of error messages that indicate ASM is not ready
 
     Returns:
         The result of the RPC call
@@ -879,24 +882,23 @@ def retry_rpc_with_asm_backoff(
         AssertionError: If the timeout is reached without success
         Exception: Any non-ASM-related exceptions from the RPC call
     """
-    if asm_error_messages is None:
-        asm_error_messages = [
-            "ASM state not found",
-            "BridgeV1 section not found",
-            "failed to load BridgeV1 state",
-            "No ASM state found",
-        ]
 
     def predicate():
         try:
             return rpc_fn()
-        except Exception as e:
-            error_str = str(e)
-            # Check if this is an ASM-not-ready error
-            if any(msg in error_str for msg in asm_error_messages):
-                logging.debug(f"ASM not ready, will retry: {error_str}")
+        except RpcError as e:
+            # Check if this is an ASM-not-ready error using specific error codes
+            if e.code in (
+                RPC_ERROR_MISSING_ASM_STATE,
+                RPC_ERROR_MISSING_BRIDGE_V1_SECTION,
+                RPC_ERROR_BRIDGE_V1_DECODE_ERROR,
+            ):
+                logging.debug(f"ASM not ready (error code {e.code}), will retry: {e}")
                 return None  # Signal to keep retrying
             # Re-raise if it's a different error
+            raise
+        except Exception:
+            # Re-raise non-RPC errors
             raise
 
     return wait_until_with_value(
