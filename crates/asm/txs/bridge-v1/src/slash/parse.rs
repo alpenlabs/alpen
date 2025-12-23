@@ -2,7 +2,8 @@ use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 
 use crate::{
-    errors::SlashTxParseError,
+    constants::BridgeTxType,
+    errors::TxStructureError,
     slash::{aux::SlashTxHeaderAux, info::SlashInfo},
 };
 
@@ -19,22 +20,29 @@ pub const STAKE_INPUT_INDEX: usize = 1;
 ///
 /// # Returns
 /// - `Ok(SlashInfo)` on success
-/// - `Err(SlashTxParseError)` if [`SlashTxHeaderAux`] data cannot be decoded, or the stake
-///   connector input (at index [`STAKE_INPUT_INDEX`]) is missing.
-pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, SlashTxParseError> {
+/// - `Err(TxStructureError)` if [`SlashTxHeaderAux`] data cannot be decoded, or the stake connector
+///   input (at index [`STAKE_INPUT_INDEX`]) is missing.
+pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, TxStructureError> {
     // Parse auxiliary data using CommitTxHeaderAux
-    let header_aux: SlashTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
+    let header_aux: SlashTxHeaderAux = decode_buf_exact(tx.tag().aux_data())
+        .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Slash, e))?;
 
-    // Extract the previous outpoint from the second input
-    let second_input_outpoint = tx
+    // Extract the stake inpoint (previous outpoint from the second input)
+    let stake_inpoint = tx
         .tx()
         .input
         .get(STAKE_INPUT_INDEX)
-        .ok_or(SlashTxParseError::MissingInput(STAKE_INPUT_INDEX))?
+        .ok_or_else(|| {
+            TxStructureError::missing_input(
+                BridgeTxType::Slash,
+                STAKE_INPUT_INDEX,
+                "stake connector input",
+            )
+        })?
         .previous_output
         .into();
 
-    let info = SlashInfo::new(header_aux, second_input_outpoint);
+    let info = SlashInfo::new(header_aux, stake_inpoint);
 
     Ok(info)
 }
@@ -44,7 +52,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{create_test_slash_tx, mutate_aux_data, parse_tx};
+    use crate::test_utils::{create_test_slash_tx, mutate_aux_data, parse_sps50_tx};
 
     const AUX_LEN: usize = std::mem::size_of::<SlashTxHeaderAux>();
 
@@ -53,7 +61,7 @@ mod tests {
         let info: SlashInfo = ArbitraryGenerator::new().generate();
 
         let tx = create_test_slash_tx(&info);
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
 
         let parsed = parse_slash_tx(&tx_input).expect("Should parse slash tx");
 
@@ -68,11 +76,14 @@ mod tests {
         // Remove the stake connector to force an input count mismatch
         tx.input.pop();
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_slash_tx(&tx_input).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::Slash);
         assert!(matches!(
-            err,
-            SlashTxParseError::MissingInput(STAKE_INPUT_INDEX)
+            err.kind(),
+            crate::errors::TxStructureErrorKind::MissingInput {
+                index: STAKE_INPUT_INDEX
+            }
         ))
     }
 
@@ -84,15 +95,23 @@ mod tests {
         let larger_aux = [0u8; AUX_LEN + 1].to_vec();
         mutate_aux_data(&mut tx, larger_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_slash_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, SlashTxParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::Slash);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
         mutate_aux_data(&mut tx, smaller_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_slash_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, SlashTxParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::Slash);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
     }
 }

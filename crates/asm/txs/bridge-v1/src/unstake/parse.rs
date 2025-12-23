@@ -3,7 +3,8 @@ use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
 
 use crate::{
-    errors::UnstakeTxParseError,
+    constants::BridgeTxType,
+    errors::{TxStructureError, WitnessError},
     unstake::{
         aux::UnstakeTxHeaderAux, info::UnstakeInfo, script::validate_and_extract_script_params,
     },
@@ -31,24 +32,31 @@ const SCRIPT_INDEX: usize = 2;
 /// Parses an unstake transaction following the SPS-50 specification and extracts the auxiliary
 /// metadata along with the aggregated N/N pubkey embedded in the stake-connector script (input
 /// index 0).
-pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeTxParseError> {
+pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, TxStructureError> {
     // Parse auxiliary data using UnstakeTxHeaderAux
-    let header_aux: UnstakeTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
+    let header_aux: UnstakeTxHeaderAux = decode_buf_exact(tx.tag().aux_data())
+        .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Unstake, e))?;
 
-    let stake_input = tx
-        .tx()
-        .input
-        .get(STAKE_INPUT_INDEX)
-        .ok_or(UnstakeTxParseError::MissingInput(STAKE_INPUT_INDEX))?;
+    let stake_input = tx.tx().input.get(STAKE_INPUT_INDEX).ok_or_else(|| {
+        TxStructureError::missing_input(
+            BridgeTxType::Unstake,
+            STAKE_INPUT_INDEX,
+            "stake connector input",
+        )
+    })?;
 
     let witness = &stake_input.witness;
 
     let witness_len = witness.len();
     if witness_len != STAKE_WITNESS_ITEMS {
-        return Err(UnstakeTxParseError::InvalidStakeWitnessLen {
-            expected: STAKE_WITNESS_ITEMS,
-            actual: witness_len,
-        });
+        return Err(TxStructureError::invalid_witness(
+            BridgeTxType::Unstake,
+            WitnessError::InvalidLength {
+                expected: STAKE_WITNESS_ITEMS,
+                actual: witness_len,
+            },
+            "stake connector witness",
+        ));
     }
     // With fixed layout, grab the script directly.
     let script = ScriptBuf::from_bytes(witness[SCRIPT_INDEX].to_vec());
@@ -57,7 +65,13 @@ pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, UnstakeT
     // This extracts nn_pubkey and stake_hash, reconstructs the expected script,
     // and compares byte-for-byte. Returns parameters only if script is valid.
     let (witness_pushed_pubkey, _stake_hash_bytes) = validate_and_extract_script_params(&script)
-        .ok_or(UnstakeTxParseError::InvalidStakeScript)?;
+        .ok_or_else(|| {
+            TxStructureError::invalid_witness(
+                BridgeTxType::Unstake,
+                WitnessError::InvalidScriptStructure,
+                "stake connector witness script",
+            )
+        })?;
 
     let info = UnstakeInfo::new(header_aux, witness_pushed_pubkey);
 
@@ -72,7 +86,8 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        build_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data, parse_tx,
+        create_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data,
+        parse_sps50_tx,
     };
 
     const AUX_LEN: usize = std::mem::size_of::<UnstakeTxHeaderAux>();
@@ -80,7 +95,7 @@ mod tests {
     fn create_slash_tx_with_info() -> (UnstakeInfo, Transaction) {
         let header_aux: UnstakeTxHeaderAux = ArbitraryGenerator::new().generate();
         let (sks, _) = create_test_operators(3);
-        let (_stake_tx, unstake_tx) = build_connected_stake_and_unstake_txs(&header_aux, &sks);
+        let (_stake_tx, unstake_tx) = create_connected_stake_and_unstake_txs(&header_aux, &sks);
         let nn_key = create_agg_pubkey_from_privkeys(&sks);
         let info = UnstakeInfo::new(header_aux, nn_key);
         (info, unstake_tx)
@@ -89,7 +104,7 @@ mod tests {
     #[test]
     fn test_parse_unstake_tx_success() {
         let (info, tx) = create_slash_tx_with_info();
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
 
         let parsed = parse_unstake_tx(&tx_input).expect("Should parse unstake tx");
 
@@ -100,14 +115,17 @@ mod tests {
     fn test_parse_unstake_missing_stake_input() {
         let (_info, mut tx) = create_slash_tx_with_info();
 
-        // Remove the stake connector to force an input count mismatch
+        // Remove the stake connector
         tx.input.pop();
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_unstake_tx(&tx_input).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::Unstake);
         assert!(matches!(
-            err,
-            UnstakeTxParseError::MissingInput(STAKE_INPUT_INDEX)
+            err.kind(),
+            crate::errors::TxStructureErrorKind::MissingInput {
+                index: STAKE_INPUT_INDEX
+            }
         ))
     }
 
@@ -118,15 +136,23 @@ mod tests {
         let larger_aux = [0u8; AUX_LEN + 1].to_vec();
         mutate_aux_data(&mut tx, larger_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_unstake_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, UnstakeTxParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::Unstake);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
         mutate_aux_data(&mut tx, smaller_aux);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_unstake_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, UnstakeTxParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::Unstake);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
     }
 }

@@ -14,7 +14,7 @@ use strata_bridge_types::OperatorIdx;
 use strata_primitives::{
     L1BlockCommitment,
     buf::Buf32,
-    l1::{BitcoinBlockHeight, BitcoinTxid, L1BlockId},
+    l1::{BitcoinBlockHeight, L1BlockId},
     sorted_vec::SortedVec,
 };
 
@@ -197,11 +197,6 @@ impl AssignmentEntry {
     /// Returns the deposit index associated with this assignment.
     pub fn deposit_idx(&self) -> u32 {
         self.deposit_entry.idx()
-    }
-
-    /// Returns the deposit txid associated with this assignment.
-    pub fn deposit_txid(&self) -> BitcoinTxid {
-        self.deposit_entry.output().outpoint().txid.into()
     }
 
     /// Returns a reference to the withdrawal command.
@@ -595,13 +590,8 @@ mod tests {
 
         // Force single operator for this test
         let operators = OperatorBitmap::new_with_size(1, true);
-        deposit_entry = DepositEntry::new(
-            deposit_entry.idx(),
-            *deposit_entry.output(),
-            operators,
-            deposit_entry.amt(),
-        )
-        .unwrap();
+        deposit_entry =
+            DepositEntry::new(deposit_entry.idx(), operators, deposit_entry.amt()).unwrap();
 
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
         let fulfillment_deadline: BitcoinBlockHeight = 100;
@@ -732,7 +722,6 @@ mod tests {
         let mut deposit_entry1: DepositEntry = arb.generate();
         deposit_entry1 = DepositEntry::new(
             deposit_entry1.idx(),
-            *deposit_entry1.output(),
             current_active_operators.clone(),
             deposit_entry1.amt(),
         )
@@ -758,7 +747,6 @@ mod tests {
         let mut deposit_entry2: DepositEntry = arb.generate();
         deposit_entry2 = DepositEntry::new(
             deposit_entry2.idx(),
-            *deposit_entry2.output(),
             current_active_operators.clone(),
             deposit_entry2.amt(),
         )

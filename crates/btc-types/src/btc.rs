@@ -567,7 +567,7 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 }
 
 /// A wrapper around [`bitcoin::TxOut`] that implements some additional traits.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxOut(TxOut);
 
 impl BitcoinTxOut {

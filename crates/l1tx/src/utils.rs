@@ -91,7 +91,7 @@ pub fn get_operator_wallet_pks(params: &RollupParams) -> Vec<Buf32> {
 #[cfg(any(test, feature = "test_utils"))]
 pub mod test_utils {
     use bitcoin::{
-        secp256k1::{Keypair, Secp256k1, SecretKey},
+        secp256k1::{Keypair, SecretKey, SECP256K1},
         Address, Network,
     };
     use strata_bridge_types::DepositEntry;
@@ -104,16 +104,13 @@ pub mod test_utils {
     use crate::{filter::types::conv_deposit_to_fulfillment, TxFilterConfig};
 
     pub fn get_taproot_addr_and_keypair() -> (Address, Keypair) {
-        // Generate valid signature
-        let secp = Secp256k1::new();
-
         // Step 1. Create a random internal key (you can use a fixed one in tests)
         let secret_key = SecretKey::from_slice(&[42u8; 32]).unwrap();
-        let keypair = Keypair::from_secret_key(&secp, &secret_key);
+        let keypair = Keypair::from_secret_key(SECP256K1, &secret_key);
         let (internal_xonly, _parity) = keypair.x_only_public_key();
 
         // Step 2. Create a Taproot address
-        let taproot_addr = Address::p2tr(&secp, internal_xonly, None, Network::Regtest);
+        let taproot_addr = Address::p2tr(SECP256K1, internal_xonly, None, Network::Regtest);
         (taproot_addr, keypair)
     }
 
@@ -159,8 +156,8 @@ pub(crate) fn convert_bridge_v1_deposit_to_protocol_deposit(
     DepositInfo {
         deposit_idx: bridge_v1_deposit.header_aux().deposit_idx(),
         amt: bridge_v1_deposit.amt(),
-        outpoint: bridge_v1_deposit.outpoint(),
-        address: bridge_v1_deposit.header_aux().address().to_vec(),
+        outpoint: (*bridge_v1_deposit.drt_inpoint()).into(),
+        address: bridge_v1_deposit.header_aux().ee_address().to_vec(),
     }
 }
 

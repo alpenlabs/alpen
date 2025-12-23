@@ -6,21 +6,20 @@
 use bdk_wallet::bitcoin::{
     consensus::deserialize,
     hashes::Hash,
-    opcodes::all::{OP_CHECKSIGVERIFY, OP_CSV},
-    script::Builder,
     sighash::{Prevouts, SighashCache},
-    taproot::LeafVersion,
-    Amount, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
+    OutPoint, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
 };
 use secp256k1::SECP256K1;
 use strata_asm_txs_bridge_v1::{
-    deposit_request::parse_drt_from_tx,
-    test_utils::{build_deposit_transaction, create_deposit_op_return},
+    deposit::DepositTxHeaderAux,
+    deposit_request::{build_deposit_request_spend_info, parse_drt},
+    test_utils::create_dummy_tx,
 };
 use strata_crypto::{
     test_utils::schnorr::{create_musig2_signature, Musig2Tweak},
     EvenSecretKey,
 };
+use strata_l1_txfmt::ParseConfig;
 use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use crate::{
@@ -28,16 +27,6 @@ use crate::{
     error::Error,
     parse::{generate_taproot_address, parse_operator_keys},
 };
-
-/// Builds the timelock script for takeback functionality
-fn build_timelock_script(recovery_pubkey_bytes: &[u8; 32]) -> ScriptBuf {
-    Builder::new()
-        .push_slice(recovery_pubkey_bytes)
-        .push_opcode(OP_CHECKSIGVERIFY)
-        .push_int(RECOVER_DELAY as i64)
-        .push_opcode(OP_CSV)
-        .into_script()
-}
 
 /// Creates a deposit transaction (DT)
 ///
@@ -67,24 +56,30 @@ pub(crate) fn create_deposit_transaction_cli(
     let (_address, agg_pubkey) =
         generate_taproot_address(&pubkeys, NETWORK).map_err(|e| Error::TxBuilder(e.to_string()))?;
 
-    let drt_data = parse_drt_from_tx(&drt_tx, MAGIC_BYTES)
-        .map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
+    let drt_data =
+        parse_drt(&drt_tx).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
 
-    let takeback_script = build_timelock_script(&drt_data.take_back_leaf_hash);
-    let takeback_hash = TapNodeHash::from_script(&takeback_script, LeafVersion::TapScript);
+    let takeback_hash = build_deposit_request_spend_info(
+        drt_data.header_aux().recovery_pk(),
+        agg_pubkey,
+        RECOVER_DELAY,
+    )
+    .merkle_root()
+    .ok_or_else(|| Error::TxBuilder("Missing takeback script merkle root".to_string()))?;
 
     // Use canonical OP_RETURN construction from asm/txs/bridge-v1
-    let op_return_script =
-        create_deposit_op_return(*MAGIC_BYTES, dt_index, takeback_hash, &drt_data.address)
-            .map_err(Error::TxBuilder)?;
+    let dt_tag =
+        DepositTxHeaderAux::new(dt_index, *drt_data.header_aux().ee_address()).build_tag_data();
+    let sps50_script = ParseConfig::new(*MAGIC_BYTES)
+        .encode_script_buf(&dt_tag.as_ref())
+        .map_err(|e| Error::TxBuilder(e.to_string()))?;
 
-    // Build deposit transaction using canonical builder
-    let unsigned_tx = build_deposit_transaction(
-        drt_tx.compute_txid(),
-        op_return_script,
-        agg_pubkey,
-        BRIDGE_OUT_AMOUNT,
-    );
+    let mut unsigned_tx = create_dummy_tx(1, 2);
+    unsigned_tx.output[0].script_pubkey = sps50_script;
+    unsigned_tx.output[1].value = BRIDGE_OUT_AMOUNT;
+    unsigned_tx.output[1].script_pubkey = ScriptBuf::new_p2tr(SECP256K1, agg_pubkey, None);
+
+    unsigned_tx.input[0].previous_output = OutPoint::new(drt_tx.compute_txid(), 1);
 
     // Per spec: P2TR deposit request output is at index 1
     let deposit_request_output = drt_tx
@@ -92,12 +87,8 @@ pub(crate) fn create_deposit_transaction_cli(
         .get(1)
         .ok_or_else(|| Error::TxParser("DRT missing P2TR output at index 1".to_string()))?;
 
-    let prevout = TxOut {
-        script_pubkey: deposit_request_output.script_pubkey.clone(),
-        value: Amount::from_sat(drt_data.amt),
-    };
-
-    let signed_tx = sign_deposit_transaction(unsigned_tx, &prevout, takeback_hash, &signers)?;
+    let signed_tx =
+        sign_deposit_transaction(unsigned_tx, deposit_request_output, takeback_hash, &signers)?;
 
     Ok(bdk_wallet::bitcoin::consensus::serialize(&signed_tx))
 }

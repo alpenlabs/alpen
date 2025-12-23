@@ -40,11 +40,9 @@
 mod aux;
 mod info;
 mod parse;
-mod validation;
 
 pub const DEPOSIT_OUTPUT_INDEX: usize = 1;
 
 pub use aux::DepositTxHeaderAux;
 pub use info::DepositInfo;
 pub use parse::parse_deposit_tx;
-pub use validation::{validate_deposit_output_lock, validate_drt_spending_signature};

@@ -91,15 +91,14 @@ pub fn validate_and_extract_script_params(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::secp256k1::{Keypair, Secp256k1, SecretKey};
+    use bitcoin::secp256k1::{Keypair, SECP256K1, SecretKey};
 
     use super::*;
 
     /// Helper function to create a valid XOnlyPublicKey from a secret key
     fn create_pubkey_from_secret(secret_bytes: [u8; 32]) -> XOnlyPublicKey {
-        let secp = Secp256k1::new();
         let secret_key = SecretKey::from_slice(&secret_bytes).unwrap();
-        let keypair = Keypair::from_secret_key(&secp, &secret_key);
+        let keypair = Keypair::from_secret_key(SECP256K1, &secret_key);
         XOnlyPublicKey::from_keypair(&keypair).0
     }
 

@@ -8,15 +8,15 @@ use crate::slash::SlashTxHeaderAux;
 pub struct SlashInfo {
     /// SPS-50 auxiliary data from the transaction tag.
     header_aux: SlashTxHeaderAux,
-    /// Previous outpoint referenced second input (stake connector).
-    second_inpoint: BitcoinOutPoint,
+    /// Previous outpoint referenced by the second input (stake connector).
+    stake_inpoint: BitcoinOutPoint,
 }
 
 impl SlashInfo {
-    pub fn new(header_aux: SlashTxHeaderAux, second_inpoint: BitcoinOutPoint) -> Self {
+    pub fn new(header_aux: SlashTxHeaderAux, stake_inpoint: BitcoinOutPoint) -> Self {
         Self {
             header_aux,
-            second_inpoint,
+            stake_inpoint,
         }
     }
 
@@ -24,7 +24,7 @@ impl SlashInfo {
         &self.header_aux
     }
 
-    pub fn second_inpoint(&self) -> &BitcoinOutPoint {
-        &self.second_inpoint
+    pub fn stake_inpoint(&self) -> &BitcoinOutPoint {
+        &self.stake_inpoint
     }
 }

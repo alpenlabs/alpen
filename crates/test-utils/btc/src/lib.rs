@@ -9,14 +9,12 @@ use bitcoin::{
     key::TapTweak,
     opcodes::all::OP_RETURN,
     script::{self, PushBytesBuf},
-    secp256k1::{Keypair, Message, Secp256k1},
+    secp256k1::{Keypair, Message, SECP256K1},
     sighash::{Prevouts, SighashCache},
     Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
     Transaction, TxIn, TxOut, Witness,
 };
-use strata_asm_txs_bridge_v1::constants::{
-    BRIDGE_V1_SUBPROTOCOL_ID, DEPOSIT_TX_TYPE, WITHDRAWAL_FULFILLMENT_TX_TYPE,
-};
+use strata_asm_txs_bridge_v1::constants::{BridgeTxType, BRIDGE_V1_SUBPROTOCOL_ID};
 use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
@@ -91,12 +89,11 @@ pub fn create_test_deposit_tx(
     let mut previous_output: BitcoinOutPoint = ArbitraryGenerator::new().generate();
     previous_output.0.vout = 0;
 
-    let secp = Secp256k1::new();
     let (xpk, _) = keypair.x_only_public_key();
     let tapscript_root = TapNodeHash::from_byte_array(*tapnode_hash); // since there is only one
                                                                       // script node
     let sbuf = ScriptBuf::new_p2tr(
-        &secp,
+        SECP256K1,
         xpk,
         Some(TapNodeHash::from_byte_array(*tapnode_hash)),
     );
@@ -143,10 +140,10 @@ pub fn create_test_deposit_tx(
 
     let msg = Message::from_digest(*sighash.as_ref());
 
-    let tweaked_pair = keypair.tap_tweak(&secp, Some(tapscript_root));
+    let tweaked_pair = keypair.tap_tweak(SECP256K1, Some(tapscript_root));
 
     // Sign the sighash
-    let sig = secp.sign_schnorr(&msg, &tweaked_pair.to_keypair());
+    let sig = SECP256K1.sign_schnorr(&msg, &tweaked_pair.to_keypair());
 
     tx.input[0].witness.push(sig.as_ref());
 
@@ -197,7 +194,7 @@ pub fn build_test_deposit_script(
     // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
     let mut data = dep_config.magic_bytes.clone().to_vec();
     data.push(BRIDGE_V1_SUBPROTOCOL_ID);
-    data.push(DEPOSIT_TX_TYPE);
+    data.push(BridgeTxType::Deposit as u8);
     data.extend(aux_data);
 
     let builder = script::Builder::new()
@@ -295,7 +292,7 @@ pub fn create_opreturn_metadata(magic: [u8; 4], deposit_idx: u32) -> ScriptBuf {
     // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
     let mut data = magic.to_vec();
     data.push(BRIDGE_V1_SUBPROTOCOL_ID);
-    data.push(WITHDRAWAL_FULFILLMENT_TX_TYPE);
+    data.push(BridgeTxType::WithdrawalFulfillment as u8);
     data.extend(aux_data);
 
     Descriptor::new_op_return(&data).unwrap().to_script()

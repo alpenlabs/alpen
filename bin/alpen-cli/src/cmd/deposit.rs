@@ -3,7 +3,10 @@ use std::{str::FromStr, time::Duration};
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
 use argh::FromArgs;
 use bdk_wallet::{
-    bitcoin::{script::PushBytesBuf, secp256k1::SECP256K1, PrivateKey, XOnlyPublicKey},
+    bitcoin::{
+        secp256k1::SECP256K1, Address as BitcoinAddress, Amount, FeeRate, Network, PrivateKey,
+        Transaction, TxOut, XOnlyPublicKey,
+    },
     chain::ChainOracle,
     coin_selection::InsufficientFunds,
     descriptor::IntoWalletDescriptor,
@@ -15,8 +18,9 @@ use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
-use strata_asm_txs_bridge_v1::deposit_request::DepositRequestAuxData;
+use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_l1_txfmt::ParseConfig;
 use strata_primitives::crypto::even_kp;
 
 use crate::{
@@ -43,6 +47,83 @@ pub struct DepositArgs {
     fee_rate: Option<u64>,
 }
 
+/// Build and sign the deposit-request transaction with the SPS-50 OP_RETURN in output 0 and the
+/// bridge output in 1.
+fn build_deposit_request_tx(
+    l1w: &mut Wallet,
+    header_aux: &DrtHeaderAux,
+    deposit_output: &TxOut,
+    magic_bytes: [u8; 4],
+    fee_rate: FeeRate,
+) -> Result<Transaction, DisplayedError> {
+    let drt_sps50_tag = header_aux.build_tag_data();
+
+    let sps50_script = ParseConfig::new(magic_bytes)
+        .encode_script_buf(&drt_sps50_tag.as_ref())
+        .expect("drt metadata should be created");
+    let mut builder = l1w.build_tx();
+    // Important: the deposit won't be found by the sequencer if the order isn't correct.
+    // Per SPS-50 spec: OP_RETURN must be at index 0, P2TR at index 1
+    builder.ordering(TxOrdering::Untouched);
+    builder.add_recipient(sps50_script, Amount::ZERO);
+    builder.add_recipient(deposit_output.script_pubkey.clone(), deposit_output.value);
+    builder.fee_rate(fee_rate);
+    let mut psbt = match builder.finish() {
+        Ok(psbt) => Ok(psbt),
+        Err(CreateTxError::CoinSelection(e @ InsufficientFunds { .. })) => {
+            Err(DisplayedError::UserError(
+                "Failed to create bridge transaction".to_string(),
+                Box::new(e),
+            ))
+        }
+        Err(e) => panic!("Unexpected error in creating PSBT: {e:?}"),
+    }?;
+
+    l1w.sign(&mut psbt, Default::default())
+        .expect("tx should be signed");
+    Ok(psbt.extract_tx().expect("tx should be signed and ready"))
+}
+
+/// Prepare the bridge-in descriptor, address, and SPS-50 aux data for a deposit request.
+fn prepare_deposit_request(
+    bridge_pubkey: XOnlyPublicKey,
+    network: Network,
+    recover_delay: u32,
+    alpen_address: AlpenAddress,
+    bridge_in_amount: Amount,
+) -> (DescriptorTemplateOut, BitcoinAddress, DrtHeaderAux, TxOut) {
+    let (secret_key, recovery_public_key) = even_kp(SECP256K1.generate_keypair(&mut OsRng));
+    let recovery_public_key = recovery_public_key.x_only_public_key().0;
+    let recovery_private_key = PrivateKey::new(secret_key.into(), network);
+
+    let bridge_in_desc = bridge_in_descriptor(bridge_pubkey, recovery_private_key, recover_delay);
+    let bridge_in_address = {
+        let desc = bridge_in_desc
+            .clone()
+            .into_wallet_descriptor(SECP256K1, network)
+            .expect("valid descriptor");
+        let mut temp_wallet = Wallet::create_single(desc)
+            .network(network)
+            .create_wallet_no_persist()
+            .expect("valid descriptor");
+        temp_wallet
+            .reveal_next_address(KeychainKind::External)
+            .address
+    };
+
+    let header_aux = DrtHeaderAux::new(recovery_public_key.serialize(), alpen_address.into());
+    let deposit_output = TxOut {
+        value: bridge_in_amount,
+        script_pubkey: bridge_in_address.script_pubkey(),
+    };
+    (
+        bridge_in_desc,
+        bridge_in_address,
+        header_aux,
+        deposit_output,
+    )
+}
+
 pub async fn deposit(
     DepositArgs {
         alpen_address,
@@ -51,13 +132,6 @@ pub async fn deposit(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let requested_alpen_address = alpen_address
-        .map(|a| {
-            AlpenAddress::from_str(&a).user_error(format!(
-                "Invalid Alpen address '{a}'. Must be an EVM-compatible address"
-            ))
-        })
-        .transpose()?;
     let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
         .internal_error("Failed to load signet wallet")?;
     let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
@@ -67,6 +141,13 @@ pub async fn deposit(
         .await
         .internal_error("Failed to sync signet wallet")?;
 
+    let requested_alpen_address = alpen_address
+        .map(|a| {
+            AlpenAddress::from_str(&a).user_error(format!(
+                "Invalid Alpen address '{a}'. Must be an EVM-compatible address"
+            ))
+        })
+        .transpose()?;
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
     println!(
         "Bridging {} to Alpen address {}",
@@ -74,31 +155,18 @@ pub async fn deposit(
         alpen_address.to_string().cyan(),
     );
 
-    let (secret_key, recovery_public_key) = even_kp(SECP256K1.generate_keypair(&mut OsRng));
-    let recovery_public_key = recovery_public_key.x_only_public_key().0;
+    let (bridge_in_desc, bridge_in_address, header_aux, deposit_output) = prepare_deposit_request(
+        settings.bridge_musig2_pubkey,
+        settings.network,
+        settings.recover_delay,
+        alpen_address,
+        settings.bridge_in_amount,
+    );
 
     println!(
         "Recovery public key: {}",
-        encode(&recovery_public_key.serialize()).yellow()
+        encode(header_aux.recovery_pk()).yellow()
     );
-
-    let recovery_private_key = PrivateKey::new(secret_key.into(), settings.network);
-
-    let bridge_in_desc = bridge_in_descriptor(
-        settings.bridge_musig2_pubkey,
-        recovery_private_key,
-        settings.recover_delay,
-    );
-
-    let desc = bridge_in_desc
-        .clone()
-        .into_wallet_descriptor(l1w.secp_ctx(), settings.network)
-        .expect("valid descriptor");
-
-    let mut temp_wallet = Wallet::create_single(desc.clone())
-        .network(settings.network)
-        .create_wallet_no_persist()
-        .expect("valid descriptor");
 
     let current_block_height = l1w
         .local_chain()
@@ -108,13 +176,7 @@ pub async fn deposit(
 
     // Number of blocks after which the wallet actually enables recovery. This is mostly to account
     // for any reorgs that may happen at the recovery height.
-    let recover_at_delay = settings.recover_delay + settings.finality_depth;
-
-    let recover_at = current_block_height + recover_at_delay;
-
-    let bridge_in_address = temp_wallet
-        .reveal_next_address(KeychainKind::External)
-        .address;
+    let recover_at = current_block_height + settings.recover_delay + settings.finality_depth;
 
     println!(
         "Using {} as bridge in address",
@@ -124,46 +186,21 @@ pub async fn deposit(
     let fee_rate = get_fee_rate(fee_rate, settings.signet_backend.as_ref()).await;
     log_fee_rate(&fee_rate);
 
-    // Construct the DRT metadata using the canonical builder
-    let drt_metadata =
-        DepositRequestAuxData::new(recovery_public_key, alpen_address.as_slice().to_vec());
-
     // Convert to PushBytes (ensures length ≤ 80 bytes)
     let magic_bytes: [u8; 4] = settings
         .magic_bytes
         .as_bytes()
         .try_into()
         .expect("magic_bytes validated to be 4 bytes");
-    let op_return_data = drt_metadata
-        .op_return_data(magic_bytes)
-        .internal_error("Failed to generate DRT metadata")?;
-    let push_bytes = PushBytesBuf::try_from(op_return_data)
-        .expect("conversion should succeed after length check");
 
-    let mut psbt = {
-        let mut builder = l1w.build_tx();
-        // Important: the deposit won't be found by the sequencer if the order isn't correct.
-        // Per SPS-50 spec: OP_RETURN must be at index 0, P2TR at index 1
-        builder.ordering(TxOrdering::Untouched);
-        builder.add_data(&push_bytes);
-        builder.add_recipient(bridge_in_address.script_pubkey(), settings.bridge_in_amount);
-        builder.fee_rate(fee_rate);
-        match builder.finish() {
-            Ok(psbt) => psbt,
-            Err(CreateTxError::CoinSelection(e @ InsufficientFunds { .. })) => {
-                return Err(DisplayedError::UserError(
-                    "Failed to create bridge transaction".to_string(),
-                    Box::new(e),
-                ));
-            }
-            Err(e) => panic!("Unexpected error in creating PSBT: {e:?}"),
-        }
-    };
-    l1w.sign(&mut psbt, Default::default())
-        .expect("tx should be signed");
+    let tx = build_deposit_request_tx(
+        &mut l1w,
+        &header_aux,
+        &deposit_output,
+        magic_bytes,
+        fee_rate,
+    )?;
     println!("Built transaction");
-
-    let tx = psbt.extract_tx().expect("tx should be signed and ready");
 
     let pb = ProgressBar::new_spinner().with_message("Saving output descriptor");
     pb.enable_steady_tick(Duration::from_millis(100));
@@ -220,13 +257,34 @@ mod tests {
     use std::sync::Arc;
 
     use bdk_wallet::{
-        bitcoin::{secp256k1::SECP256K1, Network},
+        bitcoin::{bip32::Xpriv, secp256k1::SECP256K1, Amount, FeeRate, Network},
         keys::{DescriptorPublicKey, SinglePub, SinglePubKey},
         miniscript::{descriptor::TapTree, Descriptor, Miniscript},
     };
+    use strata_asm_txs_bridge_v1::deposit_request::parse_drt;
     use strata_primitives::constants::RECOVER_DELAY;
+    use strata_test_utils_btcio::BtcioTestHarness;
 
     use super::*;
+
+    /// Populate the wallet with on-chain data by replaying blocks from the corepc node.
+    fn sync_wallet_from_node(wallet: &mut Wallet, harness: &BtcioTestHarness) {
+        let node = harness.bitcoind();
+        let tip_height = node.client.get_block_count().expect("block count").0;
+        for height in 1..=tip_height {
+            let block_hash = node
+                .client
+                .get_block_hash(height)
+                .expect("block hash")
+                .0
+                .parse()
+                .expect("block hash parse");
+            let block = node.client.get_block(block_hash).expect("block");
+            wallet
+                .apply_block(&block, height as u32)
+                .expect("apply block");
+        }
+    }
 
     #[test]
     fn bridge_in_desc() {
@@ -268,5 +326,66 @@ mod tests {
             &expected_taptree,
             "tap tree should be the expected taptree"
         )
+    }
+
+    #[test]
+    fn deposit_request_tx_parses_in_asm() {
+        let bridge_pubkey = XOnlyPublicKey::from_str(
+            "89f96f834e39766f97e245d70b27236681f741ae51c117df19761af7cb2f657e",
+        )
+        .expect("valid pubkey");
+        let alpen_address = AlpenAddress::from_str("0x5400000000000000000000000000000000000001")
+            .expect("valid Alpen address");
+
+        let harness =
+            BtcioTestHarness::new_with_coinbase_maturity().expect("bitcoind harness should start");
+
+        let xpriv = Xpriv::new_master(Network::Regtest, &[0u8; 32]).expect("valid xpriv");
+        let base_desc = format!("tr({xpriv}/86h/0h/0h");
+        let external_desc = format!("{base_desc}/0/*)");
+        let internal_desc = format!("{base_desc}/1/*)");
+        let mut wallet = Wallet::create(external_desc, internal_desc)
+            .network(Network::Regtest)
+            .create_wallet_no_persist()
+            .expect("valid test wallet");
+
+        let fund_address = wallet.reveal_next_address(KeychainKind::External).address;
+        // Fund and confirm the wallet so PSBT construction has spendable inputs.
+        let node = harness.bitcoind();
+        node.client
+            .send_to_address(&fund_address, Amount::from_sat(500_000))
+            .expect("funding transaction should be created");
+        harness
+            .mine_blocks_blocking(1, None)
+            .expect("block should be mined");
+        sync_wallet_from_node(&mut wallet, &harness);
+
+        let bridge_in_amount = Amount::from_sat(100_000);
+        let (_bridge_in_desc, bridge_in_address, header_aux, deposit_output) =
+            prepare_deposit_request(
+                bridge_pubkey,
+                Network::Regtest,
+                RECOVER_DELAY,
+                alpen_address,
+                bridge_in_amount,
+            );
+
+        let tx = build_deposit_request_tx(
+            &mut wallet,
+            &header_aux,
+            &deposit_output,
+            *b"alpn",
+            FeeRate::from_sat_per_vb(1).expect("valid fee rate"),
+        )
+        .expect("tx should be built");
+        let parsed = parse_drt(&tx).expect("tx should parse as DRT");
+        assert_eq!(parsed.header_aux(), &header_aux);
+
+        let parsed_output = parsed.deposit_request_output().inner();
+        assert_eq!(parsed_output.value, bridge_in_amount);
+        assert_eq!(
+            parsed_output.script_pubkey,
+            bridge_in_address.script_pubkey()
+        );
     }
 }

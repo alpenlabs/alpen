@@ -1,156 +1,174 @@
-use bitcoin::OutPoint;
 use strata_asm_common::TxInputRef;
 use strata_codec::decode_buf_exact;
-use strata_primitives::l1::BitcoinOutPoint;
 
 use crate::{
+    constants::BridgeTxType,
     deposit::{DEPOSIT_OUTPUT_INDEX, DepositInfo, aux::DepositTxHeaderAux},
-    errors::DepositTxParseError,
+    errors::TxStructureError,
 };
+
+/// Index of the deposit transaction input that spends the DRT (Deposit Request Transaction)
+/// output.
+const DRT_INPUT_INDEX: usize = 0;
 
 /// Parses deposit transaction to extract [`DepositInfo`].
 ///
 /// Parses a deposit transaction following the SPS-50 specification and extracts the decoded
-/// auxiliary data ([`DepositTxHeaderAux`]) along with the deposit amount and outpoint. The
-/// auxiliary data is encoded with [`strata_codec::Codec`] and includes the deposit index, DRT
-/// tapscript merkle root, and destination bytes.
+/// auxiliary data ([`DepositTxHeaderAux`]) along with the deposit output and DRT inpoint. The
+/// auxiliary data is encoded with [`strata_codec::Codec`] and includes the deposit index.
 ///
 /// # Errors
 ///
-/// Returns [`DepositTxParseError`] if the auxiliary data cannot be decoded or if the expected
-/// deposit output at index 1 is missing.
-pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, DepositTxParseError> {
-    // Parse auxiliary data using DepositTxHeaderAux
-    let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())?;
+/// Returns [`TxStructureError`] if the auxiliary data cannot be decoded or if the expected
+/// deposit output at index [`DEPOSIT_OUTPUT_INDEX`] is missing.
+pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, TxStructureError> {
+    // Parse auxiliary data
+    let header_aux: DepositTxHeaderAux = decode_buf_exact(tx_input.tag().aux_data())
+        .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::Deposit, e))?;
 
-    // Extract the deposit output (second output at index 1)
+    // Extract the deposit output
     let deposit_output = tx_input
         .tx()
         .output
         .get(DEPOSIT_OUTPUT_INDEX)
-        .ok_or(DepositTxParseError::MissingDepositOutput)?;
+        .ok_or_else(|| {
+            TxStructureError::missing_output(
+                BridgeTxType::Deposit,
+                DEPOSIT_OUTPUT_INDEX,
+                "deposit output",
+            )
+        })?
+        .clone()
+        .into();
 
-    // Create outpoint reference for the deposit output
-    let deposit_outpoint = BitcoinOutPoint::from(OutPoint {
-        txid: tx_input.tx().compute_txid(),
-        vout: DEPOSIT_OUTPUT_INDEX as u32,
-    });
+    // Extract the DRT inpoint
+    let drt_inpoint = tx_input
+        .tx()
+        .input
+        .get(DRT_INPUT_INDEX)
+        .ok_or_else(|| {
+            TxStructureError::missing_input(BridgeTxType::Deposit, DRT_INPUT_INDEX, "drt input")
+        })?
+        .previous_output
+        .into();
 
     // Construct the validated deposit information
-    Ok(DepositInfo::new(
-        header_aux,
-        deposit_output.value.into(),
-        deposit_outpoint,
-    ))
+    Ok(DepositInfo::new(header_aux, deposit_output, drt_inpoint))
 }
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        Transaction,
-        secp256k1::{Secp256k1, SecretKey},
-    };
-    use strata_asm_common::TxInputRef;
-    use strata_crypto::EvenSecretKey;
-    use strata_l1_txfmt::ParseConfig;
-    use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey};
+    use bitcoin::{OutPoint, ScriptBuf, Transaction, TxOut, secp256k1::SECP256K1};
+    use strata_crypto::test_utils::schnorr::create_agg_pubkey_from_privkeys;
+    use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::*;
-    use crate::test_utils::{TEST_MAGIC_BYTES, create_test_deposit_tx, mutate_aux_data, parse_tx};
+    use crate::{
+        constants::BridgeTxType,
+        deposit::{
+            DEPOSIT_OUTPUT_INDEX, DepositInfo, DepositTxHeaderAux, parse::DRT_INPUT_INDEX,
+            parse_deposit_tx,
+        },
+        deposit_request::{DRT_OUTPUT_INDEX, DrtHeaderAux},
+        errors::TxStructureErrorKind,
+        test_utils::{
+            create_connected_drt_and_dt, create_test_operators, mutate_aux_data, parse_sps50_tx,
+        },
+    };
 
-    /// Minimum length of auxiliary data (fixed fields only, excluding variable destination address)
-    /// - 4 bytes for deposit_idx (u32)
-    /// - 32 bytes for drt_tapscript_merkle_root
-    const MIN_DEPOSIT_TX_AUX_DATA_LEN: usize = 4 + 32;
+    const AUX_LEN: usize = std::mem::size_of::<DepositTxHeaderAux>();
 
-    // Helper function to create a test operator keypair
-    fn create_test_operator_keypair() -> (BitcoinXOnlyPublicKey, EvenSecretKey) {
-        let secp = Secp256k1::new();
-        let secret_key = EvenSecretKey::from(SecretKey::from_slice(&[1u8; 32]).unwrap());
-        let keypair = bitcoin::secp256k1::Keypair::from_secret_key(&secp, &secret_key);
-        let (xonly_pk, _) = keypair.x_only_public_key();
-        let operators_pubkey =
-            BitcoinXOnlyPublicKey::new(Buf32::new(xonly_pk.serialize())).expect("Valid public key");
-        (operators_pubkey, secret_key)
-    }
+    fn create_deposit_tx_with_info() -> (DepositInfo, Transaction) {
+        let mut arb = ArbitraryGenerator::new();
+        let drt_header_aux: DrtHeaderAux = arb.generate();
+        let deposit_idx: u32 = arb.generate();
+        let amount = BitcoinAmount::from_sat(100_000);
 
-    // Helper function to create a test transaction (for mutation tests)
-    fn create_test_tx(deposit_info: &DepositInfo) -> Transaction {
-        let (_, operators_privkey) = create_test_operator_keypair();
-        create_test_deposit_tx(deposit_info, &[operators_privkey])
+        let (sks, _) = create_test_operators(3);
+        let dt_aux = DepositTxHeaderAux::new(deposit_idx, *drt_header_aux.ee_address());
+        let (drt, dt) =
+            create_connected_drt_and_dt(&drt_header_aux, dt_aux.clone(), amount.into(), &sks);
+        let nn_key = create_agg_pubkey_from_privkeys(&sks);
+
+        let drt_inpoint = OutPoint::new(drt.compute_txid(), DRT_OUTPUT_INDEX as u32);
+        let deposit_output = TxOut {
+            value: amount.into(),
+            script_pubkey: ScriptBuf::new_p2tr(SECP256K1, nn_key, None),
+        };
+        let info = DepositInfo::new(dt_aux, deposit_output.into(), drt_inpoint.into());
+        (info, dt)
     }
 
     #[test]
-    fn test_parse_deposit_tx_success() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: DepositInfo = arb.generate();
+    fn test_parse_dt_success() {
+        let (info, tx) = create_deposit_tx_with_info();
+        let tx_input = parse_sps50_tx(&tx);
 
-        let tx = create_test_tx(&info);
+        let parsed = parse_deposit_tx(&tx_input).expect("should parse deposit tx");
 
-        let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
-            .try_parse_tx(&tx)
-            .expect("Should parse transaction");
-        let tx_input = TxInputRef::new(&tx, tag_data_ref);
-        let parsed_info =
-            parse_deposit_tx(&tx_input).expect("Should successfully extract deposit info");
-        // NOTE: we are delibertely skipping the deposit output test as the outpoint is created by
-        // computing transaction id but we are using random txid in the info
-        assert_eq!(info.header_aux(), parsed_info.header_aux());
-        assert_eq!(info.amt(), parsed_info.amt());
+        assert_eq!(info, parsed);
     }
 
     #[test]
-    fn test_parse_deposit_aux_data_too_short() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: DepositInfo = arb.generate();
+    fn test_parse_missing_output() {
+        let (_, mut tx) = create_deposit_tx_with_info();
 
-        let mut tx = create_test_tx(&info);
+        // Remove the deposit output
+        tx.output.pop();
 
-        // Mutate the OP_RETURN output to have short aux data
-        let short_aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN - 1];
-        mutate_aux_data(&mut tx, short_aux_data);
-
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, DepositTxParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::Deposit);
+        assert!(matches!(
+            err.kind(),
+            TxStructureErrorKind::MissingOutput {
+                index: DEPOSIT_OUTPUT_INDEX
+            }
+        ))
     }
 
     #[test]
-    fn test_parse_deposit_empty_destination() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: DepositInfo = arb.generate();
+    fn test_parse_missing_input() {
+        let (_, mut tx) = create_deposit_tx_with_info();
 
-        let mut tx = create_test_tx(&info);
+        // Remove all the inputs
+        tx.input.clear();
 
-        // Mutate the OP_RETURN output to have aux data with no destination (exactly
-        // MIN_AUX_DATA_LEN)
-        let aux_data = vec![0u8; MIN_DEPOSIT_TX_AUX_DATA_LEN];
-        mutate_aux_data(&mut tx, aux_data);
-
-        let tx_input = parse_tx(&tx);
-        let result = parse_deposit_tx(&tx_input);
-        assert!(result.is_ok(), "Should succeed with empty destination");
-
-        let deposit_info = result.unwrap();
-        assert!(
-            deposit_info.header_aux().address().is_empty(),
-            "Address should be empty"
-        );
-    }
-
-    #[test]
-    fn test_parse_deposit_missing_output() {
-        let mut arb = ArbitraryGenerator::new();
-        let info: DepositInfo = arb.generate();
-
-        let mut tx = create_test_tx(&info);
-
-        // Remove the deposit output (keep only OP_RETURN at index 0)
-        tx.output.truncate(1);
-
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_deposit_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, DepositTxParseError::MissingDepositOutput));
+        assert_eq!(err.tx_type(), BridgeTxType::Deposit);
+        assert!(matches!(
+            err.kind(),
+            TxStructureErrorKind::MissingInput {
+                index: DRT_INPUT_INDEX
+            }
+        ))
+    }
+
+    #[test]
+    fn test_parse_invalid_aux() {
+        let (_, mut tx) = create_deposit_tx_with_info();
+
+        let larger_aux = [0u8; AUX_LEN + 1].to_vec();
+        mutate_aux_data(&mut tx, larger_aux);
+
+        let tx_input = parse_sps50_tx(&tx);
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::Deposit);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
+
+        let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
+        mutate_aux_data(&mut tx, smaller_aux);
+
+        let tx_input = parse_sps50_tx(&tx);
+        let err = parse_deposit_tx(&tx_input).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::Deposit);
+        assert!(matches!(
+            err.kind(),
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
     }
 }

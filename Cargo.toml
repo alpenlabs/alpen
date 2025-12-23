@@ -103,7 +103,6 @@ members = [
   "crates/test-utils/l2",
   "crates/test-utils/ssz",
   "crates/test-utils/test-utils",
-  "crates/test-utils/tx-indexer",
   "provers/sp1",
 
   # binaries listed separately
@@ -253,7 +252,6 @@ strata-test-utils-btcio = { path = "crates/test-utils/btcio" }
 strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
 strata-test-utils-l2 = { path = "crates/test-utils/l2" }
 strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
-strata-test-utils-tx-indexer = { path = "crates/test-utils/tx-indexer" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common

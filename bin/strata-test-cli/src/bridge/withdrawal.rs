@@ -7,7 +7,8 @@ use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
 };
-use strata_asm_txs_bridge_v1::test_utils::{create_withdrawal_op_return, WithdrawalMetadata};
+use strata_asm_txs_bridge_v1::withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux;
+use strata_l1_txfmt::ParseConfig;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use super::types::BitcoinDConfig;
@@ -58,8 +59,11 @@ fn create_withdrawal_fulfillment_inner(
     // Parse inputs
     let amount = Amount::from_sat(amount);
 
-    // Create withdrawal metadata
-    let metadata = WithdrawalMetadata::new(*MAGIC_BYTES, deposit_idx);
+    // Create withdrawal fulfillment SPS50 tag
+    let sps50_tag = WithdrawalFulfillmentTxHeaderAux::new(deposit_idx).build_tag_data();
+    let sps_50_script = ParseConfig::new(*MAGIC_BYTES)
+        .encode_script_buf(&sps50_tag.as_ref())
+        .map_err(|e| Error::TxBuilder(e.to_string()))?;
 
     // Use wallet to select and fund inputs (CLI responsibility)
     let mut wallet = taproot_wallet()?;
@@ -80,10 +84,7 @@ fn create_withdrawal_fulfillment_inner(
 
         builder.ordering(TxOrdering::Untouched);
 
-        // Use canonical OP_RETURN construction from asm/txs/bridge-v1
-        let op_return_script = create_withdrawal_op_return(&metadata)
-            .map_err(|e| Error::TxBuilder(format!("Failed to create OP_RETURN script: {e}")))?;
-        builder.add_recipient(op_return_script, Amount::ZERO);
+        builder.add_recipient(sps_50_script, Amount::ZERO);
         builder.add_recipient(recipient_script.clone(), amount);
 
         builder.fee_rate(fee_rate);

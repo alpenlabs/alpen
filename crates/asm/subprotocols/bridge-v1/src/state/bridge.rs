@@ -1,22 +1,17 @@
-use bitcoin::Transaction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
-use strata_asm_txs_bridge_v1::{
-    deposit::{DepositInfo, validate_deposit_output_lock, validate_drt_spending_signature},
-    errors::Mismatch,
-    withdrawal_fulfillment::WithdrawalFulfillmentInfo,
-};
+use strata_asm_txs_bridge_v1::{deposit::DepositInfo, errors::Mismatch};
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
-    errors::{DepositValidationError, WithdrawalCommandError, WithdrawalValidationError},
+    errors::{DepositValidationError, WithdrawalCommandError},
     state::{
-        assignment::AssignmentTable,
+        assignment::{AssignmentEntry, AssignmentTable},
         config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
-        withdrawal::{OperatorClaimUnlock, WithdrawalCommand},
+        withdrawal::WithdrawalCommand,
     },
 };
 
@@ -88,69 +83,6 @@ impl BridgeV1State {
         &self.denomination
     }
 
-    /// Validates a deposit transaction and info against bridge state requirements.
-    ///
-    /// This function performs comprehensive validation of a deposit by verifying:
-    /// - The deposit amount matches the bridge's expected amount
-    /// - The Deposit Request Transaction (DRT) spending signature is valid
-    /// - The deposit output is properly locked to the aggregated operator key
-    /// - The deposit index is unique within the deposits table
-    ///
-    /// # Parameters
-    ///
-    /// - `tx` - The Bitcoin transaction containing the deposit
-    /// - `info` - The parsed deposit information to validate
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` - If the deposit passes all validation checks
-    /// - `Err(DepositValidationError)` - If validation fails for any reason
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - The deposit amount doesn't match the bridge's expected amount
-    /// - The DRT spending signature is invalid or doesn't match the aggregated operator key
-    /// - The deposit output lock is incorrect
-    /// - A deposit with the same index already exists
-    fn validate_deposit(
-        &self,
-        tx: &Transaction,
-        info: &DepositInfo,
-    ) -> Result<(), DepositValidationError> {
-        // Verify the deposit amount matches the bridge's expected amount
-        if info.amt().to_sat() != self.denomination.to_sat() {
-            return Err(DepositValidationError::MismatchDepositAmount(Mismatch {
-                expected: self.denomination.to_sat(),
-                got: info.amt().to_sat(),
-            }));
-        }
-
-        // Validate the DRT spending signature against the aggregated operator key
-        validate_drt_spending_signature(
-            tx,
-            info.header_aux().drt_tapscript_merkle_root(),
-            self.operators().agg_key(),
-            info.amt().into(),
-        )?;
-
-        // Ensure the deposit output is properly locked to the aggregated operator key
-        validate_deposit_output_lock(tx, self.operators().agg_key())?;
-
-        // Verify this deposit index hasn't been used before
-        if self
-            .deposits()
-            .get_deposit(info.header_aux().deposit_idx())
-            .is_some()
-        {
-            return Err(DepositValidationError::DepositIdxAlreadyExists(
-                info.header_aux().deposit_idx(),
-            ));
-        }
-
-        Ok(())
-    }
-
     /// Processes a deposit transaction by validating and adding it to the deposits table.
     ///
     /// This function takes already parsed deposit transaction information, validates it against the
@@ -174,17 +106,10 @@ impl BridgeV1State {
     /// - The deposit amount is zero or negative
     /// - The internal key doesn't match the current aggregated operator key
     /// - The deposit index already exists in the deposits table
-    pub fn process_deposit_tx(
-        &mut self,
-        tx: &Transaction,
-        info: &DepositInfo,
-    ) -> Result<(), DepositValidationError> {
-        // Validate the deposit first
-        self.validate_deposit(tx, info)?;
+    pub fn add_deposit(&mut self, info: &DepositInfo) -> Result<(), DepositValidationError> {
         let notary_operators = self.operators.current_multisig().clone();
         let entry = DepositEntry::new(
             info.header_aux().deposit_idx(),
-            info.outpoint(),
             notary_operators,
             info.amt(),
         )?;
@@ -268,105 +193,14 @@ impl BridgeV1State {
             .reassign_expired_assignments(self.operators.current_multisig(), current_block)
     }
 
-    /// Validates the parsed withdrawal fulfillment information against assignment information.
-    ///
-    /// This function takes already parsed withdrawal information and validates it
-    /// against the corresponding assignment entry. It checks that:
-    /// - An assignment exists for the withdrawal's deposit
-    /// - The withdrawal amounts and destinations match the assignment specifications
-    ///
-    /// # Parameters
-    ///
-    /// - `withdrawal_info` - Parsed withdrawal information containing deposit details and amounts
+    /// Removes an assignment by its deposit index.
     ///
     /// # Returns
     ///
-    /// - `Ok(())` - If the withdrawal is valid according to assignment information
-    /// - `Err(WithdrawalValidationError)` - If validation fails for any reason
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - No assignment exists for the referenced deposit
-    /// - The withdrawal specifications don't match the assignment
-    fn validate_withdrawal_fulfillment(
-        &self,
-        withdrawal_info: &WithdrawalFulfillmentInfo,
-    ) -> Result<(), WithdrawalValidationError> {
-        let deposit_idx = withdrawal_info.header_aux().deposit_idx();
-
-        // Check if an assignment exists for this deposit
-        let assignment = self
-            .assignments
-            .get_assignment(deposit_idx)
-            .ok_or(WithdrawalValidationError::NoAssignmentFound { deposit_idx })?;
-
-        // Validate withdrawal amount against assignment command
-        let expected_amount = assignment.withdrawal_command().net_amount();
-        let actual_amount = withdrawal_info.withdrawal_amount();
-        if expected_amount != actual_amount {
-            return Err(WithdrawalValidationError::AmountMismatch(Mismatch {
-                expected: expected_amount,
-                got: actual_amount,
-            }));
-        }
-
-        // Validate withdrawal destination against assignment command
-        let expected_destination = assignment.withdrawal_command().destination().to_script();
-        let actual_destination = withdrawal_info.withdrawal_destination().clone();
-        if expected_destination != actual_destination {
-            return Err(WithdrawalValidationError::DestinationMismatch(Mismatch {
-                expected: expected_destination,
-                got: actual_destination,
-            }));
-        }
-
-        Ok(())
-    }
-
-    /// Processes a withdrawal fulfillment transaction by validating it, and removing the
-    /// assignment from AssignmentTable.
-    ///
-    /// This function takes already parsed withdrawal transaction information, validates it against
-    /// the current state using the assignment table, removes the assignment entry to mark the
-    /// withdrawal as fulfilled. The withdrawal processing information is returned to the caller
-    /// for storage in MohoState and later use by Bridge proof.
-    ///
-    /// # Parameters
-    ///
-    /// - `tx` - The withdrawal fulfillment transaction
-    /// - `withdrawal_info` - Parsed withdrawal information containing deposit details and
-    ///   withdrawal amounts
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(WithdrawalProcessedInfo)` - The processed withdrawal information if transaction passes
-    ///   validation
-    /// - `Err(WithdrawalValidationError)` - If validation fails for any reason
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - No assignment exists for the referenced deposit
-    /// - The withdrawal specifications don't match the assignment
-    /// - The deposit referenced in the withdrawal doesn't exist
-    pub fn process_withdrawal_fulfillment_tx(
-        &mut self,
-        withdrawal_info: &WithdrawalFulfillmentInfo,
-    ) -> Result<OperatorClaimUnlock, WithdrawalValidationError> {
-        self.validate_withdrawal_fulfillment(withdrawal_info)?;
-
-        // Remove the assignment from the table to mark withdrawal as fulfilled
-        // Safe to unwrap since validate_withdrawal ensures the assignment exists
-        let removed_assignment = self
-            .assignments
-            .remove_assignment(withdrawal_info.header_aux().deposit_idx())
-            .expect("Assignment must exist after successful validation");
-
-        Ok(OperatorClaimUnlock {
-            deposit_idx: removed_assignment.deposit_idx(),
-            operator_idx: removed_assignment.current_assignee(),
-        })
+    /// - `Some(AssignmentEntry)` if the assignment was found and removed
+    /// - `None` if no assignment with the given deposit index exists
+    pub fn remove_assignment(&mut self, deposit_idx: u32) -> Option<AssignmentEntry> {
+        self.assignments.remove_assignment(deposit_idx)
     }
 
     /// Removes an operator from the active multisig by deactivating them.
@@ -382,101 +216,11 @@ impl BridgeV1State {
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_txs_bridge_v1::{deposit::DepositInfo, test_utils::create_test_deposit_tx};
-    use strata_primitives::{bitcoin_bosd::Descriptor, l1::L1BlockCommitment};
+    use strata_primitives::l1::L1BlockCommitment;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{
-        add_deposits, add_deposits_and_assignments, create_test_state,
-        create_withdrawal_info_from_assignment,
-    };
-
-    /// Test successful deposit transaction processing.
-    ///
-    /// Verifies that valid deposits with correct amounts and signatures are processed
-    /// successfully and stored in the deposits table with the correct information.
-    #[test]
-    fn test_process_deposit_tx_success() {
-        let (mut bridge_state, privkeys) = create_test_state();
-        for i in 0..5 {
-            let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-            deposit_info.set_amt(bridge_state.denomination);
-
-            let deposit_tx = create_test_deposit_tx(&deposit_info, &privkeys);
-
-            // Process the deposit
-            let result = bridge_state.process_deposit_tx(&deposit_tx, &deposit_info);
-            assert!(
-                result.is_ok(),
-                "Valid deposit should be processed successfully"
-            );
-
-            // Verify the deposit was added to the state
-            assert_eq!(bridge_state.deposits().len(), i + 1);
-            let stored_deposit = bridge_state
-                .deposits()
-                .get_deposit(deposit_info.header_aux().deposit_idx())
-                .unwrap();
-            assert_eq!(
-                stored_deposit.idx(),
-                deposit_info.header_aux().deposit_idx()
-            );
-            assert_eq!(stored_deposit.amt(), deposit_info.amt());
-            assert_eq!(stored_deposit.output(), &deposit_info.outpoint());
-        }
-    }
-
-    /// Test deposit transaction rejection due to invalid amount.
-    ///
-    /// Verifies that deposits with amounts that don't match the bridge's expected
-    /// denomination are rejected with the appropriate error type.
-    #[test]
-    fn test_process_deposit_tx_invalid_amount() {
-        let (mut bridge_state, privkeys) = create_test_state();
-        let deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-
-        let tx = create_test_deposit_tx(&deposit_info, &privkeys);
-
-        let err = bridge_state
-            .process_deposit_tx(&tx, &deposit_info)
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            DepositValidationError::MismatchDepositAmount(_)
-        ));
-        if let DepositValidationError::MismatchDepositAmount(mismatch) = err {
-            assert_eq!(mismatch.expected, bridge_state.denomination.to_sat());
-            assert_eq!(mismatch.got, deposit_info.amt().to_sat());
-        }
-
-        // Verify no deposit was added
-        assert_eq!(bridge_state.deposits().len(), 0);
-    }
-
-    /// Test deposit transaction rejection due to invalid signature.
-    ///
-    /// Verifies that deposits signed with incomplete or incorrect operator keys
-    /// are rejected during signature validation.
-    #[test]
-    fn test_process_deposit_tx_invalid_signing_set() {
-        let (mut bridge_state, mut privkeys) = create_test_state();
-
-        let mut deposit_info: DepositInfo = ArbitraryGenerator::new().generate();
-        deposit_info.set_amt(bridge_state.denomination);
-
-        privkeys.pop();
-        let tx = create_test_deposit_tx(&deposit_info, &privkeys);
-
-        let err = bridge_state
-            .process_deposit_tx(&tx, &deposit_info)
-            .unwrap_err();
-
-        assert!(matches!(err, DepositValidationError::DrtSignature(_)));
-
-        // Verify no deposit was added
-        assert_eq!(bridge_state.deposits().len(), 0);
-    }
+    use crate::test_utils::{add_deposits, create_test_state};
 
     /// Test successful withdrawal assignment creation.
     ///
@@ -485,11 +229,11 @@ mod tests {
     /// from multiple deposits to assignments until no deposits remain.
     #[test]
     fn test_create_withdrawal_assignment_success() {
-        let (mut state, privkeys) = create_test_state();
+        let (mut state, _privkeys) = create_test_state();
         let mut arb = ArbitraryGenerator::new();
 
         let count = 4;
-        add_deposits(&mut state, count, &privkeys);
+        add_deposits(&mut state, count);
 
         for i in 0..count {
             let unassigned_deposit_count = state.deposits.len();
@@ -521,11 +265,11 @@ mod tests {
     /// between the deposit amount and withdrawal command amount.
     #[test]
     fn test_create_withdrawal_assignment_failure() {
-        let (mut state, privkeys) = create_test_state();
+        let (mut state, _privkeys) = create_test_state();
         let mut arb = ArbitraryGenerator::new();
 
         let count = 1;
-        let deposit = add_deposits(&mut state, count, &privkeys)[0].clone();
+        let deposit = add_deposits(&mut state, count)[0].clone();
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
@@ -539,115 +283,6 @@ mod tests {
         if let WithdrawalCommandError::DepositWithdrawalAmountMismatch(mismatch) = err {
             assert_eq!(mismatch.got, output.amt.to_sat());
             assert_eq!(mismatch.expected, deposit.amt().to_sat());
-        }
-    }
-
-    /// Test successful withdrawal fulfillment transaction processing.
-    ///
-    /// Verifies that valid withdrawal fulfillment transactions that match their
-    /// corresponding assignments are processed successfully and result in assignment removal.
-    #[test]
-    fn test_process_withdrawal_fulfillment_tx_success() {
-        let (mut bridge_state, privkeys) = create_test_state();
-
-        let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
-
-        for _ in 0..count {
-            let assignment = bridge_state.assignments().assignments().first().unwrap();
-            let withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-            let res = bridge_state.process_withdrawal_fulfillment_tx(&withdrawal_info);
-            assert!(res.is_ok());
-        }
-    }
-
-    /// Test withdrawal fulfillment rejection due to destination mismatch.
-    ///
-    /// Verifies that withdrawal fulfillment transactions are rejected when the
-    /// withdrawal destination doesn't match the destination in the assignment.
-    #[test]
-    fn test_process_withdrawal_fulfillment_tx_destination_mismatch() {
-        let (mut bridge_state, privkeys) = create_test_state();
-        let mut arb = ArbitraryGenerator::new();
-
-        let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
-
-        let assignment = bridge_state.assignments().assignments().first().unwrap();
-        let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-
-        let correct_withdrawal_destination = withdrawal_info.withdrawal_destination().clone();
-        withdrawal_info.set_withdrawal_destination(arb.generate::<Descriptor>().to_script());
-        let err = bridge_state
-            .process_withdrawal_fulfillment_tx(&withdrawal_info)
-            .unwrap_err();
-
-        assert!(matches!(
-            err,
-            WithdrawalValidationError::DestinationMismatch(_)
-        ));
-        if let WithdrawalValidationError::DestinationMismatch(mismatch) = err {
-            assert_eq!(mismatch.expected, correct_withdrawal_destination);
-            assert_eq!(mismatch.got, *withdrawal_info.withdrawal_destination());
-        }
-    }
-
-    /// Test withdrawal fulfillment rejection due to amount mismatch.
-    ///
-    /// Verifies that withdrawal fulfillment transactions are rejected when the
-    /// withdrawal amount doesn't match the amount specified in the assignment.
-    #[test]
-    fn test_process_withdrawal_fulfillment_tx_amount_mismatch() {
-        let (mut bridge_state, privkeys) = create_test_state();
-        let mut arb = ArbitraryGenerator::new();
-
-        let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
-
-        let assignment = bridge_state.assignments().assignments().first().unwrap();
-        let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-
-        let correct_withdrawal_amount = withdrawal_info.withdrawal_amount();
-        withdrawal_info.set_withdrawal_amount(arb.generate());
-        let err = bridge_state
-            .process_withdrawal_fulfillment_tx(&withdrawal_info)
-            .unwrap_err();
-
-        assert!(matches!(err, WithdrawalValidationError::AmountMismatch(_)));
-        if let WithdrawalValidationError::AmountMismatch(mismatch) = err {
-            assert_eq!(mismatch.expected, correct_withdrawal_amount);
-            assert_eq!(mismatch.got, withdrawal_info.withdrawal_amount());
-        }
-    }
-
-    /// Test withdrawal fulfillment rejection when no assignment exists.
-    ///
-    /// Verifies that withdrawal fulfillment transactions are rejected when
-    /// referencing a deposit index that doesn't have a corresponding assignment.
-    #[test]
-    fn test_process_withdrawal_fulfillment_tx_no_assignment_found() {
-        let (mut bridge_state, privkeys) = create_test_state();
-        let mut arb = ArbitraryGenerator::new();
-
-        let count = 3;
-        add_deposits_and_assignments(&mut bridge_state, count, &privkeys);
-
-        let assignment = bridge_state.assignments().assignments().first().unwrap();
-        let mut withdrawal_info = create_withdrawal_info_from_assignment(assignment);
-        withdrawal_info
-            .header_aux_mut()
-            .set_deposit_idx(arb.generate());
-
-        let err = bridge_state
-            .process_withdrawal_fulfillment_tx(&withdrawal_info)
-            .unwrap_err();
-
-        assert!(matches!(
-            err,
-            WithdrawalValidationError::NoAssignmentFound { .. }
-        ));
-        if let WithdrawalValidationError::NoAssignmentFound { deposit_idx } = err {
-            assert_eq!(deposit_idx, withdrawal_info.header_aux().deposit_idx());
         }
     }
 }

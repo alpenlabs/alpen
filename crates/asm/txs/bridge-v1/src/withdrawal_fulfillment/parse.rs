@@ -3,7 +3,8 @@ use strata_codec::decode_buf_exact;
 use strata_primitives::l1::BitcoinAmount;
 
 use crate::{
-    errors::WithdrawalParseError,
+    constants::BridgeTxType,
+    errors::TxStructureError,
     withdrawal_fulfillment::{
         USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX, WithdrawalFulfillmentInfo,
         aux::WithdrawalFulfillmentTxHeaderAux,
@@ -19,19 +20,28 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns [`WithdrawalParseError`] if the auxiliary data cannot be decoded into
+/// Returns [`TxStructureError`] if the auxiliary data cannot be decoded into
 /// [`WithdrawalFulfillmentTxHeaderAux`] or if the required withdrawal fulfillment output at index 1
 /// is missing.
 pub fn parse_withdrawal_fulfillment_tx<'t>(
     tx: &TxInputRef<'t>,
-) -> Result<WithdrawalFulfillmentInfo, WithdrawalParseError> {
-    let header_aux: WithdrawalFulfillmentTxHeaderAux = decode_buf_exact(tx.tag().aux_data())?;
+) -> Result<WithdrawalFulfillmentInfo, TxStructureError> {
+    let header_aux: WithdrawalFulfillmentTxHeaderAux = decode_buf_exact(tx.tag().aux_data())
+        .map_err(|e| {
+            TxStructureError::invalid_auxiliary_data(BridgeTxType::WithdrawalFulfillment, e)
+        })?;
 
     let withdrawal_fulfillment_output = &tx
         .tx()
         .output
         .get(USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX)
-        .ok_or(WithdrawalParseError::MissingUserFulfillmentOutput)?;
+        .ok_or_else(|| {
+            TxStructureError::missing_output(
+                BridgeTxType::WithdrawalFulfillment,
+                USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX,
+                "user withdrawal fulfillment output",
+            )
+        })?;
 
     let withdrawal_amount = BitcoinAmount::from_sat(withdrawal_fulfillment_output.value.to_sat());
     let withdrawal_destination = withdrawal_fulfillment_output.script_pubkey.clone();
@@ -52,7 +62,7 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data, parse_tx,
+        TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data, parse_sps50_tx,
     };
 
     /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
@@ -96,9 +106,12 @@ mod tests {
 
         // Extract withdrawal info using the actual parser
         let err = parse_withdrawal_fulfillment_tx(&tx_input_ref).unwrap_err();
+        assert_eq!(err.tx_type(), BridgeTxType::WithdrawalFulfillment);
         assert!(matches!(
-            err,
-            WithdrawalParseError::MissingUserFulfillmentOutput
+            err.kind(),
+            crate::errors::TxStructureErrorKind::MissingOutput {
+                index: USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX
+            }
         ))
     }
 
@@ -113,17 +126,25 @@ mod tests {
         let short_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN - 1];
         mutate_aux_data(&mut tx, short_aux_data);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
 
-        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::WithdrawalFulfillment);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
 
         // Mutate the OP_RETURN output to have longer aux len - this should fail
         let long_aux_data = vec![0u8; WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN + 1];
         mutate_aux_data(&mut tx, long_aux_data);
 
-        let tx_input = parse_tx(&tx);
+        let tx_input = parse_sps50_tx(&tx);
         let err = parse_withdrawal_fulfillment_tx(&tx_input).unwrap_err();
-        assert!(matches!(err, WithdrawalParseError::InvalidAuxiliaryData(_)));
+        assert_eq!(err.tx_type(), BridgeTxType::WithdrawalFulfillment);
+        assert!(matches!(
+            err.kind(),
+            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+        ));
     }
 }
