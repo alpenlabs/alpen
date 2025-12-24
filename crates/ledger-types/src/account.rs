@@ -134,7 +134,7 @@ pub trait ISnarkAccountState: Sized {
     fn inner_state_root(&self) -> Hash;
 
     /// Gets the index of the next message to be read/processed by this account.
-    fn next_msg_read_idx(&self) -> u64;
+    fn next_inbox_msg_idx(&self) -> u64;
 
     // Inbox accessors
 
@@ -164,19 +164,6 @@ pub trait ISnarkAccountStateMut: ISnarkAccountState {
     ///
     /// This is exposed like this so that we can expose the message entry in DA.
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()>;
-}
-
-/// Extension trait for abstract snark account state.
-// TODO: depreciate this, this is just `.inbox_mmr().num_entries()`.
-pub trait ISnarkAccountStateExt: ISnarkAccountState {
-    /// Get the index of the next message that would be inserted into the MMR.
-    fn get_next_inbox_msg_idx(&self) -> u64;
-}
-
-impl<A: ISnarkAccountState> ISnarkAccountStateExt for A {
-    fn get_next_inbox_msg_idx(&self) -> u64 {
-        self.inbox_mmr().num_entries()
-    }
 }
 
 /// Trait for constructing account states with a serial.

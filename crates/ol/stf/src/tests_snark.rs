@@ -135,7 +135,7 @@ fn create_update_tx(
     // Get current inbox state
     let account = state.get_account_state(target).unwrap().unwrap();
     let snark_state = account.as_snark_account().unwrap();
-    let cur_inbox_idx = snark_state.next_msg_read_idx();
+    let cur_inbox_idx = snark_state.next_inbox_msg_idx();
 
     // For simplicity, just advance the index without actually processing messages
     // (in real usage, you'd need to include the actual messages and proofs)
@@ -236,7 +236,7 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Check inbox state after genesis
     let snark_state_after_genesis = account_after_deposit.as_snark_account().unwrap();
-    let inbox_idx_after_genesis = snark_state_after_genesis.get_next_inbox_msg_idx();
+    let inbox_idx_after_genesis = snark_state_after_genesis.next_inbox_msg_idx();
     eprintln!(
         "DEBUG: Inbox MMR has {} messages (next insert at index {})",
         inbox_idx_after_genesis, inbox_idx_after_genesis
@@ -289,7 +289,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     let snark_state_after_genesis = account_after_genesis.as_snark_account().unwrap();
 
     // Get the current processing index (NOT insertion index)
-    let cur_processing_idx = snark_state_after_genesis.next_msg_read_idx();
+    let cur_processing_idx = snark_state_after_genesis.next_inbox_msg_idx();
     eprintln!("DEBUG: Processing from index {}", cur_processing_idx);
 
     let deposit_msg = MessageEntry::new(
@@ -737,7 +737,7 @@ fn test_snark_update_process_inbox_message_with_valid_proof() {
     assert_eq!(snark_state.inbox_mmr().num_entries(), 1);
 
     // The snark account starts with next_msg_read_idx = 0 (no messages processed yet)
-    assert_eq!(snark_state.next_msg_read_idx(), 0);
+    assert_eq!(snark_state.next_inbox_msg_idx(), 0);
 
     // Step 3: Create update that processes the GAM message
     let outputs = UpdateOutputs::new(
@@ -820,7 +820,7 @@ fn test_snark_update_invalid_message_proof() {
         "1 inbox msg entry after gam message tx "
     );
     assert_eq!(
-        snark_state.next_msg_read_idx(),
+        snark_state.next_inbox_msg_idx(),
         0,
         "next to be processed msg idx should be 0"
     );

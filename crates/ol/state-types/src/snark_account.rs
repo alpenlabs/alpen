@@ -48,7 +48,7 @@ impl ISnarkAccountState for NativeSnarkAccountState {
         self.proof_state.inner_state_root()
     }
 
-    fn next_msg_read_idx(&self) -> u64 {
+    fn next_inbox_msg_idx(&self) -> u64 {
         self.proof_state.inner().next_msg_read_idx
     }
 
