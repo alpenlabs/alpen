@@ -8,8 +8,9 @@ use serde::Serialize;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types::L2BlockBundle;
+use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
 use strata_primitives::{
     prelude::*,
@@ -32,6 +33,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn l1_db(&self) -> Arc<impl L1Database>;
     fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
+    fn ol_block_db(&self) -> Arc<impl OLBlockDatabase>;
     fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
     fn ol_state_db(&self) -> Arc<impl OLStateDatabase>;
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
@@ -472,4 +474,37 @@ pub trait OLStateDatabase: Send + Sync + 'static {
 
     /// Deletes an OL write batch for a given block commitment.
     fn del_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<()>;
+}
+
+/// OL data store for OL blocks. Does not store anything about what we think
+/// the OL chain tip is, that's controlled by the consensus state.
+///
+/// This stores OL blocks (header + body) keyed by block commitment (slot + block ID).
+pub trait OLBlockDatabase: Send + Sync + 'static {
+    /// Stores an OL block. The slot is extracted from the block header. Also sets the block's
+    /// status to "unchecked" if this is a new block.
+    fn put_block_data(&self, block: OLBlock) -> DbResult<()>;
+
+    /// Retrieves an OL block for a given block ID.
+    fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlock>>;
+
+    /// Tries to delete an OL block from the store, returning if it really
+    /// existed or not.
+    fn del_block_data(&self, id: OLBlockId) -> DbResult<bool>;
+
+    /// Sets the block's validity status.
+    ///
+    /// Returns `true` if the status was updated.
+    fn set_block_status(&self, id: OLBlockId, status: BlockStatus) -> DbResult<bool>;
+
+    /// Gets the OL block IDs that we have at some slot, in case there's more
+    /// than one on competing forks.
+    fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>>;
+
+    /// Gets the validity status of a block.
+    fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
+
+    /// Returns the highest slot that has a valid OL block, or an error at genesis or when no valid
+    /// block exists.
+    fn get_tip_slot(&self) -> DbResult<Slot>;
 }

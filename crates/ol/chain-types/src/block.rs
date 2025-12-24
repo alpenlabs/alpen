@@ -238,7 +238,7 @@ impl OLL1ManifestContainer {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
-    use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot};
+    use strata_identifiers::{Buf32, Buf64, OLBlockId};
     use strata_test_utils_ssz::ssz_proptest;
 
     use crate::{
@@ -247,94 +247,11 @@ mod tests {
             OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLL1ManifestContainer,
             OLL1Update, OLTxSegment, SignedOLBlockHeader,
         },
-        test_utils::{buf32_strategy, ol_transaction_strategy},
+        test_utils::{
+            ol_block_body_strategy, ol_block_header_strategy, ol_block_strategy,
+            ol_tx_segment_strategy, signed_ol_block_header_strategy,
+        },
     };
-
-    fn buf64_strategy() -> impl Strategy<Value = Buf64> {
-        any::<[u8; 64]>().prop_map(Buf64::from)
-    }
-
-    fn ol_block_id_strategy() -> impl Strategy<Value = OLBlockId> {
-        buf32_strategy().prop_map(OLBlockId::from)
-    }
-
-    fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
-        prop::collection::vec(ol_transaction_strategy(), 0..10)
-            .prop_map(|txs| OLTxSegment { txs: txs.into() })
-    }
-
-    fn l1_update_strategy() -> impl Strategy<Value = Option<OLL1Update>> {
-        prop::option::of(buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
-            preseal_state_root,
-            manifest_cont:
-                OLL1ManifestContainer::new(vec![]).expect("empty manifest should succeed"),
-        }))
-    }
-
-    fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeader> {
-        (
-            any::<u64>(),
-            any::<u16>().prop_map(BlockFlags::from),
-            any::<Slot>(),
-            any::<Epoch>(),
-            ol_block_id_strategy(),
-            buf32_strategy(),
-            buf32_strategy(),
-            buf32_strategy(),
-        )
-            .prop_map(
-                |(
-                    timestamp,
-                    flags,
-                    slot,
-                    epoch,
-                    parent_blkid,
-                    body_root,
-                    state_root,
-                    logs_root,
-                )| {
-                    OLBlockHeader {
-                        timestamp,
-                        flags,
-                        slot,
-                        epoch,
-                        parent_blkid,
-                        body_root,
-                        state_root,
-                        logs_root,
-                    }
-                },
-            )
-    }
-
-    fn signed_ol_block_header_strategy() -> impl Strategy<Value = SignedOLBlockHeader> {
-        (ol_block_header_strategy(), buf64_strategy()).prop_map(|(header, signature)| {
-            SignedOLBlockHeader {
-                header,
-                credential: OLBlockCredential {
-                    schnorr_sig: Some(signature).into(),
-                },
-            }
-        })
-    }
-
-    fn ol_block_body_strategy() -> impl Strategy<Value = OLBlockBody> {
-        (ol_tx_segment_strategy(), l1_update_strategy()).prop_map(|(tx_segment, l1_update)| {
-            OLBlockBody {
-                tx_segment: Some(tx_segment).into(),
-                l1_update: l1_update.into(),
-            }
-        })
-    }
-
-    fn ol_block_strategy() -> impl Strategy<Value = OLBlock> {
-        (signed_ol_block_header_strategy(), ol_block_body_strategy()).prop_map(
-            |(signed_header, body)| OLBlock {
-                signed_header,
-                body,
-            },
-        )
-    }
 
     mod ol_tx_segment {
         use super::*;
@@ -352,6 +269,7 @@ mod tests {
 
     mod l1_update {
         use super::*;
+        use crate::test_utils::buf32_strategy;
 
         fn l1_update_non_option_strategy() -> impl Strategy<Value = OLL1Update> {
             buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
