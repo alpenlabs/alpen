@@ -15,7 +15,6 @@ use bitcoin::{
     Transaction, TxIn, TxOut, Witness,
 };
 use strata_asm_txs_bridge_v1::constants::{BridgeTxType, BRIDGE_V1_SUBPROTOCOL_ID};
-use strata_asm_types::L1HeaderRecord;
 use strata_bridge_types::{
     DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
 };
@@ -39,16 +38,6 @@ pub fn get_test_bitcoin_txs() -> Vec<Transaction> {
         .iter()
         .map(|x| deserialize(&hex::decode(x).unwrap()).unwrap())
         .collect()
-}
-
-pub fn gen_l1_chain(len: usize) -> Vec<L1HeaderRecord> {
-    // FIXME this is bad, the blocks generated are nonsensical
-    let mut blocks = vec![];
-    for _ in 0..len {
-        let block: L1HeaderRecord = ArbitraryGenerator::new().generate();
-        blocks.push(block);
-    }
-    blocks
 }
 
 pub fn get_btc_mainnet_block() -> Block {
