@@ -29,7 +29,7 @@
 //! ```
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_merkle::{Sha256Hasher, hasher::MerkleHasher};
+use strata_merkle::{hasher::MerkleHasher, Sha256Hasher};
 use strata_primitives::buf::Buf32;
 
 use crate::{DbError, DbResult};
