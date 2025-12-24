@@ -34,8 +34,8 @@ mod state_accessor;
 
 pub use account::{
     AccountTypeState, AccountTypeStateMut, AccountTypeStateRef, IAccountState,
-    IAccountStateConstructible, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateExt,
-    ISnarkAccountStateMut, NewAccountData,
+    IAccountStateConstructible, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
+    NewAccountData,
 };
 pub use coin::Coin;
 pub use state_accessor::IStateAccessor;

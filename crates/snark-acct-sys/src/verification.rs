@@ -31,7 +31,7 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
 
     // 2. Check message counts / proof indices line up
     let expected_idx =
-        snark_state.next_msg_read_idx() + operation.processed_messages().len() as u64;
+        snark_state.next_inbox_msg_idx() + operation.processed_messages().len() as u64;
     let new_idx = operation.new_state().next_inbox_msg_idx();
 
     if expected_idx != new_idx {
@@ -88,7 +88,7 @@ pub(crate) fn verify_input_mmr_proofs(
     msg_proofs: &[MessageEntryProof],
 ) -> AcctResult<()> {
     let generic_mmr = state.inbox_mmr().to_generic();
-    let mut cur_index = state.next_msg_read_idx();
+    let mut cur_index = state.next_inbox_msg_idx();
     for msg_proof in msg_proofs {
         let msg_bytes: Vec<u8> = msg_proof.entry().as_ssz_bytes();
         let hash = StrataHasher::hash_leaf(&msg_bytes);
@@ -133,7 +133,7 @@ fn compute_update_claim(
     // Use new state, processed messages, old state, refs and outputs to compute claim
     let cur_state = ProofState::new(
         snark_state.inner_state_root(),
-        snark_state.next_msg_read_idx(),
+        snark_state.next_inbox_msg_idx(),
     );
     let pub_params = UpdateProofPubParams::new(
         cur_state,
