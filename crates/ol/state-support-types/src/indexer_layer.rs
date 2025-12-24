@@ -98,8 +98,8 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
         self.inner.inbox_mmr()
     }
 
-    fn next_msg_read_idx(&self) -> u64 {
-        self.inner.next_msg_read_idx()
+    fn next_inbox_msg_idx(&self) -> u64 {
+        self.inner.next_inbox_msg_idx()
     }
 }
 
