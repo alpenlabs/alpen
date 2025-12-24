@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use args::Args;
-use bitcoind_async_client::Client;
+use bitcoind_async_client::{Auth, Client};
 use checkpoint_runner::runner::checkpoint_proof_runner;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::init_operators;
@@ -67,10 +67,14 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         .build(config.get_sequencer_rpc_url())
         .context("Failed to connect to the CL Sequencer client")?;
 
-    let btc_client = Client::new(
-        config.bitcoind_url.clone(),
+    let auth = Auth::UserPass(
         config.bitcoind_user.clone(),
         config.bitcoind_password.clone(),
+    );
+
+    let btc_client = Client::new(
+        config.bitcoind_url.clone(),
+        auth,
         Some(config.bitcoin_retry_count),
         Some(config.bitcoin_retry_interval),
         None,

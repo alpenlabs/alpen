@@ -13,22 +13,22 @@ use bitcoin::{
     Transaction, TxOut, Txid, Work, XOnlyPublicKey,
 };
 use bitcoind_async_client::{
+    corepc_types::{
+        model::{
+            Bip125Replaceable, GetAddressInfo, GetBlockchainInfo, GetMempoolInfo, GetRawMempool,
+            GetRawMempoolVerbose, GetRawTransaction, GetRawTransactionVerbose, GetTransaction,
+            GetTxOut, ListTransactions, ListUnspent, ListUnspentItem, MempoolAcceptance,
+            PsbtBumpFee, SignRawTransaction, SubmitPackage, SubmitPackageTxResult,
+            TestMempoolAccept, WalletCreateFundedPsbt, WalletProcessPsbt,
+        },
+        v29::{ImportDescriptors, ImportDescriptorsResult},
+    },
     traits::{Broadcaster, Reader, Signer, Wallet},
     types::{
         CreateRawTransactionInput, CreateRawTransactionOutput, ImportDescriptorInput,
         PreviousTransactionOutput, PsbtBumpFeeOptions, SighashType, WalletCreateFundedPsbtOptions,
     },
     ClientResult,
-};
-use corepc_types::{
-    model::{
-        Bip125Replaceable, GetAddressInfo, GetBlockchainInfo, GetMempoolInfo, GetRawMempool,
-        GetRawMempoolVerbose, GetRawTransaction, GetRawTransactionVerbose, GetTransaction,
-        GetTxOut, ListTransactions, ListUnspent, ListUnspentItem, MempoolAcceptance, PsbtBumpFee,
-        SignRawTransaction, SubmitPackage, SubmitPackageTxResult, TestMempoolAccept,
-        WalletCreateFundedPsbt, WalletProcessPsbt,
-    },
-    v29::{ImportDescriptors, ImportDescriptorsResult},
 };
 use musig2::secp256k1::SECP256K1;
 use rand::{rngs::OsRng, RngCore};

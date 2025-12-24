@@ -24,7 +24,6 @@ strata-tasks.workspace = true
 anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-corepc-types.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"], optional = true }
 rand.workspace = true

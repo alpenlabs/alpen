@@ -4,7 +4,7 @@
 //! behind the `btc-client` feature flag.
 
 use bitcoin::CompactTarget;
-use bitcoind_async_client::{traits::Reader, Client};
+use bitcoind_async_client::{traits::Reader, Auth, Client};
 use strata_asm_types::get_relative_difficulty_adjustment_height;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
@@ -113,13 +113,7 @@ async fn fetch_block_timestamps_ascending(
 
 /// Creates a Bitcoin RPC client from the provided configuration.
 fn create_client(config: &BitcoindConfig) -> anyhow::Result<Client> {
-    Client::new(
-        config.rpc_url.clone(),
-        config.rpc_user.clone(),
-        config.rpc_password.clone(),
-        None,
-        None,
-        None,
-    )
-    .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))
+    let auth = Auth::UserPass(config.rpc_user.clone(), config.rpc_password.clone());
+    Client::new(config.rpc_url.clone(), auth, None, None, None)
+        .map_err(|e| anyhow::anyhow!("Failed to create Bitcoin RPC client: {}", e))
 }

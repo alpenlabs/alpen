@@ -2,7 +2,7 @@ use std::{fs, path::Path, sync::Arc, time::Duration};
 
 use alloy_rpc_types::engine::JwtSecret;
 use bitcoin::{Address, Network};
-use bitcoind_async_client::{traits::Wallet, Client};
+use bitcoind_async_client::{traits::Wallet, Auth, Client};
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::L1Status;
@@ -119,10 +119,10 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
 // TODO: remove this after builder is done
 pub(crate) fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> anyhow::Result<Arc<Client>> {
     // Set up Bitcoin client RPC.
+    let auth = Auth::UserPass(config.rpc_user.clone(), config.rpc_password.clone());
     let btc_rpc = Client::new(
         config.rpc_url.clone(),
-        config.rpc_user.clone(),
-        config.rpc_password.clone(),
+        auth,
         config.retry_count,
         config.retry_interval,
         None,

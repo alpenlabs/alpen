@@ -2839,9 +2839,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoind-async-client"
-version = "0.7.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68c186e0c65762f38dfd3b5bf6698d3104d3595bbbc53d6477d2fbf354287809"
+checksum = "7fb42c12f538927ccce999e0227b1ac1b911065d2d1086f6b7451f1e217c8c32"
 dependencies = [
  "base64 0.22.1",
  "bitcoin",
@@ -13919,7 +13919,6 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "bitcoind-async-client",
- "corepc-types 0.10.1",
  "hex",
  "musig2",
  "rand 0.8.5",
@@ -15298,7 +15297,6 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "bitcoind-async-client",
- "corepc-types 0.10.1",
  "hex",
  "strata-asm-common",
  "strata-asm-txs-bridge-v1",

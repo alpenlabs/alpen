@@ -20,6 +20,5 @@ strata-test-utils.workspace = true
 anyhow.workspace = true
 bitcoin = { workspace = true, features = ["rand-std"] }
 bitcoind-async-client.workspace = true
-corepc-types.workspace = true
 hex.workspace = true
 tokio.workspace = true

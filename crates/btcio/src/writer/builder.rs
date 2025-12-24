@@ -19,8 +19,10 @@ use bitcoin::{
     Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
     Witness,
 };
-use bitcoind_async_client::traits::{Reader, Signer, Wallet};
-use corepc_types::model::ListUnspentItem;
+use bitcoind_async_client::{
+    corepc_types::model::ListUnspentItem,
+    traits::{Reader, Signer, Wallet},
+};
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeePolicy;
 use strata_csm_types::L1Payload;
@@ -543,7 +545,7 @@ mod tests {
         taproot::ControlBlock, Address, OutPoint, ScriptBuf, Sequence, SignedAmount, Transaction,
         TxIn, TxOut, Witness,
     };
-    use corepc_types::model::ListUnspentItem;
+    use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{TagData, TagDataRef};
 
     use super::*;

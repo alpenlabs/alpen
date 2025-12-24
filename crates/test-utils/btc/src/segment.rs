@@ -7,10 +7,14 @@ use bitcoin::{
     hashes::Hash,
     Block, BlockHash, Network, Txid,
 };
-use bitcoind_async_client::{error::ClientError, traits::Reader, ClientResult};
-use corepc_types::model::{
-    GetBlockchainInfo, GetMempoolInfo, GetRawMempool, GetRawMempoolVerbose, GetRawTransaction,
-    GetRawTransactionVerbose, GetTxOut,
+use bitcoind_async_client::{
+    corepc_types::model::{
+        GetBlockchainInfo, GetMempoolInfo, GetRawMempool, GetRawMempoolVerbose, GetRawTransaction,
+        GetRawTransactionVerbose, GetTxOut,
+    },
+    error::ClientError,
+    traits::Reader,
+    ClientResult,
 };
 use strata_asm_common::AsmManifest;
 use strata_asm_types::{HeaderVerificationState, L1HeaderRecord};
