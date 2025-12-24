@@ -1,6 +1,8 @@
-//! MMR position calculation helpers
+//! MMR position calculation helpers and algorithm implementation
 //!
-//! This module provides bit manipulation utilities for navigating the MMR structure.
+//! This module provides:
+//! - Bit manipulation utilities for navigating the MMR structure
+//! - Pure MMR algorithm logic (computation without storage)
 //!
 //! # Note on Future Migration
 //!
@@ -25,6 +27,9 @@
 //! Height:   [0, 0, 1, 0, 0, 1, 2, 0]
 //! Leaves:   [0, 1, x, 2, 3, x, x, 4]  (x = internal node)
 //! ```
+
+use strata_merkle::{Sha256Hasher, hasher::MerkleHasher};
+use strata_primitives::buf::Buf32;
 
 use crate::{DbError, DbResult};
 
@@ -228,6 +233,218 @@ pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
         "Position {} not found in MMR of size {}",
         pos, mmr_size
     )))
+}
+
+/// Metadata for an MMR instance
+#[derive(Debug, Clone, PartialEq)]
+pub struct MmrMetadata {
+    pub num_leaves: u64,
+    pub mmr_size: u64,
+    pub peak_roots: Vec<Buf32>,
+}
+
+impl MmrMetadata {
+    pub fn empty() -> Self {
+        Self {
+            num_leaves: 0,
+            mmr_size: 0,
+            peak_roots: Vec::new(),
+        }
+    }
+}
+
+/// Result of appending a leaf to the MMR
+#[derive(Debug)]
+pub struct AppendLeafResult {
+    pub leaf_index: u64,
+    pub nodes_to_write: Vec<(u64, [u8; 32])>,
+    pub new_metadata: MmrMetadata,
+}
+
+/// Result of popping a leaf from the MMR
+#[derive(Debug)]
+pub struct PopLeafResult {
+    pub leaf_hash: [u8; 32],
+    pub nodes_to_remove: Vec<u64>,
+    pub new_metadata: MmrMetadata,
+}
+
+/// Pure MMR algorithm logic separated from storage
+///
+/// This struct provides the core MMR algorithms (append, pop) as pure functions
+/// that compute what changes need to be made without actually making them.
+/// Storage implementations apply these changes within their own transaction context.
+#[derive(Debug)]
+pub struct MmrAlgorithm;
+
+impl MmrAlgorithm {
+    /// Compute the result of appending a leaf to the MMR
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - The hash value to append as a new leaf
+    /// * `metadata` - Current MMR metadata (num_leaves, mmr_size, peak_roots)
+    /// * `get_node` - Closure to read existing nodes (for sibling lookups during merge)
+    ///
+    /// # Returns
+    ///
+    /// `AppendLeafResult` containing:
+    /// - The leaf index of the newly appended leaf
+    /// - All nodes to write (leaf + internal nodes from merging)
+    /// - Updated metadata
+    ///
+    /// # Storage Independence
+    ///
+    /// This function doesn't know about transactions or storage backends.
+    /// The caller provides a closure to read nodes and applies the result
+    /// within their own transaction mechanism.
+    pub fn append_leaf(
+        hash: [u8; 32],
+        metadata: &MmrMetadata,
+        get_node: impl Fn(u64) -> DbResult<[u8; 32]>,
+    ) -> DbResult<AppendLeafResult> {
+        let leaf_index = metadata.num_leaves;
+        let leaf_pos = leaf_index_to_pos(leaf_index);
+
+        let mut nodes_to_write = Vec::new();
+
+        // Store the leaf
+        nodes_to_write.push((leaf_pos, hash));
+
+        // Merge along the path to create internal nodes
+        let mut current_pos = leaf_pos;
+        let mut current_hash = hash;
+        let mut current_height = 0u8;
+
+        // Keep merging as long as we have a left sibling
+        loop {
+            let next_pos = current_pos + 1;
+            let next_height = pos_height_in_tree(next_pos);
+
+            // If next position is higher, current is a right sibling - we should merge
+            if next_height > current_height {
+                // Current is right sibling, get left sibling
+                let sibling_position = sibling_pos(current_pos, current_height);
+                let sibling_hash = get_node(sibling_position)?;
+
+                // Create parent hash (left sibling, right sibling)
+                let parent_hash = Sha256Hasher::hash_node(sibling_hash, current_hash);
+
+                // Store parent
+                nodes_to_write.push((next_pos, parent_hash));
+
+                // Move up to parent
+                current_pos = next_pos;
+                current_hash = parent_hash;
+                current_height = next_height;
+            } else {
+                // Current is a left sibling (will be merged when right sibling comes)
+                // or we've reached a peak - stop here
+                break;
+            }
+        }
+
+        // Update metadata
+        let new_num_leaves = metadata.num_leaves + 1;
+        let peak_count = new_num_leaves.count_ones() as u64;
+        let new_mmr_size = 2 * new_num_leaves - peak_count;
+
+        // Calculate peak_roots
+        let peak_positions = get_peaks(new_mmr_size);
+        let new_peak_roots: Vec<Buf32> = peak_positions
+            .iter()
+            .rev()
+            .map(|&pos| {
+                // Check if this node is in our write list
+                if let Some((_, hash)) = nodes_to_write.iter().find(|(p, _)| *p == pos) {
+                    Ok(Buf32(*hash))
+                } else {
+                    get_node(pos).map(Buf32)
+                }
+            })
+            .collect::<DbResult<Vec<_>>>()?;
+
+        let new_metadata = MmrMetadata {
+            num_leaves: new_num_leaves,
+            mmr_size: new_mmr_size,
+            peak_roots: new_peak_roots,
+        };
+
+        Ok(AppendLeafResult {
+            leaf_index,
+            nodes_to_write,
+            new_metadata,
+        })
+    }
+
+    /// Compute the result of popping the last leaf from the MMR
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Current MMR metadata
+    /// * `get_node` - Closure to read existing nodes (for leaf hash and new peaks)
+    ///
+    /// # Returns
+    ///
+    /// `Some(PopLeafResult)` if there was a leaf to pop, containing:
+    /// - The hash of the removed leaf
+    /// - All node positions to remove
+    /// - Updated metadata
+    ///
+    /// `None` if the MMR is empty
+    pub fn pop_leaf(
+        metadata: &MmrMetadata,
+        get_node: impl Fn(u64) -> DbResult<[u8; 32]>,
+    ) -> DbResult<Option<PopLeafResult>> {
+        // Can't pop from empty MMR
+        if metadata.num_leaves == 0 {
+            return Ok(None);
+        }
+
+        let leaf_index = metadata.num_leaves - 1;
+        let leaf_pos = leaf_index_to_pos(leaf_index);
+
+        // Read the leaf hash before deletion
+        let leaf_hash = get_node(leaf_pos)?;
+
+        // Calculate the old MMR size (before the last leaf was added)
+        let old_mmr_size = if metadata.num_leaves == 1 {
+            0 // Empty MMR
+        } else {
+            leaf_index_to_mmr_size(metadata.num_leaves - 2)
+        };
+
+        // Collect nodes to remove: [old_mmr_size, current_mmr_size)
+        let nodes_to_remove: Vec<u64> = (old_mmr_size..metadata.mmr_size).collect();
+
+        // Update metadata
+        let new_num_leaves = metadata.num_leaves - 1;
+        let new_mmr_size = old_mmr_size;
+
+        // Calculate peak_roots for the new size
+        let new_peak_roots = if old_mmr_size > 0 {
+            let peak_positions = get_peaks(old_mmr_size);
+            peak_positions
+                .into_iter()
+                .rev()
+                .map(|pos| get_node(pos).map(Buf32))
+                .collect::<DbResult<Vec<_>>>()?
+        } else {
+            Vec::new()
+        };
+
+        let new_metadata = MmrMetadata {
+            num_leaves: new_num_leaves,
+            mmr_size: new_mmr_size,
+            peak_roots: new_peak_roots,
+        };
+
+        Ok(Some(PopLeafResult {
+            leaf_hash,
+            nodes_to_remove,
+            new_metadata,
+        }))
+    }
 }
 
 #[cfg(test)]
