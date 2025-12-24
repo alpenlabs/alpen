@@ -57,7 +57,6 @@ members = [
   "crates/evmexec",
   "crates/identifiers",
   "crates/key-derivation",
-  "crates/l1tx",
   "crates/ledger-types",
   "crates/mpt",
   "crates/ol/block-assembly",
@@ -212,7 +211,6 @@ strata-eectl = { path = "crates/eectl" }
 strata-evmexec = { path = "crates/evmexec" }
 strata-identifiers = { path = "crates/identifiers", default-features = false }
 strata-key-derivation = { path = "crates/key-derivation" }
-strata-l1tx = { path = "crates/l1tx" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mpt = { path = "crates/mpt" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }

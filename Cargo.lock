@@ -14531,31 +14531,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-l1tx"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "bitcoin",
- "borsh",
- "strata-asm-stf",
- "strata-asm-txs-bridge-v1",
- "strata-asm-types",
- "strata-bridge-types",
- "strata-btcio",
- "strata-checkpoint-types",
- "strata-crypto",
- "strata-csm-types",
- "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "strata-test-utils",
- "strata-test-utils-l2",
- "tracing",
-]
-
-[[package]]
 name = "strata-ledger-types"
 version = "0.1.0"
 dependencies = [
