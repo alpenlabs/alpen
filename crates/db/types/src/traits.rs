@@ -8,7 +8,8 @@ use serde::Serialize;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId, Slot};
+use strata_merkle::CompactMmr64B32;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
@@ -438,6 +439,43 @@ pub trait MmrDatabase: Send + Sync + 'static {
     /// assert_eq!(mmr.num_leaves(), 1);
     /// ```
     fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>>;
+}
+
+/// Account-scoped MMR database trait for per-account persistent proof generation
+///
+/// This trait extends the MMR concept to support multiple independent MMRs,
+/// one per account. Each account maintains its own separate MMR tree with
+/// independent leaf indexing and metadata.
+///
+/// ## Design Invariants
+///
+/// - Each account has its own independent MMR
+/// - Leaves are indexed from 0 sequentially per account
+/// - `append_leaf` is the only way to add data (append-only)
+/// - `num_leaves()` returns the total number of leaves for a specific account
+/// - Proofs are valid against the current root for that account
+/// - Accounts are logically isolated - operations on one account don't affect others
+pub trait AccountMmrDatabase: Send + Sync + 'static {
+    /// Append a new leaf to the MMR for a specific account
+    fn append_leaf(&self, account: AccountId, hash: [u8; 32]) -> DbResult<u64>;
+
+    /// Get a node hash by MMR position for a specific account
+    fn get_node(&self, account: AccountId, pos: u64) -> DbResult<[u8; 32]>;
+
+    /// Get the total MMR size for a specific account
+    fn mmr_size(&self, account: AccountId) -> DbResult<u64>;
+
+    /// Get the total number of leaves for a specific account
+    fn num_leaves(&self, account: AccountId) -> DbResult<u64>;
+
+    /// Get the individual peak roots for a specific account
+    fn peak_roots(&self, account: AccountId) -> Vec<[u8; 32]>;
+
+    /// Get a compact representation of the MMR for a specific account
+    fn to_compact(&self, account: AccountId) -> CompactMmr64B32;
+
+    /// Remove the last leaf from the MMR for a specific account
+    fn pop_leaf(&self, account: AccountId) -> DbResult<Option<[u8; 32]>>;
 }
 
 /// Database trait for toplevel OL state storage.
