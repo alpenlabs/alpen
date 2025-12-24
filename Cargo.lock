@@ -13705,21 +13705,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-core"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "strata-asm-common",
- "strata-checkpoint-types",
- "strata-l1-txfmt",
- "strata-l1tx",
- "strata-msg-fmt",
- "strata-predicate",
- "strata-primitives",
- "thiserror 2.0.17",
-]
-
-[[package]]
 name = "strata-asm-proto-debug-v1"
 version = "0.1.0"
 dependencies = [
