@@ -5,7 +5,6 @@ mod btc;
 mod errors;
 mod genesis;
 mod header;
-mod ops;
 mod params;
 pub mod payload;
 
@@ -14,7 +13,6 @@ pub use btc::*;
 pub use errors::*;
 pub use genesis::*;
 pub use header::*;
-pub use ops::*;
 pub use params::*;
 
 /// L1 block height type.

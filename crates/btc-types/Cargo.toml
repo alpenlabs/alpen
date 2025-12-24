@@ -7,7 +7,6 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-identifiers = { workspace = true, features = ["bitcoin"] }
 strata-l1-txfmt.workspace = true
@@ -19,12 +18,10 @@ bitcoin = { workspace = true, features = [
 ], optional = true }
 bitcoin-bosd = { workspace = true, features = ["address"] }
 borsh.workspace = true
-digest.workspace = true
 num_enum.workspace = true
 rand.workspace = true
 secp256k1 = { workspace = true, features = ["global-context"] }
 serde.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
 
 ssz.workspace = true
