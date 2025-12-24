@@ -416,7 +416,6 @@ pub async fn fetch_verification_state(
     Ok(header_verification_state)
 }
 
-#[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod test {
     use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};

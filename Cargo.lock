@@ -13705,21 +13705,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-core"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "strata-asm-common",
- "strata-checkpoint-types",
- "strata-l1-txfmt",
- "strata-l1tx",
- "strata-msg-fmt",
- "strata-predicate",
- "strata-primitives",
- "thiserror 2.0.17",
-]
-
-[[package]]
 name = "strata-asm-proto-debug-v1"
 version = "0.1.0"
 dependencies = [
@@ -13865,17 +13850,14 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
- "digest 0.10.7",
  "num_enum 0.7.5",
  "proptest",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
- "sha2",
  "ssz",
  "ssz_derive",
- "strata-checkpoint-types",
  "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -14124,7 +14106,6 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-common",
  "strata-asm-worker",
- "strata-bridge-types",
  "strata-btc-types",
  "strata-chain-worker",
  "strata-chainexec",
@@ -14543,31 +14524,6 @@ source = "git+https://github.com/alpenlabs/strata-common#113fcced8ab225b7639ac4d
 dependencies = [
  "bitcoin",
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "strata-l1tx"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "bitcoin",
- "borsh",
- "strata-asm-stf",
- "strata-asm-txs-bridge-v1",
- "strata-asm-types",
- "strata-bridge-types",
- "strata-btcio",
- "strata-checkpoint-types",
- "strata-crypto",
- "strata-csm-types",
- "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "strata-test-utils",
- "strata-test-utils-l2",
- "tracing",
 ]
 
 [[package]]
@@ -15265,7 +15221,6 @@ dependencies = [
  "strata-cli-common",
  "strata-crypto",
  "strata-l1-txfmt",
- "strata-l1tx",
  "strata-primitives",
  "thiserror 2.0.17",
 ]
@@ -15289,7 +15244,6 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-txs-bridge-v1",
  "strata-asm-types",
- "strata-bridge-types",
  "strata-btcio",
  "strata-identifiers",
  "strata-params",

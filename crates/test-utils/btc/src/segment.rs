@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Error;
 use bitcoin::{
-    block::Header,
-    consensus::{deserialize, serialize},
-    hashes::Hash,
-    Block, BlockHash, Network, Txid,
+    block::Header, consensus::deserialize, hashes::Hash, Block, BlockHash, Network, Txid,
 };
 use bitcoind_async_client::{
     error::ClientError,
@@ -16,7 +13,7 @@ use bitcoind_async_client::{
     ClientResult,
 };
 use strata_asm_common::AsmManifest;
-use strata_asm_types::{HeaderVerificationState, L1HeaderRecord};
+use strata_asm_types::HeaderVerificationState;
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_identifiers::WtxidsRoot;
 use strata_primitives::{buf::Buf32, l1::GenesisL1View};
@@ -132,13 +129,12 @@ impl BtcChainSegment {
     }
 
     pub fn get_block_manifest(&self, height: u64) -> AsmManifest {
-        let rec = self.get_header_record(height).unwrap();
-        AsmManifest::new(
-            height,
-            *rec.blkid(),
-            WtxidsRoot::from(*rec.wtxs_root()),
-            Vec::new(),
-        )
+        let header = self.get_block_header_at(height).unwrap();
+        let blkid = header.block_hash().into();
+        let wtxs_root = WtxidsRoot::from(Buf32::from(
+            header.merkle_root.as_raw_hash().to_byte_array(),
+        ));
+        AsmManifest::new(height, blkid, wtxs_root, Vec::new())
     }
 }
 
@@ -278,28 +274,6 @@ impl BtcChainSegment {
             manifests.push(manifest);
         }
         Ok(manifests)
-    }
-
-    pub fn get_header_record(&self, height: u64) -> Result<L1HeaderRecord, Error> {
-        let header = self.get_block_header_at(height)?;
-        Ok(L1HeaderRecord::new(
-            header.block_hash().into(),
-            serialize(&header),
-            Buf32::from(header.merkle_root.as_raw_hash().to_byte_array()),
-        ))
-    }
-
-    pub fn get_header_records(
-        &self,
-        from_height: u64,
-        len: usize,
-    ) -> Result<Vec<L1HeaderRecord>, Error> {
-        let mut blocks = Vec::with_capacity(len);
-        for i in 0..len {
-            let block = self.get_header_record(from_height + i as u64)?;
-            blocks.push(block);
-        }
-        Ok(blocks)
     }
 
     pub fn get_blocks(&self, from_height: u64, len: usize) -> Result<Vec<Block>, Error> {

@@ -4,27 +4,19 @@ use std::str::FromStr;
 
 use bitcoin::{
     absolute::LockTime,
-    consensus::{self, deserialize},
+    consensus::deserialize,
     hashes::Hash,
     key::TapTweak,
     opcodes::all::OP_RETURN,
     script::{self, PushBytesBuf},
     secp256k1::{Keypair, Message, SECP256K1},
     sighash::{Prevouts, SighashCache},
-    Address, Amount, Block, OutPoint, ScriptBuf, Sequence, TapNodeHash, TapSighashType,
-    Transaction, TxIn, TxOut, Witness,
+    Address, Amount, Block, ScriptBuf, Sequence, TapNodeHash, TapSighashType, Transaction, TxIn,
+    TxOut, Witness,
 };
 use strata_asm_txs_bridge_v1::constants::{BridgeTxType, BRIDGE_V1_SUBPROTOCOL_ID};
-use strata_asm_types::L1HeaderRecord;
-use strata_bridge_types::{
-    DepositEntry, DepositState, DispatchCommand, DispatchedState, WithdrawOutput,
-};
 use strata_params::DepositTxParams;
-use strata_primitives::{
-    bitcoin_bosd::Descriptor,
-    buf::Buf32,
-    l1::{BitcoinAddress, BitcoinAmount, BitcoinOutPoint},
-};
+use strata_primitives::l1::{BitcoinAddress, BitcoinOutPoint};
 use strata_test_utils::ArbitraryGenerator;
 
 pub mod segment;
@@ -39,16 +31,6 @@ pub fn get_test_bitcoin_txs() -> Vec<Transaction> {
         .iter()
         .map(|x| deserialize(&hex::decode(x).unwrap()).unwrap())
         .collect()
-}
-
-pub fn gen_l1_chain(len: usize) -> Vec<L1HeaderRecord> {
-    // FIXME this is bad, the blocks generated are nonsensical
-    let mut blocks = vec![];
-    for _ in 0..len {
-        let block: L1HeaderRecord = ArbitraryGenerator::new().generate();
-        blocks.push(block);
-    }
-    blocks
 }
 
 pub fn get_btc_mainnet_block() -> Block {
@@ -212,88 +194,4 @@ pub fn test_taproot_addr() -> BitcoinAddress {
             .unwrap();
 
     BitcoinAddress::parse(&addr.to_string(), bitcoin::Network::Regtest).unwrap()
-}
-
-/// Creates a test deposit transaction with a specified amount and destination address.
-pub fn generate_withdrawal_fulfillment_data(
-    deposit_amt: BitcoinAmount,
-) -> (Vec<Descriptor>, Vec<[u8; 32]>, Vec<DepositEntry>) {
-    let mut gen = ArbitraryGenerator::new();
-    let mut addresses = Vec::new();
-    let mut txids = Vec::<[u8; 32]>::new();
-    for _ in 0..10 {
-        addresses.push(Descriptor::new_p2wpkh(&gen.generate()));
-        txids.push(gen.generate());
-    }
-
-    let create_outputref = |txid: &[u8; 32], vout: u32| {
-        OutPoint::new(consensus::deserialize(txid).unwrap(), vout).into()
-    };
-
-    let create_dispatched_deposit_entry =
-        |operator_idx: u32,
-         deposit_idx: u32,
-         addr: Descriptor,
-         deadline: u64,
-         deposit_txid: &[u8; 32],
-         withdrawal_request_txid: Option<Buf32>| {
-            DepositEntry::new(
-                deposit_idx,
-                create_outputref(deposit_txid, 0),
-                vec![0, 1, 2],
-                deposit_amt,
-                withdrawal_request_txid,
-            )
-            .with_state(DepositState::Dispatched(DispatchedState::new(
-                DispatchCommand::new(vec![WithdrawOutput::new(
-                    addr,
-                    Amount::from_btc(10.0).unwrap().into(),
-                )]),
-                operator_idx,
-                deadline,
-            )))
-        };
-
-    let deposits = vec![
-        // deposits with withdrawal assignments
-        create_dispatched_deposit_entry(1, 2, addresses[0].clone(), 100, &txids[0], gen.generate()),
-        create_dispatched_deposit_entry(2, 3, addresses[1].clone(), 100, &txids[1], gen.generate()),
-        create_dispatched_deposit_entry(0, 4, addresses[2].clone(), 100, &txids[2], gen.generate()),
-        // deposits without withdrawal assignments
-        DepositEntry::new(
-            5,
-            create_outputref(&txids[3], 0),
-            vec![0, 1, 2],
-            deposit_amt,
-            None,
-        )
-        .with_state(DepositState::Accepted),
-        DepositEntry::new(
-            6,
-            create_outputref(&txids[4], 0),
-            vec![0, 1, 2],
-            deposit_amt,
-            None,
-        )
-        .with_state(DepositState::Accepted),
-    ];
-
-    (addresses, txids, deposits)
-}
-
-/// Creates an OP_RETURN metadata script for withdrawal fulfillment transactions.
-///
-/// Format: [MAGIC_BYTES (4)][SUBPROTOCOL_ID (1)][TX_TYPE (1)][DEPOSIT_IDX (4)]
-pub fn create_opreturn_metadata(magic: [u8; 4], deposit_idx: u32) -> ScriptBuf {
-    // Create auxiliary data: [deposit_idx]
-    let mut aux_data: Vec<u8> = Vec::new();
-    aux_data.extend(&deposit_idx.to_be_bytes());
-
-    // Create SPS-50 tagged payload: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE][AUX_DATA]
-    let mut data = magic.to_vec();
-    data.push(BRIDGE_V1_SUBPROTOCOL_ID);
-    data.push(BridgeTxType::WithdrawalFulfillment as u8);
-    data.extend(aux_data);
-
-    Descriptor::new_op_return(&data).unwrap().to_script()
 }

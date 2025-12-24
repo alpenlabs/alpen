@@ -1,4 +1,3 @@
-use strata_bridge_types::OperatorTable;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types::errors::DbError;
 use strata_ol_chain_types::{
@@ -6,7 +5,7 @@ use strata_ol_chain_types::{
     L2Header, SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::{Chainstate, GenesisStateData, L1ViewState, WriteBatch};
-use strata_params::{OperatorConfig, Params};
+use strata_params::Params;
 use strata_primitives::{
     buf::{Buf32, Buf64},
     constants::TIMESTAMPS_FOR_MEDIAN,
@@ -73,12 +72,6 @@ pub fn init_genesis_chainstate(
 
     info!("finished genesis insertions");
     Ok((gid, gchstate))
-}
-
-pub fn construct_operator_table(opconfig: &OperatorConfig) -> OperatorTable {
-    match opconfig {
-        OperatorConfig::Static(oplist) => OperatorTable::from_operator_list(oplist),
-    }
 }
 
 pub fn make_l2_genesis(params: &Params) -> (L2BlockBundle, Chainstate) {
@@ -149,8 +142,7 @@ fn make_genesis_chainstate(gblock: &L2BlockBundle, params: &Params) -> Chainstat
 
     let l1vs = L1ViewState::new_at_genesis(params.rollup().genesis_l1_view.blk);
 
-    let optbl = construct_operator_table(&params.rollup().operator_config);
-    let gdata = GenesisStateData::new(l1vs, optbl, gees);
+    let gdata = GenesisStateData::new(l1vs, gees);
     Chainstate::from_genesis(&gdata)
 }
 

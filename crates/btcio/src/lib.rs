@@ -4,6 +4,6 @@ pub mod broadcaster;
 pub mod reader;
 pub mod status;
 
-#[cfg(feature = "test_utils")]
+#[cfg(test)]
 pub mod test_utils;
 pub mod writer;
