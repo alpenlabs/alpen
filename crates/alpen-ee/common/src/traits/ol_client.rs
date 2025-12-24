@@ -149,4 +149,11 @@ impl OLClientError {
     pub fn rpc(msg: impl Into<String>) -> Self {
         Self::Rpc(msg.into())
     }
+
+    /// Returns true if the error is retryable (transient network/RPC errors).
+    ///
+    /// Validation errors and other non-transient errors are not retryable.
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Network(_) | Self::Rpc(_))
+    }
 }

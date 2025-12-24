@@ -60,4 +60,11 @@ impl ExecutionEngineError {
     pub fn other(msg: impl Into<String>) -> Self {
         Self::Other(msg.into())
     }
+
+    /// Returns true if the error is retryable (transient communication/syncing errors).
+    ///
+    /// Invalid payload errors and other non-transient errors are not retryable.
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Communication(_) | Self::EngineSyncing(_))
+    }
 }
