@@ -10,6 +10,7 @@ workspace = true
 alpen-ee-common.workspace = true
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
+strata-common = { workspace = true, features = ["async"] }
 
 alloy-primitives.workspace = true
 alloy-rpc-types-engine.workspace = true
