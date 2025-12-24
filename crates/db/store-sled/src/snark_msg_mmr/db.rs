@@ -10,6 +10,8 @@ use strata_primitives::buf::Buf32;
 use super::schemas::{SnarkMsgMmrMetaSchema, SnarkMsgMmrNodeSchema};
 use crate::define_sled_database;
 
+// TODO: Since the mmr db is just parametric on the node schema and meta scehma, we can possibliy
+// generalize this as well. Leave it for next ticket.
 define_sled_database!(
     pub struct SnarkMsgMmrDb {
         mmr_node_tree: SnarkMsgMmrNodeSchema,
@@ -162,4 +164,15 @@ impl MmrDatabase for SnarkMsgMmrDb {
             },
         )
     }
+}
+
+#[cfg(feature = "test_utils")]
+#[cfg(test)]
+mod tests {
+    use strata_db_tests::mmr_db_tests;
+
+    use super::*;
+    use crate::sled_db_test_setup;
+
+    sled_db_test_setup!(SnarkMsgMmrDb, mmr_db_tests);
 }
