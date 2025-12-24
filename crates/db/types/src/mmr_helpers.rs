@@ -28,6 +28,7 @@
 //! Leaves:   [0, 1, x, 2, 3, x, x, 4]  (x = internal node)
 //! ```
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use strata_merkle::{Sha256Hasher, hasher::MerkleHasher};
 use strata_primitives::buf::Buf32;
 
@@ -236,7 +237,7 @@ pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
 }
 
 /// Metadata for an MMR instance
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MmrMetadata {
     pub num_leaves: u64,
     pub mmr_size: u64,
