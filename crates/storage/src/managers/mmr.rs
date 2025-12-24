@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-use strata_db_types::{
-    mmr_helpers::{find_peak_for_pos, leaf_index_to_pos, parent_pos, sibling_pos},
-    traits::MmrDatabase,
-    DbError, DbResult,
-};
+use strata_db_types::{mmr_helpers::MmrAlgorithm, traits::MmrDatabase, DbResult};
 use strata_merkle::MerkleProofB32 as MerkleProof;
 use threadpool::ThreadPool;
 
@@ -46,64 +42,23 @@ impl MmrManager {
     }
 
     /// Generate a Merkle proof for a single leaf position
-    ///
-    /// Proof generation is implemented at the manager level using database primitives.
     pub fn generate_proof(&self, index: u64) -> DbResult<MerkleProof> {
-        // Check bounds
-        let num_leaves = self.ops.num_leaves_blocking()?;
-        if index >= num_leaves {
-            return Err(DbError::MmrLeafNotFound(index));
-        }
-
         let mmr_size = self.ops.mmr_size_blocking()?;
+        let num_leaves = self.ops.num_leaves_blocking()?;
 
-        // Convert leaf index to MMR position
-        let leaf_pos = leaf_index_to_pos(index);
-
-        // Find which peak this leaf belongs to
-        let peak_pos = find_peak_for_pos(leaf_pos, mmr_size)?;
-
-        // Collect sibling hashes along the path from leaf to peak
-        let mut cohashes = Vec::new();
-        let mut current_pos = leaf_pos;
-        let mut current_height = 0u8;
-
-        // Climb to peak, collecting siblings
-        while current_pos < peak_pos {
-            let sib_pos = sibling_pos(current_pos, current_height);
-            let sibling_hash = self.ops.get_node_blocking(sib_pos)?;
-
-            cohashes.push(sibling_hash);
-
-            // Move to parent
-            current_pos = parent_pos(current_pos, current_height);
-            current_height += 1;
-        }
-
-        Ok(MerkleProof::from_cohashes(cohashes, index))
+        MmrAlgorithm::generate_proof(index, mmr_size, num_leaves, |pos| {
+            self.ops.get_node_blocking(pos)
+        })
     }
 
     /// Generate Merkle proofs for a range of leaf positions
     pub fn generate_proofs(&self, start: u64, end: u64) -> DbResult<Vec<MerkleProof>> {
-        // Validate range
-        if start > end {
-            return Err(DbError::MmrInvalidRange { start, end });
-        }
-
+        let mmr_size = self.ops.mmr_size_blocking()?;
         let num_leaves = self.ops.num_leaves_blocking()?;
-        if end >= num_leaves {
-            return Err(DbError::MmrLeafNotFound(end));
-        }
 
-        // Generate proof for each index in range
-        let mut proofs = Vec::with_capacity((end - start + 1) as usize);
-
-        for index in start..=end {
-            let proof = self.generate_proof(index)?;
-            proofs.push(proof);
-        }
-
-        Ok(proofs)
+        MmrAlgorithm::generate_proofs(start, end, mmr_size, num_leaves, |pos| {
+            self.ops.get_node_blocking(pos)
+        })
     }
 
     /// Remove and return the last leaf from the MMR (async version)

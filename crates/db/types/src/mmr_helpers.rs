@@ -29,7 +29,7 @@
 //! ```
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_merkle::{hasher::MerkleHasher, Sha256Hasher};
+use strata_merkle::{hasher::MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use strata_primitives::buf::Buf32;
 
 use crate::{DbError, DbResult};
@@ -445,6 +445,100 @@ impl MmrAlgorithm {
             nodes_to_remove,
             new_metadata,
         }))
+    }
+
+    /// Generate a Merkle proof for a single leaf position
+    ///
+    /// # Arguments
+    ///
+    /// * `leaf_index` - The leaf index to generate proof for
+    /// * `mmr_size` - Current MMR size
+    /// * `num_leaves` - Current number of leaves
+    /// * `get_node` - Closure to read existing nodes
+    ///
+    /// # Returns
+    ///
+    /// `MerkleProof` containing the sibling hashes along the path from leaf to peak
+    ///
+    /// # Errors
+    ///
+    /// Returns `DbError::MmrLeafNotFound` if the leaf index is out of bounds
+    pub fn generate_proof<F, E>(
+        leaf_index: u64,
+        mmr_size: u64,
+        num_leaves: u64,
+        get_node: F,
+    ) -> Result<MerkleProof, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<DbError>,
+    {
+        if leaf_index >= num_leaves {
+            return Err(DbError::MmrLeafNotFound(leaf_index).into());
+        }
+
+        let leaf_pos = leaf_index_to_pos(leaf_index);
+        let peak_pos = find_peak_for_pos(leaf_pos, mmr_size)?;
+
+        let mut cohashes = Vec::new();
+        let mut current_pos = leaf_pos;
+        let mut current_height = 0u8;
+
+        while current_pos < peak_pos {
+            let sib_pos = sibling_pos(current_pos, current_height);
+            let sibling_hash = get_node(sib_pos)?;
+            cohashes.push(sibling_hash);
+
+            current_pos = parent_pos(current_pos, current_height);
+            current_height += 1;
+        }
+
+        Ok(MerkleProof::from_cohashes(cohashes, leaf_index))
+    }
+
+    /// Generate Merkle proofs for a range of leaf positions
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - Starting leaf index (inclusive)
+    /// * `end` - Ending leaf index (inclusive)
+    /// * `mmr_size` - Current MMR size
+    /// * `num_leaves` - Current number of leaves
+    /// * `get_node` - Closure to read existing nodes
+    ///
+    /// # Returns
+    ///
+    /// Vector of `MerkleProof`s, one for each leaf in the range
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the range is invalid or any leaf index is out of bounds
+    pub fn generate_proofs<F, E>(
+        start: u64,
+        end: u64,
+        mmr_size: u64,
+        num_leaves: u64,
+        get_node: F,
+    ) -> Result<Vec<MerkleProof>, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<DbError>,
+    {
+        if start > end {
+            return Err(DbError::MmrInvalidRange { start, end }.into());
+        }
+
+        if end >= num_leaves {
+            return Err(DbError::MmrLeafNotFound(end).into());
+        }
+
+        let mut proofs = Vec::with_capacity((end - start + 1) as usize);
+        for index in start..=end {
+            let proof = Self::generate_proof(index, mmr_size, num_leaves, &get_node)?;
+            proofs.push(proof);
+        }
+
+        Ok(proofs)
     }
 }
 
