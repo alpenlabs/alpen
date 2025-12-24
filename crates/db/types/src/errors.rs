@@ -1,3 +1,4 @@
+use strata_identifiers::AccountId;
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
 use strata_storage_common::exec::OpsError;
@@ -116,6 +117,10 @@ pub enum DbError {
     /// MMR leaf not found at index
     #[error("MMR leaf not found at index {0}")]
     MmrLeafNotFound(u64),
+
+    /// MMR leaf not found at index for account
+    #[error("MMR leaf not found at index {0} for account {1}")]
+    MmrLeafNotFoundForAccount(u64, AccountId),
 
     /// Invalid MMR index range
     #[error("Invalid MMR index range: {start}..{end}")]

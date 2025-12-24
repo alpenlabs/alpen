@@ -15,31 +15,28 @@ use crate::define_sled_database;
 // generalize this as well. Leave it for next ticket.
 define_sled_database!(
     pub struct SnarkMsgMmrDb {
-        mmr_node_tree: SnarkMsgMmrNodeSchema,
-        mmr_meta_tree: SnarkMsgMmrMetaSchema,
+        node_tree: SnarkMsgMmrNodeSchema,
+        meta_tree: SnarkMsgMmrMetaSchema,
     }
 );
 
 impl SnarkMsgMmrDb {
-    /// Initialize MMR metadata if not present for an account
     fn ensure_mmr_metadata(&self, account: AccountId) -> DbResult<()> {
-        if self.mmr_meta_tree.get(&account)?.is_none() {
+        if self.meta_tree.get(&account)?.is_none() {
             let metadata = MmrMetadata::empty();
-            self.mmr_meta_tree.insert(&account, &metadata)?;
+            self.meta_tree.insert(&account, &metadata)?;
         }
         Ok(())
     }
 
-    /// Load metadata from database for an account
     fn load_mmr_metadata(&self, account: AccountId) -> DbResult<MmrMetadata> {
-        self.mmr_meta_tree.get(&account)?.ok_or_else(|| {
+        self.meta_tree.get(&account)?.ok_or_else(|| {
             DbError::Other(format!("MMR metadata not found for account {}", account))
         })
     }
 
-    /// Get a node hash by position for an account
     fn get_mmr_node(&self, account: AccountId, pos: u64) -> DbResult<[u8; 32]> {
-        self.mmr_node_tree
+        self.node_tree
             .get(&(account, pos))?
             .map(|buf| buf.0)
             .ok_or_else(|| {
@@ -55,40 +52,27 @@ impl AccountMmrDatabase for SnarkMsgMmrDb {
     fn append_leaf(&self, account: AccountId, hash: [u8; 32]) -> DbResult<u64> {
         self.ensure_mmr_metadata(account)?;
 
-        self.config.with_retry(
-            (&self.mmr_node_tree, &self.mmr_meta_tree),
-            |(node_tree, meta_tree)| {
-                let metadata = meta_tree
+        self.config
+            .with_retry((&self.node_tree, &self.meta_tree), |(nt, mt)| {
+                let metadata = mt
                     .get(&account)?
                     .expect("MMR metadata must exist after ensure_mmr_metadata");
 
-                // Use the algorithm to compute what to write
-                // Closure reads directly from node_tree and converts errors to DbError
                 let result = MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
-                    node_tree
-                        .get(&(account, pos))
-                        .map_err(DbError::from)?
+                    nt.get(&(account, pos))?
                         .map(|buf| buf.0)
-                        .ok_or_else(|| {
-                            DbError::Other(format!(
-                                "MMR node not found at position {} for account {}",
-                                pos, account
-                            ))
-                        })
+                        .ok_or(DbError::MmrLeafNotFoundForAccount(pos, account))
                 })
                 .map_err(typed_sled::error::Error::abort)?;
 
-                // Apply the writes
                 for (pos, node_hash) in result.nodes_to_write {
-                    node_tree.insert(&(account, pos), &Buf32(node_hash))?;
+                    nt.insert(&(account, pos), &Buf32(node_hash))?;
                 }
 
-                // Save updated metadata
-                meta_tree.insert(&account, &result.new_metadata)?;
+                mt.insert(&account, &result.new_metadata)?;
 
                 Ok(result.leaf_index)
-            },
-        )
+            })
     }
 
     fn get_node(&self, account: AccountId, pos: u64) -> DbResult<[u8; 32]> {
@@ -134,44 +118,31 @@ impl AccountMmrDatabase for SnarkMsgMmrDb {
     fn pop_leaf(&self, account: AccountId) -> DbResult<Option<[u8; 32]>> {
         self.ensure_mmr_metadata(account)?;
 
-        self.config.with_retry(
-            (&self.mmr_node_tree, &self.mmr_meta_tree),
-            |(node_tree, meta_tree)| {
-                let metadata = meta_tree
+        self.config
+            .with_retry((&self.node_tree, &self.meta_tree), |(nt, mt)| {
+                let metadata = mt
                     .get(&account)?
                     .expect("MMR metadata must exist after ensure_mmr_metadata");
 
-                // Use the algorithm to compute what to delete
-                // Closure reads directly from node_tree and converts errors to DbError
-                let result = match MmrAlgorithm::pop_leaf(&metadata, |pos| {
-                    node_tree
-                        .get(&(account, pos))
-                        .map_err(strata_db_types::DbError::from)?
+                let result = MmrAlgorithm::pop_leaf(&metadata, |pos| {
+                    nt.get(&(account, pos))?
                         .map(|buf| buf.0)
-                        .ok_or_else(|| {
-                            strata_db_types::DbError::Other(format!(
-                                "MMR node not found at position {} for account {}",
-                                pos, account
-                            ))
-                        })
+                        .ok_or(DbError::MmrLeafNotFoundForAccount(pos, account))
                 })
-                .map_err(typed_sled::error::Error::abort)?
-                {
-                    Some(r) => r,
-                    None => return Ok(None),
+                .map_err(typed_sled::error::Error::abort)?;
+
+                let Some(result) = result else {
+                    return Ok(None);
                 };
 
-                // Delete the nodes
                 for pos in result.nodes_to_remove {
-                    node_tree.remove(&(account, pos))?;
+                    nt.remove(&(account, pos))?;
                 }
 
-                // Save updated metadata
-                meta_tree.insert(&account, &result.new_metadata)?;
+                mt.insert(&account, &result.new_metadata)?;
 
                 Ok(Some(result.leaf_hash))
-            },
-        )
+            })
     }
 }
 
