@@ -25,8 +25,9 @@ use bitcoind_async_client::{
     },
     traits::{Broadcaster, Reader, Signer, Wallet},
     types::{
-        CreateRawTransactionInput, CreateRawTransactionOutput, ImportDescriptorInput,
-        PreviousTransactionOutput, PsbtBumpFeeOptions, SighashType, WalletCreateFundedPsbtOptions,
+        CreateRawTransactionArguments, CreateRawTransactionInput, CreateRawTransactionOutput,
+        ImportDescriptorInput, ListUnspentQueryOptions, PreviousTransactionOutput,
+        PsbtBumpFeeOptions, SighashType, WalletCreateFundedPsbtOptions,
     },
     ClientResult,
 };
@@ -303,7 +304,7 @@ impl Wallet for TestBitcoinClient {
         _max_conf: Option<u32>,
         _addresses: Option<&[Address]>,
         _include_unsafe: Option<bool>,
-        _query_options: Option<bitcoind_async_client::types::ListUnspentQueryOptions>,
+        _query_options: Option<ListUnspentQueryOptions>,
     ) -> ClientResult<ListUnspent> {
         // plenty of sats
         Ok(ListUnspent(vec![ListUnspentItem {
@@ -336,7 +337,7 @@ impl Wallet for TestBitcoinClient {
 
     async fn create_raw_transaction(
         &self,
-        _raw_tx: bitcoind_async_client::types::CreateRawTransactionArguments,
+        _raw_tx: CreateRawTransactionArguments,
     ) -> ClientResult<Transaction> {
         let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
         Ok(some_tx)
