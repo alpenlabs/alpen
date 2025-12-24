@@ -46,7 +46,7 @@ impl WithdrawalIntent {
 /// Set of withdrawals that are assigned to a deposit bridge utxo.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct WithdrawalBatch {
-    /// A series of [WithdrawalIntent]'s who sum does not exceed [`WITHDRAWAL_DENOMINATION`].
+    /// A series of [WithdrawalIntent]'s who sum does not exceed withdrawal denomination.
     intents: Vec<WithdrawalIntent>,
 }
 

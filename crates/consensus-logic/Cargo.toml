@@ -9,7 +9,6 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-worker.workspace = true
-strata-bridge-types.workspace = true
 strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
 strata-chainexec.workspace = true
