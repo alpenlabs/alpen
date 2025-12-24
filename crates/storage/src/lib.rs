@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use anyhow::Context;
 pub use managers::{
-    asm::AsmStateManager, chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
-    client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager, mmr::MmrManager,
-    ol::OLBlockManager, ol_state::OLStateManager,
+    account_mmr::AccountMmrManager, asm::AsmStateManager, chainstate::ChainstateManager,
+    checkpoint::CheckpointDbManager, client_state::ClientStateManager, l1::L1BlockManager,
+    l2::L2BlockManager, mmr::MmrManager, ol::OLBlockManager, ol_state::OLStateManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
@@ -38,7 +38,7 @@ pub struct NodeStorage {
 
     ol_block_manager: Arc<OLBlockManager>,
     asm_mmr_manager: Arc<MmrManager>,
-    snark_msg_mmr_manager: Arc<MmrManager>,
+    snark_msg_mmr_manager: Arc<AccountMmrManager>,
     ol_state_manager: Arc<OLStateManager>,
 }
 
@@ -88,7 +88,7 @@ impl NodeStorage {
         &self.asm_mmr_manager
     }
 
-    pub fn snark_msg_mmr(&self) -> &Arc<MmrManager> {
+    pub fn snark_msg_mmr(&self) -> &Arc<AccountMmrManager> {
         &self.snark_msg_mmr_manager
     }
 
@@ -137,7 +137,7 @@ pub fn create_node_storage(
 
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
     let asm_mmr_manager = Arc::new(MmrManager::new(pool.clone(), asm_mmr_db));
-    let snark_msg_mmr_manager = Arc::new(MmrManager::new(pool.clone(), snark_msg_mmr_db));
+    let snark_msg_mmr_manager = Arc::new(AccountMmrManager::new(pool.clone(), snark_msg_mmr_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db));
 
     Ok(NodeStorage {

@@ -32,9 +32,9 @@ impl SnarkMsgMmrDb {
 
     /// Load metadata from database for an account
     fn load_mmr_metadata(&self, account: AccountId) -> DbResult<MmrMetadata> {
-        self.mmr_meta_tree
-            .get(&account)?
-            .ok_or_else(|| DbError::Other(format!("MMR metadata not found for account {}", account)))
+        self.mmr_meta_tree.get(&account)?.ok_or_else(|| {
+            DbError::Other(format!("MMR metadata not found for account {}", account))
+        })
     }
 
     /// Get a node hash by position for an account
@@ -42,7 +42,12 @@ impl SnarkMsgMmrDb {
         self.mmr_node_tree
             .get(&(account, pos))?
             .map(|buf| buf.0)
-            .ok_or_else(|| DbError::Other(format!("MMR node not found at position {} for account {}", pos, account)))
+            .ok_or_else(|| {
+                DbError::Other(format!(
+                    "MMR node not found at position {} for account {}",
+                    pos, account
+                ))
+            })
     }
 }
 
@@ -65,7 +70,10 @@ impl AccountMmrDatabase for SnarkMsgMmrDb {
                         .map_err(DbError::from)?
                         .map(|buf| buf.0)
                         .ok_or_else(|| {
-                            DbError::Other(format!("MMR node not found at position {} for account {}", pos, account))
+                            DbError::Other(format!(
+                                "MMR node not found at position {} for account {}",
+                                pos, account
+                            ))
                         })
                 })
                 .map_err(typed_sled::error::Error::abort)?;
