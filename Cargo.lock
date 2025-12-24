@@ -15250,7 +15250,6 @@ dependencies = [
  "strata-cli-common",
  "strata-crypto",
  "strata-l1-txfmt",
- "strata-l1tx",
  "strata-primitives",
  "thiserror 2.0.17",
 ]

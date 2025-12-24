@@ -1,7 +1,8 @@
-use bdk_wallet::bitcoin::{bip32::Xpriv, Network, PublicKey, XOnlyPublicKey};
-use secp256k1::SECP256K1;
-use strata_crypto::EvenSecretKey;
-use strata_l1tx::utils::generate_taproot_address as generate_taproot_address_impl;
+use bdk_wallet::bitcoin::{
+    bip32::Xpriv, secp256k1::SECP256K1, taproot::TaprootBuilder, Address, Network, PublicKey,
+    XOnlyPublicKey,
+};
+use strata_crypto::{aggregate_schnorr_keys, EvenSecretKey};
 use strata_primitives::{
     buf::Buf32, constants::STRATA_OP_WALLET_DERIVATION_PATH, l1::BitcoinAddress,
 };
@@ -34,12 +35,37 @@ pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<Even
 }
 
 /// Generates a taproot address from operator public keys
+///
+/// Creates a taproot address by aggregating the operator wallet public keys,
+/// building a taproot spending tree, and deriving the final address.
+///
+/// # Arguments
+/// * `operator_wallet_pks` - Slice of operator wallet public keys to aggregate
+/// * `network` - Bitcoin network (mainnet, testnet, regtest, etc.)
+///
+/// # Returns
+/// * `Result<(BitcoinAddress, XOnlyPublicKey), Error>` - Taproot address and internal pubkey
 pub(crate) fn generate_taproot_address(
     operator_wallet_pks: &[Buf32],
     network: Network,
 ) -> Result<(BitcoinAddress, XOnlyPublicKey), Error> {
-    generate_taproot_address_impl(operator_wallet_pks, network)
-        .map_err(|e| Error::TxBuilder(e.to_string()))
+    // Aggregate the operator public keys into a single x-only pubkey
+    let x_only_pub_key = aggregate_schnorr_keys(operator_wallet_pks.iter())
+        .map_err(|e| Error::TxBuilder(format!("Failed to aggregate keys: {}", e)))?;
+
+    // Build the taproot spending tree (empty tree in this case)
+    let taproot_builder = TaprootBuilder::new();
+    let spend_info = taproot_builder
+        .finalize(SECP256K1, x_only_pub_key)
+        .map_err(|_| Error::TxBuilder("Taproot finalization failed".to_string()))?;
+    let merkle_root = spend_info.merkle_root();
+
+    // Create the P2TR address
+    let addr = Address::p2tr(SECP256K1, x_only_pub_key, merkle_root, network);
+    let addr = BitcoinAddress::parse(&addr.to_string(), network)
+        .map_err(|e| Error::TxBuilder(format!("Failed to parse address: {}", e)))?;
+
+    Ok((addr, x_only_pub_key))
 }
 
 /// Parses an [`XOnlyPublicKey`] from a hex string.
