@@ -36,10 +36,9 @@ pub struct NodeStorage {
     // update: probably not, would require moving data around
     checkpoint_manager: Arc<CheckpointDbManager>,
 
-    mmr_manager: Arc<MmrManager>,
-
     ol_block_manager: Arc<OLBlockManager>,
-
+    asm_mmr_manager: Arc<MmrManager>,
+    snark_msg_mmr_manager: Arc<MmrManager>,
     ol_state_manager: Arc<OLStateManager>,
 }
 
@@ -52,8 +51,9 @@ impl Clone for NodeStorage {
             chainstate_manager: self.chainstate_manager.clone(),
             client_state_manager: self.client_state_manager.clone(),
             checkpoint_manager: self.checkpoint_manager.clone(),
-            mmr_manager: self.mmr_manager.clone(),
             ol_block_manager: self.ol_block_manager.clone(),
+            asm_mmr_manager: self.asm_mmr_manager.clone(),
+            snark_msg_mmr_manager: self.snark_msg_mmr_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
         }
     }
@@ -84,8 +84,17 @@ impl NodeStorage {
         &self.checkpoint_manager
     }
 
+    pub fn asm_mmr(&self) -> &Arc<MmrManager> {
+        &self.asm_mmr_manager
+    }
+
+    pub fn snark_msg_mmr(&self) -> &Arc<MmrManager> {
+        &self.snark_msg_mmr_manager
+    }
+
+    #[deprecated(note = "Use asm_mmr() instead")]
     pub fn mmr(&self) -> &Arc<MmrManager> {
-        &self.mmr_manager
+        &self.asm_mmr_manager
     }
 
     pub fn ol_block(&self) -> &Arc<OLBlockManager> {
@@ -110,8 +119,9 @@ pub fn create_node_storage(
     let chainstate_db = db.chain_state_db();
     let client_state_db = db.client_state_db();
     let checkpoint_db = db.checkpoint_db();
-    let mmr_db = db.mmr_db();
     let ol_block_db = db.ol_block_db();
+    let asm_mmr_db = db.asm_mmr_db();
+    let snark_msg_mmr_db = db.snark_msg_mmr_db();
     let ol_state_db = db.ol_state_db();
 
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
@@ -125,8 +135,9 @@ pub fn create_node_storage(
 
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
-    let mmr_manager = Arc::new(MmrManager::new(pool.clone(), mmr_db));
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
+    let asm_mmr_manager = Arc::new(MmrManager::new(pool.clone(), asm_mmr_db));
+    let snark_msg_mmr_manager = Arc::new(MmrManager::new(pool.clone(), snark_msg_mmr_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db));
 
     Ok(NodeStorage {
@@ -136,8 +147,9 @@ pub fn create_node_storage(
         chainstate_manager,
         client_state_manager,
         checkpoint_manager,
-        mmr_manager,
         ol_block_manager,
+        asm_mmr_manager,
+        snark_msg_mmr_manager,
         ol_state_manager,
     })
 }
