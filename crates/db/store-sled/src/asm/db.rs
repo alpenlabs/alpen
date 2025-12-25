@@ -1,7 +1,7 @@
 use strata_db_types::{
     DbError, DbResult,
     mmr_helpers::{MmrAlgorithm, MmrMetadata},
-    traits::*,
+    traits::{AsmDatabase, ScopedMmrDatabase},
 };
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
@@ -153,11 +153,17 @@ impl AsmDatabase for AsmDBSled {
 ///
 /// ## Peak Ordering
 ///
+/// Implementation of `ScopedMmrDatabase` with unit scope `()`
+///
+/// This provides a singleton MMR (single global instance). The blanket impl
+/// in `db-types` automatically provides the `MmrDatabase` trait for backward
+/// compatibility.
+///
 /// Note: strata-merkle stores peaks in reverse order (right-to-left / by increasing height)
 /// while `get_peaks()` returns them in left-to-right position order. This implementation
 /// reverses the peaks to match strata-merkle's expected ordering.
-impl MmrDatabase for AsmDBSled {
-    fn append_leaf(&self, hash: [u8; 32]) -> DbResult<u64> {
+impl ScopedMmrDatabase<()> for AsmDBSled {
+    fn append_leaf(&self, _scope: (), hash: [u8; 32]) -> DbResult<u64> {
         self.ensure_mmr_metadata()?;
 
         self.config.with_retry(
@@ -186,29 +192,29 @@ impl MmrDatabase for AsmDBSled {
         )
     }
 
-    fn get_node(&self, pos: u64) -> DbResult<[u8; 32]> {
+    fn get_node(&self, _scope: (), pos: u64) -> DbResult<[u8; 32]> {
         self.get_mmr_node(pos)
     }
 
-    fn mmr_size(&self) -> DbResult<u64> {
+    fn mmr_size(&self, _scope: ()) -> DbResult<u64> {
         self.ensure_mmr_metadata()?;
         let metadata = self.load_mmr_metadata()?;
         Ok(metadata.mmr_size)
     }
 
-    fn num_leaves(&self) -> DbResult<u64> {
+    fn num_leaves(&self, _scope: ()) -> DbResult<u64> {
         self.ensure_mmr_metadata()?;
         let metadata = self.load_mmr_metadata()?;
         Ok(metadata.num_leaves)
     }
 
-    fn peak_roots(&self) -> Vec<[u8; 32]> {
+    fn peak_roots(&self, _scope: ()) -> Vec<[u8; 32]> {
         self.load_mmr_metadata()
             .map(|m| m.peak_roots.into_iter().map(|b| b.0).collect())
             .unwrap_or_default()
     }
 
-    fn to_compact(&self) -> CompactMmr64 {
+    fn to_compact(&self, _scope: ()) -> CompactMmr64 {
         use ssz_types::FixedBytes;
 
         let metadata = self
@@ -228,7 +234,7 @@ impl MmrDatabase for AsmDBSled {
         }
     }
 
-    fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>> {
+    fn pop_leaf(&self, _scope: ()) -> DbResult<Option<[u8; 32]>> {
         self.ensure_mmr_metadata()?;
 
         self.config.with_retry(
