@@ -9,6 +9,7 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::OLBlockCommitment;
+use strata_merkle::CompactMmr64B32;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
 use strata_primitives::{
@@ -20,8 +21,9 @@ use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
     chainstate::ChainstateDatabase,
+    mmr_helpers::MmrId,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
-    DbResult,
+    DbError, DbResult,
 };
 
 /// Common database backend interface that we can parameterize worker tasks over if
@@ -60,17 +62,6 @@ pub trait AsmDatabase: Send + Sync + 'static {
         from_block: L1BlockCommitment,
         max_count: usize,
     ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>>;
-
-    /// Stores a manifest hash at the given MMR leaf index.
-    ///
-    /// This is called after appending a manifest to the MMR to maintain
-    /// a fast lookup index from leaf index to manifest hash.
-    fn store_manifest_hash(&self, index: u64, hash: Buf32) -> DbResult<()>;
-
-    /// Gets a manifest hash by MMR leaf index.
-    ///
-    /// Used by aux data resolver to retrieve manifest hashes for subprotocols.
-    fn get_manifest_hash(&self, index: u64) -> DbResult<Option<Buf32>>;
 }
 
 /// Database interface to control our view of L1 data.
@@ -359,10 +350,66 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
 }
 
+// =============================================================================
+// MMR Database Traits
+// =============================================================================
+
+/// Unified MMR database trait using MmrId for identification
+///
+/// This trait provides a simpler, more direct API where the MMR instance
+/// is identified by an `MmrId` enum rather than a generic scope parameter.
+/// This is the preferred interface for new code.
+pub trait UnifiedMmrDatabase: Send + Sync + 'static {
+    /// Append a new leaf to the specified MMR
+    fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64>;
+
+    /// Get a node hash by MMR position
+    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<[u8; 32]>;
+
+    /// Get the total MMR size
+    fn mmr_size(&self, mmr_id: MmrId) -> DbResult<u64>;
+
+    /// Get the total number of leaves
+    fn num_leaves(&self, mmr_id: MmrId) -> DbResult<u64>;
+
+    /// Get the individual peak roots
+    fn peak_roots(&self, mmr_id: MmrId) -> Vec<[u8; 32]>;
+
+    /// Get a compact representation of the MMR
+    fn to_compact(&self, mmr_id: MmrId) -> CompactMmr64B32;
+
+    /// Remove the last leaf from the MMR
+    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>>;
+
+    /// Append a leaf with its pre-image data (optional operation)
+    ///
+    /// Atomically stores both the MMR hash and the original data.
+    /// Default implementation returns Unimplemented error.
+    fn append_leaf_with_preimage(
+        &self,
+        _mmr_id: MmrId,
+        _hash: [u8; 32],
+        _preimage: Vec<u8>,
+    ) -> DbResult<u64> {
+        Err(DbError::Unimplemented)
+    }
+
+    /// Get pre-image data by leaf index (optional operation)
+    ///
+    /// Returns None if no pre-image exists at the given index.
+    /// Default implementation returns Unimplemented error.
+    fn get_preimage(&self, _mmr_id: MmrId, _index: u64) -> DbResult<Option<Vec<u8>>> {
+        Err(DbError::Unimplemented)
+    }
+}
+
 /// MMR database trait for persistent proof generation
 ///
 /// Implementations of this trait maintain MMR data in a way that allows
 /// efficient proof generation for arbitrary leaf positions.
+///
+/// This is for singleton/global MMRs (e.g., ASM manifests). For multi-instance
+/// MMRs with different scoping, use `UnifiedMmrDatabase` with appropriate `MmrId`.
 ///
 /// ## Design Invariants
 ///
@@ -437,6 +484,10 @@ pub trait MmrDatabase: Send + Sync + 'static {
     /// ```
     fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>>;
 }
+
+// =============================================================================
+// Database traits for OL state and other components
+// =============================================================================
 
 /// Database trait for toplevel OL state storage.
 ///

@@ -14,6 +14,7 @@ pub mod ol_state;
 pub mod prover;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
+pub mod unified_mmr;
 pub mod utils;
 pub mod writer;
 
@@ -34,6 +35,7 @@ use strata_db_types::{
     traits::{DatabaseBackend, OLStateDatabase},
 };
 use typed_sled::SledDb;
+pub use unified_mmr::UnifiedMmrDb;
 use writer::db::L1WriterDBSled;
 
 pub use crate::{
@@ -68,6 +70,7 @@ pub struct SledBackend {
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
+    unified_mmr_db: Arc<UnifiedMmrDb>,
 }
 
 impl SledBackend {
@@ -84,6 +87,7 @@ impl SledBackend {
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let unified_mmr_db = Arc::new(UnifiedMmrDb::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
@@ -96,6 +100,7 @@ impl SledBackend {
             writer_db,
             prover_db,
             broadcast_db,
+            unified_mmr_db,
         })
     }
 }
@@ -143,10 +148,8 @@ impl DatabaseBackend for SledBackend {
 }
 
 impl SledBackend {
-    /// Get the MMR database
-    ///
-    /// Returns the ASM database which implements the MmrDatabase trait.
-    pub fn mmr_db(&self) -> Arc<AsmDBSled> {
-        self.asm_db.clone()
+    /// Get the unified MMR database
+    pub fn unified_mmr_db(&self) -> Arc<UnifiedMmrDb> {
+        self.unified_mmr_db.clone()
     }
 }
