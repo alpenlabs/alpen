@@ -746,7 +746,7 @@ mod tests {
             .txdata
             .iter()
             .filter(|tx| {
-                tx.output.first().map_or(false, |out| {
+                tx.output.first().is_some_and(|out| {
                     out.script_pubkey.is_op_return()
                         && out.script_pubkey.as_bytes().len() >= 7
                         && &out.script_pubkey.as_bytes()[2..6] == b"ALPN"
@@ -800,7 +800,7 @@ mod tests {
         // - This is expected behavior - the test verifies that multiple transactions
         //   CAN be included in one block, even if not all process successfully
         assert!(
-            processed_count >= 1 && processed_count <= 3,
+            (1..=3).contains(&processed_count),
             "Expected 1-3 admin transactions to process successfully, got {}. \
              This test verifies multiple transactions can be included in one block.",
             processed_count

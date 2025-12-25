@@ -16,6 +16,7 @@ use strata_asm_common as _;
 use strata_asm_manifest_types as _;
 use strata_asm_proto_administration as _;
 use strata_asm_txs_admin as _;
+use strata_bridge_types as _;
 use strata_btc_types as _;
 use strata_crypto as _;
 use strata_merkle as _;
