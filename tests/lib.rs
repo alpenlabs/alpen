@@ -7,6 +7,9 @@ pub mod common;
 // Suppress unused extern crate warnings - these are used by test binaries
 use borsh as _;
 use rand as _;
+use strata_asm_common as _;
+use strata_asm_manifest_types as _;
+use strata_asm_proto_administration as _;
 use strata_asm_txs_admin as _;
 use strata_crypto as _;
 use strata_tasks as _;

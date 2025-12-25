@@ -13,7 +13,12 @@ bitcoind-async-client.workspace = true
 borsh.workspace = true
 corepc-node.workspace = true
 rand.workspace = true
-strata-asm-txs-admin = { path = "../crates/asm/txs/admin", features = ["test-utils"] }
+strata-asm-common = { path = "../crates/asm/common" }
+strata-asm-manifest-types = { path = "../crates/asm/manifest-types" }
+strata-asm-proto-administration = { path = "../crates/asm/subprotocols/admin" }
+strata-asm-txs-admin = { path = "../crates/asm/txs/admin", features = [
+  "test-utils",
+] }
 strata-asm-worker = { path = "../crates/asm/worker" }
 strata-btc-types.workspace = true
 strata-crypto.workspace = true

@@ -6,34 +6,40 @@
 //! - Automatic block submission and processing
 //! - State query utilities
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use bitcoin::{
-    Address, Amount, Block, BlockHash, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn,
-    TxOut, Txid, Witness, XOnlyPublicKey,
     absolute::LockTime,
     blockdata::script,
     key::UntweakedKeypair,
-    opcodes::{OP_FALSE, all::{OP_ENDIF, OP_IF}},
+    opcodes::{
+        all::{OP_ENDIF, OP_IF},
+        OP_FALSE,
+    },
     script::PushBytesBuf,
     secp256k1::Secp256k1,
     taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
     transaction::Version,
+    Address, Amount, Block, BlockHash, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn,
+    TxOut, Txid, Witness, XOnlyPublicKey,
 };
-use bitcoind_async_client::{Client, traits::{Reader, Wallet}};
+use bitcoind_async_client::{
+    traits::{Reader, Wallet},
+    Client,
+};
 use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle};
 use strata_params::Params;
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
-use strata_state::{BlockSubmitter, asm_state::AsmState};
+use strata_state::{asm_state::AsmState, BlockSubmitter};
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::time::sleep;
 
-use super::asm::{TestAsmWorkerContext, get_genesis_l1_view};
+use super::asm::{get_genesis_l1_view, TestAsmWorkerContext};
 
 /// Test harness that manages ASM worker service and Bitcoin regtest
+#[derive(Debug)]
 pub struct AsmTestHarness {
     /// Bitcoin regtest node
     pub bitcoind: Node,
@@ -72,8 +78,10 @@ impl AsmTestHarness {
             .await?;
 
         let genesis_hash = client.get_block_hash(genesis_height).await?;
-        println!("Test harness initialized with genesis at height {} ({})",
-                 genesis_height, genesis_hash);
+        println!(
+            "Test harness initialized with genesis at height {} ({})",
+            genesis_height, genesis_hash
+        );
 
         // 3. Setup parameters
         let mut params = strata_test_utils_l2::gen_params();
@@ -129,13 +137,9 @@ impl AsmTestHarness {
             None => self.client.get_new_address().await?,
         };
 
-        let block_hashes = strata_test_utils_btcio::mine_blocks(
-            &self.bitcoind,
-            &self.client,
-            1,
-            Some(address),
-        )
-        .await?;
+        let block_hashes =
+            strata_test_utils_btcio::mine_blocks(&self.bitcoind, &self.client, 1, Some(address))
+                .await?;
 
         let block_hash = block_hashes[0];
 
@@ -155,9 +159,7 @@ impl AsmTestHarness {
         );
 
         // Use block_in_place to submit synchronously within async context
-        tokio::task::block_in_place(|| {
-            self.asm_handle.submit_block(block_commitment)
-        })?;
+        tokio::task::block_in_place(|| self.asm_handle.submit_block(block_commitment))?;
 
         println!("Submitted block {} to ASM worker", block_hash);
 
@@ -211,7 +213,11 @@ impl AsmTestHarness {
     ///
     /// Polls the ASM state until it processes a block at or above the target height,
     /// or times out after the specified duration.
-    pub async fn wait_for_height(&self, target_height: u64, timeout: Duration) -> anyhow::Result<()> {
+    pub async fn wait_for_height(
+        &self,
+        target_height: u64,
+        timeout: Duration,
+    ) -> anyhow::Result<()> {
         use strata_asm_worker::WorkerContext;
 
         let start = std::time::Instant::now();
@@ -234,7 +240,11 @@ impl AsmTestHarness {
     /// Wait for a specific block to be processed by ASM worker
     ///
     /// Polls until the ASM state for the given block exists, or times out.
-    pub async fn wait_for_block(&self, blockid: &L1BlockCommitment, timeout: Duration) -> anyhow::Result<AsmState> {
+    pub async fn wait_for_block(
+        &self,
+        blockid: &L1BlockCommitment,
+        timeout: Duration,
+    ) -> anyhow::Result<AsmState> {
         use strata_asm_worker::WorkerContext;
 
         let start = std::time::Instant::now();
@@ -290,8 +300,13 @@ impl AsmTestHarness {
     /// Note: Coinbase outputs require 100 confirmations to be spendable.
     pub async fn mine_blocks_for_funding(&self, count: usize) -> anyhow::Result<Address> {
         let address = self.client.get_new_address().await?;
-        strata_test_utils_btcio::mine_blocks(&self.bitcoind, &self.client, count, Some(address.clone()))
-            .await?;
+        strata_test_utils_btcio::mine_blocks(
+            &self.bitcoind,
+            &self.client,
+            count,
+            Some(address.clone()),
+        )
+        .await?;
         Ok(address)
     }
 
@@ -317,14 +332,16 @@ impl AsmTestHarness {
         address: &Address,
         amount: Amount,
     ) -> anyhow::Result<(Txid, u32)> {
-        let funding_txid_str = self.bitcoind
+        let funding_txid_str = self
+            .bitcoind
             .client
             .send_to_address(address, amount)?
             .0
             .to_string();
         let funding_txid: Txid = funding_txid_str.parse()?;
 
-        let funding_tx = self.client
+        let funding_tx = self
+            .client
             .get_raw_transaction_verbosity_zero(&funding_txid)
             .await?
             .transaction()
@@ -365,7 +382,10 @@ impl AsmTestHarness {
         // Ensure we have funds available
         let balance = self.get_balance().await?;
         if balance < funding_amount {
-            println!("Insufficient balance ({} sats), mining blocks for funding...", balance.to_sat());
+            println!(
+                "Insufficient balance ({} sats), mining blocks for funding...",
+                balance.to_sat()
+            );
             self.mine_blocks_for_funding(101).await?;
         }
 
@@ -377,11 +397,15 @@ impl AsmTestHarness {
         let keypair = UntweakedKeypair::from_seckey_slice(&secp, &key_bytes)?;
         let (internal_key, _parity) = XOnlyPublicKey::from_keypair(&keypair);
 
-        println!("Building reveal script with admin payload ({} bytes)...", admin_payload.len());
+        println!(
+            "Building reveal script with admin payload ({} bytes)...",
+            admin_payload.len()
+        );
         let reveal_script = build_reveal_script(&internal_key, &admin_payload);
 
         // STEP 2: Create taproot spend info with reveal script
-        let taproot_spend_info = create_taproot_spend_info(&secp, internal_key, reveal_script.clone())?;
+        let taproot_spend_info =
+            create_taproot_spend_info(&secp, internal_key, reveal_script.clone())?;
 
         // STEP 3: Create taproot address for the commit output
         let taproot_address = Address::p2tr(
@@ -393,7 +417,9 @@ impl AsmTestHarness {
 
         // STEP 4: Fund the taproot address (commit transaction)
         println!("Creating taproot funding UTXO at {}...", taproot_address);
-        let (commit_txid, commit_vout) = self.create_funding_utxo(&taproot_address, funding_amount).await?;
+        let (commit_txid, commit_vout) = self
+            .create_funding_utxo(&taproot_address, funding_amount)
+            .await?;
         let commit_outpoint = OutPoint::new(commit_txid, commit_vout);
         println!("Created commit UTXO: {}:{}", commit_txid, commit_vout);
 
@@ -401,9 +427,7 @@ impl AsmTestHarness {
         // Create outputs
         let op_return_output = TxOut {
             value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return(
-                PushBytesBuf::try_from(sps50_tag)?,
-            ),
+            script_pubkey: ScriptBuf::new_op_return(PushBytesBuf::try_from(sps50_tag)?),
         };
 
         // Calculate change amount
@@ -423,8 +447,11 @@ impl AsmTestHarness {
         witness.push(reveal_script.as_bytes());
         witness.push(control_block.serialize());
 
-        println!("Created taproot witness (script: {} bytes, control block: {} bytes)",
-                 reveal_script.as_bytes().len(), control_block.serialize().len());
+        println!(
+            "Created taproot witness (script: {} bytes, control block: {} bytes)",
+            reveal_script.as_bytes().len(),
+            control_block.serialize().len()
+        );
 
         // Create input spending the taproot UTXO
         let tx_input = TxIn {
@@ -442,8 +469,14 @@ impl AsmTestHarness {
             output: vec![op_return_output, change_output],
         };
 
-        println!("Built reveal transaction (txid: {})", reveal_tx.compute_txid());
-        println!("Admin payload embedded in witness ({} bytes)", admin_payload.len());
+        println!(
+            "Built reveal transaction (txid: {})",
+            reveal_tx.compute_txid()
+        );
+        println!(
+            "Admin payload embedded in witness ({} bytes)",
+            admin_payload.len()
+        );
 
         Ok(reveal_tx)
     }
@@ -458,10 +491,7 @@ impl AsmTestHarness {
     ///
     /// # Returns
     /// The block hash containing the transaction
-    pub async fn submit_and_mine_admin_tx(
-        &self,
-        tx: &Transaction,
-    ) -> anyhow::Result<BlockHash> {
+    pub async fn submit_and_mine_admin_tx(&self, tx: &Transaction) -> anyhow::Result<BlockHash> {
         // Submit transaction to mempool
         let txid = self.submit_transaction(tx).await?;
         println!("Submitted admin tx {} to mempool", txid);

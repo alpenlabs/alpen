@@ -1,9 +1,11 @@
 //! Shared test utilities for ASM integration tests
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use bitcoin::{Block, BlockHash, Network, Txid, absolute::Height, block::Header};
+use bitcoin::{absolute::Height, block::Header, Block, BlockHash, Network, Txid};
 use bitcoind_async_client::{traits::Reader, Client};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
 use strata_btc_types::{GenesisL1View, RawBitcoinTx};
@@ -62,12 +64,23 @@ impl WorkerContext for TestAsmWorkerContext {
         }
 
         // If not cached, fetch from regtest (synchronously)
-        // Note: This uses tokio block_on which works in tests
         let block_hash: BlockHash = (*blockid).into();
-        let block = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(async { self.client.get_block(&block_hash).await })
-        })
+
+        // Try to use current runtime if available, otherwise create a new one
+        let block = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // We're in a Tokio context, use block_in_place
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async { self.client.get_block(&block_hash).await })
+                })
+            }
+            Err(_) => {
+                // No runtime available, create a temporary one
+                let rt = tokio::runtime::Runtime::new()
+                    .map_err(|_| WorkerError::MissingL1Block(*blockid))?;
+                rt.block_on(async { self.client.get_block(&block_hash).await })
+            }
+        }
         .map_err(|_| WorkerError::MissingL1Block(*blockid))?;
 
         // Cache for future use
@@ -114,13 +127,29 @@ impl WorkerContext for TestAsmWorkerContext {
         let txid_inner: Txid = txid.clone().into();
 
         // Fetch transaction from regtest synchronously
-        let raw_tx_result = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.client
-                    .get_raw_transaction_verbosity_zero(&txid_inner)
-                    .await
-            })
-        })
+        // Try to use current runtime if available, otherwise create a new one
+        let raw_tx_result = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // We're in a Tokio context, use block_in_place
+                tokio::task::block_in_place(|| {
+                    handle.block_on(async {
+                        self.client
+                            .get_raw_transaction_verbosity_zero(&txid_inner)
+                            .await
+                    })
+                })
+            }
+            Err(_) => {
+                // No runtime available, create a temporary one
+                let rt = tokio::runtime::Runtime::new()
+                    .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
+                rt.block_on(async {
+                    self.client
+                        .get_raw_transaction_verbosity_zero(&txid_inner)
+                        .await
+                })
+            }
+        }
         .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
 
         // Extract the transaction and convert to RawBitcoinTx
@@ -143,10 +172,7 @@ impl WorkerContext for TestAsmWorkerContext {
         Ok(())
     }
 
-    fn generate_mmr_proof(
-        &self,
-        _index: u64,
-    ) -> WorkerResult<strata_merkle::MerkleProofB32> {
+    fn generate_mmr_proof(&self, _index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
         // TODO: Implement proper MMR proof generation when needed
         // For now, this is not used in basic tests
         Err(WorkerError::Unimplemented)
@@ -154,6 +180,14 @@ impl WorkerContext for TestAsmWorkerContext {
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>> {
         Ok(self.manifest_hashes.lock().unwrap().get(&index).copied())
+    }
+
+    fn store_l1_manifest(
+        &self,
+        _manifest: strata_asm_manifest_types::AsmManifest,
+    ) -> WorkerResult<()> {
+        // Test implementation - no-op for now as we don't need manifest storage in tests
+        Ok(())
     }
 }
 

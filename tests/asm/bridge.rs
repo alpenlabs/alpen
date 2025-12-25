@@ -2,4 +2,4 @@
 //!
 //! Placeholder for future bridge tests.
 
-#![allow(unused_crate_dependencies)]
+#![allow(unused_crate_dependencies, reason = "placeholder test file")]

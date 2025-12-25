@@ -2,34 +2,34 @@
 //!
 //! Tests the ASM worker's ability to process Bitcoin blocks and maintain state.
 
-use integration_tests::common;
-
 // Suppress unused crate warnings - these dependencies are used by other test files
 use anyhow as _;
+use bitcoin::Network;
 use bitcoind_async_client as _;
 use borsh as _;
+use common::{asm::TestAsmWorkerContext, harness::create_test_harness};
 use corepc_node as _;
+use integration_tests::common;
 use rand as _;
+use strata_asm_common as _;
+use strata_asm_manifest_types as _;
+use strata_asm_proto_administration as _;
 use strata_asm_txs_admin as _;
 use strata_btc_types as _;
 use strata_crypto as _;
 use strata_merkle as _;
 use strata_params as _;
+use strata_primitives::L1BlockId;
 use strata_state as _;
 use strata_tasks as _;
-use strata_test_utils_l2 as _;
-
-use bitcoin::Network;
-use strata_primitives::L1BlockId;
 use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
-
-use common::asm::TestAsmWorkerContext;
-use common::harness::create_test_harness;
+use strata_test_utils_l2 as _;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use strata_asm_worker::WorkerContext;
+
+    use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_asm_worker_context_creation() {
@@ -49,7 +49,7 @@ mod tests {
         let context = TestAsmWorkerContext::new(client);
 
         // Mine 5 blocks
-        let block_hashes = mine_blocks(&bitcoind, &context.client.as_ref(), 5, None)
+        let block_hashes = mine_blocks(&bitcoind, context.client.as_ref(), 5, None)
             .await
             .expect("Failed to mine blocks");
 
@@ -58,7 +58,9 @@ mod tests {
         // Fetch each block through the context
         for (i, block_hash) in block_hashes.iter().enumerate() {
             let block_id = L1BlockId::from(*block_hash);
-            let block = context.get_l1_block(&block_id).expect("Failed to get block");
+            let block = context
+                .get_l1_block(&block_id)
+                .expect("Failed to get block");
             println!("Fetched block {}: {} txs", i + 1, block.txdata.len());
         }
 
@@ -105,7 +107,10 @@ mod tests {
             .await
             .expect("Failed to create test harness");
 
-        println!("Harness created with genesis at height {}", harness.genesis_height);
+        println!(
+            "Harness created with genesis at height {}",
+            harness.genesis_height
+        );
 
         // Mine and submit a block - ASM worker processes it automatically
         let block_hash = harness
@@ -119,7 +124,10 @@ mod tests {
         harness.wait_for_processing().await;
 
         // Verify chain tip advanced
-        let tip_height = harness.get_chain_tip().await.expect("Failed to get chain tip");
+        let tip_height = harness
+            .get_chain_tip()
+            .await
+            .expect("Failed to get chain tip");
         assert_eq!(tip_height, harness.genesis_height + 1);
 
         println!("Block processed successfully! Chain tip: {}", tip_height);
@@ -146,7 +154,10 @@ mod tests {
         harness.wait_for_processing().await;
 
         // Verify chain tip advanced
-        let tip_height = harness.get_chain_tip().await.expect("Failed to get chain tip");
+        let tip_height = harness
+            .get_chain_tip()
+            .await
+            .expect("Failed to get chain tip");
         assert_eq!(tip_height, harness.genesis_height + 3);
 
         println!("Test with harness completed successfully!");
