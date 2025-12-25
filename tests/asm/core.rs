@@ -2,30 +2,16 @@
 //!
 //! Tests the ASM worker's ability to process Bitcoin blocks and maintain state.
 
-// Suppress unused crate warnings - these dependencies are used by other test files
-use anyhow as _;
+#![allow(
+    unused_crate_dependencies,
+    reason = "test dependencies shared across test suite"
+)]
+
 use bitcoin::Network;
-use bitcoind_async_client as _;
-use borsh as _;
 use common::{asm::TestAsmWorkerContext, harness::create_test_harness};
-use corepc_node as _;
 use integration_tests::common;
-use rand as _;
-use rand_chacha as _;
-use strata_asm_common as _;
-use strata_asm_manifest_types as _;
-use strata_asm_proto_administration as _;
-use strata_asm_txs_admin as _;
-use strata_bridge_types as _;
-use strata_btc_types as _;
-use strata_crypto as _;
-use strata_merkle as _;
-use strata_params as _;
 use strata_primitives::L1BlockId;
-use strata_state as _;
-use strata_tasks as _;
 use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
-use strata_test_utils_l2 as _;
 
 #[cfg(test)]
 mod tests {

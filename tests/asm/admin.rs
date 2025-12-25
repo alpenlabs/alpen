@@ -2,20 +2,19 @@
 //!
 //! Tests the admin subprotocol's ability to process governance transactions.
 
+#![allow(
+    unused_crate_dependencies,
+    reason = "test dependencies shared across test suite"
+)]
+
 use std::num::NonZero;
 
-// Suppress unused crate warnings - these dependencies are used by other test files
-use anyhow as _;
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use bitcoind_async_client as _;
 use bitcoind_async_client::traits::Reader;
 use common::harness::create_test_harness;
-use corepc_node as _;
 use integration_tests::common;
 use rand::rngs::OsRng;
-use rand_chacha as _;
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_manifest_types as _;
 use strata_asm_proto_administration::{
     state::AdministrationSubprotoState, AdministrationSubprotocol,
 };
@@ -27,16 +26,8 @@ use strata_asm_txs_admin::{
     parser::SignedPayload,
     test_utils::{create_signature_set, create_test_admin_tx},
 };
-use strata_asm_worker as _;
-use strata_btc_types as _;
 use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfig};
-use strata_merkle as _;
-use strata_params as _;
 use strata_primitives::buf::Buf32;
-use strata_state as _;
-use strata_tasks as _;
-use strata_test_utils_btcio as _;
-use strata_test_utils_l2 as _;
 
 /// Helper to create test admin multisig configurations from test params.
 /// Extracts the operator XOnly keys from params and reconstructs them with even parity,
@@ -66,8 +57,8 @@ fn create_test_admin_config_from_params(
         .collect();
 
     let threshold = NonZero::new(1).unwrap();
-    let config = ThresholdConfig::try_new(admin_pubkeys, threshold)
-        .expect("valid threshold config");
+    let config =
+        ThresholdConfig::try_new(admin_pubkeys, threshold).expect("valid threshold config");
 
     (config, vec![operator_sk])
 }
@@ -584,7 +575,6 @@ mod tests {
         let signed_payload = SignedPayload::new(update_action, signature_set);
         let admin_payload = borsh::to_vec(&signed_payload).expect("Failed to serialize");
 
-
         println!("Created sequencer update tx with seqno=0");
         let fee = bitcoin::Amount::from_sat(1000);
         let update_tx = harness
@@ -609,7 +599,6 @@ mod tests {
             SignedPayload::new(cancel_multisig_action, cancel_signature_set);
         let cancel_admin_payload =
             borsh::to_vec(&cancel_signed_payload).expect("Failed to serialize");
-
 
         println!(
             "Created cancel action tx with seqno=1 (targets update_id={})",
@@ -797,8 +786,8 @@ mod tests {
         // Note: Not all transactions may be processed successfully due to:
         // - Bitcoin mempool reordering transactions (non-deterministic order)
         // - Signature verification failures if seqno doesn't match due to reordering
-        // - This is expected behavior - the test verifies that multiple transactions
-        //   CAN be included in one block, even if not all process successfully
+        // - This is expected behavior - the test verifies that multiple transactions CAN be
+        //   included in one block, even if not all process successfully
         assert!(
             (1..=3).contains(&processed_count),
             "Expected 1-3 admin transactions to process successfully, got {}. \
@@ -808,7 +797,10 @@ mod tests {
         println!("Note: {}/{} transactions processed successfully (mempool ordering affects seqno validation)",
             processed_count, admin_tx_count);
 
-        println!("✓ Verified {} admin transactions in block, {} processed successfully", admin_tx_count, processed_count);
+        println!(
+            "✓ Verified {} admin transactions in block, {} processed successfully",
+            admin_tx_count, processed_count
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
