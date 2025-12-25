@@ -8,4 +8,5 @@ pub mod l1tx_broadcast;
 pub mod l2;
 pub mod mmr;
 pub mod ol_state;
+pub mod unified_mmr;
 pub mod writer;
