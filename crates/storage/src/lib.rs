@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 pub use managers::{
-    account_mmr::AccountMmrManager,
     asm::AsmStateManager,
     chainstate::ChainstateManager,
     checkpoint::CheckpointDbManager,
@@ -46,7 +45,6 @@ pub struct NodeStorage {
 
     ol_block_manager: Arc<OLBlockManager>,
     asm_mmr_manager: Arc<MmrManager>,
-    snark_msg_mmr_manager: Arc<AccountMmrManager>,
     unified_mmr_manager: Arc<UnifiedMmrManager>,
     ol_state_manager: Arc<OLStateManager>,
 }
@@ -62,7 +60,6 @@ impl Clone for NodeStorage {
             checkpoint_manager: self.checkpoint_manager.clone(),
             ol_block_manager: self.ol_block_manager.clone(),
             asm_mmr_manager: self.asm_mmr_manager.clone(),
-            snark_msg_mmr_manager: self.snark_msg_mmr_manager.clone(),
             unified_mmr_manager: self.unified_mmr_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
         }
@@ -98,11 +95,6 @@ impl NodeStorage {
         &self.asm_mmr_manager
     }
 
-    #[deprecated(note = "Use unified_mmr() instead")]
-    pub fn snark_msg_mmr(&self) -> &Arc<AccountMmrManager> {
-        &self.snark_msg_mmr_manager
-    }
-
     pub fn unified_mmr(&self) -> &Arc<UnifiedMmrManager> {
         &self.unified_mmr_manager
     }
@@ -136,7 +128,6 @@ pub fn create_node_storage(
     let checkpoint_db = db.checkpoint_db();
     let ol_block_db = db.ol_block_db();
     let asm_mmr_db = db.asm_mmr_db();
-    let snark_msg_mmr_db = db.snark_msg_mmr_db();
     let ol_state_db = db.ol_state_db();
 
     let unified_mmr_db = db.unified_mmr_db();
@@ -154,7 +145,6 @@ pub fn create_node_storage(
 
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
     let asm_mmr_manager = Arc::new(MmrManager::new(pool.clone(), asm_mmr_db));
-    let snark_msg_mmr_manager = Arc::new(AccountMmrManager::new(pool.clone(), snark_msg_mmr_db));
     let unified_mmr_manager = Arc::new(UnifiedMmrManager::new(pool.clone(), unified_mmr_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db));
 
@@ -167,7 +157,6 @@ pub fn create_node_storage(
         checkpoint_manager,
         ol_block_manager,
         asm_mmr_manager,
-        snark_msg_mmr_manager,
         unified_mmr_manager,
         ol_state_manager,
     })
