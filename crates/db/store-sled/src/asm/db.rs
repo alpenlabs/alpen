@@ -1,17 +1,14 @@
 use strata_db_types::{
-    DbResult,
-    mmr_helpers::{
-        get_peaks, leaf_index_to_mmr_size, leaf_index_to_pos, pos_height_in_tree, sibling_pos,
-    },
+    DbError, DbResult,
+    mmr_helpers::{MmrAlgorithm, MmrMetadata},
     traits::*,
 };
-use strata_merkle::{CompactMmr64B32 as CompactMmr64, Sha256Hasher, hasher::MerkleHasher};
+use strata_merkle::CompactMmr64B32 as CompactMmr64;
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::asm_state::AsmState;
 
 use super::schemas::{
     AsmLogSchema, AsmManifestHashSchema, AsmMmrMetaSchema, AsmMmrNodeSchema, AsmStateSchema,
-    MmrMetadata,
 };
 use crate::define_sled_database;
 
@@ -31,11 +28,7 @@ impl AsmDBSled {
     /// Initialize MMR metadata if not present
     fn ensure_mmr_metadata(&self) -> DbResult<()> {
         if self.mmr_meta_tree.get(&())?.is_none() {
-            let metadata = MmrMetadata {
-                num_leaves: 0,
-                mmr_size: 0,
-                peak_roots: Vec::new(),
-            };
+            let metadata = MmrMetadata::empty();
             self.mmr_meta_tree.insert(&(), &metadata)?;
         }
         Ok(())
@@ -45,12 +38,7 @@ impl AsmDBSled {
     fn load_mmr_metadata(&self) -> DbResult<MmrMetadata> {
         self.mmr_meta_tree
             .get(&())?
-            .ok_or_else(|| strata_db_types::DbError::Other("MMR metadata not found".to_string()))
-    }
-
-    /// Hash two nodes together to create parent hash
-    fn hash_mmr_nodes(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
-        Sha256Hasher::hash_node(*left, *right)
+            .ok_or_else(|| DbError::Other("MMR metadata not found".to_string()))
     }
 
     /// Get a node hash by position from typed sled tree
@@ -58,9 +46,7 @@ impl AsmDBSled {
         self.mmr_node_tree
             .get(&pos)?
             .map(|buf| buf.0)
-            .ok_or_else(|| {
-                strata_db_types::DbError::Other(format!("MMR node not found at position {}", pos))
-            })
+            .ok_or_else(|| DbError::MmrLeafNotFound(pos))
     }
 }
 
@@ -172,81 +158,30 @@ impl AsmDatabase for AsmDBSled {
 /// reverses the peaks to match strata-merkle's expected ordering.
 impl MmrDatabase for AsmDBSled {
     fn append_leaf(&self, hash: [u8; 32]) -> DbResult<u64> {
-        // Ensure metadata exists
         self.ensure_mmr_metadata()?;
 
         self.config.with_retry(
             (&self.mmr_node_tree, &self.mmr_meta_tree),
             |(node_tree, meta_tree)| {
-                let metadata = meta_tree.get(&())?;
-                let mut metadata =
-                    metadata.expect("MMR metadata must exist after ensure_mmr_metadata");
+                let metadata = meta_tree
+                    .get(&())?
+                    .expect("MMR metadata must exist after ensure_mmr_metadata");
 
-                let leaf_index = metadata.num_leaves;
-                let leaf_pos = leaf_index_to_pos(leaf_index);
+                let result = MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
+                    node_tree
+                        .get(&pos)?
+                        .map(|buf| buf.0)
+                        .ok_or(DbError::MmrLeafNotFound(pos))
+                })
+                .map_err(typed_sled::error::Error::abort)?;
 
-                // Store the leaf
-                node_tree.insert(&leaf_pos, &Buf32(hash))?;
-
-                // Merge along the path to create internal nodes
-                let mut current_pos = leaf_pos;
-                let mut current_hash = hash;
-                let mut current_height = 0u8;
-
-                // Keep merging as long as we have a left sibling
-                loop {
-                    // Calculate what the next position would be
-                    let next_pos = current_pos + 1;
-                    let next_height = pos_height_in_tree(next_pos);
-
-                    // If next position is higher, current is a right sibling - we should merge
-                    if next_height > current_height {
-                        // Current is right sibling, get left sibling
-                        let sibling_position = sibling_pos(current_pos, current_height);
-                        let sibling_hash = node_tree
-                            .get(&sibling_position)?
-                            .expect("Sibling node must exist")
-                            .0;
-
-                        // Create parent hash (left sibling, right sibling)
-                        let parent_hash = Self::hash_mmr_nodes(&sibling_hash, &current_hash);
-
-                        // Store parent
-                        node_tree.insert(&next_pos, &Buf32(parent_hash))?;
-
-                        // Move up to parent
-                        current_pos = next_pos;
-                        current_hash = parent_hash;
-                        current_height = next_height;
-                    } else {
-                        // Current is a left sibling (will be merged when right sibling comes)
-                        // or we've reached a peak - stop here
-                        break;
-                    }
+                for (pos, node_hash) in result.nodes_to_write {
+                    node_tree.insert(&pos, &Buf32(node_hash))?;
                 }
 
-                // Update metadata
-                metadata.num_leaves += 1;
-                let leaves_count = metadata.num_leaves;
-                let peak_count = leaves_count.count_ones() as u64;
-                metadata.mmr_size = 2 * leaves_count - peak_count;
+                meta_tree.insert(&(), &result.new_metadata)?;
 
-                // Calculate and update peak_roots
-                let peak_positions = get_peaks(metadata.mmr_size);
-                let peaks: Vec<Buf32> = peak_positions
-                    .iter()
-                    .map(|&pos| {
-                        node_tree
-                            .get(&pos)
-                            .map(|opt| opt.expect("Peak node must exist"))
-                    })
-                    .collect::<Result<Vec<Buf32>, _>>()?;
-                metadata.peak_roots = peaks.into_iter().rev().collect();
-
-                // Save metadata to database
-                meta_tree.insert(&(), &metadata)?;
-
-                Ok(leaf_index)
+                Ok(result.leaf_index)
             },
         )
     }
@@ -274,16 +209,12 @@ impl MmrDatabase for AsmDBSled {
     }
 
     fn to_compact(&self) -> CompactMmr64 {
-        // Directly construct CompactMmr64 from our stored peak roots
         use ssz_types::FixedBytes;
 
-        let metadata = self.load_mmr_metadata().unwrap_or_else(|_| MmrMetadata {
-            num_leaves: 0,
-            mmr_size: 0,
-            peak_roots: Vec::new(),
-        });
+        let metadata = self
+            .load_mmr_metadata()
+            .unwrap_or_else(|_| MmrMetadata::empty());
 
-        // Convert our Hash to FixedBytes<32> for SSZ
         let roots_vec: Vec<_> = metadata
             .peak_roots
             .iter()
@@ -303,57 +234,29 @@ impl MmrDatabase for AsmDBSled {
         self.config.with_retry(
             (&self.mmr_node_tree, &self.mmr_meta_tree),
             |(node_tree, meta_tree)| {
-                let metadata = meta_tree.get(&())?;
-                let mut metadata =
-                    metadata.expect("MMR metadata must exist after ensure_mmr_metadata");
+                let metadata = meta_tree
+                    .get(&())?
+                    .expect("MMR metadata must exist after ensure_mmr_metadata");
 
-                // Can't pop from empty MMR
-                if metadata.num_leaves == 0 {
+                let result = MmrAlgorithm::pop_leaf(&metadata, |pos| {
+                    node_tree
+                        .get(&pos)?
+                        .map(|buf| buf.0)
+                        .ok_or(DbError::MmrLeafNotFound(pos))
+                })
+                .map_err(typed_sled::error::Error::abort)?;
+
+                let Some(result) = result else {
                     return Ok(None);
-                }
-
-                // Get the hash of the leaf we're about to pop (before deletion)
-                let leaf_index = metadata.num_leaves - 1;
-                let leaf_pos = leaf_index_to_pos(leaf_index);
-                let leaf_hash = node_tree.get(&leaf_pos)?.expect("Leaf node must exist").0;
-
-                // Calculate the old MMR size (before the last leaf was added)
-                let old_mmr_size = if metadata.num_leaves == 1 {
-                    0 // Empty MMR
-                } else {
-                    leaf_index_to_mmr_size(metadata.num_leaves - 2)
                 };
 
-                // Delete all nodes created when the last leaf was added
-                // These are nodes with positions: [old_mmr_size, current_mmr_size)
-                for pos in old_mmr_size..metadata.mmr_size {
+                for pos in result.nodes_to_remove {
                     node_tree.remove(&pos)?;
                 }
 
-                // Update metadata
-                metadata.num_leaves -= 1;
-                metadata.mmr_size = old_mmr_size;
+                meta_tree.insert(&(), &result.new_metadata)?;
 
-                // Calculate peak_roots for the new size
-                metadata.peak_roots = if old_mmr_size > 0 {
-                    let peak_positions = get_peaks(old_mmr_size);
-                    let peaks: Vec<Buf32> = peak_positions
-                        .iter()
-                        .map(|&pos| {
-                            node_tree
-                                .get(&pos)
-                                .map(|opt| opt.expect("Peak node must exist"))
-                        })
-                        .collect::<Result<Vec<Buf32>, _>>()?;
-                    peaks.into_iter().rev().collect()
-                } else {
-                    Vec::new()
-                };
-
-                // Save metadata to database
-                meta_tree.insert(&(), &metadata)?;
-
-                Ok(Some(leaf_hash))
+                Ok(Some(result.leaf_hash))
             },
         )
     }
