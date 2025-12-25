@@ -1,7 +1,5 @@
 use strata_asm_common::{AnchorState, AsmLogEntry};
-use strata_db_types::mmr_helpers::MmrMetadata;
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
-use typed_sled::codec::{CodecError, KeyCodec};
 
 use crate::{
     define_table_with_integer_key, define_table_with_seek_key_codec, define_table_without_codec,
@@ -19,51 +17,6 @@ define_table_with_seek_key_codec!(
     /// A table to store ASM logs per l1 block.
     (AsmLogSchema) L1BlockCommitment => Vec<AsmLogEntry>
 );
-
-// MMR database schemas for aux data resolution
-
-define_table_with_integer_key!(
-    /// MMR node storage schema: position -> hash. Stores all MMR nodes for proof generation.
-    (AsmMmrNodeSchema) u64 => Buf32
-);
-
-/// MMR metadata schema: singleton storage for MMR metadata
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AsmMmrMetaSchema;
-
-impl ::typed_sled::Schema for AsmMmrMetaSchema {
-    const TREE_NAME: ::typed_sled::schema::TreeName =
-        ::typed_sled::schema::TreeName("AsmMmrMetaSchema");
-    type Key = ();
-    type Value = MmrMetadata;
-}
-
-impl AsmMmrMetaSchema {
-    const fn tree_name() -> &'static str {
-        "AsmMmrMetaSchema"
-    }
-}
-
-impl_borsh_value_codec!(AsmMmrMetaSchema, MmrMetadata);
-
-// Implement KeyCodec for unit type (singleton key)
-impl KeyCodec<AsmMmrMetaSchema> for () {
-    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
-        Ok(vec![0u8]) // Single byte for singleton key
-    }
-
-    fn decode_key(bytes: &[u8]) -> Result<Self, CodecError> {
-        if bytes.len() == 1 && bytes[0] == 0 {
-            Ok(())
-        } else {
-            Err(CodecError::InvalidKeyLength {
-                schema: "AsmMmrMetaSchema",
-                expected: 1,
-                actual: bytes.len(),
-            })
-        }
-    }
-}
 
 define_table_with_integer_key!(
     /// Manifest hash storage: manifest_index -> hash. Maps leaf indices to manifest hashes.

@@ -157,19 +157,8 @@ impl DatabaseBackend for SledBackend {
 }
 
 impl SledBackend {
-    /// Get the ASM MMR database
-    pub fn asm_mmr_db(&self) -> Arc<AsmDBSled> {
-        self.asm_db.clone()
-    }
-
     /// Get the unified MMR database
     pub fn unified_mmr_db(&self) -> Arc<UnifiedMmrDb> {
         self.unified_mmr_db.clone()
-    }
-
-    /// Get the MMR database (deprecated - use asm_mmr_db)
-    #[deprecated(note = "Use asm_mmr_db() instead")]
-    pub fn mmr_db(&self) -> Arc<AsmDBSled> {
-        self.asm_db.clone()
     }
 }

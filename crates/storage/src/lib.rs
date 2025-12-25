@@ -44,7 +44,6 @@ pub struct NodeStorage {
     checkpoint_manager: Arc<CheckpointDbManager>,
 
     ol_block_manager: Arc<OLBlockManager>,
-    asm_mmr_manager: Arc<MmrManager>,
     unified_mmr_manager: Arc<UnifiedMmrManager>,
     ol_state_manager: Arc<OLStateManager>,
 }
@@ -59,7 +58,6 @@ impl Clone for NodeStorage {
             client_state_manager: self.client_state_manager.clone(),
             checkpoint_manager: self.checkpoint_manager.clone(),
             ol_block_manager: self.ol_block_manager.clone(),
-            asm_mmr_manager: self.asm_mmr_manager.clone(),
             unified_mmr_manager: self.unified_mmr_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
         }
@@ -89,10 +87,6 @@ impl NodeStorage {
 
     pub fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
         &self.checkpoint_manager
-    }
-
-    pub fn asm_mmr(&self) -> &Arc<MmrManager> {
-        &self.asm_mmr_manager
     }
 
     pub fn unified_mmr(&self) -> &Arc<UnifiedMmrManager> {
@@ -127,9 +121,7 @@ pub fn create_node_storage(
     let client_state_db = db.client_state_db();
     let checkpoint_db = db.checkpoint_db();
     let ol_block_db = db.ol_block_db();
-    let asm_mmr_db = db.asm_mmr_db();
     let ol_state_db = db.ol_state_db();
-
     let unified_mmr_db = db.unified_mmr_db();
 
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
@@ -144,7 +136,6 @@ pub fn create_node_storage(
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
-    let asm_mmr_manager = Arc::new(MmrManager::new(pool.clone(), asm_mmr_db));
     let unified_mmr_manager = Arc::new(UnifiedMmrManager::new(pool.clone(), unified_mmr_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db));
 
@@ -156,7 +147,6 @@ pub fn create_node_storage(
         client_state_manager,
         checkpoint_manager,
         ol_block_manager,
-        asm_mmr_manager,
         unified_mmr_manager,
         ol_state_manager,
     })
