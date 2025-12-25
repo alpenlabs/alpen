@@ -9,6 +9,7 @@ use bitcoind_async_client::Client;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
+use strata_db_types::mmr_helpers::MmrId;
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_params::Params;
 use strata_primitives::prelude::L1BlockCommitment;
@@ -265,7 +266,7 @@ pub fn spawn_asm_worker(
         bitcoin_client,
         storage.l1().clone(),
         storage.asm().clone(),
-        storage.asm_mmr().clone(),
+        storage.unified_mmr().get_handle(MmrId::Asm),
     );
 
     // Use the new builder API to launch the worker and get a handle.
