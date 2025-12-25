@@ -5,7 +5,7 @@ use strata_asm_txs_bridge_v1::{
 };
 
 use crate::{
-    errors::BridgeSubprotocolError,
+    errors::{BridgeSubprotocolError, DepositValidationError},
     state::{BridgeV1State, OperatorClaimUnlock},
     validation::{
         validate_deposit_info, validate_slash_stake_connector, validate_unstake_info,
@@ -32,7 +32,7 @@ pub(crate) fn handle_parsed_tx(
     match parsed_tx {
         ParsedTx::Deposit(info) => {
             let drt_tx = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
-            let drt_info = parse_drt(drt_tx).expect("FIXME:PG");
+            let drt_info = parse_drt(drt_tx).map_err(DepositValidationError::from)?;
 
             validate_deposit_info(state, &info, &drt_info)?;
             state.add_deposit(&info)?;
