@@ -85,7 +85,7 @@ mod tests {
         let amount = BitcoinAmount::from_sat(100_000);
 
         let (sks, _) = create_test_operators(3);
-        let dt_aux = DepositTxHeaderAux::new(deposit_idx, *drt_header_aux.ee_address());
+        let dt_aux = DepositTxHeaderAux::new(deposit_idx);
         let (drt, dt) =
             create_connected_drt_and_dt(&drt_header_aux, dt_aux.clone(), amount.into(), &sks);
         let nn_key = create_agg_pubkey_from_privkeys(&sks);
