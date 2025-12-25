@@ -109,7 +109,7 @@ impl StrataAsmSpec {
         let admin_params = AdministrationSubprotoParams::new(
             admin_config.clone(),
             admin_config,
-            100, // confirmation_depth for queuing updates
+            1, // confirmation_depth for queuing updates
         );
 
         Self {
