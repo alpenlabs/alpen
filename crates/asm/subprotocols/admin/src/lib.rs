@@ -13,4 +13,5 @@ mod queued_update;
 pub mod state;
 mod subprotocol;
 
+pub use config::AdministrationSubprotoParams;
 pub use subprotocol::AdministrationSubprotocol;
