@@ -31,7 +31,10 @@ use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_params::Params;
-use strata_primitives::{buf::Buf32, l1::{L1BlockCommitment, L1BlockId}};
+use strata_primitives::{
+    buf::Buf32,
+    l1::{L1BlockCommitment, L1BlockId},
+};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::time::sleep;
@@ -293,7 +296,7 @@ impl AsmTestHarness {
     ///
     /// Returns the height of the latest processed block, or an error if no state exists.
     pub async fn get_chain_tip(&self) -> anyhow::Result<u64> {
-        Ok(self.client.get_blockchain_info().await?.blocks)
+        Ok(self.client.get_blockchain_info().await?.blocks.into())
     }
 
     /// Get the latest ASM state from the worker context
@@ -368,8 +371,7 @@ impl AsmTestHarness {
             .client
             .get_raw_transaction_verbosity_zero(&funding_txid)
             .await?
-            .transaction()
-            .map_err(|e| anyhow::anyhow!("Failed to decode funding transaction: {}", e))?;
+            .0;
 
         let prev_vout = funding_tx
             .output

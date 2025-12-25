@@ -153,9 +153,7 @@ impl WorkerContext for TestAsmWorkerContext {
         .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
 
         // Extract the transaction and convert to RawBitcoinTx
-        let tx = raw_tx_result
-            .transaction()
-            .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
+        let tx = raw_tx_result.0;
 
         Ok(RawBitcoinTx::from(tx))
     }
