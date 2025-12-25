@@ -15,6 +15,7 @@ pub mod prover;
 pub mod snark_msg_mmr;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;
+pub mod unified_mmr;
 pub mod utils;
 pub mod writer;
 
@@ -36,6 +37,7 @@ use strata_db_types::{
     traits::{DatabaseBackend, OLStateDatabase},
 };
 use typed_sled::SledDb;
+pub use unified_mmr::UnifiedMmrDb;
 use writer::db::L1WriterDBSled;
 
 pub use crate::{
