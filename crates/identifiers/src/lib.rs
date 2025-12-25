@@ -14,7 +14,8 @@ mod mmr;
 mod ol;
 
 pub use acct::{
-    AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SYSTEM_RESERVED_ACCTS, SubjectId,
+    ACCT_ID_LEN, AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SUBJ_ID_LEN,
+    SYSTEM_RESERVED_ACCTS, SubjectId,
 };
 pub use buf::{Buf20, Buf32, Buf64};
 pub use cred_rule::CredRule;

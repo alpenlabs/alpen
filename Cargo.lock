@@ -13928,6 +13928,7 @@ dependencies = [
  "strata-bridge-types",
  "strata-codec",
  "strata-crypto",
+ "strata-identifiers",
  "strata-l1-txfmt",
  "strata-primitives",
  "strata-test-utils",

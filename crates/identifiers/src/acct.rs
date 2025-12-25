@@ -5,8 +5,8 @@ use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
-const ACCT_ID_LEN: usize = 32;
-const SUBJ_ID_LEN: usize = 32;
+pub const ACCT_ID_LEN: usize = 32;
+pub const SUBJ_ID_LEN: usize = 32;
 
 /// Total number of system reserved accounts, which is the space where we do special casing of
 /// things.
