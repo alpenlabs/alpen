@@ -8,7 +8,7 @@ use crate::VerifiedUpdate;
 /// to the provided [`LedgerInterface`] implementation. This keeps snark-acct-sys independent
 /// of STF implementation details.
 ///
-/// Called after verification succeeds and before updating the snark account's proof state.
+/// This is called after verification succeeds and before updating the snark account's proof state.
 pub fn apply_update_outputs<'a, L: LedgerInterface>(
     ledger_impl: &mut L,
     verified_update: VerifiedUpdate<'a>,
