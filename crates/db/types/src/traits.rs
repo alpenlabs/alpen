@@ -362,10 +362,110 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
 }
 
+// =============================================================================
+// Scoped MMR Database - Generic MMR with scope parameter
+// =============================================================================
+
+/// Generic MMR database trait with scope parameter.
+///
+/// This trait provides MMR operations that are scoped by a key type `S`.
+/// Different scope types allow for different partitioning strategies:
+/// - `S = ()` for singleton/global MMRs (e.g., ASM manifests)
+/// - `S = AccountId` for per-account MMRs (e.g., snark message inboxes)
+/// - `S = EpochId` for per-epoch MMRs
+///
+/// The scope parameter determines how MMR instances are partitioned in storage.
+/// Each unique scope value maintains its own independent MMR with separate
+/// metadata and node storage.
+///
+/// # Type Parameters
+///
+/// * `S` - The scope type that partitions MMR instances. Must be serializable
+///         for use as a database key.
+///
+/// # Design Invariants
+///
+/// - Each scope maintains an independent MMR
+/// - Leaves are indexed from 0 sequentially within each scope
+/// - `append_leaf` is the only way to add data (append-only per scope)
+/// - Operations on one scope don't affect other scopes
+pub trait ScopedMmrDatabase<S>: Send + Sync + 'static
+where
+    S: Clone + Send + Sync + 'static,
+{
+    /// Append a new leaf to the MMR for the given scope
+    fn append_leaf(&self, scope: S, hash: [u8; 32]) -> DbResult<u64>;
+
+    /// Get a node hash by MMR position for the given scope
+    fn get_node(&self, scope: S, pos: u64) -> DbResult<[u8; 32]>;
+
+    /// Get the total MMR size for the given scope
+    fn mmr_size(&self, scope: S) -> DbResult<u64>;
+
+    /// Get the total number of leaves for the given scope
+    fn num_leaves(&self, scope: S) -> DbResult<u64>;
+
+    /// Get the individual peak roots for the given scope
+    fn peak_roots(&self, scope: S) -> Vec<[u8; 32]>;
+
+    /// Get a compact representation of the MMR for the given scope
+    fn to_compact(&self, scope: S) -> CompactMmr64B32;
+
+    /// Remove the last leaf from the MMR for the given scope
+    fn pop_leaf(&self, scope: S) -> DbResult<Option<[u8; 32]>>;
+}
+
+// =============================================================================
+// Blanket Implementations for Backward Compatibility
+// =============================================================================
+
+/// Automatic implementation of `MmrDatabase` for any `ScopedMmrDatabase<()>`
+///
+/// This allows singleton MMRs to be used with the legacy `MmrDatabase` trait
+/// without any code changes to existing callers.
+impl<T> MmrDatabase for T
+where
+    T: ScopedMmrDatabase<()>,
+{
+    fn append_leaf(&self, hash: [u8; 32]) -> DbResult<u64> {
+        ScopedMmrDatabase::append_leaf(self, (), hash)
+    }
+
+    fn get_node(&self, pos: u64) -> DbResult<[u8; 32]> {
+        ScopedMmrDatabase::get_node(self, (), pos)
+    }
+
+    fn mmr_size(&self) -> DbResult<u64> {
+        ScopedMmrDatabase::mmr_size(self, ())
+    }
+
+    fn num_leaves(&self) -> DbResult<u64> {
+        ScopedMmrDatabase::num_leaves(self, ())
+    }
+
+    fn peak_roots(&self) -> Vec<[u8; 32]> {
+        ScopedMmrDatabase::peak_roots(self, ())
+    }
+
+    fn to_compact(&self) -> CompactMmr64B32 {
+        ScopedMmrDatabase::to_compact(self, ())
+    }
+
+    fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>> {
+        ScopedMmrDatabase::pop_leaf(self, ())
+    }
+}
+
+// =============================================================================
+// Legacy Trait - Kept for backward compatibility
+// =============================================================================
+
 /// MMR database trait for persistent proof generation
 ///
 /// Implementations of this trait maintain MMR data in a way that allows
 /// efficient proof generation for arbitrary leaf positions.
+///
+/// This is a specialized version of `ScopedMmrDatabase<()>` for singleton MMRs.
 ///
 /// ## Design Invariants
 ///
@@ -441,21 +541,25 @@ pub trait MmrDatabase: Send + Sync + 'static {
     fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>>;
 }
 
-/// Account-scoped MMR database trait for per-account persistent proof generation
+/// Type alias for account-scoped MMR databases
 ///
-/// This trait extends the MMR concept to support multiple independent MMRs,
-/// one per account. Each account maintains its own separate MMR tree with
-/// independent leaf indexing and metadata.
+/// This is a convenience alias for `ScopedMmrDatabase<AccountId>`.
+/// Use this in type bounds where the macro system has trouble with generic parameters.
+pub trait AccountMmrDatabase: ScopedMmrDatabase<AccountId> {}
+
+/// Blanket implementation: any `ScopedMmrDatabase<AccountId>` is also an `AccountMmrDatabase`
+impl<T> AccountMmrDatabase for T where T: ScopedMmrDatabase<AccountId> {}
+
+/// Legacy account-scoped MMR trait (deprecated)
 ///
-/// ## Design Invariants
-///
-/// - Each account has its own independent MMR
-/// - Leaves are indexed from 0 sequentially per account
-/// - `append_leaf` is the only way to add data (append-only)
-/// - `num_leaves()` returns the total number of leaves for a specific account
-/// - Proofs are valid against the current root for that account
-/// - Accounts are logically isolated - operations on one account don't affect others
-pub trait AccountMmrDatabase: Send + Sync + 'static {
+/// **DEPRECATED:** This is now just an alias. Use `AccountMmrDatabase` type alias
+/// or `ScopedMmrDatabase<AccountId>` directly.
+#[deprecated(
+    since = "0.3.0",
+    note = "Use AccountMmrDatabase type alias or ScopedMmrDatabase<AccountId>"
+)]
+#[allow(dead_code)]
+trait LegacyAccountMmrDatabase: Send + Sync + 'static {
     /// Append a new leaf to the MMR for a specific account
     fn append_leaf(&self, account: AccountId, hash: [u8; 32]) -> DbResult<u64>;
 
@@ -477,6 +581,10 @@ pub trait AccountMmrDatabase: Send + Sync + 'static {
     /// Remove the last leaf from the MMR for a specific account
     fn pop_leaf(&self, account: AccountId) -> DbResult<Option<[u8; 32]>>;
 }
+
+// =============================================================================
+// Database traits for OL state and other components
+// =============================================================================
 
 /// Database trait for toplevel OL state storage.
 ///

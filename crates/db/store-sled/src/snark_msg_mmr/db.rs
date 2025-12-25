@@ -2,7 +2,7 @@ use ssz_types::FixedBytes;
 use strata_db_types::{
     DbError, DbResult,
     mmr_helpers::{MmrAlgorithm, MmrMetadata},
-    traits::AccountMmrDatabase,
+    traits::ScopedMmrDatabase,
 };
 use strata_identifiers::AccountId;
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
@@ -41,7 +41,11 @@ impl SnarkMsgMmrDb {
     }
 }
 
-impl AccountMmrDatabase for SnarkMsgMmrDb {
+/// Implementation of `ScopedMmrDatabase` with `AccountId` scope
+///
+/// This provides per-account MMRs where each account has its own independent
+/// MMR instance.
+impl ScopedMmrDatabase<AccountId> for SnarkMsgMmrDb {
     fn append_leaf(&self, account: AccountId, hash: [u8; 32]) -> DbResult<u64> {
         self.ensure_mmr_metadata(account)?;
 
