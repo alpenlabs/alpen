@@ -115,11 +115,7 @@ impl WorkerContext for AsmWorkerCtx {
                 WorkerError::BitcoinTxNotFound(txid.clone())
             })?;
 
-        let tx = raw_tx_response.transaction().map_err(|e| {
-            tracing::error!(?txid, ?e, "Failed to decode transaction");
-            WorkerError::BitcoinTxNotFound(txid.clone())
-        })?;
-
+        let tx = raw_tx_response.0;
         Ok(RawBitcoinTx::from(tx))
     }
 

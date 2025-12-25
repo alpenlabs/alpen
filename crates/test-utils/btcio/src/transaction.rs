@@ -34,8 +34,7 @@ pub async fn collect_prevouts(
         let tx = client
             .get_raw_transaction_verbosity_zero(&txin.previous_output.txid)
             .await?
-            .transaction()
-            .map_err(|e| anyhow::anyhow!("Failed to decode prev transaction: {}", e))?;
+            .0;
 
         let prev_out = tx
             .output

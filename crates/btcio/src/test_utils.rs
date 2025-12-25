@@ -9,17 +9,25 @@ use bitcoin::{
     key::{Parity, UntweakedKeypair},
     taproot::{ControlBlock, LeafVersion, TaprootMerkleBranch},
     transaction::Version,
-    Address, Amount, Block, BlockHash, Network, ScriptBuf, SignedAmount, TapNodeHash, Transaction,
-    TxOut, Txid, Work, XOnlyPublicKey,
+    Address, Amount, Block, BlockHash, Network, Psbt, ScriptBuf, SignedAmount, TapNodeHash,
+    Transaction, TxOut, Txid, Work, XOnlyPublicKey,
 };
 use bitcoind_async_client::{
+    corepc_types::{
+        model::{
+            Bip125Replaceable, GetAddressInfo, GetBlockchainInfo, GetMempoolInfo, GetRawMempool,
+            GetRawMempoolVerbose, GetRawTransaction, GetRawTransactionVerbose, GetTransaction,
+            GetTxOut, ListTransactions, ListUnspent, ListUnspentItem, MempoolAcceptance,
+            PsbtBumpFee, SignRawTransaction, SubmitPackage, SubmitPackageTxResult,
+            TestMempoolAccept, WalletCreateFundedPsbt, WalletProcessPsbt,
+        },
+        v29::{ImportDescriptors, ImportDescriptorsResult},
+    },
     traits::{Broadcaster, Reader, Signer, Wallet},
     types::{
-        CreateRawTransaction, GetBlockchainInfo, GetRawTransactionVerbosityOne,
-        GetRawTransactionVerbosityZero, GetTransaction, GetTxOut, ImportDescriptor,
-        ImportDescriptorResult, ListTransactions, ListUnspent, PreviousTransactionOutput,
-        ScriptPubkey, SignRawTransactionWithWallet, SubmitPackage, SubmitPackageTxResult,
-        TestMempoolAccept,
+        CreateRawTransactionArguments, CreateRawTransactionInput, CreateRawTransactionOutput,
+        ImportDescriptorInput, ListUnspentQueryOptions, PreviousTransactionOutput,
+        PsbtBumpFeeOptions, SighashType, WalletCreateFundedPsbtOptions,
     },
     ClientResult,
 };
@@ -101,20 +109,26 @@ impl Reader for TestBitcoinClient {
 
     async fn get_blockchain_info(&self) -> ClientResult<GetBlockchainInfo> {
         Ok(GetBlockchainInfo {
-            chain: "regtest".to_string(),
+            chain: Network::Regtest,
             blocks: 100,
             headers: 100,
-            best_block_hash: BlockHash::all_zeros().to_string(),
+            best_block_hash: BlockHash::all_zeros(),
             difficulty: 1.0,
             median_time: 10 * 60,
             verification_progress: 1.0,
             initial_block_download: false,
-            chain_work: Work::from_be_bytes([0; 32]).to_string(),
+            chain_work: Work::from_be_bytes([0; 32]),
             size_on_disk: 1_000_000,
             pruned: false,
             prune_height: None,
             automatic_pruning: None,
             prune_target_size: None,
+            bits: None,
+            target: None,
+            time: None,
+            signet_challenge: None,
+            warnings: vec![],
+            softforks: BTreeMap::new(),
         })
     }
 
@@ -122,37 +136,32 @@ impl Reader for TestBitcoinClient {
         Ok(1_000)
     }
 
-    async fn get_raw_mempool(&self) -> ClientResult<Vec<Txid>> {
-        Ok(vec![])
+    async fn get_raw_mempool(&self) -> ClientResult<GetRawMempool> {
+        Ok(GetRawMempool(vec![]))
     }
 
     /// Gets a raw transaction by its [`Txid`].
     async fn get_raw_transaction_verbosity_zero(
         &self,
         _txid: &Txid,
-    ) -> ClientResult<GetRawTransactionVerbosityZero> {
-        Ok(GetRawTransactionVerbosityZero(SOME_TX.to_string()))
+    ) -> ClientResult<GetRawTransaction> {
+        let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
+        Ok(GetRawTransaction(some_tx))
     }
 
-    /// Gets a raw transaction by its [`Txid`].
     async fn get_raw_transaction_verbosity_one(
         &self,
         _txid: &Txid,
-    ) -> ClientResult<GetRawTransactionVerbosityOne> {
+    ) -> ClientResult<GetRawTransactionVerbose> {
         let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
-        Ok(GetRawTransactionVerbosityOne {
+        let block_hash = BlockHash::all_zeros();
+        Ok(GetRawTransactionVerbose {
+            transaction: some_tx,
+            block_hash: Some(block_hash),
+            confirmations: Some(1),
+            transaction_time: None,
+            block_time: None,
             in_active_chain: Some(true),
-            transaction: some_tx.clone(),
-            txid: some_tx.compute_txid(),
-            hash: some_tx.compute_wtxid(),
-            size: some_tx.base_size(),
-            vsize: some_tx.vsize(),
-            version: some_tx.version.0 as u32,
-            locktime: 0,
-            blockhash: Some(BlockHash::all_zeros()),
-            confirmations: Some(3),
-            time: Some(1_000),
-            blocktime: Some(1_000),
         })
     }
 
@@ -163,24 +172,46 @@ impl Reader for TestBitcoinClient {
         _include_mempool: bool,
     ) -> ClientResult<GetTxOut> {
         Ok(GetTxOut {
-            best_block: BlockHash::all_zeros().to_string(),
+            best_block: BlockHash::all_zeros(),
             confirmations: 1,
-            value: 1.0,
-            script_pubkey: Some(ScriptPubkey {
+            tx_out: TxOut {
+                value: Amount::from_btc(1.0).unwrap(),
                 // Taken from mainnet txid
                 // e35e3357cac58a56dab78fa3c544f52f091561ff84428da28bdc5c49fc4c5ffc
-                asm: "OP_0 OP_PUSHBYTES_20 78a93a5b649de9deabd9494ae9bc41f3c9c13837".to_string(),
-                hex: "001478a93a5b649de9deabd9494ae9bc41f3c9c13837".to_string(),
-                req_sigs: 1,
-                type_: "V0_P2WPKH".to_string(),
-                address: Some("bc1q0z5n5kmynh5aa27ef99wn0zp70yuzwph68my2c".to_string()),
-            }),
+                script_pubkey: ScriptBuf::from_hex("001478a93a5b649de9deabd9494ae9bc41f3c9c13837")
+                    .unwrap(),
+            },
             coinbase: false,
+            address: Some(
+                "bc1q0z5n5kmynh5aa27ef99wn0zp70yuzwph68my2c"
+                    .parse::<Address<_>>()
+                    .unwrap(),
+            ),
         })
     }
 
     async fn network(&self) -> ClientResult<Network> {
         Ok(Network::Regtest)
+    }
+
+    async fn get_raw_mempool_verbose(&self) -> ClientResult<GetRawMempoolVerbose> {
+        Ok(GetRawMempoolVerbose(BTreeMap::new()))
+    }
+
+    async fn get_mempool_info(&self) -> ClientResult<GetMempoolInfo> {
+        Ok(GetMempoolInfo {
+            size: 0,
+            bytes: 0,
+            usage: 0,
+            max_mempool: 0,
+            mempool_min_fee: None,
+            loaded: None,
+            total_fee: None,
+            min_relay_tx_fee: None,
+            incremental_relay_fee: None,
+            unbroadcast_count: Some(0),
+            full_rbf: None,
+        })
     }
 }
 
@@ -189,12 +220,19 @@ impl Broadcaster for TestBitcoinClient {
     async fn send_raw_transaction(&self, _tx: &Transaction) -> ClientResult<Txid> {
         Ok(Txid::from_slice(&[1u8; 32]).unwrap())
     }
-    async fn test_mempool_accept(&self, _tx: &Transaction) -> ClientResult<Vec<TestMempoolAccept>> {
+    async fn test_mempool_accept(&self, _tx: &Transaction) -> ClientResult<TestMempoolAccept> {
         let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
-        Ok(vec![TestMempoolAccept {
-            txid: some_tx.compute_txid(),
-            reject_reason: None,
-        }])
+        Ok(TestMempoolAccept {
+            results: vec![MempoolAcceptance {
+                txid: some_tx.compute_txid(),
+                allowed: true,
+                reject_reason: None,
+                vsize: None,
+                fees: None,
+                wtxid: None,
+                reject_details: None,
+            }],
+        })
     }
 
     async fn submit_package(&self, _txs: &[Transaction]) -> ClientResult<SubmitPackage> {
@@ -202,11 +240,11 @@ impl Broadcaster for TestBitcoinClient {
         let wtxid = some_tx.compute_wtxid();
         let vsize = some_tx.vsize();
         let tx_results = BTreeMap::from([(
-            wtxid.to_string(),
+            wtxid,
             SubmitPackageTxResult {
-                txid: some_tx.compute_txid().to_string(),
+                txid: some_tx.compute_txid(),
                 other_wtxid: None,
-                vsize: vsize as i64,
+                vsize: Some(vsize as u32),
                 fees: None,
                 error: None,
             },
@@ -232,56 +270,65 @@ impl Wallet for TestBitcoinClient {
     async fn get_transaction(&self, txid: &Txid) -> ClientResult<GetTransaction> {
         let some_tx = consensus::encode::deserialize_hex(SOME_TX).unwrap();
         Ok(GetTransaction {
+            tx: some_tx,
             amount: SignedAmount::from_btc(100.0).unwrap(),
-            confirmations: self.confs,
+            confirmations: self.confs as i64,
             generated: None,
             trusted: None,
-            blockhash: None,
-            blockheight: Some(self.included_height),
-            blockindex: None,
-            blocktime: None,
             txid: *txid,
-            wtxid: txid.to_string(),
-            walletconflicts: vec![],
+            wtxid: None,
             replaced_by_txid: None,
             replaces_txid: None,
             comment: None,
             to: None,
             time: 0,
-            timereceived: 0,
-            bip125_replaceable: "false".to_string(),
+            bip125_replaceable: Bip125Replaceable::No,
             details: vec![],
-            hex: some_tx,
+            fee: None,
+            block_hash: Some(BlockHash::all_zeros()),
+            block_height: Some(self.included_height as u32),
+            block_index: Some(0),
+            block_time: Some(1_000),
+            wallet_conflicts: vec![],
+            mempool_conflicts: Some(vec![]),
+            time_received: 0,
+            parent_descriptors: Some(vec![]),
+            decoded: None,
+            last_processed_block: None,
         })
     }
 
-    async fn get_utxos(&self) -> ClientResult<Vec<ListUnspent>> {
+    async fn list_unspent(
+        &self,
+        _min_conf: Option<u32>,
+        _max_conf: Option<u32>,
+        _addresses: Option<&[Address]>,
+        _include_unsafe: Option<bool>,
+        _query_options: Option<ListUnspentQueryOptions>,
+    ) -> ClientResult<ListUnspent> {
         // plenty of sats
-        (1..10)
-            .map(|i| {
-                Ok(ListUnspent {
-                    txid: Txid::from_slice(&[i; 32]).unwrap(),
-                    vout: 0,
-                    address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw"
-                        .parse::<Address<_>>()
-                        .unwrap(),
-                    label: None,
-                    script_pubkey: "foo".to_string(),
-                    amount: Amount::from_btc(100.0).unwrap(),
-                    confirmations: self.confs as u32,
-                    spendable: true,
-                    solvable: true,
-                    safe: true,
-                })
-            })
-            .collect()
+        Ok(ListUnspent(vec![ListUnspentItem {
+            txid: Txid::from_slice(&[1; 32]).unwrap(),
+            vout: 0,
+            address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw"
+                .parse::<Address<_>>()
+                .unwrap(),
+            label: "test".to_string(),
+            script_pubkey: ScriptBuf::from_hex("001478a93a5b649de9deabd9494ae9bc41f3c9c13837")
+                .unwrap(),
+            amount: SignedAmount::from_btc(100.0).unwrap(),
+            confirmations: self.confs as u32,
+            spendable: true,
+            solvable: true,
+            safe: true,
+            redeem_script: None,
+            descriptor: None,
+            parent_descriptors: None,
+        }]))
     }
 
-    async fn list_transactions(
-        &self,
-        _count: Option<usize>,
-    ) -> ClientResult<Vec<ListTransactions>> {
-        Ok(vec![])
+    async fn list_transactions(&self, _count: Option<usize>) -> ClientResult<ListTransactions> {
+        Ok(ListTransactions(vec![]))
     }
 
     async fn list_wallets(&self) -> ClientResult<Vec<String>> {
@@ -290,24 +337,70 @@ impl Wallet for TestBitcoinClient {
 
     async fn create_raw_transaction(
         &self,
-        _raw_tx: CreateRawTransaction,
+        _raw_tx: CreateRawTransactionArguments,
     ) -> ClientResult<Transaction> {
         let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
         Ok(some_tx)
+    }
+
+    async fn wallet_create_funded_psbt(
+        &self,
+        _inputs: &[CreateRawTransactionInput],
+        _outputs: &[CreateRawTransactionOutput],
+        _locktime: Option<u32>,
+        _options: Option<WalletCreateFundedPsbtOptions>,
+        _bip32_derivs: Option<bool>,
+    ) -> ClientResult<WalletCreateFundedPsbt> {
+        Ok(WalletCreateFundedPsbt {
+            // taken from https://docs.rs/bitcoin/0.32.8/src/bitcoin/psbt/mod.rs.html#1365
+            psbt: Psbt::from_str("70736274ff01003302000000010000000000000000000000000000000000000000000000000000000000000000ffffffff00ffffffff000000000000420204bb0d5d0cca36e7b9c80f63bc04c1240babb83bcd2803ef7ac8b6e2af594291daec281e856c98d210c5ab14dfd5828761f8ee7d5f45ca21ad3e4c4b41b747a3a047304402204f67e2afb76142d44fae58a2495d33a3419daa26cd0db8d04f3452b63289ac0f022010762a9fb67e94cc5cad9026f6dc99ff7f070f4278d30fbc7d0c869dd38c7fe70100").unwrap(),
+            fee: SignedAmount::from_btc(0.001).unwrap(),
+            change_position: 0,
+        })
+    }
+
+    async fn get_address_info(&self, address: &Address) -> ClientResult<GetAddressInfo> {
+        Ok(GetAddressInfo {
+            address: address.clone().into_unchecked(),
+            script_pubkey: ScriptBuf::new(),
+            is_mine: true,
+            is_watch_only: false,
+            solvable: None,
+            descriptor: None,
+            parent_descriptor: None,
+            is_script: None,
+            is_change: None,
+            is_witness: true,
+            sigs_required: None,
+            is_compressed: None,
+            label: None,
+            timestamp: None,
+            hd_key_path: None,
+            hd_seed_id: None,
+            hd_master_fingerprint: None,
+            labels: vec![],
+            witness_version: None,
+            witness_program: None,
+            script: None,
+            hex: None,
+            pubkeys: None,
+            pubkey: None,
+            embedded: None,
+        })
     }
 }
 
 impl Signer for TestBitcoinClient {
     async fn sign_raw_transaction_with_wallet(
         &self,
-        tx: &Transaction,
+        _tx: &Transaction,
         _prev_outputs: Option<Vec<PreviousTransactionOutput>>,
-    ) -> ClientResult<SignRawTransactionWithWallet> {
-        let tx_hex = consensus::encode::serialize_hex(tx);
-        Ok(SignRawTransactionWithWallet {
-            hex: tx_hex,
+    ) -> ClientResult<SignRawTransaction> {
+        let signed_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
+        Ok(SignRawTransaction {
+            tx: signed_tx,
             complete: true,
-            errors: None,
+            errors: vec![],
         })
     }
     async fn get_xpriv(&self) -> ClientResult<Option<Xpriv>> {
@@ -319,10 +412,43 @@ impl Signer for TestBitcoinClient {
 
     async fn import_descriptors(
         &self,
-        _descriptors: Vec<ImportDescriptor>,
+        _descriptors: Vec<ImportDescriptorInput>,
         _wallet_name: String,
-    ) -> ClientResult<Vec<ImportDescriptorResult>> {
-        Ok(vec![ImportDescriptorResult { success: true }])
+    ) -> ClientResult<ImportDescriptors> {
+        Ok(ImportDescriptors(vec![ImportDescriptorsResult {
+            success: true,
+            warnings: None,
+            error: None,
+        }]))
+    }
+
+    async fn wallet_process_psbt(
+        &self,
+        _psbt: &str,
+        _sign: Option<bool>,
+        _sighashtype: Option<SighashType>,
+        _bip32_derivs: Option<bool>,
+    ) -> ClientResult<WalletProcessPsbt> {
+        Ok(WalletProcessPsbt {
+            // taken from https://docs.rs/bitcoin/0.32.8/src/bitcoin/psbt/mod.rs.html#1365
+            psbt: Psbt::from_str("70736274ff01003302000000010000000000000000000000000000000000000000000000000000000000000000ffffffff00ffffffff000000000000420204bb0d5d0cca36e7b9c80f63bc04c1240babb83bcd2803ef7ac8b6e2af594291daec281e856c98d210c5ab14dfd5828761f8ee7d5f45ca21ad3e4c4b41b747a3a047304402204f67e2afb76142d44fae58a2495d33a3419daa26cd0db8d04f3452b63289ac0f022010762a9fb67e94cc5cad9026f6dc99ff7f070f4278d30fbc7d0c869dd38c7fe70100").unwrap(),
+            complete: true,
+            hex: None,
+        })
+    }
+
+    async fn psbt_bump_fee(
+        &self,
+        _txid: &Txid,
+        _options: Option<PsbtBumpFeeOptions>,
+    ) -> ClientResult<PsbtBumpFee> {
+        Ok(PsbtBumpFee {
+            // taken from https://docs.rs/bitcoin/0.32.8/src/bitcoin/psbt/mod.rs.html#1365
+            psbt: Psbt::from_str("70736274ff01003302000000010000000000000000000000000000000000000000000000000000000000000000ffffffff00ffffffff000000000000420204bb0d5d0cca36e7b9c80f63bc04c1240babb83bcd2803ef7ac8b6e2af594291daec281e856c98d210c5ab14dfd5828761f8ee7d5f45ca21ad3e4c4b41b747a3a047304402204f67e2afb76142d44fae58a2495d33a3419daa26cd0db8d04f3452b63289ac0f022010762a9fb67e94cc5cad9026f6dc99ff7f070f4278d30fbc7d0c869dd38c7fe70100").unwrap(),
+            original_fee: Amount::from_btc(0.001).unwrap(),
+            fee: Amount::from_btc(0.01).unwrap(),
+            errors: vec![],
+        })
     }
 }
 

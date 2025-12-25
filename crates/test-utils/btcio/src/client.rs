@@ -1,6 +1,6 @@
 use std::env;
 
-use bitcoind_async_client::Client;
+use bitcoind_async_client::{Auth, Client};
 use corepc_node::Node;
 
 /// Get the authentication credentials for a given `bitcoind` instance.
@@ -24,6 +24,7 @@ pub fn get_bitcoind_and_client() -> (Node, Client) {
     let bitcoind = Node::new("bitcoind").unwrap();
     let url = bitcoind.rpc_url();
     let (user, password) = get_auth(&bitcoind);
-    let client = Client::new(url, user, password, None, None).unwrap();
+    let auth = Auth::UserPass(user, password);
+    let client = Client::new(url, auth, None, None, None).unwrap();
     (bitcoind, client)
 }

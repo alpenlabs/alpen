@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bitcoin::{consensus, Transaction};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_db_types::types::{BundledPayloadEntry, L1TxEntry};
 use strata_primitives::buf::Buf32;
@@ -33,10 +32,7 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
         .sign_raw_transaction_with_wallet(&commit, None)
         .await
         .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
-        .hex;
-
-    let signed_commit: Transaction = consensus::encode::deserialize_hex(&signed_commit)
-        .expect("could not deserialize transaction");
+        .tx;
     let cid: Buf32 = signed_commit.compute_txid().into();
     let rid: Buf32 = reveal.compute_txid().into();
 

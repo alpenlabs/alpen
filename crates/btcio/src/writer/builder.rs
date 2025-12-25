@@ -20,8 +20,8 @@ use bitcoin::{
     Witness,
 };
 use bitcoind_async_client::{
+    corepc_types::model::ListUnspentItem,
     traits::{Reader, Signer, Wallet},
-    types::ListUnspent,
 };
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeePolicy;
@@ -102,7 +102,11 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     ctx: &WriterContext<R>,
 ) -> anyhow::Result<(Transaction, Transaction)> {
     let network = ctx.client.network().await?;
-    let utxos = ctx.client.get_utxos().await?;
+    let utxos = ctx
+        .client
+        .list_unspent(None, None, None, None, None)
+        .await?
+        .0;
 
     let fee_rate = match ctx.config.fee_policy {
         FeePolicy::Smart => ctx.client.estimate_smart_fee(1).await? * 2,
@@ -122,7 +126,7 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
     payload: &L1Payload,
-    utxos: Vec<ListUnspent>,
+    utxos: Vec<ListUnspentItem>,
 ) -> Result<(Transaction, Transaction), EnvelopeError> {
     // Create commit key
     let key_pair = generate_key_pair()?;
@@ -238,14 +242,14 @@ fn get_size(
 
 /// Choose utxos almost naively.
 fn choose_utxos(
-    utxos: &[ListUnspent],
+    utxos: &[ListUnspentItem],
     amount: u64,
-) -> Result<(Vec<ListUnspent>, u64), EnvelopeError> {
-    let mut bigger_utxos: Vec<&ListUnspent> = utxos
+) -> Result<(Vec<ListUnspentItem>, u64), EnvelopeError> {
+    let mut bigger_utxos: Vec<&ListUnspentItem> = utxos
         .iter()
-        .filter(|utxo| utxo.amount.to_sat() >= amount)
+        .filter(|utxo| utxo.amount.to_sat() >= amount as i64)
         .collect();
-    let mut sum = 0;
+    let mut sum: u64 = 0;
 
     if !bigger_utxos.is_empty() {
         // sort vec by amount (small first)
@@ -254,22 +258,22 @@ fn choose_utxos(
         // single utxo will be enough
         // so return the transaction
         let utxo = bigger_utxos[0];
-        sum += utxo.amount.to_sat();
+        sum += utxo.amount.to_sat() as u64;
 
         Ok((vec![utxo.clone()], sum))
     } else {
-        let mut smaller_utxos: Vec<&ListUnspent> = utxos
+        let mut smaller_utxos: Vec<&ListUnspentItem> = utxos
             .iter()
-            .filter(|utxo| utxo.amount.to_sat() < amount)
+            .filter(|utxo| utxo.amount.to_sat() < amount as i64)
             .collect();
 
         // sort vec by amount (large first)
         smaller_utxos.sort_by_key(|x| Reverse(&x.amount));
 
-        let mut chosen_utxos: Vec<ListUnspent> = vec![];
+        let mut chosen_utxos: Vec<ListUnspentItem> = vec![];
 
         for utxo in smaller_utxos {
-            sum += utxo.amount.to_sat();
+            sum += utxo.amount.to_sat() as u64;
             chosen_utxos.push(utxo.clone());
 
             if sum >= amount {
@@ -286,12 +290,12 @@ fn choose_utxos(
 }
 
 fn build_commit_transaction(
-    utxos: Vec<ListUnspent>,
+    utxos: Vec<ListUnspentItem>,
     recipient: Address,
     change_address: Address,
     output_value: u64,
     fee_rate: u64,
-) -> Result<(Transaction, Vec<ListUnspent>), EnvelopeError> {
+) -> Result<(Transaction, Vec<ListUnspentItem>), EnvelopeError> {
     // get single input single output transaction size
     let mut size = get_size(
         &default_txin(),
@@ -304,9 +308,11 @@ fn build_commit_transaction(
     );
     let mut last_size = size;
 
-    let utxos: Vec<ListUnspent> = utxos
+    let utxos: Vec<ListUnspentItem> = utxos
         .iter()
-        .filter(|utxo| utxo.spendable && utxo.solvable && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT)
+        .filter(|utxo| {
+            utxo.spendable && utxo.solvable && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT as i64
+        })
         .cloned()
         .collect();
 
@@ -535,10 +541,10 @@ mod tests {
 
     use bitcoin::{
         absolute::LockTime, script, secp256k1::constants::SCHNORR_SIGNATURE_SIZE,
-        taproot::ControlBlock, Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn,
-        TxOut, Witness,
+        taproot::ControlBlock, Address, OutPoint, ScriptBuf, Sequence, SignedAmount, Transaction,
+        TxIn, TxOut, Witness,
     };
-    use bitcoind_async_client::types::ListUnspent;
+    use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{TagData, TagDataRef};
 
     use super::*;
@@ -551,7 +557,7 @@ mod tests {
         Arc<WriterContext<TestBitcoinClient>>,
         Vec<u8>,
         Vec<u8>,
-        Vec<ListUnspent>,
+        Vec<ListUnspentItem>,
     ) {
         let ctx = get_writer_context();
         let body = vec![100; 1000];
@@ -559,47 +565,56 @@ mod tests {
         let address = ctx.sequencer_address.clone();
 
         let utxos = vec![
-            ListUnspent {
+            ListUnspentItem {
                 txid: "4cfbec13cf1510545f285cceceb6229bd7b6a918a8f6eba1dbee64d26226a3b7"
                     .parse::<Txid>()
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: "foo".to_string(),
-                amount: Amount::from_btc(100.0).unwrap(),
+                script_pubkey: ScriptBuf::new(),
+                amount: SignedAmount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
-                label: None,
+                label: "".to_string(),
                 safe: true,
+                redeem_script: None,
+                descriptor: None,
+                parent_descriptors: None,
             },
-            ListUnspent {
+            ListUnspentItem {
                 txid: "44990141674ff56ed6fee38879e497b2a726cddefd5e4d9b7bf1c4e561de4347"
                     .parse::<Txid>()
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: "foo".to_string(),
-                amount: Amount::from_btc(50.0).unwrap(),
+                script_pubkey: ScriptBuf::new(),
+                amount: SignedAmount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
-                label: None,
+                label: "".to_string(),
                 safe: true,
+                redeem_script: None,
+                descriptor: None,
+                parent_descriptors: None,
             },
-            ListUnspent {
+            ListUnspentItem {
                 txid: "4dbe3c10ee0d6bf16f9417c68b81e963b5bccef3924bbcb0885c9ea841912325"
                     .parse::<Txid>()
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: "foo".to_string(),
-                amount: Amount::from_btc(10.0).unwrap(),
+                script_pubkey: ScriptBuf::new(),
+                amount: SignedAmount::from_btc(10.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
-                label: None,
+                label: "".to_string(),
                 safe: true,
+                redeem_script: None,
+                descriptor: None,
+                parent_descriptors: None,
             },
         ];
 
@@ -644,7 +659,7 @@ mod tests {
         ));
     }
 
-    fn get_txn_from_utxo(utxo: &ListUnspent, _address: &Address) -> Transaction {
+    fn get_txn_from_utxo(utxo: &ListUnspentItem, _address: &Address) -> Transaction {
         let inputs = vec![TxIn {
             previous_output: OutPoint {
                 txid: utxo.txid,
@@ -656,7 +671,7 @@ mod tests {
         }];
 
         let outputs = vec![TxOut {
-            value: utxo.amount,
+            value: utxo.amount.to_unsigned().unwrap(),
             script_pubkey: utxo.address.clone().assume_checked().script_pubkey(),
         }];
 

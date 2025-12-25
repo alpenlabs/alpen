@@ -3,7 +3,7 @@
 use std::{fs, path::Path, sync::Arc};
 
 use bitcoin::Network;
-use bitcoind_async_client::Client;
+use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
@@ -142,12 +142,13 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
 
 /// Bitcoin client initialization
 fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, InitError> {
+    let auth = Auth::UserPass(config.rpc_user.clone(), config.rpc_password.clone());
     let btc_rpc = Client::new(
         config.rpc_url.clone(),
-        config.rpc_user.clone(),
-        config.rpc_password.clone(),
+        auth,
         config.retry_count,
         config.retry_interval,
+        None,
     )
     .map_err(|e| InitError::BitcoinClientCreation(e.to_string()))?;
 
