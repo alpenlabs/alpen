@@ -1,6 +1,7 @@
 use ssz_types::FixedBytes;
 use strata_db_types::{
     mmr_helpers::{MmrAlgorithm, MmrId, MmrMetadata},
+    traits::UnifiedMmrDatabase,
     DbError, DbResult,
 };
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
@@ -39,8 +40,14 @@ impl UnifiedMmrDb {
             .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
     }
 
-    /// Append a new leaf to the MMR
-    pub fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64> {
+    /// Get the position of a leaf by its hash (reverse lookup)
+    pub fn get_leaf_position(&self, mmr_id: &MmrId, hash: [u8; 32]) -> DbResult<Option<u64>> {
+        Ok(self.hash_index_tree.get(&(mmr_id.clone(), Buf32(hash)))?)
+    }
+}
+
+impl UnifiedMmrDatabase for UnifiedMmrDb {
+    fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
@@ -71,34 +78,29 @@ impl UnifiedMmrDb {
         )
     }
 
-    /// Get a node at a specific position
-    pub fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<[u8; 32]> {
+    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<[u8; 32]> {
         self.get_mmr_node(&mmr_id, pos)
     }
 
-    /// Get the total MMR size (number of nodes)
-    pub fn mmr_size(&self, mmr_id: MmrId) -> DbResult<u64> {
+    fn mmr_size(&self, mmr_id: MmrId) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.mmr_size)
     }
 
-    /// Get the number of leaves in the MMR
-    pub fn num_leaves(&self, mmr_id: MmrId) -> DbResult<u64> {
+    fn num_leaves(&self, mmr_id: MmrId) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.num_leaves)
     }
 
-    /// Get the peak roots of the MMR
-    pub fn peak_roots(&self, mmr_id: MmrId) -> Vec<[u8; 32]> {
+    fn peak_roots(&self, mmr_id: MmrId) -> Vec<[u8; 32]> {
         self.load_mmr_metadata(&mmr_id)
             .map(|m| m.peak_roots.into_iter().map(|b| b.0).collect())
             .unwrap_or_default()
     }
 
-    /// Convert the MMR to compact representation
-    pub fn to_compact(&self, mmr_id: MmrId) -> CompactMmr64 {
+    fn to_compact(&self, mmr_id: MmrId) -> CompactMmr64 {
         let metadata = self
             .load_mmr_metadata(&mmr_id)
             .unwrap_or_else(|_| MmrMetadata::empty());
@@ -116,8 +118,7 @@ impl UnifiedMmrDb {
         }
     }
 
-    /// Remove and return the last leaf from the MMR
-    pub fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>> {
+    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
@@ -150,11 +151,6 @@ impl UnifiedMmrDb {
                 Ok(Some(result.leaf_hash))
             },
         )
-    }
-
-    /// Get the position of a leaf by its hash (reverse lookup)
-    pub fn get_leaf_position(&self, mmr_id: &MmrId, hash: [u8; 32]) -> DbResult<Option<u64>> {
-        Ok(self.hash_index_tree.get(&(mmr_id.clone(), Buf32(hash)))?)
     }
 }
 

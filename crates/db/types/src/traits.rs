@@ -22,6 +22,7 @@ use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
     chainstate::ChainstateDatabase,
+    mmr_helpers::MmrId,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbResult,
 };
@@ -413,6 +414,34 @@ where
 
     /// Remove the last leaf from the MMR for the given scope
     fn pop_leaf(&self, scope: S) -> DbResult<Option<[u8; 32]>>;
+}
+
+/// Unified MMR database trait using MmrId for identification
+///
+/// This trait provides a simpler, more direct API where the MMR instance
+/// is identified by an `MmrId` enum rather than a generic scope parameter.
+/// This is the preferred interface for new code.
+pub trait UnifiedMmrDatabase: Send + Sync + 'static {
+    /// Append a new leaf to the specified MMR
+    fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64>;
+
+    /// Get a node hash by MMR position
+    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<[u8; 32]>;
+
+    /// Get the total MMR size
+    fn mmr_size(&self, mmr_id: MmrId) -> DbResult<u64>;
+
+    /// Get the total number of leaves
+    fn num_leaves(&self, mmr_id: MmrId) -> DbResult<u64>;
+
+    /// Get the individual peak roots
+    fn peak_roots(&self, mmr_id: MmrId) -> Vec<[u8; 32]>;
+
+    /// Get a compact representation of the MMR
+    fn to_compact(&self, mmr_id: MmrId) -> CompactMmr64B32;
+
+    /// Remove the last leaf from the MMR
+    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>>;
 }
 
 // =============================================================================

@@ -76,6 +76,7 @@ pub struct SledBackend {
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
     snark_msg_mmr_db: Arc<SnarkMsgMmrDb>,
+    unified_mmr_db: Arc<UnifiedMmrDb>,
 }
 
 impl SledBackend {
@@ -94,6 +95,7 @@ impl SledBackend {
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
         let snark_msg_mmr_db = Arc::new(SnarkMsgMmrDb::new(db_ref.clone(), config_ref.clone())?);
+        let unified_mmr_db = Arc::new(UnifiedMmrDb::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
@@ -108,6 +110,7 @@ impl SledBackend {
             prover_db,
             broadcast_db,
             snark_msg_mmr_db,
+            unified_mmr_db,
         })
     }
 }
@@ -165,8 +168,14 @@ impl SledBackend {
     }
 
     /// Get the Snark Message MMR database
+    #[deprecated(note = "Use unified_mmr_db() instead")]
     pub fn snark_msg_mmr_db(&self) -> Arc<SnarkMsgMmrDb> {
         self.snark_msg_mmr_db.clone()
+    }
+
+    /// Get the unified MMR database
+    pub fn unified_mmr_db(&self) -> Arc<UnifiedMmrDb> {
+        self.unified_mmr_db.clone()
     }
 
     /// Get the MMR database (deprecated - use asm_mmr_db)

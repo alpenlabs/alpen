@@ -9,4 +9,5 @@ pub mod l2;
 pub mod mmr;
 pub mod ol;
 pub mod ol_state;
+pub mod unified_mmr;
 pub mod writer;
