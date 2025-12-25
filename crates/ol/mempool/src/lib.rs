@@ -1,14 +1,31 @@
-//! OL transaction mempool types.
+//! OL transaction mempool.
 //!
-//! Provides types for managing pending OL transactions before they are included in blocks.
+//! Stores pending OL transactions (GenericAccountMessage and SnarkAccountUpdate
+//! without accumulator proofs) before they are included in blocks.
 
-use strata_identifiers::OLTxId;
+mod best_txs;
+mod command;
+mod error;
+mod handle;
+mod ordering;
+mod service;
+mod state;
+#[cfg(test)]
+mod test_utils;
+mod types;
+mod validation;
 
-/// Errors that can occur during mempool operations.
-#[derive(Debug, thiserror::Error)]
-pub enum MempoolError {
-    /// Transaction with the given ID doesn't exist.
-    #[error("Transaction {0} not found in mempool")]
-    TransactionNotFound(OLTxId),
-    // TODO add more errors here
-}
+pub use best_txs::{BestTransactions, BestTransactionsIterator};
+pub use command::MempoolCommand;
+pub use error::OLMempoolError;
+pub use handle::MempoolHandle;
+pub use service::MempoolServiceStatus;
+pub use types::{
+    DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_REORG_DEPTH, DEFAULT_MAX_TX_COUNT,
+    DEFAULT_MAX_TX_SIZE, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectCounts,
+    OLMempoolRejectReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolStats, OLMempoolTransaction,
+    OLMempoolTxPayload,
+};
+pub use validation::{BasicTransactionValidator, TransactionValidator};
+
+pub type OLMempoolResult<T> = Result<T, OLMempoolError>;

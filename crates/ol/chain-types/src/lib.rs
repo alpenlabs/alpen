@@ -7,7 +7,7 @@ mod log;
 mod log_payloads;
 mod transaction;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 pub use error::ChainTypesError;

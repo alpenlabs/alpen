@@ -11,6 +11,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
+use strata_identifiers::OLTxId;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::buf::Buf32;
 use zkaleido::Proof;
@@ -315,6 +316,33 @@ pub enum CheckpointConfStatus {
     Confirmed(CheckpointL1Ref),
     /// Finalized on L1, with reference
     Finalized(CheckpointL1Ref),
+}
+
+/// Stored mempool transaction with ordering metadata.
+///
+/// Used by [`MempoolDatabase`](crate::traits::MempoolDatabase) trait for storage and retrieval.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MempoolTxData {
+    /// Transaction ID.
+    pub txid: OLTxId,
+    /// Raw transaction bytes (SSZ-encoded).
+    pub tx_bytes: Vec<u8>,
+    /// Slot when transaction was first seen.
+    pub first_seen_slot: u64,
+    /// Monotonic counter for FIFO ordering within same slot.
+    pub insertion_id: u64,
+}
+
+impl MempoolTxData {
+    /// Create new mempool transaction data.
+    pub fn new(txid: OLTxId, tx_bytes: Vec<u8>, first_seen_slot: u64, insertion_id: u64) -> Self {
+        Self {
+            txid,
+            tx_bytes,
+            first_seen_slot,
+            insertion_id,
+        }
+    }
 }
 
 #[cfg(test)]
