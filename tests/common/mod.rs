@@ -12,4 +12,7 @@
 //! is `dead code` even though it is actually being used by another test "crate".
 //! Apparently, `clippy` isn't smart enough for that kind of analysis.
 
-pub(crate) mod bitcoind;
+pub mod asm;
+pub mod harness;
+// Disabled for now - not needed for ASM tests
+// pub(crate) mod bitcoind;
