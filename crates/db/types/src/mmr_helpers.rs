@@ -32,8 +32,20 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_merkle::{hasher::MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use strata_primitives::buf::Buf32;
+use thiserror::Error;
 
-use crate::{DbError, DbResult};
+/// Pure MMR algorithm errors - domain-specific, no storage concepts
+#[derive(Debug, Clone, Error)]
+pub enum MmrError {
+    #[error("MMR leaf {0} not found")]
+    LeafNotFound(u64),
+
+    #[error("Invalid MMR range: start={start}, end={end}")]
+    InvalidRange { start: u64, end: u64 },
+
+    #[error("Position {pos} out of bounds for MMR size {mmr_size}")]
+    PositionOutOfBounds { pos: u64, mmr_size: u64 },
+}
 
 /// Convert leaf index to total MMR size (number of nodes)
 ///
@@ -221,8 +233,8 @@ pub fn get_peaks(mmr_size: u64) -> Vec<u64> {
 ///
 /// # Errors
 ///
-/// Returns `DbError::Other` if the position is beyond mmr_size
-pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
+/// Returns `MmrError::PositionOutOfBounds` if the position is beyond mmr_size
+pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> Result<u64, MmrError> {
     let peaks = get_peaks(mmr_size);
 
     for &peak_pos in &peaks {
@@ -231,10 +243,7 @@ pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
         }
     }
 
-    Err(DbError::Other(format!(
-        "Position {} not found in MMR of size {}",
-        pos, mmr_size
-    )))
+    Err(MmrError::PositionOutOfBounds { pos, mmr_size })
 }
 
 /// Identifier for a specific MMR instance in unified storage
@@ -312,11 +321,15 @@ impl MmrAlgorithm {
     /// This function doesn't know about transactions or storage backends.
     /// The caller provides a closure to read nodes and applies the result
     /// within their own transaction mechanism.
-    pub fn append_leaf(
+    pub fn append_leaf<F, E>(
         hash: [u8; 32],
         metadata: &MmrMetadata,
-        get_node: impl Fn(u64) -> DbResult<[u8; 32]>,
-    ) -> DbResult<AppendLeafResult> {
+        get_node: F,
+    ) -> Result<AppendLeafResult, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>,
+    {
         let leaf_index = metadata.num_leaves;
         let leaf_pos = leaf_index_to_pos(leaf_index);
 
@@ -376,7 +389,7 @@ impl MmrAlgorithm {
                     get_node(pos).map(Buf32)
                 }
             })
-            .collect::<DbResult<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         let new_metadata = MmrMetadata {
             num_leaves: new_num_leaves,
@@ -406,10 +419,14 @@ impl MmrAlgorithm {
     /// - Updated metadata
     ///
     /// `None` if the MMR is empty
-    pub fn pop_leaf(
+    pub fn pop_leaf<F, E>(
         metadata: &MmrMetadata,
-        get_node: impl Fn(u64) -> DbResult<[u8; 32]>,
-    ) -> DbResult<Option<PopLeafResult>> {
+        get_node: F,
+    ) -> Result<Option<PopLeafResult>, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>,
+    {
         // Can't pop from empty MMR
         if metadata.num_leaves == 0 {
             return Ok(None);
@@ -442,7 +459,7 @@ impl MmrAlgorithm {
                 .into_iter()
                 .rev()
                 .map(|pos| get_node(pos).map(Buf32))
-                .collect::<DbResult<Vec<_>>>()?
+                .collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()
         };
@@ -475,7 +492,7 @@ impl MmrAlgorithm {
     ///
     /// # Errors
     ///
-    /// Returns `DbError::MmrLeafNotFound` if the leaf index is out of bounds
+    /// Returns `MmrError::LeafNotFound` if the leaf index is out of bounds
     pub fn generate_proof<F, E>(
         leaf_index: u64,
         mmr_size: u64,
@@ -484,10 +501,10 @@ impl MmrAlgorithm {
     ) -> Result<MerkleProof, E>
     where
         F: Fn(u64) -> Result<[u8; 32], E>,
-        E: From<DbError>,
+        E: From<MmrError>,
     {
         if leaf_index >= num_leaves {
-            return Err(DbError::MmrLeafNotFound(leaf_index).into());
+            return Err(MmrError::LeafNotFound(leaf_index).into());
         }
 
         let leaf_pos = leaf_index_to_pos(leaf_index);
@@ -535,14 +552,14 @@ impl MmrAlgorithm {
     ) -> Result<Vec<MerkleProof>, E>
     where
         F: Fn(u64) -> Result<[u8; 32], E>,
-        E: From<DbError>,
+        E: From<MmrError>,
     {
         if start > end {
-            return Err(DbError::MmrInvalidRange { start, end }.into());
+            return Err(MmrError::InvalidRange { start, end }.into());
         }
 
         if end >= num_leaves {
-            return Err(DbError::MmrLeafNotFound(end).into());
+            return Err(MmrError::LeafNotFound(end).into());
         }
 
         let mut proofs = Vec::with_capacity((end - start + 1) as usize);

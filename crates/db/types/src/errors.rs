@@ -153,3 +153,17 @@ impl From<OpsError> for DbError {
         }
     }
 }
+
+impl From<crate::mmr_helpers::MmrError> for DbError {
+    fn from(value: crate::mmr_helpers::MmrError) -> Self {
+        use crate::mmr_helpers::MmrError;
+        match value {
+            MmrError::LeafNotFound(idx) => DbError::MmrLeafNotFound(idx),
+            MmrError::InvalidRange { start, end } => DbError::MmrInvalidRange { start, end },
+            MmrError::PositionOutOfBounds { pos, mmr_size } => DbError::Other(format!(
+                "Position {} out of bounds for MMR size {}",
+                pos, mmr_size
+            )),
+        }
+    }
+}
