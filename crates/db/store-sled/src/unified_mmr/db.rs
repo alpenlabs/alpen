@@ -1,15 +1,14 @@
 use ssz_types::FixedBytes;
 use strata_db_types::{
+    DbError, DbResult,
     mmr_helpers::{MmrAlgorithm, MmrId, MmrMetadata},
     traits::UnifiedMmrDatabase,
-    DbError, DbResult,
 };
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
 use strata_primitives::buf::Buf32;
 
 use super::schemas::{
-    UnifiedMmrHashIndexSchema, UnifiedMmrMetaSchema, UnifiedMmrNodeSchema,
-    UnifiedMmrPreimageSchema,
+    UnifiedMmrHashIndexSchema, UnifiedMmrMetaSchema, UnifiedMmrNodeSchema, UnifiedMmrPreimageSchema,
 };
 use crate::define_sled_database;
 

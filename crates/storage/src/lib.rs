@@ -9,9 +9,14 @@ use std::sync::Arc;
 
 use anyhow::Context;
 pub use managers::{
-    asm::AsmStateManager, chainstate::ChainstateManager, checkpoint::CheckpointDbManager,
-    client_state::ClientStateManager, l1::L1BlockManager, l2::L2BlockManager,
-    ol_state::OLStateManager, unified_mmr::{MmrHandle, UnifiedMmrManager},
+    asm::AsmStateManager,
+    chainstate::ChainstateManager,
+    checkpoint::CheckpointDbManager,
+    client_state::ClientStateManager,
+    l1::L1BlockManager,
+    l2::L2BlockManager,
+    ol_state::OLStateManager,
+    unified_mmr::{MmrHandle, UnifiedMmrManager},
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_types::traits::DatabaseBackend;
