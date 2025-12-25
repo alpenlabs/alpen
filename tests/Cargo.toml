@@ -21,6 +21,7 @@ strata-asm-txs-admin = { path = "../crates/asm/txs/admin", features = [
   "test-utils",
 ] }
 strata-asm-worker = { path = "../crates/asm/worker" }
+strata-bridge-types.workspace = true
 strata-btc-types.workspace = true
 strata-crypto.workspace = true
 strata-merkle.workspace = true

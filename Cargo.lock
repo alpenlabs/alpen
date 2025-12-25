@@ -6104,6 +6104,7 @@ dependencies = [
  "strata-asm-proto-administration",
  "strata-asm-txs-admin",
  "strata-asm-worker",
+ "strata-bridge-types",
  "strata-btc-types",
  "strata-crypto",
  "strata-merkle",

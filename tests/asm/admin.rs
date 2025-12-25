@@ -12,6 +12,7 @@ use common::harness::create_test_harness;
 use corepc_node as _;
 use integration_tests::common;
 use rand::rngs::OsRng;
+use rand_chacha as _;
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_manifest_types as _;
 use strata_asm_proto_administration::{
@@ -36,44 +37,38 @@ use strata_tasks as _;
 use strata_test_utils_btcio as _;
 use strata_test_utils_l2 as _;
 
-/// Helper to get the operator secret key that matches the one used in test params.
-/// This must match the key generation in `gen_params_with_seed(0)` from test-utils.
-fn get_operator_secret_key() -> SecretKey {
-    use bitcoin::secp256k1::SECP256K1;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng as StdRng;
-    use strata_primitives::crypto::EvenSecretKey;
+/// Helper to create test admin multisig configurations from test params.
+/// Extracts the operator XOnly keys from params and reconstructs them with even parity,
+/// matching how the ASM spec initializes authorities.
+fn create_test_admin_config_from_params(
+    params: &strata_params::Params,
+) -> (ThresholdConfig, Vec<SecretKey>) {
+    use bitcoin::secp256k1::{Parity, PublicKey, XOnlyPublicKey};
+    use strata_bridge_types::OperatorPubkeys;
+    use strata_params::OperatorConfig;
+    use strata_test_utils_l2::get_test_operator_secret_key;
 
-    // Use same seed as gen_params() which calls gen_params_with_seed(0)
-    let mut rng = StdRng::seed_from_u64(0);
-    let sk = SecretKey::new(&mut rng);
+    // Get the operator secret key from test-utils
+    let operator_sk = get_test_operator_secret_key();
 
-    // CRITICAL: Convert to EvenSecretKey to match test-utils behavior
-    // This ensures the public key has even parity, which is required for taproot
-    let even_sk = EvenSecretKey::from(sk);
-    SecretKey::from_slice(&even_sk.secret_bytes()).expect("valid secret key")
-}
+    // Extract operator XOnly keys from params (same as ASM spec does)
+    let OperatorConfig::Static(ref operators) = params.rollup.operator_config;
+    let admin_pubkeys: Vec<CompressedPublicKey> = operators
+        .iter()
+        .map(|o: &OperatorPubkeys| {
+            let xonly_bytes = o.wallet_pk();
+            let xonly =
+                XOnlyPublicKey::from_slice(xonly_bytes.as_ref()).expect("valid xonly pubkey");
+            let pk = PublicKey::from_x_only_public_key(xonly, Parity::Even);
+            CompressedPublicKey::from(pk)
+        })
+        .collect();
 
-/// Helper to create test admin multisig configurations that match the ASM spec initialization.
-/// The ASM spec creates admin config from operator keys with threshold=1.
-fn create_test_admin_config() -> (ThresholdConfig, Vec<SecretKey>) {
-    let secp = Secp256k1::new();
-
-    // Get the operator private key that matches what's in params
-    let operator_sk = get_operator_secret_key();
-
-    // Create pubkey in compressed format (matches ASM spec)
-    let operator_pk = PublicKey::from_secret_key(&secp, &operator_sk);
-    let compressed_pk = CompressedPublicKey::from(operator_pk);
-
-    // ASM spec uses threshold=1 with single operator for tests
-    let pubkeys = vec![compressed_pk];
-    let privkeys = vec![operator_sk];
-
-    let config = ThresholdConfig::try_new(pubkeys, NonZero::new(1).unwrap())
+    let threshold = NonZero::new(1).unwrap();
+    let config = ThresholdConfig::try_new(admin_pubkeys, threshold)
         .expect("valid threshold config");
 
-    (config, privkeys)
+    (config, vec![operator_sk])
 }
 
 /// Helper to extract admin subprotocol state from AnchorState
@@ -103,7 +98,7 @@ mod tests {
         );
 
         // Create admin transaction (sequencer update)
-        let (_admin_config, admin_privkeys) = create_test_admin_config();
+        let (_admin_config, admin_privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8]; // Use signers 0 and 1 (threshold is 1)
 
         let new_sequencer_key = Buf32::from([1u8; 32]);
@@ -184,7 +179,7 @@ mod tests {
             harness.genesis_height
         );
 
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8];
 
         // Create operator set update (non-sequencer update that requires queuing)
@@ -360,7 +355,7 @@ mod tests {
 
         println!("Testing invalid signature rejection");
 
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
 
         // Create transaction with correct threshold
         let signer_indices = [0u8];
@@ -391,7 +386,7 @@ mod tests {
 
         println!("Testing sequence number replay protection");
 
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8];
 
         // Create first transaction with seqno=0
@@ -495,7 +490,7 @@ mod tests {
 
         println!("Testing operator set update");
 
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8];
 
         // Create operator keys to add/remove
@@ -575,7 +570,7 @@ mod tests {
 
         println!("Testing cancel queued update");
 
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8];
 
         // First, create an update that gets queued
@@ -677,7 +672,7 @@ mod tests {
 
         println!("Testing multiple admin updates in same block");
 
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8];
 
         // Create multiple admin transactions with different seqnos
@@ -789,7 +784,7 @@ mod tests {
         println!("Genesis height: {}", harness.genesis_height);
 
         // STEP 1: Create admin multisig config
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8];
         println!("✓ Created 1-of-1 multisig config (operator key)");
 
@@ -907,7 +902,7 @@ mod tests {
         println!("Genesis height: {}", harness.genesis_height);
 
         // STEP 1: Create admin multisig config
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8];
         println!("✓ Created 1-of-1 multisig config (operator key)");
 
@@ -1006,7 +1001,7 @@ mod tests {
         println!("Genesis height: {}", harness.genesis_height);
 
         // STEP 1: Create multisig config
-        let (_config, privkeys) = create_test_admin_config();
+        let (_config, privkeys) = create_test_admin_config_from_params(&harness.params);
         let signer_indices = [0u8]; // Use first 2 signers (threshold=1)
         println!("✓ Created 1-of-1 multisig config (operator key)");
 

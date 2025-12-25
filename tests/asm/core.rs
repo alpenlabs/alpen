@@ -11,6 +11,7 @@ use common::{asm::TestAsmWorkerContext, harness::create_test_harness};
 use corepc_node as _;
 use integration_tests::common;
 use rand as _;
+use rand_chacha as _;
 use strata_asm_common as _;
 use strata_asm_manifest_types as _;
 use strata_asm_proto_administration as _;
