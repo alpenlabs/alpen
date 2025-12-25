@@ -6091,6 +6091,26 @@ dependencies = [
 [[package]]
 name = "integration-tests"
 version = "0.3.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "bitcoind-async-client",
+ "borsh",
+ "corepc-node",
+ "rand 0.8.5",
+ "strata-asm-txs-admin",
+ "strata-asm-worker",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-merkle",
+ "strata-params",
+ "strata-primitives",
+ "strata-state",
+ "strata-tasks",
+ "strata-test-utils-btcio",
+ "strata-test-utils-l2",
+ "tokio",
+]
 
 [[package]]
 name = "interprocess"
