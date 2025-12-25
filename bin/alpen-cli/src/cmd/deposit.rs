@@ -18,8 +18,9 @@ use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
-use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
+use strata_asm_txs_bridge_v1::deposit_request::{DrtHeaderAux, SubjectBytes};
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_identifiers::AccountSerial;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_primitives::crypto::even_kp;
 
@@ -111,7 +112,13 @@ fn prepare_deposit_request(
             .address
     };
 
-    let header_aux = DrtHeaderAux::new(recovery_public_key.serialize(), alpen_address.into());
+    let alpen_subject_bytes =
+        SubjectBytes::try_new(alpen_address.to_vec()).expect("must be valid subject bytes");
+    let header_aux = DrtHeaderAux::new(
+        recovery_public_key.serialize(),
+        AccountSerial::zero(),
+        alpen_subject_bytes,
+    );
     let deposit_output = TxOut {
         value: bridge_in_amount,
         script_pubkey: bridge_in_address.script_pubkey(),

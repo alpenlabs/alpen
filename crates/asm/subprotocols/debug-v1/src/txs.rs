@@ -122,6 +122,7 @@ fn parse_mock_withdraw_intent_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, D
 
 #[cfg(test)]
 mod tests {
+    use strata_identifiers::{AccountSerial, SubjectId};
     use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
     use super::*;
@@ -132,7 +133,8 @@ mod tests {
         use strata_asm_logs::deposit::DepositLog;
 
         // Step 1: Create a real DepositLog
-        let original_deposit_log = DepositLog::new(42, 100_000, [0u8; 20]);
+        let original_deposit_log =
+            DepositLog::new(AccountSerial::zero(), 100_000, SubjectId::new([0u8; 32]));
 
         // Step 2: Convert it to bytes using AsmLogEntry::from_log
         let log_entry = AsmLogEntry::from_log(&original_deposit_log).unwrap();
