@@ -263,7 +263,7 @@ impl AsmTestHarness {
     ///
     /// Returns the height of the latest processed block, or an error if no state exists.
     pub async fn get_chain_tip(&self) -> anyhow::Result<u64> {
-        Ok(self.client.get_blockchain_info().await?.blocks.into())
+        Ok(self.client.get_blockchain_info().await?.blocks)
     }
 
     /// Get the latest ASM state from the worker context

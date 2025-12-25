@@ -9,7 +9,7 @@
 
 use std::num::NonZero;
 
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{Parity, PublicKey, Secp256k1, SecretKey, XOnlyPublicKey};
 use bitcoind_async_client::traits::Reader;
 use common::harness::create_test_harness;
 use integration_tests::common;
@@ -26,8 +26,11 @@ use strata_asm_txs_admin::{
     parser::SignedPayload,
     test_utils::{create_signature_set, create_test_admin_tx},
 };
+use strata_bridge_types::OperatorPubkeys;
 use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfig};
+use strata_params::OperatorConfig;
 use strata_primitives::buf::Buf32;
+use strata_test_utils_l2::get_test_operator_secret_key;
 
 /// Helper to create test admin multisig configurations from test params.
 /// Extracts the operator XOnly keys from params and reconstructs them with even parity,
@@ -35,11 +38,6 @@ use strata_primitives::buf::Buf32;
 fn create_test_admin_config_from_params(
     params: &strata_params::Params,
 ) -> (ThresholdConfig, Vec<SecretKey>) {
-    use bitcoin::secp256k1::{Parity, PublicKey, XOnlyPublicKey};
-    use strata_bridge_types::OperatorPubkeys;
-    use strata_params::OperatorConfig;
-    use strata_test_utils_l2::get_test_operator_secret_key;
-
     // Get the operator secret key from test-utils
     let operator_sk = get_test_operator_secret_key();
 

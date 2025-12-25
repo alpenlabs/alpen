@@ -158,8 +158,8 @@ impl WorkerContext for TestAsmWorkerContext {
         // Extract the transaction from the result
         let tx_bytes = hex::decode(&raw_tx_result.0)
             .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
-        let tx: Transaction = deserialize(&tx_bytes)
-            .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
+        let tx: Transaction =
+            deserialize(&tx_bytes).map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
         Ok(RawBitcoinTx::from(tx))
     }
 

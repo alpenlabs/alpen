@@ -4,12 +4,14 @@
 //! The ASM specification defines which subprotocols are enabled, their genesis configurations,
 //! and protocol-level parameters like magic bytes.
 
+use bitcoin::secp256k1::{PublicKey, XOnlyPublicKey};
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_administration::{AdministrationSubprotoParams, AdministrationSubprotocol};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
 use strata_asm_proto_checkpoint_v0::{
     CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
+use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfig};
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, RollupParams};
 use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
@@ -90,8 +92,6 @@ impl StrataAsmSpec {
 
         // For now, use the same operator config for admin roles
         // TODO: Add proper admin config to RollupParams
-        use bitcoin::secp256k1::{PublicKey, XOnlyPublicKey};
-        use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfig};
         let OperatorConfig::Static(ref operators) = params.operator_config;
         let admin_pubkeys: Vec<CompressedPublicKey> = operators
             .iter()
