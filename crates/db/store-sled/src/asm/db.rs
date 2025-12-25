@@ -1,8 +1,8 @@
 use strata_db_types::{DbResult, traits::AsmDatabase};
-use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
+use strata_primitives::l1::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 
-use super::schemas::{AsmLogSchema, AsmManifestHashSchema, AsmStateSchema};
+use super::schemas::{AsmLogSchema, AsmStateSchema};
 use crate::define_sled_database;
 
 define_sled_database!(
@@ -10,7 +10,6 @@ define_sled_database!(
         asm_state_tree: AsmStateSchema,
         // TODO(refactor) - it should operate on manifests instead of logs.
         asm_log_tree: AsmLogSchema,
-        manifest_hash_tree: AsmManifestHashSchema,
     }
 );
 
@@ -80,15 +79,6 @@ impl AsmDatabase for AsmDBSled {
         }
 
         Ok(result)
-    }
-
-    fn store_manifest_hash(&self, index: u64, hash: Buf32) -> DbResult<()> {
-        self.manifest_hash_tree.insert(&index, &hash)?;
-        Ok(())
-    }
-
-    fn get_manifest_hash(&self, index: u64) -> DbResult<Option<Buf32>> {
-        Ok(self.manifest_hash_tree.get(&index)?)
     }
 }
 

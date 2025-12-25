@@ -2,11 +2,11 @@ use std::{marker::PhantomData, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::{
-    mmr_helpers::{MmrAlgorithm, MmrId},
+    mmr_helpers::{leaf_index_to_pos, MmrAlgorithm, MmrId},
     traits::UnifiedMmrDatabase,
     DbError, DbResult,
 };
-use strata_merkle::{hasher::MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
+use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use threadpool::ThreadPool;
 
 use crate::ops;
@@ -22,6 +22,7 @@ use crate::ops;
 )]
 pub struct UnifiedMmrManager {
     ops: Arc<ops::unified_mmr::UnifiedMmrDataOps>,
+    // TODO: add a cache
 }
 
 impl UnifiedMmrManager {
@@ -45,9 +46,23 @@ impl UnifiedMmrManager {
     ///
     /// The data handle stores and retrieves pre-image data alongside MMR hashes,
     /// providing type-safe access to the original data.
-    pub fn get_data_handle<T>(&self, mmr_id: MmrId) -> TypedMmrHandle<T>
+    pub fn get_data_handle<T>(&self, mmr_id: MmrId) -> TypedMmrHandle<T, Sha256Hasher>
     where
         T: BorshSerialize + BorshDeserialize,
+    {
+        TypedMmrHandle {
+            handle: self.get_handle(mmr_id),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Get a data handle with a custom hasher for a specific MMR instance
+    ///
+    /// Allows using a different hasher than the default Sha256Hasher.
+    pub fn get_data_handle_with_hasher<T, H>(&self, mmr_id: MmrId) -> TypedMmrHandle<T, H>
+    where
+        T: BorshSerialize + BorshDeserialize,
+        H: MerkleHasher<Hash = [u8; 32]>,
     {
         TypedMmrHandle {
             handle: self.get_handle(mmr_id),
@@ -61,6 +76,10 @@ impl UnifiedMmrManager {
 /// Provides ergonomic async/blocking APIs for a single MMR instance.
 /// The MmrId is captured at creation time, so methods don't need to
 /// repeatedly pass it.
+#[expect(
+    missing_debug_implementations,
+    reason = "Inner ops type doesn't have Debug implementation"
+)]
 pub struct MmrHandle {
     mmr_id: MmrId,
     ops: Arc<ops::unified_mmr::UnifiedMmrDataOps>,
@@ -74,8 +93,7 @@ impl MmrHandle {
 
     /// Append a new leaf to the MMR (blocking version)
     pub fn append_leaf_blocking(&self, hash: [u8; 32]) -> DbResult<u64> {
-        self.ops
-            .append_leaf_blocking(self.mmr_id.clone(), hash)
+        self.ops.append_leaf_blocking(self.mmr_id.clone(), hash)
     }
 
     /// Get a node at a specific position (blocking)
@@ -127,6 +145,14 @@ impl MmrHandle {
     pub fn mmr_id(&self) -> &MmrId {
         &self.mmr_id
     }
+
+    /// Get a leaf hash by leaf index (blocking)
+    ///
+    /// Converts the leaf index to MMR position and retrieves the hash.
+    pub fn get_leaf_hash_blocking(&self, leaf_index: u64) -> DbResult<[u8; 32]> {
+        let pos = leaf_index_to_pos(leaf_index);
+        self.get_node_blocking(pos)
+    }
 }
 
 /// Typed handle for an MMR instance with pre-image storage
@@ -134,21 +160,28 @@ impl MmrHandle {
 /// Provides type-safe operations for MMRs that store the original data
 /// alongside the hash-based MMR structure. Wraps a hash-only MmrHandle
 /// and adds typed data operations on top.
-pub struct TypedMmrHandle<T> {
+///
+/// Generic over the hasher type `H` to allow different hashing strategies.
+#[expect(
+    missing_debug_implementations,
+    reason = "Inner MmrHandle doesn't have Debug implementation"
+)]
+pub struct TypedMmrHandle<T, H = Sha256Hasher> {
     handle: MmrHandle,
-    _phantom: PhantomData<T>,
+    _phantom: PhantomData<(T, H)>,
 }
 
-impl<T> TypedMmrHandle<T>
+impl<T, H> TypedMmrHandle<T, H>
 where
     T: BorshSerialize + BorshDeserialize,
+    H: MerkleHasher<Hash = [u8; 32]>,
 {
     /// Append data to the MMR (blocking version)
     ///
     /// Atomically stores both the MMR hash and the original data.
     pub fn append_blocking(&self, data: &T) -> DbResult<u64> {
         let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
-        let hash = Sha256Hasher::hash_leaf(&bytes);
+        let hash = H::hash_leaf(&bytes);
 
         self.handle
             .ops
@@ -160,7 +193,7 @@ where
     /// Atomically stores both the MMR hash and the original data.
     pub async fn append(&self, data: &T) -> DbResult<u64> {
         let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
-        let hash = Sha256Hasher::hash_leaf(&bytes);
+        let hash = H::hash_leaf(&bytes);
 
         self.handle
             .ops

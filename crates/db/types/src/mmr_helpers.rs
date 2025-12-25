@@ -419,10 +419,7 @@ impl MmrAlgorithm {
     /// - Updated metadata
     ///
     /// `None` if the MMR is empty
-    pub fn pop_leaf<F, E>(
-        metadata: &MmrMetadata,
-        get_node: F,
-    ) -> Result<Option<PopLeafResult>, E>
+    pub fn pop_leaf<F, E>(metadata: &MmrMetadata, get_node: F) -> Result<Option<PopLeafResult>, E>
     where
         F: Fn(u64) -> Result<[u8; 32], E>,
         E: From<MmrError>,

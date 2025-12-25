@@ -15,7 +15,6 @@ pub use managers::{
     client_state::ClientStateManager,
     l1::L1BlockManager,
     l2::L2BlockManager,
-    mmr::MmrManager,
     ol::OLBlockManager,
     ol_state::OLStateManager,
     unified_mmr::{MmrHandle, UnifiedMmrManager},
@@ -91,11 +90,6 @@ impl NodeStorage {
 
     pub fn unified_mmr(&self) -> &Arc<UnifiedMmrManager> {
         &self.unified_mmr_manager
-    }
-
-    #[deprecated(note = "Use asm_mmr() instead")]
-    pub fn mmr(&self) -> &Arc<MmrManager> {
-        &self.asm_mmr_manager
     }
 
     pub fn ol_block(&self) -> &Arc<OLBlockManager> {

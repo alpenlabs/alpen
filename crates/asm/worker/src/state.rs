@@ -299,10 +299,6 @@ mod tests {
             Ok(0)
         }
 
-        fn store_manifest_hash(&self, _index: u64, _hash: [u8; 32]) -> WorkerResult<()> {
-            Ok(())
-        }
-
         fn generate_mmr_proof(&self, _index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
             Err(WorkerError::Unimplemented)
         }

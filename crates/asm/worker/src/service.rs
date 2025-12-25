@@ -112,7 +112,6 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             let manifest_hash = genesis_manifest.compute_hash();
             ctx.store_l1_manifest(genesis_manifest)?;
             let leaf_index = ctx.append_manifest_to_mmr(manifest_hash)?;
-            ctx.store_manifest_hash(leaf_index, manifest_hash)?;
 
             info!(%pivot_block, leaf_index, "Created genesis manifest");
         }
@@ -134,11 +133,6 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
                     // Append manifest hash to MMR database
                     let leaf_index = state.context.append_manifest_to_mmr(manifest_hash)?;
-
-                    // Store manifest hash for fast lookup by aux resolver
-                    state
-                        .context
-                        .store_manifest_hash(leaf_index, manifest_hash)?;
 
                     let new_state = AsmState::from_output(asm_stf_out);
                     // Store and update anchor.

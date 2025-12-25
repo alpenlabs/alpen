@@ -128,12 +128,6 @@ impl WorkerContext for AsmWorkerCtx {
             })
     }
 
-    fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> WorkerResult<()> {
-        self.asmman
-            .store_manifest_hash(index, Buf32(hash))
-            .map_err(conv_db_err)
-    }
-
     fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
         self.mmr_handle.generate_proof(index).map_err(|e| {
             tracing::error!(?e, index, "Failed to generate MMR proof");
@@ -142,10 +136,22 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>> {
-        self.asmman
-            .get_manifest_hash(index)
-            .map(|opt| opt.map(|buf| buf.0))
-            .map_err(conv_db_err)
+        let num_leaves = self.mmr_handle.num_leaves_blocking().map_err(|e| {
+            tracing::error!(?e, "Failed to get MMR num_leaves");
+            WorkerError::DbError
+        })?;
+
+        if index >= num_leaves {
+            return Ok(None);
+        }
+
+        self.mmr_handle
+            .get_leaf_hash_blocking(index)
+            .map(Some)
+            .map_err(|e| {
+                tracing::error!(?e, index, "Failed to get leaf hash from MMR");
+                WorkerError::DbError
+            })
     }
 }
 
