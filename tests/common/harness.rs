@@ -11,6 +11,7 @@ use std::{sync::Arc, time::Duration};
 use bitcoin::{
     absolute::LockTime,
     blockdata::script,
+    consensus::deserialize,
     key::UntweakedKeypair,
     opcodes::{
         all::{OP_ENDIF, OP_IF},
@@ -29,7 +30,7 @@ use bitcoind_async_client::{
 };
 use corepc_node::Node;
 use rand::RngCore;
-use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle};
+use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_params::Params;
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
@@ -218,8 +219,6 @@ impl AsmTestHarness {
         target_height: u64,
         timeout: Duration,
     ) -> anyhow::Result<()> {
-        use strata_asm_worker::WorkerContext;
-
         let start = std::time::Instant::now();
         loop {
             if start.elapsed() > timeout {
@@ -245,8 +244,6 @@ impl AsmTestHarness {
         blockid: &L1BlockCommitment,
         timeout: Duration,
     ) -> anyhow::Result<AsmState> {
-        use strata_asm_worker::WorkerContext;
-
         let start = std::time::Instant::now();
         loop {
             if start.elapsed() > timeout {
@@ -266,18 +263,16 @@ impl AsmTestHarness {
     ///
     /// Returns the height of the latest processed block, or an error if no state exists.
     pub async fn get_chain_tip(&self) -> anyhow::Result<u64> {
-        Ok(self.client.get_blockchain_info().await?.blocks)
+        Ok(self.client.get_blockchain_info().await?.blocks.into())
     }
 
     /// Get the latest ASM state from the worker context
     pub fn get_latest_asm_state(&self) -> anyhow::Result<Option<(L1BlockCommitment, AsmState)>> {
-        use strata_asm_worker::WorkerContext;
         Ok(self.context.get_latest_asm_state()?)
     }
 
     /// Get ASM state at a specific block
     pub fn get_asm_state_at(&self, blockid: &L1BlockCommitment) -> anyhow::Result<AsmState> {
-        use strata_asm_worker::WorkerContext;
         Ok(self.context.get_anchor_state(blockid)?)
     }
 
@@ -288,7 +283,6 @@ impl AsmTestHarness {
 
     /// Get a manifest hash by index
     pub fn get_manifest_hash(&self, index: u64) -> anyhow::Result<Option<Buf32>> {
-        use strata_asm_worker::WorkerContext;
         Ok(self.context.get_manifest_hash(index)?.map(Buf32::from))
     }
 
@@ -340,12 +334,13 @@ impl AsmTestHarness {
             .to_string();
         let funding_txid: Txid = funding_txid_str.parse()?;
 
-        let funding_tx = self
+        let hex_tx = self
             .client
             .get_raw_transaction_verbosity_zero(&funding_txid)
             .await?
-            .transaction()
-            .map_err(|e| anyhow::anyhow!("Failed to decode funding transaction: {}", e))?;
+            .0;
+        let tx_bytes = hex::decode(&hex_tx)?;
+        let funding_tx: Transaction = deserialize(&tx_bytes)?;
 
         let prev_vout = funding_tx
             .output
