@@ -24,7 +24,7 @@ use crate::{
     chainstate::ChainstateDatabase,
     mmr_helpers::MmrId,
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
-    DbResult,
+    DbError, DbResult,
 };
 
 /// Common database backend interface that we can parameterize worker tasks over if
@@ -393,6 +393,27 @@ pub trait UnifiedMmrDatabase: Send + Sync + 'static {
 
     /// Remove the last leaf from the MMR
     fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>>;
+
+    /// Append a leaf with its pre-image data (optional operation)
+    ///
+    /// Atomically stores both the MMR hash and the original data.
+    /// Default implementation returns Unimplemented error.
+    fn append_leaf_with_preimage(
+        &self,
+        _mmr_id: MmrId,
+        _hash: [u8; 32],
+        _preimage: Vec<u8>,
+    ) -> DbResult<u64> {
+        Err(DbError::Unimplemented)
+    }
+
+    /// Get pre-image data by leaf index (optional operation)
+    ///
+    /// Returns None if no pre-image exists at the given index.
+    /// Default implementation returns Unimplemented error.
+    fn get_preimage(&self, _mmr_id: MmrId, _index: u64) -> DbResult<Option<Vec<u8>>> {
+        Err(DbError::Unimplemented)
+    }
 }
 
 /// MMR database trait for persistent proof generation

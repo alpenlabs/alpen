@@ -7,7 +7,10 @@ use strata_db_types::{
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
 use strata_primitives::buf::Buf32;
 
-use super::schemas::{UnifiedMmrHashIndexSchema, UnifiedMmrMetaSchema, UnifiedMmrNodeSchema};
+use super::schemas::{
+    UnifiedMmrHashIndexSchema, UnifiedMmrMetaSchema, UnifiedMmrNodeSchema,
+    UnifiedMmrPreimageSchema,
+};
 use crate::define_sled_database;
 
 define_sled_database!(
@@ -15,6 +18,7 @@ define_sled_database!(
         node_tree: UnifiedMmrNodeSchema,
         meta_tree: UnifiedMmrMetaSchema,
         hash_index_tree: UnifiedMmrHashIndexSchema,
+        preimage_tree: UnifiedMmrPreimageSchema,
     }
 );
 
@@ -151,6 +155,53 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
                 Ok(Some(result.leaf_hash))
             },
         )
+    }
+
+    fn append_leaf_with_preimage(
+        &self,
+        mmr_id: MmrId,
+        hash: [u8; 32],
+        preimage: Vec<u8>,
+    ) -> DbResult<u64> {
+        self.ensure_mmr_metadata(&mmr_id)?;
+
+        self.config.with_retry(
+            (
+                &self.node_tree,
+                &self.meta_tree,
+                &self.hash_index_tree,
+                &self.preimage_tree,
+            ),
+            |(nt, mt, hit, pit)| {
+                let metadata = mt
+                    .get(&mmr_id)?
+                    .expect("MMR metadata must exist after ensure_mmr_metadata");
+
+                let result = MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
+                    nt.get(&(mmr_id.clone(), pos))?
+                        .map(|buf| buf.0)
+                        .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
+                })
+                .map_err(typed_sled::error::Error::abort)?;
+
+                // Write MMR structure
+                for (pos, node_hash) in &result.nodes_to_write {
+                    nt.insert(&(mmr_id.clone(), *pos), &Buf32(*node_hash))?;
+                }
+
+                mt.insert(&mmr_id, &result.new_metadata)?;
+                hit.insert(&(mmr_id.clone(), Buf32(hash)), &result.leaf_index)?;
+
+                // Write pre-image atomically with MMR structure
+                pit.insert(&(mmr_id.clone(), result.leaf_index), &preimage)?;
+
+                Ok(result.leaf_index)
+            },
+        )
+    }
+
+    fn get_preimage(&self, mmr_id: MmrId, index: u64) -> DbResult<Option<Vec<u8>>> {
+        Ok(self.preimage_tree.get(&(mmr_id.clone(), index))?)
     }
 }
 

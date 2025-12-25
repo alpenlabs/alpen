@@ -18,3 +18,9 @@ define_table_with_seek_key_codec!(
     /// Enables reverse lookup from hash to leaf position
     (UnifiedMmrHashIndexSchema) (MmrId, Buf32) => u64
 );
+
+define_table_with_seek_key_codec!(
+    /// Pre-image data storage: (mmr_id, leaf_index) -> serialized data
+    /// Stores the actual data that was hashed to produce MMR leaves
+    (UnifiedMmrPreimageSchema) (MmrId, u64) => Vec<u8>
+);

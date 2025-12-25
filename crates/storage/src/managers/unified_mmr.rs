@@ -1,11 +1,12 @@
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::{
     mmr_helpers::{MmrAlgorithm, MmrId},
     traits::UnifiedMmrDatabase,
-    DbResult,
+    DbError, DbResult,
 };
-use strata_merkle::MerkleProofB32 as MerkleProof;
+use strata_merkle::{hasher::MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use threadpool::ThreadPool;
 
 use crate::ops;
@@ -29,7 +30,7 @@ impl UnifiedMmrManager {
         Self { ops }
     }
 
-    /// Get a handle for a specific MMR instance
+    /// Get a handle for a specific MMR instance (hash-only operations)
     ///
     /// The handle captures the MmrId and provides methods that don't require
     /// repeatedly passing the mmr_id parameter.
@@ -37,6 +38,20 @@ impl UnifiedMmrManager {
         MmrHandle {
             mmr_id,
             ops: self.ops.clone(),
+        }
+    }
+
+    /// Get a data handle for a specific MMR instance (with pre-image storage)
+    ///
+    /// The data handle stores and retrieves pre-image data alongside MMR hashes,
+    /// providing type-safe access to the original data.
+    pub fn get_data_handle<T>(&self, mmr_id: MmrId) -> TypedMmrHandle<T>
+    where
+        T: BorshSerialize + BorshDeserialize,
+    {
+        TypedMmrHandle {
+            handle: self.get_handle(mmr_id),
+            _phantom: PhantomData,
         }
     }
 }
@@ -111,5 +126,92 @@ impl MmrHandle {
     /// Get the MmrId for this handle
     pub fn mmr_id(&self) -> &MmrId {
         &self.mmr_id
+    }
+}
+
+/// Typed handle for an MMR instance with pre-image storage
+///
+/// Provides type-safe operations for MMRs that store the original data
+/// alongside the hash-based MMR structure. Wraps a hash-only MmrHandle
+/// and adds typed data operations on top.
+pub struct TypedMmrHandle<T> {
+    handle: MmrHandle,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> TypedMmrHandle<T>
+where
+    T: BorshSerialize + BorshDeserialize,
+{
+    /// Append data to the MMR (blocking version)
+    ///
+    /// Atomically stores both the MMR hash and the original data.
+    pub fn append_blocking(&self, data: &T) -> DbResult<u64> {
+        let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
+        let hash = Sha256Hasher::hash_leaf(&bytes);
+
+        self.handle
+            .ops
+            .append_leaf_with_preimage_blocking(self.handle.mmr_id.clone(), hash, bytes)
+    }
+
+    /// Append data to the MMR (async version)
+    ///
+    /// Atomically stores both the MMR hash and the original data.
+    pub async fn append(&self, data: &T) -> DbResult<u64> {
+        let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
+        let hash = Sha256Hasher::hash_leaf(&bytes);
+
+        self.handle
+            .ops
+            .append_leaf_with_preimage_async(self.handle.mmr_id.clone(), hash, bytes)
+            .await
+    }
+
+    /// Get data by leaf index (blocking version)
+    ///
+    /// Returns an error if no data exists at the given index or if deserialization fails.
+    pub fn get_blocking(&self, index: u64) -> DbResult<T> {
+        let bytes = self
+            .handle
+            .ops
+            .get_preimage_blocking(self.handle.mmr_id.clone(), index)?
+            .ok_or_else(|| {
+                DbError::Other(format!(
+                    "No pre-image data found for MMR {:?} at index {}",
+                    self.handle.mmr_id, index
+                ))
+            })?;
+
+        borsh::from_slice(&bytes).map_err(|e| DbError::CodecError(e.to_string()))
+    }
+
+    /// Get data by leaf index (async version)
+    ///
+    /// Returns an error if no data exists at the given index or if deserialization fails.
+    pub async fn get(&self, index: u64) -> DbResult<T> {
+        let bytes = self
+            .handle
+            .ops
+            .get_preimage_async(self.handle.mmr_id.clone(), index)
+            .await?
+            .ok_or_else(|| {
+                DbError::Other(format!(
+                    "No pre-image data found for MMR {:?} at index {}",
+                    self.handle.mmr_id, index
+                ))
+            })?;
+
+        borsh::from_slice(&bytes).map_err(|e| DbError::CodecError(e.to_string()))
+    }
+
+    /// Get the underlying hash-only handle
+    pub fn as_handle(&self) -> &MmrHandle {
+        &self.handle
+    }
+
+    /// Get the MmrId for this handle
+    pub fn mmr_id(&self) -> &MmrId {
+        &self.handle.mmr_id
     }
 }
