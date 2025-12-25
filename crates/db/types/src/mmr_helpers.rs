@@ -29,6 +29,7 @@
 //! ```
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 use strata_merkle::{hasher::MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use strata_primitives::buf::Buf32;
 
@@ -234,6 +235,18 @@ pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
         "Position {} not found in MMR of size {}",
         pos, mmr_size
     )))
+}
+
+/// Identifier for a specific MMR instance in unified storage
+///
+/// Each variant represents a different MMR type, with optional scoping
+/// within that type (e.g., per-account MMRs).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MmrId {
+    /// ASM manifest MMR (singleton, no account scope)
+    Asm,
+    /// Snark message MMR (per-account scope)
+    SnarkMsg(strata_identifiers::AccountId),
 }
 
 /// Metadata for an MMR instance
