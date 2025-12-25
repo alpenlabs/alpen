@@ -32,13 +32,13 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     // 2. Check message counts / proof indices line up
     let expected_idx =
         snark_state.next_inbox_msg_idx() + operation.processed_messages().len() as u64;
-    let new_idx = operation.new_state().next_inbox_msg_idx();
+    let claimed_idx = operation.new_state().next_inbox_msg_idx();
 
-    if expected_idx != new_idx {
+    if expected_idx != claimed_idx {
         return Err(AcctError::InvalidMsgIndex {
             account_id: target,
             expected: expected_idx,
-            got: new_idx,
+            got: claimed_idx,
         });
     }
 
@@ -62,6 +62,7 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     Ok(VerifiedUpdate { operation })
 }
 
+/// Verifies the ledger ref proofs against the provided asm mmr for an account.
 fn verify_ledger_refs(
     account: AccountId,
     mmr: &Mmr64,
@@ -82,6 +83,8 @@ fn verify_ledger_refs(
     Ok(())
 }
 
+/// Verifies the processed messages proofs against the provided account state's inbox
+/// mmr.
 pub(crate) fn verify_input_mmr_proofs(
     account_id: AccountId,
     state: &impl ISnarkAccountState,
@@ -108,44 +111,8 @@ pub(crate) fn verify_input_mmr_proofs(
     Ok(())
 }
 
-pub(crate) fn verify_update_witness(
-    target: AccountId,
-    snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdate,
-) -> AcctResult<()> {
-    let vk = snark_state.verification_key();
-    let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
-    let is_valid = vk
-        .verify_claim_witness(&claim, update.update_proof())
-        .is_ok();
-
-    if !is_valid {
-        return Err(AcctError::InvalidUpdateProof { account_id: target });
-    }
-
-    Ok(())
-}
-
-fn compute_update_claim(
-    snark_state: &impl ISnarkAccountState,
-    operation: &UpdateOperationData,
-) -> Vec<u8> {
-    // Use new state, processed messages, old state, refs and outputs to compute claim
-    let cur_state = ProofState::new(
-        snark_state.inner_state_root(),
-        snark_state.next_inbox_msg_idx(),
-    );
-    let pub_params = UpdateProofPubParams::new(
-        cur_state,
-        operation.new_state(),
-        operation.processed_messages().to_vec(),
-        operation.ledger_refs().clone(),
-        operation.outputs().clone(),
-        operation.extra_data().to_vec(),
-    );
-    pub_params.as_ssz_bytes()
-}
-
+/// Verifies that the outputs in the update are valid i.e. checks balances and that the receipents
+/// exist.
 fn verify_update_outputs_safe<S: IStateAccessor>(
     outputs: &UpdateOutputs,
     state_accessor: &S,
@@ -179,6 +146,46 @@ fn verify_update_outputs_safe<S: IStateAccessor>(
         });
     }
     Ok(())
+}
+
+/// Verifies the update witness(proof and pub params) against the VK of the snark account.
+pub(crate) fn verify_update_witness(
+    target: AccountId,
+    snark_state: &impl ISnarkAccountState,
+    update: &SnarkAccountUpdate,
+) -> AcctResult<()> {
+    let vk = snark_state.verification_key();
+    let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
+    let is_valid = vk
+        .verify_claim_witness(&claim, update.update_proof())
+        .is_ok();
+
+    if !is_valid {
+        return Err(AcctError::InvalidUpdateProof { account_id: target });
+    }
+
+    Ok(())
+}
+
+/// Computes the verifiable claim to be verified against a VK.
+fn compute_update_claim(
+    snark_state: &impl ISnarkAccountState,
+    operation: &UpdateOperationData,
+) -> Vec<u8> {
+    // Use new state, processed messages, old state, refs and outputs to compute claim
+    let cur_state = ProofState::new(
+        snark_state.inner_state_root(),
+        snark_state.next_inbox_msg_idx(),
+    );
+    let pub_params = UpdateProofPubParams::new(
+        cur_state,
+        operation.new_state(),
+        operation.processed_messages().to_vec(),
+        operation.ledger_refs().clone(),
+        operation.outputs().clone(),
+        operation.extra_data().to_vec(),
+    );
+    pub_params.as_ssz_bytes()
 }
 
 /// Type safe update that indicates it has been verified.

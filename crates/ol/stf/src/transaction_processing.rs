@@ -149,15 +149,15 @@ fn process_update_tx<S: IStateAccessor>(
         coin.safely_consume_unchecked(); // TODO: better usage?
 
         // Now get snark account state and update proof state
-        let sastate = astate
+        let snrk_acct_state = astate
             .as_snark_account_mut()
             .map_err(|_| ExecError::IncorrectTxTargetType)?;
 
         // Validate sequence number
-        let current_seqno = *sastate.seqno().inner();
+        let current_seqno = *snark_acct_state.seqno().inner();
         check_snark_account_seq_no(target, seqno, current_seqno)?;
 
-        sastate.update_inner_state(
+        snrk_acct_state.update_inner_state(
             operation.new_state().inner_state(),
             operation.new_state().next_inbox_msg_idx(),
             operation.seq_no().into(),
@@ -173,17 +173,6 @@ fn process_update_tx<S: IStateAccessor>(
 
     // Step 4: Apply effects
     apply_interactions(state, target, fx_buf, context.basic_context())?;
-
-    // Step 5: Emit log
-    let log_data = SnarkAccountUpdateLogData::new(
-        operation.new_state().next_inbox_msg_idx(),
-        operation.extra_data().to_vec(),
-    )
-    .ok_or(ExecError::Codec(CodecError::OverflowContainer))?;
-
-    let log_payload = encode_to_vec(&log_data)?;
-    let log = OLLog::new(acc_serial, log_payload);
-    context.emit_log(log);
 
     Ok(())
 }

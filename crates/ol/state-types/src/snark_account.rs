@@ -77,7 +77,6 @@ impl ISnarkAccountStateMut for OLSnarkAccountState {
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
-        // TODO maybe document this a little better?
         let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
         Mmr::<StrataHasher>::add_leaf(self.inbox_mmr.inner_mut(), hash.into_inner())
             .expect("ol/state: mmr add_leaf");
