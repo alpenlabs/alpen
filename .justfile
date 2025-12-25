@@ -49,6 +49,10 @@ cov-report-html: ensure-cargo-llvm-cov ensure-cargo-nextest
 test-int: ensure-cargo-nextest
     cargo nextest run -p "integration-tests" --status-level=fail --no-capture --no-tests=warn
 
+# Run ASM integration tests (all tests in tests/asm/)
+[group('test')]
+asm-itests: ensure-cargo-nextest
+    cargo nextest run -p "integration-tests" -E 'binary(asm_admin) + binary(asm_core) + binary(asm_bridge)' --status-level=fail --no-capture --no-tests=warn
 
 # Runs `nextest` under `cargo-mutants`. Caution: This can take *really* long to run
 [group('test')]
@@ -334,7 +338,7 @@ test: test-unit test-doc
 
 # Runs lints (without fixing), audit, docs, and tests (run this before creating a PR)
 [group('code-quality')]
-pr: lint rustdocs test-doc test-unit test-functional
+pr: lint rustdocs test-doc test-unit asm-itests test-functional
     @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
     @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
@@ -343,7 +347,7 @@ pr: lint rustdocs test-doc test-unit test-functional
 # NOTE: This is a command to check everything else except the functional tests pass
 # because sometimes running functional tests might be redundant.
 [group('code-quality')]
-pr-lite: lint rustdocs test-doc test-unit
+pr-lite: lint rustdocs test-doc test-unit asm-itests
     @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
     @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
