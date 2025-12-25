@@ -38,7 +38,7 @@ pub(crate) fn handle_parsed_tx(
             state.add_deposit(&info)?;
 
             let deposit_log =
-                DepositLog::new(0, info.amt().to_sat(), *info.header_aux().ee_address());
+                DepositLog::new(0, info.amt().to_sat(), *drt_info.header_aux().ee_address());
             relayer
                 .emit_log(AsmLogEntry::from_log(&deposit_log).expect("deposit log must not fail"));
 
