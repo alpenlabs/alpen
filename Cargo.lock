@@ -6098,6 +6098,7 @@ dependencies = [
  "borsh",
  "corepc-node",
  "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "strata-asm-common",
  "strata-asm-manifest-types",
  "strata-asm-proto-administration",

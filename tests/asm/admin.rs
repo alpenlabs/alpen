@@ -36,18 +36,41 @@ use strata_tasks as _;
 use strata_test_utils_btcio as _;
 use strata_test_utils_l2 as _;
 
-/// Helper to create test admin multisig configurations
+/// Helper to get the operator secret key that matches the one used in test params.
+/// This must match the key generation in `gen_params_with_seed(0)` from test-utils.
+fn get_operator_secret_key() -> SecretKey {
+    use bitcoin::secp256k1::SECP256K1;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng as StdRng;
+    use strata_primitives::crypto::EvenSecretKey;
+
+    // Use same seed as gen_params() which calls gen_params_with_seed(0)
+    let mut rng = StdRng::seed_from_u64(0);
+    let sk = SecretKey::new(&mut rng);
+
+    // CRITICAL: Convert to EvenSecretKey to match test-utils behavior
+    // This ensures the public key has even parity, which is required for taproot
+    let even_sk = EvenSecretKey::from(sk);
+    SecretKey::from_slice(&even_sk.secret_bytes()).expect("valid secret key")
+}
+
+/// Helper to create test admin multisig configurations that match the ASM spec initialization.
+/// The ASM spec creates admin config from operator keys with threshold=1.
 fn create_test_admin_config() -> (ThresholdConfig, Vec<SecretKey>) {
     let secp = Secp256k1::new();
 
-    // Create 3 signers with 2-of-3 threshold
-    let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
-    let pubkeys: Vec<CompressedPublicKey> = privkeys
-        .iter()
-        .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
-        .collect();
+    // Get the operator private key that matches what's in params
+    let operator_sk = get_operator_secret_key();
 
-    let config = ThresholdConfig::try_new(pubkeys, NonZero::new(2).unwrap())
+    // Create pubkey in compressed format (matches ASM spec)
+    let operator_pk = PublicKey::from_secret_key(&secp, &operator_sk);
+    let compressed_pk = CompressedPublicKey::from(operator_pk);
+
+    // ASM spec uses threshold=1 with single operator for tests
+    let pubkeys = vec![compressed_pk];
+    let privkeys = vec![operator_sk];
+
+    let config = ThresholdConfig::try_new(pubkeys, NonZero::new(1).unwrap())
         .expect("valid threshold config");
 
     (config, privkeys)
@@ -81,7 +104,7 @@ mod tests {
 
         // Create admin transaction (sequencer update)
         let (_admin_config, admin_privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8]; // Use signers 0 and 1 (threshold is 2)
+        let signer_indices = [0u8]; // Use signers 0 and 1 (threshold is 1)
 
         let new_sequencer_key = Buf32::from([1u8; 32]);
         let sequencer_update = SequencerUpdate::new(new_sequencer_key);
@@ -90,6 +113,7 @@ mod tests {
         let seqno = 0;
 
         // Create signed payload and submit real transaction
+        let tx_type = action.tx_type();
         let sighash = action.compute_sighash(seqno);
         let signature_set = create_signature_set(&admin_privkeys, &signer_indices, sighash);
         let signed_payload = SignedPayload::new(action, signature_set);
@@ -98,11 +122,9 @@ mod tests {
         println!("Created admin transaction successfully");
         println!("Admin tx has 1 inputs, 1 outputs");
         println!("Admin transaction creation and setup verified");
-
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
         let fee = bitcoin::Amount::from_sat(1000);
         let admin_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
 
@@ -163,7 +185,7 @@ mod tests {
         );
 
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8];
+        let signer_indices = [0u8];
 
         // Create operator set update (non-sequencer update that requires queuing)
         let new_operator = Buf32::from([7u8; 32]);
@@ -173,15 +195,14 @@ mod tests {
         let seqno = 0;
 
         // Create and submit the operator set update
+        let tx_type = action.tx_type();
         let sighash = action.compute_sighash(seqno);
         let signature_set = create_signature_set(&privkeys, &signer_indices, sighash);
         let signed_payload = SignedPayload::new(action, signature_set);
         let admin_payload = borsh::to_vec(&signed_payload).expect("Failed to serialize");
-
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
         let fee = bitcoin::Amount::from_sat(1000);
         let admin_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
 
@@ -237,47 +258,45 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_admin_multisig_threshold() {
-        // Test that multisig threshold is enforced
+        // Test that signatures from unauthorized keys are rejected
         let harness = create_test_harness()
             .await
             .expect("Failed to create test harness");
 
-        println!("Testing multisig threshold enforcement");
+        println!("Testing admin signature authorization");
 
-        // Create 3-of-5 threshold config
+        // Create a transaction signed with WRONG key (not the operator key)
         let secp = Secp256k1::new();
-        let privkeys: Vec<SecretKey> = (0..5).map(|_| SecretKey::new(&mut OsRng)).collect();
-        let pubkeys: Vec<CompressedPublicKey> = privkeys
-            .iter()
-            .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
-            .collect();
+        let wrong_privkey = SecretKey::new(&mut OsRng);
+        let wrong_pubkey = PublicKey::from_secret_key(&secp, &wrong_privkey);
+        let compressed_pk = CompressedPublicKey::from(wrong_pubkey);
 
-        let _config = ThresholdConfig::try_new(pubkeys, NonZero::new(3).unwrap())
+        let _wrong_config = ThresholdConfig::try_new(vec![compressed_pk], NonZero::new(1).unwrap())
             .expect("valid threshold config");
 
-        println!("Created 3-of-5 multisig config");
+        println!("Created admin config with unauthorized key");
 
-        // Create admin transaction with only 2 signatures (should fail threshold)
-        let signer_indices = [0u8, 1u8]; // Only 2 signers
+        // Create admin transaction signed with wrong key
+        let signer_indices = [0u8];
+        let wrong_privkeys = vec![wrong_privkey];
+
         let new_sequencer_key = Buf32::from([2u8; 32]);
         let sequencer_update = SequencerUpdate::new(new_sequencer_key);
         let action = MultisigAction::Update(UpdateAction::Sequencer(sequencer_update));
 
         let seqno = 0;
 
-        // Create signed payload with insufficient signatures
+        // Create signed payload with wrong key
+        let tx_type = action.tx_type();
         let sighash = action.compute_sighash(seqno);
-        let signature_set = create_signature_set(&privkeys, &signer_indices, sighash);
+        let signature_set = create_signature_set(&wrong_privkeys, &signer_indices, sighash);
         let signed_payload = SignedPayload::new(action, signature_set);
         let admin_payload = borsh::to_vec(&signed_payload).expect("Failed to serialize");
 
-        println!("Created admin tx with 2 signatures (threshold=3)");
-
-        // Submit the transaction with insufficient signatures
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
+        println!("Created admin tx signed with unauthorized key");
         let fee = bitcoin::Amount::from_sat(1000);
         let admin_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
 
@@ -293,7 +312,7 @@ mod tests {
             .expect("Failed to submit and mine admin tx");
 
         println!(
-            "Submitted admin tx with insufficient signatures in block: {}",
+            "Submitted admin tx with wrong signature in block: {}",
             block_hash
         );
 
@@ -304,7 +323,7 @@ mod tests {
             .await
             .expect("Timeout waiting for ASM");
 
-        // Verify the update was NOT applied (threshold check should fail)
+        // Verify the update was NOT applied (signature check should fail)
         // The ASM should process the block but reject the admin transaction
         let (_commitment, asm_state) = harness
             .get_latest_asm_state()
@@ -344,7 +363,7 @@ mod tests {
         let (_config, privkeys) = create_test_admin_config();
 
         // Create transaction with correct threshold
-        let signer_indices = [0u8, 1u8];
+        let signer_indices = [0u8];
         let new_sequencer_key = Buf32::from([3u8; 32]);
         let sequencer_update = SequencerUpdate::new(new_sequencer_key);
         let action = MultisigAction::Update(UpdateAction::Sequencer(sequencer_update));
@@ -373,7 +392,7 @@ mod tests {
         println!("Testing sequence number replay protection");
 
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8];
+        let signer_indices = [0u8];
 
         // Create first transaction with seqno=0
         let new_sequencer_key_1 = Buf32::from([4u8; 32]);
@@ -383,17 +402,14 @@ mod tests {
         let seqno = 0;
         let sighash_1 = action_1.compute_sighash(seqno);
         let signature_set_1 = create_signature_set(&privkeys, &signer_indices, sighash_1);
+        let tx_type_1 = action_1.tx_type();
         let signed_payload_1 = SignedPayload::new(action_1, signature_set_1);
         let admin_payload_1 = borsh::to_vec(&signed_payload_1).expect("Failed to serialize");
-
-        println!("Created first admin tx with seqno=0");
-
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
         let fee = bitcoin::Amount::from_sat(1000);
 
         // Submit first transaction
         let admin_tx_1 = harness
-            .build_funded_admin_tx(admin_payload_1, sps50_tag.clone(), fee)
+            .build_funded_admin_tx(admin_payload_1, tx_type_1, fee)
             .await
             .expect("Failed to build first admin tx");
 
@@ -418,14 +434,11 @@ mod tests {
 
         let sighash_2 = action_2.compute_sighash(seqno);
         let signature_set_2 = create_signature_set(&privkeys, &signer_indices, sighash_2);
+        let tx_type_2 = action_2.tx_type();
         let signed_payload_2 = SignedPayload::new(action_2, signature_set_2);
         let admin_payload_2 = borsh::to_vec(&signed_payload_2).expect("Failed to serialize");
-
-        println!("Created second admin tx with seqno=0 (replay)");
-
-        // Submit second transaction with duplicate seqno
         let admin_tx_2 = harness
-            .build_funded_admin_tx(admin_payload_2, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload_2, tx_type_2, fee)
             .await
             .expect("Failed to build second admin tx");
 
@@ -483,7 +496,7 @@ mod tests {
         println!("Testing operator set update");
 
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8];
+        let signer_indices = [0u8];
 
         // Create operator keys to add/remove
         let add_operator_1 = Buf32::from([10u8; 32]);
@@ -495,6 +508,7 @@ mod tests {
 
         let action = MultisigAction::Update(UpdateAction::OperatorSet(operator_update));
         let seqno = 0;
+        let tx_type = action.tx_type();
 
         let sighash = action.compute_sighash(seqno);
         let signature_set = create_signature_set(&privkeys, &signer_indices, sighash);
@@ -502,11 +516,9 @@ mod tests {
         let admin_payload = borsh::to_vec(&signed_payload).expect("Failed to serialize");
 
         println!("Created operator set update tx (add 2, remove 1)");
-
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
         let fee = bitcoin::Amount::from_sat(1000);
         let admin_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
 
@@ -564,7 +576,7 @@ mod tests {
         println!("Testing cancel queued update");
 
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8];
+        let signer_indices = [0u8];
 
         // First, create an update that gets queued
         let new_sequencer_key = Buf32::from([6u8; 32]);
@@ -573,15 +585,15 @@ mod tests {
 
         let sighash = update_action.compute_sighash(0);
         let signature_set = create_signature_set(&privkeys, &signer_indices, sighash);
+        let tx_type = update_action.tx_type();
         let signed_payload = SignedPayload::new(update_action, signature_set);
         let admin_payload = borsh::to_vec(&signed_payload).expect("Failed to serialize");
 
-        println!("Created sequencer update tx with seqno=0");
 
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
+        println!("Created sequencer update tx with seqno=0");
         let fee = bitcoin::Amount::from_sat(1000);
         let update_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag.clone(), fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
 
@@ -597,18 +609,19 @@ mod tests {
 
         let cancel_sighash = cancel_multisig_action.compute_sighash(1);
         let cancel_signature_set = create_signature_set(&privkeys, &signer_indices, cancel_sighash);
+        let cancel_tx_type = cancel_multisig_action.tx_type();
         let cancel_signed_payload =
             SignedPayload::new(cancel_multisig_action, cancel_signature_set);
         let cancel_admin_payload =
             borsh::to_vec(&cancel_signed_payload).expect("Failed to serialize");
 
+
         println!(
             "Created cancel action tx with seqno=1 (targets update_id={})",
             target_update_id
         );
-
         let cancel_tx = harness
-            .build_funded_admin_tx(cancel_admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(cancel_admin_payload, cancel_tx_type, fee)
             .await
             .expect("Failed to build funded cancel tx");
 
@@ -665,11 +678,12 @@ mod tests {
         println!("Testing multiple admin updates in same block");
 
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8];
+        let signer_indices = [0u8];
 
         // Create multiple admin transactions with different seqnos
         let update_1 = SequencerUpdate::new(Buf32::from([7u8; 32]));
         let action_1 = MultisigAction::Update(UpdateAction::Sequencer(update_1));
+        let tx_type_1 = action_1.tx_type();
         let sighash_1 = action_1.compute_sighash(0);
         let signature_set_1 = create_signature_set(&privkeys, &signer_indices, sighash_1);
         let signed_payload_1 = SignedPayload::new(action_1, signature_set_1);
@@ -677,6 +691,7 @@ mod tests {
 
         let update_2 = SequencerUpdate::new(Buf32::from([8u8; 32]));
         let action_2 = MultisigAction::Update(UpdateAction::Sequencer(update_2));
+        let tx_type_2 = action_2.tx_type();
         let sighash_2 = action_2.compute_sighash(1);
         let signature_set_2 = create_signature_set(&privkeys, &signer_indices, sighash_2);
         let signed_payload_2 = SignedPayload::new(action_2, signature_set_2);
@@ -684,6 +699,7 @@ mod tests {
 
         let update_3 = SequencerUpdate::new(Buf32::from([9u8; 32]));
         let action_3 = MultisigAction::Update(UpdateAction::Sequencer(update_3));
+        let tx_type_3 = action_3.tx_type();
         let sighash_3 = action_3.compute_sighash(2);
         let signature_set_3 = create_signature_set(&privkeys, &signer_indices, sighash_3);
         let signed_payload_3 = SignedPayload::new(action_3, signature_set_3);
@@ -691,20 +707,19 @@ mod tests {
 
         println!("Created 3 admin txs with seqno=0,1,2");
 
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
         let fee = bitcoin::Amount::from_sat(1000);
 
-        // Build all 3 transactions
+        // Build all 3 transactions (all same type - sequencer update)
         let tx_1 = harness
-            .build_funded_admin_tx(admin_payload_1, sps50_tag.clone(), fee)
+            .build_funded_admin_tx(admin_payload_1, tx_type_1, fee)
             .await
             .expect("Failed to build tx 1");
         let tx_2 = harness
-            .build_funded_admin_tx(admin_payload_2, sps50_tag.clone(), fee)
+            .build_funded_admin_tx(admin_payload_2, tx_type_2, fee)
             .await
             .expect("Failed to build tx 2");
         let tx_3 = harness
-            .build_funded_admin_tx(admin_payload_3, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload_3, tx_type_3, fee)
             .await
             .expect("Failed to build tx 3");
 
@@ -775,8 +790,8 @@ mod tests {
 
         // STEP 1: Create admin multisig config
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8];
-        println!("✓ Created 2-of-3 multisig config");
+        let signer_indices = [0u8];
+        println!("✓ Created 1-of-1 multisig config (operator key)");
 
         // STEP 2: Create sequencer update action
         let new_sequencer_key = Buf32::from([99u8; 32]);
@@ -813,12 +828,12 @@ mod tests {
 
         // STEP 5: Build properly funded Bitcoin transaction with admin payload
         // This uses the new harness method that implements commit-reveal pattern
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
+        let tx_type = action.tx_type();
         let fee = bitcoin::Amount::from_sat(1000);
 
         println!("\n Building funded admin transaction...");
         let admin_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
 
@@ -893,8 +908,8 @@ mod tests {
 
         // STEP 1: Create admin multisig config
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8];
-        println!("✓ Created 2-of-3 multisig config");
+        let signer_indices = [0u8];
+        println!("✓ Created 1-of-1 multisig config (operator key)");
 
         // STEP 2: Create operator set update action
         let add_operator_1 = Buf32::from([10u8; 32]);
@@ -930,12 +945,12 @@ mod tests {
         );
 
         // STEP 5: Build funded transaction
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
+        let tx_type = action.tx_type();
         let fee = bitcoin::Amount::from_sat(1000);
 
         println!("\nBuilding funded admin transaction...");
         let admin_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
 
@@ -992,8 +1007,8 @@ mod tests {
 
         // STEP 1: Create multisig config
         let (_config, privkeys) = create_test_admin_config();
-        let signer_indices = [0u8, 1u8]; // Use first 2 signers (threshold=2)
-        println!("✓ Created 2-of-3 multisig config");
+        let signer_indices = [0u8]; // Use first 2 signers (threshold=1)
+        println!("✓ Created 1-of-1 multisig config (operator key)");
 
         // STEP 2: Create sequencer update action
         let new_sequencer_key = Buf32::from([88u8; 32]);
@@ -1050,12 +1065,12 @@ mod tests {
         );
 
         // STEP 5: Build funded transaction
-        let sps50_tag = b"STRATA_ASM_ADMIN".to_vec();
+        let tx_type = action.tx_type();
         let fee = bitcoin::Amount::from_sat(1000);
 
         println!("\nBuilding funded admin transaction...");
         let admin_tx = harness
-            .build_funded_admin_tx(admin_payload, sps50_tag, fee)
+            .build_funded_admin_tx(admin_payload, tx_type, fee)
             .await
             .expect("Failed to build funded admin tx");
         println!(

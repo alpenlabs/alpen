@@ -367,12 +367,12 @@ impl AsmTestHarness {
     ///
     /// # Arguments
     /// * `admin_payload` - Borsh-serialized admin action + signatures
-    /// * `sps50_tag` - SPS-50 tag for OP_RETURN output
+    /// * `tx_type` - Admin transaction type (e.g., SEQUENCER_UPDATE_TX_TYPE)
     /// * `fee` - Transaction fee
     pub async fn build_funded_admin_tx(
         &self,
         admin_payload: Vec<u8>,
-        sps50_tag: Vec<u8>,
+        tx_type: u8,
         fee: Amount,
     ) -> anyhow::Result<Transaction> {
         // Calculate funding amount needed (outputs + fee buffer)
@@ -424,6 +424,13 @@ impl AsmTestHarness {
         println!("Created commit UTXO: {}:{}", commit_txid, commit_vout);
 
         // STEP 5: Build reveal transaction that spends the taproot output
+        // Create SPS-50 compliant OP_RETURN tag
+        const ADMIN_SUBPROTOCOL_ID: u8 = 0;
+        let mut sps50_tag = Vec::with_capacity(6);
+        sps50_tag.extend_from_slice(&self.params.rollup().magic_bytes); // 4 bytes
+        sps50_tag.push(ADMIN_SUBPROTOCOL_ID); // 1 byte
+        sps50_tag.push(tx_type); // 1 byte
+
         // Create outputs
         let op_return_output = TxOut {
             value: Amount::ZERO,
