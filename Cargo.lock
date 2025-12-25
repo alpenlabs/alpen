@@ -6097,7 +6097,6 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "corepc-node",
- "hex",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "strata-asm-common",

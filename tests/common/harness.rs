@@ -11,7 +11,6 @@ use std::{sync::Arc, time::Duration};
 use bitcoin::{
     absolute::LockTime,
     blockdata::script,
-    consensus::deserialize,
     key::UntweakedKeypair,
     opcodes::{
         all::{OP_ENDIF, OP_IF},
@@ -32,7 +31,7 @@ use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_params::Params;
-use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
+use strata_primitives::{buf::Buf32, l1::{L1BlockCommitment, L1BlockId}};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::time::sleep;
@@ -106,7 +105,7 @@ impl AsmTestHarness {
 
         println!("ASM worker service launched successfully");
 
-        Ok(Self {
+        let harness = Self {
             bitcoind,
             client,
             asm_handle,
@@ -114,7 +113,38 @@ impl AsmTestHarness {
             params,
             executor,
             genesis_height,
-        })
+        };
+
+        // Submit genesis block to ASM worker
+        let genesis_block_id = L1BlockId::from(genesis_hash);
+        let genesis_commitment = L1BlockCommitment::new(
+            bitcoin::absolute::Height::from_consensus(genesis_height as u32)?,
+            genesis_block_id,
+        );
+
+        // Fetch and cache genesis block
+        let _genesis_block = harness.context.fetch_and_cache_block(genesis_hash).await?;
+
+        // Submit genesis block
+        tokio::task::block_in_place(|| harness.asm_handle.submit_block(genesis_commitment))?;
+        println!("Submitted genesis block to ASM worker");
+
+        // Wait for ASM worker to process genesis block
+        // Poll until we have an initial state (with timeout)
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(10);
+        loop {
+            if harness.get_latest_asm_state().ok().flatten().is_some() {
+                println!("ASM worker processed genesis block");
+                break;
+            }
+            if start.elapsed() > timeout {
+                anyhow::bail!("Timeout waiting for ASM worker to process genesis block");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        Ok(harness)
     }
 
     /// Mine a single block and submit it to ASM worker
@@ -334,13 +364,12 @@ impl AsmTestHarness {
             .to_string();
         let funding_txid: Txid = funding_txid_str.parse()?;
 
-        let hex_tx = self
+        let funding_tx = self
             .client
             .get_raw_transaction_verbosity_zero(&funding_txid)
             .await?
-            .0;
-        let tx_bytes = hex::decode(&hex_tx)?;
-        let funding_tx: Transaction = deserialize(&tx_bytes)?;
+            .transaction()
+            .map_err(|e| anyhow::anyhow!("Failed to decode funding transaction: {}", e))?;
 
         let prev_vout = funding_tx
             .output

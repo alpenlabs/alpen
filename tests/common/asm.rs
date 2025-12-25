@@ -5,10 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bitcoin::{
-    absolute::Height, block::Header, consensus::deserialize, Block, BlockHash, Network,
-    Transaction, Txid,
-};
+use bitcoin::{absolute::Height, block::Header, Block, BlockHash, Network, Txid};
 use bitcoind_async_client::{traits::Reader, Client};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
 use strata_btc_types::{GenesisL1View, RawBitcoinTx};
@@ -155,11 +152,11 @@ impl WorkerContext for TestAsmWorkerContext {
         }
         .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
 
-        // Extract the transaction from the result
-        let tx_bytes = hex::decode(&raw_tx_result.0)
+        // Extract the transaction and convert to RawBitcoinTx
+        let tx = raw_tx_result
+            .transaction()
             .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
-        let tx: Transaction =
-            deserialize(&tx_bytes).map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
+
         Ok(RawBitcoinTx::from(tx))
     }
 

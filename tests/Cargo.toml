@@ -12,7 +12,6 @@ bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 borsh.workspace = true
 corepc-node.workspace = true
-hex.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 strata-asm-common.workspace = true
