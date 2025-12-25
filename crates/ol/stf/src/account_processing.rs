@@ -71,7 +71,7 @@ pub(crate) fn process_transfer<S: IStateAccessor>(
     match target {
         // Bridge gateway transfer.
         BRIDGE_GATEWAY_ACCT_ID => {
-            // TODO: what do we do with direct tranferes to bridge accounts? Emit log?
+            // TODO: what do we do with direct transfers to bridge accounts? Emit log?
         }
 
         // Any other address we assume is a ledger account, so we have to look it up.
@@ -85,7 +85,7 @@ pub(crate) fn process_transfer<S: IStateAccessor>(
 
             // Update the account within a closure.
             state.update_account(target, |acct_state| -> ExecResult<()> {
-                // First, just increase the balance right now.
+                // Just increase the balance right now.
                 let coin = Coin::new_unchecked(value);
                 acct_state.add_balance(coin);
                 Ok(())

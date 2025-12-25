@@ -82,7 +82,7 @@ impl ISnarkAccountStateMut for NativeSnarkAccountState {
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
-        // CRITICAL: Must use the SAME hash as verification (verification.rs:93-94)
+        // CRITICAL: Must use the SAME hash as verification
         // Verification uses: StrataHasher::hash_leaf(&entry.as_ssz_bytes())
         let msg_bytes: Vec<u8> = entry.as_ssz_bytes();
         let hash = StrataHasher::hash_leaf(&msg_bytes);
