@@ -1,4 +1,5 @@
 use strata_asm_common::{AnchorState, AsmLogEntry};
+use strata_db_types::mmr_helpers::MmrMetadata;
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use typed_sled::codec::{CodecError, KeyCodec};
 
@@ -25,14 +26,6 @@ define_table_with_integer_key!(
     /// MMR node storage schema: position -> hash. Stores all MMR nodes for proof generation.
     (AsmMmrNodeSchema) u64 => Buf32
 );
-
-/// MMR metadata storage
-#[derive(Debug, Clone, borsh::BorshSerialize, borsh::BorshDeserialize)]
-pub struct MmrMetadata {
-    pub num_leaves: u64,
-    pub mmr_size: u64,
-    pub peak_roots: Vec<Buf32>,
-}
 
 /// MMR metadata schema: singleton storage for MMR metadata
 #[derive(Clone, Copy, Debug, Default)]

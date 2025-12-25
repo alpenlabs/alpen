@@ -11,8 +11,6 @@ use strata_primitives::buf::Buf32;
 use super::schemas::{SnarkMsgMmrMetaSchema, SnarkMsgMmrNodeSchema};
 use crate::define_sled_database;
 
-// TODO: Since the mmr db is just parametric on the node schema and meta scehma, we can possibliy
-// generalize this as well. Leave it for next ticket.
 define_sled_database!(
     pub struct SnarkMsgMmrDb {
         node_tree: SnarkMsgMmrNodeSchema,
@@ -39,12 +37,7 @@ impl SnarkMsgMmrDb {
         self.node_tree
             .get(&(account, pos))?
             .map(|buf| buf.0)
-            .ok_or_else(|| {
-                DbError::Other(format!(
-                    "MMR node not found at position {} for account {}",
-                    pos, account
-                ))
-            })
+            .ok_or(DbError::MmrLeafNotFoundForAccount(pos, account))
     }
 }
 
