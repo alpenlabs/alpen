@@ -5,6 +5,9 @@ use async_trait::async_trait;
 use reth_node_builder::{
     BuiltPayload, ConsensusEngineHandle, EngineApiMessageVersion, PayloadTypes,
 };
+use strata_common::retry::{
+    policies::ExponentialBackoff, retry_with_backoff_async, DEFAULT_ENGINE_CALL_MAX_RETRIES,
+};
 
 /// Execution engine implementation using Reth for Alpen EE.
 #[derive(Debug, Clone)]
@@ -26,23 +29,39 @@ impl ExecutionEngine for AlpenRethExecEngine {
     type TEnginePayload = AlpenBuiltPayload;
 
     async fn submit_payload(&self, payload: AlpenBuiltPayload) -> Result<(), ExecutionEngineError> {
-        self.beacon_engine_handle
-            .new_payload(AlpenEngineTypes::block_to_payload(
-                payload.block().to_owned(),
-            ))
-            .await
-            .map(|_| ())
-            .map_err(|e| ExecutionEngineError::payload_submission(e.to_string()))
+        retry_with_backoff_async(
+            "exec_engine_submit_payload",
+            DEFAULT_ENGINE_CALL_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            || async {
+                self.beacon_engine_handle
+                    .new_payload(AlpenEngineTypes::block_to_payload(
+                        payload.block().to_owned(),
+                    ))
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| ExecutionEngineError::payload_submission(e.to_string()))
+            },
+        )
+        .await
     }
 
     async fn update_consensus_state(
         &self,
         state: ForkchoiceState,
     ) -> Result<(), ExecutionEngineError> {
-        self.beacon_engine_handle
-            .fork_choice_updated(state, None, EngineApiMessageVersion::V4)
-            .await
-            .map(|_| ())
-            .map_err(|e| ExecutionEngineError::fork_choice_update(e.to_string()))
+        retry_with_backoff_async(
+            "exec_engine_update_consensus_state",
+            DEFAULT_ENGINE_CALL_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            || async {
+                self.beacon_engine_handle
+                    .fork_choice_updated(state, None, EngineApiMessageVersion::V4)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| ExecutionEngineError::fork_choice_update(e.to_string()))
+            },
+        )
+        .await
     }
 }
