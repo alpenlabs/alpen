@@ -116,6 +116,7 @@ fn prepare_deposit_request(
         SubjectBytes::try_new(alpen_address.to_vec()).expect("must be valid subject bytes");
     let header_aux = DrtHeaderAux::new(
         recovery_public_key.serialize(),
+        // Legacy: deposit intent supports a single execution environment (zero)
         AccountSerial::zero(),
         alpen_subject_bytes,
     );
