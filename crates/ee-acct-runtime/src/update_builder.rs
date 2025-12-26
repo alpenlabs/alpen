@@ -90,6 +90,7 @@ impl UpdateBuilder {
 
         // Accumulate outputs from all blocks in the segment
         for block in segment.blocks() {
+            // REVIEW: why `block_notpackage`?
             let block_notpackage = block.package();
             let block_outputs = block_notpackage.outputs();
             let block_inputs = block_notpackage.inputs();
@@ -158,7 +159,7 @@ impl UpdateBuilder {
     /// - processed_inputs: calculated from segments (total inputs consumed)
     /// - processed_fincls: set via with_processed_fincls
     pub fn build<E: ExecutionEnvironment>(
-        self,
+        mut self,
         initial_state: &EeAccountState,
         prev_header: &<E::Block as ExecBlock>::Header,
         prev_partial_state: &E::PartialState,
@@ -180,10 +181,12 @@ impl UpdateBuilder {
         // Encode the extra data
         let extra_data_buf = encode_to_vec(&extra_data)?;
 
-        // Compute the new state by simulating the update
-        // For now we just use a placeholder state
-        // TODO: compute actual state root
-        let new_state = ProofState::new(Hash::new([0; 32]), 0);
+        // Compute the new ProofState
+        let new_state = compute_new_proof_state(
+            &mut self.current_state,
+            new_tip_blkid,
+            self.processed_messages.len(),
+        );
 
         // Encode the previous header and partial state
         let prev_header_buf = encode_to_vec(prev_header)?;
@@ -218,4 +221,30 @@ impl UpdateBuilder {
     pub fn accumulated_outputs(&self) -> &UpdateOutputs {
         &self.accumulated_outputs
     }
+}
+
+/// Helper function to compute the new ProofState after an update.
+///
+/// This function:
+/// 1. Updates the `last_exec_blkid` in the state (to match `apply_final_update_changes`)
+/// 2. Computes the `inner_state_root` using SSZ tree_hash_root
+/// 3. Calculates `next_msg_read_idx` (assumes prev_next_msg_read_idx = 0 for now)
+/// 4. Returns the ProofState with both values
+fn compute_new_proof_state(
+    state: &mut EeAccountState,
+    new_tip_blkid: Hash,
+    processed_messages_count: usize,
+) -> ProofState {
+    // Update last_exec_blkid before computing hash (matches apply_final_update_changes)
+    state.set_last_exec_blkid(new_tip_blkid);
+
+    // Compute the inner_state_root using tree_hash_root
+    let computed_hash = tree_hash::TreeHash::<tree_hash::Sha256Hasher>::tree_hash_root(state);
+    let inner_state_root = Hash::from(computed_hash.0);
+
+    // For now, assume prev_next_msg_read_idx = 0
+    // TODO: Need to pass prev_next_msg_read_idx to UpdateBuilder::new()
+    let next_msg_read_idx = processed_messages_count as u64;
+
+    ProofState::new(inner_state_root, next_msg_read_idx)
 }
