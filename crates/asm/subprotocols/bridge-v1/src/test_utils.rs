@@ -56,6 +56,7 @@ pub(crate) fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
         operators,
         assignment_duration: 144, // ~24 hours
         operator_fee: BitcoinAmount::from_sat(100_000),
+        recovery_delay: 1008,
     };
     let bridge_state = BridgeV1State::new(&config);
     (bridge_state, privkeys)
