@@ -15,6 +15,7 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-merkle = { workspace = true, features = ["ssz"] }
 strata-ol-chain-types.workspace = true
+strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-chainstate-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-primitives.workspace = true
@@ -31,3 +32,4 @@ tracing.workspace = true
 [dev-dependencies]
 strata-db-store-sled.workspace = true
 strata-ledger-types.workspace = true
+proptest.workspace = true
