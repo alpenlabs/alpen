@@ -43,9 +43,6 @@ pub struct RollupParams {
     /// target batch size in number of l2 blocks
     pub target_l2_batch_size: u64,
 
-    /// Maximum length of an EE address in a deposit.
-    pub max_address_length: u8,
-
     /// Exact "at-rest" deposit amount, in sats.
     #[serde(with = "serde_amount_sat")]
     pub deposit_amount: Amount,
@@ -87,10 +84,6 @@ impl RollupParams {
 
         if self.target_l2_batch_size == 0 {
             return Err(ParamsError::ZeroProperty("target_l2_batch_size"));
-        }
-
-        if self.max_address_length == 0 {
-            return Err(ParamsError::ZeroProperty("max_address_length"));
         }
 
         if self.deposit_amount == Amount::ZERO {

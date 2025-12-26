@@ -115,7 +115,6 @@ fn gen_params_with_seed(seed: u64) -> Params {
                     .unwrap(),
             l1_reorg_safe_depth: 3,
             target_l2_batch_size: 64,
-            max_address_length: 20,
             deposit_amount: Amount::from_sat(1_000_000_000),
             checkpoint_predicate: PredicateKey::never_accept(),
             dispatch_assignment_dur: 64,
