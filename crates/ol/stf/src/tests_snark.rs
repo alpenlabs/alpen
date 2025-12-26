@@ -118,7 +118,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     let update_outputs = UpdateOutputs::new(vec![], vec![output_message]);
 
     // Create the snark account update operation data
-    let new_seqno = 1u64; // Next sequence number
+    let new_seqno = 0u64; // First sequence number (account expects seq_no=0)
     let new_state_root = Hash::from([2u8; 32]); // New state after update
     let new_proof_state = ProofState::new(new_state_root, 0);
 
