@@ -1,54 +1,72 @@
-use strata_acct_types::{AcctResult, Hash, Mmr64};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use ssz::Encode as _;
+use ssz_derive::{Decode, Encode};
+use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher};
+use strata_codec::Codec;
 use strata_codec_utils::CodecSsz;
 use strata_ledger_types::*;
-use strata_merkle::CompactMmr64B32;
+use strata_merkle::hasher::MerkleHasher as _;
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
-use tree_hash::TreeHash;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Codec, Decode, Encode)]
 pub struct NativeSnarkAccountState {
-    seqno: Seqno,
-    proof_state: ProofState,
-    inbox_mmr: Mmr64,
+    verification_key: CodecSsz<PredicateKey>,
+    seqno: CodecSsz<Seqno>,
+    proof_state: CodecSsz<ProofState>,
+    inbox_mmr: CodecSsz<Mmr64>,
 }
 
 impl NativeSnarkAccountState {
     /// Creates an account instance with specific values.
-    pub(crate) fn new(seqno: Seqno, proof_state: ProofState, inbox_mmr: Mmr64) -> Self {
+    pub(crate) fn new(
+        vk: PredicateKey,
+        seqno: Seqno,
+        proof_state: ProofState,
+        inbox_mmr: Mmr64,
+    ) -> Self {
         Self {
-            seqno,
-            proof_state,
-            inbox_mmr,
+            verification_key: CodecSsz::new(vk),
+            seqno: CodecSsz::new(seqno),
+            proof_state: CodecSsz::new(proof_state),
+            inbox_mmr: CodecSsz::new(inbox_mmr),
         }
     }
 
     /// Creates a new fresh instance with a particular initial state, but other
     /// bookkeeping set to 0.
-    pub fn new_fresh(initial_state_root: Hash) -> Self {
+    pub fn new_fresh(verification_key: PredicateKey, initial_state_root: Hash) -> Self {
         let ps = ProofState::new(initial_state_root, 0);
-        Self::new(Seqno::zero(), ps, Mmr64::new(64))
+        Self::new(verification_key, Seqno::zero(), ps, Mmr64::new(64))
     }
 }
 
 impl ISnarkAccountState for NativeSnarkAccountState {
+    fn verification_key(&self) -> &PredicateKey {
+        self.verification_key.inner()
+    }
+
     fn seqno(&self) -> Seqno {
-        self.seqno
+        *self.seqno.inner()
     }
 
     fn inner_state_root(&self) -> Hash {
-        self.proof_state.inner_state_root
+        self.proof_state.inner().inner_state_root
+    }
+
+    fn next_inbox_msg_idx(&self) -> u64 {
+        self.proof_state.inner().next_msg_read_idx
     }
 
     fn inbox_mmr(&self) -> &Mmr64 {
-        &self.inbox_mmr
+        self.inbox_mmr.inner()
     }
 }
 
 impl ISnarkAccountStateMut for NativeSnarkAccountState {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        self.proof_state = ProofState::new(state, next_read_idx);
-        self.seqno = seqno;
+        let ps = ProofState::new(state, next_read_idx);
+        self.proof_state = CodecSsz::new(ps);
+        self.seqno = CodecSsz::new(seqno);
     }
 
     fn update_inner_state(
@@ -64,16 +82,20 @@ impl ISnarkAccountStateMut for NativeSnarkAccountState {
     }
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
-        // TODO maybe document this a little better?
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
+        // CRITICAL: Must use the SAME hash as verification
+        // Verification uses: StrataHasher::hash_leaf(&entry.as_ssz_bytes())
+        let msg_bytes: Vec<u8> = entry.as_ssz_bytes();
+        let hash = StrataHasher::hash_leaf(&msg_bytes);
+
         self.inbox_mmr
-            .add_leaf(hash.into_inner())
+            .inner_mut()
+            .add_leaf(hash)
             .expect("ol/state: mmr add_leaf");
         Ok(())
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Codec)]
+#[derive(Clone, Debug, Eq, PartialEq, Codec, Decode, Encode)]
 pub struct ProofState {
     inner_state_root: Hash,
     next_msg_read_idx: u64,
@@ -93,35 +115,5 @@ impl ProofState {
 
     pub fn next_msg_read_idx(&self) -> u64 {
         self.next_msg_read_idx
-    }
-}
-
-impl Codec for NativeSnarkAccountState {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.seqno.encode(enc)?;
-        self.proof_state.encode(enc)?;
-
-        // Convert Mmr64 to CompactMmr64B32 and encode it using CodecSsz wrapper
-        let compact_mmr = self.inbox_mmr.to_compact();
-        let wrapped_mmr = CodecSsz::new(compact_mmr);
-        wrapped_mmr.encode(enc)?;
-
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let seqno = Seqno::decode(dec)?;
-        let proof_state = ProofState::decode(dec)?;
-
-        // Decode the CompactMmr64B32 using CodecSsz wrapper and convert back to Mmr64
-        let wrapped_mmr: CodecSsz<CompactMmr64B32> = CodecSsz::decode(dec)?;
-        let compact_mmr = wrapped_mmr.inner();
-        let inbox_mmr = Mmr64::from_compact(compact_mmr);
-
-        Ok(Self {
-            seqno,
-            proof_state,
-            inbox_mmr,
-        })
     }
 }

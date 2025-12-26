@@ -2,17 +2,20 @@
 //!
 //! This can be completely omitted from DA.
 
-use strata_acct_types::BitcoinAmount;
+use ssz_derive::{Decode, Encode};
+use strata_acct_types::{BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_codec::Codec;
+use strata_codec_utils::CodecSsz;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
-#[derive(Clone, Debug, Codec)]
+#[derive(Clone, Debug, Codec, Decode, Encode)]
 pub struct EpochalState {
     total_ledger_funds: BitcoinAmount,
     cur_epoch: u32,
     last_l1_block: L1BlockCommitment,
     checkpointed_epoch: EpochCommitment,
+    manifest_mmr: CodecSsz<Mmr64>,
 }
 
 impl EpochalState {
@@ -22,12 +25,14 @@ impl EpochalState {
         cur_epoch: u32,
         last_l1_block: L1BlockCommitment,
         checkpointed_epoch: EpochCommitment,
+        manifest_mmr: Mmr64,
     ) -> Self {
         Self {
             total_ledger_funds,
             cur_epoch,
             last_l1_block,
             checkpointed_epoch,
+            manifest_mmr: CodecSsz::new(manifest_mmr),
         }
     }
 
@@ -55,7 +60,11 @@ impl EpochalState {
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
     /// block height and other fields.
     pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        // TODO actually insert into mmr
+        let manifest_hash = mf.blkid().as_ref();
+        self.manifest_mmr
+            .inner_mut()
+            .add_leaf(*manifest_hash)
+            .expect("MMR capacity exceeded");
         // FIXME make this conversion less weird
         self.last_l1_block = L1BlockCommitment::from_height_u64(height as u64, *mf.blkid())
             .expect("state: weird conversion")
@@ -85,5 +94,10 @@ impl EpochalState {
     /// Sets the total OL ledger balance.
     pub fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.total_ledger_funds = amt;
+    }
+
+    /// Gets the ASM manifests MMR.
+    pub fn asm_manifests_mmr(&self) -> &Mmr64 {
+        self.manifest_mmr.inner()
     }
 }

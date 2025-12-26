@@ -1,10 +1,12 @@
 //! Proof interface types.
 
+use ssz_derive::{Decode, Encode};
+
 use crate::{LedgerRefs, MessageEntry, ProofState, UpdateOutputs};
 
 /// Public params that we provide as the claim the proof must prove the relate
 /// to each other correctly.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct UpdateProofPubParams {
     /// Current state we're extending.
     cur_state: ProofState,
@@ -28,6 +30,24 @@ pub struct UpdateProofPubParams {
 }
 
 impl UpdateProofPubParams {
+    pub fn new(
+        cur_state: ProofState,
+        new_state: ProofState,
+        message_inputs: Vec<MessageEntry>,
+        ledger_refs: LedgerRefs,
+        outputs: UpdateOutputs,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            cur_state,
+            new_state,
+            message_inputs,
+            ledger_refs,
+            outputs,
+            extra_data,
+        }
+    }
+
     pub fn cur_state(&self) -> ProofState {
         self.cur_state.clone()
     }

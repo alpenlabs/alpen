@@ -14550,6 +14550,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-identifiers",
+ "strata-predicate",
  "strata-snark-acct-types",
 ]
 
@@ -14699,6 +14700,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-ol-state-types",
+ "strata-predicate",
  "strata-snark-acct-types",
  "tracing",
 ]
@@ -14709,6 +14711,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "ssz",
+ "ssz_derive",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
@@ -14716,14 +14719,16 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
+ "strata-predicate",
  "strata-snark-acct-types",
- "tree_hash 0.11.0",
 ]
 
 [[package]]
 name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
+ "ssz",
+ "ssz_primitives",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-manifest-types",
@@ -14736,8 +14741,11 @@ dependencies = [
  "strata-ol-da",
  "strata-ol-msg-types",
  "strata-ol-state-types",
+ "strata-predicate",
+ "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
+ "tree_hash 0.11.0",
 ]
 
 [[package]]
@@ -15091,6 +15099,17 @@ dependencies = [
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
+]
+
+[[package]]
+name = "strata-snark-acct-sys"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "strata-acct-types",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-snark-acct-types",
 ]
 
 [[package]]
