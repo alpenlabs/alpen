@@ -19,7 +19,7 @@ pub struct WithdrawalIntent {
 }
 
 impl WithdrawalIntent {
-    pub fn new(amt: BitcoinAmount, destination: Descriptor, withdrawal_txid: Buf32) -> Self {
+    pub const fn new(amt: BitcoinAmount, destination: Descriptor, withdrawal_txid: Buf32) -> Self {
         Self {
             amt,
             destination,
@@ -31,15 +31,15 @@ impl WithdrawalIntent {
         (self.amt.to_sat(), &self.destination)
     }
 
-    pub fn amt(&self) -> &BitcoinAmount {
+    pub const fn amt(&self) -> &BitcoinAmount {
         &self.amt
     }
 
-    pub fn destination(&self) -> &Descriptor {
+    pub const fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
-    pub fn withdrawal_txid(&self) -> &Buf32 {
+    pub const fn withdrawal_txid(&self) -> &Buf32 {
         &self.withdrawal_txid
     }
 }
@@ -53,7 +53,7 @@ pub struct WithdrawalBatch {
 
 impl WithdrawalBatch {
     /// Creates a new instance.
-    pub fn new(intents: Vec<WithdrawalIntent>) -> Self {
+    pub const fn new(intents: Vec<WithdrawalIntent>) -> Self {
         Self { intents }
     }
 
@@ -82,7 +82,7 @@ pub struct DepositIntent {
 }
 
 impl DepositIntent {
-    pub fn new(amt: BitcoinAmount, dest_ident: SubjectId) -> Self {
+    pub const fn new(amt: BitcoinAmount, dest_ident: SubjectId) -> Self {
         Self { amt, dest_ident }
     }
 
@@ -90,7 +90,7 @@ impl DepositIntent {
         self.amt.to_sat()
     }
 
-    pub fn dest_ident(&self) -> &SubjectId {
+    pub const fn dest_ident(&self) -> &SubjectId {
         &self.dest_ident
     }
 }
