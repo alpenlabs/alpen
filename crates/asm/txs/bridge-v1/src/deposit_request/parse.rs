@@ -48,6 +48,7 @@ pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, TxStructureErro
 #[cfg(test)]
 mod tests {
     use bitcoin::Transaction;
+    use strata_identifiers::{AccountSerial, SUBJ_ID_LEN};
     use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -59,7 +60,17 @@ mod tests {
         test_utils::{create_connected_drt_and_dt, create_test_operators, mutate_aux_data},
     };
 
-    const AUX_LEN: usize = std::mem::size_of::<DrtHeaderAux>();
+    /// Minimum encoded auxiliary data length in bytes.
+    ///
+    /// This is the size of the recovery public key (32 bytes) plus the size of
+    /// [`AccountSerial`] (4 bytes), when the subject bytes are empty.
+    const MIN_AUX_LEN: usize = 32 + std::mem::size_of::<AccountSerial>();
+
+    /// Maximum encoded auxiliary data length in bytes.
+    ///
+    /// This is [`MIN_AUX_LEN`] plus the maximum subject bytes length ([`SUBJ_ID_LEN`]),
+    /// representing the case where the subject identifier uses all 32 bytes.
+    const MAX_AUX_LEN: usize = MIN_AUX_LEN + SUBJ_ID_LEN;
 
     fn create_drt_tx_with_info() -> (DepositRequestInfo, Transaction) {
         let mut arb = ArbitraryGenerator::new();
@@ -102,7 +113,7 @@ mod tests {
     fn test_parse_invalid_aux() {
         let (_, mut tx) = create_drt_tx_with_info();
 
-        let larger_aux = [0u8; AUX_LEN + 1].to_vec();
+        let larger_aux = [0u8; MAX_AUX_LEN + 1].to_vec();
         mutate_aux_data(&mut tx, larger_aux);
 
         let err = parse_drt(&tx).unwrap_err();
@@ -112,7 +123,7 @@ mod tests {
             crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
 
-        let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
+        let smaller_aux = [0u8; MIN_AUX_LEN - 1].to_vec();
         mutate_aux_data(&mut tx, smaller_aux);
 
         let err = parse_drt(&tx).unwrap_err();

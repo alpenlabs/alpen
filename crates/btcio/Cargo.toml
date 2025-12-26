@@ -41,4 +41,3 @@ strata-status.workspace = true
 strata-test-utils.workspace = true
 strata-test-utils-l2.workspace = true
 strata-test-utils-btcio.workspace = true
-
