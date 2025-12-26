@@ -1,5 +1,6 @@
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
 use strata_codec::CodecError;
+use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::{Epoch, Slot};
 use thiserror::Error;
 
@@ -22,6 +23,12 @@ pub enum ExecError {
 
     #[error("condition in tx attachment failed")]
     TxConditionCheckFailed,
+
+    #[error("transaction has expired: max_slot={0}, current_slot={1}")]
+    TransactionExpired(Slot, Slot),
+
+    #[error("transaction is not mature: min_slot={0}, current_slot={1}")]
+    TransactionNotMature(Slot, Slot),
 
     /// For like if we'd be skipping blocks in validation somehow.
     #[error("chain integrity invalid")]
@@ -67,6 +74,9 @@ pub enum ExecError {
 
     #[error("insufficient account balance (acct {0}, need {1})")]
     InsufficientAccountBalance(AccountId, BitcoinAmount),
+
+    #[error("invalid sequence number for account {0} (expected {1}, actual {2})")]
+    InvalidSequenceNumber(AccountId, u64, u64),
 
     /// Various account errors.
     #[error("acct: {0}")]
