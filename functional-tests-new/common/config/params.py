@@ -88,6 +88,7 @@ class RollupParams:
     l1_reorg_safe_depth: int = field(default=6)
     target_l2_batch_size: int = field(default=64)
     deposit_amount: int = field(default=100000)
+    recovery_delay: int = field(default=1008)
     checkpoint_predicate: str = field(default="AlwaysAccept")
     dispatch_assignment_dur: int = field(default=144)
     proof_publish_mode: ProofPublishMode = field(default_factory=ProofPublishModeTimeout)

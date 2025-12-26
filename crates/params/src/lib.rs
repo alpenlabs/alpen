@@ -48,6 +48,10 @@ pub struct RollupParams {
     #[serde(with = "serde_amount_sat")]
     pub deposit_amount: Amount,
 
+    /// Number of blocks after Deposit Request Transaction that the depositor can reclaim funds if
+    /// operators fail to process the deposit.
+    pub recovery_delay: u32,
+
     /// Predicate to verify the validity of checkpoint
     pub checkpoint_predicate: PredicateKey,
 

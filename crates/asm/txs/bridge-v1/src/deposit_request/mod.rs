@@ -34,7 +34,7 @@
 //!
 //! The recovery public key in the OP_RETURN data is critical for user fund safety. It allows
 //! users to reclaim their Bitcoin if operators fail to process the deposit within the timeout
-//! period, maintaining the non-custodial property of the bridge.
+//! period.
 
 mod aux;
 mod info;

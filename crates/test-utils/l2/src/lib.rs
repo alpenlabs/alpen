@@ -116,6 +116,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
             l1_reorg_safe_depth: 3,
             target_l2_batch_size: 64,
             deposit_amount: Amount::from_sat(1_000_000_000),
+            recovery_delay: 10,
             checkpoint_predicate: PredicateKey::never_accept(),
             dispatch_assignment_dur: 64,
             proof_publish_mode: ProofPublishMode::Strict,
