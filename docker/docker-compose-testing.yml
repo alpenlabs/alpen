@@ -40,7 +40,7 @@ services:
     environment:
       JWTSECRET: "configs/jwt.fn.hex"
     command:
-      - "--sequencer-http"
+      - "--strata-client-http"
       - "http://alpen_reth:8545"
       # FIXME: datatool should not default to dev chain
       - "--custom-chain"

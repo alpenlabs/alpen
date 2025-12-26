@@ -45,7 +45,7 @@ fn main() {
             let datadir = builder.config().datadir().data_dir().to_path_buf();
 
             let node_args = AlpenNodeArgs {
-                sequencer_http: ext.sequencer_http.clone(),
+                strata_client_http: ext.strata_client_http.clone(),
             };
 
             let mut node_builder = builder.node(AlpenEthereumNode::new(node_args));
@@ -116,9 +116,9 @@ pub struct AdditionalConfig {
     #[arg(long, default_value_t = false)]
     pub enable_state_diff_gen: bool,
 
-    /// Rpc of sequencer's reth node to forward transactions to.
+    /// HTTP endpoint of the Strata client to forward transactions to.
     #[arg(long, required = false)]
-    pub sequencer_http: Option<String>,
+    pub strata_client_http: Option<String>,
 }
 
 /// Run node with logging

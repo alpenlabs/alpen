@@ -82,7 +82,7 @@ where
 
     fn add_ons(&self) -> Self::AddOns {
         Self::AddOns::builder()
-            .with_sequencer(self.args.sequencer_http.clone())
+            .with_sequencer(self.args.strata_client_http.clone())
             .build()
     }
 }

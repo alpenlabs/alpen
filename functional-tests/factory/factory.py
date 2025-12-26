@@ -335,7 +335,7 @@ class RethFactory(flexitest.Factory):
             )
 
         if sequencer_reth_rpc is not None:
-            cmd.extend(["--sequencer-http", sequencer_reth_rpc])
+            cmd.extend(["--strata-client-http", sequencer_reth_rpc])
 
         props = {"rpc_port": authrpc_port, "eth_rpc_http_port": ethrpc_http_port}
 

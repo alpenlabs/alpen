@@ -102,7 +102,7 @@ fn main() {
                 params,
                 CredRule::Unchecked,
                 ext.ol_client_http,
-                ext.sequencer_http,
+                ext.strata_client_http,
                 ext.db_retry_count,
             ));
 
@@ -354,9 +354,9 @@ pub struct AdditionalConfig {
     )]
     pub custom_chain: Arc<ChainSpec>,
 
-    /// Rpc of sequencer's reth node to forward transactions to.
+    /// HTTP endpoint of the Strata client to forward transactions to.
     #[arg(long, required = false)]
-    pub sequencer_http: Option<String>,
+    pub strata_client_http: Option<String>,
 
     /// Rpc of OL node.
     #[arg(long, required = true)]
