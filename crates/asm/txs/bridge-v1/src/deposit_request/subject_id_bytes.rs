@@ -56,12 +56,12 @@ impl SubjectIdBytes {
     }
 
     /// Returns the length of the subject bytes.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns true if the subject bytes are empty.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
