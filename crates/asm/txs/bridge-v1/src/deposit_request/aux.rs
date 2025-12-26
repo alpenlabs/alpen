@@ -81,6 +81,11 @@ impl DrtHeaderAux {
     }
 }
 
+/// Manual `Codec` implementation required to minimize onchain cost.
+///
+/// Since `dest_subject` has variable length and is the last field, we can save bytes
+/// by not encoding its length explicitly—instead reading all remaining bytes during
+/// decoding after the fixed-size fields (`recovery_pk` and `dest_acct_serial`).
 impl Codec for DrtHeaderAux {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         enc.write_buf(&self.recovery_pk)?;
