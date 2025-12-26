@@ -1,5 +1,6 @@
 use std::fmt;
 
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
@@ -153,10 +154,13 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
     Hash,
     Decode,
     Encode,
+    Serialize,
+    Deserialize,
+    Arbitrary,
     BorshSerialize,
     BorshDeserialize,
 )]
-pub struct SubjectId(RawSubjectId);
+pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 

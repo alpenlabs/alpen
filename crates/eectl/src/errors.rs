@@ -1,4 +1,5 @@
 use strata_db_types::DbError;
+use strata_identifiers::SubjectId;
 use strata_primitives::l2::L2BlockCommitment;
 use thiserror::Error;
 
@@ -13,7 +14,7 @@ pub enum EngineError {
     AmountConversion(u64),
 
     #[error("invalid address {0:?}")]
-    InvalidAddress(Vec<u8>),
+    InvalidAddress(SubjectId),
 
     #[error("db: {0}")]
     Db(#[from] DbError),

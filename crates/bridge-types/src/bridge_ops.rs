@@ -2,6 +2,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_identifiers::SubjectId;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
 
 /// Describes an intent to withdraw that hasn't been dispatched yet.
@@ -75,13 +76,13 @@ pub struct DepositIntent {
     /// Quantity in the L1 asset, for Bitcoin this is sats.
     amt: BitcoinAmount,
 
-    /// Description of the encoded address. For EVM this is the 20-byte
-    /// address.
-    dest_ident: Vec<u8>,
+    /// Destination subject identifier within the execution environment.
+    /// For EVM, the first 20 bytes hold the address and the remaining bytes must be zero.
+    dest_ident: SubjectId,
 }
 
 impl DepositIntent {
-    pub fn new(amt: BitcoinAmount, dest_ident: Vec<u8>) -> Self {
+    pub fn new(amt: BitcoinAmount, dest_ident: SubjectId) -> Self {
         Self { amt, dest_ident }
     }
 
@@ -89,7 +90,7 @@ impl DepositIntent {
         self.amt.to_sat()
     }
 
-    pub fn dest_ident(&self) -> &[u8] {
+    pub fn dest_ident(&self) -> &SubjectId {
         &self.dest_ident
     }
 }
