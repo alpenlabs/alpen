@@ -51,10 +51,12 @@ pub(crate) fn make_chain_status(finalized: OLBlockCommitment) -> OLChainStatus {
 pub(crate) fn make_block_data(
     block: OLBlockCommitment,
     messages: Vec<MessageEntry>,
+    next_inbox_msg_idx: u64,
 ) -> OLBlockData {
     OLBlockData {
         commitment: block,
         inbox_messages: messages,
+        next_inbox_msg_idx,
     }
 }
 
@@ -73,12 +75,16 @@ pub(crate) fn create_ol_block_chain(base_slot: u64, count: usize) -> Vec<OLBlock
 
 /// Creates OLBlockData for each block in the chain.
 /// Each block gets one message with value = slot * 100.
-pub(crate) fn create_block_data_chain(blocks: &[OLBlockCommitment]) -> Vec<OLBlockData> {
+pub(crate) fn create_block_data_chain(
+    blocks: &[OLBlockCommitment],
+    next_inbox_msg_idx: u64,
+) -> Vec<OLBlockData> {
     blocks
         .iter()
-        .map(|block| {
+        .enumerate()
+        .map(|(idx, block)| {
             let msg = make_message(block.slot() * 100);
-            make_block_data(*block, vec![msg])
+            make_block_data(*block, vec![msg], next_inbox_msg_idx + idx as u64 + 1)
         })
         .collect()
 }
@@ -103,5 +109,6 @@ pub(crate) fn create_mock_exec_record(ol_block: OLBlockCommitment) -> ExecBlockR
         ol_block,
         1_000_000,
         Hash::default(),
+        0,
     )
 }

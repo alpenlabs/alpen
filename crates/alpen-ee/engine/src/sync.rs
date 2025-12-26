@@ -484,6 +484,7 @@ mod tests {
             ol_block,
             timestamp_ms,
             parent_hash,
+            0,
         )
     }
 

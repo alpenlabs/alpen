@@ -219,6 +219,7 @@ mod tests {
             ol_block,
             0,
             parent_blockhash,
+            0,
         )
     }
 
