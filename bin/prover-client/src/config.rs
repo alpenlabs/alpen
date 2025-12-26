@@ -55,9 +55,13 @@ pub(crate) struct ProverConfig {
     #[serde(default)]
     pub(crate) retry: RetryConfig,
 
-    /// Feature flags.  
+    /// Feature flags.
     #[serde(default)]
     pub(crate) features: FeatureConfig,
+
+    /// Logging configuration.
+    #[serde(default)]
+    pub(crate) logging: LoggingConfig,
 }
 
 /// RPC configuration for the prover client.
@@ -120,6 +124,25 @@ pub(crate) struct FeatureConfig {
     /// Enable checkpoint proof runner.
     #[serde(default = "default_values::enable_checkpoint_runner")]
     pub(crate) enable_checkpoint_runner: bool,
+}
+
+/// Logging configuration for the prover client.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct LoggingConfig {
+    /// Service label to append to the service name (e.g., "prod", "dev").
+    pub(crate) service_label: Option<String>,
+
+    /// OpenTelemetry OTLP endpoint URL for distributed tracing.
+    pub(crate) otlp_url: Option<String>,
+
+    /// Directory path for file-based logging.
+    pub(crate) log_dir: Option<PathBuf>,
+
+    /// Prefix for log file names (defaults to "strata-prover-client" if not set).
+    pub(crate) log_file_prefix: Option<String>,
+
+    /// Use JSON format for logs instead of compact format.
+    pub(crate) json_format: Option<bool>,
 }
 
 /// Default value functions to make [`serde`] happy and make the [`super`] code mess easy to read.

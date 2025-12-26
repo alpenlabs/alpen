@@ -29,9 +29,13 @@ pub(crate) struct NodeContext {
     pub status_channel: Arc<StatusChannel>,
 }
 
+/// Load config early for logging initialization
+pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
+    get_config(args.clone())
+}
+
 /// Initialize runtime, database, etc.
-pub(crate) fn init_node_context(args: Args) -> Result<NodeContext, InitError> {
-    let config = get_config(args.clone())?;
+pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContext, InitError> {
     let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()

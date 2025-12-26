@@ -100,6 +100,30 @@ pub struct ExecConfig {
     pub reth: RethELConfig,
 }
 
+/// Logging configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LoggingConfig {
+    /// Service label to append to the service name (e.g., "prod", "dev").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_label: Option<String>,
+
+    /// OpenTelemetry OTLP endpoint URL for distributed tracing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub otlp_url: Option<String>,
+
+    /// Directory path for file-based logging.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_dir: Option<PathBuf>,
+
+    /// Prefix for log file names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_file_prefix: Option<String>,
+
+    /// Use JSON format for logs instead of compact format.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_format: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub client: ClientConfig,
@@ -107,6 +131,10 @@ pub struct Config {
     pub btcio: BtcioConfig,
     pub sync: SyncConfig,
     pub exec: ExecConfig,
+
+    /// Logging configuration (optional section in TOML).
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 #[cfg(test)]

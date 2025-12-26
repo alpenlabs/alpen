@@ -44,9 +44,22 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn main_inner(args: Args) -> anyhow::Result<()> {
-    logging::init(logging::LoggerConfig::with_base_name(
-        "strata-prover-client",
-    ));
+    let base_config = if let Some(config_path) = &args.config {
+        config::ProverConfig::from_file(config_path)?
+    } else {
+        config::ProverConfig::default()
+    };
+
+    // Initialize logging using common service
+    logging::init_logging_from_config(logging::LoggingInitConfig {
+        service_base_name: "strata-prover-client",
+        service_label: base_config.logging.service_label.as_deref(),
+        otlp_url: base_config.logging.otlp_url.as_deref(),
+        log_dir: base_config.logging.log_dir.as_ref(),
+        log_file_prefix: base_config.logging.log_file_prefix.as_deref(),
+        json_format: base_config.logging.json_format,
+        default_log_prefix: "alpen",
+    });
 
     // Resolve configuration from TOML file and CLI arguments
     let config = args

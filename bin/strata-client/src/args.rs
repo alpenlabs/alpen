@@ -185,6 +185,7 @@ mod test {
                 l1_follow_distance: 1,
                 client_checkpoint_interval: 2,
             },
+            logging: Default::default(),
         }
     }
 

@@ -4,10 +4,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
-use strata_common::{
-    logging,
-    logging::{LoggerConfig, get_otlp_url_from_env},
-};
+use strata_common::logging;
 use strata_db_types as _;
 use tokio::runtime::Handle;
 use tracing::info;
@@ -29,11 +26,15 @@ mod services;
 fn main() -> Result<()> {
     let args: Args = from_env();
 
-    // Validate params, configs and create node context.
-    let nodectx =
-        init_node_context(args).map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
+    // Load config early to initialize logging with config settings
+    let config = context::load_config_early(&args)
+        .map_err(|e| anyhow!("Failed to load configuration: {e}"))?;
 
-    init_logging(nodectx.executor.handle());
+    // Validate params, configs and create node context.
+    let nodectx = init_node_context(args, config.clone())
+        .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
+
+    init_logging(nodectx.executor.handle(), &config);
 
     do_startup_checks(&nodectx)?;
 
@@ -57,20 +58,16 @@ fn do_startup_checks(_ctx: &NodeContext) -> Result<()> {
     Ok(())
 }
 
-fn init_logging(rt: &Handle) {
-    let mut lconfig = LoggerConfig::with_base_name("strata-client");
-
-    let otlp_url = get_otlp_url_from_env();
-    if let Some(url) = &otlp_url {
-        lconfig.set_otlp_url(url.clone());
-    }
-
-    {
-        let _g = rt.enter();
-        logging::init(lconfig);
-    }
-
-    if let Some(url) = &otlp_url {
-        info!(%url, "using OpenTelemetry tracing output");
-    }
+fn init_logging(rt: &Handle, config: &strata_config::Config) {
+    // Need to set the runtime context for async OTLP setup
+    let _g = rt.enter();
+    logging::init_logging_from_config(logging::LoggingInitConfig {
+        service_base_name: "strata-client",
+        service_label: config.logging.service_label.as_deref(),
+        otlp_url: config.logging.otlp_url.as_deref(),
+        log_dir: config.logging.log_dir.as_ref(),
+        log_file_prefix: config.logging.log_file_prefix.as_deref(),
+        json_format: config.logging.json_format,
+        default_log_prefix: "alpen",
+    });
 }

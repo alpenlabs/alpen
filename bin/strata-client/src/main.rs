@@ -95,7 +95,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     //strata_tasks::set_panic_hook(); // only if necessary for troubleshooting
     let executor = task_manager.create_executor();
 
-    init_logging(executor.handle());
+    init_logging(executor.handle(), &config);
 
     // Init thread pool for batch jobs.
     // TODO switch to num_cpus
@@ -192,25 +192,18 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
 /// Sets up the logging system given a handle to a runtime context to possibly
 /// start the OTLP output on.
-fn init_logging(rt: &Handle) {
-    let mut lconfig = logging::LoggerConfig::with_base_name("strata-client");
-
-    // Set the OpenTelemetry URL if set.
-    let otlp_url = logging::get_otlp_url_from_env();
-    if let Some(url) = &otlp_url {
-        lconfig.set_otlp_url(url.clone());
-    }
-
-    {
-        // Need to set the runtime context because of nonsense.
-        let _g = rt.enter();
-        logging::init(lconfig);
-    }
-
-    // Have to log this after we start the logging formally.
-    if let Some(url) = &otlp_url {
-        info!(%url, "using OpenTelemetry tracing output");
-    }
+fn init_logging(rt: &Handle, config: &Config) {
+    // Need to set the runtime context for async OTLP setup
+    let _g = rt.enter();
+    logging::init_logging_from_config(logging::LoggingInitConfig {
+        service_base_name: "strata-client",
+        service_label: config.logging.service_label.as_deref(),
+        otlp_url: config.logging.otlp_url.as_deref(),
+        log_dir: config.logging.log_dir.as_ref(),
+        log_file_prefix: config.logging.log_file_prefix.as_deref(),
+        json_format: config.logging.json_format,
+        default_log_prefix: "strata-client",
+    });
 }
 
 /// Shared low-level services that secondary services depend on.
