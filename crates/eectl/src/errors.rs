@@ -13,7 +13,7 @@ pub enum EngineError {
     #[error("amount conversion sats: {0}")]
     AmountConversion(u64),
 
-    #[error("invalid address {0:?}")]
+    #[error("invalid address {0}")]
     InvalidAddress(SubjectId),
 
     #[error("db: {0}")]
