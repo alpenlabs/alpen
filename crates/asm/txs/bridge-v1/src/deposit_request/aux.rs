@@ -48,16 +48,16 @@ impl DrtHeaderAux {
     }
 
     /// Returns the recovery public key
-    pub fn recovery_pk(&self) -> &[u8; 32] {
+    pub const fn recovery_pk(&self) -> &[u8; 32] {
         &self.recovery_pk
     }
 
     /// Returns the execution environment address
-    pub fn dest_acct_serial(&self) -> &AccountSerial {
+    pub const fn dest_acct_serial(&self) -> &AccountSerial {
         &self.dest_acct_serial
     }
 
-    pub fn dest_subject(&self) -> &SubjectBytes {
+    pub const fn dest_subject(&self) -> &SubjectBytes {
         &self.dest_subject
     }
 
