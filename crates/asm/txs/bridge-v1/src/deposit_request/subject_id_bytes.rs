@@ -18,9 +18,9 @@ pub enum SubjectBytesError {
 /// practice many subject IDs are shorter. This type stores the variable-length byte representation
 /// to optimize DA costs by avoiding unnecessary zero padding in the on-chain deposit descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubjectBytes(Vec<u8>);
+pub struct SubjectIdBytes(Vec<u8>);
 
-impl SubjectBytes {
+impl SubjectIdBytes {
     /// Creates a new `SubjectBytes` instance from a byte vector.
     ///
     /// # Errors
@@ -71,7 +71,7 @@ impl SubjectBytes {
     }
 }
 
-impl<'a> Arbitrary<'a> for SubjectBytes {
+impl<'a> Arbitrary<'a> for SubjectIdBytes {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // Generate bytes with length between 0 and SUBJ_ID_LEN
         let len = u.int_in_range(0..=SUBJ_ID_LEN)?;
@@ -91,7 +91,7 @@ mod tests {
     proptest! {
         #[test]
         fn prop_accepts_valid_length(bytes in prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)) {
-            let result = SubjectBytes::try_new(bytes.clone());
+            let result = SubjectIdBytes::try_new(bytes.clone());
             prop_assert!(result.is_ok());
             let sb = result.unwrap();
             prop_assert_eq!(sb.as_bytes(), &bytes[..]);
@@ -104,7 +104,7 @@ mod tests {
             bytes in prop::collection::vec(any::<u8>(), (SUBJ_ID_LEN + 1)..=(SUBJ_ID_LEN + 100))
         ) {
             let len = bytes.len();
-            let result = SubjectBytes::try_new(bytes);
+            let result = SubjectIdBytes::try_new(bytes);
             prop_assert!(result.is_err());
             prop_assert!(matches!(result, Err(SubjectBytesError::TooLong(actual, expected))
                 if actual == len && expected == SUBJ_ID_LEN));
@@ -112,7 +112,7 @@ mod tests {
 
         #[test]
         fn prop_to_subject_id_preserves_and_pads(bytes in prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)) {
-            let sb = SubjectBytes::try_new(bytes.clone()).unwrap();
+            let sb = SubjectIdBytes::try_new(bytes.clone()).unwrap();
             let subject_id = sb.to_subject_id();
             let inner = subject_id.inner();
 

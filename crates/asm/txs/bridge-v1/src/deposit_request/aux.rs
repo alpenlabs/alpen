@@ -7,7 +7,7 @@ use strata_l1_txfmt::TagData;
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType},
-    deposit_request::SubjectBytes,
+    deposit_request::SubjectIdBytes,
 };
 
 /// Auxiliary data in the SPS-50 header for [`BridgeTxType::DepositRequest`].
@@ -26,7 +26,7 @@ pub struct DrtHeaderAux {
     /// [`SubjectId`](`strata_identifiers::SubjectId`) within the destination account.
     ///
     /// We use [`SubjectBytes`] instead of `SubjectId` to minimize onchain cost.
-    dest_subject: SubjectBytes,
+    dest_subject: SubjectIdBytes,
 }
 
 impl DrtHeaderAux {
@@ -38,7 +38,7 @@ impl DrtHeaderAux {
     pub fn new(
         recovery_pk: [u8; 32],
         dest_acct_serial: AccountSerial,
-        dest_subject: SubjectBytes,
+        dest_subject: SubjectIdBytes,
     ) -> Self {
         Self {
             recovery_pk,
@@ -57,7 +57,7 @@ impl DrtHeaderAux {
         &self.dest_acct_serial
     }
 
-    pub const fn dest_subject(&self) -> &SubjectBytes {
+    pub const fn dest_subject(&self) -> &SubjectIdBytes {
         &self.dest_subject
     }
 
@@ -106,7 +106,7 @@ impl Codec for DrtHeaderAux {
         while let Ok(byte) = dec.read_arr::<1>() {
             dest_subject_bytes.push(byte[0]);
         }
-        let dest_subject = SubjectBytes::try_new(dest_subject_bytes)
+        let dest_subject = SubjectIdBytes::try_new(dest_subject_bytes)
             .map_err(|_| CodecError::MalformedField("dest subject"))?;
 
         Ok(Self {
@@ -143,9 +143,9 @@ mod tests {
         any::<u32>().prop_map(AccountSerial::new)
     }
 
-    fn subject_bytes() -> impl Strategy<Value = SubjectBytes> {
+    fn subject_bytes() -> impl Strategy<Value = SubjectIdBytes> {
         prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)
-            .prop_map(|bytes| SubjectBytes::try_new(bytes).expect("length is within bounds"))
+            .prop_map(|bytes| SubjectIdBytes::try_new(bytes).expect("length is within bounds"))
     }
 
     proptest! {
