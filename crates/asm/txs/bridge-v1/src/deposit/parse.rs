@@ -85,11 +85,17 @@ mod tests {
         let drt_header_aux: DrtHeaderAux = arb.generate();
         let deposit_idx: u32 = arb.generate();
         let amount = BitcoinAmount::from_sat(100_000);
+        let recovery_delay = 5;
 
         let (sks, _) = create_test_operators(3);
         let dt_aux = DepositTxHeaderAux::new(deposit_idx);
-        let (drt, dt) =
-            create_connected_drt_and_dt(&drt_header_aux, dt_aux.clone(), amount.into(), &sks);
+        let (drt, dt) = create_connected_drt_and_dt(
+            &drt_header_aux,
+            dt_aux.clone(),
+            amount.into(),
+            recovery_delay,
+            &sks,
+        );
         let nn_key = create_agg_pubkey_from_privkeys(&sks);
 
         let drt_inpoint = OutPoint::new(drt.compute_txid(), DRT_OUTPUT_INDEX as u32);

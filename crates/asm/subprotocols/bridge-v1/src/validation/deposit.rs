@@ -3,7 +3,6 @@ use strata_asm_txs_bridge_v1::{
     deposit_request::{DepositRequestInfo, create_deposit_request_locking_script},
     errors::Mismatch,
 };
-use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{errors::DepositValidationError, state::BridgeV1State};
 
@@ -30,7 +29,7 @@ pub(crate) fn validate_deposit_info(
     let expected_drt_script = create_deposit_request_locking_script(
         drt_info.header_aux().recovery_pk(),
         state.operators().agg_key().to_xonly_public_key(),
-        RECOVER_DELAY,
+        state.recovery_delay(),
     );
     let actual_script = &drt_info.deposit_request_output().inner().script_pubkey;
 
@@ -60,7 +59,6 @@ mod tests {
         deposit_request::{DepositRequestInfo, create_deposit_request_locking_script, parse_drt},
     };
     use strata_btc_types::BitcoinAmount;
-    use strata_primitives::constants::RECOVER_DELAY;
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{
@@ -80,7 +78,12 @@ mod tests {
     fn test_validate_deposit_tx_success() {
         let (state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (aux, info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let (aux, info) = setup_deposit_test(
+            &drt_aux,
+            *state.denomination(),
+            state.recovery_delay(),
+            &operators,
+        );
         let drt_info = drt_info_from_aux(&info, &aux);
 
         validate_deposit_info(&state, &info, &drt_info)
@@ -91,7 +94,12 @@ mod tests {
     fn test_old_deposit_tx() {
         let (mut state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (aux, info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let (aux, info) = setup_deposit_test(
+            &drt_aux,
+            *state.denomination(),
+            state.recovery_delay(),
+            &operators,
+        );
         let drt_info = drt_info_from_aux(&info, &aux);
 
         let old_script = state.operators().current_nn_script().clone();
@@ -111,7 +119,12 @@ mod tests {
     fn test_old_signing_set() {
         let (mut state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (aux, mut info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let (aux, mut info) = setup_deposit_test(
+            &drt_aux,
+            *state.denomination(),
+            state.recovery_delay(),
+            &operators,
+        );
         let drt_info = drt_info_from_aux(&info, &aux);
 
         let old_agg_key = *state.operators().agg_key();
@@ -130,12 +143,12 @@ mod tests {
         let new_valid_script = create_deposit_request_locking_script(
             drt_aux.recovery_pk(),
             new_agg_key.to_xonly_public_key(),
-            RECOVER_DELAY,
+            state.recovery_delay(),
         );
         let old_valid_script = create_deposit_request_locking_script(
             drt_aux.recovery_pk(),
             old_agg_key.to_xonly_public_key(),
-            RECOVER_DELAY,
+            state.recovery_delay(),
         );
         assert_eq!(mismatch.expected, new_valid_script);
         assert_eq!(mismatch.got, old_valid_script);
@@ -145,7 +158,12 @@ mod tests {
     fn test_invalid_deposit_amount() {
         let (state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
-        let (aux, mut info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let (aux, mut info) = setup_deposit_test(
+            &drt_aux,
+            *state.denomination(),
+            state.recovery_delay(),
+            &operators,
+        );
         let drt_info = drt_info_from_aux(&info, &aux);
 
         let actual_amt = info.amt();
