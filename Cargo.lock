@@ -13982,6 +13982,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
  "serde",
+ "sha2",
  "strata-primitives",
 ]
 
@@ -14587,6 +14588,7 @@ dependencies = [
  "anyhow",
  "strata-common",
  "strata-db-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
@@ -14651,6 +14653,7 @@ dependencies = [
  "strata-bridge-types",
  "strata-db-types",
  "strata-eectl",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -15062,6 +15065,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-bridge-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
@@ -15351,6 +15355,7 @@ dependencies = [
  "strata-asm-stf",
  "strata-bridge-types",
  "strata-csm-types",
+ "strata-identifiers",
  "strata-primitives",
 ]
 

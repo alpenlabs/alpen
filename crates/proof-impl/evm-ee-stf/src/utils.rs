@@ -1,4 +1,6 @@
+use revm_primitives::Address;
 use strata_bridge_types::WithdrawalIntent;
+use strata_identifiers::{SubjectId, SUBJ_ID_LEN};
 use strata_ol_chain_types::ExecSegment;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload, l1::BitcoinAmount};
 use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateInput, UpdateOutput};
@@ -27,7 +29,7 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
             Op::Deposit(ELDepositData::new(
                 request.index,
                 gwei_to_sats(request.amount),
-                request.address.as_slice().to_vec(),
+                address_to_subject(request.address),
             ))
         })
         .collect::<Vec<_>>();
@@ -50,4 +52,12 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
 const fn gwei_to_sats(gwei: u64) -> u64 {
     // 1 BTC = 10^8 sats = 10^9 gwei
     gwei / 10
+}
+
+const EVM_ADDR_LEN: usize = 20;
+
+fn address_to_subject(address: Address) -> SubjectId {
+    let mut buf = [0u8; SUBJ_ID_LEN];
+    buf[..EVM_ADDR_LEN].copy_from_slice(address.as_slice());
+    SubjectId::new(buf)
 }

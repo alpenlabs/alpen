@@ -12,7 +12,7 @@ pub struct DepositLog {
     pub ee_id: AccountSerial,
     /// Amount in satoshis.
     pub amount: u64,
-    /// Serialized address for the operation.
+    /// Destination subject identifier for the operation.
     pub addr: SubjectId,
 }
 

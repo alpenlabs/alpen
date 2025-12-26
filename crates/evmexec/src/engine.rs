@@ -18,6 +18,7 @@ use strata_eectl::{
     errors::{EngineError, EngineResult},
     messages::{ExecPayloadData, PayloadEnv},
 };
+use strata_identifiers::{SubjectId, SUBJ_ID_LEN};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l1::BitcoinAmount;
 use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput};
@@ -31,9 +32,22 @@ use crate::{
     http_client::EngineRpc,
 };
 
-fn address_from_slice(slice: &[u8]) -> Option<Address> {
-    let slice: Option<[u8; 20]> = slice.try_into().ok();
-    slice.map(Address::from)
+const EVM_ADDR_LEN: usize = 20;
+
+fn subject_to_address(subject: &SubjectId) -> Option<Address> {
+    let bytes = subject.inner();
+    if bytes[EVM_ADDR_LEN..].iter().any(|&byte| byte != 0) {
+        return None;
+    }
+    let mut address_bytes = [0u8; EVM_ADDR_LEN];
+    address_bytes.copy_from_slice(&bytes[..EVM_ADDR_LEN]);
+    Some(Address::from(address_bytes))
+}
+
+fn address_to_subject(address: Address) -> SubjectId {
+    let mut buf = [0u8; SUBJ_ID_LEN];
+    buf[0..EVM_ADDR_LEN].copy_from_slice(address.as_slice());
+    SubjectId::new(buf)
 }
 
 fn sats_to_gwei(sats: u64) -> Option<u64> {
@@ -121,9 +135,8 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             .map(|op| match op {
                 Op::Deposit(deposit_data) => Ok(Withdrawal {
                     index: deposit_data.intent_idx(),
-                    address: address_from_slice(deposit_data.dest_addr()).ok_or_else(|| {
-                        EngineError::InvalidAddress(deposit_data.dest_addr().to_vec())
-                    })?,
+                    address: subject_to_address(deposit_data.dest_addr())
+                        .ok_or_else(|| EngineError::InvalidAddress(*deposit_data.dest_addr()))?,
                     amount: sats_to_gwei(deposit_data.amt())
                         .ok_or(EngineError::AmountConversion(deposit_data.amt()))?,
                     ..Default::default()
@@ -182,7 +195,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
                 Op::Deposit(ELDepositData::new(
                     withdrawal.index,
                     gwei_to_sats(withdrawal.amount),
-                    withdrawal.address.as_slice().to_vec(),
+                    address_to_subject(withdrawal.address),
                 ))
             })
             .collect::<Vec<_>>();
@@ -226,12 +239,16 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             .ops()
             .iter()
             .filter_map(|op| match op {
-                Op::Deposit(deposit_data) => Some(Withdrawal {
-                    index: deposit_data.intent_idx(),
-                    address: address_from_slice(deposit_data.dest_addr())?,
-                    amount: sats_to_gwei(deposit_data.amt())?,
-                    validator_index: 0,
-                }),
+                Op::Deposit(deposit_data) => {
+                    let address = subject_to_address(deposit_data.dest_addr())?;
+                    let amount = sats_to_gwei(deposit_data.amt())?;
+                    Some(Withdrawal {
+                        index: deposit_data.intent_idx(),
+                        address,
+                        amount,
+                        validator_index: 0,
+                    })
+                }
             })
             .collect();
 
@@ -672,5 +689,14 @@ mod tests {
         let result = rpc_exec_engine_inner.submit_new_payload(payload_data).await;
 
         assert!(matches!(result, EngineResult::Ok(BlockStatus::Valid)));
+    }
+
+    #[test]
+    fn test_address_to_subject_to_address_roundtrip() {
+        let original_address = Address::random();
+        let subject = address_to_subject(original_address);
+        let recovered_address =
+            subject_to_address(&subject).expect("subject should be EVM address-compatible");
+        assert_eq!(original_address, recovered_address);
     }
 }
