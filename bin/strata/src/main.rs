@@ -4,10 +4,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
-use strata_common::{
-    logging,
-    logging::{LoggerConfig, get_otlp_url_from_env},
-};
+use strata_common::logging;
 use strata_db_types as _;
 use tokio::runtime::Handle;
 use tracing::info;
