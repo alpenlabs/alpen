@@ -41,17 +41,18 @@ impl SubjectIdBytes {
     /// Converts to a canonical [`SUBJ_ID_LEN`]-byte [`SubjectId`].
     ///
     /// This method allocates a [`SUBJ_ID_LEN`]-byte buffer and zero-pads the stored subject bytes.
-    /// The original bytes are copied to the beginning of the buffer, with any remaining
-    /// bytes filled with zeros.
+    /// The original bytes are copied to the end of the buffer, with any remaining
+    /// bytes filled with zeros at the beginning.
     ///
     /// # Example
     ///
     /// If the stored bytes are shorter than [`SUBJ_ID_LEN`], such as `[0xAA, 0xBB, ..., 0xFF]`,
-    /// this method returns a [`SUBJ_ID_LEN`]-byte `SubjectId` with the bytes at the start and
-    /// trailing zeros: `[0xAA, 0xBB, ..., 0xFF, 0x00, 0x00, ..., 0x00]`.
+    /// this method returns a [`SUBJ_ID_LEN`]-byte `SubjectId` with leading zeros and the bytes
+    /// at the end: `[0x00, 0x00, ..., 0x00, 0xAA, 0xBB, ..., 0xFF]`.
     pub fn to_subject_id(&self) -> SubjectId {
         let mut buf = [0u8; SUBJ_ID_LEN];
-        buf[..self.0.len()].copy_from_slice(&self.0);
+        let start = SUBJ_ID_LEN - self.0.len();
+        buf[start..].copy_from_slice(&self.0);
         SubjectId::new(buf)
     }
 
@@ -116,11 +117,13 @@ mod tests {
             let subject_id = sb.to_subject_id();
             let inner = subject_id.inner();
 
-            // Original bytes should be preserved at the start
-            prop_assert_eq!(&inner[..bytes.len()], &bytes[..]);
+            let start = SUBJ_ID_LEN - bytes.len();
 
-            // Remaining bytes should be zeros (padding)
-            for &byte in &inner[bytes.len()..] {
+            // Original bytes should be preserved at the end
+            prop_assert_eq!(&inner[start..], &bytes[..]);
+
+            // Leading bytes should be zeros (padding)
+            for &byte in &inner[..start] {
                 prop_assert_eq!(byte, 0);
             }
 
