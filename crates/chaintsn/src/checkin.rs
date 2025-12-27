@@ -166,8 +166,8 @@ fn process_l1_deposit<'s, S: StateAccessor>(
     deposit: DepositLog,
 ) -> Result<(), OpError> {
     let amt = BitcoinAmount::from_sat(deposit.amount);
-    let dest_ident = deposit.addr.to_vec();
+    let dest_ident = deposit.addr;
     let intent = DepositIntent::new(amt, dest_ident);
-    state.insert_deposit_intent(0, intent);
+    state.insert_deposit_intent(deposit.ee_id, intent);
     Ok(())
 }

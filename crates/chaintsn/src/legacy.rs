@@ -1,7 +1,7 @@
 //! Legacy routines extracted from `StateCache`.
 
 use strata_bridge_types::DepositIntent;
-use strata_identifiers::L1BlockCommitment;
+use strata_identifiers::{AccountSerial, L1BlockCommitment};
 use strata_ol_chainstate_types::Chainstate;
 
 use crate::context::StateAccessor;
@@ -38,8 +38,12 @@ impl<'s, S: StateAccessor> FauxStateCache<'s, S> {
     }
 
     /// Writes a deposit intent into an execution environment's input queue.
-    pub fn insert_deposit_intent(&mut self, ee_id: u32, intent: DepositIntent) {
-        assert_eq!(ee_id, 0, "stateop: only support execution env 0 right now");
+    pub fn insert_deposit_intent(&mut self, ee_id: AccountSerial, intent: DepositIntent) {
+        assert_eq!(
+            ee_id,
+            AccountSerial::zero(),
+            "stateop: only support execution env 0 right now"
+        );
         self.state_mut()
             .exec_env_state_mut()
             .pending_deposits

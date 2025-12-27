@@ -1,7 +1,6 @@
-use strata_asm_common::VerifiedAuxData;
 use strata_asm_txs_bridge_v1::{
     deposit::DepositInfo,
-    deposit_request::{create_deposit_request_locking_script, parse_drt},
+    deposit_request::{DepositRequestInfo, create_deposit_request_locking_script},
     errors::Mismatch,
 };
 use strata_primitives::constants::RECOVER_DELAY;
@@ -15,16 +14,11 @@ use crate::{errors::DepositValidationError, state::BridgeV1State};
 /// 2. The associated Deposit Request Transaction (DRT) output script matches the expected lock
 ///    script derived from the bridge configuration.
 /// 3. The deposit amount equals the bridge’s configured denomination.
-///
-/// Auxiliary data must provide the DRT needed for these inspections.
 pub(crate) fn validate_deposit_info(
     state: &BridgeV1State,
     info: &DepositInfo,
-    verified_aux_data: &VerifiedAuxData,
+    drt_info: &DepositRequestInfo,
 ) -> Result<(), DepositValidationError> {
-    let drt_tx = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
-    let drt_info = parse_drt(drt_tx).unwrap();
-
     let expected_script = state.operators().current_nn_script();
     if info.locked_script() != expected_script {
         return Err(DepositValidationError::WrongOutputLock(Mismatch {
@@ -60,7 +54,11 @@ pub(crate) fn validate_deposit_info(
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_txs_bridge_v1::deposit_request::create_deposit_request_locking_script;
+    use strata_asm_common::VerifiedAuxData;
+    use strata_asm_txs_bridge_v1::{
+        deposit::DepositInfo,
+        deposit_request::{DepositRequestInfo, create_deposit_request_locking_script, parse_drt},
+    };
     use strata_btc_types::BitcoinAmount;
     use strata_primitives::constants::RECOVER_DELAY;
     use strata_test_utils::ArbitraryGenerator;
@@ -71,13 +69,21 @@ mod tests {
         validation::validate_deposit_info,
     };
 
+    fn drt_info_from_aux(info: &DepositInfo, aux: &VerifiedAuxData) -> DepositRequestInfo {
+        let drt_tx = aux
+            .get_bitcoin_tx(info.drt_inpoint().txid)
+            .expect("DRT should be present in aux data");
+        parse_drt(drt_tx).expect("should parse deposit request tx")
+    }
+
     #[test]
     fn test_validate_deposit_tx_success() {
         let (state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
         let (aux, info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let drt_info = drt_info_from_aux(&info, &aux);
 
-        validate_deposit_info(&state, &info, &aux)
+        validate_deposit_info(&state, &info, &drt_info)
             .expect("handling valid deposit tx should succeed");
     }
 
@@ -86,12 +92,13 @@ mod tests {
         let (mut state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
         let (aux, info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let drt_info = drt_info_from_aux(&info, &aux);
 
         let old_script = state.operators().current_nn_script().clone();
         state.remove_operator(1);
         let new_script = state.operators().current_nn_script().clone();
 
-        let err = validate_deposit_info(&state, &info, &aux).unwrap_err();
+        let err = validate_deposit_info(&state, &info, &drt_info).unwrap_err();
         let DepositValidationError::WrongOutputLock(mismatch) = err else {
             panic!("Expected WrongOutputLock, got: {:?}", err);
         };
@@ -105,6 +112,7 @@ mod tests {
         let (mut state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
         let (aux, mut info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let drt_info = drt_info_from_aux(&info, &aux);
 
         let old_agg_key = *state.operators().agg_key();
         state.remove_operator(1);
@@ -114,7 +122,7 @@ mod tests {
         let locked_script = state.operators().current_nn_script().clone();
         info.set_locked_script(locked_script);
 
-        let err = validate_deposit_info(&state, &info, &aux).unwrap_err();
+        let err = validate_deposit_info(&state, &info, &drt_info).unwrap_err();
         let DepositValidationError::DrtOutputScriptMismatch(mismatch) = err else {
             panic!("Expected DRTScriptMismatch, got: {:?}", err);
         };
@@ -138,12 +146,13 @@ mod tests {
         let (state, operators) = create_test_state();
         let drt_aux = ArbitraryGenerator::new().generate();
         let (aux, mut info) = setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let drt_info = drt_info_from_aux(&info, &aux);
 
         let actual_amt = info.amt();
         let modified_amt: BitcoinAmount = ArbitraryGenerator::new().generate();
         info.set_amt(modified_amt);
 
-        let err = validate_deposit_info(&state, &info, &aux).unwrap_err();
+        let err = validate_deposit_info(&state, &info, &drt_info).unwrap_err();
         let DepositValidationError::MismatchDepositAmount(mismatch) = err else {
             panic!("Expected MismatchDepositAmount, got: {:?}", err);
         };
