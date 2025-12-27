@@ -99,6 +99,7 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
     Ord,
     PartialOrd,
     Hash,
+    Arbitrary,
     Decode,
     Encode,
     BorshSerialize,
