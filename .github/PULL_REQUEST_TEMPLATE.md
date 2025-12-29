@@ -25,6 +25,13 @@ Anything in particular you want to note that will help reviewers fulfill their r
 in reviewing this PR?
 -->
 
+Is this PR addressing any specification, design doc or external reference document?
+
+- [ ]  Yes
+- [ ]  No
+
+If yes, please add relevant links:
+
 ## Checklist
 
 <!--
