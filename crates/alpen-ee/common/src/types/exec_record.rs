@@ -40,6 +40,7 @@ pub struct ExecBlockRecord {
 }
 
 impl ExecBlockRecord {
+    #[expect(clippy::too_many_arguments, reason = "need them")]
     pub fn new(
         package: ExecBlockPackage,
         account_state: EeAccountState,
@@ -48,12 +49,12 @@ impl ExecBlockRecord {
         timestamp_ms: u64,
         parent_blockhash: Hash,
         next_inbox_msg_idx: u64,
+        messages: Vec<MessageEntry>,
     ) -> Self {
         Self {
             package,
             account_state,
-            // TODO: messages
-            messages: vec![],
+            messages,
             metadata: ExecPackageMetadata {
                 blocknum,
                 ol_block,

@@ -62,6 +62,7 @@ impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
             value.timestamp_ms,
             value.parent_blockhash,
             value.next_inbox_msg_idx,
+            value.messages.into_iter().map(Into::into).collect(),
         ))
     }
 }

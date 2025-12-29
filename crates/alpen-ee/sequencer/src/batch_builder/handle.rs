@@ -118,7 +118,10 @@ where
     /// Builds and returns the batch builder handle and task.
     ///
     /// The handle provides a watch channel for observing the latest batch ID.
-    pub fn build(self, initial_batch_id: Option<BatchId>) -> (BatchBuilderHandle, impl Future<Output = ()>) {
+    pub fn build(
+        self,
+        initial_batch_id: Option<BatchId>,
+    ) -> (BatchBuilderHandle, impl Future<Output = ()>) {
         let config = BatchBuilderConfig {
             max_blocks_per_batch: self
                 .max_blocks_per_batch
