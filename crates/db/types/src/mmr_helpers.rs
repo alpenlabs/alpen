@@ -40,11 +40,11 @@ pub enum MmrError {
     #[error("MMR leaf {0} not found")]
     LeafNotFound(u64),
 
-    #[error("Invalid MMR range: start={start}, end={end}")]
+    #[error("invalid mmr range (start {start}, end {end})")]
     InvalidRange { start: u64, end: u64 },
 
-    #[error("Position {pos} out of bounds for MMR size {mmr_size}")]
-    PositionOutOfBounds { pos: u64, mmr_size: u64 },
+    #[error("mmr index {pos} out of bounds (max {max_size})")]
+    PositionOutOfBounds { pos: u64, max_size: u64 },
 }
 
 /// Convert leaf index to total MMR size (number of nodes)
@@ -234,8 +234,8 @@ pub fn get_peaks(mmr_size: u64) -> Vec<u64> {
 /// # Errors
 ///
 /// Returns `MmrError::PositionOutOfBounds` if the position is beyond mmr_size
-pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> Result<u64, MmrError> {
-    let peaks = get_peaks(mmr_size);
+pub fn find_peak_for_pos(pos: u64, max_size: u64) -> Result<u64, MmrError> {
+    let peaks = get_peaks(max_size);
 
     for &peak_pos in &peaks {
         if pos <= peak_pos {
@@ -243,7 +243,7 @@ pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> Result<u64, MmrError> {
         }
     }
 
-    Err(MmrError::PositionOutOfBounds { pos, mmr_size })
+    Err(MmrError::PositionOutOfBounds { pos, max_size })
 }
 
 /// Identifier for a specific MMR instance in unified storage
@@ -372,9 +372,7 @@ impl MmrAlgorithm {
         }
 
         // Update metadata
-        let new_num_leaves = metadata.num_leaves + 1;
-        let peak_count = new_num_leaves.count_ones() as u64;
-        let new_mmr_size = 2 * new_num_leaves - peak_count;
+        let new_mmr_size = leaf_index_to_mmr_size(metadata.num_leaves);
 
         // Calculate peak_roots
         let peak_positions = get_peaks(new_mmr_size);
@@ -392,7 +390,7 @@ impl MmrAlgorithm {
             .collect::<Result<Vec<_>, _>>()?;
 
         let new_metadata = MmrMetadata {
-            num_leaves: new_num_leaves,
+            num_leaves: metadata.num_leaves + 1,
             mmr_size: new_mmr_size,
             peak_roots: new_peak_roots,
         };
@@ -446,7 +444,6 @@ impl MmrAlgorithm {
         let nodes_to_remove: Vec<u64> = (old_mmr_size..metadata.mmr_size).collect();
 
         // Update metadata
-        let new_num_leaves = metadata.num_leaves - 1;
         let new_mmr_size = old_mmr_size;
 
         // Calculate peak_roots for the new size
@@ -462,7 +459,7 @@ impl MmrAlgorithm {
         };
 
         let new_metadata = MmrMetadata {
-            num_leaves: new_num_leaves,
+            num_leaves: metadata.num_leaves - 1,
             mmr_size: new_mmr_size,
             peak_roots: new_peak_roots,
         };

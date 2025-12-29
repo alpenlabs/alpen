@@ -14,8 +14,8 @@ define_table_with_seek_key_codec!(
 );
 
 define_table_with_seek_key_codec!(
-    /// Unified MMR hash index: (mmr_id, hash) -> position
-    /// Enables reverse lookup from hash to leaf position
+    /// Unified MMR hash position: (mmr_id, hash) -> position
+    /// Enables reverse lookup from node hash to node position
     (UnifiedMmrHashIndexSchema) (MmrId, Buf32) => u64
 );
 

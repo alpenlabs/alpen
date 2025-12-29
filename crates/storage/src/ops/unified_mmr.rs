@@ -9,7 +9,7 @@ inst_ops_simple! {
         get_preimage(mmr_id: MmrId, index: u64) => Option<Vec<u8>>;
         pop_leaf(mmr_id: MmrId) => Option<[u8; 32]>;
         get_node(mmr_id: MmrId, pos: u64) => [u8; 32];
-        mmr_size(mmr_id: MmrId) => u64;
-        num_leaves(mmr_id: MmrId) => u64;
+        get_mmr_size(mmr_id: MmrId) => u64;
+        get_num_leaves(mmr_id: MmrId) => u64;
     }
 }

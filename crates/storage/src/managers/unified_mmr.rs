@@ -103,12 +103,12 @@ impl MmrHandle {
 
     /// Get the total MMR size (blocking)
     pub fn mmr_size_blocking(&self) -> DbResult<u64> {
-        self.ops.mmr_size_blocking(self.mmr_id.clone())
+        self.ops.get_mmr_size_blocking(self.mmr_id.clone())
     }
 
     /// Get the number of leaves (blocking)
     pub fn num_leaves_blocking(&self) -> DbResult<u64> {
-        self.ops.num_leaves_blocking(self.mmr_id.clone())
+        self.ops.get_num_leaves_blocking(self.mmr_id.clone())
     }
 
     /// Generate a Merkle proof for a single leaf position

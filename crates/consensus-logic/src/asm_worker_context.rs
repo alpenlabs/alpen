@@ -142,7 +142,10 @@ impl WorkerContext for AsmWorkerCtx {
         })?;
 
         if index >= num_leaves {
-            return Ok(None);
+            return Err(WorkerError::ManifestIndexOutOfBound {
+                index,
+                max: num_leaves,
+            });
         }
 
         self.mmr_handle

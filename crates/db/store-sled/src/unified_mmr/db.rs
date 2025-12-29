@@ -69,12 +69,13 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
 
                 for (pos, node_hash) in &result.nodes_to_write {
                     nt.insert(&(mmr_id.clone(), *pos), &Buf32(*node_hash))?;
+                    // Insert reverse mapping of node
+                    hit.insert(&(mmr_id.clone(), Buf32(*node_hash)), pos)?;
                 }
-
-                mt.insert(&mmr_id, &result.new_metadata)?;
-
                 // Store hash -> position mapping for the leaf
                 hit.insert(&(mmr_id.clone(), Buf32(hash)), &result.leaf_index)?;
+
+                mt.insert(&mmr_id, &result.new_metadata)?;
 
                 Ok(result.leaf_index)
             },
@@ -85,25 +86,24 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
         self.get_mmr_node(&mmr_id, pos)
     }
 
-    fn mmr_size(&self, mmr_id: MmrId) -> DbResult<u64> {
+    fn get_mmr_size(&self, mmr_id: MmrId) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.mmr_size)
     }
 
-    fn num_leaves(&self, mmr_id: MmrId) -> DbResult<u64> {
+    fn get_num_leaves(&self, mmr_id: MmrId) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.num_leaves)
     }
 
-    fn peak_roots(&self, mmr_id: MmrId) -> Vec<[u8; 32]> {
+    fn get_peak_roots(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>> {
         self.load_mmr_metadata(&mmr_id)
             .map(|m| m.peak_roots.into_iter().map(|b| b.0).collect())
-            .unwrap_or_default()
     }
 
-    fn to_compact(&self, mmr_id: MmrId) -> CompactMmr64 {
+    fn get_compact(&self, mmr_id: MmrId) -> DbResult<CompactMmr64> {
         let metadata = self
             .load_mmr_metadata(&mmr_id)
             .unwrap_or_else(|_| MmrMetadata::empty());
@@ -114,11 +114,11 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
             .map(|buf| FixedBytes::<32>::from(buf.0))
             .collect();
 
-        CompactMmr64 {
+        Ok(CompactMmr64 {
             entries: metadata.num_leaves,
             cap_log2: 64,
             roots: roots_vec.into(),
-        }
+        })
     }
 
     fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>> {
@@ -227,14 +227,22 @@ mod tests {
         let hash = [1u8; 32];
 
         // Initially empty
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 0);
-        assert_eq!(db.mmr_size(mmr_id.clone()).unwrap(), 0);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 0);
+        assert_eq!(
+            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id.clone())
+                .unwrap(),
+            0
+        );
 
         // Append first leaf
         let idx = db.append_leaf(mmr_id.clone(), hash).unwrap();
         assert_eq!(idx, 0);
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 1);
-        assert_eq!(db.mmr_size(mmr_id.clone()).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 1);
+        assert_eq!(
+            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id.clone())
+                .unwrap(),
+            1
+        );
 
         // Can retrieve the node
         let node = db.get_node(mmr_id, 0).unwrap();
@@ -254,9 +262,13 @@ mod tests {
             assert_eq!(idx as usize, expected_idx);
         }
 
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 7);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 7);
         // 7 leaves with 3 peaks -> mmr_size = 2*7 - 3 = 11
-        assert_eq!(db.mmr_size(mmr_id).unwrap(), 11);
+        assert_eq!(
+            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id)
+                .unwrap(),
+            11
+        );
     }
 
     #[test]
@@ -295,22 +307,22 @@ mod tests {
 
         // Single leaf: one peak
         db.append_leaf(mmr_id.clone(), [1u8; 32]).unwrap();
-        let peaks = db.peak_roots(mmr_id.clone());
+        let peaks = db.get_peak_roots(mmr_id.clone());
         assert_eq!(peaks.len(), 1);
 
         // Two leaves: one peak (merged)
         db.append_leaf(mmr_id.clone(), [2u8; 32]).unwrap();
-        let peaks = db.peak_roots(mmr_id.clone());
+        let peaks = db.get_peak_roots(mmr_id.clone());
         assert_eq!(peaks.len(), 1);
 
         // Three leaves: two peaks
         db.append_leaf(mmr_id.clone(), [3u8; 32]).unwrap();
-        let peaks = db.peak_roots(mmr_id.clone());
+        let peaks = db.get_peak_roots(mmr_id.clone());
         assert_eq!(peaks.len(), 2);
 
         // Four leaves: one peak (complete tree)
         db.append_leaf(mmr_id.clone(), [4u8; 32]).unwrap();
-        let peaks = db.peak_roots(mmr_id);
+        let peaks = db.get_peak_roots(mmr_id);
         assert_eq!(peaks.len(), 1);
     }
 
@@ -332,12 +344,16 @@ mod tests {
         let hash = [42u8; 32];
         db.append_leaf(mmr_id.clone(), hash).unwrap();
 
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 1);
 
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(popped, Some(hash));
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 0);
-        assert_eq!(db.mmr_size(mmr_id).unwrap(), 0);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 0);
+        assert_eq!(
+            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id)
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -351,17 +367,17 @@ mod tests {
             db.append_leaf(mmr_id.clone(), *hash).unwrap();
         }
 
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 5);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 5);
 
         // Pop last leaf
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(popped, Some([4u8; 32]));
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 4);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 4);
 
         // Pop another
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(popped, Some([3u8; 32]));
-        assert_eq!(db.num_leaves(mmr_id).unwrap(), 3);
+        assert_eq!(db.get_num_leaves(mmr_id).unwrap(), 3);
     }
 
     #[test]
@@ -376,12 +392,12 @@ mod tests {
 
         // Pop one
         db.pop_leaf(mmr_id.clone()).unwrap();
-        assert_eq!(db.num_leaves(mmr_id.clone()).unwrap(), 2);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 2);
 
         // Append again
         let idx = db.append_leaf(mmr_id.clone(), [4u8; 32]).unwrap();
         assert_eq!(idx, 2);
-        assert_eq!(db.num_leaves(mmr_id).unwrap(), 3);
+        assert_eq!(db.get_num_leaves(mmr_id).unwrap(), 3);
     }
 
     #[test]
@@ -390,7 +406,7 @@ mod tests {
         let mmr_id = MmrId::Asm;
 
         // Empty MMR
-        let compact = db.to_compact(mmr_id.clone());
+        let compact = db.get_compact(mmr_id.clone());
         assert_eq!(compact.entries, 0);
 
         // Add some leaves
@@ -398,7 +414,7 @@ mod tests {
             db.append_leaf(mmr_id.clone(), [i; 32]).unwrap();
         }
 
-        let compact = db.to_compact(mmr_id);
+        let compact = db.get_compact(mmr_id);
         assert_eq!(compact.entries, 4);
         assert_eq!(compact.cap_log2, 64);
         assert!(!compact.roots.is_empty());
@@ -422,7 +438,7 @@ mod tests {
 
         for (num_leaves, expected_size) in test_cases {
             // Clear and rebuild
-            while db.num_leaves(mmr_id.clone()).unwrap() > 0 {
+            while db.get_num_leaves(mmr_id.clone()).unwrap() > 0 {
                 db.pop_leaf(mmr_id.clone()).unwrap();
             }
 
@@ -431,7 +447,8 @@ mod tests {
             }
 
             assert_eq!(
-                db.mmr_size(mmr_id.clone()).unwrap(),
+                db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id.clone())
+                    .unwrap(),
                 expected_size,
                 "MMR size mismatch for {} leaves",
                 num_leaves
@@ -484,9 +501,9 @@ mod tests {
             .unwrap();
 
         // Verify each MMR is independent
-        assert_eq!(db.num_leaves(MmrId::Asm).unwrap(), 1);
-        assert_eq!(db.num_leaves(MmrId::SnarkMsg(account1)).unwrap(), 1);
-        assert_eq!(db.num_leaves(MmrId::SnarkMsg(account2)).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(MmrId::Asm).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(MmrId::SnarkMsg(account1)).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(MmrId::SnarkMsg(account2)).unwrap(), 1);
 
         // Verify hash index works per MMR
         assert_eq!(

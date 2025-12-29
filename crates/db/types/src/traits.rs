@@ -369,16 +369,16 @@ pub trait UnifiedMmrDatabase: Send + Sync + 'static {
     fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<[u8; 32]>;
 
     /// Get the total MMR size
-    fn mmr_size(&self, mmr_id: MmrId) -> DbResult<u64>;
+    fn get_mmr_size(&self, mmr_id: MmrId) -> DbResult<u64>;
 
     /// Get the total number of leaves
-    fn num_leaves(&self, mmr_id: MmrId) -> DbResult<u64>;
+    fn get_num_leaves(&self, mmr_id: MmrId) -> DbResult<u64>;
 
     /// Get the individual peak roots
-    fn peak_roots(&self, mmr_id: MmrId) -> Vec<[u8; 32]>;
+    fn get_peak_roots(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>>;
 
     /// Get a compact representation of the MMR
-    fn to_compact(&self, mmr_id: MmrId) -> CompactMmr64B32;
+    fn get_compact(&self, mmr_id: MmrId) -> DbResult<CompactMmr64B32>;
 
     /// Remove the last leaf from the MMR
     fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>>;
@@ -403,88 +403,6 @@ pub trait UnifiedMmrDatabase: Send + Sync + 'static {
     fn get_preimage(&self, _mmr_id: MmrId, _index: u64) -> DbResult<Option<Vec<u8>>> {
         Err(DbError::Unimplemented)
     }
-}
-
-/// MMR database trait for persistent proof generation
-///
-/// Implementations of this trait maintain MMR data in a way that allows
-/// efficient proof generation for arbitrary leaf positions.
-///
-/// This is for singleton/global MMRs (e.g., ASM manifests). For multi-instance
-/// MMRs with different scoping, use `UnifiedMmrDatabase` with appropriate `MmrId`.
-///
-/// ## Design Invariants
-///
-/// - Leaves are indexed from 0 sequentially
-/// - `append_leaf` is the only way to add data (append-only)
-/// - `num_leaves()` always returns the total number of leaves added
-/// - Proofs are valid against the current `root()`
-pub trait MmrDatabase: Send + Sync + 'static {
-    /// Append a new leaf to the MMR
-    ///
-    /// Returns the index of the newly added leaf.
-    ///
-    /// # Arguments
-    ///
-    /// * `hash` - The hash value to append as a new leaf
-    ///
-    /// # Returns
-    ///
-    /// The index (0-based) of the appended leaf.
-    fn append_leaf(&self, hash: [u8; 32]) -> DbResult<u64>;
-
-    /// Get a node hash by MMR position
-    ///
-    /// # Arguments
-    ///
-    /// * `pos` - The MMR tree position (not leaf index)
-    ///
-    /// # Returns
-    ///
-    /// The 32-byte hash stored at that position
-    ///
-    /// # Errors
-    ///
-    /// Returns `DbError` if the position doesn't exist
-    fn get_node(&self, pos: u64) -> DbResult<[u8; 32]>;
-
-    /// Get the total MMR size (number of nodes, not just leaves)
-    fn mmr_size(&self) -> DbResult<u64>;
-
-    /// Get the total number of leaves in the MMR
-    fn num_leaves(&self) -> DbResult<u64>;
-
-    /// Get the individual peak roots
-    ///
-    /// Returns a vector of peak roots in the compact representation.
-    /// Proofs are verified against the appropriate peak root based on proof height.
-    fn peak_roots(&self) -> Vec<[u8; 32]>;
-
-    /// Get a compact representation of the MMR
-    ///
-    /// This is useful for serialization and verification without needing
-    /// the full tree structure.
-    fn to_compact(&self) -> strata_merkle::CompactMmr64B32;
-
-    /// Remove the last leaf from the MMR
-    ///
-    /// This reverses the last `append_leaf` operation, removing the most recently
-    /// added leaf and all internal nodes that were created during its insertion.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(Some(hash))` - The hash of the removed leaf
-    /// - `Ok(None)` - The MMR was empty, nothing to pop
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// mmr.append_leaf([1u8; 32])?; // index 0
-    /// mmr.append_leaf([2u8; 32])?; // index 1
-    /// let popped = mmr.pop_leaf()?; // removes leaf 1, returns Some([2u8; 32])
-    /// assert_eq!(mmr.num_leaves(), 1);
-    /// ```
-    fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>>;
 }
 
 // =============================================================================
