@@ -1246,6 +1246,7 @@ dependencies = [
  "alpen-ee-block-assembly",
  "alpen-ee-common",
  "alpen-ee-exec-chain",
+ "async-trait",
  "eyre",
  "strata-acct-types",
  "strata-ee-acct-types",
