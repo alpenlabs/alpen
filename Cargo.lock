@@ -1249,7 +1249,9 @@ dependencies = [
  "alpen-ee-exec-chain",
  "async-trait",
  "eyre",
+ "futures",
  "strata-acct-types",
+ "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
@@ -1257,6 +1259,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+ "tree_hash 0.11.0",
 ]
 
 [[package]]

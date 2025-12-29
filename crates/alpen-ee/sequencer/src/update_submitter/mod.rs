@@ -4,5 +4,6 @@
 //! `SnarkAccountUpdate` transactions to the OL chain.
 
 mod task;
+mod update_builder;
 
 pub use task::update_submitter_task;
