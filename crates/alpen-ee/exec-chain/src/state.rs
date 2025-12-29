@@ -133,6 +133,13 @@ impl ExecChainState {
         self.orphans.has_block(hash)
     }
 
+    /// Checks if a block is on the canonical chain.
+    ///
+    /// Returns `true` if the block is on the path from the finalized block to the best tip.
+    pub(crate) fn is_canonical(&self, hash: &Hash) -> bool {
+        self.unfinalized.is_canonical(hash)
+    }
+
     /// Advances finalization to the given block and prunes stale blocks.
     ///
     /// Removes finalized blocks and blocks that no longer extend the finalized chain,
