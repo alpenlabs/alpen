@@ -54,12 +54,25 @@ mod tests {
     use crate::{
         constants::BridgeTxType,
         deposit::DepositTxHeaderAux,
-        deposit_request::{DRT_OUTPUT_INDEX, DepositRequestInfo, DrtHeaderAux, parse_drt},
+        deposit_request::{
+            DRT_OUTPUT_INDEX, DepositRequestInfo, DrtHeaderAux, MAX_DESCRIPTOR_LEN,
+            MIN_DESCRIPTOR_LEN, parse_drt,
+        },
         errors::TxStructureErrorKind,
         test_utils::{create_connected_drt_and_dt, create_test_operators, mutate_aux_data},
     };
 
-    const AUX_LEN: usize = std::mem::size_of::<DrtHeaderAux>();
+    /// Minimum encoded auxiliary data length in bytes.
+    ///
+    /// This is the size of the recovery public key (32 bytes) plus the minimum descriptor length,
+    /// when the subject bytes are empty.
+    const MIN_AUX_LEN: usize = 32 + MIN_DESCRIPTOR_LEN;
+
+    /// Maximum encoded auxiliary data length in bytes.
+    ///
+    /// This is the recovery public key plus the maximum descriptor length, representing the case
+    /// where the subject identifier uses all 32 bytes.
+    const MAX_AUX_LEN: usize = 32 + MAX_DESCRIPTOR_LEN;
 
     fn create_drt_tx_with_info() -> (DepositRequestInfo, Transaction) {
         let mut arb = ArbitraryGenerator::new();
@@ -102,7 +115,7 @@ mod tests {
     fn test_parse_invalid_aux() {
         let (_, mut tx) = create_drt_tx_with_info();
 
-        let larger_aux = [0u8; AUX_LEN + 1].to_vec();
+        let larger_aux = [0u8; MAX_AUX_LEN + 1].to_vec();
         mutate_aux_data(&mut tx, larger_aux);
 
         let err = parse_drt(&tx).unwrap_err();
@@ -112,7 +125,7 @@ mod tests {
             crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
 
-        let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
+        let smaller_aux = [0u8; MIN_AUX_LEN - 1].to_vec();
         mutate_aux_data(&mut tx, smaller_aux);
 
         let err = parse_drt(&tx).unwrap_err();

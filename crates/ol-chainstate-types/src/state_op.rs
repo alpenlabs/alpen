@@ -6,7 +6,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::{DepositIntent, WithdrawalIntent};
-use strata_identifiers::Epoch;
+use strata_identifiers::{AccountSerial, Epoch};
 use strata_primitives::{
     epoch::EpochCommitment,
     l2::{L2BlockCommitment, L2BlockId},
@@ -159,8 +159,12 @@ impl StateCache {
     }
 
     /// Writes a deposit intent into an execution environment's input queue.
-    pub fn insert_deposit_intent(&mut self, ee_id: u32, intent: DepositIntent) {
-        assert_eq!(ee_id, 0, "stateop: only support execution env 0 right now");
+    pub fn insert_deposit_intent(&mut self, ee_id: AccountSerial, intent: DepositIntent) {
+        assert_eq!(
+            ee_id,
+            AccountSerial::zero(),
+            "stateop: only support execution env 0 right now"
+        );
         let state = self.state_mut();
         state.exec_env_state.pending_deposits.push_back(intent);
     }

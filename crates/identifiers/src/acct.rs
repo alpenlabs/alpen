@@ -1,12 +1,13 @@
 use std::fmt;
 
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
-const ACCT_ID_LEN: usize = 32;
-const SUBJ_ID_LEN: usize = 32;
+pub const ACCT_ID_LEN: usize = 32;
+pub const SUBJ_ID_LEN: usize = 32;
 
 /// Total number of system reserved accounts, which is the space where we do special casing of
 /// things.
@@ -85,6 +86,7 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = std::mem::size_of::<RawAccountSerial>();
     Ord,
     PartialOrd,
     Hash,
+    Arbitrary,
     Decode,
     Encode,
     BorshSerialize,
@@ -153,10 +155,13 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
     Hash,
     Decode,
     Encode,
+    Serialize,
+    Deserialize,
+    Arbitrary,
     BorshSerialize,
     BorshDeserialize,
 )]
-pub struct SubjectId(RawSubjectId);
+pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 
