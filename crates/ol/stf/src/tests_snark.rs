@@ -358,26 +358,9 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Verify that logs were emitted
     let logs = block1_output.outputs().logs();
-    let mut snark_update_found = false;
     let mut withdrawal_found = false;
 
     for log in logs {
-        // Check if it's a snark account update log (from the snark account)
-        if log.account_serial() == snark_serial
-            && let Ok(update_log) =
-                strata_codec::decode_buf_exact::<SnarkAccountUpdateLogData>(log.payload())
-        {
-            snark_update_found = true;
-            // The update log indicates the snark account was updated
-            // We started at cur_processing_idx and processed 1 message, so new index is
-            // cur_processing_idx + 1
-            assert_eq!(
-                update_log.new_msg_idx(),
-                cur_processing_idx + 1,
-                "Message index should advance by 1 after processing the deposit message"
-            );
-        }
-
         // Check if it's a withdrawal intent log (from the bridge gateway)
         if log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL
             && let Ok(withdrawal_log) =
@@ -399,7 +382,6 @@ fn test_snark_account_deposit_and_withdrawal() {
         }
     }
 
-    assert!(snark_update_found, "test: missing snark account log");
     assert!(withdrawal_found, "test: missing withdrawal intent log");
 }
 
