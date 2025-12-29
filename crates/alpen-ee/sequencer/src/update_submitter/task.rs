@@ -1,16 +1,52 @@
 //! Update submitter task implementation.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use alpen_ee_common::{
     BatchId, BatchProver, BatchStatus, BatchStorage, ExecBlockStorage, OLFinalizedStatus,
     SequencerOLClient,
 };
 use eyre::Result;
+use strata_snark_acct_types::SnarkAccountUpdate;
 use tokio::sync::watch;
 use tracing::{debug, error, warn};
 
 use crate::update_submitter::update_builder::build_update_from_batch;
+
+/// Maximum number of entries in the update cache.
+const UPDATE_CACHE_MAX_SIZE: usize = 64;
+
+/// Cache for built updates, keyed by BatchId.
+/// Stores (batch_idx, update) to allow eviction based on sequence number.
+struct UpdateCache {
+    entries: HashMap<BatchId, (u64, SnarkAccountUpdate)>,
+}
+
+impl UpdateCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    /// Get a cached update by BatchId.
+    fn get(&self, batch_id: &BatchId) -> Option<&SnarkAccountUpdate> {
+        self.entries.get(batch_id).map(|(_, update)| update)
+    }
+
+    /// Insert an update into the cache if there is room.
+    /// If the cache is at max capacity, the entry is not inserted.
+    fn insert(&mut self, batch_id: BatchId, batch_idx: u64, update: SnarkAccountUpdate) {
+        if self.entries.len() < UPDATE_CACHE_MAX_SIZE {
+            self.entries.insert(batch_id, (batch_idx, update));
+        }
+    }
+
+    /// Evict entries for batches that have been accepted (batch_idx <= current_seq_no).
+    fn evict_accepted(&mut self, current_seq_no: u64) {
+        self.entries.retain(|_, (idx, _)| *idx > current_seq_no);
+    }
+}
 
 /// Main update submitter task.
 ///
@@ -34,6 +70,8 @@ pub async fn update_submitter_task<C, S, ES, P>(
     ES: ExecBlockStorage,
     P: BatchProver,
 {
+    let mut update_cache = UpdateCache::new();
+
     loop {
         let result = tokio::select! {
             // Branch 1: New batch ready notification
@@ -42,7 +80,7 @@ pub async fn update_submitter_task<C, S, ES, P>(
                     warn!("batch_ready_rx closed; exiting");
                     return;
                 }
-                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref()).await
+                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref(), &mut update_cache).await
             }
             // Branch 2: OL chain status update
             changed = ol_status_rx.changed() => {
@@ -50,7 +88,7 @@ pub async fn update_submitter_task<C, S, ES, P>(
                     warn!("ol_status_rx closed; exiting");
                     return;
                 }
-                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref()).await
+                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref(), &mut update_cache).await
             }
         };
 
@@ -70,6 +108,7 @@ async fn process_ready_batches(
     batch_storage: &impl BatchStorage,
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
+    update_cache: &mut UpdateCache,
 ) -> Result<()> {
     // Get latest account state from OL to determine next expected seq_no
     let account_state = ol_client.get_latest_account_state().await?;
@@ -77,6 +116,9 @@ async fn process_ready_batches(
     // For batch idx, we use the same value (batch idx == seq_no for now)
     let current_seq_no = *account_state.seq_no.inner();
     let next_batch_idx = current_seq_no.saturating_add(1);
+
+    // Evict cache entries for batches that have been accepted
+    update_cache.evict_accepted(current_seq_no);
 
     let mut batch_idx = next_batch_idx;
 
@@ -92,8 +134,16 @@ async fn process_ready_batches(
             break;
         };
 
-        // Build and submit update
-        let update = build_update_from_batch(&batch, &proof, exec_storage, prover).await?;
+        // Get update from cache or build it
+        let batch_id = batch.id();
+        let update = if let Some(cached) = update_cache.get(&batch_id) {
+            cached.clone()
+        } else {
+            let update = build_update_from_batch(&batch, &proof, exec_storage, prover).await?;
+            update_cache.insert(batch_id, batch_idx, update.clone());
+            update
+        };
+
         ol_client.submit_update(update).await?;
 
         debug!(batch_idx, "Submitted update for batch");
