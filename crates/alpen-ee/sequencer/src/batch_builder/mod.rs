@@ -54,7 +54,6 @@
 
 mod accumulator;
 mod block_count;
-mod config;
 mod ctx;
 mod handle;
 mod state;
@@ -63,7 +62,6 @@ mod traits;
 
 pub use accumulator::Accumulator;
 pub use block_count::{BlockCountData, BlockCountPolicy, BlockCountValue, FixedBlockCountSealing};
-pub use config::BatchBuilderConfig;
-pub use handle::{BatchBuilderBuilder, BatchBuilderHandle};
+pub use handle::{create_batch_builder, BatchBuilderHandle};
 pub use state::{init_batch_builder_state, BatchBuilderState};
 pub use traits::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};

@@ -1,12 +1,9 @@
 //! Batch builder task implementation.
 
-use std::time::Duration;
-
 use alpen_ee_common::{Batch, BatchId, BatchStorage, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
 use eyre::Result;
 use strata_acct_types::Hash;
-use tokio::time;
 use tracing::{debug, error, warn};
 
 use super::{
@@ -192,9 +189,6 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     BS: BatchStorage,
     ES: ExecBlockStorage,
 {
-    // TODO: backoff logic
-    let error_backoff = Duration::from_millis(ctx.config.error_backoff_ms);
-
     loop {
         let result = tokio::select! {
             // Branch 1: New canonical tip received
@@ -214,8 +208,7 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
         };
 
         if let Err(e) = result {
-            error!(error = %e, "Batch builder error, backing off");
-            time::sleep(error_backoff).await;
+            error!(error = %e, "Batch builder error");
         }
     }
 }
