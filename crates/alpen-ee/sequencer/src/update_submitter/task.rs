@@ -3,12 +3,14 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{
-    Batch, BatchId, BatchStatus, BatchStorage, OLFinalizedStatus, ProofId, SequencerOLClient,
+    BatchId, BatchProver, BatchStatus, BatchStorage, ExecBlockStorage, OLFinalizedStatus,
+    SequencerOLClient,
 };
 use eyre::Result;
-use strata_snark_acct_types::SnarkAccountUpdate;
 use tokio::sync::watch;
 use tracing::{debug, error, warn};
+
+use crate::update_submitter::update_builder::build_update_from_batch;
 
 /// Main update submitter task.
 ///
@@ -19,14 +21,18 @@ use tracing::{debug, error, warn};
 /// On either trigger, it queries the OL client for the current account state,
 /// finds all batches in `ProofReady` state starting from the next expected
 /// sequence number, and submits them in order.
-pub async fn update_submitter_task<C, S>(
+pub async fn update_submitter_task<C, S, ES, P>(
     ol_client: Arc<C>,
     batch_storage: Arc<S>,
+    exec_storage: Arc<ES>,
+    prover: Arc<P>,
     mut batch_ready_rx: watch::Receiver<Option<BatchId>>,
     mut ol_status_rx: watch::Receiver<OLFinalizedStatus>,
 ) where
     C: SequencerOLClient,
     S: BatchStorage,
+    ES: ExecBlockStorage,
+    P: BatchProver,
 {
     loop {
         let result = tokio::select! {
@@ -36,7 +42,7 @@ pub async fn update_submitter_task<C, S>(
                     warn!("batch_ready_rx closed; exiting");
                     return;
                 }
-                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref()).await
+                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref()).await
             }
             // Branch 2: OL chain status update
             changed = ol_status_rx.changed() => {
@@ -44,7 +50,7 @@ pub async fn update_submitter_task<C, S>(
                     warn!("ol_status_rx closed; exiting");
                     return;
                 }
-                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref()).await
+                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref()).await
             }
         };
 
@@ -62,6 +68,8 @@ pub async fn update_submitter_task<C, S>(
 async fn process_ready_batches(
     ol_client: &impl SequencerOLClient,
     batch_storage: &impl BatchStorage,
+    exec_storage: &impl ExecBlockStorage,
+    prover: &impl BatchProver,
 ) -> Result<()> {
     // Get latest account state from OL to determine next expected seq_no
     let account_state = ol_client.get_latest_account_state().await?;
@@ -85,7 +93,7 @@ async fn process_ready_batches(
         };
 
         // Build and submit update
-        let update = build_update_from_batch(&batch, &proof).await?;
+        let update = build_update_from_batch(&batch, &proof, exec_storage, prover).await?;
         ol_client.submit_update(update).await?;
 
         debug!(batch_idx, "Submitted update for batch");
@@ -93,12 +101,4 @@ async fn process_ready_batches(
     }
 
     Ok(())
-}
-
-/// Build a SnarkAccountUpdate from a batch in ProofReady state.
-///
-/// TODO: Implement actual construction from batch data and DB lookups.
-#[expect(unused_variables, reason = "TODO: implement")]
-async fn build_update_from_batch(batch: &Batch, proof: &ProofId) -> Result<SnarkAccountUpdate> {
-    todo!("Build SnarkAccountUpdate from batch")
 }
