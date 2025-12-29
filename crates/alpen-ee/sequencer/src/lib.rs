@@ -3,6 +3,7 @@
 mod batch_builder;
 mod block_builder;
 mod ol_chain_tracker;
+mod update_submitter;
 
 pub use batch_builder::{
     init_batch_builder_state, Accumulator, BatchBuilderBuilder, BatchBuilderConfig,
@@ -14,3 +15,4 @@ pub use ol_chain_tracker::{
     build_ol_chain_tracker, init_ol_chain_tracker_state, InboxMessages, OLChainTrackerHandle,
     OLChainTrackerState,
 };
+pub use update_submitter::update_submitter_task;
