@@ -110,5 +110,6 @@ pub(crate) fn create_mock_exec_record(ol_block: OLBlockCommitment) -> ExecBlockR
         1_000_000,
         Hash::default(),
         0,
+        vec![],
     )
 }
