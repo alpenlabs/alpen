@@ -8,7 +8,7 @@ use serde::Serialize;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_merkle::CompactMmr64B32;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
@@ -365,10 +365,10 @@ pub trait UnifiedMmrDatabase: Send + Sync + 'static {
     type MmrAlgorithm: MmrAlgorithm;
 
     /// Append a new leaf to the specified MMR
-    fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64>;
+    fn append_leaf(&self, mmr_id: MmrId, hash: Hash) -> DbResult<u64>;
 
     /// Get a node hash by MMR position
-    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<[u8; 32]>;
+    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<Hash>;
 
     /// Get the total MMR size
     fn get_mmr_size(&self, mmr_id: MmrId) -> DbResult<u64>;
@@ -376,14 +376,14 @@ pub trait UnifiedMmrDatabase: Send + Sync + 'static {
     /// Get the total number of leaves
     fn get_num_leaves(&self, mmr_id: MmrId) -> DbResult<u64>;
 
-    /// Get the individual peaks
-    fn get_peaks(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>>;
+    /// Get the peaks
+    fn get_peaks(&self, mmr_id: MmrId) -> DbResult<Vec<Hash>>;
 
     /// Get a compact representation of the MMR
     fn get_compact(&self, mmr_id: MmrId) -> DbResult<CompactMmr64B32>;
 
     /// Remove the last leaf from the MMR
-    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>>;
+    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<Hash>>;
 
     /// Append a leaf with its pre-image data (optional operation)
     ///
@@ -392,7 +392,7 @@ pub trait UnifiedMmrDatabase: Send + Sync + 'static {
     fn append_leaf_with_preimage(
         &self,
         _mmr_id: MmrId,
-        _hash: [u8; 32],
+        _hash: Hash,
         _preimage: Vec<u8>,
     ) -> DbResult<u64> {
         Err(DbError::Unimplemented)

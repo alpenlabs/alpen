@@ -209,6 +209,7 @@ impl<'a> AuxDataResolver<'a> {
                 let manifest_hash: [u8; 32] = self
                     .context
                     .get_manifest_hash(mmr_index)?
+                    .map(|x| x.0)
                     .ok_or(WorkerError::ManifestHashNotFound { index: mmr_index })?;
 
                 // Generate MMR proof for this index

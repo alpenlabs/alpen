@@ -4,8 +4,10 @@ use strata_db_types::{
     mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrId, MmrMetadata},
     traits::UnifiedMmrDatabase,
 };
+use strata_identifiers::Hash;
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
 use strata_primitives::buf::Buf32;
+use typed_sled::tree::SledTransactionalTree;
 
 use super::schemas::{
     UnifiedMmrHashIndexSchema, UnifiedMmrMetaSchema, UnifiedMmrNodeSchema, UnifiedMmrPreimageSchema,
@@ -36,55 +38,64 @@ impl UnifiedMmrDb {
         })
     }
 
-    fn get_mmr_node(&self, mmr_id: &MmrId, pos: u64) -> DbResult<[u8; 32]> {
+    fn get_mmr_node(&self, mmr_id: &MmrId, pos: u64) -> DbResult<Hash> {
         self.node_tree
             .get(&(mmr_id.clone(), pos))?
-            .map(|buf| buf.0)
             .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
     }
 
     /// Get the position of a leaf by its hash (reverse lookup)
-    pub fn get_leaf_position(&self, mmr_id: &MmrId, hash: [u8; 32]) -> DbResult<Option<u64>> {
-        Ok(self.hash_index_tree.get(&(mmr_id.clone(), Buf32(hash)))?)
+    pub fn get_leaf_position(&self, mmr_id: &MmrId, hash: Hash) -> DbResult<Option<u64>> {
+        Ok(self.hash_index_tree.get(&(mmr_id.clone(), hash))?)
+    }
+
+    fn append_leaf_in_transaction<A: MmrAlgorithm>(
+        mmr_id: &MmrId,
+        hash: Hash,
+        nt: SledTransactionalTree<UnifiedMmrNodeSchema>,
+        mt: SledTransactionalTree<UnifiedMmrMetaSchema>,
+        hit: SledTransactionalTree<UnifiedMmrHashIndexSchema>,
+    ) -> typed_sled::error::Result<u64> {
+        let metadata = mt
+            .get(mmr_id)?
+            .expect("MMR metadata must exist after ensure_mmr_metadata");
+
+        let result = A::append_leaf(hash.0, &metadata, |pos| {
+            nt.get(&(mmr_id.clone(), pos))?
+                .map(|buf| buf.0)
+                .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
+        })
+        .map_err(typed_sled::error::Error::abort)?;
+
+        for (pos, node_hash) in &result.nodes_to_write {
+            nt.insert(&(mmr_id.clone(), *pos), &Buf32(*node_hash))?;
+            hit.insert(&(mmr_id.clone(), Buf32(*node_hash)), pos)?;
+        }
+
+        hit.insert(&(mmr_id.clone(), hash), &result.leaf_index)?;
+        mt.insert(mmr_id, &result.new_metadata)?;
+
+        Ok(result.leaf_index)
     }
 }
 
 impl UnifiedMmrDatabase for UnifiedMmrDb {
     type MmrAlgorithm = BitManipulatedMmrAlgorithm;
 
-    fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64> {
+    fn append_leaf(&self, mmr_id: MmrId, hash: Hash) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
             (&self.node_tree, &self.meta_tree, &self.hash_index_tree),
             |(nt, mt, hit)| {
-                let metadata = mt
-                    .get(&mmr_id)?
-                    .expect("MMR metadata must exist after ensure_mmr_metadata");
-
-                let result = Self::MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
-                    nt.get(&(mmr_id.clone(), pos))?
-                        .map(|buf| buf.0)
-                        .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
-                })
-                .map_err(typed_sled::error::Error::abort)?;
-
-                for (pos, node_hash) in &result.nodes_to_write {
-                    nt.insert(&(mmr_id.clone(), *pos), &Buf32(*node_hash))?;
-                    // Insert reverse mapping of node
-                    hit.insert(&(mmr_id.clone(), Buf32(*node_hash)), pos)?;
-                }
-                // Store hash -> position mapping for the leaf
-                hit.insert(&(mmr_id.clone(), Buf32(hash)), &result.leaf_index)?;
-
-                mt.insert(&mmr_id, &result.new_metadata)?;
-
-                Ok(result.leaf_index)
+                Ok(Self::append_leaf_in_transaction::<Self::MmrAlgorithm>(
+                    &mmr_id, hash, nt, mt, hit,
+                )?)
             },
         )
     }
 
-    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<[u8; 32]> {
+    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<Hash> {
         self.get_mmr_node(&mmr_id, pos)
     }
 
@@ -100,9 +111,9 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
         Ok(metadata.num_leaves)
     }
 
-    fn get_peaks(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>> {
+    fn get_peaks(&self, mmr_id: MmrId) -> DbResult<Vec<Hash>> {
         self.load_mmr_metadata(&mmr_id)
-            .map(|m| m.peaks.into_iter().map(|b| b.0).collect())
+            .map(|m| m.peaks.into_iter().collect())
     }
 
     fn get_compact(&self, mmr_id: MmrId) -> DbResult<CompactMmr64> {
@@ -123,7 +134,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
         })
     }
 
-    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<[u8; 32]>> {
+    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<Hash>> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
@@ -135,7 +146,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
 
                 let result = Self::MmrAlgorithm::pop_leaf(&metadata, |pos| {
                     nt.get(&(mmr_id.clone(), pos))?
-                        .map(|buf| buf.0)
+                        .map(|x| x.0)
                         .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
                 })
                 .map_err(typed_sled::error::Error::abort)?;
@@ -153,7 +164,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
                 // Remove hash -> position mapping for the popped leaf
                 hit.remove(&(mmr_id.clone(), Buf32(result.leaf_hash)))?;
 
-                Ok(Some(result.leaf_hash))
+                Ok(Some(result.leaf_hash.into()))
             },
         )
     }
@@ -161,7 +172,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
     fn append_leaf_with_preimage(
         &self,
         mmr_id: MmrId,
-        hash: [u8; 32],
+        hash: Hash,
         preimage: Vec<u8>,
     ) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
@@ -174,29 +185,11 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
                 &self.preimage_tree,
             ),
             |(nt, mt, hit, pit)| {
-                let metadata = mt
-                    .get(&mmr_id)?
-                    .expect("MMR metadata must exist after ensure_mmr_metadata");
-
-                let result = Self::MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
-                    nt.get(&(mmr_id.clone(), pos))?
-                        .map(|buf| buf.0)
-                        .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
-                })
-                .map_err(typed_sled::error::Error::abort)?;
-
-                // Write MMR structure
-                for (pos, node_hash) in &result.nodes_to_write {
-                    nt.insert(&(mmr_id.clone(), *pos), &Buf32(*node_hash))?;
-                }
-
-                mt.insert(&mmr_id, &result.new_metadata)?;
-                hit.insert(&(mmr_id.clone(), Buf32(hash)), &result.leaf_index)?;
-
-                // Write pre-image atomically with MMR structure
-                pit.insert(&(mmr_id.clone(), result.leaf_index), &preimage)?;
-
-                Ok(result.leaf_index)
+                let leaf_index = Self::append_leaf_in_transaction::<Self::MmrAlgorithm>(
+                    &mmr_id, hash, nt, mt, hit,
+                )?;
+                pit.insert(&(mmr_id.clone(), leaf_index), &preimage)?;
+                Ok(leaf_index)
             },
         )
     }
@@ -226,25 +219,17 @@ mod tests {
     fn test_append_single_leaf() {
         let db = setup();
         let mmr_id = MmrId::Asm;
-        let hash = [1u8; 32];
+        let hash = [1u8; 32].into();
 
         // Initially empty
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 0);
-        assert_eq!(
-            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id.clone())
-                .unwrap(),
-            0
-        );
+        assert_eq!(db.get_mmr_size(mmr_id.clone()).unwrap(), 0);
 
         // Append first leaf
         let idx = db.append_leaf(mmr_id.clone(), hash).unwrap();
         assert_eq!(idx, 0);
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 1);
-        assert_eq!(
-            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id.clone())
-                .unwrap(),
-            1
-        );
+        assert_eq!(db.get_mmr_size(mmr_id.clone()).unwrap(), 1);
 
         // Can retrieve the node
         let node = db.get_node(mmr_id, 0).unwrap();
@@ -257,7 +242,7 @@ mod tests {
         let mmr_id = MmrId::Asm;
 
         // Append 7 leaves to create a complete tree
-        let hashes: Vec<[u8; 32]> = (0..7).map(|i| [i; 32]).collect();
+        let hashes: Vec<Hash> = (0..7).map(|i| [i; 32].into()).collect();
 
         for (expected_idx, hash) in hashes.iter().enumerate() {
             let idx = db.append_leaf(mmr_id.clone(), *hash).unwrap();
@@ -266,11 +251,7 @@ mod tests {
 
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 7);
         // 7 leaves with 3 peaks -> mmr_size = 2*7 - 3 = 11
-        assert_eq!(
-            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id)
-                .unwrap(),
-            11
-        );
+        assert_eq!(db.get_mmr_size(mmr_id).unwrap(), 11);
     }
 
     #[test]
@@ -279,7 +260,7 @@ mod tests {
         let mmr_id = MmrId::Asm;
 
         // Append 4 leaves
-        let hashes: Vec<[u8; 32]> = (0..4).map(|i| [i; 32]).collect();
+        let hashes: Vec<Hash> = (0..4).map(|i| [i; 32].into()).collect();
 
         for hash in &hashes {
             db.append_leaf(mmr_id.clone(), *hash).unwrap();
@@ -291,10 +272,10 @@ mod tests {
         // Leaves:   [0, 1, x, 2, 3, x, x]
 
         // Verify leaf positions
-        assert_eq!(db.get_node(mmr_id.clone(), 0).unwrap(), [0u8; 32]);
-        assert_eq!(db.get_node(mmr_id.clone(), 1).unwrap(), [1u8; 32]);
-        assert_eq!(db.get_node(mmr_id.clone(), 3).unwrap(), [2u8; 32]);
-        assert_eq!(db.get_node(mmr_id.clone(), 4).unwrap(), [3u8; 32]);
+        assert_eq!(db.get_node(mmr_id.clone(), 0).unwrap(), [0u8; 32].into());
+        assert_eq!(db.get_node(mmr_id.clone(), 1).unwrap(), [1u8; 32].into());
+        assert_eq!(db.get_node(mmr_id.clone(), 3).unwrap(), [2u8; 32].into());
+        assert_eq!(db.get_node(mmr_id.clone(), 4).unwrap(), [3u8; 32].into());
 
         // Internal nodes exist
         assert!(db.get_node(mmr_id.clone(), 2).is_ok());
@@ -308,23 +289,23 @@ mod tests {
         let mmr_id = MmrId::Asm;
 
         // Single leaf: one peak
-        db.append_leaf(mmr_id.clone(), [1u8; 32]).unwrap();
-        let peaks = db.get_peaks(mmr_id.clone());
+        db.append_leaf(mmr_id.clone(), [1u8; 32].into()).unwrap();
+        let peaks = db.get_peaks(mmr_id.clone()).unwrap();
         assert_eq!(peaks.len(), 1);
 
         // Two leaves: one peak (merged)
-        db.append_leaf(mmr_id.clone(), [2u8; 32]).unwrap();
-        let peaks = db.get_peaks(mmr_id.clone());
+        db.append_leaf(mmr_id.clone(), [2u8; 32].into()).unwrap();
+        let peaks = db.get_peaks(mmr_id.clone()).unwrap();
         assert_eq!(peaks.len(), 1);
 
         // Three leaves: two peaks
-        db.append_leaf(mmr_id.clone(), [3u8; 32]).unwrap();
-        let peaks = db.get_peaks(mmr_id.clone());
+        db.append_leaf(mmr_id.clone(), [3u8; 32].into()).unwrap();
+        let peaks = db.get_peaks(mmr_id.clone()).unwrap();
         assert_eq!(peaks.len(), 2);
 
         // Four leaves: one peak (complete tree)
-        db.append_leaf(mmr_id.clone(), [4u8; 32]).unwrap();
-        let peaks = db.get_peaks(mmr_id);
+        db.append_leaf(mmr_id.clone(), [4u8; 32].into()).unwrap();
+        let peaks = db.get_peaks(mmr_id).unwrap();
         assert_eq!(peaks.len(), 1);
     }
 
@@ -343,7 +324,7 @@ mod tests {
         let db = setup();
         let mmr_id = MmrId::Asm;
 
-        let hash = [42u8; 32];
+        let hash = [42u8; 32].into();
         db.append_leaf(mmr_id.clone(), hash).unwrap();
 
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 1);
@@ -351,11 +332,7 @@ mod tests {
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(popped, Some(hash));
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 0);
-        assert_eq!(
-            db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id)
-                .unwrap(),
-            0
-        );
+        assert_eq!(db.get_mmr_size(mmr_id).unwrap(), 0);
     }
 
     #[test]
@@ -364,7 +341,7 @@ mod tests {
         let mmr_id = MmrId::Asm;
 
         // Append several leaves
-        let hashes: Vec<[u8; 32]> = (0..5).map(|i| [i; 32]).collect();
+        let hashes: Vec<Hash> = (0..5).map(|i| [i; 32].into()).collect();
         for hash in &hashes {
             db.append_leaf(mmr_id.clone(), *hash).unwrap();
         }
@@ -373,12 +350,12 @@ mod tests {
 
         // Pop last leaf
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
-        assert_eq!(popped, Some([4u8; 32]));
+        assert_eq!(popped, Some([4u8; 32].into()));
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 4);
 
         // Pop another
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
-        assert_eq!(popped, Some([3u8; 32]));
+        assert_eq!(popped, Some([3u8; 32].into()));
         assert_eq!(db.get_num_leaves(mmr_id).unwrap(), 3);
     }
 
@@ -388,16 +365,16 @@ mod tests {
         let mmr_id = MmrId::Asm;
 
         // Append 3 leaves
-        db.append_leaf(mmr_id.clone(), [1u8; 32]).unwrap();
-        db.append_leaf(mmr_id.clone(), [2u8; 32]).unwrap();
-        db.append_leaf(mmr_id.clone(), [3u8; 32]).unwrap();
+        db.append_leaf(mmr_id.clone(), [1u8; 32].into()).unwrap();
+        db.append_leaf(mmr_id.clone(), [2u8; 32].into()).unwrap();
+        db.append_leaf(mmr_id.clone(), [3u8; 32].into()).unwrap();
 
         // Pop one
         db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 2);
 
         // Append again
-        let idx = db.append_leaf(mmr_id.clone(), [4u8; 32]).unwrap();
+        let idx = db.append_leaf(mmr_id.clone(), [4u8; 32].into()).unwrap();
         assert_eq!(idx, 2);
         assert_eq!(db.get_num_leaves(mmr_id).unwrap(), 3);
     }
@@ -408,15 +385,15 @@ mod tests {
         let mmr_id = MmrId::Asm;
 
         // Empty MMR
-        let compact = db.get_compact(mmr_id.clone());
+        let compact = db.get_compact(mmr_id.clone()).unwrap();
         assert_eq!(compact.entries, 0);
 
         // Add some leaves
         for i in 0..4 {
-            db.append_leaf(mmr_id.clone(), [i; 32]).unwrap();
+            db.append_leaf(mmr_id.clone(), [i; 32].into()).unwrap();
         }
 
-        let compact = db.get_compact(mmr_id);
+        let compact = db.get_compact(mmr_id).unwrap();
         assert_eq!(compact.entries, 4);
         assert_eq!(compact.cap_log2, 64);
         assert!(!compact.roots.is_empty());
@@ -445,12 +422,11 @@ mod tests {
             }
 
             for i in 0..num_leaves {
-                db.append_leaf(mmr_id.clone(), [i; 32]).unwrap();
+                db.append_leaf(mmr_id.clone(), [i; 32].into()).unwrap();
             }
 
             assert_eq!(
-                db.lelhlircdgtvhlkfiiecceijfuhejlbrnjubdmmr_sizecccccdc(mmr_id.clone())
-                    .unwrap(),
+                db.get_mmr_size(mmr_id.clone()).unwrap(),
                 expected_size,
                 "MMR size mismatch for {} leaves",
                 num_leaves
@@ -463,8 +439,8 @@ mod tests {
         let db = setup();
         let mmr_id = MmrId::Asm;
 
-        let hash1 = [1u8; 32];
-        let hash2 = [2u8; 32];
+        let hash1 = [1u8; 32].into();
+        let hash2 = [2u8; 32].into();
 
         // Append leaves
         let idx1 = db.append_leaf(mmr_id.clone(), hash1).unwrap();
@@ -473,7 +449,10 @@ mod tests {
         // Test reverse lookup
         assert_eq!(db.get_leaf_position(&mmr_id, hash1).unwrap(), Some(idx1));
         assert_eq!(db.get_leaf_position(&mmr_id, hash2).unwrap(), Some(idx2));
-        assert_eq!(db.get_leaf_position(&mmr_id, [99u8; 32]).unwrap(), None);
+        assert_eq!(
+            db.get_leaf_position(&mmr_id, [99u8; 32].into()).unwrap(),
+            None
+        );
 
         // Pop a leaf and verify index is removed
         db.pop_leaf(mmr_id.clone()).unwrap();
@@ -489,16 +468,16 @@ mod tests {
         let account2 = AccountId::from([1u8; 32]);
 
         // Append to ASM MMR
-        let asm_hash = [10u8; 32];
+        let asm_hash = [10u8; 32].into();
         db.append_leaf(MmrId::Asm, asm_hash).unwrap();
 
         // Append to account1 MMR
-        let acc1_hash = [20u8; 32];
+        let acc1_hash = [20u8; 32].into();
         db.append_leaf(MmrId::SnarkMsg(account1), acc1_hash)
             .unwrap();
 
         // Append to account2 MMR
-        let acc2_hash = [30u8; 32];
+        let acc2_hash = [30u8; 32].into();
         db.append_leaf(MmrId::SnarkMsg(account2), acc2_hash)
             .unwrap();
 

@@ -6,6 +6,7 @@ use strata_db_types::{
     traits::UnifiedMmrDatabase,
     DbError, DbResult,
 };
+use strata_identifiers::Hash;
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use threadpool::ThreadPool;
 
@@ -87,17 +88,17 @@ pub struct MmrHandle {
 
 impl MmrHandle {
     /// Append a new leaf to the MMR (async version)
-    pub async fn append_leaf(&self, hash: [u8; 32]) -> DbResult<u64> {
+    pub async fn append_leaf(&self, hash: Hash) -> DbResult<u64> {
         self.ops.append_leaf_async(self.mmr_id.clone(), hash).await
     }
 
     /// Append a new leaf to the MMR (blocking version)
-    pub fn append_leaf_blocking(&self, hash: [u8; 32]) -> DbResult<u64> {
+    pub fn append_leaf_blocking(&self, hash: Hash) -> DbResult<u64> {
         self.ops.append_leaf_blocking(self.mmr_id.clone(), hash)
     }
 
     /// Get a node at a specific position (blocking)
-    pub fn get_node_blocking(&self, pos: u64) -> DbResult<[u8; 32]> {
+    pub fn get_node_blocking(&self, pos: u64) -> DbResult<Hash> {
         self.ops.get_node_blocking(self.mmr_id.clone(), pos)
     }
 
@@ -117,7 +118,7 @@ impl MmrHandle {
         let num_leaves = self.num_leaves_blocking()?;
 
         BitManipulatedMmrAlgorithm::generate_proof(index, mmr_size, num_leaves, |pos| {
-            self.get_node_blocking(pos)
+            self.get_node_blocking(pos).map(|x| x.0)
         })
     }
 
@@ -127,17 +128,17 @@ impl MmrHandle {
         let num_leaves = self.num_leaves_blocking()?;
 
         BitManipulatedMmrAlgorithm::generate_proofs(start, end, mmr_size, num_leaves, |pos| {
-            self.get_node_blocking(pos)
+            self.get_node_blocking(pos).map(|x| x.0)
         })
     }
 
     /// Remove and return the last leaf from the MMR (async version)
-    pub async fn pop_leaf(&self) -> DbResult<Option<[u8; 32]>> {
+    pub async fn pop_leaf(&self) -> DbResult<Option<Hash>> {
         self.ops.pop_leaf_async(self.mmr_id.clone()).await
     }
 
     /// Remove and return the last leaf from the MMR (blocking version)
-    pub fn pop_leaf_blocking(&self) -> DbResult<Option<[u8; 32]>> {
+    pub fn pop_leaf_blocking(&self) -> DbResult<Option<Hash>> {
         self.ops.pop_leaf_blocking(self.mmr_id.clone())
     }
 
@@ -149,7 +150,7 @@ impl MmrHandle {
     /// Get a leaf hash by leaf index (blocking)
     ///
     /// Converts the leaf index to MMR position and retrieves the hash.
-    pub fn get_leaf_hash_blocking(&self, leaf_index: u64) -> DbResult<[u8; 32]> {
+    pub fn get_leaf_hash_blocking(&self, leaf_index: u64) -> DbResult<Hash> {
         let pos = leaf_index_to_pos(leaf_index);
         self.get_node_blocking(pos)
     }
@@ -181,7 +182,7 @@ where
     /// Atomically stores both the MMR hash and the original data.
     pub fn append_blocking(&self, data: &T) -> DbResult<u64> {
         let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
-        let hash = H::hash_leaf(&bytes);
+        let hash = H::hash_leaf(&bytes).into();
 
         self.handle
             .ops
@@ -193,7 +194,7 @@ where
     /// Atomically stores both the MMR hash and the original data.
     pub async fn append(&self, data: &T) -> DbResult<u64> {
         let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
-        let hash = H::hash_leaf(&bytes);
+        let hash = H::hash_leaf(&bytes).into();
 
         self.handle
             .ops

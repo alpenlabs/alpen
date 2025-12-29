@@ -4,7 +4,10 @@ use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 
-use crate::{chainstate::WriteBatchId, mmr_helpers::MmrId};
+use crate::{
+    chainstate::WriteBatchId,
+    mmr_helpers::{MmrError, MmrId},
+};
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -156,7 +159,6 @@ impl From<OpsError> for DbError {
 
 impl From<crate::mmr_helpers::MmrError> for DbError {
     fn from(value: crate::mmr_helpers::MmrError) -> Self {
-        use crate::mmr_helpers::MmrError;
         match value {
             MmrError::LeafNotFound(idx) => DbError::MmrLeafNotFound(idx),
             MmrError::InvalidRange { start, end } => DbError::MmrInvalidRange { start, end },

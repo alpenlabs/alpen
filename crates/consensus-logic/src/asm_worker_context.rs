@@ -5,11 +5,12 @@ use std::sync::Arc;
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
 use strata_db_types::DbError;
+use strata_identifiers::Hash;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{AsmStateManager, L1BlockManager, MmrHandle};
 use tokio::runtime::Handle;
-use tracing;
+use tracing::{self, error};
 
 #[expect(
     missing_debug_implementations,
@@ -116,28 +117,29 @@ impl WorkerContext for AsmWorkerCtx {
             })?;
 
         let tx = raw_tx_response.0;
+
         Ok(RawBitcoinTx::from(tx))
     }
 
-    fn append_manifest_to_mmr(&self, manifest_hash: [u8; 32]) -> WorkerResult<u64> {
+    fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64> {
         self.mmr_handle
             .append_leaf_blocking(manifest_hash)
             .map_err(|e| {
-                tracing::error!(?e, "Failed to append leaf to MMR");
+                error!(?e, "Failed to append leaf to MMR");
                 WorkerError::DbError
             })
     }
 
     fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
         self.mmr_handle.generate_proof(index).map_err(|e| {
-            tracing::error!(?e, index, "Failed to generate MMR proof");
+            error!(?e, index, "Failed to generate MMR proof");
             WorkerError::MmrProofFailed { index }
         })
     }
 
-    fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>> {
+    fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>> {
         let num_leaves = self.mmr_handle.num_leaves_blocking().map_err(|e| {
-            tracing::error!(?e, "Failed to get MMR num_leaves");
+            error!(?e, "Failed to get MMR num_leaves");
             WorkerError::DbError
         })?;
 
@@ -152,7 +154,7 @@ impl WorkerContext for AsmWorkerCtx {
             .get_leaf_hash_blocking(index)
             .map(Some)
             .map_err(|e| {
-                tracing::error!(?e, index, "Failed to get leaf hash from MMR");
+                error!(?e, index, "Failed to get leaf hash from MMR");
                 WorkerError::DbError
             })
     }
