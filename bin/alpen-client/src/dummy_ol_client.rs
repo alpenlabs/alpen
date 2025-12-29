@@ -50,6 +50,7 @@ impl SequencerOLClient for DummyOLClient {
             blocks.push(OLBlockData {
                 commitment,
                 inbox_messages: vec![],
+                next_inbox_msg_idx: 0,
             })
         }
         Ok(blocks)

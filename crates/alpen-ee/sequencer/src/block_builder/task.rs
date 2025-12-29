@@ -29,8 +29,14 @@ enum BlockBuilderError {
 }
 
 /// Computes the target timestamp for the next block.
-fn compute_next_block_target(last_block_timestamp_ms: u64, blocktime_ms: u64) -> u64 {
-    last_block_timestamp_ms + blocktime_ms
+fn compute_next_block_target(
+    last_block: &ExecBlockRecord,
+    config: &BlockBuilderConfig,
+) -> BlockTarget {
+    BlockTarget {
+        parent: last_block.blockhash(),
+        timestamp_ms: last_block.timestamp_ms() + config.blocktime_ms(),
+    }
 }
 
 /// Validates that current time meets the minimum blocktime constraint.
@@ -76,6 +82,7 @@ fn create_exec_block_record(
     best_ol_block: OLBlockCommitment,
     timestamp_ms: u64,
     parent_blockhash: Hash,
+    next_inbox_msg_idx: u64,
 ) -> ExecBlockRecord {
     ExecBlockRecord::new(
         package,
@@ -84,6 +91,7 @@ fn create_exec_block_record(
         best_ol_block,
         timestamp_ms,
         parent_blockhash,
+        next_inbox_msg_idx,
     )
 }
 
@@ -97,9 +105,17 @@ pub async fn block_builder_task<
     payload_builder: Arc<TPayloadBuilder>,
     storage: Arc<TStorage>,
 ) {
+    let last_local_block = exec_chain_handle
+        .get_best_block()
+        .await
+        .expect("next_block_target_timestamp: failed to get best exec block");
+
+    let mut next_block_target = compute_next_block_target(&last_local_block, &config);
+
     let clock = SystemClock;
     loop {
         match block_builder_task_inner(
+            &next_block_target,
             &config,
             &exec_chain_handle,
             &ol_chain_handle,
@@ -109,8 +125,9 @@ pub async fn block_builder_task<
         )
         .await
         {
-            Ok(blockhash) => {
+            Ok((blockhash, next_target)) => {
                 info!(?blockhash, "built new block");
+                next_block_target = next_target;
             }
             Err(BlockBuilderError::BlocktimeConstraintViolated) => {
                 warn!("blocktime constraint violated, retrying immediately");
@@ -124,21 +141,20 @@ pub async fn block_builder_task<
 }
 
 async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
+    next_block_target: &BlockTarget,
     config: &BlockBuilderConfig,
     exec_chain_handle: &ExecChainHandle,
     ol_chain_handle: &OLChainTrackerHandle,
     payload_builder: &TEngine,
     storage: &impl ExecBlockStorage,
     clock: &impl Clock,
-) -> Result<Hash, BlockBuilderError> {
-    // check when the next block should be built
-    let next_block_target = next_block_target_timestamp(config, exec_chain_handle).await?;
-
+) -> Result<(Hash, BlockTarget), BlockBuilderError> {
     // if we are not ready, sleep
-    clock.sleep_until(next_block_target).await;
+    clock.sleep_until(next_block_target.timestamp_ms).await;
 
     // we can build blocks now
     let (block, payload, blockhash) = build_next_block(
+        next_block_target,
         config,
         exec_chain_handle,
         ol_chain_handle,
@@ -156,6 +172,9 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit payload to engine")?;
 
+    // cache next block target
+    let next_block_target = compute_next_block_target(&block, config);
+
     // save block outputs
     storage
         .save_exec_block(block, payload)
@@ -168,25 +187,20 @@ async fn block_builder_task_inner<TEngine: PayloadBuilderEngine>(
         .await
         .context("block_builder: submit new exec block")?;
 
-    Ok(blockhash)
+    // TODO: should this wait for block
+
+    Ok((blockhash, next_block_target))
 }
 
-async fn next_block_target_timestamp(
-    config: &BlockBuilderConfig,
-    exec_chain_handle: &ExecChainHandle,
-) -> eyre::Result<u64> {
-    let last_local_block = exec_chain_handle
-        .get_best_block()
-        .await
-        .context("next_block_target_timestamp: failed to get best exec block")?;
-
-    Ok(compute_next_block_target(
-        last_local_block.timestamp_ms(),
-        config.blocktime_ms(),
-    ))
+// Next Block building target data
+#[derive(Debug)]
+struct BlockTarget {
+    parent: Hash,
+    timestamp_ms: u64,
 }
 
 async fn build_next_block(
+    expected_block_target: &BlockTarget,
     config: &BlockBuilderConfig,
     exec_chain_handle: &ExecChainHandle,
     ol_chain_handle: &OLChainTrackerHandle,
@@ -198,7 +212,17 @@ async fn build_next_block(
         .await
         .context("build_next_block: failed to get best exec block")?;
 
-    // validate blocktime constraint
+    // Check if last local block is not as expected from previous block building cycle
+    // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
+    if last_local_block.parent_blockhash() != expected_block_target.parent {
+        warn!(
+            expected = %expected_block_target.parent,
+            actual = %last_local_block.parent_blockhash(),
+            "build_next_block: unexpected latest blockhash"
+        )
+    }
+
+    // Ensure blocktime >= configured blocktime
     // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
     let timestamp_ms = clock.current_timestamp();
     validate_blocktime_constraint(
@@ -212,7 +236,7 @@ async fn build_next_block(
         .get_finalized_block()
         .await
         .context("build_next_block: failed to get finalized OL block")?;
-    let inbox_messages = if should_fetch_inbox_messages(
+    let (inbox_messages, next_inbox_msg_idx) = if should_fetch_inbox_messages(
         last_local_block.ol_block().blkid(),
         best_ol_block.blkid(),
     ) {
@@ -220,8 +244,9 @@ async fn build_next_block(
             .get_inbox_messages(last_local_block.ol_block().slot(), best_ol_block.slot())
             .await
             .context("build_next_block: failed to get inbox messages")?
+            .into_parts()
     } else {
-        vec![]
+        (vec![], last_local_block.next_inbox_msg_idx())
     };
 
     // build next block
@@ -245,6 +270,7 @@ async fn build_next_block(
         best_ol_block,
         timestamp_ms,
         parent_blockhash,
+        next_inbox_msg_idx,
     );
 
     Ok((block, payload, blockhash))
@@ -285,6 +311,7 @@ mod tests {
             ol_block,
             timestamp_ms,
             Hash::default(),
+            0,
         )
     }
 

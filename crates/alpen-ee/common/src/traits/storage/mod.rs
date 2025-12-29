@@ -1,10 +1,14 @@
 mod account;
+mod batch;
 mod errors;
 mod exec_block;
 
 #[cfg(feature = "test-utils")]
 pub use account::{tests, MockStorage};
 pub use account::{OLBlockOrEpoch, Storage};
+pub use batch::BatchStorage;
+#[cfg(feature = "test-utils")]
+pub use batch::MockBatchStorage;
 pub use errors::StorageError;
 pub use exec_block::ExecBlockStorage;
 #[cfg(feature = "test-utils")]

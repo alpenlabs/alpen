@@ -9,4 +9,4 @@ pub(crate) mod test_utils;
 
 pub use handle::{build_ol_chain_tracker, OLChainTrackerHandle};
 pub use init::init_ol_chain_tracker_state;
-pub use state::OLChainTrackerState;
+pub use state::{InboxMessages, OLChainTrackerState};

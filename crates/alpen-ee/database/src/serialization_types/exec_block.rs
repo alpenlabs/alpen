@@ -17,6 +17,7 @@ pub(crate) struct DBExecBlockRecord {
     /// ExecBlockPackage serialized using SSZ, then wrapped in a Vec<u8> for Borsh
     package_ssz: Vec<u8>,
     account_state: DBEeAccountState,
+    next_inbox_msg_idx: u64,
 }
 
 impl From<ExecBlockRecord> for DBExecBlockRecord {
@@ -25,6 +26,7 @@ impl From<ExecBlockRecord> for DBExecBlockRecord {
         let parent_blockhash = value.parent_blockhash();
         let timestamp_ms = value.timestamp_ms();
         let ol_block = *value.ol_block();
+        let next_inbox_msg_idx = value.next_inbox_msg_idx();
         let (package, account_state) = value.into_parts();
         let package_ssz = package.as_ssz_bytes();
         let account_state = account_state.into();
@@ -36,6 +38,7 @@ impl From<ExecBlockRecord> for DBExecBlockRecord {
             ol_block,
             package_ssz,
             account_state,
+            next_inbox_msg_idx,
         }
     }
 }
@@ -54,6 +57,7 @@ impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
             value.ol_block,
             value.timestamp_ms,
             value.parent_blockhash,
+            value.next_inbox_msg_idx,
         ))
     }
 }
