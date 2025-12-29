@@ -1,8 +1,8 @@
-//! Builder for creating the batch builder task.
+//! Builder and handle for the batch builder task.
 
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{BatchStorage, ExecBlockStorage};
+use alpen_ee_common::{BatchId, BatchStorage, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
 use strata_acct_types::Hash;
 use tokio::sync::watch;
@@ -11,6 +11,30 @@ use super::{
     ctx::BatchBuilderCtx, task::batch_builder_task, BatchBuilderConfig, BatchBuilderState,
     BatchPolicy, BatchSealingPolicy, BlockDataProvider,
 };
+
+/// Handle to observe batch builder state changes.
+///
+/// Provides a watch channel that is updated whenever:
+/// - A new batch is sealed
+/// - A reorg causes batches to be reverted
+#[derive(Debug, Clone)]
+pub struct BatchBuilderHandle {
+    /// Receiver for the latest batch ID.
+    /// The value is `None` if no batches exist yet, otherwise `Some(latest_batch_id)`.
+    latest_batch_rx: watch::Receiver<Option<BatchId>>,
+}
+
+impl BatchBuilderHandle {
+    /// Returns a receiver that can be used to watch for batch updates.
+    pub fn latest_batch_watcher(&self) -> watch::Receiver<Option<BatchId>> {
+        self.latest_batch_rx.clone()
+    }
+
+    /// Returns the current latest batch ID, if any.
+    pub fn latest_batch_id(&self) -> Option<BatchId> {
+        *self.latest_batch_rx.borrow()
+    }
+}
 
 /// Default backoff duration (ms) when block data is not yet available.
 const DEFAULT_DATA_POLL_INTERVAL_MS: u64 = 100;
@@ -91,8 +115,10 @@ where
         self
     }
 
-    /// Builds and returns the batch builder task.
-    pub fn build(self) -> impl Future<Output = ()> {
+    /// Builds and returns the batch builder handle and task.
+    ///
+    /// The handle provides a watch channel for observing the latest batch ID.
+    pub fn build(self, initial_batch_id: Option<BatchId>) -> (BatchBuilderHandle, impl Future<Output = ()>) {
         let config = BatchBuilderConfig {
             max_blocks_per_batch: self
                 .max_blocks_per_batch
@@ -103,6 +129,8 @@ where
             error_backoff_ms: self.error_backoff_ms.unwrap_or(DEFAULT_ERROR_BACKOFF_MS),
         };
 
+        let (latest_batch_tx, latest_batch_rx) = watch::channel(initial_batch_id);
+
         let ctx = BatchBuilderCtx {
             genesis_hash: self.genesis_hash,
             config,
@@ -112,9 +140,13 @@ where
             block_storage: self.block_storage,
             batch_storage: self.batch_storage,
             exec_chain: self.exec_chain,
+            latest_batch_tx,
             _policy: std::marker::PhantomData,
         };
 
-        batch_builder_task(self.state, ctx)
+        let handle = BatchBuilderHandle { latest_batch_rx };
+        let task = batch_builder_task(self.state, ctx);
+
+        (handle, task)
     }
 }

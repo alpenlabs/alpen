@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use alpen_ee_common::{BatchStorage, ExecBlockStorage};
+use alpen_ee_common::{BatchId, BatchStorage, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
 use strata_acct_types::Hash;
 use tokio::sync::watch;
@@ -37,6 +37,8 @@ where
     pub batch_storage: Arc<BS>,
     /// Handle to query canonical chain status.
     pub exec_chain: Arc<ExecChainHandle>,
+    /// Sender to notify about latest batch updates (new batch sealed or reorg).
+    pub latest_batch_tx: watch::Sender<Option<BatchId>>,
     /// Marker for the policy type.
     pub _policy: std::marker::PhantomData<P>,
 }
