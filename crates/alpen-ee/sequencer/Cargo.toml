@@ -16,6 +16,7 @@ strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
+async-trait.workspace = true
 eyre.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
