@@ -6,8 +6,8 @@ mod ol_chain_tracker;
 
 pub use batch_builder::{
     init_batch_builder_state, Accumulator, BatchBuilderBuilder, BatchBuilderConfig,
-    BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockCountData, BlockCountPolicy,
-    BlockCountValue, BlockDataProvider, FixedBlockCountSealing,
+    BatchBuilderHandle, BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockCountData,
+    BlockCountPolicy, BlockCountValue, BlockDataProvider, FixedBlockCountSealing,
 };
 pub use block_builder::{block_builder_task, BlockBuilderConfig};
 pub use ol_chain_tracker::{
