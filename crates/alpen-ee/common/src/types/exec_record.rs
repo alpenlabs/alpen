@@ -2,6 +2,7 @@ use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::OLBlockCommitment;
+use strata_snark_acct_types::MessageEntry;
 
 /// Additional metadata associated with the block.
 /// Most of these can be derived from data in package or account_state, but are cached
@@ -30,6 +31,8 @@ struct ExecPackageMetadata {
 pub struct ExecBlockRecord {
     /// Additional metadata associated with this block.
     metadata: ExecPackageMetadata,
+    /// OL Account messages processed in this block.
+    messages: Vec<MessageEntry>,
     /// The execution block package with additional block data.
     package: ExecBlockPackage,
     /// The final account state as a result of this execution.
@@ -49,6 +52,8 @@ impl ExecBlockRecord {
         Self {
             package,
             account_state,
+            // TODO: messages
+            messages: vec![],
             metadata: ExecPackageMetadata {
                 blocknum,
                 ol_block,
@@ -91,8 +96,12 @@ impl ExecBlockRecord {
         self.metadata.next_inbox_msg_idx
     }
 
-    pub fn into_parts(self) -> (ExecBlockPackage, EeAccountState) {
-        (self.package, self.account_state)
+    pub fn messages(&self) -> &[MessageEntry] {
+        &self.messages
+    }
+
+    pub fn into_parts(self) -> (ExecBlockPackage, EeAccountState, Vec<MessageEntry>) {
+        (self.package, self.account_state, self.messages)
     }
 }
 
