@@ -29,7 +29,8 @@ async fn is_block_canonical(
 
 /// Find the last batch whose end block is still canonical.
 ///
-/// Returns `(batch_idx, last_block_hash, batch_id)` or `None` if no batches exist or none are canonical.
+/// Returns `(batch_idx, last_block_hash, batch_id)` or `None` if no batches exist or none are
+/// canonical.
 async fn find_last_canonical_batch(
     exec_chain: &ExecChainHandle,
     batch_storage: &impl BatchStorage,
