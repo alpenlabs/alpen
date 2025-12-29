@@ -1,7 +1,7 @@
 use ssz_types::FixedBytes;
 use strata_db_types::{
     DbError, DbResult,
-    mmr_helpers::{MmrAlgorithm, MmrId, MmrMetadata},
+    mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrId, MmrMetadata},
     traits::UnifiedMmrDatabase,
 };
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
@@ -50,6 +50,8 @@ impl UnifiedMmrDb {
 }
 
 impl UnifiedMmrDatabase for UnifiedMmrDb {
+    type MmrAlgorithm = BitManipulatedMmrAlgorithm;
+
     fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
@@ -60,7 +62,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
                     .get(&mmr_id)?
                     .expect("MMR metadata must exist after ensure_mmr_metadata");
 
-                let result = MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
+                let result = Self::MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
                     nt.get(&(mmr_id.clone(), pos))?
                         .map(|buf| buf.0)
                         .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
@@ -98,9 +100,9 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
         Ok(metadata.num_leaves)
     }
 
-    fn get_peak_roots(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>> {
+    fn get_peaks(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>> {
         self.load_mmr_metadata(&mmr_id)
-            .map(|m| m.peak_roots.into_iter().map(|b| b.0).collect())
+            .map(|m| m.peaks.into_iter().map(|b| b.0).collect())
     }
 
     fn get_compact(&self, mmr_id: MmrId) -> DbResult<CompactMmr64> {
@@ -109,7 +111,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
             .unwrap_or_else(|_| MmrMetadata::empty());
 
         let roots_vec: Vec<_> = metadata
-            .peak_roots
+            .peaks
             .iter()
             .map(|buf| FixedBytes::<32>::from(buf.0))
             .collect();
@@ -131,7 +133,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
                     .get(&mmr_id)?
                     .expect("MMR metadata must exist after ensure_mmr_metadata");
 
-                let result = MmrAlgorithm::pop_leaf(&metadata, |pos| {
+                let result = Self::MmrAlgorithm::pop_leaf(&metadata, |pos| {
                     nt.get(&(mmr_id.clone(), pos))?
                         .map(|buf| buf.0)
                         .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
@@ -176,7 +178,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
                     .get(&mmr_id)?
                     .expect("MMR metadata must exist after ensure_mmr_metadata");
 
-                let result = MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
+                let result = Self::MmrAlgorithm::append_leaf(hash, &metadata, |pos| {
                     nt.get(&(mmr_id.clone(), pos))?
                         .map(|buf| buf.0)
                         .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
@@ -307,22 +309,22 @@ mod tests {
 
         // Single leaf: one peak
         db.append_leaf(mmr_id.clone(), [1u8; 32]).unwrap();
-        let peaks = db.get_peak_roots(mmr_id.clone());
+        let peaks = db.get_peaks(mmr_id.clone());
         assert_eq!(peaks.len(), 1);
 
         // Two leaves: one peak (merged)
         db.append_leaf(mmr_id.clone(), [2u8; 32]).unwrap();
-        let peaks = db.get_peak_roots(mmr_id.clone());
+        let peaks = db.get_peaks(mmr_id.clone());
         assert_eq!(peaks.len(), 1);
 
         // Three leaves: two peaks
         db.append_leaf(mmr_id.clone(), [3u8; 32]).unwrap();
-        let peaks = db.get_peak_roots(mmr_id.clone());
+        let peaks = db.get_peaks(mmr_id.clone());
         assert_eq!(peaks.len(), 2);
 
         // Four leaves: one peak (complete tree)
         db.append_leaf(mmr_id.clone(), [4u8; 32]).unwrap();
-        let peaks = db.get_peak_roots(mmr_id);
+        let peaks = db.get_peaks(mmr_id);
         assert_eq!(peaks.len(), 1);
     }
 

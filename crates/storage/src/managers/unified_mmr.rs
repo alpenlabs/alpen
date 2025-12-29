@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::{
-    mmr_helpers::{leaf_index_to_pos, MmrAlgorithm, MmrId},
+    mmr_helpers::{leaf_index_to_pos, BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrId},
     traits::UnifiedMmrDatabase,
     DbError, DbResult,
 };
@@ -116,7 +116,7 @@ impl MmrHandle {
         let mmr_size = self.mmr_size_blocking()?;
         let num_leaves = self.num_leaves_blocking()?;
 
-        MmrAlgorithm::generate_proof(index, mmr_size, num_leaves, |pos| {
+        BitManipulatedMmrAlgorithm::generate_proof(index, mmr_size, num_leaves, |pos| {
             self.get_node_blocking(pos)
         })
     }
@@ -126,7 +126,7 @@ impl MmrHandle {
         let mmr_size = self.mmr_size_blocking()?;
         let num_leaves = self.num_leaves_blocking()?;
 
-        MmrAlgorithm::generate_proofs(start, end, mmr_size, num_leaves, |pos| {
+        BitManipulatedMmrAlgorithm::generate_proofs(start, end, mmr_size, num_leaves, |pos| {
             self.get_node_blocking(pos)
         })
     }

@@ -22,7 +22,7 @@ use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{
     chainstate::ChainstateDatabase,
-    mmr_helpers::MmrId,
+    mmr_helpers::{MmrAlgorithm, MmrId},
     types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry},
     DbError, DbResult,
 };
@@ -362,6 +362,8 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 /// is identified by an `MmrId` enum rather than a generic scope parameter.
 /// This is the preferred interface for new code.
 pub trait UnifiedMmrDatabase: Send + Sync + 'static {
+    type MmrAlgorithm: MmrAlgorithm;
+
     /// Append a new leaf to the specified MMR
     fn append_leaf(&self, mmr_id: MmrId, hash: [u8; 32]) -> DbResult<u64>;
 
@@ -374,8 +376,8 @@ pub trait UnifiedMmrDatabase: Send + Sync + 'static {
     /// Get the total number of leaves
     fn get_num_leaves(&self, mmr_id: MmrId) -> DbResult<u64>;
 
-    /// Get the individual peak roots
-    fn get_peak_roots(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>>;
+    /// Get the individual peaks
+    fn get_peaks(&self, mmr_id: MmrId) -> DbResult<Vec<[u8; 32]>>;
 
     /// Get a compact representation of the MMR
     fn get_compact(&self, mmr_id: MmrId) -> DbResult<CompactMmr64B32>;
