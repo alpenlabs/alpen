@@ -7,7 +7,7 @@ use alpen_ee_exec_chain::ExecChainHandle;
 use strata_acct_types::Hash;
 use tokio::sync::watch;
 
-use super::{BatchBuilderConfig, BatchPolicy, BatchSealingPolicy, BlockDataProvider};
+use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
 
 /// Context holding all dependencies for the batch builder task.
 ///
@@ -23,8 +23,6 @@ where
 {
     /// Genesis block hash, used as the starting point for the first batch.
     pub genesis_hash: Hash,
-    /// Configuration for the batch builder.
-    pub config: BatchBuilderConfig,
     /// Receiver for canonical tip updates from ExecChain.
     pub preconf_rx: watch::Receiver<Hash>,
     /// Provider for fetching block data (e.g., DA size).
