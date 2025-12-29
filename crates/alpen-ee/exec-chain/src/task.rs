@@ -28,6 +28,7 @@ pub(crate) enum ChainTrackerError {
 /// Queries for reading chain tracker state.
 pub(crate) enum Query {
     GetBestBlock(oneshot::Sender<ExecBlockRecord>),
+    IsCanonical(Hash, oneshot::Sender<bool>),
 }
 
 /// Channel receivers for the execution chain tracker task, split by priority.
@@ -128,6 +129,9 @@ async fn handle_query(state: &mut ExecChainState, query: Query) {
     match query {
         Query::GetBestBlock(tx) => {
             let _ = tx.send(state.get_best_block().clone());
+        }
+        Query::IsCanonical(hash, tx) => {
+            let _ = tx.send(state.is_canonical(&hash));
         }
     }
 }

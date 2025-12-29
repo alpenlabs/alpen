@@ -28,6 +28,21 @@ impl ExecChainHandle {
         rx.await.map_err(Into::into)
     }
 
+    /// Check if a block is on the canonical chain.
+    ///
+    /// Returns `true` if the block with the given hash lies on the path from
+    /// the finalized block to the current best tip.
+    pub async fn is_canonical(&self, hash: Hash) -> eyre::Result<bool> {
+        let (tx, rx) = oneshot::channel();
+
+        self.senders
+            .query_tx
+            .send(Query::IsCanonical(hash, tx))
+            .await?;
+
+        rx.await.map_err(Into::into)
+    }
+
     /// Submit new exec block to be tracked.
     pub async fn new_block(&self, hash: Hash) -> eyre::Result<()> {
         self.senders
