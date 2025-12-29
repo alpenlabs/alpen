@@ -212,7 +212,7 @@ async fn build_next_block(
         .await
         .context("build_next_block: failed to get best exec block")?;
 
-    // check if last local block is not as expected from previous block building cycle
+    // Check if last local block is not as expected from previous block building cycle
     // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
     if last_local_block.parent_blockhash() != expected_block_target.parent {
         warn!(

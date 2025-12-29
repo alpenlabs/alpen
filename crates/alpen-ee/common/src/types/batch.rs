@@ -6,7 +6,7 @@ use strata_identifiers::L1BlockCommitment;
 
 use crate::ProofId;
 
-/// Unique, deterministic identifier for an Batch
+/// Unique, deterministic identifier for a batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BatchId {
     prev_block: Hash,
@@ -56,19 +56,18 @@ pub enum BatchStatus {
 /// Represents a sequence of blocks that are treated as a unit for DA and posting updates to OL.
 #[derive(Debug)]
 pub struct Batch {
-    /// Sequential update index, also used in
+    /// Sequential update index.
     idx: u64,
-    /// last block of (idx - 1)th update
+    /// Last block of (idx - 1)th update.
     prev_block: Hash,
-    /// last block in this update
+    /// Last block in this update.
     last_block: Hash,
-    /// rest of the blocks in this update.
-    /// cached here for easier processing.
+    /// Rest of the blocks in this update, cached here for easier processing.
     inner_blocks: Vec<Hash>,
 }
 
 impl Batch {
-    /// Create a new Batch.
+    /// Create a new batch.
     pub fn new(idx: u64, prev_block: Hash, last_block: Hash, inner_blocks: Vec<Hash>) -> Self {
         debug_assert_ne!(prev_block, last_block);
         Self {
@@ -85,22 +84,21 @@ impl Batch {
     }
 
     /// Get sequential index.
-    /// This should equal the sequence number in account update sent to OL.
     pub fn idx(&self) -> u64 {
         self.idx
     }
 
-    /// last block of the previous Batch.
+    /// last block of the previous batch.
     pub fn prev_block(&self) -> Hash {
         self.prev_block
     }
 
-    /// last block of this Batch
+    /// last block of this batch.
     pub fn last_block(&self) -> Hash {
         self.last_block
     }
 
-    /// Iterate over all blocks in range of this Batch.
+    /// Iterate over all blocks in range of this batch.
     pub fn blocks_iter(&self) -> impl Iterator<Item = Hash> + '_ {
         self.inner_blocks
             .iter()

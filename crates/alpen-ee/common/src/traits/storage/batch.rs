@@ -10,8 +10,8 @@ use crate::{Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, StorageErr
 /// Chunks are subsets of blocks in a batch, and units for proving ee chain execution, typically
 /// limited by prover constraints.
 ///
-/// An Batch will consist of 1 or more chunks.
-/// These chunks can be generated before or after updates, but the chunks must fit inside Batch
+/// A batch will consist of 1 or more chunks.
+/// These chunks can be generated before or after updates, but the chunks must fit inside batch
 /// boundaries.
 ///
 /// ... | ------------ Batch 1 ------------- | --------- Batch 2 ------- | ...

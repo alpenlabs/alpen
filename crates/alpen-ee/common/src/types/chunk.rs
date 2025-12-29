@@ -34,13 +34,13 @@ impl ChunkId {
 /// Represents a sequence of blocks that are processed together as a unit during proving.
 #[derive(Debug)]
 pub struct Chunk {
-    /// Sequential chunk index
+    /// Sequential chunk index.
     idx: u64,
-    /// last block of (idx - 1)th chunk that this chunk extends
+    /// Last block of (idx - 1)th chunk that this chunk extends.
     prev_block: Hash,
-    /// last block of this chunk. A chunk cannot be empty.
+    /// Last block of this chunk. A chunk cannot be empty.
     last_block: Hash,
-    /// rest of the blocks in the chunk.
+    /// Rest of the blocks in the chunk.
     inner_blocks: Vec<Hash>,
 }
 
@@ -56,22 +56,22 @@ impl Chunk {
         }
     }
 
-    /// Deterministic chunk id
+    /// Deterministic chunk id.
     pub fn id(&self) -> ChunkId {
         ChunkId::new(self.prev_block, self.last_block)
     }
 
-    /// Sequential chunk index
+    /// Sequential chunk index.
     pub fn idx(&self) -> u64 {
         self.idx
     }
 
-    /// last block of (idx - 1)th chunk that this chunk extends
+    /// Last block of (idx - 1)th chunk, that this chunk extends.
     pub fn prev_block(&self) -> Hash {
         self.prev_block
     }
 
-    /// last block of this chunk.
+    /// Last block of this chunk.
     pub fn last_block(&self) -> Hash {
         self.last_block
     }
