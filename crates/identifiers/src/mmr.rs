@@ -1,30 +1,29 @@
 //! MMR (Merkle Mountain Range) identifier types.
 
-use serde::{Deserialize, Serialize};
+use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::AccountId;
+
+pub type RawMmrId = Vec<u8>;
 
 /// Identifier for a specific MMR instance in unified storage
 ///
 /// Each variant represents a different MMR type, with optional scoping
 /// within that type (e.g., per-account MMRs).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum MmrId {
     /// ASM manifest MMR (singleton, no account scope)
     Asm,
-    /// Snark message MMR (per-account scope)
-    SnarkMsg(AccountId),
+    /// Snark message inbox MMR (per-account scope)
+    SnarkMsgInbox(AccountId),
 }
 
 impl MmrId {
     /// Serialize MmrId to bytes for use as database key
     ///
-    /// Uses bincode with big-endian encoding for compatibility with existing data.
+    /// Uses bincode with big-endian encoding to ensure lexicographical order because this will be
+    /// used in the db key.
     pub fn to_bytes(&self) -> Vec<u8> {
-        use bincode::Options;
-        let options = bincode::options().with_fixint_encoding().with_big_endian();
-        options
-            .serialize(self)
-            .expect("MmrId serialization should not fail")
+        borsh::to_vec(&self).expect("MmrId serialization should not fail")
     }
 }

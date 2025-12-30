@@ -138,7 +138,7 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>> {
-        let num_leaves = self.mmr_handle.num_leaves_blocking().map_err(|e| {
+        let num_leaves = self.mmr_handle.get_num_leaves_blocking().map_err(|e| {
             error!(?e, "Failed to get MMR num_leaves");
             WorkerError::DbError
         })?;

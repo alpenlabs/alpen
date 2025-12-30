@@ -8,7 +8,7 @@ use serde::Serialize;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::{Hash, OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{Hash, OLBlockCommitment, OLBlockId, RawMmrId, Slot};
 use strata_merkle::CompactMmr64B32;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
@@ -365,25 +365,25 @@ pub trait GlobalMmrDatabase: Send + Sync + 'static {
     type MmrAlgorithm: MmrAlgorithm;
 
     /// Append a new leaf to the specified MMR
-    fn append_leaf(&self, mmr_id: Vec<u8>, hash: Hash) -> DbResult<u64>;
+    fn append_leaf(&self, mmr_id: RawMmrId, hash: Hash) -> DbResult<u64>;
 
     /// Get a node hash by MMR position
-    fn get_node(&self, mmr_id: Vec<u8>, pos: u64) -> DbResult<Hash>;
+    fn get_node(&self, mmr_id: RawMmrId, pos: u64) -> DbResult<Hash>;
 
     /// Get the total MMR size
-    fn get_mmr_size(&self, mmr_id: Vec<u8>) -> DbResult<u64>;
+    fn get_mmr_size(&self, mmr_id: RawMmrId) -> DbResult<u64>;
 
     /// Get the total number of leaves
-    fn get_num_leaves(&self, mmr_id: Vec<u8>) -> DbResult<u64>;
+    fn get_num_leaves(&self, mmr_id: RawMmrId) -> DbResult<u64>;
 
     /// Get the peaks
-    fn get_peaks(&self, mmr_id: Vec<u8>) -> DbResult<Vec<Hash>>;
+    fn get_peaks(&self, mmr_id: RawMmrId) -> DbResult<Vec<Hash>>;
 
     /// Get a compact representation of the MMR
-    fn get_compact(&self, mmr_id: Vec<u8>) -> DbResult<CompactMmr64B32>;
+    fn get_compact(&self, mmr_id: RawMmrId) -> DbResult<CompactMmr64B32>;
 
     /// Remove the last leaf from the MMR
-    fn pop_leaf(&self, mmr_id: Vec<u8>) -> DbResult<Option<Hash>>;
+    fn pop_leaf(&self, mmr_id: RawMmrId) -> DbResult<Option<Hash>>;
 
     /// Append a leaf with its pre-image data (optional operation)
     ///
@@ -391,7 +391,7 @@ pub trait GlobalMmrDatabase: Send + Sync + 'static {
     /// Default implementation returns Unimplemented error.
     fn append_leaf_with_preimage(
         &self,
-        _mmr_id: Vec<u8>,
+        _mmr_id: RawMmrId,
         _hash: Hash,
         _preimage: Vec<u8>,
     ) -> DbResult<u64> {
@@ -402,7 +402,7 @@ pub trait GlobalMmrDatabase: Send + Sync + 'static {
     ///
     /// Returns None if no pre-image exists at the given index.
     /// Default implementation returns Unimplemented error.
-    fn get_preimage(&self, _mmr_id: Vec<u8>, _index: u64) -> DbResult<Option<Vec<u8>>> {
+    fn get_preimage(&self, _mmr_id: RawMmrId, _index: u64) -> DbResult<Option<Vec<u8>>> {
         Err(DbError::Unimplemented)
     }
 }

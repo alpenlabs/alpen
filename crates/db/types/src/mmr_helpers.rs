@@ -343,7 +343,6 @@ pub trait MmrAlgorithm {
     ///
     /// * `leaf_index` - The leaf index to generate proof for
     /// * `mmr_size` - Current MMR size
-    /// * `num_leaves` - Current number of leaves
     /// * `get_node` - Closure to read existing nodes
     ///
     /// # Returns
@@ -352,13 +351,8 @@ pub trait MmrAlgorithm {
     ///
     /// # Errors
     ///
-    /// Returns `MmrError::LeafNotFound` if the leaf index is out of bounds
-    fn generate_proof<F, E>(
-        leaf_index: u64,
-        mmr_size: u64,
-        num_leaves: u64,
-        get_node: F,
-    ) -> Result<MerkleProof, E>
+    /// Returns `MmrError::PositionOutOfBounds` if the leaf index is out of bounds
+    fn generate_proof<F, E>(leaf_index: u64, mmr_size: u64, get_node: F) -> Result<MerkleProof, E>
     where
         F: Fn(u64) -> Result<[u8; 32], E>,
         E: From<MmrError>;
@@ -370,7 +364,6 @@ pub trait MmrAlgorithm {
     /// * `start` - Starting leaf index (inclusive)
     /// * `end` - Ending leaf index (inclusive)
     /// * `mmr_size` - Current MMR size
-    /// * `num_leaves` - Current number of leaves
     /// * `get_node` - Closure to read existing nodes
     ///
     /// # Returns
@@ -384,7 +377,6 @@ pub trait MmrAlgorithm {
         start: u64,
         end: u64,
         mmr_size: u64,
-        num_leaves: u64,
         get_node: F,
     ) -> Result<Vec<MerkleProof>, E>
     where
@@ -531,20 +523,11 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
         }))
     }
 
-    fn generate_proof<F, E>(
-        leaf_index: u64,
-        mmr_size: u64,
-        num_leaves: u64,
-        get_node: F,
-    ) -> Result<MerkleProof, E>
+    fn generate_proof<F, E>(leaf_index: u64, mmr_size: u64, get_node: F) -> Result<MerkleProof, E>
     where
         F: Fn(u64) -> Result<[u8; 32], E>,
         E: From<MmrError>,
     {
-        if leaf_index >= num_leaves {
-            return Err(MmrError::LeafNotFound(leaf_index).into());
-        }
-
         let leaf_pos = leaf_index_to_pos(leaf_index);
         let peak_pos = find_peak_for_pos(leaf_pos, mmr_size)?;
 
@@ -568,7 +551,6 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
         start: u64,
         end: u64,
         mmr_size: u64,
-        num_leaves: u64,
         get_node: F,
     ) -> Result<Vec<MerkleProof>, E>
     where
@@ -579,13 +561,9 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
             return Err(MmrError::InvalidRange { start, end }.into());
         }
 
-        if end >= num_leaves {
-            return Err(MmrError::LeafNotFound(end).into());
-        }
-
         let mut proofs = Vec::with_capacity((end - start + 1) as usize);
         for index in start..=end {
-            let proof = Self::generate_proof(index, mmr_size, num_leaves, &get_node)?;
+            let proof = Self::generate_proof(index, mmr_size, &get_node)?;
             proofs.push(proof);
         }
 

@@ -18,7 +18,20 @@ type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
 #[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Decode,
+    Encode,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 

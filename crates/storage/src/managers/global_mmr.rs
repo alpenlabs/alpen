@@ -105,31 +105,29 @@ impl MmrHandle {
     }
 
     /// Get the total MMR size (blocking)
-    pub fn mmr_size_blocking(&self) -> DbResult<u64> {
+    pub fn get_mmr_size_blocking(&self) -> DbResult<u64> {
         self.ops.get_mmr_size_blocking(self.mmr_id.to_bytes())
     }
 
     /// Get the number of leaves (blocking)
-    pub fn num_leaves_blocking(&self) -> DbResult<u64> {
+    pub fn get_num_leaves_blocking(&self) -> DbResult<u64> {
         self.ops.get_num_leaves_blocking(self.mmr_id.to_bytes())
     }
 
     /// Generate a Merkle proof for a single leaf position
     pub fn generate_proof(&self, index: u64) -> DbResult<MerkleProof> {
-        let mmr_size = self.mmr_size_blocking()?;
-        let num_leaves = self.num_leaves_blocking()?;
+        let mmr_size = self.get_mmr_size_blocking()?;
 
-        BitManipulatedMmrAlgorithm::generate_proof(index, mmr_size, num_leaves, |pos| {
+        BitManipulatedMmrAlgorithm::generate_proof(index, mmr_size, |pos| {
             self.get_node_blocking(pos).map(|x| x.0)
         })
     }
 
     /// Generate Merkle proofs for a range of leaf positions
     pub fn generate_proofs(&self, start: u64, end: u64) -> DbResult<Vec<MerkleProof>> {
-        let mmr_size = self.mmr_size_blocking()?;
-        let num_leaves = self.num_leaves_blocking()?;
+        let mmr_size = self.get_mmr_size_blocking()?;
 
-        BitManipulatedMmrAlgorithm::generate_proofs(start, end, mmr_size, num_leaves, |pos| {
+        BitManipulatedMmrAlgorithm::generate_proofs(start, end, mmr_size, |pos| {
             self.get_node_blocking(pos).map(|x| x.0)
         })
     }

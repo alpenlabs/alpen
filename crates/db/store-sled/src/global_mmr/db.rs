@@ -4,7 +4,7 @@ use strata_db_types::{
     mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrMetadata},
     traits::GlobalMmrDatabase,
 };
-use strata_identifiers::Hash;
+use strata_identifiers::{Hash, RawMmrId};
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
 use strata_primitives::buf::Buf32;
 use typed_sled::tree::SledTransactionalTree;
@@ -54,7 +54,7 @@ impl GlobalMmrDb {
     }
 
     fn append_leaf_in_transaction<A: MmrAlgorithm>(
-        mmr_id: Vec<u8>,
+        mmr_id: RawMmrId,
         hash: Hash,
         nt: SledTransactionalTree<GlobalMmrNodeSchema>,
         mt: SledTransactionalTree<GlobalMmrMetaSchema>,
@@ -86,7 +86,7 @@ impl GlobalMmrDb {
 impl GlobalMmrDatabase for GlobalMmrDb {
     type MmrAlgorithm = BitManipulatedMmrAlgorithm;
 
-    fn append_leaf(&self, mmr_id: Vec<u8>, hash: Hash) -> DbResult<u64> {
+    fn append_leaf(&self, mmr_id: RawMmrId, hash: Hash) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
@@ -103,28 +103,28 @@ impl GlobalMmrDatabase for GlobalMmrDb {
         )
     }
 
-    fn get_node(&self, mmr_id: Vec<u8>, pos: u64) -> DbResult<Hash> {
+    fn get_node(&self, mmr_id: RawMmrId, pos: u64) -> DbResult<Hash> {
         self.get_mmr_node(&mmr_id, pos)
     }
 
-    fn get_mmr_size(&self, mmr_id: Vec<u8>) -> DbResult<u64> {
+    fn get_mmr_size(&self, mmr_id: RawMmrId) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.mmr_size)
     }
 
-    fn get_num_leaves(&self, mmr_id: Vec<u8>) -> DbResult<u64> {
+    fn get_num_leaves(&self, mmr_id: RawMmrId) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.num_leaves)
     }
 
-    fn get_peaks(&self, mmr_id: Vec<u8>) -> DbResult<Vec<Hash>> {
+    fn get_peaks(&self, mmr_id: RawMmrId) -> DbResult<Vec<Hash>> {
         self.load_mmr_metadata(&mmr_id)
             .map(|m| m.peaks.into_iter().collect())
     }
 
-    fn get_compact(&self, mmr_id: Vec<u8>) -> DbResult<CompactMmr64> {
+    fn get_compact(&self, mmr_id: RawMmrId) -> DbResult<CompactMmr64> {
         let metadata = self
             .load_mmr_metadata(&mmr_id)
             .unwrap_or_else(|_| MmrMetadata::empty());
@@ -142,7 +142,7 @@ impl GlobalMmrDatabase for GlobalMmrDb {
         })
     }
 
-    fn pop_leaf(&self, mmr_id: Vec<u8>) -> DbResult<Option<Hash>> {
+    fn pop_leaf(&self, mmr_id: RawMmrId) -> DbResult<Option<Hash>> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
@@ -179,7 +179,7 @@ impl GlobalMmrDatabase for GlobalMmrDb {
 
     fn append_leaf_with_preimage(
         &self,
-        mmr_id: Vec<u8>,
+        mmr_id: RawMmrId,
         hash: Hash,
         preimage: Vec<u8>,
     ) -> DbResult<u64> {
@@ -206,7 +206,7 @@ impl GlobalMmrDatabase for GlobalMmrDb {
         )
     }
 
-    fn get_preimage(&self, mmr_id: Vec<u8>, index: u64) -> DbResult<Option<Vec<u8>>> {
+    fn get_preimage(&self, mmr_id: RawMmrId, index: u64) -> DbResult<Option<Vec<u8>>> {
         Ok(self.preimage_tree.get(&(mmr_id, index))?)
     }
 }

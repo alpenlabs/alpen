@@ -16,7 +16,6 @@ tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
 arbitrary.workspace = true
-bincode.workspace = true
 bitcoin = { workspace = true, optional = true }
 borsh.workspace = true
 const-hex = "1.14"
