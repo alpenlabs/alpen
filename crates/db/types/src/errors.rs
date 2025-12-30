@@ -4,10 +4,7 @@ use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 
-use crate::{
-    chainstate::WriteBatchId,
-    mmr_helpers::{MmrError, MmrId},
-};
+use crate::{chainstate::WriteBatchId, mmr_helpers::MmrError};
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -128,10 +125,6 @@ pub enum DbError {
     /// Invalid MMR index range
     #[error("Invalid MMR index range: {start}..{end}")]
     MmrInvalidRange { start: u64, end: u64 },
-
-    /// MMR node not found for a specific MMR instance
-    #[error("MMR node not found at position {0} for MMR {1:?}")]
-    MmrNodeNotFound(u64, MmrId),
 
     #[error("{0}")]
     Other(String),

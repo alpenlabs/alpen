@@ -10,6 +10,7 @@ mod epoch;
 mod exec;
 pub mod hash;
 mod l1;
+mod mmr;
 mod ol;
 
 pub use acct::{
@@ -22,6 +23,7 @@ pub use exec::{
 };
 pub use hash::Hash;
 pub use l1::{BitcoinBlockHeight, L1BlockId, L1Height, WtxidsRoot};
+pub use mmr::MmrId;
 pub use ol::{Epoch, L2BlockCommitment, L2BlockId, OLBlockId, OLTxId, Slot};
 
 // Re-export for macro use

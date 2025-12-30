@@ -2,11 +2,11 @@ use std::{marker::PhantomData, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::{
-    mmr_helpers::{leaf_index_to_pos, BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrId},
+    mmr_helpers::{leaf_index_to_pos, BitManipulatedMmrAlgorithm, MmrAlgorithm},
     traits::UnifiedMmrDatabase,
     DbError, DbResult,
 };
-use strata_identifiers::Hash;
+use strata_identifiers::{Hash, MmrId};
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use threadpool::ThreadPool;
 
@@ -89,7 +89,9 @@ pub struct MmrHandle {
 impl MmrHandle {
     /// Append a new leaf to the MMR (async version)
     pub async fn append_leaf(&self, hash: Hash) -> DbResult<u64> {
-        self.ops.append_leaf_async(self.mmr_id.to_bytes(), hash).await
+        self.ops
+            .append_leaf_async(self.mmr_id.to_bytes(), hash)
+            .await
     }
 
     /// Append a new leaf to the MMR (blocking version)
@@ -184,9 +186,11 @@ where
         let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
         let hash = H::hash_leaf(&bytes).into();
 
-        self.handle
-            .ops
-            .append_leaf_with_preimage_blocking(self.handle.mmr_id.to_bytes(), hash, bytes)
+        self.handle.ops.append_leaf_with_preimage_blocking(
+            self.handle.mmr_id.to_bytes(),
+            hash,
+            bytes,
+        )
     }
 
     /// Append data to the MMR (async version)

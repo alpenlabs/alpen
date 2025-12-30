@@ -29,7 +29,6 @@
 //! ```
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 use strata_merkle::{hasher::MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use strata_primitives::buf::Buf32;
 use thiserror::Error;
@@ -244,31 +243,6 @@ pub fn find_peak_for_pos(pos: u64, max_size: u64) -> Result<u64, MmrError> {
     }
 
     Err(MmrError::PositionOutOfBounds { pos, max_size })
-}
-
-/// Identifier for a specific MMR instance in unified storage
-///
-/// Each variant represents a different MMR type, with optional scoping
-/// within that type (e.g., per-account MMRs).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum MmrId {
-    /// ASM manifest MMR (singleton, no account scope)
-    Asm,
-    /// Snark message MMR (per-account scope)
-    SnarkMsg(strata_identifiers::AccountId),
-}
-
-impl MmrId {
-    /// Serialize MmrId to bytes for use as database key
-    ///
-    /// Uses bincode with big-endian encoding for compatibility with existing data.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        use bincode::Options;
-        let options = bincode::options()
-            .with_fixint_encoding()
-            .with_big_endian();
-        options.serialize(self).expect("MmrId serialization should not fail")
-    }
 }
 
 /// Metadata for an MMR instance

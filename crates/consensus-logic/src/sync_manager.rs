@@ -9,13 +9,12 @@ use bitcoind_async_client::Client;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
-use strata_db_types::mmr_helpers::MmrId;
 use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_params::Params;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
+use strata_storage::{MmrId, NodeStorage};
 use strata_tasks::TaskExecutor;
 use tokio::{runtime::Handle, sync::mpsc};
 

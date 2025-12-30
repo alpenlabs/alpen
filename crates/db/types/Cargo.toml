@@ -23,7 +23,6 @@ zkaleido.workspace = true
 
 anyhow.workspace = true
 arbitrary.workspace = true
-bincode.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
 parking_lot = { workspace = true, optional = true }
