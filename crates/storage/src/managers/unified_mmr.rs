@@ -89,27 +89,27 @@ pub struct MmrHandle {
 impl MmrHandle {
     /// Append a new leaf to the MMR (async version)
     pub async fn append_leaf(&self, hash: Hash) -> DbResult<u64> {
-        self.ops.append_leaf_async(self.mmr_id.clone(), hash).await
+        self.ops.append_leaf_async(self.mmr_id.to_bytes(), hash).await
     }
 
     /// Append a new leaf to the MMR (blocking version)
     pub fn append_leaf_blocking(&self, hash: Hash) -> DbResult<u64> {
-        self.ops.append_leaf_blocking(self.mmr_id.clone(), hash)
+        self.ops.append_leaf_blocking(self.mmr_id.to_bytes(), hash)
     }
 
     /// Get a node at a specific position (blocking)
     pub fn get_node_blocking(&self, pos: u64) -> DbResult<Hash> {
-        self.ops.get_node_blocking(self.mmr_id.clone(), pos)
+        self.ops.get_node_blocking(self.mmr_id.to_bytes(), pos)
     }
 
     /// Get the total MMR size (blocking)
     pub fn mmr_size_blocking(&self) -> DbResult<u64> {
-        self.ops.get_mmr_size_blocking(self.mmr_id.clone())
+        self.ops.get_mmr_size_blocking(self.mmr_id.to_bytes())
     }
 
     /// Get the number of leaves (blocking)
     pub fn num_leaves_blocking(&self) -> DbResult<u64> {
-        self.ops.get_num_leaves_blocking(self.mmr_id.clone())
+        self.ops.get_num_leaves_blocking(self.mmr_id.to_bytes())
     }
 
     /// Generate a Merkle proof for a single leaf position
@@ -134,12 +134,12 @@ impl MmrHandle {
 
     /// Remove and return the last leaf from the MMR (async version)
     pub async fn pop_leaf(&self) -> DbResult<Option<Hash>> {
-        self.ops.pop_leaf_async(self.mmr_id.clone()).await
+        self.ops.pop_leaf_async(self.mmr_id.to_bytes()).await
     }
 
     /// Remove and return the last leaf from the MMR (blocking version)
     pub fn pop_leaf_blocking(&self) -> DbResult<Option<Hash>> {
-        self.ops.pop_leaf_blocking(self.mmr_id.clone())
+        self.ops.pop_leaf_blocking(self.mmr_id.to_bytes())
     }
 
     /// Get the MmrId for this handle
@@ -186,7 +186,7 @@ where
 
         self.handle
             .ops
-            .append_leaf_with_preimage_blocking(self.handle.mmr_id.clone(), hash, bytes)
+            .append_leaf_with_preimage_blocking(self.handle.mmr_id.to_bytes(), hash, bytes)
     }
 
     /// Append data to the MMR (async version)
@@ -198,7 +198,7 @@ where
 
         self.handle
             .ops
-            .append_leaf_with_preimage_async(self.handle.mmr_id.clone(), hash, bytes)
+            .append_leaf_with_preimage_async(self.handle.mmr_id.to_bytes(), hash, bytes)
             .await
     }
 
@@ -209,7 +209,7 @@ where
         let bytes = self
             .handle
             .ops
-            .get_preimage_blocking(self.handle.mmr_id.clone(), index)?
+            .get_preimage_blocking(self.handle.mmr_id.to_bytes(), index)?
             .ok_or_else(|| {
                 DbError::Other(format!(
                     "No pre-image data found for MMR {:?} at index {}",
@@ -227,7 +227,7 @@ where
         let bytes = self
             .handle
             .ops
-            .get_preimage_async(self.handle.mmr_id.clone(), index)
+            .get_preimage_async(self.handle.mmr_id.to_bytes(), index)
             .await?
             .ok_or_else(|| {
                 DbError::Other(format!(

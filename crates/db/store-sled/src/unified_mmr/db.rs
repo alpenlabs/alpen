@@ -1,7 +1,7 @@
 use ssz_types::FixedBytes;
 use strata_db_types::{
     DbError, DbResult,
-    mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrId, MmrMetadata},
+    mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrMetadata},
     traits::UnifiedMmrDatabase,
 };
 use strata_identifiers::Hash;
@@ -24,46 +24,50 @@ define_sled_database!(
 );
 
 impl UnifiedMmrDb {
-    fn ensure_mmr_metadata(&self, mmr_id: &MmrId) -> DbResult<()> {
-        if self.meta_tree.get(mmr_id)?.is_none() {
+    fn ensure_mmr_metadata(&self, mmr_id: &[u8]) -> DbResult<()> {
+        let key = mmr_id.to_vec();
+        if self.meta_tree.get(&key)?.is_none() {
             let metadata = MmrMetadata::empty();
-            self.meta_tree.insert(mmr_id, &metadata)?;
+            self.meta_tree.insert(&key, &metadata)?;
         }
         Ok(())
     }
 
-    fn load_mmr_metadata(&self, mmr_id: &MmrId) -> DbResult<MmrMetadata> {
-        self.meta_tree.get(mmr_id)?.ok_or_else(|| {
+    fn load_mmr_metadata(&self, mmr_id: &[u8]) -> DbResult<MmrMetadata> {
+        self.meta_tree.get(&mmr_id.to_vec())?.ok_or_else(|| {
             DbError::Other(format!("MMR metadata not found for mmr_id {:?}", mmr_id))
         })
     }
 
-    fn get_mmr_node(&self, mmr_id: &MmrId, pos: u64) -> DbResult<Hash> {
-        self.node_tree
-            .get(&(mmr_id.clone(), pos))?
-            .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
+    fn get_mmr_node(&self, mmr_id: &[u8], pos: u64) -> DbResult<Hash> {
+        self.node_tree.get(&(mmr_id.to_vec(), pos))?.ok_or_else(|| {
+            DbError::Other(format!(
+                "MMR node not found at pos {} for mmr_id {:?}",
+                pos, mmr_id
+            ))
+        })
     }
 
     /// Get the position of a leaf by its hash (reverse lookup)
-    pub fn get_leaf_position(&self, mmr_id: &MmrId, hash: Hash) -> DbResult<Option<u64>> {
-        Ok(self.hash_index_tree.get(&(mmr_id.clone(), hash))?)
+    pub fn get_leaf_position(&self, mmr_id: &[u8], hash: Hash) -> DbResult<Option<u64>> {
+        Ok(self.hash_index_tree.get(&(mmr_id.to_vec(), hash))?)
     }
 
     fn append_leaf_in_transaction<A: MmrAlgorithm>(
-        mmr_id: &MmrId,
+        mmr_id: Vec<u8>,
         hash: Hash,
         nt: SledTransactionalTree<UnifiedMmrNodeSchema>,
         mt: SledTransactionalTree<UnifiedMmrMetaSchema>,
         hit: SledTransactionalTree<UnifiedMmrHashIndexSchema>,
     ) -> typed_sled::error::Result<u64> {
         let metadata = mt
-            .get(mmr_id)?
+            .get(&mmr_id)?
             .expect("MMR metadata must exist after ensure_mmr_metadata");
 
         let result = A::append_leaf(hash.0, &metadata, |pos| {
             nt.get(&(mmr_id.clone(), pos))?
                 .map(|buf| buf.0)
-                .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
+                .ok_or_else(|| DbError::Other(format!("MMR node not found at pos {}", pos)))
         })
         .map_err(typed_sled::error::Error::abort)?;
 
@@ -73,7 +77,7 @@ impl UnifiedMmrDb {
         }
 
         hit.insert(&(mmr_id.clone(), hash), &result.leaf_index)?;
-        mt.insert(mmr_id, &result.new_metadata)?;
+        mt.insert(&mmr_id, &result.new_metadata)?;
 
         Ok(result.leaf_index)
     }
@@ -82,41 +86,45 @@ impl UnifiedMmrDb {
 impl UnifiedMmrDatabase for UnifiedMmrDb {
     type MmrAlgorithm = BitManipulatedMmrAlgorithm;
 
-    fn append_leaf(&self, mmr_id: MmrId, hash: Hash) -> DbResult<u64> {
+    fn append_leaf(&self, mmr_id: Vec<u8>, hash: Hash) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
             (&self.node_tree, &self.meta_tree, &self.hash_index_tree),
             |(nt, mt, hit)| {
                 Ok(Self::append_leaf_in_transaction::<Self::MmrAlgorithm>(
-                    &mmr_id, hash, nt, mt, hit,
+                    mmr_id.clone(),
+                    hash,
+                    nt,
+                    mt,
+                    hit,
                 )?)
             },
         )
     }
 
-    fn get_node(&self, mmr_id: MmrId, pos: u64) -> DbResult<Hash> {
+    fn get_node(&self, mmr_id: Vec<u8>, pos: u64) -> DbResult<Hash> {
         self.get_mmr_node(&mmr_id, pos)
     }
 
-    fn get_mmr_size(&self, mmr_id: MmrId) -> DbResult<u64> {
+    fn get_mmr_size(&self, mmr_id: Vec<u8>) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.mmr_size)
     }
 
-    fn get_num_leaves(&self, mmr_id: MmrId) -> DbResult<u64> {
+    fn get_num_leaves(&self, mmr_id: Vec<u8>) -> DbResult<u64> {
         self.ensure_mmr_metadata(&mmr_id)?;
         let metadata = self.load_mmr_metadata(&mmr_id)?;
         Ok(metadata.num_leaves)
     }
 
-    fn get_peaks(&self, mmr_id: MmrId) -> DbResult<Vec<Hash>> {
+    fn get_peaks(&self, mmr_id: Vec<u8>) -> DbResult<Vec<Hash>> {
         self.load_mmr_metadata(&mmr_id)
             .map(|m| m.peaks.into_iter().collect())
     }
 
-    fn get_compact(&self, mmr_id: MmrId) -> DbResult<CompactMmr64> {
+    fn get_compact(&self, mmr_id: Vec<u8>) -> DbResult<CompactMmr64> {
         let metadata = self
             .load_mmr_metadata(&mmr_id)
             .unwrap_or_else(|_| MmrMetadata::empty());
@@ -134,7 +142,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
         })
     }
 
-    fn pop_leaf(&self, mmr_id: MmrId) -> DbResult<Option<Hash>> {
+    fn pop_leaf(&self, mmr_id: Vec<u8>) -> DbResult<Option<Hash>> {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
@@ -147,7 +155,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
                 let result = Self::MmrAlgorithm::pop_leaf(&metadata, |pos| {
                     nt.get(&(mmr_id.clone(), pos))?
                         .map(|x| x.0)
-                        .ok_or_else(|| DbError::MmrNodeNotFound(pos, mmr_id.clone()))
+                        .ok_or_else(|| DbError::Other(format!("MMR node not found at pos {}", pos)))
                 })
                 .map_err(typed_sled::error::Error::abort)?;
 
@@ -171,7 +179,7 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
 
     fn append_leaf_with_preimage(
         &self,
-        mmr_id: MmrId,
+        mmr_id: Vec<u8>,
         hash: Hash,
         preimage: Vec<u8>,
     ) -> DbResult<u64> {
@@ -186,7 +194,11 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
             ),
             |(nt, mt, hit, pit)| {
                 let leaf_index = Self::append_leaf_in_transaction::<Self::MmrAlgorithm>(
-                    &mmr_id, hash, nt, mt, hit,
+                    mmr_id.clone(),
+                    hash,
+                    nt,
+                    mt,
+                    hit,
                 )?;
                 pit.insert(&(mmr_id.clone(), leaf_index), &preimage)?;
                 Ok(leaf_index)
@@ -194,8 +206,8 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
         )
     }
 
-    fn get_preimage(&self, mmr_id: MmrId, index: u64) -> DbResult<Option<Vec<u8>>> {
-        Ok(self.preimage_tree.get(&(mmr_id.clone(), index))?)
+    fn get_preimage(&self, mmr_id: Vec<u8>, index: u64) -> DbResult<Option<Vec<u8>>> {
+        Ok(self.preimage_tree.get(&(mmr_id, index))?)
     }
 }
 
@@ -203,8 +215,6 @@ impl UnifiedMmrDatabase for UnifiedMmrDb {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-
-    use strata_identifiers::AccountId;
 
     use super::*;
     use crate::test_utils::{get_test_sled_config, get_test_sled_db};
@@ -218,7 +228,7 @@ mod tests {
     #[test]
     fn test_append_single_leaf() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // Simple byte identifier
         let hash = [1u8; 32].into();
 
         // Initially empty
@@ -239,7 +249,7 @@ mod tests {
     #[test]
     fn test_append_multiple_leaves() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Append 7 leaves to create a complete tree
         let hashes: Vec<Hash> = (0..7).map(|i| [i; 32].into()).collect();
@@ -251,13 +261,13 @@ mod tests {
 
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 7);
         // 7 leaves with 3 peaks -> mmr_size = 2*7 - 3 = 11
-        assert_eq!(db.get_mmr_size(mmr_id).unwrap(), 11);
+        assert_eq!(db.get_mmr_size(mmr_id.clone()).unwrap(), 11);
     }
 
     #[test]
     fn test_get_node_positions() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Append 4 leaves
         let hashes: Vec<Hash> = (0..4).map(|i| [i; 32].into()).collect();
@@ -280,13 +290,13 @@ mod tests {
         // Internal nodes exist
         assert!(db.get_node(mmr_id.clone(), 2).is_ok());
         assert!(db.get_node(mmr_id.clone(), 5).is_ok());
-        assert!(db.get_node(mmr_id, 6).is_ok());
+        assert!(db.get_node(mmr_id.clone(), 6).is_ok());
     }
 
     #[test]
     fn test_peak_roots() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Single leaf: one peak
         db.append_leaf(mmr_id.clone(), [1u8; 32].into()).unwrap();
@@ -305,24 +315,24 @@ mod tests {
 
         // Four leaves: one peak (complete tree)
         db.append_leaf(mmr_id.clone(), [4u8; 32].into()).unwrap();
-        let peaks = db.get_peaks(mmr_id).unwrap();
+        let peaks = db.get_peaks(mmr_id.clone()).unwrap();
         assert_eq!(peaks.len(), 1);
     }
 
     #[test]
     fn test_pop_leaf_empty() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Popping from empty MMR returns None
-        let result = db.pop_leaf(mmr_id).unwrap();
+        let result = db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(result, None);
     }
 
     #[test]
     fn test_pop_leaf_single() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         let hash = [42u8; 32].into();
         db.append_leaf(mmr_id.clone(), hash).unwrap();
@@ -332,13 +342,13 @@ mod tests {
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(popped, Some(hash));
         assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 0);
-        assert_eq!(db.get_mmr_size(mmr_id).unwrap(), 0);
+        assert_eq!(db.get_mmr_size(mmr_id.clone()).unwrap(), 0);
     }
 
     #[test]
     fn test_pop_leaf_multiple() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Append several leaves
         let hashes: Vec<Hash> = (0..5).map(|i| [i; 32].into()).collect();
@@ -356,13 +366,13 @@ mod tests {
         // Pop another
         let popped = db.pop_leaf(mmr_id.clone()).unwrap();
         assert_eq!(popped, Some([3u8; 32].into()));
-        assert_eq!(db.get_num_leaves(mmr_id).unwrap(), 3);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 3);
     }
 
     #[test]
     fn test_append_after_pop() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Append 3 leaves
         db.append_leaf(mmr_id.clone(), [1u8; 32].into()).unwrap();
@@ -376,13 +386,13 @@ mod tests {
         // Append again
         let idx = db.append_leaf(mmr_id.clone(), [4u8; 32].into()).unwrap();
         assert_eq!(idx, 2);
-        assert_eq!(db.get_num_leaves(mmr_id).unwrap(), 3);
+        assert_eq!(db.get_num_leaves(mmr_id.clone()).unwrap(), 3);
     }
 
     #[test]
     fn test_to_compact() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Empty MMR
         let compact = db.get_compact(mmr_id.clone()).unwrap();
@@ -393,7 +403,7 @@ mod tests {
             db.append_leaf(mmr_id.clone(), [i; 32].into()).unwrap();
         }
 
-        let compact = db.get_compact(mmr_id).unwrap();
+        let compact = db.get_compact(mmr_id.clone()).unwrap();
         assert_eq!(compact.entries, 4);
         assert_eq!(compact.cap_log2, 64);
         assert!(!compact.roots.is_empty());
@@ -402,7 +412,7 @@ mod tests {
     #[test]
     fn test_mmr_size_formula() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         // Test the MMR size formula: size = 2 * leaves - peaks
         // where peaks = number of set bits in binary representation of leaves
@@ -437,7 +447,7 @@ mod tests {
     #[test]
     fn test_hash_index_lookup() {
         let db = setup();
-        let mmr_id = MmrId::Asm;
+        let mmr_id = vec![1u8]; // ASM MMR identifier
 
         let hash1 = [1u8; 32].into();
         let hash2 = [2u8; 32].into();
@@ -464,49 +474,46 @@ mod tests {
     fn test_multiple_mmr_instances() {
         let db = setup();
 
-        let account1 = AccountId::zero();
-        let account2 = AccountId::from([1u8; 32]);
+        // Different MMR identifiers using raw bytes
+        let asm_mmr_id = vec![1u8];
+        let account1_mmr_id = vec![2u8, 0u8];
+        let account2_mmr_id = vec![2u8, 1u8];
 
         // Append to ASM MMR
         let asm_hash = [10u8; 32].into();
-        db.append_leaf(MmrId::Asm, asm_hash).unwrap();
+        db.append_leaf(asm_mmr_id.clone(), asm_hash).unwrap();
 
         // Append to account1 MMR
         let acc1_hash = [20u8; 32].into();
-        db.append_leaf(MmrId::SnarkMsg(account1), acc1_hash)
-            .unwrap();
+        db.append_leaf(account1_mmr_id.clone(), acc1_hash).unwrap();
 
         // Append to account2 MMR
         let acc2_hash = [30u8; 32].into();
-        db.append_leaf(MmrId::SnarkMsg(account2), acc2_hash)
-            .unwrap();
+        db.append_leaf(account2_mmr_id.clone(), acc2_hash).unwrap();
 
         // Verify each MMR is independent
-        assert_eq!(db.get_num_leaves(MmrId::Asm).unwrap(), 1);
-        assert_eq!(db.get_num_leaves(MmrId::SnarkMsg(account1)).unwrap(), 1);
-        assert_eq!(db.get_num_leaves(MmrId::SnarkMsg(account2)).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(asm_mmr_id.clone()).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(account1_mmr_id.clone()).unwrap(), 1);
+        assert_eq!(db.get_num_leaves(account2_mmr_id.clone()).unwrap(), 1);
 
         // Verify hash index works per MMR
         assert_eq!(
-            db.get_leaf_position(&MmrId::Asm, asm_hash).unwrap(),
+            db.get_leaf_position(&asm_mmr_id, asm_hash).unwrap(),
             Some(0)
         );
         assert_eq!(
-            db.get_leaf_position(&MmrId::SnarkMsg(account1), acc1_hash)
-                .unwrap(),
+            db.get_leaf_position(&account1_mmr_id, acc1_hash).unwrap(),
             Some(0)
         );
         assert_eq!(
-            db.get_leaf_position(&MmrId::SnarkMsg(account2), acc2_hash)
-                .unwrap(),
+            db.get_leaf_position(&account2_mmr_id, acc2_hash).unwrap(),
             Some(0)
         );
 
         // Cross-MMR lookup should fail
-        assert_eq!(db.get_leaf_position(&MmrId::Asm, acc1_hash).unwrap(), None);
+        assert_eq!(db.get_leaf_position(&asm_mmr_id, acc1_hash).unwrap(), None);
         assert_eq!(
-            db.get_leaf_position(&MmrId::SnarkMsg(account1), asm_hash)
-                .unwrap(),
+            db.get_leaf_position(&account1_mmr_id, asm_hash).unwrap(),
             None
         );
     }

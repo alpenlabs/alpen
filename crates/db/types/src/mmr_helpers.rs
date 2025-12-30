@@ -258,6 +258,19 @@ pub enum MmrId {
     SnarkMsg(strata_identifiers::AccountId),
 }
 
+impl MmrId {
+    /// Serialize MmrId to bytes for use as database key
+    ///
+    /// Uses bincode with big-endian encoding for compatibility with existing data.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        use bincode::Options;
+        let options = bincode::options()
+            .with_fixint_encoding()
+            .with_big_endian();
+        options.serialize(self).expect("MmrId serialization should not fail")
+    }
+}
+
 /// Metadata for an MMR instance
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct MmrMetadata {
