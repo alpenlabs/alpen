@@ -13845,14 +13845,9 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
- "ed25519-dalek",
  "musig2",
- "rand 0.8.5",
  "serde",
- "sha2",
  "strata-primitives",
- "strata-test-utils",
- "thiserror 2.0.17",
 ]
 
 [[package]]

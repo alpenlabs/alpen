@@ -7,7 +7,6 @@ mod bridge;
 mod bridge_ops;
 mod constants;
 mod operator;
-mod relay;
 
 // Re-export commonly used types
 #[cfg(not(target_os = "zkvm"))]
@@ -17,6 +16,3 @@ pub use bridge::{
 };
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};
 pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
-pub use relay::{
-    verify_bridge_msg_sig, BridgeMessage, BridgeMsgId, MessageSigner, Scope, VerifyError,
-};
