@@ -101,7 +101,6 @@ fn gen_params_with_seed(seed: u64) -> Params {
     Params {
         rollup: RollupParams {
             magic_bytes: *b"ALPN",
-            da_tag: "strata-da".to_string(),
             block_time: 1000,
             cred_rule: block_credential::CredRule::Unchecked,
             genesis_l1_view,

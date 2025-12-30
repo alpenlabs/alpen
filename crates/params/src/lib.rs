@@ -24,9 +24,6 @@ pub struct RollupParams {
     /// Block time in milliseconds.
     pub block_time: u64,
 
-    /// Tagname used to identify DA envelopes
-    pub da_tag: String,
-
     /// Rule we use to decide if a block is correctly signed.
     pub cred_rule: CredRule,
 

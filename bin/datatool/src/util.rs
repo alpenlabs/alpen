@@ -334,7 +334,6 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
 
     let config = ParamsConfig {
         magic,
-        da_tag: cmd.da_tag.unwrap_or("strata-da".to_string()),
         bitcoin_network: ctx.bitcoin_network,
         genesis_l1_view,
         // TODO make these consts
@@ -441,8 +440,6 @@ fn resolve_xpriv(
 pub(crate) struct ParamsConfig {
     /// Name of the network.
     magic: MagicBytes,
-    /// Tagname used to identify DA envelopes
-    da_tag: String,
     /// Network to use.
     bitcoin_network: Network,
     /// Block time in seconds.
@@ -493,7 +490,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
     Ok(RollupParams {
         magic_bytes: config.magic,
         block_time: config.block_time_sec * 1000,
-        da_tag: config.da_tag,
         cred_rule: cr,
         // TODO do we want to remove this?
         genesis_l1_view: config.genesis_l1_view,
