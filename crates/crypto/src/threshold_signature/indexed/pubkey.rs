@@ -5,7 +5,6 @@ use std::ops::Deref;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-#[cfg(all(feature = "serde", not(target_os = "zkvm")))]
 use serde::{Deserialize, Serialize};
 
 use super::ThresholdSignatureError;
@@ -113,7 +112,6 @@ impl BorshDeserialize for CompressedPublicKey {
     }
 }
 
-#[cfg(all(feature = "serde", not(target_os = "zkvm")))]
 impl Serialize for CompressedPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -125,7 +123,6 @@ impl Serialize for CompressedPublicKey {
     }
 }
 
-#[cfg(all(feature = "serde", not(target_os = "zkvm")))]
 impl<'de> Deserialize<'de> for CompressedPublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

@@ -14150,7 +14150,6 @@ dependencies = [
  "bitcoin",
  "borsh",
  "hex",
- "k256",
  "musig2",
  "rand 0.8.5",
  "secp256k1 0.29.1",
