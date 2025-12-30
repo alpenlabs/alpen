@@ -7,11 +7,7 @@ use strata_primitives::crypto::EvenPublicKey;
 
 use crate::OperatorIdx;
 
-// A table that maps [`OperatorIdx`] to the corresponding [`PublicKey`].
-///
-/// We use an [`EvenPublicKey`] instead of an [`bitcoin::secp256k1::XOnlyPublicKey`] for convenience
-/// since the [`musig2`] crate has functions that expect a [`PublicKey`] and this table is most
-/// useful for interacting with those functions.
+// A table that maps [`OperatorIdx`] to the corresponding [`EvenPublicKey`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublickeyTable(pub BTreeMap<OperatorIdx, EvenPublicKey>);
 
