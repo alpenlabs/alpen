@@ -34,7 +34,7 @@ alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
-strata-common.workspace = true
+strata-common = { workspace = true, features = ["async"] }
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
 strata-rpc-api-new = { workspace = true, features = ["client"] }

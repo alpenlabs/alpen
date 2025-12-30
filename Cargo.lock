@@ -1183,6 +1183,7 @@ dependencies = [
  "reth-node-builder",
  "reth-provider",
  "strata-acct-types",
+ "strata-common",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
