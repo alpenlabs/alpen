@@ -13842,10 +13842,7 @@ dependencies = [
 name = "strata-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
- "bitcoin",
  "borsh",
- "musig2",
  "serde",
  "strata-primitives",
 ]
