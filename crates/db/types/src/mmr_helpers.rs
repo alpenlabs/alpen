@@ -46,7 +46,7 @@ pub enum MmrError {
     PositionOutOfBounds { pos: u64, max_size: u64 },
 }
 
-/// Convert leaf index to total MMR size (number of nodes)
+/// Convert leaves count to total MMR size (number of nodes)
 ///
 /// Formula: 2 * leaves - peak_count
 /// Peak count = number of set bits in binary representation of leaf count
@@ -59,8 +59,7 @@ pub enum MmrError {
 /// 3 leaves (0b11)  -> 2 peaks -> size = 2*3 - 2 = 4
 /// 7 leaves (0b111) -> 3 peaks -> size = 2*7 - 3 = 11
 /// ```
-pub fn leaf_index_to_mmr_size(index: u64) -> u64 {
-    let leaves_count = index + 1;
+pub fn num_leaves_to_mmr_size(leaves_count: u64) -> u64 {
     let peak_count = leaves_count.count_ones() as u64;
     2 * leaves_count - peak_count
 }
@@ -78,7 +77,7 @@ pub fn leaf_index_to_mmr_size(index: u64) -> u64 {
 /// leaf_index_to_pos(3) = 4  // Fourth leaf
 /// ```
 pub fn leaf_index_to_pos(index: u64) -> u64 {
-    leaf_index_to_mmr_size(index) - (index + 1).trailing_zeros() as u64 - 1
+    num_leaves_to_mmr_size(index + 1) - (index + 1).trailing_zeros() as u64 - 1
 }
 
 /// Calculate the height of a node at given position
@@ -113,14 +112,6 @@ pub fn pos_height_in_tree(mut pos: u64) -> u8 {
     pos as u8
 }
 
-/// Calculate the offset to a node's parent
-///
-/// For a node at height h, parent is 2^(h+1) positions away
-#[inline]
-pub fn parent_offset(height: u8) -> u64 {
-    2 << height
-}
-
 /// Calculate the offset to a node's sibling
 ///
 /// For a node at height h, sibling is 2^(h+1) - 1 positions away
@@ -145,8 +136,8 @@ pub fn parent_pos(pos: u64, height: u8) -> u64 {
         // Current node is a right sibling
         pos + 1
     } else {
-        // Current node is a left sibling
-        pos + parent_offset(height)
+        // Current node is a left sibling, parent is at offset 2^(height+1)
+        pos + (2 << height)
     }
 }
 
@@ -442,7 +433,7 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
         }
 
         // Update metadata
-        let new_mmr_size = leaf_index_to_mmr_size(metadata.num_leaves);
+        let new_mmr_size = num_leaves_to_mmr_size(metadata.num_leaves + 1);
 
         // Calculate peaks
         let peak_positions = get_peaks(new_mmr_size);
@@ -492,7 +483,7 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
         let new_mmr_size = if metadata.num_leaves == 1 {
             0 // Empty MMR
         } else {
-            leaf_index_to_mmr_size(metadata.num_leaves - 2)
+            num_leaves_to_mmr_size(metadata.num_leaves - 1)
         };
 
         // Collect nodes to remove: [new_mmr_size, current_mmr_size)
@@ -577,11 +568,11 @@ mod tests {
 
     #[test]
     fn test_leaf_index_to_mmr_size() {
-        assert_eq!(leaf_index_to_mmr_size(0), 1); // 1 leaf -> 1 node
-        assert_eq!(leaf_index_to_mmr_size(1), 3); // 2 leaves -> 3 nodes
-        assert_eq!(leaf_index_to_mmr_size(2), 4); // 3 leaves -> 4 nodes
-        assert_eq!(leaf_index_to_mmr_size(3), 7); // 4 leaves -> 7 nodes
-        assert_eq!(leaf_index_to_mmr_size(6), 11); // 7 leaves -> 11 nodes
+        assert_eq!(num_leaves_to_mmr_size(1), 1); // 1 leaf -> 1 node
+        assert_eq!(num_leaves_to_mmr_size(2), 3); // 2 leaves -> 3 nodes
+        assert_eq!(num_leaves_to_mmr_size(3), 4); // 3 leaves -> 4 nodes
+        assert_eq!(num_leaves_to_mmr_size(4), 7); // 4 leaves -> 7 nodes
+        assert_eq!(num_leaves_to_mmr_size(7), 11); // 7 leaves -> 11 nodes
     }
 
     #[test]
@@ -608,11 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parent_and_sibling_offsets() {
-        assert_eq!(parent_offset(0), 2); // 2^1
-        assert_eq!(parent_offset(1), 4); // 2^2
-        assert_eq!(parent_offset(2), 8); // 2^3
-
+    fn test_sibling_offset() {
         assert_eq!(sibling_offset(0), 1); // 2^1 - 1
         assert_eq!(sibling_offset(1), 3); // 2^2 - 1
         assert_eq!(sibling_offset(2), 7); // 2^3 - 1
