@@ -8,7 +8,6 @@ mod bridge_ops;
 mod operator;
 
 // Re-export commonly used types
-#[cfg(not(target_os = "zkvm"))]
 pub use bridge::PublickeyTable;
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};
-pub use operator::{OperatorIdx, OperatorKeyProvider, OperatorPubkeys, StubOpKeyProv};
+pub use operator::{OperatorIdx, OperatorPubkeys};
