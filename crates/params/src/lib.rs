@@ -4,7 +4,7 @@ use bitcoin::{Amount, Network};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorPubkeys;
-use strata_btc_types::{BitcoinAddress, BitcoinAmount, BitcoinXOnlyPublicKey, GenesisL1View};
+use strata_btc_types::GenesisL1View;
 use strata_identifiers::{Buf32, CredRule};
 use strata_l1_txfmt::MagicBytes;
 use strata_predicate::PredicateKey;
@@ -23,12 +23,6 @@ pub struct RollupParams {
 
     /// Block time in milliseconds.
     pub block_time: u64,
-
-    /// Tagname used to identify DA envelopes
-    pub da_tag: String,
-
-    /// Tagname used to identify Checkpoint envelopes
-    pub checkpoint_tag: String,
 
     /// Rule we use to decide if a block is correctly signed.
     pub cred_rule: CredRule,
@@ -114,33 +108,9 @@ impl RollupParams {
         Ok(())
     }
 
-    pub fn compute_hash(&self) -> Buf32 {
-        let raw_bytes = bincode::serialize(&self).expect("rollup params serialization failed");
-        strata_identifiers::hash::raw(&raw_bytes)
-    }
-
     pub fn checkpoint_predicate(&self) -> &PredicateKey {
         &self.checkpoint_predicate
     }
-}
-
-/// Configuration common among deposit and deposit request transaction
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Deserialize, Serialize)]
-pub struct DepositTxParams {
-    /// Magic bytes we use to recognize a deposit with.
-    pub magic_bytes: MagicBytes,
-
-    /// Maximum EE address length.
-    pub max_address_length: u8,
-
-    /// Exact [`BitcoinAmount`] in the at-rest deposit.
-    pub deposit_amount: BitcoinAmount,
-
-    /// Federation address derived from operator entries
-    pub address: BitcoinAddress,
-
-    /// Operators' aggregated pubkey (untweaked internal pubkey).
-    pub operators_pubkey: BitcoinXOnlyPublicKey,
 }
 
 /// Describes how we decide to wait for proofs for checkpoints to generate.

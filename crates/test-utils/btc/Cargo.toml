@@ -8,13 +8,10 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-asm-txs-bridge-v1.workspace = true
 strata-asm-types.workspace = true
 strata-btcio.workspace = true
 strata-identifiers.workspace = true
-strata-params.workspace = true
 strata-primitives.workspace = true
-strata-test-utils.workspace = true
 
 anyhow.workspace = true
 bitcoin = { workspace = true, features = ["rand-std"] }

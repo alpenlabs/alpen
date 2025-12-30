@@ -14763,7 +14763,6 @@ dependencies = [
 name = "strata-params"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "bitcoin",
  "borsh",
  "serde",
@@ -15262,13 +15261,10 @@ dependencies = [
  "bitcoind-async-client",
  "hex",
  "strata-asm-common",
- "strata-asm-txs-bridge-v1",
  "strata-asm-types",
  "strata-btcio",
  "strata-identifiers",
- "strata-params",
  "strata-primitives",
- "strata-test-utils",
  "tokio",
 ]
 
