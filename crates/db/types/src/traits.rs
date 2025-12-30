@@ -8,7 +8,8 @@ use serde::Serialize;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId, Slot};
+use strata_snark_acct_types::MessageEntry;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
@@ -507,4 +508,28 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Returns the highest slot that has a valid OL block, or an error at genesis or when no valid
     /// block exists.
     fn get_tip_slot(&self) -> DbResult<Slot>;
+}
+
+/// Database for storing inbox message content.
+///
+/// This stores the actual [`MessageEntry`] content for inbox messages, keyed by
+/// account ID and message index. The MMR hash storage is handled separately.
+pub trait InboxMessageDatabase: Send + Sync + 'static {
+    /// Stores an inbox message entry for a given account and index.
+    fn put_inbox_message(
+        &self,
+        account_id: AccountId,
+        index: u64,
+        entry: MessageEntry,
+    ) -> DbResult<()>;
+
+    /// Retrieves an inbox message entry for a given account and index.
+    fn get_inbox_message(
+        &self,
+        account_id: AccountId,
+        index: u64,
+    ) -> DbResult<Option<MessageEntry>>;
+
+    /// Deletes an inbox message entry for a given account and index.
+    fn del_inbox_message(&self, account_id: AccountId, index: u64) -> DbResult<()>;
 }
