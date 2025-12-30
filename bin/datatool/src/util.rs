@@ -334,7 +334,6 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
 
     let config = ParamsConfig {
         magic,
-        checkpoint_tag: cmd.checkpoint_tag.unwrap_or("strata-ckpt".to_string()),
         da_tag: cmd.da_tag.unwrap_or("strata-da".to_string()),
         bitcoin_network: ctx.bitcoin_network,
         genesis_l1_view,
@@ -444,8 +443,6 @@ pub(crate) struct ParamsConfig {
     magic: MagicBytes,
     /// Tagname used to identify DA envelopes
     da_tag: String,
-    /// Tagname used to identify Checkpoint envelopes
-    checkpoint_tag: String,
     /// Network to use.
     bitcoin_network: Network,
     /// Block time in seconds.
@@ -497,7 +494,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         magic_bytes: config.magic,
         block_time: config.block_time_sec * 1000,
         da_tag: config.da_tag,
-        checkpoint_tag: config.checkpoint_tag,
         cred_rule: cr,
         // TODO do we want to remove this?
         genesis_l1_view: config.genesis_l1_view,

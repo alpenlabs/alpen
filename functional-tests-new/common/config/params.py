@@ -81,7 +81,6 @@ class RollupParams:
     magic_bytes: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     block_time: int = field(default=5000)  # millisecs
     da_tag: str = field(default="strata-da")
-    checkpoint_tag: str = field(default="strata-ckpt")
     cred_rule: CredRule = field(default="unchecked")
     genesis_l1_view: GenesisL1View = field(default_factory=GenesisL1View)
     operator_config: OperatorConfig = field(default_factory=OperatorConfig)

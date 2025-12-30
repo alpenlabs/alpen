@@ -166,12 +166,6 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
-        description = "checkpoint tag, used in envelopes (default 'strata-ckpt')"
-    )]
-    pub(crate) checkpoint_tag: Option<String>,
-
-    #[argh(
-        option,
         description = "sequencer pubkey (default unchecked)",
         short = 's'
     )]

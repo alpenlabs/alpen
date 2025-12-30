@@ -27,9 +27,6 @@ pub struct RollupParams {
     /// Tagname used to identify DA envelopes
     pub da_tag: String,
 
-    /// Tagname used to identify Checkpoint envelopes
-    pub checkpoint_tag: String,
-
     /// Rule we use to decide if a block is correctly signed.
     pub cred_rule: CredRule,
 
