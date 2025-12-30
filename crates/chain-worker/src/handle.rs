@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use strata_primitives::prelude::*;
+use strata_identifiers::OLBlockCommitment;
+use strata_primitives::epoch::EpochCommitment;
 use strata_service::{CommandHandle, ServiceError};
 use tokio::sync::Mutex;
 
@@ -32,7 +33,7 @@ impl ChainWorkerHandle {
     }
 
     /// Tries to execute a block, returns the result.
-    pub async fn try_exec_block(&self, block: L2BlockCommitment) -> WorkerResult<()> {
+    pub async fn try_exec_block(&self, block: OLBlockCommitment) -> WorkerResult<()> {
         self.command_handle
             .send_and_wait(|completion| ChainWorkerMessage::TryExecBlock(block, completion))
             .await
@@ -40,7 +41,7 @@ impl ChainWorkerHandle {
     }
 
     /// Tries to execute a block, returns the result.
-    pub fn try_exec_block_blocking(&self, block: L2BlockCommitment) -> WorkerResult<()> {
+    pub fn try_exec_block_blocking(&self, block: OLBlockCommitment) -> WorkerResult<()> {
         self.command_handle
             .send_and_wait_blocking(|completion| {
                 ChainWorkerMessage::TryExecBlock(block, completion)
@@ -66,7 +67,7 @@ impl ChainWorkerHandle {
     }
 
     /// Update the safe tip, making whatever database changes necessary.
-    pub async fn update_safe_tip(&self, safe_tip: L2BlockCommitment) -> WorkerResult<()> {
+    pub async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> WorkerResult<()> {
         self.command_handle
             .send_and_wait(|completion| ChainWorkerMessage::UpdateSafeTip(safe_tip, completion))
             .await
@@ -74,7 +75,7 @@ impl ChainWorkerHandle {
     }
 
     /// Update the safe tip, making whatever database changes necessary.
-    pub fn update_safe_tip_blocking(&self, safe_tip: L2BlockCommitment) -> WorkerResult<()> {
+    pub fn update_safe_tip_blocking(&self, safe_tip: OLBlockCommitment) -> WorkerResult<()> {
         self.command_handle
             .send_and_wait_blocking(|completion| {
                 ChainWorkerMessage::UpdateSafeTip(safe_tip, completion)

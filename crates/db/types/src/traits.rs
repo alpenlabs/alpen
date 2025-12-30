@@ -9,7 +9,6 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId, Slot};
-use strata_snark_acct_types::MessageEntry;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
@@ -17,6 +16,7 @@ use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
+use strata_snark_acct_types::MessageEntry;
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 

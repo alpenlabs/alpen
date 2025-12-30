@@ -1,4 +1,5 @@
-use strata_primitives::prelude::*;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_primitives::epoch::EpochCommitment;
 use thiserror::Error;
 
 /// Return type for worker messages.
@@ -6,30 +7,36 @@ pub type WorkerResult<T> = Result<T, WorkerError>;
 
 #[derive(Debug, Error)]
 pub enum WorkerError {
-    #[error("missing block {0}")]
-    MissingL2Block(L2BlockId),
+    #[error("missing OL block {0}")]
+    MissingBlock(OLBlockId),
 
     /// This usually means that we didn't execute the previous block.
     #[error("missing pre-state to execute block {0:?}")]
-    MissingPreState(L2BlockCommitment),
+    MissingPreState(OLBlockCommitment),
 
     /// This might point to a database corruption or misused admin commands.
     /// The worker should not have tried to access block outputs that are
     /// missing.
     #[error("missing exec output for block {0:?}")]
-    MissingBlockOutput(L2BlockCommitment),
+    MissingBlockOutput(OLBlockCommitment),
 
     /// Missing write batch for a specific block, used for post-state reconstruction
-    #[error("missing write batch for block {0}")]
-    MissingWriteBatch(L2BlockId),
+    #[error("missing write batch for block {0:?}")]
+    MissingWriteBatch(OLBlockCommitment),
+
+    /// Missing OL state for a block
+    #[error("missing OL state for block {0:?}")]
+    MissingOLState(OLBlockCommitment),
 
     /// This means that we haven't executed the block that's the terminal for an epoch.
     #[error("missing inner post-state of epoch {0} terminal {1:?}")]
-    MissingEpochInnerPostState(u64, L2BlockCommitment),
+    MissingEpochInnerPostState(u64, OLBlockCommitment),
 
+    /// Invalid execution payload for a block.
     #[error("invalid execution payload for block {0:?}")]
-    InvalidExecPayload(L2BlockCommitment),
+    InvalidExecPayload(OLBlockCommitment),
 
+    /// Missing epoch summary for a given epoch commitment.
     #[error("missing summary for epoch commitment {0:?}")]
     MissingEpochSummary(EpochCommitment),
 
@@ -38,37 +45,39 @@ pub enum WorkerError {
     #[error("chain worker exited")]
     WorkerExited,
 
+    /// Block execution error.
     #[error("block execution: {0}")]
-    Exec(strata_chainexec::Error<Box<dyn std::error::Error + Send + Sync>>),
+    Exec(String),
 
+    /// EE block execution error.
     #[error("EE block execution: {0}")]
     ExecEnvEngine(#[from] strata_eectl::errors::EngineError),
 
+    /// Missing required dependency.
     #[error("missing required dependency: {0}")]
     MissingDependency(&'static str),
 
+    /// Shutdown before genesis.
     #[error("shutdown before genesis")]
     ShutdownBeforeGenesis,
 
-    #[error("genesis block not found at height 0")]
+    /// Missing genesis block.
+    #[error("genesis block not found at slot 0")]
     MissingGenesisBlock,
 
+    /// Worker not initialized.
     #[error("worker not initialized")]
     NotInitialized,
 
+    /// Unexpected error.
     #[error("unexpected error: {0}")]
     Unexpected(String),
 
+    /// Not yet implemented.
     #[error("not yet implemented")]
     Unimplemented,
-}
 
-impl From<strata_chainexec::Error<WorkerError>> for WorkerError {
-    fn from(err: strata_chainexec::Error<WorkerError>) -> Self {
-        use strata_chainexec::Error as ExecError;
-        match err {
-            ExecError::Context(worker_err) => worker_err,
-            _ => WorkerError::Exec(err.map_context(|e| Box::new(e) as _)),
-        }
-    }
+    /// Database error.
+    #[error("database error: {0}")]
+    Database(String),
 }

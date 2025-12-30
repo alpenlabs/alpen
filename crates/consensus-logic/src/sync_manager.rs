@@ -230,12 +230,11 @@ fn spawn_chain_worker(
     params: Arc<Params>,
     exec_ctl_handle: ExecCtlHandle,
 ) -> anyhow::Result<ChainWorkerHandle> {
-    // Create the worker context - this stays in consensus-logic since it implements WorkerContext
+    // Create the worker context using the new OL managers
     let context = ChainWorkerCtx::new(
-        storage.l2().clone(),
-        storage.chainstate().clone(),
+        storage.ol_block().clone(),
+        storage.ol_state().clone(),
         storage.checkpoint().clone(),
-        0, // FIXME: Not sure what this is
     );
 
     // Use the new builder API to launch the worker and get a handle

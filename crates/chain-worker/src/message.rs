@@ -1,6 +1,7 @@
 //! Messages from the handle to the worker.
 
-use strata_primitives::prelude::*;
+use strata_identifiers::OLBlockCommitment;
+use strata_primitives::epoch::EpochCommitment;
 use strata_service::CommandCompletionSender;
 
 use crate::WorkerResult;
@@ -9,7 +10,12 @@ use crate::WorkerResult;
 /// completion to return a result.
 #[derive(Debug)]
 pub enum ChainWorkerMessage {
-    TryExecBlock(L2BlockCommitment, CommandCompletionSender<WorkerResult<()>>),
+    /// Try to execute a block at the given commitment.
+    TryExecBlock(OLBlockCommitment, CommandCompletionSender<WorkerResult<()>>),
+
+    /// Finalize an epoch.
     FinalizeEpoch(EpochCommitment, CommandCompletionSender<WorkerResult<()>>),
-    UpdateSafeTip(L2BlockCommitment, CommandCompletionSender<WorkerResult<()>>),
+
+    /// Update the safe tip to the given block.
+    UpdateSafeTip(OLBlockCommitment, CommandCompletionSender<WorkerResult<()>>),
 }
