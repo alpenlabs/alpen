@@ -17,6 +17,7 @@ strata-ol-chainstate-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
+strata-snark-acct-types.workspace = true
 strata-state.workspace = true
 typed-sled.workspace = true
 zkaleido.workspace = true
@@ -30,6 +31,7 @@ ssz_types.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+strata-acct-types.workspace = true
 strata-db-tests.workspace = true
 sled = "0.34.7"
 

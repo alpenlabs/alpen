@@ -11,6 +11,7 @@ pub mod l1;
 pub mod l2;
 pub mod macros;
 pub mod ol;
+pub mod ol_aux;
 pub mod ol_state;
 pub mod prover;
 #[cfg(feature = "test_utils")]
@@ -30,10 +31,11 @@ pub use config::SledDbConfig;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use ol::db::OLBlockDBSled;
+use ol_aux::db::OLAuxDBSled;
 use ol_state::db::OLStateDBSled;
 use strata_db_types::{
     DbResult,
-    traits::{DatabaseBackend, OLBlockDatabase, OLStateDatabase},
+    traits::{DatabaseBackend, InboxMessageDatabase, OLBlockDatabase, OLStateDatabase},
 };
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
@@ -66,6 +68,7 @@ pub struct SledBackend {
     client_state_db: Arc<ClientStateDBSled>,
     chain_state_db: Arc<ChainstateDBSled>,
     ol_block_db: Arc<OLBlockDBSled>,
+    ol_aux_db: Arc<OLAuxDBSled>,
     ol_state_db: Arc<OLStateDBSled>,
     checkpoint_db: Arc<CheckpointDBSled>,
     writer_db: Arc<L1WriterDBSled>,
@@ -84,6 +87,7 @@ impl SledBackend {
         let client_state_db = Arc::new(ClientStateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let chain_state_db = Arc::new(ChainstateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_block_db = Arc::new(OLBlockDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let ol_aux_db = Arc::new(OLAuxDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_state_db = Arc::new(OLStateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
@@ -96,6 +100,7 @@ impl SledBackend {
             client_state_db,
             chain_state_db,
             ol_block_db,
+            ol_aux_db,
             ol_state_db,
             checkpoint_db,
             writer_db,
@@ -157,5 +162,10 @@ impl SledBackend {
     /// Returns the ASM database which implements the MmrDatabase trait.
     pub fn mmr_db(&self) -> Arc<AsmDBSled> {
         self.asm_db.clone()
+    }
+
+    /// Get the inbox message database.
+    pub fn inbox_message_db(&self) -> Arc<impl InboxMessageDatabase> {
+        self.ol_aux_db.clone()
     }
 }
