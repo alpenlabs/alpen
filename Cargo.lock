@@ -14763,7 +14763,6 @@ dependencies = [
 name = "strata-params"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "bitcoin",
  "borsh",
  "serde",

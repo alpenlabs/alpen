@@ -108,11 +108,6 @@ impl RollupParams {
         Ok(())
     }
 
-    pub fn compute_hash(&self) -> Buf32 {
-        let raw_bytes = bincode::serialize(&self).expect("rollup params serialization failed");
-        strata_identifiers::hash::raw(&raw_bytes)
-    }
-
     pub fn checkpoint_predicate(&self) -> &PredicateKey {
         &self.checkpoint_predicate
     }
