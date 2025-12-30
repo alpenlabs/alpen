@@ -132,21 +132,3 @@ pub fn finalize() {
     // Shutdown global text map propagator
     opentelemetry::global::shutdown_tracer_provider();
 }
-
-/// Shuts down with a custom timeout for span flushing
-pub fn finalize_with_timeout(timeout: Duration) {
-    info!(?timeout, "shutting down logging with custom timeout");
-
-    if let Some(provider) = TRACER_PROVIDER.get() {
-        match provider.shutdown() {
-            Ok(()) => {
-                info!("tracer provider shut down successfully");
-            }
-            Err(e) => {
-                error!("failed to shut down tracer provider: {:?}", e);
-            }
-        }
-    }
-
-    opentelemetry::global::shutdown_tracer_provider();
-}

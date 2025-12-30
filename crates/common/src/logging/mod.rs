@@ -8,7 +8,7 @@ pub mod types;
 mod tests;
 
 // Re-export main types and functions
-pub use manager::{finalize, finalize_with_timeout, init};
+pub use manager::{finalize, init};
 pub use service::{init_logging_from_config, LoggingInitConfig};
 // Re-export tracing-appender types for convenience
 pub use tracing_appender::rolling::Rotation;
