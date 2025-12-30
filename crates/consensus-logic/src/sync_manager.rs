@@ -265,7 +265,7 @@ pub fn spawn_asm_worker(
         bitcoin_client,
         storage.l1().clone(),
         storage.asm().clone(),
-        storage.unified_mmr().get_handle(MmrId::Asm),
+        storage.global_mmr().get_handle(MmrId::Asm),
     );
 
     // Use the new builder API to launch the worker and get a handle.

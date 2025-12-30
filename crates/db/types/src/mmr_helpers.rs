@@ -398,12 +398,12 @@ pub trait MmrAlgorithm {
     ///
     /// # Returns
     ///
-    /// `Some(PopLeafResult)` if there was a leaf to pop, containing:
+    /// `None` if the MMR is empty
+    ///
+    /// else `Some(PopLeafResult)` containing:
     /// - The hash of the removed leaf
     /// - All node positions to remove
     /// - Updated metadata
-    ///
-    /// `None` if the MMR is empty
     fn pop_leaf<F, E>(metadata: &MmrMetadata, get_node: F) -> Result<Option<PopLeafResult>, E>
     where
         F: Fn(u64) -> Result<[u8; 32], E>,
@@ -554,7 +554,7 @@ pub trait MmrAlgorithm {
 }
 
 /// MMR algorithm implementation that makes clever use of bit manipulation.
-/// This is based on https://github.com/opentimestamps/opentimestamps-server/blob/master/doc/merkle-mountain-range.md
+/// This is based on [opentimestamps mmr](https://github.com/opentimestamps/opentimestamps-server/blob/master/doc/merkle-mountain-range.md)
 // TODO: a better name?
 #[derive(Debug)]
 pub struct BitManipulatedMmrAlgorithm;
@@ -657,22 +657,19 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
         // Read the leaf hash before deletion
         let leaf_hash = get_node(leaf_pos)?;
 
-        // Calculate the old MMR size (before the last leaf was added)
-        let old_mmr_size = if metadata.num_leaves == 1 {
+        // Calculate the new MMR size (before the last leaf was added)
+        let new_mmr_size = if metadata.num_leaves == 1 {
             0 // Empty MMR
         } else {
             leaf_index_to_mmr_size(metadata.num_leaves - 2)
         };
 
-        // Collect nodes to remove: [old_mmr_size, current_mmr_size)
-        let nodes_to_remove: Vec<u64> = (old_mmr_size..metadata.mmr_size).collect();
-
-        // Update metadata
-        let new_mmr_size = old_mmr_size;
+        // Collect nodes to remove: [new_mmr_size, current_mmr_size)
+        let nodes_to_remove: Vec<u64> = (new_mmr_size..metadata.mmr_size).collect();
 
         // Calculate peaks for the new size
-        let new_peaks = if old_mmr_size > 0 {
-            let peak_positions = get_peaks(old_mmr_size);
+        let new_peaks = if new_mmr_size > 0 {
+            let peak_positions = get_peaks(new_mmr_size);
             peak_positions
                 .into_iter()
                 .rev()

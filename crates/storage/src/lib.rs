@@ -13,11 +13,11 @@ pub use managers::{
     chainstate::ChainstateManager,
     checkpoint::CheckpointDbManager,
     client_state::ClientStateManager,
+    global_mmr::{GlobalMmrManager, MmrHandle},
     l1::L1BlockManager,
     l2::L2BlockManager,
     ol::OLBlockManager,
     ol_state::OLStateManager,
-    unified_mmr::{MmrHandle, UnifiedMmrManager},
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
@@ -45,7 +45,7 @@ pub struct NodeStorage {
     checkpoint_manager: Arc<CheckpointDbManager>,
 
     ol_block_manager: Arc<OLBlockManager>,
-    unified_mmr_manager: Arc<UnifiedMmrManager>,
+    global_mmr_manager: Arc<GlobalMmrManager>,
     ol_state_manager: Arc<OLStateManager>,
 }
 
@@ -59,7 +59,7 @@ impl Clone for NodeStorage {
             client_state_manager: self.client_state_manager.clone(),
             checkpoint_manager: self.checkpoint_manager.clone(),
             ol_block_manager: self.ol_block_manager.clone(),
-            unified_mmr_manager: self.unified_mmr_manager.clone(),
+            global_mmr_manager: self.global_mmr_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
         }
     }
@@ -90,8 +90,8 @@ impl NodeStorage {
         &self.checkpoint_manager
     }
 
-    pub fn unified_mmr(&self) -> &Arc<UnifiedMmrManager> {
-        &self.unified_mmr_manager
+    pub fn global_mmr(&self) -> &Arc<GlobalMmrManager> {
+        &self.global_mmr_manager
     }
 
     pub fn ol_block(&self) -> &Arc<OLBlockManager> {
@@ -118,7 +118,7 @@ pub fn create_node_storage(
     let checkpoint_db = db.checkpoint_db();
     let ol_block_db = db.ol_block_db();
     let ol_state_db = db.ol_state_db();
-    let unified_mmr_db = db.unified_mmr_db();
+    let global_mmr_db = db.global_mmr_db();
 
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
@@ -132,7 +132,7 @@ pub fn create_node_storage(
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
-    let unified_mmr_manager = Arc::new(UnifiedMmrManager::new(pool.clone(), unified_mmr_db));
+    let global_mmr_manager = Arc::new(GlobalMmrManager::new(pool.clone(), global_mmr_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db));
 
     Ok(NodeStorage {
@@ -143,7 +143,7 @@ pub fn create_node_storage(
         client_state_manager,
         checkpoint_manager,
         ol_block_manager,
-        unified_mmr_manager,
+        global_mmr_manager,
         ol_state_manager,
     })
 }

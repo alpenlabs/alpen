@@ -2,7 +2,7 @@ use ssz_types::FixedBytes;
 use strata_db_types::{
     DbError, DbResult,
     mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrMetadata},
-    traits::UnifiedMmrDatabase,
+    traits::GlobalMmrDatabase,
 };
 use strata_identifiers::Hash;
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
@@ -10,20 +10,20 @@ use strata_primitives::buf::Buf32;
 use typed_sled::tree::SledTransactionalTree;
 
 use super::schemas::{
-    UnifiedMmrHashIndexSchema, UnifiedMmrMetaSchema, UnifiedMmrNodeSchema, UnifiedMmrPreimageSchema,
+    GlobalMmrHashIndexSchema, GlobalMmrMetaSchema, GlobalMmrNodeSchema, GlobalMmrPreimageSchema,
 };
 use crate::define_sled_database;
 
 define_sled_database!(
-    pub struct UnifiedMmrDb {
-        node_tree: UnifiedMmrNodeSchema,
-        meta_tree: UnifiedMmrMetaSchema,
-        hash_index_tree: UnifiedMmrHashIndexSchema,
-        preimage_tree: UnifiedMmrPreimageSchema,
+    pub struct GlobalMmrDb {
+        node_tree: GlobalMmrNodeSchema,
+        meta_tree: GlobalMmrMetaSchema,
+        hash_index_tree: GlobalMmrHashIndexSchema,
+        preimage_tree: GlobalMmrPreimageSchema,
     }
 );
 
-impl UnifiedMmrDb {
+impl GlobalMmrDb {
     fn ensure_mmr_metadata(&self, mmr_id: &[u8]) -> DbResult<()> {
         let key = mmr_id.to_vec();
         if self.meta_tree.get(&key)?.is_none() {
@@ -56,9 +56,9 @@ impl UnifiedMmrDb {
     fn append_leaf_in_transaction<A: MmrAlgorithm>(
         mmr_id: Vec<u8>,
         hash: Hash,
-        nt: SledTransactionalTree<UnifiedMmrNodeSchema>,
-        mt: SledTransactionalTree<UnifiedMmrMetaSchema>,
-        hit: SledTransactionalTree<UnifiedMmrHashIndexSchema>,
+        nt: SledTransactionalTree<GlobalMmrNodeSchema>,
+        mt: SledTransactionalTree<GlobalMmrMetaSchema>,
+        hit: SledTransactionalTree<GlobalMmrHashIndexSchema>,
     ) -> typed_sled::error::Result<u64> {
         let metadata = mt
             .get(&mmr_id)?
@@ -83,7 +83,7 @@ impl UnifiedMmrDb {
     }
 }
 
-impl UnifiedMmrDatabase for UnifiedMmrDb {
+impl GlobalMmrDatabase for GlobalMmrDb {
     type MmrAlgorithm = BitManipulatedMmrAlgorithm;
 
     fn append_leaf(&self, mmr_id: Vec<u8>, hash: Hash) -> DbResult<u64> {
@@ -219,10 +219,10 @@ mod tests {
     use super::*;
     use crate::test_utils::{get_test_sled_config, get_test_sled_db};
 
-    fn setup() -> UnifiedMmrDb {
+    fn setup() -> GlobalMmrDb {
         let db = Arc::new(get_test_sled_db());
         let config = get_test_sled_config();
-        UnifiedMmrDb::new(db, config).unwrap()
+        GlobalMmrDb::new(db, config).unwrap()
     }
 
     #[test]

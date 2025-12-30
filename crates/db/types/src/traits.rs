@@ -356,12 +356,12 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 // MMR Database Traits
 // =============================================================================
 
-/// Unified MMR database trait using MmrId for identification
+/// Global MMR database trait using MmrId for identification
 ///
 /// This trait provides a simpler, more direct API where the MMR instance
 /// is identified by an `MmrId` enum rather than a generic scope parameter.
 /// This is the preferred interface for new code.
-pub trait UnifiedMmrDatabase: Send + Sync + 'static {
+pub trait GlobalMmrDatabase: Send + Sync + 'static {
     type MmrAlgorithm: MmrAlgorithm;
 
     /// Append a new leaf to the specified MMR

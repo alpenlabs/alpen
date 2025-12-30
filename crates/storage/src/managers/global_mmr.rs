@@ -3,7 +3,7 @@ use std::{marker::PhantomData, sync::Arc};
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::{
     mmr_helpers::{leaf_index_to_pos, BitManipulatedMmrAlgorithm, MmrAlgorithm},
-    traits::UnifiedMmrDatabase,
+    traits::GlobalMmrDatabase,
     DbError, DbResult,
 };
 use strata_identifiers::{Hash, MmrId};
@@ -12,7 +12,7 @@ use threadpool::ThreadPool;
 
 use crate::ops;
 
-/// Unified manager for all MMR instances in the system
+/// Global manager for all MMR instances in the system
 ///
 /// Provides a single entry point for managing multiple MMR instances
 /// through the handle pattern. Each handle captures a specific MmrId
@@ -21,14 +21,14 @@ use crate::ops;
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"
 )]
-pub struct UnifiedMmrManager {
-    ops: Arc<ops::unified_mmr::UnifiedMmrDataOps>,
+pub struct GlobalMmrManager {
+    ops: Arc<ops::global_mmr::GlobalMmrDataOps>,
     // TODO: add a cache
 }
 
-impl UnifiedMmrManager {
-    pub fn new(pool: ThreadPool, db: Arc<impl UnifiedMmrDatabase + 'static>) -> Self {
-        let ops = Arc::new(ops::unified_mmr::Context::new(db).into_ops(pool));
+impl GlobalMmrManager {
+    pub fn new(pool: ThreadPool, db: Arc<impl GlobalMmrDatabase + 'static>) -> Self {
+        let ops = Arc::new(ops::global_mmr::Context::new(db).into_ops(pool));
         Self { ops }
     }
 
@@ -83,7 +83,7 @@ impl UnifiedMmrManager {
 )]
 pub struct MmrHandle {
     mmr_id: MmrId,
-    ops: Arc<ops::unified_mmr::UnifiedMmrDataOps>,
+    ops: Arc<ops::global_mmr::GlobalMmrDataOps>,
 }
 
 impl MmrHandle {
