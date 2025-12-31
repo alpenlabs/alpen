@@ -13,6 +13,16 @@ pub(crate) struct DummyOLClient {
     pub(crate) genesis_epoch: EpochCommitment,
 }
 
+impl DummyOLClient {
+    fn slot_to_block_commitment(&self, slot: u64) -> OLBlockCommitment {
+        if slot == self.genesis_epoch.last_slot() {
+            self.genesis_epoch.to_block_commitment()
+        } else {
+            slot_to_block_commitment(slot)
+        }
+    }
+}
+
 #[async_trait]
 impl OLClient for DummyOLClient {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
@@ -27,7 +37,7 @@ impl OLClient for DummyOLClient {
         let commitment = EpochCommitment::new(
             epoch,
             epoch as u64,
-            slot_to_block_commitment(epoch as u64).blkid,
+            self.slot_to_block_commitment(epoch as u64).blkid,
         );
         Ok(OLEpochSummary::new(commitment, commitment, vec![]))
     }
@@ -46,7 +56,7 @@ impl SequencerOLClient for DummyOLClient {
     ) -> Result<Vec<OLBlockData>, OLClientError> {
         let mut blocks = Vec::with_capacity((max_slot - min_slot + 1) as usize);
         for slot in min_slot..=max_slot {
-            let commitment = slot_to_block_commitment(slot);
+            let commitment = self.slot_to_block_commitment(slot);
             blocks.push(OLBlockData {
                 commitment,
                 inbox_messages: vec![],
