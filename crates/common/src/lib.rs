@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod logging;
+pub mod metrics;
 pub mod retry;
 
 #[cfg(feature = "debug-utils")]

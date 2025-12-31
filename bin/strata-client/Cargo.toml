@@ -54,6 +54,9 @@ tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
 zeroize.workspace = true
+pprof.workspace = true
+prometheus.workspace = true
+lazy_static.workspace = true
 
 [dev-dependencies]
 arbitrary.workspace = true

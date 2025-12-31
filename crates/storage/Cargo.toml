@@ -4,6 +4,7 @@ name = "strata-storage"
 version = "0.2.0"
 
 [dependencies]
+strata-common.workspace = true
 strata-db.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
@@ -17,3 +18,5 @@ paste.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+prometheus.workspace = true
+lazy_static.workspace = true

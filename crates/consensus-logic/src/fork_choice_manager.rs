@@ -3,6 +3,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use strata_chaintsn::transition::process_block;
+use strata_common::metrics::{BLOCK_PROCESSING_DURATION, BLOCKS_PROCESSED_TOTAL};
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -568,14 +569,24 @@ fn handle_new_block(
     bundle: &L2BlockBundle,
     engine: &impl ExecEngineCtl,
 ) -> anyhow::Result<bool> {
+    let total_start = std::time::Instant::now();
     let slot = bundle.header().slot();
 
     // First, decide if the block seems correctly signed and we haven't
     // already marked it as invalid.
+    let validation_start = std::time::Instant::now();
     let chstate = fcm_state.cur_chainstate.as_ref();
     let correctly_signed = check_new_block(blkid, bundle.block(), chstate, fcm_state)?;
+    let validation_duration = validation_start.elapsed().as_secs_f64();
+    BLOCK_PROCESSING_DURATION
+        .with_label_values(&["validation"])
+        .observe(validation_duration);
+
     if !correctly_signed {
         // It's invalid, write that and return.
+        BLOCKS_PROCESSED_TOTAL
+            .with_label_values(&["failed"])
+            .inc();
         return Ok(false);
     }
 
@@ -588,18 +599,26 @@ fn handle_new_block(
         debug!(?blkid, ?exec_hash, "submitting execution payload");
         let eng_payload = ExecPayloadData::from_l2_block_bundle(bundle);
 
+        let execution_start = std::time::Instant::now();
         let res = retry_with_backoff(
             "engine_submit_payload",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || engine.submit_payload(eng_payload.clone()),
         )?;
+        let execution_duration = execution_start.elapsed().as_secs_f64();
+        BLOCK_PROCESSING_DURATION
+            .with_label_values(&["execution"])
+            .observe(execution_duration);
 
         // If the payload is invalid then we should write the full block as
         // being invalid and return too.
         // TODO verify this is reasonable behavior, especially with regard
         // to pre-sync
         if res == strata_eectl::engine::BlockStatus::Invalid {
+            BLOCKS_PROCESSED_TOTAL
+                .with_label_values(&["failed"])
+                .inc();
             return Ok(false);
         }
     }
@@ -633,7 +652,7 @@ fn handle_new_block(
     debug!(%tip_blkid, "have new tip, applying update");
 
     // Apply the reorg.
-    match apply_tip_update(tip_update, fcm_state) {
+    let result = match apply_tip_update(tip_update, fcm_state) {
         Ok(()) => {
             info!(%tip_blkid, "new chain tip");
 
@@ -669,7 +688,29 @@ fn handle_new_block(
                 Err(e)
             }
         }
+    };
+
+    // Track total block processing duration
+    let total_duration = total_start.elapsed().as_secs_f64();
+    BLOCK_PROCESSING_DURATION
+        .with_label_values(&["total"])
+        .observe(total_duration);
+
+    // Track success/failure
+    match &result {
+        Ok(true) => {
+            BLOCKS_PROCESSED_TOTAL
+                .with_label_values(&["success"])
+                .inc();
+        }
+        Ok(false) | Err(_) => {
+            BLOCKS_PROCESSED_TOTAL
+                .with_label_values(&["failed"])
+                .inc();
+        }
     }
+
+    result
 }
 
 /// Considers if the block is plausibly valid and if we should attach it to the
@@ -864,12 +905,17 @@ fn apply_blocks(
 
         // Compute the transition write batch, then compute the new state
         // locally and update our going state.
+        let state_transition_start = std::time::Instant::now();
         let mut prestate_cache = StateCache::new(cur_state);
         debug!("processing block transition");
         process_block(&mut prestate_cache, header, body, &rparams)
             .map_err(|e| Error::InvalidStateTsn(blkid, e))?;
         let wb = prestate_cache.finalize();
         let post_state = wb.new_toplevel_state();
+        let state_transition_duration = state_transition_start.elapsed().as_secs_f64();
+        BLOCK_PROCESSING_DURATION
+            .with_label_values(&["state_transition"])
+            .observe(state_transition_duration);
 
         let post_state_epoch = post_state.cur_epoch();
 
@@ -908,10 +954,15 @@ fn apply_blocks(
     let last_block = updates.last().map(|(b, _)| *b).unwrap();
 
     // Apply all the write batches.
+    let db_write_start = std::time::Instant::now();
     let chsman = fcm_state.storage.chainstate();
     for (block, wb) in updates {
         chsman.put_write_batch_blocking(block.slot(), WriteBatchEntry::new(wb, *block.blkid()))?;
     }
+    let db_write_duration = db_write_start.elapsed().as_secs_f64();
+    BLOCK_PROCESSING_DURATION
+        .with_label_values(&["db_write"])
+        .observe(db_write_duration);
 
     // Update the tip block in the FCM state.
     fcm_state.update_tip_block(last_block, Arc::new(cur_state));

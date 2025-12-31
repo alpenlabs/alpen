@@ -4,6 +4,7 @@ use strata_db::{
     traits::{BlockStatus, Database},
     DbResult,
 };
+use strata_common::metrics::{DB_OPERATIONS_TOTAL, DB_WRITE_BYTES, DB_WRITE_DURATION};
 use strata_state::{block::L2BlockBundle, header::L2Header, id::L2BlockId};
 use threadpool::ThreadPool;
 
@@ -26,18 +27,74 @@ impl L2BlockManager {
     pub async fn put_block_data_async(&self, bundle: L2BlockBundle) -> DbResult<()> {
         let header = bundle.block().header().clone();
         let id = header.get_blockid();
-        self.ops.put_block_data_async(bundle).await?;
-        self.block_cache.purge(&id);
-        Ok(())
+
+        // Estimate payload size (rough approximation)
+        let payload_size = std::mem::size_of_val(&bundle);
+
+        let start = std::time::Instant::now();
+        let result = self.ops.put_block_data_async(bundle).await;
+        let duration = start.elapsed().as_secs_f64();
+
+        // Record metrics
+        DB_WRITE_DURATION
+            .with_label_values(&["put_block"])
+            .observe(duration);
+        DB_WRITE_BYTES
+            .with_label_values(&["put_block"])
+            .observe(payload_size as f64);
+
+        match &result {
+            Ok(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_block", "success"])
+                    .inc();
+                self.block_cache.purge(&id);
+            }
+            Err(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_block", "failed"])
+                    .inc();
+            }
+        }
+
+        result
     }
 
     /// Puts in a block in the database, purging cache entry.
     pub fn put_block_data_blocking(&self, bundle: L2BlockBundle) -> DbResult<()> {
         let header = bundle.block().header().clone();
         let id = header.get_blockid();
-        self.ops.put_block_data_blocking(bundle)?;
-        self.block_cache.purge(&id);
-        Ok(())
+
+        // Estimate payload size (rough approximation)
+        let payload_size = std::mem::size_of_val(&bundle);
+
+        let start = std::time::Instant::now();
+        let result = self.ops.put_block_data_blocking(bundle);
+        let duration = start.elapsed().as_secs_f64();
+
+        // Record metrics
+        DB_WRITE_DURATION
+            .with_label_values(&["put_block"])
+            .observe(duration);
+        DB_WRITE_BYTES
+            .with_label_values(&["put_block"])
+            .observe(payload_size as f64);
+
+        match &result {
+            Ok(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_block", "success"])
+                    .inc();
+                self.block_cache.purge(&id);
+            }
+            Err(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_block", "failed"])
+                    .inc();
+            }
+        }
+
+        result
     }
 
     /// Gets a block either in the cache or from the underlying database.

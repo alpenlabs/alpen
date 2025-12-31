@@ -1,6 +1,7 @@
 use std::cmp::min;
 
 use futures::stream::{self, Stream, StreamExt};
+use strata_common::metrics::{L2_BLOCKS_FETCHED_TOTAL, L2_BLOCK_FETCH_DURATION, RPC_CALL_DURATION, RPC_PAYLOAD_BYTES, RPC_CALLS_TOTAL};
 use strata_primitives::l2::L2BlockCommitment;
 use strata_rpc_api::StrataApiClient;
 use strata_state::{block::L2BlockBundle, id::L2BlockId};
@@ -68,13 +69,58 @@ impl<RPC: StrataApiClient + Send + Sync> RpcSyncPeer<RPC> {
         start_height: u64,
         end_height: u64,
     ) -> Result<Vec<L2BlockBundle>, ClientError> {
-        let bytes = self
+        let start = std::time::Instant::now();
+
+        let bytes_result = self
             .rpc_client
             .get_raw_bundles(start_height, end_height)
             .await
-            .map_err(|e| ClientError::Network(e.to_string()))?;
+            .map_err(|e| ClientError::Network(e.to_string()));
 
-        borsh::from_slice(&bytes.0).map_err(|err| ClientError::Deserialization(err.to_string()))
+        let rpc_duration = start.elapsed().as_secs_f64();
+        RPC_CALL_DURATION
+            .with_label_values(&["get_raw_bundles", "l2_sync_peer"])
+            .observe(rpc_duration);
+
+        let bytes = match bytes_result {
+            Ok(b) => {
+                RPC_CALLS_TOTAL
+                    .with_label_values(&["get_raw_bundles", "l2_sync_peer", "success"])
+                    .inc();
+
+                // Track response payload size
+                let payload_size = b.0.len();
+                RPC_PAYLOAD_BYTES
+                    .with_label_values(&["get_raw_bundles", "response", "l2_sync_peer"])
+                    .observe(payload_size as f64);
+
+                b
+            }
+            Err(e) => {
+                RPC_CALLS_TOTAL
+                    .with_label_values(&["get_raw_bundles", "l2_sync_peer", "failed"])
+                    .inc();
+                return Err(e);
+            }
+        };
+
+        let blocks: Vec<L2BlockBundle> = borsh::from_slice(&bytes.0)
+            .map_err(|err| ClientError::Deserialization(err.to_string()))?;
+
+        // Track blocks fetched
+        let block_count = blocks.len();
+
+        L2_BLOCKS_FETCHED_TOTAL
+            .with_label_values(&["rpc_peer", "success"])
+            .inc_by(block_count as u64);
+
+        // Track total fetch duration (including deserialization)
+        let total_duration = start.elapsed().as_secs_f64();
+        L2_BLOCK_FETCH_DURATION
+            .with_label_values(&["rpc_peer"])
+            .observe(total_duration);
+
+        Ok(blocks)
     }
 }
 

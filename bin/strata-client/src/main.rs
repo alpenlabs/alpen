@@ -54,6 +54,7 @@ mod el_sync;
 mod errors;
 mod helpers;
 mod network;
+mod profiling;
 mod rpc_client;
 mod rpc_server;
 
@@ -100,6 +101,11 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let executor = task_manager.executor();
 
     init_logging(executor.handle());
+
+    // Register metrics before starting any services
+    if let Err(e) = strata_common::metrics::register_metrics() {
+        warn!("failed to register metrics: {}", e);
+    }
 
     // Init thread pool for batch jobs.
     // TODO switch to num_cpus
@@ -185,6 +191,12 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
                 .map_err(Into::into)
         });
     };
+
+    // Start profiling/metrics server on port 6060
+    executor.spawn_critical_async(
+        "profiling-server",
+        profiling::start_profiling_server("0.0.0.0", 6060),
+    );
 
     // FIXME we don't have the `CoreContext` anymore after this point
     executor.spawn_critical_async(
