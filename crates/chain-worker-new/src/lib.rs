@@ -13,26 +13,25 @@
 
 #![allow(unused, reason = "in development")]
 
+mod errors;
+
+pub use errors::{WorkerError, WorkerResult};
+
 // Placeholder uses for dependencies that will be used in subsequent modules.
 // These will be removed as we implement each module.
 use strata_checkpoint_types as _;
 use strata_db_types as _;
-use strata_eectl as _;
-use strata_identifiers as _;
 use strata_ledger_types as _;
 use strata_ol_chain_types_new as _;
 use strata_ol_state_support_types as _;
 use strata_ol_state_types as _;
-use strata_ol_stf as _;
 use strata_params as _;
-use strata_primitives as _;
 use strata_service as _;
 use strata_snark_acct_types as _;
 use strata_status as _;
 
 use anyhow as _;
 use serde as _;
-use thiserror as _;
 use tokio as _;
 use tracing as _;
 
