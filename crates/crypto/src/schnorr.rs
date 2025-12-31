@@ -1,18 +1,13 @@
 //! Schnorr signature signing and verification.
 
-#[cfg(not(target_os = "zkvm"))]
 use std::ops::Deref;
 
-#[cfg(not(target_os = "zkvm"))]
 use borsh::{BorshDeserialize, BorshSerialize};
-#[cfg(all(not(target_os = "zkvm"), feature = "serde"))]
 use hex;
-#[cfg(not(target_os = "zkvm"))]
-use secp256k1::{Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
-#[cfg(all(not(target_os = "zkvm"), feature = "serde"))]
-use serde::de::Error as DeError;
-#[cfg(all(not(target_os = "zkvm"), feature = "serde"))]
-use serde::{Deserialize, Serialize};
+use secp256k1::{
+    schnorr::Signature, Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1,
+};
+use serde::{de::Error as DeError, Deserialize, Serialize};
 use strata_identifiers::{Buf32, Buf64};
 
 /// Sign a message with a Schnorr signature.
@@ -32,11 +27,8 @@ pub fn sign_schnorr_sig(_msg: &Buf32, _sk: &Buf32) -> Buf64 {
     unimplemented!("Schnorr signing not available in zkvm")
 }
 
-/// Verify a Schnorr signature (non-zkvm version using secp256k1).
-#[cfg(not(target_os = "zkvm"))]
+/// Verify a Schnorr signature
 pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
-    use secp256k1::schnorr::Signature;
-
     let msg = match Message::from_digest_slice(msg.as_ref()) {
         Ok(msg) => msg,
         Err(_) => return false,
@@ -55,30 +47,10 @@ pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
     sig.verify(&msg, &pk).is_ok()
 }
 
-/// Verify a Schnorr signature (zkvm version using k256).
-#[cfg(target_os = "zkvm")]
-pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
-    use k256::schnorr::{signature::hazmat::PrehashVerifier, Signature, VerifyingKey};
-
-    let sig = match Signature::try_from(sig.as_slice()) {
-        Ok(sig) => sig,
-        Err(_) => return false,
-    };
-
-    let vk = match VerifyingKey::from_bytes(pk.as_slice()) {
-        Ok(vk) => vk,
-        Err(_) => return false,
-    };
-
-    vk.verify_prehash(msg.as_slice(), &sig).is_ok()
-}
-
 /// A secret key that is guaranteed to have a even x-only public key
-#[cfg(not(target_os = "zkvm"))]
 #[derive(Debug, Clone, Copy)]
 pub struct EvenSecretKey(SecretKey);
 
-#[cfg(not(target_os = "zkvm"))]
 impl Deref for EvenSecretKey {
     type Target = SecretKey;
 
@@ -87,14 +59,12 @@ impl Deref for EvenSecretKey {
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl AsRef<SecretKey> for EvenSecretKey {
     fn as_ref(&self) -> &SecretKey {
         &self.0
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl From<SecretKey> for EvenSecretKey {
     fn from(value: SecretKey) -> Self {
         match value.x_only_public_key(SECP256K1).1 == Parity::Odd {
@@ -104,7 +74,6 @@ impl From<SecretKey> for EvenSecretKey {
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl From<EvenSecretKey> for SecretKey {
     fn from(value: EvenSecretKey) -> Self {
         value.0
@@ -112,11 +81,9 @@ impl From<EvenSecretKey> for SecretKey {
 }
 
 /// A public key with guaranteed even parity
-#[cfg(not(target_os = "zkvm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EvenPublicKey(PublicKey);
 
-#[cfg(not(target_os = "zkvm"))]
 impl Deref for EvenPublicKey {
     type Target = PublicKey;
 
@@ -125,14 +92,12 @@ impl Deref for EvenPublicKey {
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl AsRef<PublicKey> for EvenPublicKey {
     fn as_ref(&self) -> &PublicKey {
         &self.0
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl From<PublicKey> for EvenPublicKey {
     fn from(value: PublicKey) -> Self {
         match value.x_only_public_key().1 == Parity::Odd {
@@ -142,21 +107,18 @@ impl From<PublicKey> for EvenPublicKey {
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl From<EvenPublicKey> for PublicKey {
     fn from(value: EvenPublicKey) -> Self {
         value.0
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl From<EvenPublicKey> for XOnlyPublicKey {
     fn from(value: EvenPublicKey) -> Self {
         value.0.x_only_public_key().0
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl From<XOnlyPublicKey> for EvenPublicKey {
     fn from(value: XOnlyPublicKey) -> Self {
         // Convert x-only to full public key with even parity
@@ -164,14 +126,12 @@ impl From<XOnlyPublicKey> for EvenPublicKey {
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl From<EvenPublicKey> for Buf32 {
     fn from(value: EvenPublicKey) -> Self {
         Buf32::from(value.0.x_only_public_key().0.serialize())
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl TryFrom<Buf32> for EvenPublicKey {
     type Error = secp256k1::Error;
 
@@ -181,7 +141,6 @@ impl TryFrom<Buf32> for EvenPublicKey {
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl BorshSerialize for EvenPublicKey {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let x_only = self.0.x_only_public_key().0;
@@ -189,7 +148,6 @@ impl BorshSerialize for EvenPublicKey {
     }
 }
 
-#[cfg(not(target_os = "zkvm"))]
 impl BorshDeserialize for EvenPublicKey {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let buf = Buf32::deserialize_reader(reader)?;
@@ -199,7 +157,6 @@ impl BorshDeserialize for EvenPublicKey {
     }
 }
 
-#[cfg(all(not(target_os = "zkvm"), feature = "serde"))]
 impl Serialize for EvenPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -212,7 +169,6 @@ impl Serialize for EvenPublicKey {
     }
 }
 
-#[cfg(all(not(target_os = "zkvm"), feature = "serde"))]
 impl<'de> Deserialize<'de> for EvenPublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

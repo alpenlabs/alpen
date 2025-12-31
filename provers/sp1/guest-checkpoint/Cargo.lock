@@ -158,18 +158,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2261d10cca569e4643e526d8dc2e62e433cc8aba21ab764233731f8d369bf394"
 
 [[package]]
-name = "bitvec"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
-dependencies = [
- "funty",
- "radium",
- "tap",
- "wyz",
-]
-
-[[package]]
 name = "blake3"
 version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -451,12 +439,6 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
-name = "funty"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "gcd"
@@ -950,12 +932,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
-name = "radium"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
-
-[[package]]
 name = "rand"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1207,8 +1183,8 @@ dependencies = [
 
 [[package]]
 name = "sizzle-parser"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -1288,18 +1264,20 @@ dependencies = [
 
 [[package]]
 name = "ssz"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
+ "hex",
  "itertools 0.13.0",
+ "serde",
  "smallvec",
  "ssz_primitives",
 ]
 
 [[package]]
 name = "ssz_codegen"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -1317,8 +1295,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_derive"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
  "darling",
  "quote",
@@ -1327,8 +1305,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -1337,9 +1315,12 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
  "ssz",
  "ssz_primitives",
  "tree_hash",
@@ -1363,15 +1344,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-logs"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "strata-asm-common",
+ "strata-checkpoint-types",
+ "strata-codec",
+ "strata-codec-utils",
+ "strata-msg-fmt",
+ "strata-predicate",
+ "strata-primitives",
+]
+
+[[package]]
 name = "strata-asm-manifest-types"
 version = "0.1.0"
 dependencies = [
  "borsh",
  "serde",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",
  "thiserror 2.0.17",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1396,15 +1398,9 @@ dependencies = [
 name = "strata-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
- "bitcoin",
  "borsh",
- "musig2",
- "rand 0.8.5",
  "serde",
- "sha2",
  "strata-primitives",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -1415,15 +1411,12 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
- "digest",
  "num_enum",
  "rand 0.8.5",
  "secp256k1",
  "serde",
- "sha2",
  "ssz",
  "ssz_derive",
- "strata-checkpoint-types",
  "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -1449,6 +1442,7 @@ name = "strata-chainexec"
 version = "0.1.0"
 dependencies = [
  "strata-chaintsn",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -1460,12 +1454,14 @@ dependencies = [
 name = "strata-chaintsn"
 version = "0.3.0-alpha.1"
 dependencies = [
- "bitcoin",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
+ "strata-asm-common",
+ "strata-asm-logs",
  "strata-asm-types",
  "strata-bridge-types",
  "strata-checkpoint-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -1507,14 +1503,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-codec-utils"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "ssz",
+ "ssz_derive",
+ "strata-codec",
+]
+
+[[package]]
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bitvec",
  "borsh",
  "hex",
- "k256 0.13.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "musig2",
  "secp256k1",
  "serde",
@@ -1550,9 +1554,13 @@ dependencies = [
  "serde",
  "sha2",
  "ssz",
+ "ssz_codegen",
  "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-codec",
  "tree_hash",
+ "tree_hash_derive",
  "zeroize",
 ]
 
@@ -1574,14 +1582,8 @@ dependencies = [
  "digest",
  "serde",
  "sha2",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_types",
  "strata-codec",
  "thiserror 2.0.17",
- "tree_hash",
- "tree_hash_derive",
 ]
 
 [[package]]
@@ -1599,7 +1601,7 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
- "strata-asm-types",
+ "strata-asm-common",
  "strata-crypto",
  "strata-params",
  "strata-primitives",
@@ -1613,13 +1615,11 @@ name = "strata-ol-chainstate-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
- "bitcoin",
  "borsh",
- "strata-asm-types",
  "strata-bridge-types",
+ "strata-identifiers",
  "strata-primitives",
  "strata-state",
- "tracing",
 ]
 
 [[package]]
@@ -1660,6 +1660,7 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
+ "hex",
  "secp256k1",
  "serde",
  "strata-btc-types",
@@ -1705,7 +1706,6 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-stf",
- "strata-asm-types",
  "strata-bridge-types",
  "strata-csm-types",
  "strata-primitives",
@@ -1746,12 +1746,6 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
-
-[[package]]
-name = "tap"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "thiserror"
@@ -1897,8 +1891,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
  "digest",
  "sha2",
@@ -1909,8 +1903,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash_derive"
-version = "0.8.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.8.0#32212bc3f32386a4c51a1355ab78ac139d516216"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
 dependencies = [
  "darling",
  "quote",
@@ -1985,15 +1979,6 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
-
-[[package]]
-name = "wyz"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
-dependencies = [
- "tap",
-]
 
 [[package]]
 name = "zerocopy"

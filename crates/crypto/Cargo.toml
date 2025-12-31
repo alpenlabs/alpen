@@ -11,17 +11,12 @@ strata-identifiers.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
+hex.workspace = true
 musig2.workspace = true
 rand = { workspace = true, optional = true }
 secp256k1 = { workspace = true, features = ["global-context", "recovery"] }
+serde.workspace = true
 thiserror.workspace = true
-
-[target.'cfg(target_os = "zkvm")'.dependencies]
-k256 = { version = "0.13.4", features = ["schnorr"] }
-
-[target.'cfg(not(target_os = "zkvm"))'.dependencies]
-hex = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 bitcoin.workspace = true
@@ -29,5 +24,4 @@ rand.workspace = true
 
 [features]
 default = []
-serde = ["dep:serde", "dep:hex"]
 test-utils = ["dep:rand"]

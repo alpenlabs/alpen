@@ -13843,17 +13843,9 @@ dependencies = [
 name = "strata-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
- "bitcoin",
  "borsh",
- "ed25519-dalek",
- "musig2",
- "rand 0.8.5",
  "serde",
- "sha2",
  "strata-primitives",
- "strata-test-utils",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -14159,7 +14151,6 @@ dependencies = [
  "bitcoin",
  "borsh",
  "hex",
- "k256",
  "musig2",
  "rand 0.8.5",
  "secp256k1 0.29.1",

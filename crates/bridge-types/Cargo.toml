@@ -9,19 +9,10 @@ workspace = true
 [dependencies]
 strata-primitives.workspace = true
 
-arbitrary.workspace = true
-bitcoin.workspace = true
 borsh.workspace = true
-ed25519-dalek.workspace = true
-musig2.workspace = true
 serde.workspace = true
-sha2.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
-strata-test-utils.workspace = true
-
-rand.workspace = true
 
 [features]
 default = ["std"]

@@ -22,7 +22,7 @@ strata-asm-txs-bridge-v1.workspace = true
 strata-bridge-types.workspace = true
 strata-btc-types.workspace = true
 strata-codec.workspace = true
-strata-crypto = { workspace = true, features = ["serde"] }
+strata-crypto.workspace = true
 strata-primitives.workspace = true
 
 [dev-dependencies]
