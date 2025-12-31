@@ -33,9 +33,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "alloy-chains"
-version = "0.2.20"
+version = "0.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bc32535569185cbcb6ad5fa64d989a47bccb9a08e27284b1f2a3ccf16e6d010"
+checksum = "35d744058a9daa51a8cf22a3009607498fcf82d3cf4c5444dd8056cdf651f471"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -46,9 +46,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-consensus"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b6440213a22df93a87ed512d2f668e7dc1d62a05642d107f82d61edc9e12370"
+checksum = "2e318e25fb719e747a7e8db1654170fc185024f3ed5b10f86c08d448a912f6e2"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-consensus-any"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15d0bea09287942405c4f9d2a4f22d1e07611c2dbd9d5bf94b75366340f9e6e0"
+checksum = "364380a845193a317bcb7a5398fc86cdb66c47ebe010771dde05f6869bf9e64a"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -127,9 +127,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-eips"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bd2c7ae05abcab4483ce821f12f285e01c0b33804e6883dd9ca1569a87ee2be"
+checksum = "a4c4d7c5839d9f3a467900c625416b24328450c65702eb3d8caff8813e4d1d33"
 dependencies = [
  "alloy-eip2124",
  "alloy-eip2930",
@@ -174,9 +174,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-genesis"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc47eaae86488b07ea8e20236184944072a78784a1f4993f8ec17b3aa5d08c21"
+checksum = "1ba4b1be0988c11f0095a2380aa596e35533276b8fa6c9e06961bbfe0aebcac5"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -214,9 +214,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-json-rpc"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "003f46c54f22854a32b9cc7972660a476968008ad505427eabab49225309ec40"
+checksum = "f72cf87cda808e593381fb9f005ffa4d2475552b7a6c5ac33d087bf77d82abd0"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -229,9 +229,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-network"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f4029954d9406a40979f3a3b46950928a0fdcfe3ea8a9b0c17490d57e8aa0e3"
+checksum = "12aeb37b6f2e61b93b1c3d34d01ee720207c76fe447e2a2c217e433ac75b17f5"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
@@ -255,9 +255,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-network-primitives"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7805124ad69e57bbae7731c9c344571700b2a18d351bda9e0eba521c991d1bcb"
+checksum = "abd29ace62872083e30929cd9b282d82723196d196db589f3ceda67edcc05552"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -317,9 +317,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64e279e6d40ee40fe8f76753b678d8d5d260cb276dc6c8a8026099b16d2b43f4"
+checksum = "39cf1398cb33aacb139a960fa3d8cf8b1202079f320e77e952a0b95967bf7a9f"
 dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-eth",
@@ -329,9 +329,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-any"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b43c1622aac2508d528743fd4cfdac1dea92d5a8fa894038488ff7edd0af0b32"
+checksum = "6a63fb40ed24e4c92505f488f9dd256e2afaed17faa1b7a221086ebba74f4122"
 dependencies = [
  "alloy-consensus-any",
  "alloy-rpc-types-eth",
@@ -340,9 +340,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-debug"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b2ca3a434a6d49910a7e8e51797eb25db42ef8a5578c52d877fcb26d0afe7bc"
+checksum = "4936f579d9d10eae01772b2ab3497f9d568684f05f26f8175e12f9a1a2babc33"
 dependencies = [
  "alloy-primitives",
  "derive_more",
@@ -352,9 +352,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-engine"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9c4c53a8b0905d931e7921774a1830609713bd3e8222347963172b03a3ecc68"
+checksum = "4c60bdce3be295924122732b7ecd0b2495ce4790bedc5370ca7019c08ad3f26e"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -370,9 +370,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-eth"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed5fafb741c19b3cca4cdd04fa215c89413491f9695a3e928dee2ae5657f607e"
+checksum = "9eae0c7c40da20684548cbc8577b6b7447f7bf4ddbac363df95e3da220e41e72"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
@@ -391,9 +391,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-serde"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6f180c399ca7c1e2fe17ea58343910cad0090878a696ff5a50241aee12fc529"
+checksum = "c0df1987ed0ff2d0159d76b52e7ddfc4e4fbddacc54d2fbee765e0d14d7c01b5"
 dependencies = [
  "alloy-primitives",
  "serde",
@@ -402,9 +402,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-signer"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecc39ad2c0a3d2da8891f4081565780703a593f090f768f884049aa3aa929cbc"
+checksum = "6ff69deedee7232d7ce5330259025b868c5e6a52fa8dffda2c861fb3a5889b24"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -503,9 +503,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-tx-macros"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae109e33814b49fc0a62f2528993aa8a2dd346c26959b151f05441dc0b9da292"
+checksum = "333544408503f42d7d3792bfc0f7218b643d968a03d2c0ed383ae558fb4a76d0"
 dependencies = [
  "darling 0.21.3",
  "proc-macro2",
@@ -545,12 +545,6 @@ checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "anyhow"
-version = "1.0.100"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "arbitrary"
@@ -934,15 +928,15 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
+checksum = "0e050f626429857a27ddccb31e0aca21356bfa709c04041aefddac081a8f068a"
 
 [[package]]
 name = "bech32"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
+checksum = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f"
 
 [[package]]
 name = "bincode"
@@ -970,9 +964,9 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitcoin"
-version = "0.32.7"
+version = "0.32.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fda569d741b895131a88ee5589a467e73e9c4718e958ac9308e4f7dc44b6945"
+checksum = "1e499f9fc0407f50fe98af744ab44fa67d409f76b6772e1689ec8485eb0c0f66"
 dependencies = [
  "base58ck",
  "bech32",
@@ -1011,9 +1005,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin-io"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b47c4ab7a93edb0c7198c5535ed9b52b63095f4e9b45279c6736cec4b856baf"
+checksum = "2dee39a0ee5b4095224a0cfc6bf4cc1baf0f9624b96b367e53b66d974e51d953"
 
 [[package]]
 name = "bitcoin-units"
@@ -1027,9 +1021,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin_hashes"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb18c03d0db0247e147a21a6faafd5a7eb851c743db062de72018b6b7e8e4d16"
+checksum = "26ec84b80c482df901772e931a9a681e26a1b9ee2302edeff23cb30328745c8b"
 dependencies = [
  "bitcoin-io",
  "hex-conservative",
@@ -1094,9 +1088,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.5.7"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad8646f98db542e39fc66e68a20b2144f6a732636df7c2354e74645faaa433ce"
+checksum = "d1da5ab77c1437701eeff7c88d968729e7766172279eab0676857b3d63af7a6f"
 dependencies = [
  "borsh-derive",
  "cfg_aliases",
@@ -1104,9 +1098,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.5.7"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdd1d3c0c2f5833f22386f252fe8ed005c7f59fdcddeef025c01b4c3b9fd9ac3"
+checksum = "0686c856aa6aac0c4498f936d7d6a02df690f614c03e4d906d1018062b5c5e2c"
 dependencies = [
  "once_cell",
  "proc-macro-crate",
@@ -1179,9 +1173,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.47"
+version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd405d82c84ff7f35739f175f67d8b9fb7687a0e84ccdc78bd3568839827cf07"
+checksum = "90583009037521a116abf44494efecd645ba48b6622457080f080b85544e2215"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1259,9 +1253,9 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "convert_case"
-version = "0.7.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb402b8d4c85569410425650ce3eddc7d698ed96d39a73f941b08fb63082f1e7"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -1283,9 +1277,9 @@ dependencies = [
 
 [[package]]
 name = "crc"
-version = "3.3.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9710d3b3739c2e349eb44fe848ad0b7c8cb1e42bd87ee49371df2f7acaf3e675"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
 dependencies = [
  "crc-catalog",
 ]
@@ -1353,33 +1347,6 @@ checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
 dependencies = [
  "generic-array",
  "typenum",
-]
-
-[[package]]
-name = "curve25519-dalek"
-version = "4.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
-dependencies = [
- "cfg-if",
- "cpufeatures",
- "curve25519-dalek-derive",
- "digest 0.10.7",
- "fiat-crypto",
- "rustc_version 0.4.1",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "curve25519-dalek-derive"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.111",
 ]
 
 [[package]]
@@ -1508,22 +1475,23 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "2.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+checksum = "10b768e943bed7bf2cab53df09f4bc34bfd217cdb57d971e769874c9a6710618"
 dependencies = [
  "derive_more-impl",
 ]
 
 [[package]]
 name = "derive_more-impl"
-version = "2.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
+checksum = "6d286bfdaf75e988b4a78e013ecd79c581e06399ab53fbacd2d916c2f904f30b"
 dependencies = [
  "convert_case",
  "proc-macro2",
  "quote",
+ "rustc_version 0.4.1",
  "syn 2.0.111",
  "unicode-xid",
 ]
@@ -1598,30 +1566,6 @@ dependencies = [
  "serdect",
  "signature",
  "spki",
-]
-
-[[package]]
-name = "ed25519"
-version = "2.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
-dependencies = [
- "pkcs8",
- "signature",
-]
-
-[[package]]
-name = "ed25519-dalek"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
-dependencies = [
- "curve25519-dalek",
- "ed25519",
- "serde",
- "sha2",
- "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -1798,12 +1742,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fiat-crypto"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1947,10 +1885,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-sp1-evm-ee-stf"
+name = "guest-sp1-alpen-ee-batch"
 version = "0.1.0"
 dependencies = [
- "strata-proofimpl-evm-ee-stf",
+ "strata-proofimpl-alpen-ee-acct",
  "zkaleido-sp1-guest-env",
 ]
 
@@ -2003,9 +1941,9 @@ dependencies = [
 
 [[package]]
 name = "hex-conservative"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5313b072ce3c597065a808dbf612c4c8e8590bdbf8b579508bf7a762c5eae6cd"
+checksum = "fda06d18ac606267c40c04e41b9947729bf8b9efe74bd4e82b61a5f26a510b9f"
 dependencies = [
  "arrayvec",
 ]
@@ -2116,9 +2054,9 @@ checksum = "7aedcccd01fc5fe81e6b489c15b247b8b0690feb23304303a9e560f37efc560a"
 
 [[package]]
 name = "icu_properties"
-version = "2.1.1"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e93fcd3157766c0c8da2f8cff6ce651a31f0810eaa1c51ec363ef790bbb5fb99"
+checksum = "020bfc02fe870ec3a66d93e677ccca0562506e5872c650f893269e08615d74ec"
 dependencies = [
  "icu_collections",
  "icu_locale_core",
@@ -2130,9 +2068,9 @@ dependencies = [
 
 [[package]]
 name = "icu_properties_data"
-version = "2.1.1"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02845b3647bb045f1100ecd6480ff52f34c35f82d9880e029d329c21d1054899"
+checksum = "616c294cf8d725c6afcd8f55abc17c56464ef6211f9ed59cccffe534129c77af"
 
 [[package]]
 name = "icu_provider"
@@ -2285,9 +2223,9 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.82"
+version = "0.3.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b011eec8cc36da2aab2d5cff675ec18454fad408585853910a202391cf9f8e65"
+checksum = "464a3709c7f55f1f721e5389aa6ea4e3bc6aba669353300af094b29ffbdde1d8"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
@@ -2352,9 +2290,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.177"
+version = "0.2.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
+checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
 
 [[package]]
 name = "libm"
@@ -2376,9 +2314,9 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 
 [[package]]
 name = "log"
-version = "0.4.28"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "macro-string"
@@ -2949,7 +2887,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219cb19e96be00ab2e37d6e299658a0cfa83e52429179969b0f0121b4ac46983"
 dependencies = [
- "toml_edit 0.23.7",
+ "toml_edit 0.23.9",
 ]
 
 [[package]]
@@ -4170,9 +4108,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.16.0"
+version = "3.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10574371d41b0d9b2cff89418eda27da52bcaff2cc8741db26382a77c29131f1"
+checksum = "4fa237f2807440d238e0364a218270b98f767a00d3dada77b1c53ae88940e2e7"
 dependencies = [
  "base64",
  "chrono",
@@ -4189,9 +4127,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.16.0"
+version = "3.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08a72d8216842fdd57820dc78d840bef99248e35fb2554ff923319e60f2d686b"
+checksum = "52a8e3ca0ca629121f70ab50f95249e5a6f925cc0f6ffe8256c45b728875706c"
 dependencies = [
  "darling 0.21.3",
  "proc-macro2",
@@ -4292,9 +4230,9 @@ checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
 
 [[package]]
 name = "sp1-lib"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb1a9935d58cb1dcd757a1b10d727090f5b718f1f03b512d48f0c1952e6ead00"
+checksum = "b73b8ff343f2405d5935440e56b7aba5cee6d87303f0051974cbd6f5de502f57"
 dependencies = [
  "bincode",
  "elliptic-curve",
@@ -4304,9 +4242,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-primitives"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7d2a6187e394c30097ea7a975a4832f172918690dc89a979f0fad67422d3a8b"
+checksum = "7e69a03098f827102c54c31a5e57280eb45b2c085de433b3f702e4f9e3ec1641"
 dependencies = [
  "bincode",
  "blake3",
@@ -4324,9 +4262,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-zkvm"
-version = "5.2.3"
+version = "5.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e767ed85f89b1c8d84188c2cc035833079529bb0ddd8f7bd252de91ce562acc7"
+checksum = "d6247de4d980d1f3311fa877cc5d2d3b7e111258878c8196a8bb9728aec98c8c"
 dependencies = [
  "cfg-if",
  "getrandom 0.2.16",
@@ -4449,72 +4387,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "strata-asm-common"
+name = "strata-acct-types"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
- "borsh",
- "serde",
- "strata-asm-manifest-types",
- "strata-asm-types",
- "strata-btc-types",
- "strata-l1-txfmt",
- "strata-merkle",
- "strata-msg-fmt",
- "thiserror 2.0.17",
- "tracing",
-]
-
-[[package]]
-name = "strata-asm-manifest-types"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "serde",
+ "digest 0.10.7",
+ "sha2",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
+ "strata-btc-types",
  "strata-codec",
  "strata-identifiers",
- "strata-msg-fmt",
+ "strata-merkle",
  "thiserror 2.0.17",
  "tree_hash",
  "tree_hash_derive",
-]
-
-[[package]]
-name = "strata-asm-stf"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "strata-asm-common",
- "strata-identifiers",
- "strata-l1-txfmt",
-]
-
-[[package]]
-name = "strata-asm-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "strata-btc-types",
- "strata-btc-verification",
-]
-
-[[package]]
-name = "strata-bridge-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "bitcoin",
- "borsh",
- "ed25519-dalek",
- "musig2",
- "serde",
- "sha2",
- "strata-primitives",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -4542,19 +4431,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-btc-verification"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "bitcoin",
- "borsh",
- "serde",
- "strata-btc-types",
- "strata-identifiers",
- "thiserror 2.0.17",
-]
-
-[[package]]
 name = "strata-checkpoint-types"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -4563,13 +4439,13 @@ dependencies = [
  "serde",
  "strata-crypto",
  "strata-identifiers",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "zkaleido",
 ]
 
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#113fcced8ab225b7639ac4d6a9685d9f19af7c80"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.17",
@@ -4578,7 +4454,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#113fcced8ab225b7639ac4d6a9685d9f19af7c80"
 dependencies = [
  "quote",
  "syn 2.0.111",
@@ -4600,17 +4476,82 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-csm-types"
-version = "0.3.0-alpha.1"
+name = "strata-ee-acct-runtime"
+version = "0.1.0"
 dependencies = [
- "arbitrary",
- "borsh",
- "const-hex",
- "serde",
- "strata-btc-types",
- "strata-checkpoint-types",
+ "digest 0.10.7",
+ "sha2",
+ "ssz",
+ "ssz_derive",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tree_hash",
+]
+
+[[package]]
+name = "strata-ee-acct-types"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-chain-types",
  "strata-identifiers",
- "strata-primitives",
+ "strata-msg-fmt",
+ "thiserror 2.0.17",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
+name = "strata-ee-chain-types"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
+name = "strata-evm-ee"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-rlp",
+ "alpen-reth-evm",
+ "alpen-reth-primitives",
+ "itertools 0.14.0",
+ "reth-chainspec",
+ "reth-consensus-common",
+ "reth-errors",
+ "reth-evm",
+ "reth-evm-ethereum",
+ "reth-primitives",
+ "reth-primitives-traits",
+ "reth-trie",
+ "revm",
+ "revm-primitives",
+ "rlp",
+ "rsp-client-executor",
+ "rsp-mpt",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-ol-msg-types",
 ]
 
 [[package]]
@@ -4640,7 +4581,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#113fcced8ab225b7639ac4d6a9685d9f19af7c80"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.17",
@@ -4649,68 +4590,39 @@ dependencies = [
 [[package]]
 name = "strata-merkle"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#113fcced8ab225b7639ac4d6a9685d9f19af7c80"
 dependencies = [
  "borsh",
  "digest 0.10.7",
  "serde",
  "sha2",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-codec",
  "thiserror 2.0.17",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#113fcced8ab225b7639ac4d6a9685d9f19af7c80"
 dependencies = [
  "thiserror 2.0.17",
 ]
 
 [[package]]
-name = "strata-ol-chain-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "borsh",
- "serde",
- "strata-asm-types",
- "strata-crypto",
- "strata-params",
- "strata-primitives",
- "strata-state",
- "thiserror 2.0.17",
- "tracing",
-]
-
-[[package]]
-name = "strata-params"
+name = "strata-ol-msg-types"
 version = "0.1.0"
 dependencies = [
- "bincode",
- "bitcoin",
- "borsh",
- "serde",
- "strata-bridge-types",
- "strata-btc-types",
+ "strata-acct-types",
+ "strata-codec",
  "strata-identifiers",
- "strata-l1-txfmt",
- "strata-predicate",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "strata-predicate"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
-dependencies = [
- "borsh",
- "hex",
- "k256",
- "serde",
- "signature",
- "thiserror 2.0.17",
- "zkaleido-sp1-groth16-verifier",
+ "strata-msg-fmt",
 ]
 
 [[package]]
@@ -4732,46 +4644,41 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-evm-ee-stf"
-version = "0.3.0-alpha.1"
+name = "strata-proofimpl-alpen-ee-acct"
+version = "0.1.0"
 dependencies = [
- "alloy-consensus",
- "alloy-eips",
- "alpen-reth-evm",
- "alpen-reth-primitives",
  "reth-chainspec",
- "reth-evm",
- "reth-evm-ethereum",
- "reth-primitives",
- "reth-primitives-traits",
- "reth-trie",
- "revm",
- "revm-primitives",
- "rsp-client-executor",
- "serde",
- "strata-bridge-types",
- "strata-ol-chain-types",
+ "rsp-primitives",
+ "sha2",
+ "ssz",
+ "ssz_derive",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-evm-ee",
+ "strata-identifiers",
  "strata-primitives",
- "strata-state",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tree_hash",
+ "zkaleido",
  "zkaleido-native-adapter",
 ]
 
 [[package]]
-name = "strata-state"
-version = "0.3.0-alpha.1"
+name = "strata-snark-acct-types"
+version = "0.1.0"
 dependencies = [
- "anyhow",
- "arbitrary",
- "async-trait",
- "borsh",
- "serde",
- "strata-asm-common",
- "strata-asm-stf",
- "strata-asm-types",
- "strata-bridge-types",
- "strata-csm-types",
- "strata-primitives",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
+ "thiserror 2.0.17",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -5032,9 +4939,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.23.7"
+version = "0.23.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6485ef6d0d9b5d0ec17244ff7eb05310113c3f316f2d14200d4de56b3cb98f8d"
+checksum = "5d7cbc3b4b49633d57a0509303158ca50de80ae32c265093b24c414705807832"
 dependencies = [
  "indexmap 2.12.1",
  "toml_datetime 0.7.3",
@@ -5059,9 +4966,9 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "tracing"
-version = "0.1.41"
+version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
+checksum = "2d15d90a0b5c19378952d479dc858407149d7bb45a14de0142f6c534b16fc647"
 dependencies = [
  "pin-project-lite",
  "tracing-attributes",
@@ -5070,9 +4977,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.30"
+version = "0.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81383ab64e72a7a8b8e13130c49e3dab29def6d0c7d76a03087b3cf71c5c6903"
+checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5081,9 +4988,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.34"
+version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
+checksum = "7a04e24fab5c89c6a36eb8558c9656f30d81de51dfa4d3b45f26b21d61fa0a6c"
 dependencies = [
  "once_cell",
  "valuable",
@@ -5224,9 +5131,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.105"
+version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da95793dfc411fbbd93f5be7715b0578ec61fe87cb1a42b12eb625caa5c5ea60"
+checksum = "0d759f433fa64a2d763d1340820e46e111a7a5ab75f993d1852d70b03dbb80fd"
 dependencies = [
  "cfg-if",
  "once_cell",
@@ -5237,9 +5144,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.105"
+version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04264334509e04a7bf8690f2384ef5265f05143a4bff3889ab7a3269adab59c2"
+checksum = "48cb0d2638f8baedbc542ed444afc0644a29166f1595371af4fecf8ce1e7eeb3"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -5247,9 +5154,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.105"
+version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "420bc339d9f322e562942d52e115d57e950d12d88983a14c79b86859ee6c7ebc"
+checksum = "cefb59d5cd5f92d9dcf80e4683949f15ca4b511f4ac0a6e14d4e1ac60c6ecd40"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -5260,9 +5167,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.105"
+version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76f218a38c84bcb33c25ec7059b07847d465ce0e0a76b995e134a45adcb6af76"
+checksum = "cbc538057e648b67f72a982e708d485b2efa771e1ac05fec311f9f63e5800db4"
 dependencies = [
  "unicode-ident",
 ]
@@ -5411,9 +5318,9 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
 name = "winnow"
-version = "0.7.13"
+version = "0.7.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21a0236b59786fed61e2a80582dd500fe61f18b5dca67a4a067d0bc9039339cf"
+checksum = "5a5364e9d77fcdeeaa6062ced926ee3381faa2ee02d3eb83a5c27a8825540829"
 dependencies = [
  "memchr",
 ]
@@ -5464,18 +5371,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.30"
+version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ea879c944afe8a2b25fef16bb4ba234f47c694565e97383b36f3a878219065c"
+checksum = "fd74ec98b9250adb3ca554bdde269adf631549f51d8a8f8f0a10b50f1cb298c3"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.30"
+version = "0.8.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf955aa904d6040f70dc8e9384444cb1030aed272ba3cb09bbc4ab9e7c1f34f5"
+checksum = "d8a8d209fdf45cf5138cbb5a506f6b52522a25afccc534d1475dad8e31105c6a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5559,19 +5466,6 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17#3cd4f232d2807fa61b6545847f695a7119841adb"
-dependencies = [
- "arbitrary",
- "async-trait",
- "bincode",
- "borsh",
- "serde",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "zkaleido"
-version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
 dependencies = [
  "arbitrary",
@@ -5592,22 +5486,7 @@ dependencies = [
  "borsh",
  "hex",
  "serde",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
-]
-
-[[package]]
-name = "zkaleido-sp1-groth16-verifier"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17#3cd4f232d2807fa61b6545847f695a7119841adb"
-dependencies = [
- "blake3",
- "borsh",
- "hex",
- "serde",
- "sha2",
- "substrate-bn",
- "thiserror 1.0.69",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17)",
+ "zkaleido",
 ]
 
 [[package]]
@@ -5620,7 +5499,7 @@ dependencies = [
  "serde",
  "sha2",
  "sp1-zkvm",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "zkaleido",
 ]
 
 [[package]]

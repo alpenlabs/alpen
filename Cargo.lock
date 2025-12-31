@@ -14355,6 +14355,8 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "sha2",
+ "ssz",
+ "ssz_derive",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",
@@ -14363,6 +14365,7 @@ dependencies = [
  "strata-simple-ee",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
+ "tree_hash 0.11.0",
 ]
 
 [[package]]
@@ -14813,6 +14816,29 @@ dependencies = [
  "strata-identifiers",
  "thiserror 2.0.17",
  "zeroize",
+]
+
+[[package]]
+name = "strata-proofimpl-alpen-ee-acct"
+version = "0.1.0"
+dependencies = [
+ "reth-chainspec",
+ "rsp-primitives",
+ "sha2",
+ "ssz",
+ "ssz_derive",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-evm-ee",
+ "strata-identifiers",
+ "strata-primitives",
+ "strata-snark-acct-types",
+ "thiserror 2.0.17",
+ "tree_hash 0.11.0",
+ "zkaleido",
+ "zkaleido-native-adapter",
 ]
 
 [[package]]

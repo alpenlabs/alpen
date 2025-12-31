@@ -80,3 +80,24 @@ class SnarkAccountUpdateContainer(Container):
     ### which may need to be updated according to the recent state if it was
     ### provided for an older one.
     accumulator_proofs: UpdateAccumulatorProofs
+
+### Public parameters committed by a snark account update proof.
+### This is the proof interface that all snark account proofs must conform to.
+class UpdateProofPubParams(Container):
+    ### Current state before the update.
+    cur_state: state.ProofState
+
+    ### New state after the update.
+    new_state: state.ProofState
+
+    ### Messages from the inbox that were processed.
+    message_inputs: List[messages.MessageEntry, MAX_PROCESSED_MESSAGES]
+
+    ### Checked claims for other accumulators/state on the ledger.
+    ledger_refs: LedgerRefs
+
+    ### Outputs from the account which will be applied to the ledger.
+    outputs: outputs.UpdateOutputs
+
+    ### Extra data field persisted in DA, formatted per the account's needs.
+    extra_data: List[uint8, MAX_EXTRA_DATA_BYTES]

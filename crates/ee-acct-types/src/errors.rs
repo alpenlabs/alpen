@@ -77,6 +77,9 @@ pub enum EnvError {
     /// There was a tx that was invalid in a block, for some reason.
     #[error("invalid tx in a block")]
     InvalidBlockTx,
+
+    #[error("proof state mismatch")]
+    MismatchProofState,
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;
