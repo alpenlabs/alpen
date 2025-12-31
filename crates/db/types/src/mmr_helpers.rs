@@ -426,8 +426,7 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
                 current_hash = parent_hash;
                 current_height = next_height;
             } else {
-                // Current is a left sibling (will be merged when right sibling comes)
-                // or we've reached a peak - stop here
+                // Current is a left sibling (will be merged when right sibling comes) - stop here
                 break;
             }
         }
@@ -479,7 +478,7 @@ impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
         // Read the leaf hash before deletion
         let leaf_hash = get_node(leaf_pos)?;
 
-        // Calculate the new MMR size (before the last leaf was added)
+        // Calculate the new MMR size (after the last leaf was popped)
         let new_mmr_size = if metadata.num_leaves == 1 {
             0 // Empty MMR
         } else {

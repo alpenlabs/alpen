@@ -138,25 +138,10 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>> {
-        let num_leaves = self.mmr_handle.get_num_leaves_blocking().map_err(|e| {
-            error!(?e, "Failed to get MMR num_leaves");
+        self.mmr_handle.get_node_blocking(index).map_err(|e| {
+            error!(?e, index, "Failed to get leaf hash from MMR");
             WorkerError::DbError
-        })?;
-
-        if index >= num_leaves {
-            return Err(WorkerError::ManifestIndexOutOfBound {
-                index,
-                max: num_leaves,
-            });
-        }
-
-        self.mmr_handle
-            .get_leaf_hash_blocking(index)
-            .map(Some)
-            .map_err(|e| {
-                error!(?e, index, "Failed to get leaf hash from MMR");
-                WorkerError::DbError
-            })
+        })
     }
 }
 

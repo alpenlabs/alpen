@@ -10,7 +10,7 @@ use strata_primitives::buf::Buf32;
 use typed_sled::tree::SledTransactionalTree;
 
 use super::schemas::{
-    GlobalMmrHashIndexSchema, GlobalMmrMetaSchema, GlobalMmrNodeSchema, GlobalMmrPreimageSchema,
+    GlobalMmrHashPositionSchema, GlobalMmrMetaSchema, GlobalMmrNodeSchema, GlobalMmrPreimageSchema,
 };
 use crate::define_sled_database;
 
@@ -18,7 +18,7 @@ define_sled_database!(
     pub struct GlobalMmrDb {
         node_tree: GlobalMmrNodeSchema,
         meta_tree: GlobalMmrMetaSchema,
-        hash_index_tree: GlobalMmrHashIndexSchema,
+        hash_pos_tree: GlobalMmrHashPositionSchema,
         preimage_tree: GlobalMmrPreimageSchema,
     }
 );
@@ -39,18 +39,13 @@ impl GlobalMmrDb {
         })
     }
 
-    fn get_mmr_node(&self, mmr_id: &[u8], pos: u64) -> DbResult<Hash> {
-        self.node_tree.get(&(mmr_id.to_vec(), pos))?.ok_or_else(|| {
-            DbError::Other(format!(
-                "MMR node not found at pos {} for mmr_id {:?}",
-                pos, mmr_id
-            ))
-        })
+    fn get_mmr_node(&self, mmr_id: &[u8], pos: u64) -> DbResult<Option<Hash>> {
+        Ok(self.node_tree.get(&(mmr_id.to_vec(), pos))?)
     }
 
     /// Get the position of a leaf by its hash (reverse lookup)
     pub fn get_leaf_position(&self, mmr_id: &[u8], hash: Hash) -> DbResult<Option<u64>> {
-        Ok(self.hash_index_tree.get(&(mmr_id.to_vec(), hash))?)
+        Ok(self.hash_pos_tree.get(&(mmr_id.to_vec(), hash))?)
     }
 
     fn append_leaf_in_transaction<A: MmrAlgorithm>(
@@ -58,7 +53,7 @@ impl GlobalMmrDb {
         hash: Hash,
         nt: SledTransactionalTree<GlobalMmrNodeSchema>,
         mt: SledTransactionalTree<GlobalMmrMetaSchema>,
-        hit: SledTransactionalTree<GlobalMmrHashIndexSchema>,
+        hpt: SledTransactionalTree<GlobalMmrHashPositionSchema>,
     ) -> typed_sled::error::Result<u64> {
         let metadata = mt
             .get(&mmr_id)?
@@ -73,10 +68,10 @@ impl GlobalMmrDb {
 
         for (pos, node_hash) in &result.nodes_to_write {
             nt.insert(&(mmr_id.clone(), *pos), &Buf32(*node_hash))?;
-            hit.insert(&(mmr_id.clone(), Buf32(*node_hash)), pos)?;
+            hpt.insert(&(mmr_id.clone(), Buf32(*node_hash)), pos)?;
         }
 
-        hit.insert(&(mmr_id.clone(), hash), &result.leaf_index)?;
+        hpt.insert(&(mmr_id.clone(), hash), &result.leaf_index)?;
         mt.insert(&mmr_id, &result.new_metadata)?;
 
         Ok(result.leaf_index)
@@ -90,20 +85,20 @@ impl GlobalMmrDatabase for GlobalMmrDb {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
-            (&self.node_tree, &self.meta_tree, &self.hash_index_tree),
-            |(nt, mt, hit)| {
+            (&self.node_tree, &self.meta_tree, &self.hash_pos_tree),
+            |(nt, mt, hpt)| {
                 Ok(Self::append_leaf_in_transaction::<Self::MmrAlgorithm>(
                     mmr_id.clone(),
                     hash,
                     nt,
                     mt,
-                    hit,
+                    hpt,
                 )?)
             },
         )
     }
 
-    fn get_node(&self, mmr_id: RawMmrId, pos: u64) -> DbResult<Hash> {
+    fn get_node(&self, mmr_id: RawMmrId, pos: u64) -> DbResult<Option<Hash>> {
         self.get_mmr_node(&mmr_id, pos)
     }
 
@@ -146,8 +141,8 @@ impl GlobalMmrDatabase for GlobalMmrDb {
         self.ensure_mmr_metadata(&mmr_id)?;
 
         self.config.with_retry(
-            (&self.node_tree, &self.meta_tree, &self.hash_index_tree),
-            |(nt, mt, hit)| {
+            (&self.node_tree, &self.meta_tree, &self.hash_pos_tree),
+            |(nt, mt, hpt)| {
                 let metadata = mt
                     .get(&mmr_id)?
                     .expect("MMR metadata must exist after ensure_mmr_metadata");
@@ -170,7 +165,7 @@ impl GlobalMmrDatabase for GlobalMmrDb {
                 mt.insert(&mmr_id, &result.new_metadata)?;
 
                 // Remove hash -> position mapping for the popped leaf
-                hit.remove(&(mmr_id.clone(), Buf32(result.leaf_hash)))?;
+                hpt.remove(&(mmr_id.clone(), Buf32(result.leaf_hash)))?;
 
                 Ok(Some(result.leaf_hash.into()))
             },
@@ -189,16 +184,16 @@ impl GlobalMmrDatabase for GlobalMmrDb {
             (
                 &self.node_tree,
                 &self.meta_tree,
-                &self.hash_index_tree,
+                &self.hash_pos_tree,
                 &self.preimage_tree,
             ),
-            |(nt, mt, hit, pit)| {
+            |(nt, mt, hpt, pit)| {
                 let leaf_index = Self::append_leaf_in_transaction::<Self::MmrAlgorithm>(
                     mmr_id.clone(),
                     hash,
                     nt,
                     mt,
-                    hit,
+                    hpt,
                 )?;
                 pit.insert(&(mmr_id.clone(), leaf_index), &preimage)?;
                 Ok(leaf_index)
@@ -242,7 +237,7 @@ mod tests {
         assert_eq!(db.get_mmr_size(mmr_id.clone()).unwrap(), 1);
 
         // Can retrieve the node
-        let node = db.get_node(mmr_id, 0).unwrap();
+        let node = db.get_node(mmr_id, 0).unwrap().unwrap();
         assert_eq!(node, hash);
     }
 
@@ -282,10 +277,22 @@ mod tests {
         // Leaves:   [0, 1, x, 2, 3, x, x]
 
         // Verify leaf positions
-        assert_eq!(db.get_node(mmr_id.clone(), 0).unwrap(), [0u8; 32].into());
-        assert_eq!(db.get_node(mmr_id.clone(), 1).unwrap(), [1u8; 32].into());
-        assert_eq!(db.get_node(mmr_id.clone(), 3).unwrap(), [2u8; 32].into());
-        assert_eq!(db.get_node(mmr_id.clone(), 4).unwrap(), [3u8; 32].into());
+        assert_eq!(
+            db.get_node(mmr_id.clone(), 0).unwrap().unwrap(),
+            [0u8; 32].into()
+        );
+        assert_eq!(
+            db.get_node(mmr_id.clone(), 1).unwrap().unwrap(),
+            [1u8; 32].into()
+        );
+        assert_eq!(
+            db.get_node(mmr_id.clone(), 3).unwrap().unwrap(),
+            [2u8; 32].into()
+        );
+        assert_eq!(
+            db.get_node(mmr_id.clone(), 4).unwrap().unwrap(),
+            [3u8; 32].into()
+        );
 
         // Internal nodes exist
         assert!(db.get_node(mmr_id.clone(), 2).is_ok());

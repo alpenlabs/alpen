@@ -368,7 +368,7 @@ pub trait GlobalMmrDatabase: Send + Sync + 'static {
     fn append_leaf(&self, mmr_id: RawMmrId, hash: Hash) -> DbResult<u64>;
 
     /// Get a node hash by MMR position
-    fn get_node(&self, mmr_id: RawMmrId, pos: u64) -> DbResult<Hash>;
+    fn get_node(&self, mmr_id: RawMmrId, pos: u64) -> DbResult<Option<Hash>>;
 
     /// Get the total MMR size
     fn get_mmr_size(&self, mmr_id: RawMmrId) -> DbResult<u64>;

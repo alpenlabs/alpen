@@ -17,7 +17,7 @@ define_table_with_seek_key_codec!(
 define_table_with_seek_key_codec!(
     /// Global MMR hash position: (mmr_id, hash) -> position
     /// Enables reverse lookup from node hash to node position
-    (GlobalMmrHashIndexSchema) (RawMmrId, Buf32) => u64
+    (GlobalMmrHashPositionSchema) (RawMmrId, Buf32) => u64
 );
 
 define_table_with_seek_key_codec!(

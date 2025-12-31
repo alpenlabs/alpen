@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::{
-    mmr_helpers::{leaf_index_to_pos, BitManipulatedMmrAlgorithm, MmrAlgorithm},
+    mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm},
     traits::GlobalMmrDatabase,
     DbError, DbResult,
 };
@@ -100,7 +100,7 @@ impl MmrHandle {
     }
 
     /// Get a node at a specific position (blocking)
-    pub fn get_node_blocking(&self, pos: u64) -> DbResult<Hash> {
+    pub fn get_node_blocking(&self, pos: u64) -> DbResult<Option<Hash>> {
         self.ops.get_node_blocking(self.mmr_id.to_bytes(), pos)
     }
 
@@ -118,18 +118,22 @@ impl MmrHandle {
     pub fn generate_proof(&self, index: u64) -> DbResult<MerkleProof> {
         let mmr_size = self.get_mmr_size_blocking()?;
 
-        BitManipulatedMmrAlgorithm::generate_proof(index, mmr_size, |pos| {
-            self.get_node_blocking(pos).map(|x| x.0)
-        })
+        BitManipulatedMmrAlgorithm::generate_proof(index, mmr_size, self.node_getter())
     }
 
     /// Generate Merkle proofs for a range of leaf positions
     pub fn generate_proofs(&self, start: u64, end: u64) -> DbResult<Vec<MerkleProof>> {
         let mmr_size = self.get_mmr_size_blocking()?;
 
-        BitManipulatedMmrAlgorithm::generate_proofs(start, end, mmr_size, |pos| {
-            self.get_node_blocking(pos).map(|x| x.0)
-        })
+        BitManipulatedMmrAlgorithm::generate_proofs(start, end, mmr_size, self.node_getter())
+    }
+
+    fn node_getter(&self) -> impl Fn(u64) -> DbResult<[u8; 32]> + '_ {
+        |pos| {
+            self.get_node_blocking(pos)?
+                .map(|x| x.0)
+                .ok_or(DbError::MmrLeafNotFound(pos))
+        }
     }
 
     /// Remove and return the last leaf from the MMR (async version)
@@ -145,14 +149,6 @@ impl MmrHandle {
     /// Get the MmrId for this handle
     pub fn mmr_id(&self) -> &MmrId {
         &self.mmr_id
-    }
-
-    /// Get a leaf hash by leaf index (blocking)
-    ///
-    /// Converts the leaf index to MMR position and retrieves the hash.
-    pub fn get_leaf_hash_blocking(&self, leaf_index: u64) -> DbResult<Hash> {
-        let pos = leaf_index_to_pos(leaf_index);
-        self.get_node_blocking(pos)
     }
 }
 
