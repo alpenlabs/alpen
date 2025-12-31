@@ -3,7 +3,7 @@ use std::num::NonZero;
 use alpen_ee_common::{EnginePayload, ExecBlockPayload, PayloadBuilderEngine};
 use eyre::Context;
 use strata_acct_types::{AccountId, Hash};
-use strata_ee_acct_runtime::{apply_final_update_changes, apply_input_messages};
+use strata_ee_acct_runtime::{apply_extra_data, apply_input_messages};
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_snark_acct_types::MessageEntry;
@@ -68,7 +68,7 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
     .await?;
 
     // 3. update account state based on built payload and consumed inputs
-    apply_final_update_changes(&mut account_state, &update_extra_data)
+    apply_extra_data(&mut account_state, &update_extra_data)
         .context("build_next_exec_block: failed to apply final update changes")?;
 
     // 4. build exec package
