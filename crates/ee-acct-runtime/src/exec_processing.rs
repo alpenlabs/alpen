@@ -10,7 +10,7 @@ use strata_ee_acct_types::{
 };
 use strata_ee_chain_types::BlockInputs;
 
-use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationState};
+use crate::verification_state::{ChunkVerificationState, InputTracker, PendingCommit};
 
 /// Validates that block inputs match pending inputs in the tracker.
 ///
@@ -56,7 +56,7 @@ pub(crate) fn validate_block_inputs(
 }
 
 struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
-    uvstate: &'v mut UpdateVerificationState,
+    cvstate: &'v mut ChunkVerificationState,
     input_tracker: &'v mut InputTracker<'a, PendingInputEntry>,
 
     ee: &'v E,
@@ -70,7 +70,7 @@ struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
 
 impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
     fn new(
-        uvstate: &'v mut UpdateVerificationState,
+        cvstate: &'v mut ChunkVerificationState,
         input_tracker: &'v mut InputTracker<'a, PendingInputEntry>,
         ee: &'v E,
         exec_state: E::PartialState,
@@ -78,7 +78,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
     ) -> Self {
         let last_exec_blkid = last_exec_header.compute_block_id();
         Self {
-            uvstate,
+            cvstate,
             input_tracker,
             ee,
             exec_state,
@@ -95,7 +95,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
 
     /// Gets the next commit we have yet to process.
     fn next_pending_commit(&self) -> Option<&PendingCommit> {
-        self.uvstate.pending_commits().get(self.processed_commits)
+        self.cvstate.pending_commits().get(self.processed_commits)
     }
 
     fn consume_pending_commit(&mut self, exec_blkid: &Hash) -> EnvResult<()> {
@@ -131,7 +131,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
     fn consume_pending_inputs_from_block(&mut self, block_inputs: &BlockInputs) -> EnvResult<()> {
         validate_block_inputs(self.input_tracker, block_inputs)?;
         let input_count = block_inputs.total_inputs();
-        self.uvstate.inc_consumed_inputs(input_count);
+        self.cvstate.inc_consumed_inputs(input_count);
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
 /// Processes segments against accumulated update verification state by
 /// verifying the blocks and managing inputs/outputs/etc.
 pub(crate) fn process_segments<E: ExecutionEnvironment>(
-    uvstate: &mut UpdateVerificationState,
+    cvstate: &mut ChunkVerificationState,
     input_tracker: &mut InputTracker<'_, PendingInputEntry>,
     segments: &[CommitChainSegment],
     pre_state: &[u8],
@@ -202,7 +202,7 @@ pub(crate) fn process_segments<E: ExecutionEnvironment>(
     }
 
     let mut cvstate =
-        ChainVerificationState::new(uvstate, input_tracker, ee, partial_pre_state, header);
+        ChainVerificationState::new(cvstate, input_tracker, ee, partial_pre_state, header);
 
     // 2. Process each segment in order, continually modifying the chain.
     for segment in segments {
@@ -275,7 +275,7 @@ fn process_block<E: ExecutionEnvironment>(
 
     // 6. Update bookkeeping outputs.
     cvstate
-        .uvstate
+        .cvstate
         .merge_block_outputs(block_data.package().outputs());
 
     // TODO other stuff?  how do we do fincls?
