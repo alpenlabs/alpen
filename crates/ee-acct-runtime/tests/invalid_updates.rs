@@ -1,7 +1,7 @@
-//! Tests for invalid update conditions and error handling.
+//! Tests for invalid chunk conditions and error handling.
 //!
-//! These tests verify that the verification logic correctly rejects
-//! malformed or invalid updates.
+//! These tests verify that chunk verification logic correctly rejects
+//! malformed or invalid chunks.
 
 #![expect(unused_crate_dependencies, reason = "test dependencies")]
 
@@ -9,7 +9,7 @@ mod common;
 
 use common::{
     build_chain_segment_with_deposits, build_update_operation, create_deposit_message,
-    create_initial_state,
+    create_initial_state, update_to_single_chunk_op,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
 use strata_ee_acct_runtime::ChainSegmentBuilder;
@@ -70,11 +70,12 @@ fn test_mismatched_processed_inputs_count() {
         tampered_extra_buf,
     );
 
-    // Try to verify - should fail
+    // Convert to chunk and try to verify - should fail
+    let chunk_op = update_to_single_chunk_op(&tampered_operation, &initial_state);
     let mut test_state = initial_state.clone();
-    let result = strata_ee_acct_runtime::verify_and_apply_update_operation(
+    let result = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
         &mut test_state,
-        &tampered_operation,
+        &chunk_op,
         coinputs.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
@@ -120,11 +121,12 @@ fn test_mismatched_segment_count() {
         prev_state_buf,
     );
 
-    // Try to verify - should fail with MismatchedChainSegment
+    // Convert to chunk and try to verify - should fail with MismatchedChainSegment
+    let chunk_op = update_to_single_chunk_op(&operation, &initial_state);
     let mut test_state = initial_state.clone();
-    let result = strata_ee_acct_runtime::verify_and_apply_update_operation(
+    let result = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
         &mut test_state,
-        &operation,
+        &chunk_op,
         coinputs.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
@@ -223,13 +225,16 @@ fn test_mismatched_coinput_count() {
         &exec_state,
     );
 
+    // Convert to chunk
+    let chunk_op = update_to_single_chunk_op(&operation, &initial_state);
+
     // Try to verify with wrong number of coinputs (too many)
     let mut test_state = initial_state.clone();
     let wrong_coinputs = [vec![], vec![]]; // Too many!
 
-    let result = strata_ee_acct_runtime::verify_and_apply_update_operation(
+    let result = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
         &mut test_state,
-        &operation,
+        &chunk_op,
         wrong_coinputs.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
@@ -241,9 +246,9 @@ fn test_mismatched_coinput_count() {
     let mut test_state2 = initial_state.clone();
     let wrong_coinputs2: Vec<Vec<u8>> = vec![]; // Too few!
 
-    let result2 = strata_ee_acct_runtime::verify_and_apply_update_operation(
+    let result2 = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
         &mut test_state2,
-        &operation,
+        &chunk_op,
         wrong_coinputs2.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
