@@ -1885,7 +1885,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-sp1-alpen-ee-acct"
+name = "guest-sp1-alpen-ee-batch"
 version = "0.1.0"
 dependencies = [
  "strata-proofimpl-alpen-ee-acct",
@@ -4481,6 +4481,8 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "sha2",
+ "ssz",
+ "ssz_derive",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",
@@ -4649,6 +4651,7 @@ dependencies = [
  "rsp-primitives",
  "sha2",
  "ssz",
+ "ssz_derive",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
