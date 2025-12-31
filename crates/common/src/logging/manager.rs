@@ -1,6 +1,6 @@
 //! Logging initialization and shutdown management.
 
-use std::{sync::OnceLock, time::Duration};
+use std::sync::OnceLock;
 
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
