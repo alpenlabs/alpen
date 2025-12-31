@@ -14416,6 +14416,8 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "sha2",
+ "ssz",
+ "ssz_derive",
  "strata-acct-types",
  "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-ee-acct-types",
@@ -14923,6 +14925,7 @@ dependencies = [
  "rsp-primitives",
  "sha2",
  "ssz",
+ "ssz_derive",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
