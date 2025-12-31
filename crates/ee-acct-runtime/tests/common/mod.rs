@@ -5,7 +5,7 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{ChainSegmentBuilder, UpdateBuilder};
+use strata_ee_acct_runtime::{ChainSegmentBuilder, ChunkOperationData, UpdateBuilder};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState, ExecHeader, PendingInputEntry};
 use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
@@ -13,45 +13,30 @@ use strata_simple_ee::{
     SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader, SimpleHeaderIntrinsics,
     SimplePartialState,
 };
-use strata_snark_acct_types::{MessageEntry, UpdateOperationData};
+use strata_snark_acct_types::{MessageEntry, ProofState, UpdateOperationData};
+use tree_hash::{Sha256Hasher, TreeHash};
 
-/// Helper to assert that both update application paths yield the same final state.
+/// Converts a full UpdateOperationData into a single ChunkOperationData.
 ///
-/// This tests that `verify_and_apply_update_operation` and
-/// `apply_update_operation_unconditionally` produce identical results.
-pub fn assert_update_paths_match(
-    initial_state: &EeAccountState,
+/// This is used for testing that a single chunk covering the entire update
+/// is equivalent to unconditional application. The SharedPrivateInput remains
+/// unchanged since it contains all the blocks to execute.
+pub fn update_to_single_chunk_op(
     operation: &UpdateOperationData,
-    shared_private: &strata_ee_acct_runtime::SharedPrivateInput,
-    coinputs: &[Vec<u8>],
-    ee: &SimpleExecutionEnvironment,
-) {
-    // Apply with verification
-    let mut verified_state = initial_state.clone();
+    initial_state: &EeAccountState,
+) -> ChunkOperationData {
+    // Compute initial state hash - this becomes the chunk's prev_state
+    let initial_state_hash = TreeHash::<Sha256Hasher>::tree_hash_root(initial_state);
+    let prev_state = ProofState::new(Hash::from(initial_state_hash.0), 0);
 
-    strata_ee_acct_runtime::verify_and_apply_update_operation(
-        &mut verified_state,
-        operation,
-        coinputs.iter().map(|v| v.as_slice()),
-        shared_private,
-        ee,
+    // A single chunk processes all messages, outputs, and blocks
+    ChunkOperationData::new(
+        prev_state,
+        operation.new_state(),
+        operation.processed_messages().to_vec(),
+        operation.outputs().clone(),
+        operation.extra_data().to_vec(),
     )
-    .expect("verify_and_apply should succeed");
-
-    // Apply unconditionally
-    let mut unconditional_state = initial_state.clone();
-    let input_data: strata_snark_acct_types::UpdateInputData = operation.clone().into();
-    strata_ee_acct_runtime::apply_update_operation_unconditionally(
-        &mut unconditional_state,
-        &input_data,
-    )
-    .expect("apply_unconditionally should succeed");
-
-    // Compare the two states
-    assert_eq!(
-        verified_state, unconditional_state,
-        "Verified and unconditional application paths should yield identical states"
-    );
 }
 
 /// Creates a simple initial state for testing.
@@ -159,4 +144,74 @@ pub(crate) fn build_update_operation(
     builder
         .build::<SimpleExecutionEnvironment>(initial_state, prev_header, prev_partial_state)
         .expect("build should succeed")
+}
+
+/// Helper to build a chunk operation for testing.
+///
+/// This is a convenience wrapper that builds an UpdateOperationData and
+/// converts it to a single ChunkOperationData. Use this when you want to
+/// test chunk-based processing.
+pub(crate) fn build_chunk_operation(
+    seq_no: u64,
+    messages: Vec<MessageEntry>,
+    segments: Vec<CommitChainSegment>,
+    initial_state: &EeAccountState,
+    prev_header: &SimpleHeader,
+    prev_partial_state: &SimplePartialState,
+) -> (
+    ChunkOperationData,
+    strata_ee_acct_runtime::SharedPrivateInput,
+    Vec<Vec<u8>>,
+) {
+    let (operation, shared_private, coinputs) = build_update_operation(
+        seq_no,
+        messages,
+        segments,
+        initial_state,
+        prev_header,
+        prev_partial_state,
+    );
+    let chunk_op = update_to_single_chunk_op(&operation, initial_state);
+    (chunk_op, shared_private, coinputs)
+}
+
+/// Assert that chunk-based verification and unconditional update application produce identical
+/// results.
+///
+/// This helper function is used by tests to verify equivalence between:
+/// 1. Chunk-based processing (with verification)
+/// 2. Unconditional update application
+pub(crate) fn assert_update_paths_match<E: strata_ee_acct_types::ExecutionEnvironment>(
+    initial_state: &EeAccountState,
+    operation: &UpdateOperationData,
+    shared_private: &strata_ee_acct_runtime::SharedPrivateInput,
+    coinputs: &[Vec<u8>],
+    ee: &E,
+) {
+    // Convert to chunk and apply with verification
+    let chunk_op = update_to_single_chunk_op(operation, initial_state);
+    let mut state_chunk = initial_state.clone();
+    strata_ee_acct_runtime::verify_and_apply_chunk_operation(
+        &mut state_chunk,
+        &chunk_op,
+        coinputs.iter().map(|v| v.as_slice()),
+        shared_private,
+        ee,
+    )
+    .expect("chunk verification should succeed");
+
+    // Apply unconditionally
+    let mut state_unconditional = initial_state.clone();
+    let input_data: strata_snark_acct_types::UpdateInputData = operation.clone().into();
+    strata_ee_acct_runtime::apply_update_operation_unconditionally(
+        &mut state_unconditional,
+        &input_data,
+    )
+    .expect("unconditional application should succeed");
+
+    // Assert both paths match
+    assert_eq!(
+        state_chunk, state_unconditional,
+        "Chunk-based and unconditional paths should produce identical states"
+    );
 }
