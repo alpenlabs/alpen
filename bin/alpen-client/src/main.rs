@@ -222,111 +222,99 @@ fn main() {
                         info!(target: "alpen-gossip", "Registered Alpen gossip RLPx subprotocol");
                         Ok(())
                     }
-                })
-                .on_node_started(move |node| {
-                    // Sync chainstate to engine for sequencer nodes before starting other tasks
-                    #[cfg(feature = "sequencer")]
-                    if ext.sequencer {
-                        let engine = AlpenRethExecEngine::new(node.beacon_engine_handle.clone());
-                        let storage_clone = storage.clone();
-                        let provider_clone = node.provider.clone();
-
-                        // Block on the async sync operation
-                        let sync_result = tokio::runtime::Handle::current().block_on(async {
-                            sync_chainstate_to_engine(
-                                storage_clone.as_ref(),
-                                &provider_clone,
-                                &engine,
-                            )
-                            .await
-                        });
-
-                        if let Err(e) = sync_result {
-                            error!(target: "alpen-client", error = ?e, "failed to sync chainstate to engine on startup");
-                            return Err(eyre::eyre!("chainstate sync failed: {e}"));
-                        }
-
-                        info!(target: "alpen-client", "chainstate sync completed successfully");
-                    }
-
-                    let engine_control_task = create_engine_control_task(
-                        preconf_rx,
-                        ol_tracker.consensus_watcher(),
-                        node.provider.clone(),
-                        AlpenRethExecEngine::new(node.beacon_engine_handle.clone()),
-                    );
-
-                    // Subscribe to canonical state notifications for broadcasting new blocks
-                    let state_events = node.provider.subscribe_to_canonical_state();
-
-                    // Create gossip task for broadcasting new blocks
-                    let gossip_task = create_gossip_task(
-                        gossip_rx,
-                        state_events,
-                        preconf_tx.clone(),
-                        gossip_config,
-                    );
-
-                    // Spawn critical tasks
-                    node.task_executor
-                        .spawn_critical("ol_tracker_task", ol_tracker_task);
-                    node.task_executor
-                        .spawn_critical("engine_control", engine_control_task);
-                    node.task_executor
-                        .spawn_critical("gossip_task", gossip_task);
-
-                    #[cfg(feature = "sequencer")]
-                    if ext.sequencer {
-                        // sequencer specific tasks
-                        let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
-                            node.payload_builder_handle.clone(),
-                            node.beacon_engine_handle.clone(),
-                        ));
-
-                        let (exec_chain_handle, exec_chain_task) = build_exec_chain_task(
-                            exec_chain_state,
-                            preconf_tx.clone(),
-                            storage.clone(),
-                        );
-
-                        let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
-                            ol_chain_tracker_state,
-                            ol_tracker.ol_status_watcher(),
-                            ol_client.clone(),
-                            storage.clone(),
-                        );
-
-                        node.task_executor
-                            .spawn_critical("exec_chain", exec_chain_task);
-                        node.task_executor.spawn_critical(
-                            "exec_chain_consensus_forwarder",
-                            build_exec_chain_consensus_forwarder_task(
-                                exec_chain_handle.clone(),
-                                ol_tracker.consensus_watcher(),
-                            ),
-                        );
-                        node.task_executor
-                            .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
-                        node.task_executor.spawn_critical(
-                            "block_assembly",
-                            block_builder_task(
-                                block_builder_config,
-                                exec_chain_handle,
-                                ol_chain_tracker,
-                                payload_engine,
-                                storage.clone(),
-                            ),
-                        );
-
-                        // TODO: batch assembly
-                        // TODO: proof generation
-                        // TODO: post update to OL
-                    }
-
-                    Ok(())
                 });
 
             let handle = node_builder.launch().await?;
+
+            let node = handle.node;
+
+            // Sync chainstate to engine for sequencer nodes before starting other tasks
+            #[cfg(feature = "sequencer")]
+            if ext.sequencer {
+                let engine = AlpenRethExecEngine::new(node.beacon_engine_handle.clone());
+                let storage_clone = storage.clone();
+                let provider_clone = node.provider.clone();
+
+                // Block on the async sync operation
+                let sync_result =
+                    sync_chainstate_to_engine(storage_clone.as_ref(), &provider_clone, &engine)
+                        .await;
+
+                if let Err(e) = sync_result {
+                    error!(target: "alpen-client", error = ?e, "failed to sync chainstate to engine on startup");
+                    return Err(eyre::eyre!("chainstate sync failed: {e}"));
+                }
+
+                info!(target: "alpen-client", "chainstate sync completed successfully");
+            }
+
+            let engine_control_task = create_engine_control_task(
+                preconf_rx,
+                ol_tracker.consensus_watcher(),
+                node.provider.clone(),
+                AlpenRethExecEngine::new(node.beacon_engine_handle.clone()),
+            );
+
+            // Subscribe to canonical state notifications for broadcasting new blocks
+            let state_events = node.provider.subscribe_to_canonical_state();
+
+            // Create gossip task for broadcasting new blocks
+            let gossip_task =
+                create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
+
+            // Spawn critical tasks
+            node.task_executor
+                .spawn_critical("ol_tracker_task", ol_tracker_task);
+            node.task_executor
+                .spawn_critical("engine_control", engine_control_task);
+            node.task_executor
+                .spawn_critical("gossip_task", gossip_task);
+
+            #[cfg(feature = "sequencer")]
+            if ext.sequencer {
+                // sequencer specific tasks
+                let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
+                    node.payload_builder_handle.clone(),
+                    node.beacon_engine_handle.clone(),
+                ));
+
+                let (exec_chain_handle, exec_chain_task) =
+                    build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
+
+                let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
+                    ol_chain_tracker_state,
+                    ol_tracker.ol_status_watcher(),
+                    ol_client.clone(),
+                    storage.clone(),
+                );
+
+                node.task_executor
+                    .spawn_critical("exec_chain", exec_chain_task);
+                node.task_executor.spawn_critical(
+                    "exec_chain_consensus_forwarder",
+                    build_exec_chain_consensus_forwarder_task(
+                        exec_chain_handle.clone(),
+                        ol_tracker.consensus_watcher(),
+                    ),
+                );
+                node.task_executor
+                    .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
+                node.task_executor.spawn_critical(
+                    "block_assembly",
+                    block_builder_task(
+                        block_builder_config,
+                        exec_chain_handle,
+                        ol_chain_tracker,
+                        payload_engine,
+                        storage.clone(),
+                    ),
+                );
+
+                // TODO: batch assembly
+                // TODO: proof generation
+                // TODO: post update to OL
+            }
+
             handle.node_exit_future.await
         },
     ) {
