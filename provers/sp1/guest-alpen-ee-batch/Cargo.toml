@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "guest-sp1-alpen-ee-acct"
+name = "guest-sp1-alpen-ee-batch"
 version = "0.1.0"
 
 [workspace]
