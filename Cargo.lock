@@ -13952,6 +13952,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-chain-worker-new"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "strata-checkpoint-types",
+ "strata-db-types",
+ "strata-eectl",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-chain-types-new",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-ol-stf",
+ "strata-params",
+ "strata-primitives",
+ "strata-service",
+ "strata-snark-acct-types",
+ "strata-status",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "strata-chainexec"
 version = "0.1.0"
 dependencies = [
