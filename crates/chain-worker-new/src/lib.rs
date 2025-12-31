@@ -14,11 +14,13 @@
 #![allow(unused, reason = "in development")]
 
 mod errors;
+mod message;
 mod output;
 mod traits;
 
 use anyhow as _;
 pub use errors::{WorkerError, WorkerResult};
+pub use message::ChainWorkerMessage;
 pub use output::OLBlockExecutionOutput;
 use serde as _;
 // Placeholder uses for dependencies that will be used in subsequent modules.
@@ -26,7 +28,6 @@ use serde as _;
 use strata_db_types as _;
 use strata_ledger_types as _;
 use strata_params as _;
-use strata_service as _;
 use strata_snark_acct_types as _;
 use strata_status as _;
 use tokio as _;
