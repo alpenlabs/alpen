@@ -1,0 +1,702 @@
+# AGENTS.md
+
+This file provides guidance to AI coding assistants when working with code in this repository.
+
+## Overview
+
+**Alpen** is an EVM-compatible validity rollup on Bitcoin. It provides programmable Bitcoin functionality through a Layer 2 solution with a decoupled architecture separating the Anchor State Machine (ASM), Orchestration Layer (OL), and Execution Environment (EE).
+
+## Architecture
+
+Alpen uses a layered architecture with three main State Transition Functions (STFs):
+
+```mermaid
+flowchart LR
+    subgraph ASM[ASM STF]
+        AnchorState[AnchorState]
+        L1Block[L1Block]
+        AsmOut[AnchorState + AsmManifest]
+    end
+    
+    subgraph OL[OL STF]
+        OLState[OLState]
+        OLBlock[OLBlock]
+        OLOut[OLState + OLLogs]
+    end
+    
+    subgraph EE[EE STF]
+        EEState[EEState]
+        ExecBlock[ExecBlock]
+        EEOut[EEState + EEUpdate]
+    end
+    
+    L1Block --> AnchorState
+    AnchorState --> AsmOut
+    
+    OLBlock --> OLState
+    OLState --> OLOut
+    
+    ExecBlock --> EEState
+    EEState --> EEOut
+    
+    AsmOut -.->|AsmManifest| OLBlock
+    EEOut -.->|EEUpdate| OLBlock
+```
+
+**State Transition Functions:**
+- **ASM STF**: `AnchorState + L1Block → (AnchorState', AsmManifest)`
+- **OL STF**: `OLState + OLBlock → (OLState', OLLogs)`
+- **EE STF**: `EEState + ExecBlock → (EEState', EEUpdate)`
+
+The OL block contains the `AsmManifest` (from ASM) and `EEUpdate` (from EE), orchestrating the two layers.
+
+### Layer Descriptions
+
+#### L1 Layer (Bitcoin)
+
+Bitcoin serves as the data availability and settlement layer. Protocol transactions are tagged with SPS-50 headers for recognition by the ASM.
+
+- **Bitcoin Blocks**: Source of truth for L1 state
+- **SPS-50 Tagged Transactions**: Protocol transactions with standardized headers (magic, subprotocol ID, tx_type, aux data)
+- **Header Verification**: PoW verification state maintained in ASM
+
+#### ASM Layer (Anchor State Machine)
+
+The ASM is the core of the Strata protocol, functioning as a "virtual rollup smart contract" anchored to L1. It processes L1 blocks and maintains state through subprotocols.
+
+- **ASM STF**: State transition function processing L1 blocks
+- **Subprotocols**: Modular components (Bridge V1, Checkpoint V0, Admin, Debug) with defined IDs
+- **Moho Proofs**: Upgradeable proof mechanism wrapping ASM transitions
+- **Export State**: Accumulator for bridge proofs and operator claims
+
+**Subprotocol IDs:**
+| ID | Subprotocol | Purpose |
+|----|-------------|---------|
+| 0 | Admin | System upgrades |
+| 1 | Checkpoint | OL checkpoint verification |
+| 2 | Bridge V1 | Deposit/withdrawal management |
+| 254 | Debug | Development/testing |
+
+#### OL Layer (Orchestration Layer)
+
+The OL manages L2 state, accounts, and epoch processing. It produces checkpoints that are proven and posted to L1.
+
+- **OL STF**: Processes OL blocks and transactions
+- **Account System**: Ledger accounts (with state) and system accounts (precompile-like)
+- **Snark Accounts**: Actor-like accounts with inbox MMRs, proven state updates
+- **Epochs & Checkpoints**: Time ranges of blocks with DA diffs posted to L1
+- **DA Reconstruction**: State can be reconstructed from L1 DA payloads
+
+**State Structure:**
+- **Toplevel State**: Global fields, always accessible
+- **Bulk State**: Key-value mapping of accounts, selectively loaded
+
+#### EE Layer (Execution Environment)
+
+The EE provides EVM execution, decoupled from OL. Currently implemented via Alpen Reth.
+
+- **Alpen Reth**: Custom Reth node with rollup-specific precompiles
+- **EE Chain**: Execution chain state management
+- **OL Tracker**: Tracks finalized OL state from EE perspective
+- **Package Chain**: Off-chain interface between OL and EE
+
+## Binary Crates (bin/)
+
+| Binary | Description |
+|--------|-------------|
+| `strata` | Unified Strata client (new architecture) |
+| `alpen-client` | EE client with OL tracking and payload building |
+| `strata-client` | Core L2 client (sequencer or full node mode) |
+| `alpen-reth` | Custom Reth node with Alpen precompiles and extensions |
+| `prover-client` | ZK proof generation (checkpoint, cl-stf, evm-ee proofs) |
+| `strata-sequencer-client` | Lightweight signing client for sequencer duties |
+| `alpen-cli` | End-user wallet CLI for deposits, withdrawals, L2 transactions |
+| `strata-dbtool` | Database inspection and debugging utility |
+| `strata-test-cli` | Bridge and transaction testing utilities |
+| `datatool` | Development utility for test data and key generation |
+| `prover-perf` | Performance benchmarking for proof systems |
+
+## Library Crates (crates/)
+
+### ASM Domain (`crates/asm/`)
+
+Core Anchor State Machine implementation.
+
+| Crate | Description |
+|-------|-------------|
+| `asm/common` | Core ASM types, state, subprotocol traits, aux data handling |
+| `asm/stf` | ASM state transition function and processing stages |
+| `asm/subprotocols/bridge-v1` | Bridge subprotocol: deposits, withdrawals, operators |
+| `asm/subprotocols/checkpoint-v0` | Checkpoint verification subprotocol |
+| `asm/subprotocols/admin` | Administrative operations and upgrades |
+| `asm/subprotocols/debug-v1` | Debug subprotocol for testing |
+| `asm/txs/bridge-v1` | Bridge transaction parsing (deposit, withdrawal, slash, unstake) |
+| `asm/txs/checkpoint` | Checkpoint transaction parsing |
+| `asm/txs/admin` | Admin transaction parsing |
+| `asm/logs` | ASM log types (deposit, checkpoint, export, forced inclusion) |
+| `asm/worker` | ASM worker handle pattern implementation |
+| `asm/manifest-types` | L1 block manifest structures (SSZ) |
+| `asm/moho-program` | Moho proof program interface |
+| `asm/msgs/bridge` | Bridge inter-subprotocol messages |
+| `asm/msgs/checkpoint` | Checkpoint inter-subprotocol messages |
+| `asm/spec` | Production ASM specification |
+| `asm/spec-debug` | Debug ASM specification |
+
+### OL Domain (`crates/ol/`)
+
+Orchestration Layer implementation.
+
+| Crate | Description |
+|-------|-------------|
+| `ol/stf` | OL state transition function (block, epoch, manifest processing) |
+| `ol/state-types` | State structures (toplevel, global, epochal, ledger, snark account) |
+| `ol/chain-types` | Block, transaction, log structures (SSZ) |
+| `ol/msg-types` | Deposit and withdrawal message types |
+| `ol/da` | OL data availability traits |
+| `ol/block-assembly` | OL block construction |
+| `ol/mempool` | Transaction mempool |
+| `ol/state-support-types` | State access layers (batch diff, indexer, write tracking) |
+
+### EE Domain (`crates/alpen-ee/`)
+
+Execution Environment implementation.
+
+| Crate | Description |
+|-------|-------------|
+| `alpen-ee/engine` | EE sync and control logic |
+| `alpen-ee/exec-chain` | Execution chain state and orphan tracking |
+| `alpen-ee/ol_tracker` | OL state tracking from EE perspective |
+| `alpen-ee/sequencer` | EE block building and OL chain tracking |
+| `alpen-ee/database` | EE-specific storage (SledDB) |
+| `alpen-ee/common` | Shared EE types and traits |
+| `alpen-ee/config` | EE configuration |
+| `alpen-ee/genesis` | EE genesis state |
+| `alpen-ee/block-assembly` | EE block and package assembly |
+| `evm-ee` | EVM execution environment integration |
+| `evmexec` | EVM execution logic |
+| `eectl` | EE controller |
+| `ee-acct-types` | EE account types (SSZ) |
+| `ee-acct-runtime` | EE account runtime |
+| `ee-chain-types` | EE chain types (SSZ) |
+
+### DA Framework (`crates/da-framework/`)
+
+Data Availability primitives for state diff encoding.
+
+| Primitive | Description |
+|-----------|-------------|
+| `Register` | Simple value replacement |
+| `Counter` | Increment-only values |
+| `LinearAccumulator` | MMR-style accumulators |
+| `Queue` | FIFO structures |
+| `Compound` | Nested DA structures |
+
+### Core Domain
+
+Fundamental types and utilities.
+
+| Crate | Description |
+|-------|-------------|
+| `primitives` | Core primitive types |
+| `identifiers` | Block IDs, transaction IDs, account IDs (SSZ) |
+| `crypto` | Cryptographic operations |
+| `btc-types` | Bitcoin types (blocks, transactions, params) |
+| `btc-verification` | Bitcoin header and PoW verification |
+| `btcio` | Bitcoin I/O (reader, writer, broadcaster) |
+| `storage` | Storage managers and interfaces |
+| `db/store-sled` | SledDB storage implementation |
+| `db/types` | Database type definitions |
+| `state` | Chain and client state management |
+| `params` | Network parameters |
+| `config` | Configuration types |
+| `acct-types` | Account types and messages (SSZ) |
+| `snark-acct-types` | Snark account types (SSZ) |
+| `ledger-types` | Ledger entry types |
+| `bridge-types` | Bridge operation types |
+| `checkpoint-types` | Checkpoint and batch types |
+
+### Proof Domain (`crates/proof-impl/`, `crates/zkvm/`)
+
+Zero-knowledge proof generation.
+
+| Crate | Description |
+|-------|-------------|
+| `proof-impl/checkpoint` | Checkpoint proof implementation |
+| `proof-impl/cl-stf` | Consensus layer STF proof |
+| `proof-impl/evm-ee-stf` | EVM EE STF proof |
+| `zkvm/hosts` | ZKVM host implementations (SP1, RISC0, Native) |
+
+### Reth Integration (`crates/reth/`)
+
+Custom Reth node components.
+
+| Crate | Description |
+|-------|-------------|
+| `reth/node` | Alpen Reth node implementation |
+| `reth/evm` | Custom EVM with Alpen precompiles |
+| `reth/exex` | Execution extensions |
+| `reth/rpc` | Custom RPC endpoints |
+| `reth/chainspec` | Chain specification |
+| `reth/statediff` | State diff generation |
+
+### Service Crates
+
+Worker patterns and service infrastructure.
+
+| Crate | Description |
+|-------|-------------|
+| `chain-worker` | Generic chain worker pattern |
+| `csm-worker` | Client state machine worker |
+| `chainexec` | Chain execution context |
+| `chaintsn` | Chain transition logic |
+| `consensus-logic` | Fork choice and sync management |
+| `sequencer` | Block production and checkpoint handling |
+| `sync` | Synchronization logic |
+
+## Development Commands
+
+### Building
+
+```bash
+# Build workspace with release profile
+just build
+
+# Build specific binary
+cargo build --bin strata --release
+
+# Build with specific features
+FEATURES="feature1,feature2" just build
+```
+
+### Testing
+
+```bash
+# Run all unit tests
+just test-unit
+
+# Run integration tests
+just test-int
+
+# Run functional tests (legacy, requires bitcoind)
+just test-functional
+
+# Run new functional tests
+cd functional-tests-new && ./run_tests.sh
+
+# Run specific legacy test
+cd functional-tests && ./run_test.sh -t bridge/bridge_deposit_happy.py
+
+# Run test group
+cd functional-tests && ./run_test.sh -g bridge
+
+# Run prover tests
+PROVER_TEST=1 cd functional-tests && ./run_test.sh -g prover
+```
+
+### Code Quality
+
+```bash
+# Format code
+just fmt-ws
+
+# Run linting (use this after changes)
+just lint-check-ws
+
+# Or directly with clippy (If Nix is available)
+nix develop -c cargo clippy --workspace --lib --bins --examples --tests --benches --all-features --all-targets --locked
+
+# Fix linting issues
+just lint-fix-ws
+
+# Run all quality checks (format, lint, spell check)
+just lint
+
+# Pre-PR checks (includes tests, docs, linting)
+just pr
+```
+
+### Docker
+
+```bash
+just docker-up    # Start environment
+just docker-down  # Stop environment
+just docker       # Full restart
+```
+
+### Prover Operations
+
+```bash
+just prover-eval   # Generate performance reports
+just prover-clean  # Clean proof artifacts
+
+# Debug proof generation
+ZKVM_MOCK=1 ZKVM_PROFILING=1 cargo run --bin prover-client
+```
+
+## Engineering Best Practices
+
+### Rust Guidelines
+
+**"Parse, don't validate"**: Encode data invariants into types using Rust's type system. This reduces runtime errors and makes illegal states unrepresentable.
+
+```rust
+// Good: Type encodes invariant
+struct SortedVec<T: Ord>(Vec<T>);
+
+impl<T: Ord> SortedVec<T> {
+    pub fn new(mut v: Vec<T>) -> Self {
+        v.sort();
+        Self(v)
+    }
+}
+
+// Bad: Runtime checks everywhere
+fn process(v: &[u32]) {
+    assert!(v.is_sorted()); // Must remember to check
+}
+```
+
+**Avoid heap allocation** in pure library crates. Prefer stack allocation and avoid unnecessary `Arc`ing.
+
+**Naming conventions**:
+- Directories: `kebab-case`
+- Files: `snake_case`
+- Serde fields: `snake_case`
+- Variables: verbose, descriptive names
+
+**Documentation**:
+- Use active voice, third-person indicative mood
+- Brief first paragraph (single sentence summary)
+- Additional paragraphs for details
+- Use doclinks: `[`SomeType`]` instead of `` `SomeType` ``
+
+**Import symbols** with `use` statements at the top of the file instead of inline qualified paths.
+
+### Error Handling
+
+| Context | Approach |
+|---------|----------|
+| Internal sanity checks | `unwrap()` / `expect("reason")` |
+| Library errors | `enum Error` / `struct Error` with `thiserror` |
+| Application errors | `anyhow` for context propagation |
+
+```rust
+// Library error
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("invalid header: {0}")]
+    InvalidHeader(String),
+    #[error("missing field: {field}")]
+    MissingField { field: &'static str },
+}
+
+// Application error
+fn main() -> anyhow::Result<()> {
+    let config = load_config()
+        .context("failed to load configuration")?;
+    Ok(())
+}
+```
+
+### Logging (Observability)
+
+Use structured logging with `tracing`. Always include relevant context as fields.
+
+**Log Levels**:
+| Level | Usage |
+|-------|-------|
+| `error!` | Unrecoverable errors, requires immediate attention |
+| `warn!` | Recoverable issues, potential problems |
+| `info!` | Significant events (startup, connections, milestones) |
+| `debug!` | Detailed information for debugging |
+| `trace!` | Very verbose, step-by-step execution |
+
+**Structured Fields**:
+```rust
+// Good: Structured fields for querying
+info!(%block_id, height, "processing block");
+
+// Bad: String interpolation
+info!("processing block {block_id} at height {height}");
+```
+
+**Spans**: Any function with significant work must create a span with a `component` field:
+```rust
+#[tracing::instrument(fields(component = "asm_stf"))]
+fn process_block(block: &Block) -> Result<()> {
+    // ...
+}
+```
+
+**Metrics Instruments**:
+- `Counter`: Monotonically increasing (requests, errors)
+- `UpDownCounter`: Can increase or decrease (active connections)
+- `Gauge`: Point-in-time value (temperature, queue size)
+- `Histogram`: Distribution of values (latency, sizes)
+
+### Serialization Guidelines
+
+| Context | Format | Crate |
+|---------|--------|-------|
+| Protocol data structures | SSZ | `ssz_rs`, custom `.ssz` files |
+| On-chain envelope payloads | `strata-codec` | `strata-codec` |
+| Private proof interfaces | `rkyv` | `rkyv` (zero-copy) |
+| Human-readable/config | JSON/TOML | `serde` |
+
+**SSZ** is used for consensus data structures due to:
+- Deterministic encoding
+- Tree hashing support
+- Forward compatibility with `StableContainer`
+
+**`strata-codec`** is a lightweight, compact format for on-chain data where space is critical.
+
+**`rkyv`** provides zero-copy deserialization for proof guest programs where performance matters.
+
+### Design Patterns
+
+**Pseudo-Actors**: Worker tasks receiving inputs on a channel, processing in order.
+
+```rust
+struct FooWorker {
+    rx: mpsc::Receiver<FooMsg>,
+    state: FooState,
+}
+
+impl FooWorker {
+    async fn run(mut self) {
+        while let Some(msg) = self.rx.recv().await {
+            self.handle(msg).await;
+        }
+    }
+}
+```
+
+**Worker Handles**: Decouple control interface from internal state.
+
+```rust
+// Public handle (Clone, Send)
+pub struct FooHandle {
+    tx: mpsc::Sender<FooMsg>,
+}
+
+impl FooHandle {
+    pub async fn do_thing(&self, arg: Arg) -> Result<Output> {
+        let (resp_tx, resp_rx) = oneshot::channel();
+        self.tx.send(FooMsg::DoThing { arg, resp: resp_tx }).await?;
+        resp_rx.await?
+    }
+}
+
+// Internal state (not exposed)
+struct FooState { /* ... */ }
+
+// Worker task
+async fn foo_task(rx: mpsc::Receiver<FooMsg>, state: FooState) {
+    // Process messages
+}
+```
+
+**Definitions Crates**: Separate interface from implementation.
+
+```
+rpc-types/   # Just types, minimal dependencies
+rpc-api/     # Trait definitions using types
+rpc-server/  # Implementation
+```
+
+**Effectful State Machines**: State machines that emit "actions" for an executor to carry out side effects, improving testability.
+
+```rust
+enum Action {
+    SendMessage(Peer, Message),
+    PersistState(State),
+    EmitLog(Log),
+}
+
+fn transition(state: &mut State, event: Event) -> Vec<Action> {
+    // Pure state transition, returns effects to execute
+}
+```
+
+## Git Best Practices
+
+### Commit Message Standards
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Type Prefixes**:
+| Type | Description |
+|------|-------------|
+| `feat` | New feature (MINOR version) |
+| `fix` | Bug fix (PATCH version) |
+| `docs` | Documentation only |
+| `style` | Formatting, no code change |
+| `refactor` | Code restructuring |
+| `perf` | Performance improvement |
+| `test` | Adding/fixing tests |
+| `chore` | Maintenance tasks |
+
+**Breaking Changes**: Use `!` after type/scope or `BREAKING CHANGE:` in footer.
+
+```
+feat(api)!: change response format
+
+BREAKING CHANGE: Response now returns array instead of object.
+```
+
+### Atomic Commits
+
+Each commit should be:
+- **Single purpose**: One logical change
+- **Self-contained**: Compiles and passes tests
+- **Complete**: Doesn't leave work half-done
+- **Minimal**: No unrelated changes
+
+### Linear History
+
+Maintain a clean, linear git history:
+- Use `git rebase` instead of `git merge`
+- Use interactive rebase (`git rebase -i`) to clean up before sharing
+- Safe force push: `git push --force-with-lease`
+
+### Workflow
+
+```bash
+# Feature development
+git checkout -b feat/my-feature
+# ... make changes ...
+git add -p                          # Stage selectively
+git commit -m "feat(scope): description"
+git rebase -i main                  # Clean up commits
+git push --force-with-lease
+
+# Amending recent commit
+git add .
+git commit --amend --no-edit
+
+# Recovery
+git reflog                          # Find lost commits
+git reset --hard HEAD@{n}           # Restore state
+```
+
+## Testing Strategy
+
+### Unit Tests
+
+```bash
+just test-unit
+# Or directly
+cargo nextest run
+```
+
+Best practices:
+- Test public API behavior, not implementation details
+- Use descriptive test names: `test_deposit_with_invalid_amount_fails`
+- Prefer `assert_eq!` over `assert!` for better error messages
+
+### Integration Tests
+
+```bash
+just test-int
+```
+
+Cross-component interaction testing in `tests/` directories.
+
+### Functional Tests (New Framework)
+
+Located in `functional-tests-new/`. Uses `uv` for dependency management.
+
+```bash
+cd functional-tests-new
+./run_tests.sh
+
+# Or with uv
+uv run python entry.py
+```
+
+**Structure**:
+- `common/` - Base test classes, services, utilities
+- `envconfigs/` - Environment configurations
+- `factories/` - Service factories (Bitcoin, Strata)
+- `tests/` - Test files
+
+### Functional Tests (Legacy)
+
+Located in `functional-tests/`. Uses `uv` for dependency management.
+
+```bash
+cd functional-tests
+
+# Run specific test
+./run_test.sh -t bridge/bridge_deposit_happy.py
+
+# Run test group
+./run_test.sh -g bridge
+
+# Start test environment
+./run_test.sh -e basic
+```
+
+### Prover Tests
+
+```bash
+PROVER_TEST=1 cd functional-tests && ./run_test.sh -g prover
+```
+
+## Configuration
+
+### Rust Toolchain
+
+- **Toolchain**: Updates monthly to the latest nightly on the first day of the month (see `rust-toolchain.toml`)
+- **Components**: cargo, clippy, rustfmt, rust-analyzer, rust-docs, rust-src, rust-std
+
+### Key Dependencies
+
+| Dependency | Purpose |
+|------------|---------|
+| Reth | Base Ethereum execution client |
+| Alloy | Ethereum types and RPC |
+| SP1 | Zero-knowledge proof system |
+| Bitcoin | Bitcoin protocol implementation |
+| SSZ | Serialization |
+
+### Prerequisites
+
+- **bitcoind**: Required for L1 integration and testing
+- **uv**: For Python functional tests
+- **nix**: Development shell (optional but recommended)
+
+## Specifications Reference
+
+Key SPS (Strata Protocol Specification) documents:
+
+| Spec | Name | Description |
+|------|------|-------------|
+| SPS-50 | L1 Transaction Header | OP_RETURN format for protocol transactions |
+| SPS-60 | Moho Proof Mechanism | Upgradeable proof wrapper for ASM |
+| SPS-61 | ASM Core Types | ASM state structure and lifecycle |
+| SPS-62 | OL Checkpoint Structure | Checkpoint format and verification |
+| SPS-63 | OL Checkpointing Subprotocol | Checkpoint processing in ASM |
+| SPS-64 | Bridge Subprotocol | Deposit, withdrawal, operator management |
+| SPS-ol-stf | Orchestration Layer STF | OL state transition function |
+| SPS-acct-sys | Account System | Ledger and system accounts |
+| SPS-snark-acct | Snark Accounts | Actor-like accounts with proven updates |
+| SPS-ol-chain-structures | Chain Structures | OL block and transaction types |
+
+Full specification index available in the team Notion workspace.
+
+## Important Notes
+
+- **Security**: Never commit secrets or keys to the repository
+- **Performance**: Proof generation is computationally intensive
+- **Dependencies**: Keep Alloy/Revm versions aligned with Reth
+- **Nix**: Use `nix develop -c <command>` for consistent environment
+- **Just**: Prefer `just` recipes over direct `cargo` commands
