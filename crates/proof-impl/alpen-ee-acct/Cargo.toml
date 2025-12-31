@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 ssz.workspace = true
+ssz_derive.workspace = true
 strata-codec.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
