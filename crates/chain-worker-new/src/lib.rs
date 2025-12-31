@@ -13,6 +13,7 @@
 
 #![allow(unused, reason = "in development")]
 
+mod builder;
 mod errors;
 mod handle;
 mod message;
@@ -21,13 +22,13 @@ mod service;
 mod traits;
 
 use anyhow as _;
+pub use builder::ChainWorkerBuilder;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::{ChainWorkerHandle, WorkerShared};
 pub use message::ChainWorkerMessage;
 pub use output::OLBlockExecutionOutput;
 pub use service::{ChainWorkerService, ChainWorkerServiceState, ChainWorkerStatus};
 // Placeholder uses for dependencies that will be used in subsequent modules.
-// These will be removed as we implement each module.
 use strata_db_types as _;
 use strata_ledger_types as _;
 use strata_snark_acct_types as _;

@@ -22,6 +22,7 @@ strata-primitives.workspace = true
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-status.workspace = true
+strata-tasks.workspace = true
 
 anyhow.workspace = true
 serde.workspace = true
