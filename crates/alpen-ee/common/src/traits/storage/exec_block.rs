@@ -11,7 +11,7 @@ use crate::{ExecBlockPayload, ExecBlockRecord};
 /// This expects blocks to be stored as "finalized" or "unfinalized".
 /// "finalized" blocks should only ever have a single canonical chain.
 /// "unfinalized" blocks may have forks, and all such blocks need to be persisted.
-pub trait ExecBlockStorage {
+pub trait ExecBlockStorage: Send + Sync {
     /// Save block data and payload for a given block hash.
     ///
     /// Blocks are uniquely identified by `ExecBlockRecord::blockhash()`. If a block with the same

@@ -1,6 +1,6 @@
 //! Context for the batch builder task.
 
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use alpen_ee_common::{BatchId, BatchStorage, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
@@ -8,6 +8,7 @@ use strata_acct_types::Hash;
 use tokio::sync::watch;
 
 use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
+use crate::batch_builder::canonical::{CanonicalChainReader, ExecChainCanonicalReader};
 
 /// Context holding all dependencies for the batch builder task.
 ///
@@ -38,5 +39,19 @@ where
     /// Sender to notify about latest batch updates (new batch sealed or reorg).
     pub latest_batch_tx: watch::Sender<Option<BatchId>>,
     /// Marker for the policy type.
-    pub _policy: std::marker::PhantomData<P>,
+    pub _policy: PhantomData<P>,
+}
+
+impl<P, D, S, BS, ES> BatchBuilderCtx<P, D, S, BS, ES>
+where
+    P: BatchPolicy,
+    D: BlockDataProvider<P>,
+    S: BatchSealingPolicy<P>,
+    BS: BatchStorage,
+    ES: ExecBlockStorage + Send + Sync,
+{
+    #[expect(unused, reason = "todo")]
+    pub(crate) fn canonical_reader(&self) -> impl CanonicalChainReader {
+        ExecChainCanonicalReader::new(self.exec_chain.clone(), self.block_storage.clone())
+    }
 }

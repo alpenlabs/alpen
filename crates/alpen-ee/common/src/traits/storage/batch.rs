@@ -21,7 +21,7 @@ use crate::{Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, StorageErr
 /// forks and reorgs.
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
-pub trait BatchStorage {
+pub trait BatchStorage: Send + Sync {
     /// Save the next ee update
     ///
     /// The entry must extend the last batch present in storage.
