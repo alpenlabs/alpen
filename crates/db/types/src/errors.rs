@@ -1,9 +1,10 @@
+use strata_identifiers::AccountId;
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 
-use crate::chainstate::WriteBatchId;
+use crate::{chainstate::WriteBatchId, mmr_helpers::MmrError};
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -117,6 +118,10 @@ pub enum DbError {
     #[error("MMR leaf not found at index {0}")]
     MmrLeafNotFound(u64),
 
+    /// MMR leaf not found at index for account
+    #[error("MMR leaf not found at index {0} for account {1}")]
+    MmrLeafNotFoundForAccount(u64, AccountId),
+
     /// Invalid MMR index range
     #[error("Invalid MMR index range: {start}..{end}")]
     MmrInvalidRange { start: u64, end: u64 },
@@ -141,6 +146,19 @@ impl From<OpsError> for DbError {
     fn from(value: OpsError) -> Self {
         match value {
             OpsError::WorkerFailedStrangely => DbError::WorkerFailedStrangely,
+        }
+    }
+}
+
+impl From<crate::mmr_helpers::MmrError> for DbError {
+    fn from(value: crate::mmr_helpers::MmrError) -> Self {
+        match value {
+            MmrError::LeafNotFound(idx) => DbError::MmrLeafNotFound(idx),
+            MmrError::InvalidRange { start, end } => DbError::MmrInvalidRange { start, end },
+            MmrError::PositionOutOfBounds { pos, max_size } => DbError::Other(format!(
+                "Position {} out of bounds (max size {})",
+                pos, max_size
+            )),
         }
     }
 }

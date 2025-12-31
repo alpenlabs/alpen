@@ -52,4 +52,7 @@ pub enum WorkerError {
 
     #[error("MMR proof generation failed for index {index}")]
     MmrProofFailed { index: u64 },
+
+    #[error("Manifest hash out of bound (max {max}, requested {index})")]
+    ManifestIndexOutOfBound { index: u64, max: u64 },
 }

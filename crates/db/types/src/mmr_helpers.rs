@@ -1,6 +1,8 @@
-//! MMR position calculation helpers
+//! MMR position calculation helpers and algorithm implementation
 //!
-//! This module provides bit manipulation utilities for navigating the MMR structure.
+//! This module provides:
+//! - Bit manipulation utilities for navigating the MMR structure
+//! - Pure MMR algorithm logic (computation without storage)
 //!
 //! # Note on Future Migration
 //!
@@ -26,9 +28,25 @@
 //! Leaves:   [0, 1, x, 2, 3, x, x, 4]  (x = internal node)
 //! ```
 
-use crate::{DbError, DbResult};
+use borsh::{BorshDeserialize, BorshSerialize};
+use strata_merkle::{hasher::MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
+use strata_primitives::buf::Buf32;
+use thiserror::Error;
 
-/// Convert leaf index to total MMR size (number of nodes)
+/// Pure MMR algorithm errors - domain-specific, no storage concepts
+#[derive(Debug, Clone, Error)]
+pub enum MmrError {
+    #[error("MMR leaf {0} not found")]
+    LeafNotFound(u64),
+
+    #[error("invalid mmr range (start {start}, end {end})")]
+    InvalidRange { start: u64, end: u64 },
+
+    #[error("mmr index {pos} out of bounds (max {max_size})")]
+    PositionOutOfBounds { pos: u64, max_size: u64 },
+}
+
+/// Convert leaves count to total MMR size (number of nodes)
 ///
 /// Formula: 2 * leaves - peak_count
 /// Peak count = number of set bits in binary representation of leaf count
@@ -41,8 +59,7 @@ use crate::{DbError, DbResult};
 /// 3 leaves (0b11)  -> 2 peaks -> size = 2*3 - 2 = 4
 /// 7 leaves (0b111) -> 3 peaks -> size = 2*7 - 3 = 11
 /// ```
-pub fn leaf_index_to_mmr_size(index: u64) -> u64 {
-    let leaves_count = index + 1;
+pub fn num_leaves_to_mmr_size(leaves_count: u64) -> u64 {
     let peak_count = leaves_count.count_ones() as u64;
     2 * leaves_count - peak_count
 }
@@ -60,7 +77,7 @@ pub fn leaf_index_to_mmr_size(index: u64) -> u64 {
 /// leaf_index_to_pos(3) = 4  // Fourth leaf
 /// ```
 pub fn leaf_index_to_pos(index: u64) -> u64 {
-    leaf_index_to_mmr_size(index) - (index + 1).trailing_zeros() as u64 - 1
+    num_leaves_to_mmr_size(index + 1) - (index + 1).trailing_zeros() as u64 - 1
 }
 
 /// Calculate the height of a node at given position
@@ -95,14 +112,6 @@ pub fn pos_height_in_tree(mut pos: u64) -> u8 {
     pos as u8
 }
 
-/// Calculate the offset to a node's parent
-///
-/// For a node at height h, parent is 2^(h+1) positions away
-#[inline]
-pub fn parent_offset(height: u8) -> u64 {
-    2 << height
-}
-
 /// Calculate the offset to a node's sibling
 ///
 /// For a node at height h, sibling is 2^(h+1) - 1 positions away
@@ -127,8 +136,8 @@ pub fn parent_pos(pos: u64, height: u8) -> u64 {
         // Current node is a right sibling
         pos + 1
     } else {
-        // Current node is a left sibling
-        pos + parent_offset(height)
+        // Current node is a left sibling, parent is at offset 2^(height+1)
+        pos + (2 << height)
     }
 }
 
@@ -214,9 +223,9 @@ pub fn get_peaks(mmr_size: u64) -> Vec<u64> {
 ///
 /// # Errors
 ///
-/// Returns `DbError::Other` if the position is beyond mmr_size
-pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
-    let peaks = get_peaks(mmr_size);
+/// Returns `MmrError::PositionOutOfBounds` if the position is beyond mmr_size
+pub fn find_peak_for_pos(pos: u64, max_size: u64) -> Result<u64, MmrError> {
+    let peaks = get_peaks(max_size);
 
     for &peak_pos in &peaks {
         if pos <= peak_pos {
@@ -224,10 +233,332 @@ pub fn find_peak_for_pos(pos: u64, mmr_size: u64) -> DbResult<u64> {
         }
     }
 
-    Err(DbError::Other(format!(
-        "Position {} not found in MMR of size {}",
-        pos, mmr_size
-    )))
+    Err(MmrError::PositionOutOfBounds { pos, max_size })
+}
+
+/// Metadata for an MMR instance
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct MmrMetadata {
+    /// Number of leaves.
+    pub num_leaves: u64,
+    /// Number of mmr nodes.
+    pub mmr_size: u64,
+    /// Peaks of the mmr.
+    pub peaks: Vec<Buf32>,
+}
+
+impl MmrMetadata {
+    pub fn empty() -> Self {
+        Self {
+            num_leaves: 0,
+            mmr_size: 0,
+            peaks: Vec::new(),
+        }
+    }
+}
+
+/// Result of appending a leaf to the MMR
+#[derive(Debug)]
+pub struct AppendLeafResult {
+    pub leaf_index: u64,
+    pub nodes_to_write: Vec<(u64, [u8; 32])>,
+    pub new_metadata: MmrMetadata,
+}
+
+/// Result of popping a leaf from the MMR
+#[derive(Debug)]
+pub struct PopLeafResult {
+    pub leaf_hash: [u8; 32],
+    pub nodes_to_remove: Vec<u64>,
+    pub new_metadata: MmrMetadata,
+}
+
+/// Pure MMR algorithm trait
+///
+/// Defines the core MMR algorithms (append, pop, proof generation) as pure functions
+/// that compute what changes need to be made without actually making them.
+/// Storage implementations apply these changes within their own transaction context.
+pub trait MmrAlgorithm {
+    /// Compute the result of appending a leaf to the MMR
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - The hash value to append as a new leaf
+    /// * `metadata` - Current MMR metadata (num_leaves, mmr_size, peaks)
+    /// * `get_node` - Closure to read existing nodes (for sibling lookups during merge)
+    ///
+    /// # Returns
+    ///
+    /// `AppendLeafResult` containing:
+    /// - The leaf index of the newly appended leaf
+    /// - All nodes to write (leaf + internal nodes from merging)
+    /// - Updated metadata
+    ///
+    /// # Storage Independence
+    ///
+    /// This function doesn't know about transactions or storage backends.
+    /// The caller provides a closure to read nodes and applies the result
+    /// within their own transaction mechanism.
+    fn append_leaf<F, E>(
+        hash: [u8; 32],
+        metadata: &MmrMetadata,
+        get_node: F,
+    ) -> Result<AppendLeafResult, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>;
+
+    /// Compute the result of popping the last leaf from the MMR
+    ///
+    /// # Arguments
+    ///
+    /// * `metadata` - Current MMR metadata
+    /// * `get_node` - Closure to read existing nodes (for leaf hash and new peaks)
+    ///
+    /// # Returns
+    ///
+    /// `None` if the MMR is empty
+    ///
+    /// else `Some(PopLeafResult)` containing:
+    /// - The hash of the removed leaf
+    /// - All node positions to remove
+    /// - Updated metadata
+    fn pop_leaf<F, E>(metadata: &MmrMetadata, get_node: F) -> Result<Option<PopLeafResult>, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>;
+
+    /// Generate a Merkle proof for a single leaf position
+    ///
+    /// # Arguments
+    ///
+    /// * `leaf_index` - The leaf index to generate proof for
+    /// * `mmr_size` - Current MMR size
+    /// * `get_node` - Closure to read existing nodes
+    ///
+    /// # Returns
+    ///
+    /// `MerkleProof` containing the sibling hashes along the path from leaf to peak
+    ///
+    /// # Errors
+    ///
+    /// Returns `MmrError::PositionOutOfBounds` if the leaf index is out of bounds
+    fn generate_proof<F, E>(leaf_index: u64, mmr_size: u64, get_node: F) -> Result<MerkleProof, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>;
+
+    /// Generate Merkle proofs for a range of leaf positions
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - Starting leaf index (inclusive)
+    /// * `end` - Ending leaf index (inclusive)
+    /// * `mmr_size` - Current MMR size
+    /// * `get_node` - Closure to read existing nodes
+    ///
+    /// # Returns
+    ///
+    /// Vector of `MerkleProof`s, one for each leaf in the range
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the range is invalid or any leaf index is out of bounds
+    fn generate_proofs<F, E>(
+        start: u64,
+        end: u64,
+        mmr_size: u64,
+        get_node: F,
+    ) -> Result<Vec<MerkleProof>, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>;
+}
+
+/// MMR algorithm implementation that makes clever use of bit manipulation.
+/// This is based on [opentimestamps mmr](https://github.com/opentimestamps/opentimestamps-server/blob/master/doc/merkle-mountain-range.md)
+// TODO: a better name?
+#[derive(Debug)]
+pub struct BitManipulatedMmrAlgorithm;
+
+impl MmrAlgorithm for BitManipulatedMmrAlgorithm {
+    fn append_leaf<F, E>(
+        hash: [u8; 32],
+        metadata: &MmrMetadata,
+        get_node: F,
+    ) -> Result<AppendLeafResult, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>,
+    {
+        let leaf_index = metadata.num_leaves;
+        let leaf_pos = leaf_index_to_pos(leaf_index);
+
+        let mut nodes_to_write = Vec::new();
+
+        // Store the leaf
+        nodes_to_write.push((leaf_pos, hash));
+
+        // Merge along the path to create internal nodes
+        let mut current_pos = leaf_pos;
+        let mut current_hash = hash;
+        let mut current_height = 0u8;
+
+        // Keep merging as long as we have a left sibling
+        loop {
+            let next_pos = current_pos + 1;
+            let next_height = pos_height_in_tree(next_pos);
+
+            // If next position is higher, current is a right sibling - we should merge
+            if next_height > current_height {
+                // Current is right sibling, get left sibling
+                let sibling_position = sibling_pos(current_pos, current_height);
+                let sibling_hash = get_node(sibling_position)?;
+
+                // Create parent hash (left sibling, right sibling)
+                let parent_hash = Sha256Hasher::hash_node(sibling_hash, current_hash);
+
+                // Store parent
+                nodes_to_write.push((next_pos, parent_hash));
+
+                // Move up to parent
+                current_pos = next_pos;
+                current_hash = parent_hash;
+                current_height = next_height;
+            } else {
+                // Current is a left sibling (will be merged when right sibling comes) - stop here
+                break;
+            }
+        }
+
+        // Update metadata
+        let new_mmr_size = num_leaves_to_mmr_size(metadata.num_leaves + 1);
+
+        // Calculate peaks
+        let peak_positions = get_peaks(new_mmr_size);
+        let new_peaks: Vec<Buf32> = peak_positions
+            .iter()
+            .rev()
+            .map(|&pos| {
+                // Check if this node is in our write list
+                if let Some((_, hash)) = nodes_to_write.iter().find(|(p, _)| *p == pos) {
+                    Ok(Buf32(*hash))
+                } else {
+                    get_node(pos).map(Buf32)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let new_metadata = MmrMetadata {
+            num_leaves: metadata.num_leaves + 1,
+            mmr_size: new_mmr_size,
+            peaks: new_peaks,
+        };
+
+        Ok(AppendLeafResult {
+            leaf_index,
+            nodes_to_write,
+            new_metadata,
+        })
+    }
+
+    fn pop_leaf<F, E>(metadata: &MmrMetadata, get_node: F) -> Result<Option<PopLeafResult>, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>,
+    {
+        // Can't pop from empty MMR
+        if metadata.num_leaves == 0 {
+            return Ok(None);
+        }
+
+        let leaf_index = metadata.num_leaves - 1;
+        let leaf_pos = leaf_index_to_pos(leaf_index);
+
+        // Read the leaf hash before deletion
+        let leaf_hash = get_node(leaf_pos)?;
+
+        // Calculate the new MMR size (after the last leaf was popped)
+        let new_mmr_size = if metadata.num_leaves == 1 {
+            0 // Empty MMR
+        } else {
+            num_leaves_to_mmr_size(metadata.num_leaves - 1)
+        };
+
+        // Collect nodes to remove: [new_mmr_size, current_mmr_size)
+        let nodes_to_remove: Vec<u64> = (new_mmr_size..metadata.mmr_size).collect();
+
+        // Calculate peaks for the new size
+        let new_peaks = if new_mmr_size > 0 {
+            let peak_positions = get_peaks(new_mmr_size);
+            peak_positions
+                .into_iter()
+                .rev()
+                .map(|pos| get_node(pos).map(Buf32))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+
+        let new_metadata = MmrMetadata {
+            num_leaves: metadata.num_leaves - 1,
+            mmr_size: new_mmr_size,
+            peaks: new_peaks,
+        };
+
+        Ok(Some(PopLeafResult {
+            leaf_hash,
+            nodes_to_remove,
+            new_metadata,
+        }))
+    }
+
+    fn generate_proof<F, E>(leaf_index: u64, mmr_size: u64, get_node: F) -> Result<MerkleProof, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>,
+    {
+        let leaf_pos = leaf_index_to_pos(leaf_index);
+        let peak_pos = find_peak_for_pos(leaf_pos, mmr_size)?;
+
+        let mut cohashes = Vec::new();
+        let mut current_pos = leaf_pos;
+        let mut current_height = 0u8;
+
+        while current_pos < peak_pos {
+            let sib_pos = sibling_pos(current_pos, current_height);
+            let sibling_hash = get_node(sib_pos)?;
+            cohashes.push(sibling_hash);
+
+            current_pos = parent_pos(current_pos, current_height);
+            current_height += 1;
+        }
+
+        Ok(MerkleProof::from_cohashes(cohashes, leaf_index))
+    }
+
+    fn generate_proofs<F, E>(
+        start: u64,
+        end: u64,
+        mmr_size: u64,
+        get_node: F,
+    ) -> Result<Vec<MerkleProof>, E>
+    where
+        F: Fn(u64) -> Result<[u8; 32], E>,
+        E: From<MmrError>,
+    {
+        if start > end {
+            return Err(MmrError::InvalidRange { start, end }.into());
+        }
+
+        let mut proofs = Vec::with_capacity((end - start + 1) as usize);
+        for index in start..=end {
+            let proof = Self::generate_proof(index, mmr_size, &get_node)?;
+            proofs.push(proof);
+        }
+
+        Ok(proofs)
+    }
 }
 
 #[cfg(test)]
@@ -236,11 +567,11 @@ mod tests {
 
     #[test]
     fn test_leaf_index_to_mmr_size() {
-        assert_eq!(leaf_index_to_mmr_size(0), 1); // 1 leaf -> 1 node
-        assert_eq!(leaf_index_to_mmr_size(1), 3); // 2 leaves -> 3 nodes
-        assert_eq!(leaf_index_to_mmr_size(2), 4); // 3 leaves -> 4 nodes
-        assert_eq!(leaf_index_to_mmr_size(3), 7); // 4 leaves -> 7 nodes
-        assert_eq!(leaf_index_to_mmr_size(6), 11); // 7 leaves -> 11 nodes
+        assert_eq!(num_leaves_to_mmr_size(1), 1); // 1 leaf -> 1 node
+        assert_eq!(num_leaves_to_mmr_size(2), 3); // 2 leaves -> 3 nodes
+        assert_eq!(num_leaves_to_mmr_size(3), 4); // 3 leaves -> 4 nodes
+        assert_eq!(num_leaves_to_mmr_size(4), 7); // 4 leaves -> 7 nodes
+        assert_eq!(num_leaves_to_mmr_size(7), 11); // 7 leaves -> 11 nodes
     }
 
     #[test]
@@ -267,11 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parent_and_sibling_offsets() {
-        assert_eq!(parent_offset(0), 2); // 2^1
-        assert_eq!(parent_offset(1), 4); // 2^2
-        assert_eq!(parent_offset(2), 8); // 2^3
-
+    fn test_sibling_offset() {
         assert_eq!(sibling_offset(0), 1); // 2^1 - 1
         assert_eq!(sibling_offset(1), 3); // 2^2 - 1
         assert_eq!(sibling_offset(2), 7); // 2^3 - 1

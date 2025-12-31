@@ -24,6 +24,7 @@ strata-storage-common.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
+borsh.workspace = true
 futures.workspace = true
 threadpool.workspace = true
 tokio.workspace = true

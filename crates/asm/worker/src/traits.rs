@@ -3,7 +3,7 @@
 use bitcoin::{Block, Network};
 use strata_asm_common::AsmManifest;
 use strata_btc_types::BitcoinTxid;
-use strata_primitives::prelude::*;
+use strata_primitives::{hash::Hash, prelude::*};
 use strata_state::asm_state::AsmState;
 
 use crate::WorkerResult;
@@ -39,10 +39,7 @@ pub trait WorkerContext {
     /// Appends a manifest hash to the MMR database and returns the leaf index.
     ///
     /// This should be called after each STF execution with the manifest hash.
-    fn append_manifest_to_mmr(&self, manifest_hash: [u8; 32]) -> WorkerResult<u64>;
-
-    /// Stores a manifest hash at the given MMR leaf index for fast lookup.
-    fn store_manifest_hash(&self, index: u64, hash: [u8; 32]) -> WorkerResult<()>;
+    fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64>;
 
     /// Generates an MMR proof for the given leaf index.
     ///
@@ -51,6 +48,6 @@ pub trait WorkerContext {
 
     /// Retrieves a manifest hash by its MMR leaf index.
     ///
-    /// Returns None if no manifest hash is stored at the given index.
-    fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<[u8; 32]>>;
+    /// Reads the hash directly from the MMR structure.
+    fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>>;
 }

@@ -6,6 +6,7 @@ pub mod chain_state;
 pub mod checkpoint;
 pub mod client_state;
 mod config;
+pub mod global_mmr;
 mod init;
 pub mod l1;
 pub mod l2;
@@ -27,6 +28,7 @@ use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
 use client_state::db::ClientStateDBSled;
 pub use config::SledDbConfig;
+pub use global_mmr::GlobalMmrDb;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use ol::db::OLBlockDBSled;
@@ -71,6 +73,7 @@ pub struct SledBackend {
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
+    global_mmr_db: Arc<GlobalMmrDb>,
 }
 
 impl SledBackend {
@@ -88,6 +91,7 @@ impl SledBackend {
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let global_mmr_db = Arc::new(GlobalMmrDb::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
@@ -101,6 +105,7 @@ impl SledBackend {
             writer_db,
             prover_db,
             broadcast_db,
+            global_mmr_db,
         })
     }
 }
@@ -152,10 +157,8 @@ impl DatabaseBackend for SledBackend {
 }
 
 impl SledBackend {
-    /// Get the MMR database
-    ///
-    /// Returns the ASM database which implements the MmrDatabase trait.
-    pub fn mmr_db(&self) -> Arc<AsmDBSled> {
-        self.asm_db.clone()
+    /// Get the global MMR database
+    pub fn global_mmr_db(&self) -> Arc<GlobalMmrDb> {
+        self.global_mmr_db.clone()
     }
 }

@@ -14,7 +14,7 @@ use strata_params::Params;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
+use strata_storage::{MmrId, NodeStorage};
 use strata_tasks::TaskExecutor;
 use tokio::{runtime::Handle, sync::mpsc};
 
@@ -265,7 +265,7 @@ pub fn spawn_asm_worker(
         bitcoin_client,
         storage.l1().clone(),
         storage.asm().clone(),
-        storage.mmr().clone(),
+        storage.global_mmr().get_handle(MmrId::Asm),
     );
 
     // Use the new builder API to launch the worker and get a handle.
