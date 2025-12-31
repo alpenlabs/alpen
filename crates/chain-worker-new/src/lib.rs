@@ -6,10 +6,13 @@
 //! OL chainstate database. It encapsulates the logic for fetching, executing,
 //! and finalizing OL blocks and epochs using:
 //!
-//! - New OL STF (`strata-ol-stf::verify_block`)
-//! - New OL types (`OLBlock`, `OLBlockHeader`, `OLState`, `WriteBatch`)
-//! - `IndexerState<WriteTrackingState<OLState>>` for state tracking
-//! - `GlobalMmrManager` for MMR operations
+//! - New OL STF ([`strata_ol_stf::verify_block`])
+//! - New OL types ([`OLBlock`](strata_ol_chain_types_new::OLBlock),
+//!   [`OLBlockHeader`](strata_ol_chain_types_new::OLBlockHeader),
+//!   [`OLState`](strata_ol_state_types::OLState),
+//!   [`WriteBatch`](strata_ol_state_types::WriteBatch))
+//! - [`IndexerState<WriteTrackingState<OLState>>`](strata_ol_state_support_types::IndexerState) for
+//!   state tracking
 
 mod builder;
 mod errors;
