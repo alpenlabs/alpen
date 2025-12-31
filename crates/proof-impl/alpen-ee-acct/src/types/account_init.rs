@@ -31,6 +31,21 @@ impl EeAccountInit {
     pub fn prev_proof_state_ssz(&self) -> &[u8] {
         &self.prev_proof_state_ssz
     }
+
+    /// Consume and return astate SSZ bytes
+    pub fn into_astate_ssz(self) -> Vec<u8> {
+        self.astate_ssz
+    }
+
+    /// Consume and return previous proof state SSZ bytes
+    pub fn into_prev_proof_state_ssz(self) -> Vec<u8> {
+        self.prev_proof_state_ssz
+    }
+
+    /// Destructure into both components
+    pub fn into_parts(self) -> (Vec<u8>, Vec<u8>) {
+        (self.astate_ssz, self.prev_proof_state_ssz)
+    }
 }
 
 impl Codec for EeAccountInit {
