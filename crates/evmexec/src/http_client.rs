@@ -14,6 +14,7 @@ use reth_primitives::{Block, SealedBlock, TransactionSigned};
 use reth_rpc_api::{EngineApiClient, EthApiClient};
 use reth_rpc_layer::{AuthClientLayer, AuthClientService};
 use revm_primitives::alloy_primitives::BlockHash;
+use strata_common::metrics::{RPC_CALLS_TOTAL, RPC_CALL_DURATION, RPC_PAYLOAD_BYTES};
 
 fn http_client(http_url: &str, secret: JwtSecret) -> HttpClient<AuthClientService<HttpBackend>> {
     let middleware = tower::ServiceBuilder::new().layer(AuthClientLayer::new(secret));
@@ -76,7 +77,40 @@ impl EngineRpc for EngineRpcClient {
         fork_choice_state: ForkchoiceState,
         payload_attributes: Option<StrataPayloadAttributes>,
     ) -> RpcResult<ForkchoiceUpdated> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::fork_choice_updated_v2(&self.client, fork_choice_state, payload_attributes).await
+        let start = std::time::Instant::now();
+
+        // Estimate request payload size
+        let request_size = std::mem::size_of_val(&fork_choice_state)
+            + payload_attributes.as_ref().map(|pa| std::mem::size_of_val(pa)).unwrap_or(0);
+        RPC_PAYLOAD_BYTES
+            .with_label_values(&["fork_choice_updated_v2", "request", "execution_engine"])
+            .observe(request_size as f64);
+
+        let result = <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::fork_choice_updated_v2(&self.client, fork_choice_state, payload_attributes).await;
+
+        let duration = start.elapsed().as_secs_f64();
+        RPC_CALL_DURATION
+            .with_label_values(&["fork_choice_updated_v2", "execution_engine"])
+            .observe(duration);
+
+        match &result {
+            Ok(response) => {
+                RPC_CALLS_TOTAL
+                    .with_label_values(&["fork_choice_updated_v2", "execution_engine", "success"])
+                    .inc();
+                let response_size = std::mem::size_of_val(response);
+                RPC_PAYLOAD_BYTES
+                    .with_label_values(&["fork_choice_updated_v2", "response", "execution_engine"])
+                    .observe(response_size as f64);
+            }
+            Err(_) => {
+                RPC_CALLS_TOTAL
+                    .with_label_values(&["fork_choice_updated_v2", "execution_engine", "failed"])
+                    .inc();
+            }
+        }
+
+        result
     }
 
     async fn get_payload_v2(
@@ -90,7 +124,39 @@ impl EngineRpc for EngineRpcClient {
         &self,
         payload: ExecutionPayloadInputV2,
     ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus> {
-        <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::new_payload_v2(&self.client, payload).await
+        let start = std::time::Instant::now();
+
+        // Track payload size
+        let payload_size = std::mem::size_of_val(&payload);
+        RPC_PAYLOAD_BYTES
+            .with_label_values(&["new_payload_v2", "request", "execution_engine"])
+            .observe(payload_size as f64);
+
+        let result = <HttpClient<AuthClientService<HttpBackend>> as EngineApiClient<StrataEngineTypes>>::new_payload_v2(&self.client, payload).await;
+
+        let duration = start.elapsed().as_secs_f64();
+        RPC_CALL_DURATION
+            .with_label_values(&["new_payload_v2", "execution_engine"])
+            .observe(duration);
+
+        match &result {
+            Ok(response) => {
+                RPC_CALLS_TOTAL
+                    .with_label_values(&["new_payload_v2", "execution_engine", "success"])
+                    .inc();
+                let response_size = std::mem::size_of_val(response);
+                RPC_PAYLOAD_BYTES
+                    .with_label_values(&["new_payload_v2", "response", "execution_engine"])
+                    .observe(response_size as f64);
+            }
+            Err(_) => {
+                RPC_CALLS_TOTAL
+                    .with_label_values(&["new_payload_v2", "execution_engine", "failed"])
+                    .inc();
+            }
+        }
+
+        result
     }
 
     async fn get_payload_bodies_by_hash_v1(

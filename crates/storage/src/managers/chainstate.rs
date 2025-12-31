@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use strata_common::metrics::{DB_OPERATIONS_TOTAL, DB_WRITE_BYTES, DB_WRITE_DURATION};
 use strata_db::{traits::*, DbResult};
 use strata_state::{
     chain_state::{Chainstate, ChainstateEntry},
@@ -39,16 +40,68 @@ impl ChainstateManager {
 
     /// Stores a new write batch at a particular index.
     pub async fn put_write_batch_async(&self, idx: u64, wb: WriteBatchEntry) -> DbResult<()> {
-        self.ops.put_write_batch_async(idx, wb).await?;
-        self.wb_cache.purge(&idx);
-        Ok(())
+        let payload_size = std::mem::size_of_val(&wb);
+
+        let start = std::time::Instant::now();
+        let result = self.ops.put_write_batch_async(idx, wb).await;
+        let duration = start.elapsed().as_secs_f64();
+
+        // Record metrics
+        DB_WRITE_DURATION
+            .with_label_values(&["put_chainstate"])
+            .observe(duration);
+        DB_WRITE_BYTES
+            .with_label_values(&["put_chainstate"])
+            .observe(payload_size as f64);
+
+        match &result {
+            Ok(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_chainstate", "success"])
+                    .inc();
+                self.wb_cache.purge(&idx);
+            }
+            Err(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_chainstate", "failed"])
+                    .inc();
+            }
+        }
+
+        result
     }
 
     /// Stores a new write batch at a particular index.
     pub fn put_write_batch_blocking(&self, idx: u64, wb: WriteBatchEntry) -> DbResult<()> {
-        self.ops.put_write_batch_blocking(idx, wb)?;
-        self.wb_cache.purge(&idx);
-        Ok(())
+        let payload_size = std::mem::size_of_val(&wb);
+
+        let start = std::time::Instant::now();
+        let result = self.ops.put_write_batch_blocking(idx, wb);
+        let duration = start.elapsed().as_secs_f64();
+
+        // Record metrics
+        DB_WRITE_DURATION
+            .with_label_values(&["put_chainstate"])
+            .observe(duration);
+        DB_WRITE_BYTES
+            .with_label_values(&["put_chainstate"])
+            .observe(payload_size as f64);
+
+        match &result {
+            Ok(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_chainstate", "success"])
+                    .inc();
+                self.wb_cache.purge(&idx);
+            }
+            Err(_) => {
+                DB_OPERATIONS_TOTAL
+                    .with_label_values(&["put_chainstate", "failed"])
+                    .inc();
+            }
+        }
+
+        result
     }
 
     /// Gets the writes stored for an index.

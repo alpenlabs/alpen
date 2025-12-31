@@ -8,3 +8,5 @@ strata-primitives.workspace = true
 strata-state.workspace = true
 
 thiserror.workspace = true
+prometheus.workspace = true
+lazy_static.workspace = true

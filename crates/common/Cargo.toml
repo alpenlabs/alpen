@@ -17,6 +17,8 @@ tokio = { workspace = true, optional = true }
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
+prometheus.workspace = true
+lazy_static.workspace = true
 
 [features]
 debug-utils = ["tokio", "thiserror"]
