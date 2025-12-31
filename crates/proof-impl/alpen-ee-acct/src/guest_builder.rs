@@ -14,8 +14,6 @@ use strata_ee_chain_types::ExecBlockPackage;
 use strata_primitives::buf::Buf32;
 use thiserror::Error;
 
-use crate::types::CommitBlockPackage;
-
 #[derive(Debug, Error)]
 pub(crate) enum GuestBuilderError {
     /// Failed to decode input using SSZ
@@ -26,8 +24,8 @@ pub(crate) enum GuestBuilderError {
     #[error("Codec decode failed: {0}")]
     CodecDecode(String),
     /// Expected and computed hash mismatched
-    #[error("Block hash mismatch: expected {expected:?}, computed {computed:?}")]
-    HashMismatch { expected: Buf32, computed: Buf32 },
+    #[error("blkid mismatch: expected {expected:?}, computed {computed:?}")]
+    BlkidMismatch { expected: Buf32, computed: Buf32 },
 }
 
 pub(crate) type Result<T> = StdResult<T, GuestBuilderError>;
@@ -67,7 +65,7 @@ fn deserialize_and_build_block_data(bytes: &[u8]) -> Result<CommitBlockData> {
     let expected_hash = package.commitment().raw_block_encoded_hash();
 
     if raw_block_hash != expected_hash {
-        return Err(GuestBuilderError::HashMismatch {
+        return Err(GuestBuilderError::BlkidMismatch {
             expected: expected_hash,
             computed: raw_block_hash,
         });
@@ -82,17 +80,18 @@ fn deserialize_and_build_block_data(bytes: &[u8]) -> Result<CommitBlockData> {
 /// This is the main entry point for processing blocks from the host.
 ///
 /// # Arguments
-/// * `blocks` - Vec of [`CommitBlockPackage`] containing serialized block data
+/// * `block_bytes` - Vec of byte slices, each containing serialized block data in format:
+///   `[exec_block_package (SSZ)][raw_block_body (codec)]`
 ///
 /// # Returns
 /// Vec<CommitChainSegment> - Currently returns one segment containing all blocks
 pub(crate) fn build_commit_segments_from_blocks(
-    blocks: Vec<CommitBlockPackage>,
+    block_bytes: Vec<Vec<u8>>,
 ) -> Result<Vec<CommitChainSegment>> {
     // Deserialize and verify each block
-    let block_data_list = blocks
-        .into_iter()
-        .map(|block| deserialize_and_build_block_data(block.as_bytes()))
+    let block_data_list = block_bytes
+        .iter()
+        .map(|bytes| deserialize_and_build_block_data(bytes))
         .collect::<Result<Vec<_>>>()?;
 
     // Build one CommitChainSegment from all blocks
@@ -100,4 +99,19 @@ pub(crate) fn build_commit_segments_from_blocks(
 
     // Return as Vec for compatibility with existing code
     Ok(vec![segment])
+}
+
+/// Build CommitChainSegment(s) from CommitBlockPackage (for backward compatibility)
+///
+/// This is kept for compatibility with existing monolithic proof code.
+/// New code should use `build_commit_segments_from_blocks` with Vec<Vec<u8>> directly.
+#[expect(
+    dead_code,
+    reason = "Kept for backward compatibility, may be used in future"
+)]
+pub(crate) fn build_commit_segments_from_packages(
+    blocks: Vec<crate::types::CommitBlockPackage>,
+) -> Result<Vec<CommitChainSegment>> {
+    let block_bytes: Vec<Vec<u8>> = blocks.into_iter().map(|pkg| pkg.into_bytes()).collect();
+    build_commit_segments_from_blocks(block_bytes)
 }

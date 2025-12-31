@@ -2,10 +2,10 @@
 
 mod account_init;
 mod block_package;
-mod proof_input;
-mod runtime_input;
+mod bytes_list;
+mod chunk_proof;
 
 pub use account_init::EeAccountInit;
 pub use block_package::CommitBlockPackage;
-pub use proof_input::AlpenEeProofInput;
-pub use runtime_input::RuntimeUpdateInput;
+pub(crate) use bytes_list::BytesList;
+pub use chunk_proof::ChunkProofOutput;
