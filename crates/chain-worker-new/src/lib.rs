@@ -11,8 +11,6 @@
 //! - `IndexerState<WriteTrackingState<OLState>>` for state tracking
 //! - `GlobalMmrManager` for MMR operations
 
-#![allow(unused, reason = "in development")]
-
 mod builder;
 mod errors;
 mod handle;
@@ -21,15 +19,10 @@ mod output;
 mod service;
 mod traits;
 
-use anyhow as _;
 pub use builder::ChainWorkerBuilder;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::{ChainWorkerHandle, WorkerShared};
 pub use message::ChainWorkerMessage;
 pub use output::OLBlockExecutionOutput;
 pub use service::{ChainWorkerService, ChainWorkerServiceState, ChainWorkerStatus};
-// Placeholder uses for dependencies that will be used in subsequent modules.
-use strata_db_types as _;
-use strata_ledger_types as _;
-use strata_snark_acct_types as _;
 pub use traits::WorkerContext;
