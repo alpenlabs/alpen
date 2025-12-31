@@ -54,6 +54,7 @@
 
 mod accumulator;
 mod block_count;
+mod canonical;
 mod ctx;
 mod handle;
 mod state;

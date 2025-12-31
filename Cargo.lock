@@ -1250,6 +1250,7 @@ dependencies = [
  "async-trait",
  "eyre",
  "futures",
+ "mockall",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",

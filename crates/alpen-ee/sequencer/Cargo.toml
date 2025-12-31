@@ -6,6 +6,10 @@ version = "0.3.0-alpha.1"
 [lints]
 workspace = true
 
+[features]
+default = []
+test-utils = ["dep:mockall"]
+
 [dependencies]
 alpen-ee-block-assembly.workspace = true
 alpen-ee-common.workspace = true
@@ -21,9 +25,11 @@ tree_hash.workspace = true
 async-trait.workspace = true
 eyre.workspace = true
 futures.workspace = true
+mockall = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
+mockall.workspace = true
