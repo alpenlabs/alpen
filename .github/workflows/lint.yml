@@ -41,7 +41,7 @@ jobs:
         uses: dtolnay/rust-toolchain@22a6a5b0f9f487c5f5587025ae9d4a1caf2a8a78 # clippy
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
         with:
           cache-on-failure: true
 
@@ -75,7 +75,7 @@ jobs:
           tool: cargo-hack
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
         with:
           cache-on-failure: true
 

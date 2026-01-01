@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
         with:
           working-directory: functional-tests
           activate-environment: true
@@ -65,7 +65,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
         with:
           working-directory: functional-tests
           activate-environment: true
@@ -109,7 +109,7 @@ jobs:
           toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
         with:
           # All parallel jobs share the same cache to maximize hits
           shared-key: functional-tests-pr
@@ -136,7 +136,7 @@ jobs:
           rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
         with:
           working-directory: functional-tests
           activate-environment: true
@@ -213,7 +213,7 @@ jobs:
           rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
         with:
           working-directory: functional-tests
           activate-environment: true
@@ -231,7 +231,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
         with:
           # Separate cache for coverage builds (different RUSTFLAGS produce different artifacts)
           shared-key: functional-tests-coverage
