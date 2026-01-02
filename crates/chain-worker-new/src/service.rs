@@ -25,8 +25,8 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> Service for ChainWorkerServi
     fn get_status(state: &Self::State) -> Self::Status {
         ChainWorkerStatus {
             is_initialized: state.is_initialized(),
-            cur_tip: state.cur_tip,
-            last_finalized_epoch: state.last_finalized_epoch,
+            cur_tip: state.cur_tip(),
+            last_finalized_epoch: state.last_finalized_epoch(),
         }
     }
 }
