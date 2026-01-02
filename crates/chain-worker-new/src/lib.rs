@@ -20,6 +20,7 @@ mod handle;
 mod message;
 mod output;
 mod service;
+mod state;
 mod traits;
 
 pub use builder::ChainWorkerBuilder;
@@ -27,5 +28,6 @@ pub use errors::{WorkerError, WorkerResult};
 pub use handle::ChainWorkerHandle;
 pub use message::ChainWorkerMessage;
 pub use output::OLBlockExecutionOutput;
-pub use service::{ChainWorkerService, ChainWorkerServiceState, ChainWorkerStatus};
+pub use service::{ChainWorkerService, ChainWorkerStatus};
+pub use state::ChainWorkerServiceState;
 pub use traits::WorkerContext;
