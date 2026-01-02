@@ -3,7 +3,7 @@ use std::{thread, time};
 use strata_asm_common::AsmManifest;
 use strata_asm_logs::{constants::CHECKPOINT_UPDATE_LOG_TYPE, CheckpointUpdate};
 use strata_chainexec::MemStateAccessor;
-use strata_chaintsn::context::StateAccessor;
+use strata_chaintsn::{context::StateAccessor, transition::process_block};
 use strata_checkpoint_types::Checkpoint;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
@@ -410,6 +410,6 @@ fn compute_post_state(
     params: &Params,
 ) -> Result<Chainstate, Error> {
     let mut state_accessor = MemStateAccessor::new(prev_chstate);
-    strata_chaintsn::transition::process_block(&mut state_accessor, header, body, params.rollup())?;
+    process_block(&mut state_accessor, header, body, params.rollup())?;
     Ok(state_accessor.state_untracked().clone())
 }

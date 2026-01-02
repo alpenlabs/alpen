@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display};
 
+use borsh::io;
 use strata_codec::CodecError;
 use strata_msg_fmt::TypeId;
 use thiserror::Error;
@@ -26,11 +27,11 @@ pub enum AsmManifestError {
 
     /// Failed to deserialize data for the given TypeId.
     #[error("failed to deserialize TypeId {0:?} data: {1}")]
-    TypeIdDeserialization(TypeId, #[source] borsh::io::Error),
+    TypeIdDeserialization(TypeId, #[source] io::Error),
 
     /// Failed to serialize data for the given TypeId.
     #[error("failed to serialize TypeId {0:?} data: {1}")]
-    TypeIdSerialization(TypeId, #[source] borsh::io::Error),
+    TypeIdSerialization(TypeId, #[source] io::Error),
 
     /// Message format error.
     #[error("msgfmt: {0:?}")]

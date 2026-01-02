@@ -10,7 +10,7 @@ use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_status::StatusChannel;
 use strata_tasks::ShutdownGuard;
-use tokio::runtime::Handle;
+use tokio::{runtime::Handle, time};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -289,7 +289,7 @@ pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
     // TODO(QQ): maybe expose better waiting for L2 genesis through status channel.
     let genesis_block_id = handle.block_on(async {
         while context.fetch_blkid_at_height(0).unwrap().is_none() {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            time::sleep(time::Duration::from_secs(1)).await;
         }
         context
             .fetch_blkid_at_height(0)

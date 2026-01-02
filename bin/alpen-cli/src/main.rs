@@ -10,6 +10,8 @@ pub mod seed;
 pub mod settings;
 pub mod signet;
 
+use std::process::exit;
+
 use cmd::{
     backup::backup, balance::balance, config::config, deposit::deposit, drain::drain,
     faucet::faucet, receive::receive, recover::recover, scan::scan, send::send, withdraw::withdraw,
@@ -37,7 +39,7 @@ async fn main() {
 
     let settings = Settings::load().unwrap_or_else(|e| {
         eprintln!("Configuration error: {e:?}");
-        std::process::exit(1);
+        exit(1);
     });
 
     #[cfg(all(not(target_os = "linux"), not(feature = "test-mode")))]
@@ -59,7 +61,7 @@ async fn main() {
     #[cfg(not(feature = "test-mode"))]
     let seed = seed::load_or_create(&persister).unwrap_or_else(|e| {
         eprintln!("{e:?}");
-        std::process::exit(1);
+        exit(1);
     });
 
     #[cfg(feature = "test-mode")]
@@ -86,6 +88,6 @@ async fn main() {
 
     if let Err(err) = result {
         eprintln!("{err}");
-        std::process::exit(1);
+        exit(1);
     }
 }

@@ -3,6 +3,8 @@
 //! This provides an `IStateAccessor` implementation that tracks all writes
 //! in a `WriteBatch`, allowing them to be applied atomically or discarded.
 
+use std::fmt;
+
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
@@ -20,12 +22,12 @@ pub struct WriteTrackingState<'base, S: IStateAccessor> {
     batch: WriteBatch<S::AccountState>,
 }
 
-impl<S: IStateAccessor> std::fmt::Debug for WriteTrackingState<'_, S>
+impl<S: IStateAccessor> fmt::Debug for WriteTrackingState<'_, S>
 where
-    S: std::fmt::Debug,
-    S::AccountState: std::fmt::Debug,
+    S: fmt::Debug,
+    S::AccountState: fmt::Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WriteTrackingState")
             .field("base", &self.base)
             .field("batch", &self.batch)

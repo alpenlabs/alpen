@@ -17,7 +17,7 @@
 //! These traits allow building generic handlers like `RemoteProofHandler` that work
 //! with any input source and storage backend.
 
-use std::any::Any;
+use std::{any::Any, error, fmt};
 
 use async_trait::async_trait;
 use zkaleido::ProofReceiptWithMetadata;
@@ -37,8 +37,8 @@ use crate::{error::ProverServiceResult, program::ProgramType, ZkVmBackend};
 /// This allows PaaS to remain generic while handlers work with specific types.
 pub struct BoxedInput(Box<dyn Any + Send + Sync>);
 
-impl std::fmt::Debug for BoxedInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for BoxedInput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("BoxedInput").field(&"<any>").finish()
     }
 }
@@ -162,7 +162,7 @@ pub trait InputFetcher<P: ProgramType>: Send + Sync {
     type Input: Send + Sync;
 
     /// Error type for input fetching
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: error::Error + Send + Sync + 'static;
 
     /// Fetch the input required for proof generation
     ///
@@ -200,7 +200,7 @@ pub trait InputFetcher<P: ProgramType>: Send + Sync {
 #[async_trait]
 pub trait ProofStorer<P: ProgramType>: Send + Sync {
     /// Error type for proof storage
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: error::Error + Send + Sync + 'static;
 
     /// Store a completed proof
     ///

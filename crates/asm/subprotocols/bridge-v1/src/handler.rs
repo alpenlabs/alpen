@@ -109,7 +109,8 @@ mod tests {
     use super::handle_parsed_tx;
     use crate::test_utils::{
         MockMsgRelayer, add_deposits_and_assignments, create_test_state, create_verified_aux_data,
-        create_withdrawal_info_from_assignment, setup_slash_test, setup_unstake_test,
+        create_withdrawal_info_from_assignment, setup_deposit_test, setup_slash_test,
+        setup_unstake_test,
     };
 
     #[test]
@@ -118,7 +119,7 @@ mod tests {
         let (mut state, operators) = create_test_state();
         let drt_aux: DrtHeaderAux = ArbitraryGenerator::new().generate();
         let (verified_aux_data, info) =
-            crate::test_utils::setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+            setup_deposit_test(&drt_aux, *state.denomination(), &operators);
 
         // 2. Prepare ParsedTx
         let parsed_tx = ParsedTx::Deposit(info.clone());

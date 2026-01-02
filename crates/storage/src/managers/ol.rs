@@ -133,6 +133,7 @@ mod tests {
     use strata_identifiers::{Buf32, OLBlockId};
     use strata_ol_chain_types_new::test_utils as ol_test_utils;
     use threadpool::ThreadPool;
+    use tokio::runtime::Runtime;
 
     use super::*;
 
@@ -146,7 +147,7 @@ mod tests {
     proptest! {
         #[test]
         fn proptest_put_and_get_block_data_async(block in ol_test_utils::ol_block_strategy()) {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 let manager = setup_manager();
                 let block_id = block.header().compute_blkid();
@@ -180,7 +181,7 @@ mod tests {
 
         #[test]
         fn proptest_status_transitions_async(block in ol_test_utils::ol_block_strategy()) {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 let manager = setup_manager();
                 let block_id = block.header().compute_blkid();
@@ -219,7 +220,7 @@ mod tests {
 
         #[test]
         fn proptest_get_blocks_at_height_async(mut block1 in ol_test_utils::ol_block_strategy(), mut block2 in ol_test_utils::ol_block_strategy()) {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 let manager = setup_manager();
                 let slot = 10u64;
@@ -273,7 +274,7 @@ mod tests {
 
         #[test]
         fn proptest_get_tip_slot_async(mut block1 in ol_test_utils::ol_block_strategy(), mut block2 in ol_test_utils::ol_block_strategy()) {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 let manager = setup_manager();
 

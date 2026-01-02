@@ -13,7 +13,7 @@
 //! We also have a sentinel "null" epoch used to refer to the "finalized epoch"
 //! as of the genesis block.
 
-use std::fmt;
+use std::{cmp, fmt, str};
 
 use const_hex as hex;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
@@ -108,8 +108,8 @@ impl fmt::Display for EpochCommitment {
             "{}[{}]@{}..{}",
             self.last_slot(),
             self.epoch(),
-            unsafe { std::str::from_utf8_unchecked(&first_hex) },
-            unsafe { std::str::from_utf8_unchecked(&last_hex) },
+            unsafe { str::from_utf8_unchecked(&first_hex) },
+            unsafe { str::from_utf8_unchecked(&last_hex) },
         )
     }
 }
@@ -128,7 +128,7 @@ impl<'a> arbitrary::Arbitrary<'a> for EpochCommitment {
 }
 
 impl Ord for EpochCommitment {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         (self.epoch, self.last_slot, &self.last_blkid).cmp(&(
             other.epoch,
             other.last_slot,
@@ -138,7 +138,7 @@ impl Ord for EpochCommitment {
 }
 
 impl PartialOrd for EpochCommitment {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }

@@ -9,6 +9,7 @@ use strata_storage::ops::{
     l1tx_broadcast::Context as BContext,
     writer::{Context, EnvelopeDataOps},
 };
+use tokio::sync::mpsc::channel;
 
 use crate::broadcaster::L1BroadcastHandle;
 
@@ -28,7 +29,7 @@ pub(crate) fn get_broadcast_handle() -> Arc<L1BroadcastHandle> {
     let backend = SledBackend::new(sdb.into(), sconf).unwrap();
     let db = backend.broadcast_db();
     let ops = BContext::new(db).into_ops(pool);
-    let (sender, _) = tokio::sync::mpsc::channel::<(u64, L1TxEntry)>(64);
+    let (sender, _) = channel::<(u64, L1TxEntry)>(64);
     let handle = L1BroadcastHandle::new(sender, Arc::new(ops));
     Arc::new(handle)
 }

@@ -7,7 +7,7 @@ use strata_primitives::l1::L1BlockId;
 use crate::{
     cli::OutputFormat,
     output::{
-        l1::{L1BlockInfo, L1SummaryInfo},
+        l1::{L1BlockInfo, L1SummaryInfo, MissingBlockInfo},
         output,
     },
     utils::block_id::parse_l1_block_id,
@@ -142,7 +142,7 @@ pub(crate) fn get_l1_summary(
         all_manifests_present: all_l1_manifests_present,
         missing_blocks: missing_heights
             .into_iter()
-            .map(|height| crate::output::l1::MissingBlockInfo {
+            .map(|height| MissingBlockInfo {
                 height,
                 reason: "Missing block".to_string(),
                 block_id: None,

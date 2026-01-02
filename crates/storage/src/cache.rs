@@ -6,6 +6,7 @@
 //! For caches with custom error types, use `strata_storage_common::cache::CacheTable` directly.
 
 use strata_db_types::DbError;
+use strata_storage_common::cache;
 
 /// Type alias for `CacheTable` using `DbError` as the error type.
 ///
@@ -14,4 +15,4 @@ use strata_db_types::DbError;
 /// that use the standard `DbError` type.
 ///
 /// For custom error types, use `strata_storage_common::cache::CacheTable` directly.
-pub(crate) type CacheTable<K, V> = strata_storage_common::cache::CacheTable<K, V, DbError>;
+pub(crate) type CacheTable<K, V> = cache::CacheTable<K, V, DbError>;

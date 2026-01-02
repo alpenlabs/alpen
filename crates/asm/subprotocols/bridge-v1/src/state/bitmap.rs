@@ -3,6 +3,8 @@
 //! This module contains bitmap types and operations for efficiently tracking
 //! and filtering operators in various contexts.
 
+use std::io;
+
 use arbitrary::Arbitrary;
 use bitvec::prelude::*;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -31,7 +33,7 @@ pub struct OperatorBitmap {
 }
 
 impl BorshSerialize for OperatorBitmap {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize as bytes: [length, data...]
         let bytes = self.bits.as_raw_slice();
         let bit_len = self.bits.len();
@@ -44,7 +46,7 @@ impl BorshSerialize for OperatorBitmap {
 }
 
 impl BorshDeserialize for OperatorBitmap {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         // Deserialize bit length first
         let bit_len = usize::deserialize_reader(reader)?;
         // Then deserialize the byte data

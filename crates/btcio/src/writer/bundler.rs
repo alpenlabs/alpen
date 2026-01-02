@@ -7,7 +7,7 @@ use strata_db_types::{
 };
 use strata_storage::ops::writer::EnvelopeDataOps;
 use strata_tasks::ShutdownGuard;
-use tokio::{select, sync::mpsc::Receiver};
+use tokio::{select, sync::mpsc::Receiver, time::interval};
 use tracing::*;
 
 /// Periodically bundles unbundled intents into payload entries.
@@ -18,7 +18,7 @@ pub(crate) async fn bundler_task(
     mut intent_rx: Receiver<IntentEntry>,
     shutdown: ShutdownGuard,
 ) -> anyhow::Result<()> {
-    let interval = tokio::time::interval(Duration::from_millis(config.bundle_interval_ms));
+    let interval = interval(Duration::from_millis(config.bundle_interval_ms));
     tokio::pin!(interval);
     loop {
         select! {

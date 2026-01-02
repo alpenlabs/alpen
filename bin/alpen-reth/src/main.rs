@@ -2,7 +2,7 @@
 
 mod init_db;
 
-use std::sync::Arc;
+use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
@@ -13,16 +13,17 @@ use init_db::init_witness_db;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
+use reth_cli_util::sigsegv_handler;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use tracing::info;
 
 fn main() {
-    reth_cli_util::sigsegv_handler::install();
+    sigsegv_handler::install();
 
     // Enable backtraces unless a RUST_BACKTRACE value has already been explicitly provided.
-    if std::env::var_os("RUST_BACKTRACE").is_none() {
-        std::env::set_var("RUST_BACKTRACE", "1");
+    if env::var_os("RUST_BACKTRACE").is_none() {
+        env::set_var("RUST_BACKTRACE", "1");
     }
 
     let mut command = NodeCommand::<AlpenChainSpecParser, AdditionalConfig>::parse();
@@ -87,7 +88,7 @@ fn main() {
         },
     ) {
         eprintln!("Error: {err:?}");
-        std::process::exit(1);
+        process::exit(1);
     }
 }
 

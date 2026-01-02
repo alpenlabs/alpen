@@ -2,6 +2,7 @@
 //! converters to appropriate json-rpc error codes.
 
 use jsonrpsee::types::ErrorObjectOwned;
+use strata_db_types::errors::DbError;
 use strata_ol_chain_types::L2BlockId;
 use thiserror::Error;
 
@@ -35,7 +36,7 @@ pub enum RpcServerError {
     MissingChainstate(L2BlockId),
 
     #[error("db: {0}")]
-    Db(#[from] strata_db_types::errors::DbError),
+    Db(#[from] DbError),
 
     #[error("blocking task '{0}' failed for unknown reason")]
     BlockingAbort(String),

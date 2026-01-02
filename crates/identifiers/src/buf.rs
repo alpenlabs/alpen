@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+#[cfg(feature = "bitcoin")]
+use bitcoin::secp256k1::{Error, SecretKey, XOnlyPublicKey, schnorr::Signature};
 use const_hex as hex;
 use ssz_derive::{Decode, Encode};
 use zeroize::Zeroize;
@@ -125,40 +127,39 @@ impl From<Buf32> for bitcoin::Wtxid {
 }
 
 #[cfg(feature = "bitcoin")]
-impl From<bitcoin::secp256k1::SecretKey> for Buf32 {
-    fn from(value: bitcoin::secp256k1::SecretKey) -> Self {
+impl From<SecretKey> for Buf32 {
+    fn from(value: SecretKey) -> Self {
         let bytes: [u8; 32] = value.secret_bytes();
         bytes.into()
     }
 }
 
 #[cfg(feature = "bitcoin")]
-impl From<Buf32> for bitcoin::secp256k1::SecretKey {
+impl From<Buf32> for SecretKey {
     fn from(value: Buf32) -> Self {
-        bitcoin::secp256k1::SecretKey::from_slice(value.0.as_slice())
-            .expect("could not convert Buf32 into SecretKey")
+        SecretKey::from_slice(value.0.as_slice()).expect("could not convert Buf32 into SecretKey")
     }
 }
 
 #[cfg(feature = "bitcoin")]
-impl TryFrom<Buf32> for bitcoin::secp256k1::XOnlyPublicKey {
-    type Error = bitcoin::secp256k1::Error;
+impl TryFrom<Buf32> for XOnlyPublicKey {
+    type Error = Error;
 
     fn try_from(value: Buf32) -> Result<Self, Self::Error> {
-        bitcoin::secp256k1::XOnlyPublicKey::from_slice(&value.0)
+        XOnlyPublicKey::from_slice(&value.0)
     }
 }
 
 #[cfg(feature = "bitcoin")]
-impl From<bitcoin::secp256k1::XOnlyPublicKey> for Buf32 {
-    fn from(value: bitcoin::secp256k1::XOnlyPublicKey) -> Self {
+impl From<XOnlyPublicKey> for Buf32 {
+    fn from(value: XOnlyPublicKey) -> Self {
         Self::from(value.serialize())
     }
 }
 
 #[cfg(feature = "bitcoin")]
-impl From<bitcoin::secp256k1::schnorr::Signature> for Buf64 {
-    fn from(value: bitcoin::secp256k1::schnorr::Signature) -> Self {
+impl From<Signature> for Buf64 {
+    fn from(value: Signature) -> Self {
         value.serialize().into()
     }
 }

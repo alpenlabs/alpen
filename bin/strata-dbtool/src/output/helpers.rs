@@ -3,7 +3,10 @@
 //! This module provides output functions and helper utilities for consistent
 //! formatting across all commands.
 
-use std::io::{self, Write};
+use std::{
+    fmt,
+    io::{self, Write},
+};
 
 use serde::Serialize;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
@@ -44,7 +47,7 @@ pub(crate) fn output_to<T: Serialize + Formattable, W: Write>(
 }
 
 /// Helper function for creating porcelain field output
-pub(crate) fn porcelain_field<T: std::fmt::Display>(key: &str, value: T) -> String {
+pub(crate) fn porcelain_field<T: fmt::Display>(key: &str, value: T) -> String {
     format!("{key}: {value}")
 }
 
@@ -58,7 +61,7 @@ pub(crate) fn porcelain_bool(value: bool) -> &'static str {
 }
 
 /// Helper function for porcelain optional formatting
-pub(crate) fn porcelain_optional<T: std::fmt::Display>(value: &Option<T>) -> String {
+pub(crate) fn porcelain_optional<T: fmt::Display>(value: &Option<T>) -> String {
     match value {
         Some(v) => format!("{v}"),
         None => String::new(),
@@ -67,7 +70,7 @@ pub(crate) fn porcelain_optional<T: std::fmt::Display>(value: &Option<T>) -> Str
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{fmt::Display, io::Cursor};
 
     use serde::Serialize;
 
@@ -98,7 +101,7 @@ mod tests {
     }
 
     /// Helper function for porcelain array formatting
-    fn porcelain_array<T: std::fmt::Display>(values: &[T]) -> String {
+    fn porcelain_array<T: Display>(values: &[T]) -> String {
         values
             .iter()
             .map(|v| format!("{v}"))

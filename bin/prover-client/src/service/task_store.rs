@@ -2,7 +2,7 @@
 
 use std::{
     sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{self, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use strata_db_store_sled::prover::{ProofDBSled, SerializableTaskId, SerializableTaskRecord};
@@ -155,7 +155,7 @@ impl TaskStore<ProofTask> for SledTaskStore {
 
         // Update status and timestamp (SerializableTaskRecord has direct field access)
         record.status = status;
-        record.updated_at_secs = Self::instant_to_secs(&std::time::Instant::now());
+        record.updated_at_secs = Self::instant_to_secs(&time::Instant::now());
 
         // Write back
         self.db.update_task(&key, &record).map_err(|e| {

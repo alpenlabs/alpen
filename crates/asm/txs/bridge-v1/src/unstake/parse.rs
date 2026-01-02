@@ -80,17 +80,22 @@ pub fn parse_unstake_tx<'t>(tx: &TxInputRef<'t>) -> Result<UnstakeInfo, TxStruct
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
+
     use bitcoin::Transaction;
     use strata_crypto::test_utils::schnorr::create_agg_pubkey_from_privkeys;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{
-        create_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data,
-        parse_sps50_tx,
+    use crate::{
+        errors::TxStructureErrorKind,
+        test_utils::{
+            create_connected_stake_and_unstake_txs, create_test_operators, mutate_aux_data,
+            parse_sps50_tx,
+        },
     };
 
-    const AUX_LEN: usize = std::mem::size_of::<UnstakeTxHeaderAux>();
+    const AUX_LEN: usize = mem::size_of::<UnstakeTxHeaderAux>();
 
     fn create_slash_tx_with_info() -> (UnstakeInfo, Transaction) {
         let header_aux: UnstakeTxHeaderAux = ArbitraryGenerator::new().generate();
@@ -123,7 +128,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::Unstake);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::MissingInput {
+            TxStructureErrorKind::MissingInput {
                 index: STAKE_INPUT_INDEX
             }
         ))
@@ -141,7 +146,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::Unstake);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
@@ -152,7 +157,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::Unstake);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
     }
 }

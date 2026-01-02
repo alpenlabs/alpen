@@ -11,6 +11,7 @@ use reth_rpc_eth_types::{
     block::BlockAndReceipts, builder::config::PendingBlockKind, EthApiError, PendingBlock,
 };
 use reth_storage_api::{BlockReader, BlockReaderIdExt, ReceiptProvider};
+use tokio::sync::Mutex;
 
 use crate::AlpenEthApi;
 
@@ -21,7 +22,7 @@ where
     Rpc: RpcConvert<Primitives = N::Primitives>,
 {
     #[inline]
-    fn pending_block(&self) -> &tokio::sync::Mutex<Option<PendingBlock<N::Primitives>>> {
+    fn pending_block(&self) -> &Mutex<Option<PendingBlock<N::Primitives>>> {
         self.inner.eth_api.pending_block()
     }
 

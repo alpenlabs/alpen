@@ -1,5 +1,6 @@
 use strata_chaintsn::errors::TsnError;
-use strata_db_types::DbError;
+use strata_consensus_logic::errors;
+use strata_db_types::errors::DbError;
 use strata_eectl::errors::EngineError;
 use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
@@ -55,7 +56,7 @@ pub enum BlockAssemblyError {
     MissingTipBlock,
 
     #[error("consensus: {0}")]
-    ConsensusError(#[from] strata_consensus_logic::errors::Error),
+    ConsensusError(#[from] errors::Error),
 
     #[error("invalid state transition: {0}")]
     InvalidStateTsnImm(#[from] TsnError),
@@ -64,5 +65,5 @@ pub enum BlockAssemblyError {
     Engine(#[from] EngineError),
 
     #[error("db: {0}")]
-    Db(#[from] strata_db_types::errors::DbError),
+    Db(#[from] DbError),
 }

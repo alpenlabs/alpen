@@ -1,3 +1,5 @@
+use std::fmt;
+
 use strata_l1_txfmt::SubprotocolId;
 
 /// The unique identifier for the Bridge V1 subprotocol within the Anchor State Machine.
@@ -49,8 +51,8 @@ impl TryFrom<u8> for BridgeTxType {
     }
 }
 
-impl std::fmt::Display for BridgeTxType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for BridgeTxType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BridgeTxType::DepositRequest => write!(f, "DepositRequest"),
             BridgeTxType::Deposit => write!(f, "Deposit"),

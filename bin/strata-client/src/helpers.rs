@@ -10,7 +10,7 @@ use strata_evmexec::{engine::RpcExecEngineCtl, fetch_init_fork_choice_state, Eng
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
-use tokio::runtime::Handle;
+use tokio::{runtime::Handle, time};
 use tracing::*;
 
 use crate::{
@@ -165,12 +165,7 @@ pub(crate) fn init_engine_controller(
     );
 
     let initial_fcs = fetch_init_fork_choice_state(storage, params.rollup())?;
-    let eng_ctl = strata_evmexec::engine::RpcExecEngineCtl::new(
-        client,
-        initial_fcs,
-        handle.clone(),
-        storage.l2().clone(),
-    );
+    let eng_ctl = RpcExecEngineCtl::new(client, initial_fcs, handle.clone(), storage.l2().clone());
     let eng_ctl = Arc::new(eng_ctl);
     Ok(eng_ctl)
 }
@@ -182,7 +177,7 @@ pub(crate) async fn generate_sequencer_address(
     poll_interval: u64,
 ) -> anyhow::Result<Address> {
     let mut last_err = None;
-    tokio::time::timeout(Duration::from_secs(timeout), async {
+    time::timeout(Duration::from_secs(timeout), async {
         loop {
             match bitcoin_client.get_new_address().await {
                 Ok(address) => return address,
@@ -192,7 +187,7 @@ pub(crate) async fn generate_sequencer_address(
                 }
             }
             // Sleep for a while just to prevent excessive continuous calls in short time
-            tokio::time::sleep(Duration::from_millis(poll_interval)).await;
+            time::sleep(Duration::from_millis(poll_interval)).await;
         }
     })
     .await

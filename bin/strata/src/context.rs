@@ -12,7 +12,7 @@ use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
 use strata_tasks::{TaskExecutor, TaskManager};
-use tokio::runtime::Runtime;
+use tokio::runtime::{self, Runtime};
 use tracing::warn;
 
 use crate::{args::*, config::*, errors::*, init_db};
@@ -38,7 +38,7 @@ pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
 pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContext, InitError> {
     let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let runtime = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("strata-rt")
         .build()

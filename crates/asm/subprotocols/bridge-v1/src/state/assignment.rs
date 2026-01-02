@@ -4,6 +4,8 @@
 //! Assignments link specific deposit UTXOs to operators who are responsible for processing
 //! the corresponding withdrawal requests within specified deadlines.
 
+use std::cmp::Ordering;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use rand_chacha::{
@@ -119,13 +121,13 @@ pub struct AssignmentEntry {
 }
 
 impl PartialOrd for AssignmentEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for AssignmentEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.deposit_entry.cmp(&other.deposit_entry)
     }
 }

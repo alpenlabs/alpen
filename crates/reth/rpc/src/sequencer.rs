@@ -1,10 +1,14 @@
 //! adapted from reth-node-optimism::rpc
 
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::sync::{
+    atomic::{self, AtomicUsize},
+    Arc,
+};
 
 use jsonrpsee_types::error::{ErrorObject, INTERNAL_ERROR_CODE};
-use reqwest::Client;
+use reqwest::{header::CONTENT_TYPE, Client};
 use reth_rpc_eth_types::error::{EthApiError, ToRpcError};
+use revm_primitives::alloy_primitives::hex;
 
 /// Error type when interacting with the Sequencer
 #[derive(Debug, thiserror::Error)]
@@ -66,9 +70,7 @@ impl SequencerClient {
 
     /// Returns the next id for the request
     fn next_request_id(&self) -> usize {
-        self.inner
-            .id
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        self.inner.id.fetch_add(1, atomic::Ordering::SeqCst)
     }
 
     /// Forwards a transaction to the sequencer endpoint.
@@ -76,7 +78,7 @@ impl SequencerClient {
         let body = serde_json::to_string(&serde_json::json!({
             "jsonrpc": "2.0",
             "method": "eth_sendRawTransaction",
-            "params": [format!("0x{}", revm_primitives::alloy_primitives::hex::encode(tx))],
+            "params": [format!("0x{}", hex::encode(tx))],
             "id": self.next_request_id()
         }))
         .map_err(|_| {
@@ -89,7 +91,7 @@ impl SequencerClient {
 
         self.http_client()
             .post(self.endpoint())
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(CONTENT_TYPE, "application/json")
             .body(body)
             .send()
             .await

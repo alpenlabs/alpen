@@ -1,7 +1,7 @@
 use std::{
-    fmt::{Debug, Display},
+    fmt::{self, Debug, Display},
     io::{self, Read, Write},
-    str,
+    mem, ops, str,
 };
 
 use arbitrary::{Arbitrary, Unstructured};
@@ -253,10 +253,10 @@ impl BorshDeserialize for BitcoinAddress {
 pub struct BitcoinAmount(u64);
 
 /// Size of u64 in bytes
-const BITCOIN_AMOUNT_LEN: usize = std::mem::size_of::<u64>();
+const BITCOIN_AMOUNT_LEN: usize = mem::size_of::<u64>();
 
 impl Display for BitcoinAmount {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -285,7 +285,7 @@ impl From<BitcoinAmount> for u64 {
     }
 }
 
-impl std::ops::Deref for BitcoinAmount {
+impl ops::Deref for BitcoinAmount {
     type Target = u64;
 
     fn deref(&self) -> &Self::Target {
@@ -293,7 +293,7 @@ impl std::ops::Deref for BitcoinAmount {
     }
 }
 
-impl std::ops::DerefMut for BitcoinAmount {
+impl ops::DerefMut for BitcoinAmount {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -430,7 +430,7 @@ impl From<BitcoinPsbt> for Psbt {
 }
 
 impl BorshSerialize for BitcoinPsbt {
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the PSBT using bitcoin's built-in serialization
         let psbt_bytes = self.0.serialize();
         // First, write the length of the serialized PSBT (as u32)
@@ -442,16 +442,15 @@ impl BorshSerialize for BitcoinPsbt {
 }
 
 impl BorshDeserialize for BitcoinPsbt {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         // First, read the length of the PSBT (as u32)
         let len = u32::deserialize_reader(reader)? as usize;
         // Then, create a buffer to hold the PSBT bytes and read them
         let mut psbt_bytes = vec![0u8; len];
         reader.read_exact(&mut psbt_bytes)?;
         // Use the bitcoin crate's deserialize method to create a Psbt from the bytes
-        let psbt = Psbt::deserialize(&psbt_bytes).map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid PSBT data")
-        })?;
+        let psbt = Psbt::deserialize(&psbt_bytes)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid PSBT data"))?;
         Ok(BitcoinPsbt(psbt))
     }
 }
@@ -525,7 +524,7 @@ impl BitcoinTxid {
 }
 
 impl BorshSerialize for BitcoinTxid {
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the txid using bitcoin's built-in serialization
         let txid_bytes = self.0.to_byte_array();
         // First, write the length of the serialized txid (as u32)
@@ -537,13 +536,13 @@ impl BorshSerialize for BitcoinTxid {
 }
 
 impl BorshDeserialize for BitcoinTxid {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         // First, read the length tag
         let len = u32::deserialize_reader(reader)? as usize;
 
         if len != HASH_SIZE {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
                 format!("Invalid Txid size, expected: {HASH_SIZE}, got: {len}"),
             ));
         }
@@ -590,7 +589,7 @@ impl From<BitcoinTxOut> for TxOut {
 
 // Implement BorshSerialize for BitcoinTxOut
 impl BorshSerialize for BitcoinTxOut {
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the value (u64)
         BorshSerialize::serialize(&self.0.value.to_sat(), writer)?;
 
@@ -605,7 +604,7 @@ impl BorshSerialize for BitcoinTxOut {
 
 // Implement BorshDeserialize for BitcoinTxOut
 impl BorshDeserialize for BitcoinTxOut {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         // Deserialize the value (u64)
         let value = u64::deserialize_reader(reader)?;
 
@@ -661,7 +660,7 @@ pub enum TaprootSpendPath {
 }
 
 impl BorshSerialize for TaprootSpendPath {
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         match self {
             TaprootSpendPath::Key => {
                 // Variant index for Keypath is 0
@@ -691,7 +690,7 @@ impl BorshSerialize for TaprootSpendPath {
 
 // Implement BorshDeserialize for TaprootSpendInfo
 impl BorshDeserialize for TaprootSpendPath {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         // Deserialize the variant index
         let variant: u32 = BorshDeserialize::deserialize_reader(reader)?;
         match variant {
@@ -709,7 +708,7 @@ impl BorshDeserialize for TaprootSpendPath {
                 reader.read_exact(&mut control_block_bytes)?;
                 let control_block: ControlBlock = ControlBlock::decode(&control_block_bytes[..])
                     .map_err(|_| {
-                        std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid ControlBlock")
+                        io::Error::new(io::ErrorKind::InvalidData, "Invalid ControlBlock")
                     })?;
 
                 Ok(TaprootSpendPath::Script {
@@ -717,8 +716,8 @@ impl BorshDeserialize for TaprootSpendPath {
                     control_block,
                 })
             }
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
                 "Unknown variant for TaprootSpendInfo",
             )),
         }
@@ -978,7 +977,7 @@ impl From<ScriptBuf> for BitcoinScriptBuf {
 
 // Implement BorshSerialize for BitcoinScriptBuf
 impl BorshSerialize for BitcoinScriptBuf {
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         let script_bytes = self.0.to_bytes();
         BorshSerialize::serialize(&(script_bytes.len() as u32), writer)?;
         writer.write_all(&script_bytes)?;
@@ -988,7 +987,7 @@ impl BorshSerialize for BitcoinScriptBuf {
 
 // Implement BorshDeserialize for BitcoinScriptBuf
 impl BorshDeserialize for BitcoinScriptBuf {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
         let script_len = u32::deserialize_reader(reader)? as usize;
         let mut script_bytes = vec![0u8; script_len];
         reader.read_exact(&mut script_bytes)?;
@@ -1018,7 +1017,7 @@ mod tests {
         Address, Amount, Network, ScriptBuf, TapNodeHash, Transaction, TxOut, XOnlyPublicKey,
         hashes::Hash,
         key::Keypair,
-        opcodes::all::OP_CHECKSIG,
+        opcodes::{self, all::OP_CHECKSIG},
         script::Builder,
         secp256k1::{Parity, SECP256K1, SecretKey},
         taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootMerkleBranch},
@@ -1414,7 +1413,7 @@ mod tests {
     fn test_bitcointxout_serialize_deserialize() {
         // Create a dummy TxOut with a simple script
         let script = Builder::new()
-            .push_opcode(bitcoin::blockdata::opcodes::all::OP_CHECKSIG)
+            .push_opcode(opcodes::all::OP_CHECKSIG)
             .into_script();
         let tx_out = TxOut {
             value: Amount::from_sat(1000),

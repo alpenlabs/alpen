@@ -35,7 +35,11 @@ use ol::db::OLBlockDBSled;
 use ol_state::db::OLStateDBSled;
 use strata_db_types::{
     DbResult,
-    traits::{DatabaseBackend, OLBlockDatabase, OLStateDatabase},
+    chainstate::ChainstateDatabase,
+    traits::{
+        self, AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend, L1Database,
+        L2BlockDatabase, OLBlockDatabase, OLStateDatabase,
+    },
 };
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
@@ -111,23 +115,23 @@ impl SledBackend {
 }
 
 impl DatabaseBackend for SledBackend {
-    fn asm_db(&self) -> Arc<impl strata_db_types::traits::AsmDatabase> {
+    fn asm_db(&self) -> Arc<impl AsmDatabase> {
         self.asm_db.clone()
     }
 
-    fn l1_db(&self) -> Arc<impl strata_db_types::traits::L1Database> {
+    fn l1_db(&self) -> Arc<impl L1Database> {
         self.l1_db.clone()
     }
 
-    fn l2_db(&self) -> Arc<impl strata_db_types::traits::L2BlockDatabase> {
+    fn l2_db(&self) -> Arc<impl L2BlockDatabase> {
         self.l2_db.clone()
     }
 
-    fn client_state_db(&self) -> Arc<impl strata_db_types::traits::ClientStateDatabase> {
+    fn client_state_db(&self) -> Arc<impl ClientStateDatabase> {
         self.client_state_db.clone()
     }
 
-    fn chain_state_db(&self) -> Arc<impl strata_db_types::chainstate::ChainstateDatabase> {
+    fn chain_state_db(&self) -> Arc<impl ChainstateDatabase> {
         self.chain_state_db.clone()
     }
 
@@ -139,19 +143,19 @@ impl DatabaseBackend for SledBackend {
         self.ol_state_db.clone()
     }
 
-    fn checkpoint_db(&self) -> Arc<impl strata_db_types::traits::CheckpointDatabase> {
+    fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase> {
         self.checkpoint_db.clone()
     }
 
-    fn writer_db(&self) -> Arc<impl strata_db_types::traits::L1WriterDatabase> {
+    fn writer_db(&self) -> Arc<impl traits::L1WriterDatabase> {
         self.writer_db.clone()
     }
 
-    fn prover_db(&self) -> Arc<impl strata_db_types::traits::ProofDatabase> {
+    fn prover_db(&self) -> Arc<impl traits::ProofDatabase> {
         self.prover_db.clone()
     }
 
-    fn broadcast_db(&self) -> Arc<impl strata_db_types::traits::L1BroadcastDatabase> {
+    fn broadcast_db(&self) -> Arc<impl traits::L1BroadcastDatabase> {
         self.broadcast_db.clone()
     }
 }

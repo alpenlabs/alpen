@@ -3,11 +3,13 @@
 //! The CLI is responsible for signature aggregation and transaction signing.
 //! All transaction structure and OP_RETURN construction is handled by asm/txs/bridge-v1.
 
+use std::slice;
+
 use bdk_wallet::bitcoin::{
-    consensus::deserialize,
+    consensus::{self, deserialize},
     hashes::Hash,
     sighash::{Prevouts, SighashCache},
-    OutPoint, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
+    taproot, OutPoint, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
 };
 use secp256k1::SECP256K1;
 use strata_asm_txs_bridge_v1::{
@@ -90,7 +92,7 @@ pub(crate) fn create_deposit_transaction_cli(
     let signed_tx =
         sign_deposit_transaction(unsigned_tx, deposit_request_output, takeback_hash, &signers)?;
 
-    Ok(bdk_wallet::bitcoin::consensus::serialize(&signed_tx))
+    Ok(consensus::serialize(&signed_tx))
 }
 
 /// Signs a deposit transaction using MuSig2 aggregated signature.
@@ -122,7 +124,7 @@ fn sign_deposit_transaction(
         input.sighash_type = Some(TapSighashType::Default.into());
     }
 
-    let prevouts_ref = Prevouts::All(std::slice::from_ref(prevout));
+    let prevouts_ref = Prevouts::All(slice::from_ref(prevout));
     let mut sighash_cache = SighashCache::new(&unsigned_tx);
 
     let sighash = sighash_cache
@@ -133,7 +135,7 @@ fn sign_deposit_transaction(
     let tweak = Musig2Tweak::TaprootScript(takeback_hash.to_byte_array());
     let schnorr_sig = create_musig2_signature(signers, &msg, tweak);
 
-    let signature = bdk_wallet::bitcoin::taproot::Signature {
+    let signature = taproot::Signature {
         signature: schnorr_sig.into(),
         sighash_type: TapSighashType::Default,
     };

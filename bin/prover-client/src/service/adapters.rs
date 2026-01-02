@@ -8,7 +8,7 @@
 //!
 //! Host resolution is now handled by `CentralizedHostResolver` in the `host_resolver` module.
 
-use std::{fmt, sync::Arc};
+use std::{error, fmt, sync::Arc};
 
 use async_trait::async_trait;
 use strata_db_store_sled::prover::ProofDBSled;
@@ -29,8 +29,8 @@ impl fmt::Display for ProofStorageError {
     }
 }
 
-impl std::error::Error for ProofStorageError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl error::Error for ProofStorageError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         self.0.source()
     }
 }

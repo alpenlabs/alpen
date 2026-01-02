@@ -1,4 +1,5 @@
 use strata_chaintsn::errors::TsnError;
+use strata_db_types::errors::DbError;
 use strata_eectl::errors::EngineError;
 use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
@@ -75,7 +76,7 @@ pub enum Error {
     Engine(#[from] EngineError),
 
     #[error("db: {0}")]
-    Db(#[from] strata_db_types::errors::DbError),
+    Db(#[from] DbError),
 
     #[error("{0}")]
     Other(String),

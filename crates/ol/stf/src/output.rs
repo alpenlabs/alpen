@@ -1,6 +1,6 @@
 //! Output tracking structures.
 
-use std::cell::RefCell;
+use std::{cell::RefCell, iter};
 
 use strata_ol_chain_types_new::OLLog;
 
@@ -40,6 +40,6 @@ pub trait OutputCtx {
 
     /// Records a single log.
     fn emit_log(&self, log: OLLog) {
-        self.emit_logs(std::iter::once(log));
+        self.emit_logs(iter::once(log));
     }
 }

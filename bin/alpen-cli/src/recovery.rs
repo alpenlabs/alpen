@@ -11,7 +11,7 @@ use aes_gcm_siv::{aead::AeadMutInPlace, Aes256GcmSiv, KeyInit, Nonce, Tag};
 use bdk_wallet::{
     bitcoin::{constants::ChainHash, Network},
     keys::{DescriptorPublicKey, DescriptorSecretKey},
-    miniscript::{descriptor::DescriptorKeyParseError, Descriptor},
+    miniscript::{self, descriptor::DescriptorKeyParseError, Descriptor},
     template::DescriptorTemplateOut,
 };
 use make_buf::make_buf;
@@ -239,7 +239,7 @@ pub struct EntryTooShort {
 
 #[derive(Debug)]
 #[expect(unused, reason = "Error type for invalid descriptor recovery")]
-pub struct InvalidDescriptor(OneOf<(FromUtf8Error, bdk_wallet::miniscript::Error)>);
+pub struct InvalidDescriptor(OneOf<(FromUtf8Error, miniscript::Error)>);
 
 #[derive(Debug)]
 pub struct InvalidNetwork;

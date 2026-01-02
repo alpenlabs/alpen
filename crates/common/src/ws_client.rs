@@ -1,12 +1,12 @@
 //! Wrapper for managing a WebSocket client that supports connection recycling and client
 //! restarting.
 
-use core::fmt;
+use core::{fmt, future};
 
 use deadpool::managed::{self, Manager, Object, Pool, RecycleError, RecycleResult};
 use jsonrpsee::{
     core::{
-        client::{BatchResponse, ClientT},
+        client::{BatchResponse, ClientT, Error},
         params::BatchRequestBuilder,
         traits::ToRpcParams,
         ClientError, DeserializeOwned,
@@ -40,7 +40,7 @@ pub struct WsClientManager {
 /// existing ones, ensuring that clients remain in a valid state.
 impl Manager for WsClientManager {
     type Type = WebsocketClient;
-    type Error = jsonrpsee::core::client::Error;
+    type Error = Error;
 
     /// Creates a new WebSocket client.
     ///
@@ -143,7 +143,7 @@ impl ClientT for ManagedWsClient {
     fn batch_request<'a, R>(
         &self,
         batch: BatchRequestBuilder<'a>,
-    ) -> impl core::future::Future<Output = Result<BatchResponse<'a, R>, ClientError>> + Send
+    ) -> impl future::Future<Output = Result<BatchResponse<'a, R>, ClientError>> + Send
     where
         R: DeserializeOwned + fmt::Debug + 'a,
     {

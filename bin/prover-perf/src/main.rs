@@ -1,5 +1,8 @@
 //! Prover performance evaluation.
 
+use std::error::Error;
+
+use sp1_sdk::utils::setup_logger;
 #[cfg(feature = "sp1")]
 use strata_sp1_guest_builder as _;
 #[cfg(feature = "sp1")]
@@ -18,8 +21,8 @@ use github::{format_github_message, post_to_github_pr};
 use zkaleido::PerformanceReport;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    sp1_sdk::utils::setup_logger();
+async fn main() -> Result<(), Box<dyn Error>> {
+    setup_logger();
     let args = EvalArgs::parse();
 
     let mut results_text = vec![format_header(&args)];
@@ -29,8 +32,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let sp1_reports = programs::run_sp1_programs(&args.programs);
         results_text.push(format_results(&sp1_reports, "SP1".to_owned()));
         if !sp1_reports.iter().all(|r| r.success) {
+            use std::process;
+
             println!("Some SP1 programs failed. Please check the results below.");
-            std::process::exit(1);
+            process::exit(1);
         }
     }
 

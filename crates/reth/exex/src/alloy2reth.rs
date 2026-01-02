@@ -1,5 +1,6 @@
 use alloy_eips::eip4895::Withdrawal as RethWithdrawal;
 use alloy_rpc_types::Withdrawal as AlloyWithdrawal;
+use rsp_primitives::genesis::Genesis;
 
 /// A trait to convert from Alloy types to Reth types.
 pub trait IntoReth<T> {
@@ -19,11 +20,11 @@ impl IntoReth<RethWithdrawal> for AlloyWithdrawal {
 
 /// A trait to convert from Alloy genesis to RSP genesis.
 pub trait IntoRspChainConfig {
-    fn into_rsp(self) -> rsp_primitives::genesis::Genesis;
+    fn into_rsp(self) -> Genesis;
 }
 
 impl IntoRspChainConfig for alloy_genesis::ChainConfig {
-    fn into_rsp(self) -> rsp_primitives::genesis::Genesis {
-        rsp_primitives::genesis::Genesis::Custom(self)
+    fn into_rsp(self) -> Genesis {
+        Genesis::Custom(self)
     }
 }

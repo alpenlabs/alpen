@@ -1,4 +1,7 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    env::var,
+    sync::{Arc, LazyLock},
+};
 
 use strata_primitives::proof::ProofContext;
 #[cfg(feature = "sp1-builder")]
@@ -6,7 +9,7 @@ use strata_sp1_guest_builder::*;
 use zkaleido_sp1_host::SP1Host;
 
 pub static ELF_BASE_PATH: LazyLock<String> =
-    LazyLock::new(|| std::env::var("ELF_BASE_PATH").unwrap_or_else(|_| "elfs/sp1".to_string()));
+    LazyLock::new(|| var("ELF_BASE_PATH").unwrap_or_else(|_| "elfs/sp1".to_string()));
 
 macro_rules! define_host {
     ($host_name:ident, $guest_const:ident, $elf_file:expr) => {

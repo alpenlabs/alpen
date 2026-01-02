@@ -1,7 +1,10 @@
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::{core::client::ClientT, http_client::HttpClient, rpc_params};
 use strata_db_store_sled::prover::ProofDBSled;
-use strata_primitives::{buf::Buf32, proof::ProofKey};
+use strata_primitives::{
+    buf::Buf32,
+    proof::{ProofContext, ProofKey},
+};
 use strata_proofimpl_evm_ee_stf::{primitives::EvmEeProofInput, EvmBlockStfInput};
 use tracing::error;
 
@@ -60,7 +63,7 @@ impl ProofInputFetcher for EvmEeOperator {
         _db: &ProofDBSled,
     ) -> Result<Self::Input, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
-            strata_primitives::proof::ProofContext::EvmEeStf(start, end) => (*start, *end),
+            ProofContext::EvmEeStf(start, end) => (*start, *end),
             _ => return Err(ProvingTaskError::InvalidInput("EvmEe".to_string())),
         };
 

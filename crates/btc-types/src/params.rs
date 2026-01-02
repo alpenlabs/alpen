@@ -1,3 +1,5 @@
+use std::io;
+
 use bitcoin::params::{MAINNET, Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,7 @@ impl Default for BtcParams {
 }
 
 impl BorshSerialize for BtcParams {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the network type as an index since Network doesn't implement BorshSerialize
         let network_index = match self.0.network {
             bitcoin::Network::Bitcoin => 0u8,
@@ -29,8 +31,8 @@ impl BorshSerialize for BtcParams {
             bitcoin::Network::Signet => 2u8,
             bitcoin::Network::Regtest => 3u8,
             _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
                     "Unsupported network type",
                 ));
             }
@@ -40,7 +42,7 @@ impl BorshSerialize for BtcParams {
 }
 
 impl BorshDeserialize for BtcParams {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let network_index = u8::deserialize_reader(reader)?;
         let network = match network_index {
             0 => bitcoin::Network::Bitcoin,
@@ -48,8 +50,8 @@ impl BorshDeserialize for BtcParams {
             2 => bitcoin::Network::Signet,
             3 => bitcoin::Network::Regtest,
             _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
                     "Invalid network index",
                 ));
             }

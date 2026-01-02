@@ -10,7 +10,7 @@ use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::ChainSyncStatusUpdate;
 use strata_storage::NodeStorage;
-use tokio::sync::watch;
+use tokio::{sync::watch, time};
 use tracing::*;
 
 use crate::{
@@ -90,8 +90,8 @@ pub async fn sync_worker<T: SyncClient>(context: &L2SyncContext<T>) -> Result<()
     let mut state = wait_until_ready_and_init_sync_state(context).await?;
 
     let mut chainsync_rx = context.sync_manager.status_channel().subscribe_chain_sync();
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut interval = time::interval(time::Duration::from_secs(1));
+    interval.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {

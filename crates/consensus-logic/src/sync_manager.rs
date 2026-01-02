@@ -9,7 +9,7 @@ use bitcoind_async_client::Client;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
-use strata_eectl::{engine::ExecEngineCtl, handle::ExecCtlHandle};
+use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_params::Params;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
@@ -212,7 +212,7 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
     // Create the worker context - this stays in consensus-logic since it implements WorkerContext
     let context = ExecWorkerCtx::new(storage.l2().clone(), storage.client_state().clone());
 
-    let handle = strata_eectl::builder::ExecWorkerBuilder::new()
+    let handle = ExecWorkerBuilder::new()
         .with_context(context)
         .with_engine(engine)
         .with_status_channel(status_channel)

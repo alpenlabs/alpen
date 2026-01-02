@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{error::Error, sync::Arc};
 
 use alpen_ee_common::{EeAccountStateAtEpoch, ExecBlockRecord};
 use strata_acct_types::Hash;
@@ -18,7 +18,7 @@ use crate::{
     DbError, DbResult,
 };
 
-fn abort<T>(reason: impl std::error::Error + Send + Sync + 'static) -> Result<T, TSledError> {
+fn abort<T>(reason: impl Error + Send + Sync + 'static) -> Result<T, TSledError> {
     Err(TSledError::abort(reason))
 }
 

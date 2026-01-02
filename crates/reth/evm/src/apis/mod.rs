@@ -1,3 +1,4 @@
+use core::mem;
 use std::ops::{Deref, DerefMut};
 
 use reth_evm::{eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv};
@@ -165,20 +166,20 @@ where
         let mut disable_nonce_check = true;
 
         // ensure the block gas limit is >= the tx
-        core::mem::swap(&mut self.block.gas_limit, &mut gas_limit);
+        mem::swap(&mut self.block.gas_limit, &mut gas_limit);
         // disable the base fee check for this call by setting the base fee to zero
-        core::mem::swap(&mut self.block.basefee, &mut basefee);
+        mem::swap(&mut self.block.basefee, &mut basefee);
         // disable the nonce check
-        core::mem::swap(&mut self.cfg.disable_nonce_check, &mut disable_nonce_check);
+        mem::swap(&mut self.cfg.disable_nonce_check, &mut disable_nonce_check);
 
         let mut res = ExecuteEvm::transact(self, tx);
 
         // swap back to the previous gas limit
-        core::mem::swap(&mut self.block.gas_limit, &mut gas_limit);
+        mem::swap(&mut self.block.gas_limit, &mut gas_limit);
         // swap back to the previous base fee
-        core::mem::swap(&mut self.block.basefee, &mut basefee);
+        mem::swap(&mut self.block.basefee, &mut basefee);
         // swap back to the previous nonce check flag
-        core::mem::swap(&mut self.cfg.disable_nonce_check, &mut disable_nonce_check);
+        mem::swap(&mut self.cfg.disable_nonce_check, &mut disable_nonce_check);
 
         // NOTE: We assume that only the contract storage is modified. Revm currently marks the
         // caller and block beneficiary accounts as "touched" when we do the above transact calls,

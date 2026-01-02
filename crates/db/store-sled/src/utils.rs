@@ -1,5 +1,7 @@
+use std::{fmt, ops};
+
 use strata_db_types::errors::DbError;
-use typed_sled::tree::SledTransactionalTree;
+use typed_sled::{Schema, error::Error, tree::SledTransactionalTree};
 
 pub fn second<A, B>((_, b): (A, B)) -> B {
     b
@@ -10,7 +12,7 @@ pub fn first<A, B>((a, _): (A, B)) -> A {
 }
 
 /// Converts any error that implements Display and Debug into a DbError::Other
-pub fn to_db_error<E: std::fmt::Display + std::fmt::Debug>(e: E) -> DbError {
+pub fn to_db_error<E: fmt::Display + fmt::Debug>(e: E) -> DbError {
     DbError::Other(e.to_string())
 }
 
@@ -18,10 +20,10 @@ pub fn to_db_error<E: std::fmt::Display + std::fmt::Debug>(e: E) -> DbError {
 pub fn find_next_available_id<K, V, S>(
     tree: &SledTransactionalTree<S>,
     start_id: K,
-) -> Result<K, typed_sled::error::Error>
+) -> Result<K, Error>
 where
-    K: Clone + std::ops::Add<u64, Output = K>,
-    S: typed_sled::Schema<Key = K, Value = V>,
+    K: Clone + ops::Add<u64, Output = K>,
+    S: Schema<Key = K, Value = V>,
 {
     let mut next_id = start_id;
     while tree.get(&next_id)?.is_some() {

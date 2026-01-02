@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use bitcoin::{hashes::Hash, BlockHash};
 use bitcoind_async_client::{traits::Reader, Client};
 use errors::InitError;
-use jsonrpsee::Methods;
+use jsonrpsee::{server, Methods};
 use rpc_client::sync_client;
 use strata_btcio::{
     broadcaster::{spawn_broadcaster_task, L1BroadcastHandle},
@@ -40,11 +40,11 @@ use strata_sequencer::{
     checkpoint::{checkpoint_expiry_worker, checkpoint_worker, CheckpointHandle},
 };
 use strata_status::StatusChannel;
-use strata_storage::{create_node_storage, NodeStorage};
+use strata_storage::{create_node_storage, ops::l1tx_broadcast, NodeStorage};
 use strata_sync::{self, L2SyncContext, RpcSyncPeer};
 use strata_tasks::{ShutdownSignal, TaskExecutor, TaskManager};
 use tokio::{
-    runtime::Handle,
+    runtime::{Builder, Handle},
     sync::{mpsc, oneshot},
 };
 use tracing::*;
@@ -86,7 +86,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         .map_err(anyhow::Error::from)?;
 
     // Init the task manager and logging before we do anything else.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let runtime = Builder::new_multi_thread()
         .enable_all()
         .thread_name("strata-rt")
         .build()
@@ -470,8 +470,7 @@ fn start_broadcaster_tasks(
     broadcast_poll_interval: u64,
 ) -> Arc<L1BroadcastHandle> {
     // Set up L1 broadcaster.
-    let broadcast_ctx =
-        strata_storage::ops::l1tx_broadcast::Context::new(broadcast_database.clone());
+    let broadcast_ctx = l1tx_broadcast::Context::new(broadcast_database.clone());
     let broadcast_ops = Arc::new(broadcast_ctx.into_ops(pool));
     // start broadcast task
     let broadcast_handle = spawn_broadcaster_task(
@@ -519,7 +518,7 @@ async fn start_rpc(
     let rpc_host = config.client.rpc_host;
     let rpc_port = config.client.rpc_port;
 
-    let rpc_server = jsonrpsee::server::ServerBuilder::new()
+    let rpc_server = server::ServerBuilder::new()
         .build(format!("{rpc_host}:{rpc_port}"))
         .await
         .expect("init: build rpc server");

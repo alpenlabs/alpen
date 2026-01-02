@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use revm::{
     context::{
         result::{EVMError, HaltReason, InvalidTransaction},
@@ -20,13 +22,13 @@ use crate::{apis::validation, constants::BASEFEE_ADDRESS};
     reason = "Handler struct contains phantom data and doesn't need debug implementation"
 )]
 pub struct AlpenRevmHandler<EVM> {
-    pub _phantom: core::marker::PhantomData<EVM>,
+    pub _phantom: PhantomData<EVM>,
 }
 
 impl<EVM> Default for AlpenRevmHandler<EVM> {
     fn default() -> Self {
         Self {
-            _phantom: core::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }

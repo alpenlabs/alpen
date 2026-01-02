@@ -8,6 +8,8 @@
 
 mod common;
 
+use std::collections::BTreeMap;
+
 use common::{
     assert_update_paths_match, build_chain_segment_with_deposits, build_update_operation,
     create_deposit_message, create_initial_state,
@@ -187,7 +189,7 @@ fn test_deposits_with_transactions() {
     // Set up initial execution state with an existing account
     let alice = SubjectId::from([10u8; 32]);
     let bob = SubjectId::from([20u8; 32]);
-    let mut initial_accounts = std::collections::BTreeMap::new();
+    let mut initial_accounts = BTreeMap::new();
     initial_accounts.insert(alice, 1000u64);
     let exec_state = SimplePartialState::new(initial_accounts.clone());
 

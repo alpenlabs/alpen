@@ -1,6 +1,10 @@
 //! Handle timeouts for checkpoints in ProofPublishMode::Timeout
 
-use std::{cmp::Reverse, collections::BinaryHeap, sync::Arc};
+use std::{
+    cmp::{self, Reverse},
+    collections::BinaryHeap,
+    sync::Arc,
+};
 
 use strata_db_types::types::CheckpointProvingStatus;
 use tokio::{
@@ -26,13 +30,13 @@ impl CheckpointExpiry {
 }
 
 impl PartialOrd for CheckpointExpiry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for CheckpointExpiry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         self.1.cmp(&other.1)
     }
 }

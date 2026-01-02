@@ -1,5 +1,7 @@
 //! Types relating to updating the tip and planning reorgs.
 
+use std::iter;
+
 use strata_ol_chain_types::L2BlockId;
 use tracing::*;
 
@@ -140,10 +142,10 @@ pub fn compute_tip_update(
 
     // Create a vec of parents from tip to the beginning(before limit depth) and then move forwards
     // until the blockids don't match
-    let mut down_blocks: Vec<_> = std::iter::successors(Some(start), |n| tracker.get_parent(n))
+    let mut down_blocks: Vec<_> = iter::successors(Some(start), |n| tracker.get_parent(n))
         .take(limit_depth)
         .collect();
-    let mut up_blocks: Vec<_> = std::iter::successors(Some(dest), |n| tracker.get_parent(n))
+    let mut up_blocks: Vec<_> = iter::successors(Some(dest), |n| tracker.get_parent(n))
         .take(limit_depth)
         .collect();
 
@@ -223,6 +225,7 @@ pub fn compute_tip_update(
 mod tests {
     use rand::{rngs::OsRng, RngCore};
     use strata_primitives::{
+        buf::Buf32,
         epoch::EpochCommitment,
         l2::{L2BlockCommitment, L2BlockId},
     };
@@ -233,7 +236,7 @@ mod tests {
     fn rand_blkid() -> L2BlockId {
         let mut buf = [0; 32];
         OsRng.fill_bytes(&mut buf);
-        L2BlockId::from(strata_primitives::buf::Buf32::from(buf))
+        L2BlockId::from(Buf32::from(buf))
     }
 
     fn rand_block_commitment(s: u64) -> L2BlockCommitment {

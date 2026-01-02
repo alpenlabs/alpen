@@ -2,13 +2,19 @@
 
 use std::sync::OnceLock;
 
-use opentelemetry::trace::TracerProvider;
+use opentelemetry::{
+    global::{self, set_text_map_propagator},
+    trace::TracerProvider,
+};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    propagation::TraceContextPropagator, trace::TracerProvider as SdkTracerProvider,
+    propagation::TraceContextPropagator,
+    runtime::Tokio,
+    trace::{Config, TracerProvider as SdkTracerProvider},
 };
 use tracing::*;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_appender::rolling::RollingFileAppender;
+use tracing_subscriber::{fmt::layer, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use super::types::LoggerConfig;
 
@@ -18,19 +24,19 @@ static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
 /// Initializes the logging subsystem with the provided config.
 pub fn init(config: LoggerConfig) {
     // Set the global trace context propagator for distributed tracing
-    opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+    set_text_map_propagator(TraceContextPropagator::new());
 
     let filt = tracing_subscriber::EnvFilter::from_default_env();
 
     // Configure stdout logging with JSON or compact format
     let stdout_sub = if config.stdout_config.json_format {
-        tracing_subscriber::fmt::layer()
+        layer()
             .json()
             .with_span_events(config.stdout_config.fmt_span)
             .with_filter(filt.clone())
             .boxed()
     } else {
-        tracing_subscriber::fmt::layer()
+        layer()
             .compact()
             .with_span_events(config.stdout_config.fmt_span)
             .with_filter(filt.clone())
@@ -39,21 +45,21 @@ pub fn init(config: LoggerConfig) {
 
     // Build optional file logging layer
     let file_layer = config.file_logging_config.as_ref().map(|file_config| {
-        let file_appender = tracing_appender::rolling::RollingFileAppender::new(
+        let file_appender = RollingFileAppender::new(
             file_config.rotation.clone(),
             &file_config.directory,
             &file_config.file_name_prefix,
         );
 
         if file_config.json_format {
-            tracing_subscriber::fmt::layer()
+            layer()
                 .json()
                 .with_writer(file_appender)
                 .with_ansi(false) // No color codes in files
                 .with_filter(filt.clone())
                 .boxed()
         } else {
-            tracing_subscriber::fmt::layer()
+            layer()
                 .compact()
                 .with_writer(file_appender)
                 .with_ansi(false) // No color codes in files
@@ -67,7 +73,7 @@ pub fn init(config: LoggerConfig) {
         let resource = config.resource.build_resource();
 
         // TODO (@voidash) modify here once we have more idea on span limits
-        let trace_config = opentelemetry_sdk::trace::Config::default().with_resource(resource);
+        let trace_config = Config::default().with_resource(resource);
 
         // Configure exporter with timeout
         // tonic is a grpc exporter
@@ -81,7 +87,7 @@ pub fn init(config: LoggerConfig) {
             .tracing()
             .with_exporter(exporter)
             .with_trace_config(trace_config)
-            .install_batch(opentelemetry_sdk::runtime::Tokio)
+            .install_batch(Tokio)
             .expect("init: failed to initialize opentelemetry pipeline");
 
         // Store tracer provider for shutdown
@@ -130,5 +136,5 @@ pub fn finalize() {
     }
 
     // Shutdown global text map propagator
-    opentelemetry::global::shutdown_tracer_provider();
+    global::shutdown_tracer_provider();
 }

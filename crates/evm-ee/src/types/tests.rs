@@ -1,5 +1,7 @@
 //! Tests for EVM types Codec implementations.
 
+use std::{fs::read_to_string, path::PathBuf};
+
 use alloy_consensus::Header;
 use revm_primitives::alloy_primitives::{Address, B256, Bloom, Bytes, U256};
 use rsp_client_executor::io::EthClientExecutorInput;
@@ -16,12 +18,12 @@ struct TestData {
 
 /// Helper function to load witness test data from the reference implementation.
 fn load_witness_test_data() -> EthClientExecutorInput {
-    let test_data_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let test_data_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .join("proof-impl/evm-ee-stf/test_data/witness_params.json");
 
-    let json_content = std::fs::read_to_string(&test_data_path)
+    let json_content = read_to_string(&test_data_path)
         .expect("Failed to read witness_params.json - make sure reference crate exists");
 
     let test_data: TestData =

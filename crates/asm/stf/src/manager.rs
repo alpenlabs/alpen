@@ -1,6 +1,6 @@
 //! Subprotocol handler.
 
-use std::{any::Any, collections::BTreeMap};
+use std::{any::Any, collections::BTreeMap, marker};
 
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, InterprotoMsg, Loader, MsgRelayer,
@@ -14,7 +14,7 @@ pub(crate) struct HandlerImpl<S: Subprotocol, R> {
     state: S::State,
     interproto_msg_buf: Vec<S::Msg>,
 
-    _r: std::marker::PhantomData<R>,
+    _r: marker::PhantomData<R>,
 }
 
 impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
@@ -23,7 +23,7 @@ impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
             params,
             state,
             interproto_msg_buf,
-            _r: std::marker::PhantomData,
+            _r: marker::PhantomData,
         }
     }
 }

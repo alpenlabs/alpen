@@ -1,6 +1,6 @@
 //! Handle for registry-based prover service
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use strata_service::{CommandHandle, ServiceMonitor};
 
@@ -22,8 +22,8 @@ pub struct ProverHandle<P: ProgramType> {
     monitor: ServiceMonitor<ProverServiceStatus>,
 }
 
-impl<P: ProgramType> std::fmt::Debug for ProverHandle<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<P: ProgramType> fmt::Debug for ProverHandle<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverHandle")
             .field("monitor", &self.monitor)
             .finish()

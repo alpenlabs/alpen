@@ -1,3 +1,5 @@
+use std::io;
+
 use arbitrary::Arbitrary;
 use bitcoin::{
     BlockHash, CompactTarget, Network, absolute, block::Header, hashes::Hash, params::Params,
@@ -47,7 +49,7 @@ pub enum L1VerificationError {
 
     /// Wraps underlying I/O errors.
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 }
 
 /// A struct containing all necessary information for validating a Bitcoin block header.

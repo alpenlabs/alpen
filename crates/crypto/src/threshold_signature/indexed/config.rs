@@ -1,6 +1,10 @@
 //! Configuration types for threshold signing.
 
-use std::{collections::HashSet, hash::Hash, num::NonZero};
+use std::{
+    collections::HashSet,
+    hash::{self, Hash},
+    num::NonZero,
+};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -141,7 +145,7 @@ impl ThresholdConfig {
 }
 
 impl Hash for CompressedPublicKey {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.serialize().hash(state);
     }
 }

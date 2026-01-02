@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cmp, fmt, str};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -91,10 +91,8 @@ impl fmt::Display for OLBlockCommitment {
             f,
             "{}@{}..{}",
             self.slot,
-            std::str::from_utf8(&first_hex)
-                .expect("Failed to convert first hex bytes to UTF-8 string"),
-            std::str::from_utf8(&last_hex)
-                .expect("Failed to convert last hex bytes to UTF-8 string")
+            str::from_utf8(&first_hex).expect("Failed to convert first hex bytes to UTF-8 string"),
+            str::from_utf8(&last_hex).expect("Failed to convert last hex bytes to UTF-8 string")
         )
     }
 }
@@ -126,13 +124,13 @@ impl<'a> arbitrary::Arbitrary<'a> for OLBlockCommitment {
 }
 
 impl Ord for OLBlockCommitment {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         (self.slot, &self.blkid).cmp(&(other.slot, &other.blkid))
     }
 }
 
 impl PartialOrd for OLBlockCommitment {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }

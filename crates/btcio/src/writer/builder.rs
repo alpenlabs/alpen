@@ -10,7 +10,7 @@ use bitcoin::{
     secp256k1::{
         constants::SCHNORR_SIGNATURE_SIZE, schnorr::Signature, Message, XOnlyPublicKey, SECP256K1,
     },
-    sighash::{Prevouts, SighashCache},
+    sighash::{Prevouts, SighashCache, TapSighashType},
     taproot::{
         ControlBlock, LeafVersion, TapLeafHash, TaprootBuilder, TaprootBuilderError,
         TaprootSpendInfo,
@@ -491,7 +491,7 @@ fn sign_reveal_transaction(
         0,
         &Prevouts::All(&[output_to_reveal]),
         TapLeafHash::from_script(reveal_script, LeafVersion::TapScript),
-        bitcoin::sighash::TapSighashType::Default,
+        TapSighashType::Default,
     )?;
 
     let mut randbytes = [0; 32];
@@ -541,8 +541,8 @@ mod tests {
 
     use bitcoin::{
         absolute::LockTime, script, secp256k1::constants::SCHNORR_SIGNATURE_SIZE,
-        taproot::ControlBlock, Address, OutPoint, ScriptBuf, Sequence, SignedAmount, Transaction,
-        TxIn, TxOut, Witness,
+        taproot::ControlBlock, transaction::Version, Address, OutPoint, ScriptBuf, Sequence,
+        SignedAmount, Transaction, TxIn, TxOut, Witness,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{TagData, TagDataRef};
@@ -677,7 +677,7 @@ mod tests {
 
         Transaction {
             lock_time: LockTime::ZERO,
-            version: bitcoin::transaction::Version(2),
+            version: Version(2),
             input: inputs,
             output: outputs,
         }

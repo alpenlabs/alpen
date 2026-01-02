@@ -1,5 +1,5 @@
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_db_types::errors::DbError;
+use strata_db_types::{errors::DbError, traits::BlockStatus};
 use strata_ol_chain_types::{
     ExecSegment, L1Segment, L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader,
     L2Header, SignedL2BlockHeader,
@@ -17,7 +17,10 @@ use strata_state::{
     prelude::*,
 };
 use strata_storage::{L2BlockManager, NodeStorage};
-use tokio::runtime::Handle;
+use tokio::{
+    runtime::Handle,
+    time::{sleep, Duration},
+};
 use tracing::*;
 
 /// Inserts into the database an initial basic client state that we can begin
@@ -63,7 +66,7 @@ pub fn init_genesis_chainstate(
     storage.l2().put_block_data_blocking(gblock)?;
     storage
         .l2()
-        .set_block_status_blocking(&gid, strata_db_types::traits::BlockStatus::Valid)?;
+        .set_block_status_blocking(&gid, BlockStatus::Valid)?;
     // TODO: Status channel should probably be updated.
 
     // TODO make ^this be atomic so we can't accidentally not write both, or
@@ -168,7 +171,7 @@ pub fn check_needs_genesis(l2man: &L2BlockManager) -> anyhow::Result<bool> {
 pub fn wait_for_genesis<T>(f: impl Fn() -> Option<L2BlockId>, handle: Handle) -> L2BlockId {
     let genesis_block_id = handle.block_on(async {
         while f().is_none() {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            sleep(Duration::from_secs(1)).await;
         }
         f().expect("genesis should be in")
     });

@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use alloy_eips::eip7685::RequestsOrHash;
 use alloy_rpc_types::{
-    engine::{ExecutionPayloadV3, ForkchoiceState, ForkchoiceUpdated, JwtSecret, PayloadId},
+    engine::{
+        ExecutionPayloadV3, ForkchoiceState, ForkchoiceUpdated, JwtSecret, PayloadId, PayloadStatus,
+    },
     eth::{Block as RpcBlock, Header, Transaction, TransactionRequest},
 };
 use alpen_reth_node::{AlpenEngineTypes, AlpenExecutionPayloadEnvelopeV4, AlpenPayloadAttributes};
 use jsonrpsee::{
-    core::middleware::layer::RpcLogger,
+    core::{middleware::layer::RpcLogger, ClientError},
     http_client::{transport::HttpBackend, HttpClient, HttpClientBuilder},
 };
 use jsonrpsee_http_client::RpcService;
@@ -18,7 +20,7 @@ use reth_rpc_api::{EngineApiClient, EthApiClient};
 use reth_rpc_layer::{AuthClientLayer, AuthClientService};
 use revm_primitives::alloy_primitives::{BlockHash, B256};
 
-type RpcResult<T> = Result<T, jsonrpsee::core::ClientError>;
+type RpcResult<T> = Result<T, ClientError>;
 
 #[allow(
     async_fn_in_trait,
@@ -44,7 +46,7 @@ pub trait EngineRpc {
         versioned_hashes: Vec<B256>,
         parent_beacon_block_root: B256,
         execution_requests: RequestsOrHash,
-    ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus>;
+    ) -> RpcResult<PayloadStatus>;
 
     async fn block_by_hash(&self, block_hash: BlockHash) -> RpcResult<Option<RpcBlock>>;
 }
@@ -96,7 +98,7 @@ impl EngineRpc for EngineRpcClient {
         versioned_hashes: Vec<B256>,
         parent_beacon_block_root: B256,
         execution_requests: RequestsOrHash,
-    ) -> RpcResult<alloy_rpc_types::engine::PayloadStatus> {
+    ) -> RpcResult<PayloadStatus> {
         <EngineHttpClient as EngineApiClient<AlpenEngineTypes>>::new_payload_v4(
             &self.client,
             payload,

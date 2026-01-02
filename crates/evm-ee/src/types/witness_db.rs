@@ -3,7 +3,7 @@
 //! This module provides a custom DatabaseRef implementation that avoids unnecessary
 //! clones by holding only references to pre-computed data in EvmPartialState.
 
-use std::{cell::RefCell, collections::BTreeMap};
+use std::{cell::RefCell, collections::BTreeMap, fmt};
 
 use reth_errors::ProviderError;
 use reth_trie::TrieAccount;
@@ -33,8 +33,8 @@ pub struct WitnessDB<'a> {
     storage_key_cache: RefCell<HashMap<U256, B256>>,
 }
 
-impl<'a> std::fmt::Debug for WitnessDB<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> fmt::Debug for WitnessDB<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WitnessDB")
             .field("ethereum_state", &self.ethereum_state)
             .field("block_hashes", &self.block_hashes)

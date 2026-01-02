@@ -1,3 +1,6 @@
+use std::error;
+
+use strata_eectl::errors::EngineError;
 use strata_primitives::prelude::*;
 use thiserror::Error;
 
@@ -39,10 +42,10 @@ pub enum WorkerError {
     WorkerExited,
 
     #[error("block execution: {0}")]
-    Exec(strata_chainexec::Error<Box<dyn std::error::Error + Send + Sync>>),
+    Exec(strata_chainexec::Error<Box<dyn error::Error + Send + Sync>>),
 
     #[error("EE block execution: {0}")]
-    ExecEnvEngine(#[from] strata_eectl::errors::EngineError),
+    ExecEnvEngine(#[from] EngineError),
 
     #[error("missing required dependency: {0}")]
     MissingDependency(&'static str),

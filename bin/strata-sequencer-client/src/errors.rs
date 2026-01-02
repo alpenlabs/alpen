@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, result};
 
 use strata_tasks::TaskError;
 use thiserror::Error;
@@ -18,4 +18,4 @@ pub(crate) enum AppError {
     Anyhow(#[from] anyhow::Error),
 }
 
-pub(crate) type Result<T> = std::result::Result<T, AppError>;
+pub(crate) type Result<T> = result::Result<T, AppError>;

@@ -4,6 +4,8 @@
 //! payload so other subprotocols can dispatch withdrawals without pulling in the
 //! bridge implementation crate.
 
+use std::any::Any;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -65,7 +67,7 @@ impl InterprotoMsg for BridgeIncomingMsg {
         BRIDGE_V1_SUBPROTOCOL_ID
     }
 
-    fn as_dyn_any(&self) -> &dyn std::any::Any {
+    fn as_dyn_any(&self) -> &dyn Any {
         self
     }
 }

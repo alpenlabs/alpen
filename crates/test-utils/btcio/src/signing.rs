@@ -2,7 +2,7 @@ use bitcoin::{
     TapSighashType, Transaction, TxOut, XOnlyPublicKey,
     secp256k1::{Keypair, Message, schnorr::Signature},
     sighash::{Prevouts, SighashCache},
-    taproot::TapTweakHash,
+    taproot::{LeafVersion, TapLeafHash, TapTweakHash},
 };
 use musig2::secp256k1::SECP256K1;
 use strata_crypto::{
@@ -96,7 +96,7 @@ pub fn sign_musig2_scriptpath(
     prevouts: &[TxOut],
     input_index: usize,
     script: &bitcoin::ScriptBuf,
-    leaf_version: bitcoin::taproot::LeafVersion,
+    leaf_version: LeafVersion,
 ) -> anyhow::Result<Signature> {
     // For script path spends, we need to use taproot_script_spend_signature_hash
     let prevouts_ref = Prevouts::All(prevouts);
@@ -104,7 +104,7 @@ pub fn sign_musig2_scriptpath(
     let sighash = sighash_cache.taproot_script_spend_signature_hash(
         input_index,
         &prevouts_ref,
-        bitcoin::taproot::TapLeafHash::from_script(script, leaf_version),
+        TapLeafHash::from_script(script, leaf_version),
         TapSighashType::Default,
     )?;
     let sighash_bytes: [u8; 32] = *sighash.as_ref();

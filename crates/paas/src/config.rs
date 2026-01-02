@@ -1,6 +1,6 @@
 //! Configuration types for PaaS
 
-use std::collections::HashMap;
+use std::{collections::HashMap, hash};
 
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Generic over `Backend` type to support different zkVM backends (SP1, Risc0, Native, etc.).
 /// In practice, this is typically instantiated as `ProverServiceConfig<ZkVmBackend>`.
 #[derive(Debug, Clone)]
-pub struct ProverServiceConfig<Backend: Clone + Eq + std::hash::Hash> {
+pub struct ProverServiceConfig<Backend: Clone + Eq + hash::Hash> {
     /// Worker configuration
     pub workers: WorkerConfig<Backend>,
 
@@ -17,7 +17,7 @@ pub struct ProverServiceConfig<Backend: Clone + Eq + std::hash::Hash> {
     pub retry: Option<RetryConfig>,
 }
 
-impl<Backend: Clone + Eq + std::hash::Hash> ProverServiceConfig<Backend> {
+impl<Backend: Clone + Eq + hash::Hash> ProverServiceConfig<Backend> {
     /// Create a new configuration with worker counts per backend
     ///
     /// By default, retries are disabled. Use the builder's `with_retry_config()`
@@ -36,7 +36,7 @@ impl<Backend: Clone + Eq + std::hash::Hash> ProverServiceConfig<Backend> {
 ///
 /// Defines the number of concurrent workers (semaphore capacity) for each backend type.
 #[derive(Debug, Clone)]
-pub struct WorkerConfig<Backend: Clone + Eq + std::hash::Hash> {
+pub struct WorkerConfig<Backend: Clone + Eq + hash::Hash> {
     /// Number of concurrent tasks per backend (semaphore capacity)
     pub worker_count: HashMap<Backend, usize>,
 }

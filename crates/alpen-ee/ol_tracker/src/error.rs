@@ -1,3 +1,5 @@
+use std::result;
+
 use alpen_ee_common::{OLClientError, StorageError};
 use thiserror::Error;
 
@@ -86,4 +88,4 @@ impl From<eyre::Error> for OLTrackerError {
     }
 }
 
-pub(crate) type Result<T> = std::result::Result<T, OLTrackerError>;
+pub(crate) type Result<T> = result::Result<T, OLTrackerError>;

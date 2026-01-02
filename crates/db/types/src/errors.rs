@@ -3,8 +3,12 @@ use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
+use typed_sled::error::Error;
 
-use crate::{chainstate::WriteBatchId, mmr_helpers::MmrError};
+use crate::{
+    chainstate::WriteBatchId,
+    mmr_helpers::{self, MmrError},
+};
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -136,8 +140,8 @@ impl From<anyhow::Error> for DbError {
     }
 }
 
-impl From<typed_sled::error::Error> for DbError {
-    fn from(value: typed_sled::error::Error) -> Self {
+impl From<Error> for DbError {
+    fn from(value: Error) -> Self {
         Self::Other(format!("sled error: {value:?}"))
     }
 }
@@ -150,8 +154,8 @@ impl From<OpsError> for DbError {
     }
 }
 
-impl From<crate::mmr_helpers::MmrError> for DbError {
-    fn from(value: crate::mmr_helpers::MmrError) -> Self {
+impl From<mmr_helpers::MmrError> for DbError {
+    fn from(value: mmr_helpers::MmrError) -> Self {
         match value {
             MmrError::LeafNotFound(idx) => DbError::MmrLeafNotFound(idx),
             MmrError::InvalidRange { start, end } => DbError::MmrInvalidRange { start, end },

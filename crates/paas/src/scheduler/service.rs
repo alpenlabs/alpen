@@ -7,7 +7,7 @@ use std::{sync::Arc, time::Duration};
 
 use strata_service::CommandHandle;
 use strata_tasks::TaskExecutor;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time::sleep};
 use tracing::{debug, warn};
 
 use crate::{program::ProgramType, service::commands::ProverCommand, task::TaskId};
@@ -63,7 +63,7 @@ impl<P: ProgramType> RetryScheduler<P> {
                     self.executor.handle().spawn(async move {
                         // TODO: This still uses tokio::time::sleep, but it's isolated here
                         // In the future, we could use a more abstract delay mechanism
-                        tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+                        sleep(Duration::from_secs(delay_secs)).await;
                         debug!(?task_id, "Retry delay elapsed, sending retry command");
 
                         // Send retry command back to service (fire and forget)

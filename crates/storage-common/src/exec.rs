@@ -17,9 +17,10 @@
 //! their own error types while maintaining the same convenient interface generation.
 
 use thiserror::Error;
+use tokio::sync::oneshot;
 
 /// Handle for receiving a result from a database operation with a generic error type.
-pub type GenericRecv<T, E> = tokio::sync::oneshot::Receiver<Result<T, E>>;
+pub type GenericRecv<T, E> = oneshot::Receiver<Result<T, E>>;
 
 /// Errors specific to the ops execution layer.
 ///

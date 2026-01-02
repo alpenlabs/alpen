@@ -1,5 +1,7 @@
-// TODO: remove this "dummy" implementation once OL RPCs are ready and `RpcOLCLient`` can be used
-// instead.
+use std::mem;
+
+// TODO: remove this "dummy" implementation once OL RPCs are ready and `RpcOLCLient`` can be
+// used instead.
 use alpen_ee_common::{
     OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary, SequencerOLClient,
 };
@@ -76,5 +78,5 @@ fn slot_to_block_commitment(slot: u64) -> OLBlockCommitment {
 }
 
 fn u64_to_256(v: u64) -> [u8; 32] {
-    unsafe { std::mem::transmute([1, 0, 0, v]) }
+    unsafe { mem::transmute([1, 0, 0, v]) }
 }

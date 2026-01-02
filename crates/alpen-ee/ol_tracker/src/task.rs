@@ -7,6 +7,7 @@ use strata_ee_acct_runtime::apply_update_operation_unconditionally;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::EpochCommitment;
 use strata_snark_acct_types::UpdateInputData;
+use tokio::time;
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -24,7 +25,7 @@ pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
     TOLClient: OLClient,
 {
     loop {
-        tokio::time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
+        time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
 
         match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_epochs_fetch).await {
             Ok(TrackOLAction::Extend(epoch_operations, chain_status)) => {

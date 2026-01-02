@@ -2,6 +2,8 @@
 //!
 //! This module contains types and tables for managing bridge operators
 
+use std::cmp;
+
 use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -36,13 +38,13 @@ pub struct OperatorEntry {
 }
 
 impl PartialOrd for OperatorEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for OperatorEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         self.idx().cmp(&other.idx())
     }
 }

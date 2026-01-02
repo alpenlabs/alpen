@@ -1,5 +1,7 @@
 //! Command types for ProverService
 
+use std::{fmt, hash};
+
 use strata_service::CommandCompletionSender;
 
 use crate::task::{TaskResult, TaskStatus};
@@ -10,7 +12,7 @@ use crate::task::{TaskResult, TaskStatus};
 #[derive(Debug)]
 pub enum ProverCommand<T>
 where
-    T: Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
+    T: Clone + Eq + hash::Hash + fmt::Debug + Send + Sync + 'static,
 {
     /// Submit a new task for proving (returns UUID)
     SubmitTask {
