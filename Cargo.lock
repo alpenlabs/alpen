@@ -1162,6 +1162,7 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
+ "strata-snark-acct-types",
  "strata-storage-common",
  "thiserror 2.0.17",
  "threadpool",
@@ -1246,8 +1247,11 @@ dependencies = [
  "alpen-ee-block-assembly",
  "alpen-ee-common",
  "alpen-ee-exec-chain",
+ "async-trait",
  "eyre",
+ "futures",
  "strata-acct-types",
+ "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
@@ -1255,6 +1259,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+ "tree_hash 0.11.0",
 ]
 
 [[package]]
@@ -14973,7 +14978,9 @@ dependencies = [
 name = "strata-rpc-types-new"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "serde",
+ "serde_json",
  "strata-acct-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",

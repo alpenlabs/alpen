@@ -29,6 +29,14 @@ pub trait OLClientRpc {
         end_slot: u64,
     ) -> RpcResult<Vec<RpcAccountBlockSummary>>;
 
+    /// Get snark account state of an account at a specified block.
+    #[method(name = "getSnarkAccountState")]
+    async fn get_snark_account_state(
+        &self,
+        account_id: AccountId,
+        block_or_tag: OLBlockOrTag,
+    ) -> RpcResult<Option<RpcSnarkAccountState>>;
+
     /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId>;

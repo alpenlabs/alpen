@@ -151,6 +151,38 @@ impl UnfinalizedTracker {
         self.best
     }
 
+    /// Checks if a block is on the canonical chain (the path from finalized to best).
+    ///
+    /// Returns `true` if the block is either the finalized block, on the path from
+    /// the best tip back to the finalized block, or is the best tip itself.
+    pub(crate) fn is_canonical(&self, hash: &Hash) -> bool {
+        // Check if it's the finalized block
+        if *hash == self.finalized.hash {
+            return true;
+        }
+
+        // Check if the block exists at all
+        if !self.blocks.contains_key(hash) {
+            return false;
+        }
+
+        // Walk backwards from best tip to finalized, checking if we encounter the hash
+        let mut current = self.best.hash;
+        while current != self.finalized.hash {
+            if current == *hash {
+                return true;
+            }
+            // Get the parent of current block
+            let Some(block) = self.blocks.get(&current) else {
+                // Should not happen in a well-formed tracker
+                return false;
+            };
+            current = block.parent;
+        }
+
+        false
+    }
+
     /// Advances the finalized block and prunes the tracker, removing blocks not on the finalized
     /// chain.
     ///
@@ -501,6 +533,100 @@ mod tests {
             result,
             Err(UnfinalizedTrackerError::UnknownBlock(_))
         ));
+    }
+
+    #[test]
+    fn test_is_canonical_linear_chain() {
+        // 0 -> 1 -> 2 -> 3
+        let finalized = make_block(0, hash_from_u8(0), hash_from_u8(0));
+        let mut tracker = UnfinalizedTracker::new_empty(finalized);
+
+        tracker.attach_block(make_block(1, hash_from_u8(1), hash_from_u8(0)));
+        tracker.attach_block(make_block(2, hash_from_u8(2), hash_from_u8(1)));
+        tracker.attach_block(make_block(3, hash_from_u8(3), hash_from_u8(2)));
+
+        // All blocks should be canonical
+        assert!(tracker.is_canonical(&hash_from_u8(0))); // finalized
+        assert!(tracker.is_canonical(&hash_from_u8(1)));
+        assert!(tracker.is_canonical(&hash_from_u8(2)));
+        assert!(tracker.is_canonical(&hash_from_u8(3))); // best tip
+
+        // Unknown block should not be canonical
+        assert!(!tracker.is_canonical(&hash_from_u8(99)));
+    }
+
+    #[test]
+    fn test_is_canonical_with_fork() {
+        //     0
+        //    / \
+        //   1   2
+        //   |
+        //   3 (best)
+        let finalized = make_block(0, hash_from_u8(0), hash_from_u8(0));
+        let mut tracker = UnfinalizedTracker::new_empty(finalized);
+
+        tracker.attach_block(make_block(1, hash_from_u8(1), hash_from_u8(0)));
+        tracker.attach_block(make_block(1, hash_from_u8(2), hash_from_u8(0)));
+        tracker.attach_block(make_block(2, hash_from_u8(3), hash_from_u8(1)));
+
+        // Best tip is 3 (height 2)
+        assert_eq!(tracker.best().hash, hash_from_u8(3));
+
+        // Blocks on canonical chain (0 -> 1 -> 3)
+        assert!(tracker.is_canonical(&hash_from_u8(0))); // finalized
+        assert!(tracker.is_canonical(&hash_from_u8(1)));
+        assert!(tracker.is_canonical(&hash_from_u8(3))); // best tip
+
+        // Block 2 is on a side chain, not canonical
+        assert!(!tracker.is_canonical(&hash_from_u8(2)));
+    }
+
+    #[test]
+    fn test_is_canonical_multiple_forks() {
+        //       0
+        //      /|\
+        //     1 2 3
+        //     |   |
+        //     4   5 (best, height 2)
+        let finalized = make_block(0, hash_from_u8(0), hash_from_u8(0));
+        let mut tracker = UnfinalizedTracker::new_empty(finalized);
+
+        tracker.attach_block(make_block(1, hash_from_u8(1), hash_from_u8(0)));
+        tracker.attach_block(make_block(1, hash_from_u8(2), hash_from_u8(0)));
+        tracker.attach_block(make_block(1, hash_from_u8(3), hash_from_u8(0)));
+        tracker.attach_block(make_block(2, hash_from_u8(4), hash_from_u8(1)));
+        tracker.attach_block(make_block(2, hash_from_u8(5), hash_from_u8(3)));
+
+        // Both 4 and 5 are at height 2, but one will be best
+        let best = tracker.best().hash;
+
+        // Finalized is always canonical
+        assert!(tracker.is_canonical(&hash_from_u8(0)));
+
+        // Check canonical path based on which tip is best
+        if best == hash_from_u8(4) {
+            assert!(tracker.is_canonical(&hash_from_u8(1)));
+            assert!(tracker.is_canonical(&hash_from_u8(4)));
+            assert!(!tracker.is_canonical(&hash_from_u8(2)));
+            assert!(!tracker.is_canonical(&hash_from_u8(3)));
+            assert!(!tracker.is_canonical(&hash_from_u8(5)));
+        } else {
+            assert!(tracker.is_canonical(&hash_from_u8(3)));
+            assert!(tracker.is_canonical(&hash_from_u8(5)));
+            assert!(!tracker.is_canonical(&hash_from_u8(1)));
+            assert!(!tracker.is_canonical(&hash_from_u8(2)));
+            assert!(!tracker.is_canonical(&hash_from_u8(4)));
+        }
+    }
+
+    #[test]
+    fn test_is_canonical_only_finalized() {
+        let finalized = make_block(0, hash_from_u8(0), hash_from_u8(0));
+        let tracker = UnfinalizedTracker::new_empty(finalized);
+
+        // Only the finalized block exists
+        assert!(tracker.is_canonical(&hash_from_u8(0)));
+        assert!(!tracker.is_canonical(&hash_from_u8(1)));
     }
 
     #[test]

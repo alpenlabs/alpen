@@ -58,12 +58,12 @@ fn should_fetch_inbox_messages(last_local_ol_blkid: &OLBlockId, best_ol_blkid: &
 }
 
 /// Constructs BlockAssemblyInputs from the current state.
-fn create_block_assembly_inputs(
+fn create_block_assembly_inputs<'a>(
     last_local_block: &ExecBlockRecord,
-    inbox_messages: Vec<MessageEntry>,
+    inbox_messages: &'a [MessageEntry],
     timestamp_ms: u64,
     config: &BlockBuilderConfig,
-) -> BlockAssemblyInputs {
+) -> BlockAssemblyInputs<'a> {
     BlockAssemblyInputs {
         account_state: last_local_block.account_state().clone(),
         inbox_messages,
@@ -75,7 +75,8 @@ fn create_block_assembly_inputs(
 }
 
 /// Creates an ExecBlockRecord from block assembly outputs.
-fn create_exec_block_record(
+#[expect(clippy::too_many_arguments, reason = "too many args")]
+fn create_next_exec_block_record(
     package: ExecBlockPackage,
     account_state: EeAccountState,
     last_blocknum: u64,
@@ -83,6 +84,7 @@ fn create_exec_block_record(
     timestamp_ms: u64,
     parent_blockhash: Hash,
     next_inbox_msg_idx: u64,
+    messages: Vec<MessageEntry>,
 ) -> ExecBlockRecord {
     ExecBlockRecord::new(
         package,
@@ -92,6 +94,7 @@ fn create_exec_block_record(
         timestamp_ms,
         parent_blockhash,
         next_inbox_msg_idx,
+        messages,
     )
 }
 
@@ -251,7 +254,7 @@ async fn build_next_block(
 
     // build next block
     let block_assembly_inputs =
-        create_block_assembly_inputs(&last_local_block, inbox_messages, timestamp_ms, config);
+        create_block_assembly_inputs(&last_local_block, &inbox_messages, timestamp_ms, config);
 
     let BlockAssemblyOutputs {
         package,
@@ -263,7 +266,7 @@ async fn build_next_block(
 
     let blockhash = package.exec_blkid();
     let parent_blockhash = last_local_block.package().exec_blkid();
-    let block = create_exec_block_record(
+    let block = create_next_exec_block_record(
         package,
         account_state,
         last_local_block.blocknum(),
@@ -271,6 +274,7 @@ async fn build_next_block(
         timestamp_ms,
         parent_blockhash,
         next_inbox_msg_idx,
+        inbox_messages,
     );
 
     Ok((block, payload, blockhash))
@@ -278,6 +282,8 @@ async fn build_next_block(
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use strata_acct_types::BitcoinAmount;
     use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment};
     use strata_identifiers::Buf32;
@@ -312,6 +318,7 @@ mod tests {
             timestamp_ms,
             Hash::default(),
             0,
+            vec![],
         )
     }
 
@@ -362,7 +369,7 @@ mod tests {
             );
             let messages = vec![msg1.clone(), msg2.clone()];
 
-            let inputs = create_block_assembly_inputs(&exec_record, messages, 6000, &config);
+            let inputs = create_block_assembly_inputs(&exec_record, &messages, 6000, &config);
 
             assert_eq!(inputs.inbox_messages.len(), 2);
             assert_eq!(inputs.inbox_messages[0].source(), msg1.source());
