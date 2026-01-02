@@ -30,4 +30,4 @@ pub use message::ChainWorkerMessage;
 pub use output::OLBlockExecutionOutput;
 pub use service::{ChainWorkerService, ChainWorkerStatus};
 pub use state::ChainWorkerServiceState;
-pub use traits::WorkerContext;
+pub use traits::ChainWorkerContext;

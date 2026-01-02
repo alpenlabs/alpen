@@ -7,15 +7,17 @@ use strata_identifiers::OLBlockCommitment;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{Response, Service, SyncService};
 
-use crate::{message::ChainWorkerMessage, state::ChainWorkerServiceState, traits::WorkerContext};
+use crate::{
+    message::ChainWorkerMessage, state::ChainWorkerServiceState, traits::ChainWorkerContext,
+};
 
 /// Chain worker service implementation using the service framework.
 #[derive(Debug)]
-pub struct ChainWorkerService<W: WorkerContext + Send + Sync + 'static> {
+pub struct ChainWorkerService<W: ChainWorkerContext + Send + Sync + 'static> {
     _phantom: PhantomData<W>,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W> {
     type State = ChainWorkerServiceState<W>;
     type Msg = ChainWorkerMessage;
     type Status = ChainWorkerStatus;
@@ -29,7 +31,7 @@ impl<W: WorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W>
     }
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerService<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static> SyncService for ChainWorkerService<W> {
     fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
         let cur_tip = state.wait_for_genesis_and_resolve_tip()?;
         state.initialize_with_tip(cur_tip)?;

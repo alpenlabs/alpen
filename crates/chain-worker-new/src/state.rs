@@ -18,7 +18,7 @@ use tracing::*;
 use crate::{
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
-    traits::WorkerContext,
+    traits::ChainWorkerContext,
 };
 
 /// Service state for the chain worker.
@@ -54,7 +54,7 @@ pub struct ChainWorkerServiceState<W> {
     initialized: bool,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     /// Creates a new chain worker service state.
     pub fn new(
         context: W,
@@ -319,7 +319,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     }
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServiceState<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServiceState<W> {
     fn name(&self) -> &str {
         "chain_worker_new"
     }
