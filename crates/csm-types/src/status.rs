@@ -84,7 +84,10 @@ impl fmt::Debug for L1Status {
 
         debug
             .field("last_update", &self.last_update)
-            .field("published_reveal_txs_count", &self.published_reveal_txs_count)
+            .field(
+                "published_reveal_txs_count",
+                &self.published_reveal_txs_count,
+            )
             .finish()
     }
 }
@@ -96,7 +99,7 @@ impl fmt::Display for L1Status {
         let txid_str = self
             .last_published_txid
             .as_ref()
-            .map(|t| txid_to_le_hex(t))
+            .map(txid_to_le_hex)
             .unwrap_or_else(|| "None".to_string());
 
         write!(
@@ -145,9 +148,11 @@ mod tests {
         assert!(debug_output.contains(r#"last_rpc_error: Some("test error")"#));
         assert!(debug_output.contains("cur_height: 12345"));
         // Verify blkid is reversed (little-endian)
-        assert!(debug_output.contains("6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"));
+        assert!(debug_output
+            .contains("6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"));
         // Verify txid appears in output (already in display format from inner_raw reversal)
-        assert!(debug_output.contains("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        assert!(debug_output
+            .contains("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
         assert!(debug_output.contains("last_update: 1234567890"));
         assert!(debug_output.contains("published_reveal_txs_count: 42"));
     }
@@ -210,9 +215,11 @@ mod tests {
         assert!(display_output.contains("bitcoin_rpc_connected: true"));
         assert!(display_output.contains("cur_height: 12345"));
         // Verify blkid is reversed
-        assert!(display_output.contains("6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"));
+        assert!(display_output
+            .contains("6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"));
         // Verify txid appears in output
-        assert!(display_output.contains("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        assert!(display_output
+            .contains("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
         assert!(display_output.contains("published_reveal_txs_count: 42"));
 
         // Should NOT contain fields that Display omits
