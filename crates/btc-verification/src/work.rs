@@ -1,4 +1,4 @@
-use std::ops::AddAssign;
+use std::{io, ops::AddAssign};
 
 use bitcoin::Work;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -26,13 +26,13 @@ impl AddAssign for BtcWork {
 }
 
 impl BorshSerialize for BtcWork {
-    fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         BorshSerialize::serialize(&self.0.to_le_bytes(), writer)
     }
 }
 
 impl BorshDeserialize for BtcWork {
-    fn deserialize_reader<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let bytes = <[u8; 32]>::deserialize_reader(reader)?;
         Ok(Self(Work::from_le_bytes(bytes)))
     }

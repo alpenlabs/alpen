@@ -18,7 +18,7 @@
 //! The `HostResolver` trait provides a single entry point for all host resolution,
 //! centralizing feature flag checks, backend selection, and host instantiation.
 
-use std::sync::Arc;
+use std::{error, fmt, sync::Arc};
 
 use zkaleido::{
     ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram, ZkVmRemoteHost, ZkVmRemoteProgram,
@@ -51,12 +51,12 @@ where
     Native(Arc<N>),
 }
 
-impl<R, N> std::fmt::Debug for HostInstance<R, N>
+impl<R, N> fmt::Debug for HostInstance<R, N>
 where
     R: ZkVmHost + Send + Sync,
     N: ZkVmHost + Send + Sync,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Remote(_) => f.debug_tuple("Remote").field(&"<host>").finish(),
             Self::Native(_) => f.debug_tuple("Native").field(&"<host>").finish(),
@@ -75,7 +75,7 @@ where
     pub fn prove<Prog>(
         &self,
         input: &Prog::Input,
-    ) -> Result<ProofReceiptWithMetadata, Box<dyn std::error::Error + Send + Sync>>
+    ) -> Result<ProofReceiptWithMetadata, Box<dyn error::Error + Send + Sync>>
     where
         Prog: ZkVmProgram,
     {
@@ -92,7 +92,7 @@ where
     pub async fn start_proving<Prog>(
         &self,
         input: &Prog::Input,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
+    ) -> Result<String, Box<dyn error::Error + Send + Sync>>
     where
         Prog: ZkVmRemoteProgram,
     {
@@ -113,7 +113,7 @@ where
     pub async fn get_proof_if_ready(
         &self,
         proof_id: String,
-    ) -> Result<Option<ProofReceiptWithMetadata>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Option<ProofReceiptWithMetadata>, Box<dyn error::Error + Send + Sync>> {
         match self {
             Self::Remote(host) => host
                 .get_proof_if_ready(proof_id)

@@ -1,6 +1,6 @@
 //! Error types for the auxiliary framework.
 
-use bitcoin::Txid;
+use bitcoin::{Txid, consensus};
 use thiserror::Error;
 
 use crate::Hash32;
@@ -33,7 +33,7 @@ pub enum AuxError {
         index: usize,
         /// Underlying decode error
         #[source]
-        source: bitcoin::consensus::encode::Error,
+        source: consensus::encode::Error,
     },
 
     /// Bitcoin transaction not found.

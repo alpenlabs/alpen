@@ -1,6 +1,6 @@
 //! Service state management with persistence
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use strata_service::ServiceState;
@@ -48,8 +48,8 @@ pub struct ProverServiceState<P: ProgramType> {
     pub(crate) retry_scheduler: SchedulerHandle<P>,
 }
 
-impl<P: ProgramType> std::fmt::Debug for ProverServiceState<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<P: ProgramType> fmt::Debug for ProverServiceState<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverServiceState")
             .field("config", &self.config)
             .field("handler_count", &self.handlers.len())

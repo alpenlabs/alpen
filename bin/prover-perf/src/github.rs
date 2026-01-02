@@ -1,3 +1,5 @@
+use std::error;
+
 use reqwest::{Client, RequestBuilder};
 use serde_json::json;
 
@@ -9,7 +11,7 @@ use crate::args::EvalArgs;
 pub async fn post_to_github_pr(
     args: &EvalArgs,
     message: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn error::Error>> {
     let client = Client::new();
 
     const BASE_URL: &str = "https://api.github.com/repos/alpenlabs/strata";

@@ -1,11 +1,12 @@
 //! Error types for initialization and configuration.
 
-use std::io;
+use std::{io, path};
 
 use format_serde_error::SerdeError;
 use strata_db_types::DbError;
 use strata_params::ParamsError;
 use thiserror::Error;
+use toml::de;
 
 #[derive(Debug, Error)]
 pub(crate) enum InitError {
@@ -25,7 +26,7 @@ pub(crate) enum InitError {
     MissingRollupParams,
 
     #[error("invalid datadir path: {0:?}")]
-    InvalidDatadirPath(std::path::PathBuf),
+    InvalidDatadirPath(path::PathBuf),
 
     #[error("failed to build tokio runtime: {0}")]
     RuntimeBuild(#[source] io::Error),
@@ -37,7 +38,7 @@ pub(crate) enum InitError {
     MissingSyncEndpoint,
 
     #[error("failed to parse TOML configuration: {0}")]
-    TomlParse(#[source] toml::de::Error),
+    TomlParse(#[source] de::Error),
 
     #[error("failed to create bitcoin RPC client: {0}")]
     BitcoinClientCreation(String),

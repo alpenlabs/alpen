@@ -1,4 +1,5 @@
 use std::{
+    env::var,
     fs::{create_dir_all, File},
     io,
     path::PathBuf,
@@ -94,19 +95,15 @@ pub struct Settings {
     pub seed: Seed,
 }
 
-pub static PROJ_DIRS: LazyLock<ProjectDirs> =
-    LazyLock::new(|| match std::env::var("PROJ_DIRS").ok() {
-        Some(path) => ProjectDirs::from_path(path.into()).expect("valid project path"),
-        None => {
-            ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available")
-        }
-    });
+pub static PROJ_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| match var("PROJ_DIRS").ok() {
+    Some(path) => ProjectDirs::from_path(path.into()).expect("valid project path"),
+    None => ProjectDirs::from("io", "alpenlabs", "alpen").expect("project dir should be available"),
+});
 
-pub static CONFIG_FILE: LazyLock<PathBuf> =
-    LazyLock::new(|| match std::env::var("CLI_CONFIG").ok() {
-        Some(path) => PathBuf::from_str(&path).expect("valid config path"),
-        None => PROJ_DIRS.config_dir().to_owned().join("config.toml"),
-    });
+pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var("CLI_CONFIG").ok() {
+    Some(path) => PathBuf::from_str(&path).expect("valid config path"),
+    None => PROJ_DIRS.config_dir().to_owned().join("config.toml"),
+});
 
 impl Settings {
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {

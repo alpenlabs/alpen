@@ -58,6 +58,8 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, Tx
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
+
     use bitcoin::{OutPoint, ScriptBuf, Transaction, TxOut, secp256k1::SECP256K1};
     use strata_crypto::test_utils::schnorr::create_agg_pubkey_from_privkeys;
     use strata_primitives::l1::BitcoinAmount;
@@ -76,7 +78,7 @@ mod tests {
         },
     };
 
-    const AUX_LEN: usize = std::mem::size_of::<DepositTxHeaderAux>();
+    const AUX_LEN: usize = mem::size_of::<DepositTxHeaderAux>();
 
     fn create_deposit_tx_with_info() -> (DepositInfo, Transaction) {
         let mut arb = ArbitraryGenerator::new();
@@ -157,7 +159,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::Deposit);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();

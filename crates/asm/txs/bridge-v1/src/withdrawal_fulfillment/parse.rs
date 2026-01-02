@@ -56,18 +56,24 @@ pub fn parse_withdrawal_fulfillment_tx<'t>(
 #[cfg(test)]
 mod tests {
 
+    use std::mem;
+
     use strata_asm_common::TxInputRef;
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{
-        TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data, parse_sps50_tx,
+    use crate::{
+        errors::TxStructureErrorKind,
+        test_utils::{
+            TEST_MAGIC_BYTES, create_test_withdrawal_fulfillment_tx, mutate_aux_data,
+            parse_sps50_tx,
+        },
     };
 
     /// Minimum length of auxiliary data for withdrawal fulfillment transactions.
     const WITHDRAWAL_FULFILLMENT_TX_AUX_DATA_LEN: usize =
-        std::mem::size_of::<WithdrawalFulfillmentTxHeaderAux>();
+        mem::size_of::<WithdrawalFulfillmentTxHeaderAux>();
 
     #[test]
     fn test_parse_withdrawal_fulfillment_tx_success() {
@@ -109,7 +115,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::WithdrawalFulfillment);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::MissingOutput {
+            TxStructureErrorKind::MissingOutput {
                 index: USER_WITHDRAWAL_FULFILLMENT_OUTPUT_INDEX
             }
         ))
@@ -132,7 +138,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::WithdrawalFulfillment);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
 
         // Mutate the OP_RETURN output to have longer aux len - this should fail
@@ -144,7 +150,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::WithdrawalFulfillment);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
     }
 }

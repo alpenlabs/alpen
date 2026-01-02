@@ -14,8 +14,11 @@
 //! `RemoteProofHandler` uses the `HostResolver` trait from the `host` module to obtain
 //! zkVM hosts, then executes proofs using the appropriate execution strategy for each backend.
 
+use std::{any, fmt, marker::PhantomData, time};
+
 use async_trait::async_trait;
 use strata_tasks::TaskExecutor;
+use tokio::{task, time::sleep};
 use tracing::info;
 use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram, ZkVmRemoteProgram};
 
@@ -67,15 +70,15 @@ pub struct RemoteProofHandler<P, F, S, R, Prog> {
     storer: S,
     resolver: R,
     executor: TaskExecutor,
-    _phantom: std::marker::PhantomData<(P, Prog)>,
+    _phantom: PhantomData<(P, Prog)>,
 }
 
-impl<P, F, S, R, Prog> std::fmt::Debug for RemoteProofHandler<P, F, S, R, Prog> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<P, F, S, R, Prog> fmt::Debug for RemoteProofHandler<P, F, S, R, Prog> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RemoteProofHandler")
-            .field("fetcher", &std::any::type_name::<F>())
-            .field("storer", &std::any::type_name::<S>())
-            .field("resolver", &std::any::type_name::<R>())
+            .field("fetcher", &any::type_name::<F>())
+            .field("storer", &any::type_name::<S>())
+            .field("resolver", &any::type_name::<R>())
             .finish()
     }
 }
@@ -102,7 +105,7 @@ where
             storer,
             resolver,
             executor,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -151,7 +154,7 @@ where
         // Layer 1: spawn_blocking - move to blocking thread pool
         // Layer 2: block_on - re-enter async runtime
         // Layer 3-4-5: LocalSet for !Send futures (Remote only)
-        let result = tokio::task::spawn_blocking(move || {
+        let result = task::spawn_blocking(move || {
             runtime_handle.block_on(async move {
                 // Resolve host once using unified API
                 let host = resolver.resolve(&program_clone, &backend);
@@ -160,7 +163,7 @@ where
                     // Remote backends (SP1, Risc0, etc.) use async polling
                     ZkVmBackend::SP1 | ZkVmBackend::Risc0 => {
                         // Remote backends may produce !Send futures, so use LocalSet
-                        let local = tokio::task::LocalSet::new();
+                        let local = task::LocalSet::new();
                         local
                             .run_until(async move {
                                 // Start remote proving
@@ -176,11 +179,11 @@ where
 
                                 // TODO: prettify.
                                 // Poll for proof completion with exponential backoff
-                                let mut interval = std::time::Duration::from_secs(1);
-                                let max_interval = std::time::Duration::from_secs(30);
+                                let mut interval = time::Duration::from_secs(1);
+                                let max_interval = time::Duration::from_secs(30);
 
                                 loop {
-                                    tokio::time::sleep(interval).await;
+                                    sleep(interval).await;
 
                                     match host.get_proof_if_ready(proof_id.clone()).await {
                                         Ok(Some(proof)) => return Ok(proof),

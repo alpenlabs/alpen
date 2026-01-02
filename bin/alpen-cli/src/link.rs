@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{self, Display, Formatter};
 
 use alloy::primitives::{Address as AlpenAddress, TxHash};
 use bdk_wallet::bitcoin;
@@ -95,7 +95,7 @@ impl PrettyPrint for OnchainObject<'_> {
 }
 
 impl Display for OnchainObject<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             OnchainObject::Transaction(txid) => txid.fmt(f),
             OnchainObject::Address(address) => address.fmt(f),
@@ -125,7 +125,7 @@ impl<'a> From<&'a bitcoin::Txid> for Txid<'a> {
 }
 
 impl Display for Txid<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Txid::Bitcoin(txid) => txid.fmt(f),
             Txid::Alpen(txid) => txid.fmt(f),
@@ -141,7 +141,7 @@ pub(crate) enum Address<'a> {
 }
 
 impl Display for Address<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Address::Bitcoin(address) => address.fmt(f),
             Address::Alpen(address) => address.fmt(f),
@@ -161,7 +161,7 @@ pub(crate) struct Link<'a, 'b> {
 }
 
 impl Display for Link<'_, '_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self.object {
             OnchainObject::Transaction(ref txid) => match txid {
                 Txid::Bitcoin(txid) => write!(f, "{}/tx/{}", self.explorer_ep, txid),

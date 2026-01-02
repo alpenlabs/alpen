@@ -124,7 +124,7 @@ impl ProofInputFetcher for CheckpointOperator {
         for dep in deps {
             // Validate that all dependencies are ClStf proofs
             match dep {
-                strata_primitives::proof::ProofContext::ClStf(..) => {}
+                ProofContext::ClStf(..) => {}
                 _ => panic!(
                     "Checkpoint dependencies must be ClStf proofs, got: {:?}",
                     dep

@@ -41,6 +41,8 @@ pub enum ProofType {
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
+
     use super::*;
     #[test]
     fn test_role_variants_contigous() {
@@ -50,7 +52,7 @@ mod tests {
         // Rust, so we use a constant.
 
         for i in 0..count {
-            let role: Role = unsafe { std::mem::transmute(i) };
+            let role: Role = unsafe { mem::transmute(i) };
             assert_eq!(role as u8, i);
         }
     }

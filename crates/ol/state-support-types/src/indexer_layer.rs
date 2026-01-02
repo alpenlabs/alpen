@@ -4,6 +4,8 @@
 //! to accumulator structures (like MMRs) and records them for later use by
 //! indexers, while passing all operations through to an inner implementation.
 
+use std::fmt;
+
 use strata_acct_types::{
     AccountId, AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64,
 };
@@ -35,10 +37,8 @@ pub struct IndexerSnarkAccountStateMut<S: ISnarkAccountStateMut> {
     modified: bool,
 }
 
-impl<S: ISnarkAccountStateMut + std::fmt::Debug> std::fmt::Debug
-    for IndexerSnarkAccountStateMut<S>
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<S: ISnarkAccountStateMut + fmt::Debug> fmt::Debug for IndexerSnarkAccountStateMut<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexerSnarkAccountStateMut")
             .field("inner", &self.inner)
             .field("account_id", &self.account_id)
@@ -173,8 +173,8 @@ pub struct IndexerAccountStateMut<A: IAccountStateMut> {
     snark_wrapper: Option<IndexerSnarkAccountStateMut<A::SnarkAccountStateMut>>,
 }
 
-impl<A: IAccountStateMut + std::fmt::Debug> std::fmt::Debug for IndexerAccountStateMut<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: IAccountStateMut + fmt::Debug> fmt::Debug for IndexerAccountStateMut<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexerAccountStateMut")
             .field("inner", &self.inner)
             .field("account_id", &self.account_id)
@@ -319,11 +319,11 @@ pub struct IndexerState<S: IStateAccessor> {
     writes: IndexerWrites,
 }
 
-impl<S: IStateAccessor + std::fmt::Debug> std::fmt::Debug for IndexerState<S>
+impl<S: IStateAccessor + fmt::Debug> fmt::Debug for IndexerState<S>
 where
-    S::AccountState: std::fmt::Debug,
+    S::AccountState: fmt::Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexerState")
             .field("inner", &self.inner)
             .field("writes", &self.writes)

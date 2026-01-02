@@ -158,7 +158,7 @@ impl ProofInputFetcher for ClStfOperator {
         db: &ProofDBSled,
     ) -> Result<Self::Input, ProvingTaskError> {
         let (start_block, end_block) = match task_id.context() {
-            strata_primitives::proof::ProofContext::ClStf(start, end) => (*start, *end),
+            ProofContext::ClStf(start, end) => (*start, *end),
             _ => return Err(ProvingTaskError::InvalidInput("CL_STF".to_string())),
         };
 

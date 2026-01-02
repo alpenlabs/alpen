@@ -7,6 +7,9 @@ use std::sync::Arc;
 
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_paas::RemoteProofHandler;
+use strata_proofimpl_checkpoint::program::CheckpointProgram;
+use strata_proofimpl_cl_stf::program::ClStfProgram;
+use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
 use strata_tasks::TaskExecutor;
 
 use super::{
@@ -26,7 +29,7 @@ pub(crate) type CheckpointHandler = RemoteProofHandler<
     OperatorInputFetcher<CheckpointOperator>,
     ProofDbStorer,
     CentralizedHostResolver,
-    strata_proofimpl_checkpoint::program::CheckpointProgram,
+    CheckpointProgram,
 >;
 
 /// Type alias for CL STF proof handler
@@ -35,7 +38,7 @@ pub(crate) type ClStfHandler = RemoteProofHandler<
     OperatorInputFetcher<ClStfOperator>,
     ProofDbStorer,
     CentralizedHostResolver,
-    strata_proofimpl_cl_stf::program::ClStfProgram,
+    ClStfProgram,
 >;
 
 /// Type alias for EVM EE STF proof handler
@@ -44,7 +47,7 @@ pub(crate) type EvmEeStfHandler = RemoteProofHandler<
     OperatorInputFetcher<EvmEeOperator>,
     ProofDbStorer,
     CentralizedHostResolver,
-    strata_proofimpl_evm_ee_stf::program::EvmEeProgram,
+    EvmEeProgram,
 >;
 
 /// Create a new CheckpointHandler

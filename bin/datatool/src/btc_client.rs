@@ -3,7 +3,7 @@
 //! This module contains Bitcoin RPC client operations and is feature-gated
 //! behind the `btc-client` feature flag.
 
-use bitcoin::CompactTarget;
+use bitcoin::{params::Params, CompactTarget};
 use bitcoind_async_client::{traits::Reader, Auth, Client};
 use strata_asm_types::get_relative_difficulty_adjustment_height;
 use strata_primitives::{
@@ -31,7 +31,7 @@ async fn fetch_genesis_l1_view(
 ) -> anyhow::Result<GenesisL1View> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
-    let btc_params = BtcParams::from(bitcoin::params::Params::from(network));
+    let btc_params = BtcParams::from(Params::from(network));
 
     // Get the difficulty adjustment block just before the given block height,
     // representing the start of the current epoch.

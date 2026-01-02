@@ -6,7 +6,7 @@
 //! The trait allows extracting a routing key from any program type, which PaaS
 //! uses to dispatch tasks to the appropriate handler.
 
-use std::hash::Hash;
+use std::{fmt, hash::Hash};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,12 +47,12 @@ use serde::{Deserialize, Serialize};
 /// }
 /// ```
 pub trait ProgramType:
-    Clone + Eq + Hash + Send + Sync + std::fmt::Debug + Serialize + for<'de> Deserialize<'de> + 'static
+    Clone + Eq + Hash + Send + Sync + fmt::Debug + Serialize + for<'de> Deserialize<'de> + 'static
 {
     /// Routing key type (typically an enum discriminant)
     ///
     /// This is used by PaaS to look up the correct handler for a given program.
-    type RoutingKey: Eq + Hash + Clone + Send + Sync + std::fmt::Debug + 'static;
+    type RoutingKey: Eq + Hash + Clone + Send + Sync + fmt::Debug + 'static;
 
     /// Extract the routing key for handler lookup
     ///

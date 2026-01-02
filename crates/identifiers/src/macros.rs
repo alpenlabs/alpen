@@ -809,6 +809,8 @@ mod tests {
         assert_eq!(buf, decoded);
     }
 
+    use std::io;
+
     // Test the SSZ transparent wrapper macros
     use ssz::{Decode, Encode};
     use ssz_derive::{Decode, Encode};
@@ -896,7 +898,7 @@ mod tests {
         }
 
         impl borsh::BorshSerialize for Container {
-            fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+            fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
                 self.first.serialize(writer)?;
                 self.second.serialize(writer)?;
                 Ok(())
@@ -904,7 +906,7 @@ mod tests {
         }
 
         impl borsh::BorshDeserialize for Container {
-            fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+            fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
                 let first = TestBorshViaSsz::deserialize_reader(reader)?;
                 let second = TestBorshViaSsz::deserialize_reader(reader)?;
                 Ok(Container { first, second })

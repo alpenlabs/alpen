@@ -15,7 +15,10 @@ use strata_params::Params;
 use strata_status::StatusChannel;
 use strata_storage::ops::writer::{Context, EnvelopeDataOps};
 use strata_tasks::TaskExecutor;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::{
+    sync::mpsc::{self, Sender},
+    time::interval,
+};
 use tracing::*;
 
 use super::bundler::{bundler_task, get_initial_unbundled_entries};
@@ -182,7 +185,7 @@ pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
     broadcast_handle: Arc<L1BroadcastHandle>,
 ) -> anyhow::Result<()> {
     info!("Starting L1 writer's watcher task");
-    let interval = tokio::time::interval(Duration::from_millis(context.config.write_poll_dur_ms));
+    let interval = interval(Duration::from_millis(context.config.write_poll_dur_ms));
     tokio::pin!(interval);
 
     let mut curr_payloadidx = next_watch_payload_idx;

@@ -7,7 +7,10 @@ mod db;
 mod output;
 mod utils;
 
+use std::process::exit;
+
 use strata_db_types::traits::DatabaseBackend;
+use tracing_subscriber::fmt::init;
 
 use crate::{
     cli::{Cli, Command},
@@ -25,13 +28,13 @@ use crate::{
 };
 
 fn main() {
-    tracing_subscriber::fmt::init();
+    init();
 
     let cli: Cli = argh::from_env();
 
     let db = open_database(&cli.datadir).unwrap_or_else(|e| {
         eprintln!("{e}");
-        std::process::exit(1);
+        exit(1);
     });
     let db = db.as_ref();
 
@@ -55,6 +58,6 @@ fn main() {
 
     if let Err(e) = result {
         eprintln!("{e}");
-        std::process::exit(1);
+        exit(1);
     }
 }

@@ -49,12 +49,17 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, TxStructureE
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
+
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::test_utils::{create_test_slash_tx, mutate_aux_data, parse_sps50_tx};
+    use crate::{
+        errors::TxStructureErrorKind,
+        test_utils::{create_test_slash_tx, mutate_aux_data, parse_sps50_tx},
+    };
 
-    const AUX_LEN: usize = std::mem::size_of::<SlashTxHeaderAux>();
+    const AUX_LEN: usize = mem::size_of::<SlashTxHeaderAux>();
 
     #[test]
     fn test_parse_slash_tx_success() {
@@ -81,7 +86,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::Slash);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::MissingInput {
+            TxStructureErrorKind::MissingInput {
                 index: STAKE_INPUT_INDEX
             }
         ))
@@ -100,7 +105,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::Slash);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
@@ -111,7 +116,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::Slash);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
     }
 }

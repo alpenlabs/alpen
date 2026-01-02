@@ -1,3 +1,5 @@
+use std::fs;
+
 use argh::FromArgs;
 use colored::Colorize;
 use dialoguer::Confirm;
@@ -35,7 +37,7 @@ pub async fn reset(
             .delete()
             .internal_error("Failed to wipe out seed")?;
         println!("Wiped seed");
-        std::fs::remove_dir_all(settings.data_dir.clone())
+        fs::remove_dir_all(settings.data_dir.clone())
             .internal_error("Failed to delete data directory")?;
         println!("Wiped data directory");
     }

@@ -8,7 +8,7 @@ use reth_primitives::EthPrimitives;
 use reth_provider::CanonStateSubscriptions;
 use reth_transaction_pool::{
     blobstore::{DiskFileBlobStore, DiskFileBlobStoreConfig},
-    EthTransactionPool, TransactionValidationTaskExecutor,
+    maintain, EthTransactionPool, TransactionValidationTaskExecutor,
 };
 use tracing::{debug, info};
 /// A basic ethereum transaction pool.
@@ -84,13 +84,15 @@ where
                     .unwrap_or_else(|| data_dir.txpool_transactions());
 
                 let transactions_backup_config =
-                    reth_transaction_pool::maintain::LocalTransactionBackupConfig::with_local_txs_backup(transactions_path);
+                    maintain::LocalTransactionBackupConfig::with_local_txs_backup(
+                        transactions_path,
+                    );
 
                 ctx.task_executor()
                     .spawn_critical_with_graceful_shutdown_signal(
                         "local transactions backup task",
                         |shutdown| {
-                            reth_transaction_pool::maintain::backup_local_transactions_task(
+                            maintain::backup_local_transactions_task(
                                 shutdown,
                                 pool.clone(),
                                 transactions_backup_config,
@@ -102,12 +104,12 @@ where
             // spawn the maintenance task
             ctx.task_executor().spawn_critical(
                 "txpool maintenance task",
-                reth_transaction_pool::maintain::maintain_transaction_pool_future(
+                maintain::maintain_transaction_pool_future(
                     client,
                     pool,
                     chain_events,
                     ctx.task_executor().clone(),
-                    reth_transaction_pool::maintain::MaintainPoolConfig {
+                    maintain::MaintainPoolConfig {
                         max_tx_lifetime: transaction_pool.config().max_queued_lifetime,
                         no_local_exemptions: transaction_pool
                             .config()

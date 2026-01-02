@@ -18,6 +18,7 @@ use strata_tasks::ShutdownGuard;
 use tokio::{
     runtime::Handle,
     sync::{mpsc, watch},
+    time::{self, sleep},
 };
 use tracing::*;
 
@@ -394,7 +395,7 @@ pub fn tracker_task(
             .unwrap()
             .is_empty()
         {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            sleep(time::Duration::from_secs(1)).await;
         }
         storage
             .l2()

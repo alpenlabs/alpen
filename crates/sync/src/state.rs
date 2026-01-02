@@ -2,6 +2,7 @@ use strata_consensus_logic::unfinalized_tracker::UnfinalizedBlockTracker;
 use strata_ol_chain_types::{L2BlockId, L2Header, SignedL2BlockHeader};
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_storage::NodeStorage;
+use tokio::runtime::Handle;
 use tracing::debug;
 
 use crate::L2SyncError;
@@ -72,7 +73,7 @@ pub(crate) async fn initialize_from_db(
 
     let l2man_tracker = storage.l2().clone();
 
-    let tracker = tokio::runtime::Handle::current()
+    let tracker = Handle::current()
         .spawn_blocking(move || {
             let mut tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
             tracker

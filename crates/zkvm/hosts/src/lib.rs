@@ -1,5 +1,7 @@
 //! ZKVM hosts for the Alpen codebase.
 
+use std::sync::Arc;
+
 use strata_primitives::proof::{ProofKey, ProofZkVm};
 use zkaleido::{VerifyingKey, ZkVmVkProvider};
 
@@ -48,7 +50,7 @@ pub enum ZkVmHostInstance {
     ///
     /// This variant uses the [`zkaleido_native_adapter::NativeHost`] implementation
     /// to provide ZKVM functionality without requiring any feature flags.
-    Native(std::sync::Arc<zkaleido_native_adapter::NativeHost>),
+    Native(Arc<zkaleido_native_adapter::NativeHost>),
 
     /// Represents the SP1 ZKVM host implementation.
     ///
@@ -56,7 +58,7 @@ pub enum ZkVmHostInstance {
     /// available when the `sp1` feature flag is enabled. Attempting to use this variant
     /// without enabling the `sp1` feature will result in a compile-time error or a runtime panic.
     #[cfg(feature = "sp1")]
-    SP1(std::sync::Arc<zkaleido_sp1_host::SP1Host>),
+    SP1(Arc<zkaleido_sp1_host::SP1Host>),
 }
 
 /// Resolves the appropriate ZKVM host instance based on the provided [`ProofKey`].

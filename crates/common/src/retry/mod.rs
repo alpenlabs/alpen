@@ -146,7 +146,7 @@ fn retry_with_backoff_inner<R, E, F, S>(
 ) -> Result<R, E>
 where
     F: Fn() -> Result<R, E>,
-    E: std::fmt::Debug,
+    E: fmt::Debug,
     S: FnMut(Duration),
 {
     let mut delay = backoff.base_delay_ms();

@@ -1,7 +1,9 @@
 use std::{
     collections::BTreeSet,
+    error, fmt,
     fmt::Debug,
     marker::Send,
+    ops,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -22,11 +24,11 @@ use bdk_wallet::{
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use terrors::OneOf;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::{sync::mpsc::UnboundedSender, task};
 
 use super::EsploraClient;
 
-pub type BoxedInner = dyn std::error::Error + Send + Sync;
+pub type BoxedInner = dyn error::Error + Send + Sync;
 pub type BoxedErr = Box<BoxedInner>;
 
 #[macro_export]
@@ -35,13 +37,13 @@ macro_rules! boxed_err {
         impl $name {
             pub fn from_err<E>(err: E) -> Self
             where
-                E: std::error::Error + Send + Sync + 'static,
+                E: error::Error + Send + Sync + 'static,
             {
                 Self::from(Box::new(err) as BoxedErr)
             }
         }
 
-        impl std::ops::Deref for $name {
+        impl ops::Deref for $name {
             type Target = BoxedInner;
             fn deref(&self) -> &Self::Target {
                 self.0.as_ref()
@@ -54,14 +56,14 @@ macro_rules! boxed_err {
             }
         }
 
-        impl std::fmt::Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                std::fmt::Display::fmt(&self.0, f)
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt::Display::fmt(&self.0, f)
             }
         }
 
-        impl std::error::Error for $name {
-            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        impl error::Error for $name {
+            fn source(&self) -> Option<&(dyn error::Error + 'static)> {
                 self.0.source()
             }
         }
@@ -293,7 +295,7 @@ where
     T: Send + 'static,
     F: FnOnce(&bitcoincore_rpc::Client) -> Result<T, bitcoincore_rpc::Error> + Send + 'static,
 {
-    let handle = tokio::task::spawn_blocking(move || func(&client));
+    let handle = task::spawn_blocking(move || func(&client));
     handle.await.expect("thread should be fine")
 }
 

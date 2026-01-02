@@ -4,7 +4,7 @@ use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
-use typed_sled::{transaction::SledTransactional, SledDb, SledTree};
+use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
 
 use super::schema::{BlockHashByNumber, BlockStateDiffSchema, BlockWitnessSchema};
 use crate::{
@@ -29,7 +29,7 @@ impl Clone for WitnessDB {
 }
 
 impl WitnessDB {
-    pub fn new(db: Arc<SledDb>) -> Result<Self, typed_sled::error::Error> {
+    pub fn new(db: Arc<SledDb>) -> Result<Self, Error> {
         let witness_tree = db.get_tree::<BlockWitnessSchema>()?;
         let state_diff_tree = db.get_tree::<BlockStateDiffSchema>()?;
         let block_hash_by_number_tree = db.get_tree::<BlockHashByNumber>()?;
@@ -106,22 +106,20 @@ impl StateDiffStore for WitnessDB {
         state_diff: &BlockStateDiff,
     ) -> DbResult<()> {
         (&self.block_hash_by_number_tree, &self.state_diff_tree)
-            .transaction(
-                |(bht, sdt)| -> ConflictableTransactionResult<(), typed_sled::error::Error> {
-                    bht.insert(&block_number, &block_hash.to_vec())?;
-                    let serialized = match bincode::serialize(state_diff) {
-                        Ok(data) => data,
-                        Err(err) => {
-                            return Err(ConflictableTransactionError::Abort(
-                                sled::Error::Unsupported(format!("Serialization failed: {}", err))
-                                    .into(),
-                            ))
-                        }
-                    };
-                    sdt.insert(&block_hash, &serialized)?;
-                    Ok(())
-                },
-            )
+            .transaction(|(bht, sdt)| -> ConflictableTransactionResult<(), Error> {
+                bht.insert(&block_number, &block_hash.to_vec())?;
+                let serialized = match bincode::serialize(state_diff) {
+                    Ok(data) => data,
+                    Err(err) => {
+                        return Err(ConflictableTransactionError::Abort(
+                            sled::Error::Unsupported(format!("Serialization failed: {}", err))
+                                .into(),
+                        ))
+                    }
+                };
+                sdt.insert(&block_hash, &serialized)?;
+                Ok(())
+            })
             .map_err(|e| DbError::Other(format!("{:?}", e)))?;
         Ok(())
     }
@@ -133,6 +131,8 @@ impl StateDiffStore for WitnessDB {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs::read_to_string, path::PathBuf};
+
     use alpen_reth_statediff::account::{Account, AccountChanges};
     use revm_primitives::{
         alloy_primitives::{address, map::HashMap},
@@ -161,9 +161,8 @@ mod tests {
     }
 
     fn get_mock_data() -> TestData {
-        let json_content = std::fs::read_to_string(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("test_data/witness_params.json"),
+        let json_content = read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/witness_params.json"),
         )
         .expect("Failed to read the blob data file");
 

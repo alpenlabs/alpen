@@ -47,6 +47,8 @@ pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, TxStructureErro
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
+
     use bitcoin::Transaction;
     use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils::ArbitraryGenerator;
@@ -59,7 +61,7 @@ mod tests {
         test_utils::{create_connected_drt_and_dt, create_test_operators, mutate_aux_data},
     };
 
-    const AUX_LEN: usize = std::mem::size_of::<DrtHeaderAux>();
+    const AUX_LEN: usize = mem::size_of::<DrtHeaderAux>();
 
     fn create_drt_tx_with_info() -> (DepositRequestInfo, Transaction) {
         let mut arb = ArbitraryGenerator::new();
@@ -109,7 +111,7 @@ mod tests {
         assert_eq!(err.tx_type(), BridgeTxType::DepositRequest);
         assert!(matches!(
             err.kind(),
-            crate::errors::TxStructureErrorKind::InvalidAuxiliaryData(_)
+            TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
 
         let smaller_aux = [0u8; AUX_LEN - 1].to_vec();

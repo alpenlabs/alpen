@@ -1,4 +1,8 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    fmt::{self, Display},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use argh::FromArgs;
 
@@ -58,8 +62,8 @@ pub(crate) enum OutputFormat {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UnsupportedOutputFormat;
 
-impl std::fmt::Display for UnsupportedOutputFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for UnsupportedOutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "must be 'porcelain' or 'json'")
     }
 }
@@ -76,8 +80,8 @@ impl FromStr for OutputFormat {
     }
 }
 
-impl std::fmt::Display for OutputFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for OutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             OutputFormat::Porcelain => "porcelain",
             OutputFormat::Json => "json",

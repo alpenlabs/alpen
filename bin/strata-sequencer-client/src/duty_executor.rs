@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
+use jsonrpsee::core::ClientError;
 use strata_rpc_api::StrataSequencerApiClient;
 use strata_rpc_types::HexBytes64;
 use strata_sequencer::{
@@ -8,7 +9,7 @@ use strata_sequencer::{
     utils::now_millis,
 };
 use thiserror::Error;
-use tokio::{runtime::Handle, select, sync::mpsc};
+use tokio::{runtime::Handle, select, sync::mpsc, time};
 use tracing::{debug, error, info, warn};
 
 use crate::helpers::{sign_checkpoint, sign_header};
@@ -16,13 +17,13 @@ use crate::helpers::{sign_checkpoint, sign_header};
 #[derive(Debug, Error)]
 enum DutyExecError {
     #[error("failed generating template: {0}")]
-    GenerateTemplate(jsonrpsee::core::ClientError),
+    GenerateTemplate(ClientError),
 
     #[error("failed completing template: {0}")]
-    CompleteTemplate(jsonrpsee::core::ClientError),
+    CompleteTemplate(ClientError),
 
     #[error("failed submitting checkpoint signature: {0}")]
-    CompleteCheckpoint(jsonrpsee::core::ClientError),
+    CompleteCheckpoint(ClientError),
 }
 
 pub(crate) async fn duty_executor_worker<R>(
@@ -106,10 +107,7 @@ where
         // wait until target time
         // TODO: ensure duration is within some bounds
         warn!(%duty_id, %now, target = duty.target_ts(), "got duty too early; sleeping till target time");
-        tokio::time::sleep(tokio::time::Duration::from_millis(
-            duty.target_ts() - now_millis(),
-        ))
-        .await;
+        time::sleep(time::Duration::from_millis(duty.target_ts() - now_millis())).await;
     }
 
     // should this keep track of previously signed slots and dont sign conflicting blocks ?

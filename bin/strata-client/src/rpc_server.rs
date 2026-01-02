@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
-use futures::TryFutureExt;
+use futures::{future, TryFutureExt};
 use jsonrpsee::core::RpcResult;
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
@@ -479,7 +479,7 @@ impl StrataApiServer for StrataRpcImpl {
     }
 
     async fn get_raw_bundles(&self, start_height: u64, end_height: u64) -> RpcResult<HexBytes> {
-        let block_ids = futures::future::join_all(
+        let block_ids = future::join_all(
             (start_height..=end_height)
                 .map(|height| self.storage.l2().get_blocks_at_height_async(height)),
         )
@@ -491,7 +491,7 @@ impl StrataApiServer for StrataRpcImpl {
             .flatten()
             .collect::<Vec<_>>();
 
-        let blocks = futures::future::join_all(
+        let blocks = future::join_all(
             block_ids
                 .iter()
                 .map(|blkid| self.storage.l2().get_block_data_async(blkid)),

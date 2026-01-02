@@ -1,3 +1,4 @@
+use borsh::io;
 use strata_db_types::DbError;
 use strata_primitives::proof::ProofKey;
 use thiserror::Error;
@@ -17,7 +18,7 @@ pub(crate) enum ProvingTaskError {
 
     /// Occurs when Borsh deserialization of the input fails.
     #[error("Failed to borsh deserialize the input")]
-    BorshSerialization(#[from] borsh::io::Error),
+    BorshSerialization(#[from] io::Error),
 
     /// Occurs when a required dependency for a task does not exist.
     #[error("Dependency with ID {0:?} does not exist.")]

@@ -4,6 +4,8 @@
 //! subprotocols can send configuration updates without depending on the checkpoint
 //! implementation crate.
 
+use std::any::Any;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_proto_checkpoint_txs::CHECKPOINT_V0_SUBPROTOCOL_ID;
@@ -24,7 +26,7 @@ impl InterprotoMsg for CheckpointIncomingMsg {
         CHECKPOINT_V0_SUBPROTOCOL_ID
     }
 
-    fn as_dyn_any(&self) -> &dyn std::any::Any {
+    fn as_dyn_any(&self) -> &dyn Any {
         self
     }
 }

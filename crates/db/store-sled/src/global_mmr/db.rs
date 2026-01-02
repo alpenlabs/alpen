@@ -7,7 +7,7 @@ use strata_db_types::{
 use strata_identifiers::{Hash, RawMmrId};
 use strata_merkle::CompactMmr64B32 as CompactMmr64;
 use strata_primitives::buf::Buf32;
-use typed_sled::tree::SledTransactionalTree;
+use typed_sled::{error, tree::SledTransactionalTree};
 
 use super::schemas::{
     GlobalMmrHashPositionSchema, GlobalMmrMetaSchema, GlobalMmrNodeSchema, GlobalMmrPreimageSchema,
@@ -54,7 +54,7 @@ impl GlobalMmrDb {
         nt: SledTransactionalTree<GlobalMmrNodeSchema>,
         mt: SledTransactionalTree<GlobalMmrMetaSchema>,
         hpt: SledTransactionalTree<GlobalMmrHashPositionSchema>,
-    ) -> typed_sled::error::Result<u64> {
+    ) -> error::Result<u64> {
         let metadata = mt
             .get(&mmr_id)?
             .expect("MMR metadata must exist after ensure_mmr_metadata");
@@ -64,7 +64,7 @@ impl GlobalMmrDb {
                 .map(|buf| buf.0)
                 .ok_or_else(|| DbError::Other(format!("MMR node not found at pos {}", pos)))
         })
-        .map_err(typed_sled::error::Error::abort)?;
+        .map_err(error::Error::abort)?;
 
         for (pos, node_hash) in &result.nodes_to_write {
             nt.insert(&(mmr_id.clone(), *pos), &Buf32(*node_hash))?;
@@ -152,7 +152,7 @@ impl GlobalMmrDatabase for GlobalMmrDb {
                         .map(|x| x.0)
                         .ok_or_else(|| DbError::Other(format!("MMR node not found at pos {}", pos)))
                 })
-                .map_err(typed_sled::error::Error::abort)?;
+                .map_err(error::Error::abort)?;
 
                 let Some(result) = result else {
                     return Ok(None);

@@ -1,5 +1,6 @@
 use strata_db_types::{DbResult, errors::DbError, traits::ProofDatabase};
 use strata_primitives::proof::{ProofContext, ProofKey};
+use typed_sled::error::Error;
 use zkaleido::ProofReceiptWithMetadata;
 
 use super::schemas::{
@@ -23,15 +24,12 @@ impl ProofDBSled {
     pub fn get_task(
         &self,
         task_id: &SerializableTaskId,
-    ) -> Result<Option<SerializableTaskRecord>, typed_sled::error::Error> {
+    ) -> Result<Option<SerializableTaskRecord>, Error> {
         self.paas_task_tree.get(task_id)
     }
 
     /// Get TaskId by UUID
-    pub fn get_task_id_by_uuid(
-        &self,
-        uuid: &str,
-    ) -> Result<Option<SerializableTaskId>, typed_sled::error::Error> {
+    pub fn get_task_id_by_uuid(&self, uuid: &str) -> Result<Option<SerializableTaskId>, Error> {
         self.paas_uuid_index_tree.get(&uuid.to_string())
     }
 
@@ -40,7 +38,7 @@ impl ProofDBSled {
         &self,
         task_id: &SerializableTaskId,
         record: &SerializableTaskRecord,
-    ) -> Result<(), typed_sled::error::Error> {
+    ) -> Result<(), Error> {
         self.paas_task_tree.insert(task_id, record)?;
         self.paas_uuid_index_tree.insert(&record.uuid, task_id)?;
         Ok(())
@@ -51,7 +49,7 @@ impl ProofDBSled {
         &self,
         task_id: &SerializableTaskId,
         record: &SerializableTaskRecord,
-    ) -> Result<(), typed_sled::error::Error> {
+    ) -> Result<(), Error> {
         self.paas_task_tree.insert(task_id, record)?;
         Ok(())
     }

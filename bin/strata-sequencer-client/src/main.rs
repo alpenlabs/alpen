@@ -23,7 +23,10 @@ use helpers::load_seqkey;
 use rpc_client::rpc_client;
 use strata_common::logging;
 use strata_tasks::TaskManager;
-use tokio::{runtime::Handle, sync::mpsc};
+use tokio::{
+    runtime::{Builder, Handle},
+    sync::mpsc,
+};
 use tracing::info;
 
 const SHUTDOWN_TIMEOUT_MS: u64 = 5000;
@@ -41,7 +44,7 @@ fn main() -> Result<()> {
 
 fn main_inner(args: Args) -> Result<()> {
     // Start runtime for async IO tasks.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let runtime = Builder::new_multi_thread()
         .enable_all()
         .thread_name("strata-rt")
         .build()

@@ -1,8 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future};
 
 use anyhow::Error;
 use bitcoin::{
-    block::Header, consensus::deserialize, hashes::Hash, Block, BlockHash, Network, Txid,
+    block::Header,
+    consensus::{self, deserialize},
+    hashes::Hash,
+    Block, BlockHash, Network, Txid,
 };
 use bitcoind_async_client::{
     corepc_types::model::{
@@ -18,6 +21,7 @@ use strata_asm_types::HeaderVerificationState;
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_identifiers::WtxidsRoot;
 use strata_primitives::{buf::Buf32, l1::GenesisL1View};
+use tokio::runtime;
 
 #[derive(Debug)]
 pub struct BtcChainSegment {
@@ -53,7 +57,7 @@ impl BtcChainSegment {
 
         let custom_headers: HashMap<u64, Header> = vec![(38304, "01000000858a5c6d458833aa83f7b7e56d71c604cb71165ebb8104b82f64de8d00000000e408c11029b5fdbb92ea0eeb8dfa138ffa3acce0f69d7deebeb1400c85042e01723f6b4bc38c001d09bd8bd5")].into_iter().map(|(h, raw_block)| {
             let header_bytes = hex::decode(raw_block).unwrap();
-            let header: Header = bitcoin::consensus::deserialize(&header_bytes).unwrap();
+            let header: Header = consensus::deserialize(&header_bytes).unwrap();
             (h, header)
         })
         .collect();
@@ -75,7 +79,7 @@ impl BtcChainSegment {
         .into_iter()
         .map(|(h, raw_block)| {
             let block_bytes = hex::decode(raw_block).unwrap();
-            let block: Block = bitcoin::consensus::deserialize(&block_bytes).unwrap();
+            let block: Block = consensus::deserialize(&block_bytes).unwrap();
             (h, block)
         })
         .collect();
@@ -306,15 +310,15 @@ impl BtcChainSegment {
 
 /// If we're already in a tokio runtime, we'll block in place. Otherwise, we'll create a new
 /// runtime.
-fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+fn block_on<T>(fut: impl Future<Output = T>) -> T {
     use tokio::task::block_in_place;
 
     // Handle case if we're already in an tokio runtime.
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+    if let Ok(handle) = runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(fut))
     } else {
         // Otherwise create a new runtime.
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create a new runtime");
+        let rt = runtime::Runtime::new().expect("Failed to create a new runtime");
         rt.block_on(fut)
     }
 }

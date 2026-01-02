@@ -8,7 +8,7 @@
 //! The configuration is used to configure the prover client, including the RPC configuration,
 //! worker configuration, timing configuration, retry configuration, and feature flags.
 
-use std::path::PathBuf;
+use std::{fs::read_to_string, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -193,7 +193,7 @@ mod default_values {
 impl ProverConfig {
     /// Loads configuration from a TOML file.
     pub(crate) fn from_file(path: &PathBuf) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
+        let content = read_to_string(path)?;
         let config = toml::from_str(&content)?;
         Ok(config)
     }
