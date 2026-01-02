@@ -52,7 +52,7 @@ pub trait WorkerContext: Send + Sync + 'static {
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()>;
 
-    /// Stores auxiliary data for indexing (inbox messages, manifests, snark updates).
+    /// Stores auxiliary data for indexing (inbox messages, manifests).
     fn store_auxiliary_data(
         &self,
         commitment: OLBlockCommitment,

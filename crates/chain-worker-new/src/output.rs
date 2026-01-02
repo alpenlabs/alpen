@@ -20,7 +20,7 @@ pub struct OLBlockExecutionOutput {
     /// State changes to persist (the diff).
     write_batch: WriteBatch<NativeAccountState>,
 
-    /// Auxiliary data for indexing (inbox messages, manifests, snark updates).
+    /// Auxiliary data for indexing (inbox messages, manifests).
     indexer_writes: IndexerWrites,
 }
 
