@@ -1,4 +1,13 @@
 //! Service state for the chain worker.
+//!
+//! This module contains the state management for the chain worker service.
+//! The state is internally organized into:
+//! - [`ChainWorkerDeps`]: Static dependencies (context, params, runtime handles)
+//! - [`ChainWorkerMutableState`]: Actual mutable state (tip, epoch info, etc.)
+//!
+//! This separation makes it clear which parts are actual "state" vs dependencies,
+//! even though both must live in [`ChainWorkerServiceState`] due to the current
+//! service framework design.
 
 use std::sync::Arc;
 
@@ -21,16 +30,12 @@ use crate::{
     traits::ChainWorkerContext,
 };
 
-/// Service state for the chain worker.
+/// Static dependencies for the chain worker.
 ///
-/// NOTE: Ideally, static dependencies like `context`, `runtime_handle`, etc. would live
-/// in the Service struct rather than State. However, the current service framework doesn't
-/// support this pattern. This should be refactored when the framework is updated.
-#[expect(
-    missing_debug_implementations,
-    reason = "Some inner types don't have Debug impl"
-)]
-pub struct ChainWorkerServiceState<W> {
+/// These are initialized once and don't change during the worker's lifetime.
+/// Ideally these would live in the Service struct, but the current framework
+/// requires all dependencies to be passed through State.
+struct ChainWorkerDeps<W> {
     /// Parameters for the chain.
     #[expect(unused, reason = "params will be used for chain configuration")]
     params: Arc<Params>,
@@ -38,20 +43,59 @@ pub struct ChainWorkerServiceState<W> {
     /// Context for the worker (database access layer).
     context: W,
 
-    /// Current tip commitment.
-    pub(crate) cur_tip: OLBlockCommitment,
-
-    /// Last finalized epoch, if any.
-    pub(crate) last_finalized_epoch: Option<EpochCommitment>,
-
     /// Status channel for the worker.
     status_channel: StatusChannel,
 
     /// Runtime handle for the worker.
     runtime_handle: Handle,
+}
+
+/// Mutable state for the chain worker.
+///
+/// This contains the actual "state" - data that changes during the worker's
+/// operation and represents the current processing position.
+#[derive(Debug)]
+struct ChainWorkerMutableState {
+    /// Current tip commitment.
+    cur_tip: OLBlockCommitment,
+
+    /// Last finalized epoch, if any.
+    last_finalized_epoch: Option<EpochCommitment>,
 
     /// Whether the worker has been initialized.
     initialized: bool,
+}
+
+impl Default for ChainWorkerMutableState {
+    fn default() -> Self {
+        Self {
+            cur_tip: OLBlockCommitment::null(),
+            last_finalized_epoch: None,
+            initialized: false,
+        }
+    }
+}
+
+/// Service state for the chain worker.
+///
+/// This combines static dependencies with mutable state. The separation is
+/// internal to make the code clearer about what is actual "state" vs what
+/// are just dependencies needed for operations.
+///
+/// NOTE: Ideally, the dependencies (`ChainWorkerDeps`) would live in the Service
+/// struct rather than State, with only `ChainWorkerMutableState` here. However,
+/// the current service framework doesn't support this pattern. This should be
+/// refactored when the framework is updated.
+#[expect(
+    missing_debug_implementations,
+    reason = "Some inner types don't have Debug impl"
+)]
+pub struct ChainWorkerServiceState<W> {
+    /// Static dependencies.
+    deps: ChainWorkerDeps<W>,
+
+    /// Mutable state.
+    state: ChainWorkerMutableState,
 }
 
 impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
@@ -63,19 +107,19 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         runtime_handle: Handle,
     ) -> Self {
         Self {
-            params,
-            context,
-            cur_tip: OLBlockCommitment::null(),
-            last_finalized_epoch: None,
-            status_channel,
-            runtime_handle,
-            initialized: false,
+            deps: ChainWorkerDeps {
+                params,
+                context,
+                status_channel,
+                runtime_handle,
+            },
+            state: ChainWorkerMutableState::default(),
         }
     }
 
     /// Returns whether the worker has been initialized.
     pub(crate) fn is_initialized(&self) -> bool {
-        self.initialized
+        self.state.initialized
     }
 
     fn check_initialized(&self) -> WorkerResult<()> {
@@ -86,13 +130,24 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         }
     }
 
+    /// Returns the current tip commitment.
+    pub(crate) fn cur_tip(&self) -> OLBlockCommitment {
+        self.state.cur_tip
+    }
+
+    /// Returns the last finalized epoch, if any.
+    pub(crate) fn last_finalized_epoch(&self) -> Option<EpochCommitment> {
+        self.state.last_finalized_epoch
+    }
+
     /// Waits for genesis and resolves the initial tip commitment.
     pub(crate) fn wait_for_genesis_and_resolve_tip(&self) -> WorkerResult<OLBlockCommitment> {
         info!("waiting until genesis");
 
         let init_state = self
+            .deps
             .runtime_handle
-            .block_on(self.status_channel.wait_until_genesis())
+            .block_on(self.deps.status_channel.wait_until_genesis())
             .map_err(|_| WorkerError::ShutdownBeforeGenesis)?;
 
         let cur_tip = match init_state.get_declared_final_epoch() {
@@ -103,7 +158,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             }
             None => {
                 // Get genesis block ID by fetching the first block at slot 0
-                let genesis_block_ids = self.context.fetch_blocks_at_slot(0)?;
+                let genesis_block_ids = self.deps.context.fetch_blocks_at_slot(0)?;
                 let genesis_blkid = *genesis_block_ids
                     .first()
                     .ok_or(WorkerError::MissingGenesisBlock)?;
@@ -119,8 +174,8 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let blkid = *cur_tip.blkid();
         info!(%blkid, "initializing chain worker");
 
-        self.cur_tip = cur_tip;
-        self.initialized = true;
+        self.state.cur_tip = cur_tip;
+        self.state.initialized = true;
 
         Ok(())
     }
@@ -163,6 +218,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let blkid = block_commitment.blkid();
 
         let block = self
+            .deps
             .context
             .fetch_block(blkid)?
             .ok_or(WorkerError::MissingOLBlock(*blkid))?;
@@ -181,7 +237,8 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             None
         } else {
             Some(
-                self.context
+                self.deps
+                    .context
                     .fetch_header(parent_commitment.blkid())?
                     .ok_or(WorkerError::MissingOLBlock(*parent_commitment.blkid()))?,
             )
@@ -202,6 +259,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     ) -> WorkerResult<OLBlockExecutionOutput> {
         // Fetch parent state
         let parent_state = self
+            .deps
             .context
             .fetch_ol_state(parent_commitment)?
             .ok_or(WorkerError::MissingPreState(parent_commitment))?;
@@ -258,8 +316,11 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         block_commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
-        self.context.store_block_output(block_commitment, output)?;
-        self.context
+        self.deps
+            .context
+            .store_block_output(block_commitment, output)?;
+        self.deps
+            .context
             .store_auxiliary_data(block_commitment, output.indexer_writes())?;
         Ok(())
     }
@@ -300,21 +361,21 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         );
 
         debug!(?summary, "completed chain epoch");
-        self.context.store_summary(summary)?;
+        self.deps.context.store_summary(summary)?;
 
         Ok(())
     }
 
     /// Updates the current tip as managed by the worker.
     pub(crate) fn update_cur_tip(&mut self, tip: OLBlockCommitment) -> WorkerResult<()> {
-        self.cur_tip = tip;
+        self.state.cur_tip = tip;
         Ok(())
     }
 
     /// Finalizes an epoch, merging write batches into finalized state.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        self.context.merge_finalized_epoch(&epoch)?;
-        self.last_finalized_epoch = Some(epoch);
+        self.deps.context.merge_finalized_epoch(&epoch)?;
+        self.state.last_finalized_epoch = Some(epoch);
         Ok(())
     }
 }
