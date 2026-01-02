@@ -32,54 +32,59 @@ pub struct L1Status {
     pub published_reveal_txs_count: u64,
 }
 
+// Helper to reverse a 32-byte hex string from big-endian to little-endian
+fn reverse_hex_32(hex_str: &str) -> Option<String> {
+    if hex_str.len() != 64 {
+        return None;
+    }
+
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(hex_str, &mut bytes).ok()?;
+    bytes.reverse();
+
+    let mut buf = [0u8; 64];
+    hex::encode_to_slice(bytes, &mut buf).expect("encoding to fixed buffer");
+
+    // SAFETY: hex encoding always produces valid UTF-8
+    Some(unsafe { str::from_utf8_unchecked(&buf).to_string() })
+}
+
+// Helper to reverse BitcoinTxid bytes to little-endian hex string
+fn txid_to_le_hex(txid: &BitcoinTxid) -> String {
+    let mut bytes = txid.inner_raw().0;
+    bytes.reverse();
+
+    let mut buf = [0u8; 64];
+    hex::encode_to_slice(bytes, &mut buf).expect("encoding to fixed buffer");
+
+    // SAFETY: hex encoding always produces valid UTF-8
+    unsafe { str::from_utf8_unchecked(&buf).to_string() }
+}
+
+// Helper to format cur_tip_blkid for display (reversed if valid hex, otherwise as-is)
+fn format_blkid(blkid: &str) -> String {
+    reverse_hex_32(blkid).unwrap_or_else(|| blkid.to_string())
+}
+
 // Custom debug implementation to print the txid in little endian
 impl fmt::Debug for L1Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("L1Status");
-        let mut debug_struct = debug
+        debug
             .field("bitcoin_rpc_connected", &self.bitcoin_rpc_connected)
             .field("last_rpc_error", &self.last_rpc_error)
-            .field("cur_height", &self.cur_height);
+            .field("cur_height", &self.cur_height)
+            .field("cur_tip_blkid", &format_blkid(&self.cur_tip_blkid));
 
-        // Handle cur_tip_blkid - reverse the hex string if it's a valid 32-byte hex
-        if self.cur_tip_blkid.len() == 64 {
-            // Try to parse as hex and reverse
-            let mut blkid_bytes = [0u8; 32];
-            if hex::decode_to_slice(&self.cur_tip_blkid, &mut blkid_bytes).is_ok() {
-                blkid_bytes.reverse();
-                let mut blkid_buf = [0u8; 64];
-                hex::encode_to_slice(blkid_bytes, &mut blkid_buf).expect("buf: enc hex");
-                // SAFETY: hex encoding always produces valid UTF-8
-                let blkid_str = unsafe { str::from_utf8_unchecked(&blkid_buf) };
-                debug_struct = debug_struct.field("cur_tip_blkid", &blkid_str);
-            } else {
-                debug_struct = debug_struct.field("cur_tip_blkid", &self.cur_tip_blkid);
-            }
-        } else {
-            debug_struct = debug_struct.field("cur_tip_blkid", &self.cur_tip_blkid);
-        }
-
-        // Handle last_published_txid
         if let Some(txid) = &self.last_published_txid {
-            let mut txid_buf = [0u8; 64];
-            {
-                let mut bytes = txid.inner_raw().0;
-                bytes.reverse();
-                hex::encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
-            }
-            // SAFETY: hex encoding always produces valid UTF-8
-            let txid_str = unsafe { str::from_utf8_unchecked(&txid_buf) };
-            debug_struct = debug_struct.field("last_published_txid", &txid_str);
+            debug.field("last_published_txid", &txid_to_le_hex(txid));
         } else {
-            debug_struct = debug_struct.field("last_published_txid", &"None");
+            debug.field("last_published_txid", &"None");
         }
 
-        debug_struct
+        debug
             .field("last_update", &self.last_update)
-            .field(
-                "published_reveal_txs_count",
-                &self.published_reveal_txs_count,
-            )
+            .field("published_reveal_txs_count", &self.published_reveal_txs_count)
             .finish()
     }
 }
@@ -87,97 +92,22 @@ impl fmt::Debug for L1Status {
 // Custom display information to print the txid in little endian
 impl fmt::Display for L1Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(txid) = &self.last_published_txid {
-            let mut txid_buf = [0u8; 64];
-            {
-                let mut bytes = txid.inner_raw().0;
-                bytes.reverse();
-                hex::encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
-            }
-            // SAFETY: hex encoding always produces valid UTF-8
-            let txid_str = unsafe { str::from_utf8_unchecked(&txid_buf) };
+        let blkid = format_blkid(&self.cur_tip_blkid);
+        let txid_str = self
+            .last_published_txid
+            .as_ref()
+            .map(|t| txid_to_le_hex(t))
+            .unwrap_or_else(|| "None".to_string());
 
-            // Handle cur_tip_blkid - reverse the hex string if it's a valid 32-byte hex
-            if self.cur_tip_blkid.len() == 64 {
-                // Try to parse as hex and reverse
-                let mut blkid_bytes = [0u8; 32];
-                if hex::decode_to_slice(&self.cur_tip_blkid, &mut blkid_bytes).is_ok() {
-                    blkid_bytes.reverse();
-                    let mut blkid_buf = [0u8; 64];
-                    hex::encode_to_slice(blkid_bytes, &mut blkid_buf).expect("buf: enc hex");
-                    // SAFETY: hex encoding always produces valid UTF-8
-                    let blkid_str = unsafe { str::from_utf8_unchecked(&blkid_buf) };
-                    write!(
-                        f,
-                        "L1Status {{ bitcoin_rpc_connected: {}, cur_height: {}, cur_tip_blkid: {}, last_published_txid: {}, published_reveal_txs_count: {} }}",
-                        self.bitcoin_rpc_connected,
-                        self.cur_height,
-                        blkid_str,
-                        txid_str,
-                        self.published_reveal_txs_count
-                    )
-                } else {
-                    write!(
-                        f,
-                        "L1Status {{ bitcoin_rpc_connected: {}, cur_height: {}, cur_tip_blkid: {}, last_published_txid: {}, published_reveal_txs_count: {} }}",
-                        self.bitcoin_rpc_connected,
-                        self.cur_height,
-                        self.cur_tip_blkid,
-                        txid_str,
-                        self.published_reveal_txs_count
-                    )
-                }
-            } else {
-                write!(
-                    f,
-                    "L1Status {{ bitcoin_rpc_connected: {}, cur_height: {}, cur_tip_blkid: {}, last_published_txid: {}, published_reveal_txs_count: {} }}",
-                    self.bitcoin_rpc_connected,
-                    self.cur_height,
-                    self.cur_tip_blkid,
-                    txid_str,
-                    self.published_reveal_txs_count
-                )
-            }
-        } else {
-            // Handle cur_tip_blkid - reverse the hex string if it's a valid 32-byte hex
-            if self.cur_tip_blkid.len() == 64 {
-                // Try to parse as hex and reverse
-                let mut blkid_bytes = [0u8; 32];
-                if hex::decode_to_slice(&self.cur_tip_blkid, &mut blkid_bytes).is_ok() {
-                    blkid_bytes.reverse();
-                    let mut blkid_buf = [0u8; 64];
-                    hex::encode_to_slice(blkid_bytes, &mut blkid_buf).expect("buf: enc hex");
-                    // SAFETY: hex encoding always produces valid UTF-8
-                    let blkid_str = unsafe { str::from_utf8_unchecked(&blkid_buf) };
-                    write!(
-                        f,
-                        "L1Status {{ bitcoin_rpc_connected: {}, cur_height: {}, cur_tip_blkid: {}, last_published_txid: None, published_reveal_txs_count: {} }}",
-                        self.bitcoin_rpc_connected,
-                        self.cur_height,
-                        blkid_str,
-                        self.published_reveal_txs_count
-                    )
-                } else {
-                    write!(
-                        f,
-                        "L1Status {{ bitcoin_rpc_connected: {}, cur_height: {}, cur_tip_blkid: {}, last_published_txid: None, published_reveal_txs_count: {} }}",
-                        self.bitcoin_rpc_connected,
-                        self.cur_height,
-                        self.cur_tip_blkid,
-                        self.published_reveal_txs_count
-                    )
-                }
-            } else {
-                write!(
-                    f,
-                    "L1Status {{ bitcoin_rpc_connected: {}, cur_height: {}, cur_tip_blkid: {}, last_published_txid: None, published_reveal_txs_count: {} }}",
-                    self.bitcoin_rpc_connected,
-                    self.cur_height,
-                    self.cur_tip_blkid,
-                    self.published_reveal_txs_count
-                )
-            }
-        }
+        write!(
+            f,
+            "L1Status {{ bitcoin_rpc_connected: {}, cur_height: {}, cur_tip_blkid: {}, last_published_txid: {}, published_reveal_txs_count: {} }}",
+            self.bitcoin_rpc_connected,
+            self.cur_height,
+            blkid,
+            txid_str,
+            self.published_reveal_txs_count
+        )
     }
 }
 
