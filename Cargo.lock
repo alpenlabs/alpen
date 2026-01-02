@@ -14156,7 +14156,6 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
- "const-hex",
  "serde",
  "strata-btc-types",
  "strata-checkpoint-types",
