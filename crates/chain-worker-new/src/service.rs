@@ -4,7 +4,6 @@ use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 use strata_checkpoint_types::EpochSummary;
-use strata_eectl::handle::ExecCtlHandle;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_support_types::{IndexerState, WriteTrackingState};
@@ -90,9 +89,6 @@ pub struct ChainWorkerServiceState<W> {
     /// Context for the worker.
     context: W,
 
-    /// Handle for the execution controller.
-    exec_ctl_handle: ExecCtlHandle,
-
     /// Current tip commitment.
     cur_tip: OLBlockCommitment,
 
@@ -115,7 +111,6 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         shared: Arc<Mutex<WorkerShared>>,
         context: W,
         params: Arc<Params>,
-        exec_ctl_handle: ExecCtlHandle,
         status_channel: StatusChannel,
         runtime_handle: Handle,
     ) -> Self {
@@ -123,7 +118,6 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             shared,
             params,
             context,
-            exec_ctl_handle,
             cur_tip: OLBlockCommitment::null(),
             last_finalized_epoch: None,
             status_channel,
@@ -215,12 +209,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             )
         };
 
-        // 2. Execute EE payload (validates the EL block)
-        self.exec_ctl_handle
-            .try_exec_el_payload_blocking(*block_commitment)
-            .map_err(|_| WorkerError::InvalidExecPayload(*block_commitment))?;
-
-        // 3. Fetch parent state and create layered state accessor
+        // 2. Fetch parent state and create layered state accessor
         let parent_state = self
             .context
             .fetch_ol_state(parent_commitment)?
@@ -230,7 +219,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let tracking_state = WriteTrackingState::new_from_state(&parent_state);
         let mut indexer_state = IndexerState::new(tracking_state);
 
-        // 4. Execute using new OL STF
+        // 3. Execute using new OL STF
         verify_block(
             &mut indexer_state,
             block.header(),
@@ -238,7 +227,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             block.body(),
         )?;
 
-        // 5. Extract outputs
+        // 4. Extract outputs
         let (tracking_state, indexer_writes) = indexer_state.into_parts();
         let write_batch = tracking_state.into_batch();
 
@@ -246,7 +235,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let computed_state_root = *block.header().state_root();
         let logs = Vec::new(); // TODO: Collect logs from execution context when available
 
-        // 6. Create output and persist
+        // 5. Create output and persist
         let output = OLBlockExecutionOutput::new(
             computed_state_root,
             logs,
@@ -259,7 +248,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         self.context
             .store_auxiliary_data(*block_commitment, &indexer_writes)?;
 
-        // 7. Handle epoch terminal if needed
+        // 6. Handle epoch terminal if needed
         if block.header().is_terminal() {
             self.handle_complete_epoch(&block, &output)?;
         }
@@ -311,23 +300,13 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     /// Updates the current tip as managed by the worker.
     fn update_cur_tip(&mut self, tip: OLBlockCommitment) -> WorkerResult<()> {
         self.cur_tip = tip;
-
-        self.exec_ctl_handle
-            .update_safe_tip_blocking(tip)
-            .map_err(WorkerError::ExecEnvEngine)?;
-
         Ok(())
     }
 
-    /// Finalizes an epoch, updating the EE and internal state.
+    /// Finalizes an epoch, merging write batches into finalized state.
     fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        self.exec_ctl_handle
-            .update_finalized_tip_blocking(epoch.to_block_commitment())
-            .map_err(WorkerError::ExecEnvEngine)?;
-
         self.context.merge_finalized_epoch(&epoch)?;
         self.last_finalized_epoch = Some(epoch);
-
         Ok(())
     }
 }
