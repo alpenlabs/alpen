@@ -46,7 +46,13 @@ pub use tree_hash::{self, Sha256Hasher};
 ///     transparent_wrapper_of(u64, from_sat)
 /// );
 /// ```
+/// Wrapper around `proptest::proptest!` that skips tests under miri.
+///
+/// Miri runs significantly slower than normal execution, making proptest's
+/// many randomized iterations impractical (tests can take hours). This macro
+/// conditionally compiles out proptest tests when running under miri.
 #[macro_export]
+#[cfg(not(miri))]
 macro_rules! ssz_proptest {
     // Variant without transparent wrapper
     ($type:ty, $strategy:expr) => {
@@ -100,4 +106,13 @@ macro_rules! ssz_proptest {
             }
         }
     };
+}
+
+/// No-op version of [`ssz_proptest!`] when running under miri.
+///
+/// Proptest tests are too slow under miri's interpreted execution, so we skip them entirely.
+#[macro_export]
+#[cfg(miri)]
+macro_rules! ssz_proptest {
+    ($($tt:tt)*) => {};
 }
