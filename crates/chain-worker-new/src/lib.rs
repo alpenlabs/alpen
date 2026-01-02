@@ -24,7 +24,7 @@ mod traits;
 
 pub use builder::ChainWorkerBuilder;
 pub use errors::{WorkerError, WorkerResult};
-pub use handle::{ChainWorkerHandle, WorkerShared};
+pub use handle::ChainWorkerHandle;
 pub use message::ChainWorkerMessage;
 pub use output::OLBlockExecutionOutput;
 pub use service::{ChainWorkerService, ChainWorkerServiceState, ChainWorkerStatus};

@@ -6,11 +6,11 @@ use strata_params::Params;
 use strata_service::ServiceBuilder;
 use strata_status::StatusChannel;
 use strata_tasks::TaskExecutor;
-use tokio::{runtime::Handle, sync::Mutex};
+use tokio::runtime::Handle;
 
 use crate::{
     errors::{WorkerError, WorkerResult},
-    handle::{ChainWorkerHandle, WorkerShared},
+    handle::ChainWorkerHandle,
     service::{ChainWorkerService, ChainWorkerServiceState},
     traits::WorkerContext,
 };
@@ -97,17 +97,9 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
             .runtime_handle
             .ok_or(WorkerError::MissingDependency("runtime_handle"))?;
 
-        // Create shared state for the worker.
-        let shared = Arc::new(Mutex::new(WorkerShared::default()));
-
         // Create the service state.
-        let service_state = ChainWorkerServiceState::new(
-            shared.clone(),
-            context,
-            params,
-            status_channel,
-            runtime_handle,
-        );
+        let service_state =
+            ChainWorkerServiceState::new(context, params, status_channel, runtime_handle);
 
         // Create the service builder and get command handle.
         let mut service_builder =
@@ -122,7 +114,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
             .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 
         // Create and return the handle.
-        let handle = ChainWorkerHandle::new(shared, command_handle);
+        let handle = ChainWorkerHandle::new(command_handle);
 
         Ok(handle)
     }
