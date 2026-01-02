@@ -1,0 +1,68 @@
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:latest
+    command:
+      -signet
+      -daemon=0
+      -server=1
+      -txindex=1
+      -rpcbind=0.0.0.0
+      -rpcallowip=0.0.0.0/0
+      -rpcuser=rpcuser
+      -rpcpassword=rpcpassword
+      -fallbackfee=0.0001
+    ports:
+      - "38332:38332"
+    volumes:
+      - bitcoind-data:/bitcoin/.bitcoin
+    restart: unless-stopped
+
+  alpen-client:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    command: >
+      --ol-client-http http://strata:8432
+      --sequencer-pubkey 4f8c8a1b39e9c7f61b0d2c5f8d1a3345c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1
+    environment:
+      RUST_LOG: info
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+      - "30303:30303"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    restart: unless-stopped
+    volumes:
+      - alpen-client-data:/app/.local
+      - alpen-client-data:/app/.cache
+    # depends_on:
+    #   - strata
+    # links:
+    #   - strata
+  strata:
+    # image: strata:latest
+    build:
+      context: ..
+      dockerfile: docker/strata/Dockerfile    
+    user: "0:0"
+    depends_on:
+      - bitcoind
+    environment:
+      CONFIG_PATH: /config/config.toml
+      PARAM_PATH: /config/params.json
+      RUST_LOG: debug
+      RUST_BACKTRACE: 1
+    volumes:
+      - ./configs/config.toml:/config/config.toml:ro
+      - ./configs/params.json:/config/params.json:ro
+      - strata-data:/app/data
+    ports:
+      - "8432:8432"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    restart: unless-stopped
+
+volumes:
+  bitcoind-data:
+  strata-data:
+  alpen-client-data:
