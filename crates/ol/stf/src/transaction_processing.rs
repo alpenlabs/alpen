@@ -1,13 +1,16 @@
 //! Block transactional processing.
 
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
-use strata_codec::encode_to_vec;
+use strata_acct_types::{
+    AccountId, AcctError, BitcoinAmount, MsgPayload, SentMessage, SentTransfer,
+};
+use strata_codec::{CodecError, encode_to_vec};
 use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
 use strata_ol_chain_types_new::{
     OLLog, OLTransaction, OLTxSegment, SnarkAccountUpdateLogData, TransactionAttachment,
     TransactionPayload,
 };
-use strata_snark_acct_types::SnarkAccountUpdateContainer;
+use strata_snark_acct_sys as snark_sys;
+use strata_snark_acct_types::{LedgerInterface, SnarkAccountUpdateContainer};
 
 use crate::{
     account_processing,
@@ -75,12 +78,14 @@ pub fn process_single_tx<S: IStateAccessor>(
 #[derive(Clone, Debug)]
 struct AcctInteractionBuffer {
     messages: Vec<SentMessage>,
+    transfers: Vec<SentTransfer>,
 }
 
 impl AcctInteractionBuffer {
     fn new_empty() -> Self {
         Self {
             messages: Vec::new(),
+            transfers: Vec::new(),
         }
     }
 
@@ -91,6 +96,24 @@ impl AcctInteractionBuffer {
     fn send_message_to(&mut self, dest: AccountId, payload: MsgPayload) {
         self.add_sent_message(SentMessage::new(dest, payload));
     }
+
+    fn send_transfer_to(&mut self, dest: AccountId, amount: BitcoinAmount) {
+        self.transfers.push(SentTransfer::new(dest, amount));
+    }
+}
+
+impl LedgerInterface for AcctInteractionBuffer {
+    type Error = ExecError;
+
+    fn send_transfer(&mut self, dest: AccountId, value: BitcoinAmount) -> Result<(), Self::Error> {
+        self.send_transfer_to(dest, value);
+        Ok(())
+    }
+
+    fn send_message(&mut self, dest: AccountId, payload: MsgPayload) -> Result<(), Self::Error> {
+        self.send_message_to(dest, payload);
+        Ok(())
+    }
 }
 
 fn process_update_tx<S: IStateAccessor>(
@@ -99,72 +122,55 @@ fn process_update_tx<S: IStateAccessor>(
     update: &SnarkAccountUpdateContainer,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
-    // We need to collect information for logging and effects from within the
-    // closure, then apply them after.
-    let seqno = update.operation().seq_no();
-    let new_state = update.operation().new_state();
-    let extra_data = update.operation().extra_data();
-    let outputs = update.operation().outputs();
+    let operation = update.base_update().operation();
 
-    // Update the account within the closure, collecting effects to apply after.
-    let (fx_buf, account_serial) = state.update_account(target, |astate| -> ExecResult<_> {
-        // 1. Make sure it's a snark account and get a mutable reference.
-        let sastate = astate
+    // Step 1: Read account state outside closure for verification
+    let account_state = state
+        .get_account_state(target)?
+        .ok_or(ExecError::UnknownAccount(target))?;
+    let acc_serial = account_state.serial();
+    let snark_acct_state = account_state
+        .as_snark_account()
+        .map_err(|_| ExecError::IncorrectTxTargetType)?;
+    let cur_balance = account_state.balance();
+
+    // Step 2: Verify the update (needs state.asm_manifests_mmr())
+    let verified_update =
+        snark_sys::verify_update_correctness(state, target, snark_acct_state, update, cur_balance)?;
+
+    // Step 3: Mutate and collect effects (inside closure)
+    let fx_buf = state.update_account(target, |astate| -> ExecResult<_> {
+        // Deduct balance for all outputs first
+        let total_sent = operation
+            .outputs()
+            .compute_total_value()
+            .ok_or(ExecError::Acct(AcctError::BitcoinAmountOverflow))?;
+        let coin = astate
+            .take_balance(total_sent)
+            .map_err(|_| ExecError::InsufficientAccountBalance(target, total_sent))?;
+        coin.safely_consume_unchecked(); // TODO: better usage?
+
+        // Now get snark account state and update proof state
+        let snrk_acct_state = astate
             .as_snark_account_mut()
             .map_err(|_| ExecError::IncorrectTxTargetType)?;
 
-        // 2. Call the snark account machinery to process the update.
-        //
-        // XXX This implementation is very limited because we don't want to support
-        // the full snark account functionality yet.  We don't check anything, we
-        // just update the fields as we're told to without authenticating anything.
-        //
-        // TODO make this the full implementation, this is where we'd call out to it
-        // instead of just doing it here
-
-        // This just calls the function to update the state as we would if we
-        // actually were doing the real implementation.
-        sastate.update_inner_state(
-            new_state.inner_state(),
-            new_state.next_inbox_msg_idx(),
-            seqno.into(),
-            extra_data,
+        snrk_acct_state.update_inner_state(
+            operation.new_state().inner_state(),
+            operation.new_state().next_inbox_msg_idx(),
+            operation.seq_no().into(),
+            operation.extra_data(),
         )?;
 
-        // We also have to extract the effects here too, subtracting balance in the
-        // process.
+        // Collect effects using snark-acct-sys
         let mut fx_buf = AcctInteractionBuffer::new_empty();
-        for m in outputs.messages() {
-            let coin = astate
-                .take_balance(m.payload().value())
-                .map_err(|_| ExecError::InsufficientAccountBalance(target, m.payload().value()))?;
-            coin.safely_consume_unchecked(); // TODO track this better
-            fx_buf.send_message_to(m.dest(), m.payload().clone());
-        }
+        snark_sys::apply_update_outputs(&mut fx_buf, verified_update)?;
 
-        // Capture the account serial for the log.
-        let account_serial = astate.serial();
-
-        Ok((fx_buf, account_serial))
+        Ok(fx_buf)
     })??;
 
-    // 3. Apply the effects (after the account update closure completes).
+    // Step 4: Apply effects
     apply_interactions(state, target, fx_buf, context.basic_context())?;
-
-    // 4. Emit a log message.
-    // According to the spec, the log should contain:
-    // - new_msg_idx: The sequence number from the account state
-    // - extra_data: The extra data from the update operation
-    // TODO improve codec error handling here when more stuff is SSZed
-    let log_data =
-        SnarkAccountUpdateLogData::new(new_state.next_inbox_msg_idx, extra_data.to_vec()).ok_or(
-            ExecError::Codec(strata_codec::CodecError::OverflowContainer),
-        )?;
-
-    // Encode the log data and emit it
-    let log_payload = encode_to_vec(&log_data)?;
-    let log = OLLog::new(account_serial, log_payload);
-    context.emit_log(log);
 
     Ok(())
 }
@@ -175,7 +181,12 @@ fn apply_interactions<S: IStateAccessor>(
     fx_buf: AcctInteractionBuffer,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // Send the messages off to each of the targets.
+    // Process transfers: pure value transfers with no message data
+    for t in fx_buf.transfers {
+        account_processing::process_transfer(state, source, t.dest, t.value, context)?;
+    }
+
+    // Process messages: carry both value and data
     for m in fx_buf.messages {
         account_processing::process_message(state, source, m.dest, m.payload, context)?;
     }
