@@ -13,7 +13,7 @@ use crate::{
     handle::ChainWorkerHandle,
     service::ChainWorkerService,
     state::ChainWorkerServiceState,
-    traits::WorkerContext,
+    traits::ChainWorkerContext,
 };
 
 /// Builder for constructing and launching a chain worker service.
@@ -34,14 +34,14 @@ use crate::{
 ///     .launch(&executor)?;
 /// ```
 #[derive(Debug)]
-pub struct ChainWorkerBuilder<W: WorkerContext + Send + Sync + 'static> {
+pub struct ChainWorkerBuilder<W: ChainWorkerContext + Send + Sync + 'static> {
     context: Option<W>,
     params: Option<Arc<Params>>,
     status_channel: Option<StatusChannel>,
     runtime_handle: Option<Handle>,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
     /// Create a new builder instance.
     pub fn new() -> Self {
         Self {
@@ -52,7 +52,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
         }
     }
 
-    /// Set the worker context (implements [`WorkerContext`] trait).
+    /// Set the worker context (implements [`ChainWorkerContext`] trait).
     pub fn with_context(mut self, context: W) -> Self {
         self.context = Some(context);
         self
@@ -83,7 +83,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
     /// a handle for interacting with the worker.
     pub fn launch(self, executor: &TaskExecutor) -> WorkerResult<ChainWorkerHandle>
     where
-        W: WorkerContext + Send + Sync + 'static,
+        W: ChainWorkerContext + Send + Sync + 'static,
     {
         let context = self
             .context
@@ -121,7 +121,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
     }
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> Default for ChainWorkerBuilder<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static> Default for ChainWorkerBuilder<W> {
     fn default() -> Self {
         Self::new()
     }

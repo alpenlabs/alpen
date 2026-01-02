@@ -14,7 +14,7 @@ use crate::{OLBlockExecutionOutput, WorkerResult};
 /// This trait abstracts the database access layer, allowing the worker to be
 /// tested with mock implementations. All methods should be blocking operations
 /// as the worker runs on a dedicated thread pool.
-pub trait WorkerContext: Send + Sync + 'static {
+pub trait ChainWorkerContext: Send + Sync + 'static {
     // =========================================================================
     // Block access
     // =========================================================================
