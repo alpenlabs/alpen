@@ -28,7 +28,7 @@ Generate the required keys:
 cargo build --bin strata-datatool
 cd docker
 
-# Bitcoin RPC credentials can be provided via environment variables (optional):
+# Bitcoin RPC connection is required. Credentials can be provided via environment variables:
 # If not set, defaults to: http://localhost:18443, rpcuser, rpcpassword
 export BITCOIN_RPC_URL="http://localhost:18443"
 export BITCOIN_RPC_USER="rpcuser"
@@ -53,7 +53,7 @@ docker start strata_sequencer
 docker start alpen_reth_fn # if you want to test the full node
 ```
 
-## Prover Client
+## Prover Client (with SP1)
 
 > Before proceeding, make sure that all of the prerequisites listed above have been met.
 
@@ -69,15 +69,18 @@ docker start alpen_reth_fn # if you want to test the full node
     target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1
     ```
 
-3. Generate configs
+3. Generate configs and params
 
     ```bash
-    # Set Bitcoin RPC credentials if needed (optional)
-    export BITCOIN_RPC_URL="http://localhost:18443"
-    export BITCOIN_RPC_USER="rpcuser"
-    export BITCOIN_RPC_PASSWORD="rpcpassword"
+    # Set Bitcoin network and RPC credentials
+    export BITCOIN_NETWORK=signet
+    export BITCOIN_RPC_URL="http://localhost:59191"
+    export BITCOIN_RPC_USER="user"
+    export BITCOIN_RPC_PASSWORD="password"
 
-    cd docker && ./init-keys.sh ../target/release/strata-datatool
+    # The --chain-config argument allows switching between different chainspecs during deployment
+    # Available chainspecs: crates/reth/chainspec/src/res/{alpen-dev-chain.json, devnet-chain.json, testnet-chain.json (default)}
+    cd docker && ./init-keys.sh ../target/release/strata-datatool --chain-config ../crates/reth/chainspec/src/res/testnet-chain.json
     ```
 
 4. Run the prover-client
