@@ -11,7 +11,8 @@ use tokio::runtime::Handle;
 use crate::{
     errors::{WorkerError, WorkerResult},
     handle::ChainWorkerHandle,
-    service::{ChainWorkerService, ChainWorkerServiceState},
+    service::ChainWorkerService,
+    state::ChainWorkerServiceState,
     traits::WorkerContext,
 };
 
