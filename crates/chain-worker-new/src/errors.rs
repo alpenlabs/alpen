@@ -31,10 +31,6 @@ pub enum WorkerError {
     #[error("missing inner post-state of epoch {0} terminal {1:?}")]
     MissingEpochInnerPostState(u64, OLBlockCommitment),
 
-    /// Execution payload validation failed.
-    #[error("invalid execution payload for block {0:?}")]
-    InvalidExecPayload(OLBlockCommitment),
-
     /// Missing epoch summary for the given commitment.
     #[error("missing summary for epoch commitment {0:?}")]
     MissingEpochSummary(EpochCommitment),
@@ -47,10 +43,6 @@ pub enum WorkerError {
     /// STF execution error.
     #[error("STF execution failure: {0}")]
     StfExecution(#[from] strata_ol_stf::ExecError),
-
-    /// EE block execution error.
-    #[error("EE block execution failure: {0}")]
-    ExecEnvEngine(#[from] strata_eectl::errors::EngineError),
 
     /// Database error.
     #[error("database failure: {0}")]

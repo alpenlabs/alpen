@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use strata_eectl::handle::ExecCtlHandle;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
 use strata_status::StatusChannel;
@@ -29,7 +28,6 @@ use crate::{
 /// let handle = ChainWorkerBuilder::new()
 ///     .with_context(context)
 ///     .with_params(params)
-///     .with_exec_handle(exec_ctl_handle)
 ///     .with_status_channel(status_channel)
 ///     .with_runtime(runtime_handle)
 ///     .launch(&executor)?;
@@ -38,7 +36,6 @@ use crate::{
 pub struct ChainWorkerBuilder<W: WorkerContext + Send + Sync + 'static> {
     context: Option<W>,
     params: Option<Arc<Params>>,
-    exec_ctl_handle: Option<ExecCtlHandle>,
     status_channel: Option<StatusChannel>,
     runtime_handle: Option<Handle>,
 }
@@ -49,7 +46,6 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
         Self {
             context: None,
             params: None,
-            exec_ctl_handle: None,
             status_channel: None,
             runtime_handle: None,
         }
@@ -64,12 +60,6 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
     /// Set the rollup parameters.
     pub fn with_params(mut self, params: Arc<Params>) -> Self {
         self.params = Some(params);
-        self
-    }
-
-    /// Set the execution control handle.
-    pub fn with_exec_handle(mut self, handle: ExecCtlHandle) -> Self {
-        self.exec_ctl_handle = Some(handle);
         self
     }
 
@@ -100,9 +90,6 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
         let params = self
             .params
             .ok_or(WorkerError::MissingDependency("params"))?;
-        let exec_ctl_handle = self
-            .exec_ctl_handle
-            .ok_or(WorkerError::MissingDependency("exec_ctl_handle"))?;
         let status_channel = self
             .status_channel
             .ok_or(WorkerError::MissingDependency("status_channel"))?;
@@ -118,7 +105,6 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
             shared.clone(),
             context,
             params,
-            exec_ctl_handle,
             status_channel,
             runtime_handle,
         );
