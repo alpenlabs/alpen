@@ -150,14 +150,19 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             .block_on(self.deps.status_channel.wait_until_genesis())
             .map_err(|_| WorkerError::ShutdownBeforeGenesis)?;
 
-        let cur_tip = match init_state.get_declared_final_epoch() {
+        // Get the last finalized epoch from the checkpoint, if any
+        let finalized_epoch = init_state
+            .get_last_finalized_checkpoint()
+            .map(|ckpt| ckpt.batch_info.get_epoch_commitment());
+
+        let cur_tip = match finalized_epoch {
             Some(epoch) => {
-                // Convert from L2BlockCommitment to OLBlockCommitment
+                // Resume from the last finalized epoch's block
                 let l2bc = epoch.to_block_commitment();
                 OLBlockCommitment::new(l2bc.slot(), *l2bc.blkid())
             }
             None => {
-                // Get genesis block ID by fetching the first block at slot 0
+                // No finalized checkpoint yet - start from genesis
                 let genesis_block_ids = self.deps.context.fetch_blocks_at_slot(0)?;
                 let genesis_blkid = *genesis_block_ids
                     .first()
