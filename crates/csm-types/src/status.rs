@@ -3,7 +3,7 @@ use std::{fmt, str};
 use arbitrary::Arbitrary;
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
-use strata_identifiers::Buf32;
+use strata_btc_types::BitcoinTxid;
 
 /// Data that reflects what's happening around L1
 #[derive(Clone, Serialize, Deserialize, Default, Arbitrary)]
@@ -23,7 +23,7 @@ pub struct L1Status {
     pub cur_tip_blkid: String,
 
     /// Last published txid where L2 blob was present
-    pub last_published_txid: Option<Buf32>,
+    pub last_published_txid: Option<BitcoinTxid>,
 
     /// UNIX millis time of the last time we got a new update from the L1 connector.
     pub last_update: u64,
@@ -60,10 +60,10 @@ impl fmt::Debug for L1Status {
         }
 
         // Handle last_published_txid
-        if let Some(txid) = self.last_published_txid {
+        if let Some(txid) = &self.last_published_txid {
             let mut txid_buf = [0u8; 64];
             {
-                let mut bytes = txid.0;
+                let mut bytes = txid.inner_raw().0;
                 bytes.reverse();
                 hex::encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
             }
@@ -87,10 +87,10 @@ impl fmt::Debug for L1Status {
 // Custom display information to print the txid in little endian
 impl fmt::Display for L1Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(txid) = self.last_published_txid {
+        if let Some(txid) = &self.last_published_txid {
             let mut txid_buf = [0u8; 64];
             {
-                let mut bytes = txid.0;
+                let mut bytes = txid.inner_raw().0;
                 bytes.reverse();
                 hex::encode_to_slice(bytes, &mut txid_buf).expect("buf: enc hex");
             }
