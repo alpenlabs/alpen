@@ -1,11 +1,8 @@
 //! Handle for interacting with the chain worker service.
 
-use std::sync::Arc;
-
 use strata_identifiers::OLBlockCommitment;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{CommandHandle, ServiceError};
-use tokio::sync::Mutex;
 
 use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
 
@@ -15,21 +12,13 @@ use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
 /// and waiting for results.
 #[derive(Debug)]
 pub struct ChainWorkerHandle {
-    #[expect(unused, reason = "will be used later for shared state")]
-    shared: Arc<Mutex<WorkerShared>>,
     command_handle: CommandHandle<ChainWorkerMessage>,
 }
 
 impl ChainWorkerHandle {
-    /// Create a new chain worker handle from shared state and a service command handle.
-    pub fn new(
-        shared: Arc<Mutex<WorkerShared>>,
-        command_handle: CommandHandle<ChainWorkerMessage>,
-    ) -> Self {
-        Self {
-            shared,
-            command_handle,
-        }
+    /// Create a new chain worker handle from a service command handle.
+    pub fn new(command_handle: CommandHandle<ChainWorkerMessage>) -> Self {
+        Self { command_handle }
     }
 
     /// Returns the number of pending inputs that have not been processed yet.
@@ -103,13 +92,4 @@ fn convert_service_error(err: ServiceError) -> WorkerError {
         }
         ServiceError::UnknownInputErr => WorkerError::Unexpected("unknown input error".to_string()),
     }
-}
-
-/// Shared state between the worker and the handle.
-///
-/// This can be used to expose additional state that the handle needs to access
-/// without going through the message queue.
-#[derive(Debug, Clone, Default)]
-pub struct WorkerShared {
-    // TODO: Add shared state as needed
 }

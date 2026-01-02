@@ -12,12 +12,11 @@ use strata_params::Params;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::{Response, Service, ServiceState, SyncService};
 use strata_status::StatusChannel;
-use tokio::{runtime::Handle, sync::Mutex};
+use tokio::runtime::Handle;
 use tracing::*;
 
 use crate::{
     errors::{WorkerError, WorkerResult},
-    handle::WorkerShared,
     message::ChainWorkerMessage,
     output::OLBlockExecutionOutput,
     traits::WorkerContext,
@@ -73,20 +72,20 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 }
 
 /// Service state for the chain worker.
+///
+/// NOTE: Ideally, static dependencies like `context`, `runtime_handle`, etc. would live
+/// in the Service struct rather than State. However, the current service framework doesn't
+/// support this pattern. This should be refactored when the framework is updated.
 #[expect(
     missing_debug_implementations,
     reason = "Some inner types don't have Debug impl"
 )]
 pub struct ChainWorkerServiceState<W> {
-    /// Shared state for the worker.
-    #[expect(unused, reason = "will be used later for shared state access")]
-    shared: Arc<Mutex<WorkerShared>>,
-
     /// Parameters for the chain.
     #[expect(unused, reason = "params will be used for chain configuration")]
     params: Arc<Params>,
 
-    /// Context for the worker.
+    /// Context for the worker (database access layer).
     context: W,
 
     /// Current tip commitment.
@@ -108,14 +107,12 @@ pub struct ChainWorkerServiceState<W> {
 impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     /// Creates a new chain worker service state.
     pub fn new(
-        shared: Arc<Mutex<WorkerShared>>,
         context: W,
         params: Arc<Params>,
         status_channel: StatusChannel,
         runtime_handle: Handle,
     ) -> Self {
         Self {
-            shared,
             params,
             context,
             cur_tip: OLBlockCommitment::null(),
