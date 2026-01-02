@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types_new::OLBlock;
-use strata_ol_state_support_types::{IndexerState, WriteTrackingState};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
+use strata_ol_state_types::OLState;
 use strata_ol_stf::verify_block;
 use strata_params::Params;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
@@ -134,7 +135,33 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let blkid = block_commitment.blkid();
         debug!(%blkid, "Trying to execute block");
 
-        // 1. Fetch block and parent header
+        // Fetch block and parent context
+        let (block, parent_header, parent_commitment) =
+            self.fetch_block_with_parent(block_commitment)?;
+
+        // Execute STF and get output
+        let output = self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
+
+        // Persist results
+        self.persist_execution_output(*block_commitment, &output)?;
+
+        // Handle epoch terminal if needed
+        if block.header().is_terminal() {
+            self.handle_complete_epoch(&block, &output)?;
+        }
+
+        Ok(())
+    }
+
+    /// Fetches a block and its parent header from the context.
+    ///
+    /// Returns the block, optional parent header, and parent commitment.
+    fn fetch_block_with_parent(
+        &self,
+        block_commitment: &OLBlockCommitment,
+    ) -> WorkerResult<(OLBlock, Option<OLBlockHeader>, OLBlockCommitment)> {
+        let blkid = block_commitment.blkid();
+
         let block = self
             .context
             .fetch_block(blkid)?
@@ -160,50 +187,80 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             )
         };
 
-        // 2. Fetch parent state and create layered state accessor
+        Ok((block, parent_header, parent_commitment))
+    }
+
+    /// Executes the STF on a block and returns the execution output.
+    ///
+    /// This fetches parent state, builds the state stack, runs verification,
+    /// and extracts the resulting write batch and indexer writes.
+    fn execute_stf(
+        &self,
+        block: &OLBlock,
+        parent_header: Option<&OLBlockHeader>,
+        parent_commitment: OLBlockCommitment,
+    ) -> WorkerResult<OLBlockExecutionOutput> {
+        // Fetch parent state
         let parent_state = self
             .context
             .fetch_ol_state(parent_commitment)?
             .ok_or(WorkerError::MissingPreState(parent_commitment))?;
 
-        // Build the state stack: IndexerState<WriteTrackingState<&OLState>>
-        let tracking_state = WriteTrackingState::new_from_state(&parent_state);
-        let mut indexer_state = IndexerState::new(tracking_state);
-
-        // 3. Execute using new OL STF
-        verify_block(
-            &mut indexer_state,
-            block.header(),
-            parent_header,
-            block.body(),
-        )?;
-
-        // 4. Extract outputs
-        let (tracking_state, indexer_writes) = indexer_state.into_parts();
-        let write_batch = tracking_state.into_batch();
+        // Execute and extract outputs
+        let (write_batch, indexer_writes) =
+            Self::run_stf_verification(&parent_state, block, parent_header)?;
 
         // Use the state root from the header (verify_block validated it)
         let computed_state_root = *block.header().state_root();
         let logs = Vec::new(); // TODO: Collect logs from execution context when available
 
-        // 5. Create output and persist
-        let output = OLBlockExecutionOutput::new(
+        Ok(OLBlockExecutionOutput::new(
             computed_state_root,
             logs,
             write_batch,
-            indexer_writes.clone(),
-        );
+            indexer_writes,
+        ))
+    }
 
+    /// Runs the STF verification on a block.
+    ///
+    /// This is a pure function that builds the state stack and executes the STF.
+    fn run_stf_verification(
+        parent_state: &OLState,
+        block: &OLBlock,
+        parent_header: Option<&OLBlockHeader>,
+    ) -> WorkerResult<(
+        strata_ol_state_types::WriteBatch<strata_ol_state_types::NativeAccountState>,
+        IndexerWrites,
+    )> {
+        // Build the state stack: IndexerState<WriteTrackingState<&OLState>>
+        let tracking_state = WriteTrackingState::new_from_state(parent_state);
+        let mut indexer_state = IndexerState::new(tracking_state);
+
+        // Execute using new OL STF
+        verify_block(
+            &mut indexer_state,
+            block.header(),
+            parent_header.cloned(),
+            block.body(),
+        )?;
+
+        // Extract outputs
+        let (tracking_state, indexer_writes) = indexer_state.into_parts();
+        let write_batch = tracking_state.into_batch();
+
+        Ok((write_batch, indexer_writes))
+    }
+
+    /// Persists the execution output to storage.
+    fn persist_execution_output(
+        &self,
+        block_commitment: OLBlockCommitment,
+        output: &OLBlockExecutionOutput,
+    ) -> WorkerResult<()> {
+        self.context.store_block_output(block_commitment, output)?;
         self.context
-            .store_block_output(*block_commitment, &output)?;
-        self.context
-            .store_auxiliary_data(*block_commitment, &indexer_writes)?;
-
-        // 6. Handle epoch terminal if needed
-        if block.header().is_terminal() {
-            self.handle_complete_epoch(&block, &output)?;
-        }
-
+            .store_auxiliary_data(block_commitment, output.indexer_writes())?;
         Ok(())
     }
 
