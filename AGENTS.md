@@ -4,7 +4,7 @@ This file provides guidance to AI coding assistants when working with code in th
 
 ## Overview
 
-**Alpen** is an EVM-compatible validity rollup on Bitcoin. It provides programmable Bitcoin functionality through a Layer 2 solution with a decoupled architecture separating the Anchor State Machine (ASM), Orchestration Layer (OL), and Execution Environment (EE).
+**Alpen** is an EVM-compatible Bitcoin layer 2. It provides programmable Bitcoin functionality through a layer 2 solution with a decoupled architecture separating the Anchor State Machine (ASM), Orchestration Layer (OL), and Execution Environment (EE).
 
 ## Architecture
 
@@ -56,17 +56,17 @@ The OL block contains the `AsmManifest` (from ASM) and `EEUpdate` (from EE), orc
 
 Bitcoin serves as the data availability and settlement layer. Protocol transactions are tagged with SPS-50 headers for recognition by the ASM.
 
-- **Bitcoin Blocks**: Source of truth for L1 state
-- **SPS-50 Tagged Transactions**: Protocol transactions with standardized headers (magic, subprotocol ID, tx_type, aux data)
-- **Header Verification**: PoW verification state maintained in ASM
+- **Bitcoin Blocks**: Source of truth for L1 state and, hence, for everything actually.
+- **SPS-50 Tagged Transactions**: All protocol transactions use standardized headers (magic, subprotocol ID, tx_type, aux data)
 
 #### ASM Layer (Anchor State Machine)
 
-The ASM is the core of the Strata protocol, functioning as a "virtual rollup smart contract" anchored to L1. It processes L1 blocks and maintains state through subprotocols.
+ASM is the core of the Strata protocol, functioning as a "virtual smart contract" anchored to L1. It processes L1 blocks and maintains state through subprotocols.
 
 - **ASM STF**: State transition function processing L1 blocks
-- **Subprotocols**: Modular components (Bridge V1, Checkpoint V0, Admin, Debug) with defined IDs
-- **Moho Proofs**: Upgradeable proof mechanism wrapping ASM transitions
+- **Header Verification**: PoW verification state for L1 headers
+- **Subprotocols**: Modular components (Bridge V1, Checkpoint V1, Admin, Debug) with defined IDs
+- **Moho Framework**: Upgradeable proof mechanism wrapping ASM transitions
 - **Export State**: Accumulator for bridge proofs and operator claims
 
 **Subprotocol IDs:**
@@ -75,6 +75,7 @@ The ASM is the core of the Strata protocol, functioning as a "virtual rollup sma
 | 0 | Admin | System upgrades |
 | 1 | Checkpoint | OL checkpoint verification |
 | 2 | Bridge V1 | Deposit/withdrawal management |
+| 3 | Execution DA | EE data availability |
 | 254 | Debug | Development/testing |
 
 #### OL Layer (Orchestration Layer)
@@ -108,7 +109,7 @@ The EE provides EVM execution, decoupled from OL. Currently implemented via Alpe
 | `alpen-client` | EE client with OL tracking and payload building |
 | `strata-client` | Core L2 client (sequencer or full node mode) |
 | `alpen-reth` | Custom Reth node with Alpen precompiles and extensions |
-| `prover-client` | ZK proof generation (checkpoint, cl-stf, evm-ee proofs) |
+| `prover-client` | Validity proof generation (`checkpoint`, `cl-stf`, `evm-ee` proofs) |
 | `strata-sequencer-client` | Lightweight signing client for sequencer duties |
 | `alpen-cli` | End-user wallet CLI for deposits, withdrawals, L2 transactions |
 | `strata-dbtool` | Database inspection and debugging utility |
@@ -127,7 +128,7 @@ Core Anchor State Machine implementation.
 | `asm/common` | Core ASM types, state, subprotocol traits, aux data handling |
 | `asm/stf` | ASM state transition function and processing stages |
 | `asm/subprotocols/bridge-v1` | Bridge subprotocol: deposits, withdrawals, operators |
-| `asm/subprotocols/checkpoint-v0` | Checkpoint verification subprotocol |
+| `asm/subprotocols/checkpoint-v1` | Checkpoint verification subprotocol |
 | `asm/subprotocols/admin` | Administrative operations and upgrades |
 | `asm/subprotocols/debug-v1` | Debug subprotocol for testing |
 | `asm/txs/bridge-v1` | Bridge transaction parsing (deposit, withdrawal, slash, unstake) |
