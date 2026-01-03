@@ -19,7 +19,7 @@ jobs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -50,6 +50,40 @@ jobs:
         env:
           RUSTFLAGS: -D warnings
 
+
+  miri:
+    name: Check for memory safety issues with Miri (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - strata-state
+          # - strata-primitives # unsupported due to `secp256k1` FFI dependency
+          - strata-identifiers
+          - strata-dbtool
+          - alpen-client
+          # - alpen-cli # unsupported due to `secp256k1` FFI dependency
+          # - strata-test-utils-btcio # unsupported due to `tokio::test` macro usage
+          # - strata-btcio # unsupported due to `tokio::test` macro usage
+          # - strata-key-derivation # unsupported due to `secp256k1` FFI dependency
+          - strata-csm-types
+          - strata-acct-types
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@62dc1d13b1387fc95a27ab904e7f8850cf39ed53 # miri
+
+      - name: Run Miri
+        run: cargo miri test -p ${{ matrix.crate }} --all-features --locked
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+
   crate-checks:
     name: Check that crates compile on their own
     runs-on: ubuntu-latest
@@ -57,7 +91,7 @@ jobs:
     timeout-minutes: 90 # cold run takes a lot of time as each crate is compiled separately
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -97,7 +131,7 @@ jobs:
     needs: extract-rust-version
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -112,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - uses: codespell-project/actions-codespell@8f01853be192eb0f849a5c7d721450e7a467c579 # v2
@@ -122,7 +156,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
       - name: Install taplo
@@ -145,7 +179,7 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -162,6 +196,7 @@ jobs:
     if: always()
     needs:
       - clippy
+      - miri
       - crate-checks
       - fmt
       - codespell
