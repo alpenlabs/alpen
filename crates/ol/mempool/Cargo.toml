@@ -7,6 +7,30 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
+ssz_derive.workspace = true
+strata-acct-types.workspace = true
+strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
+strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
+strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
+strata-service.workspace = true
+strata-snark-acct-types.workspace = true
+strata-status.workspace = true
+strata-storage.workspace = true
+strata-tasks.workspace = true
 
+anyhow.workspace = true
+serde.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+ssz_types.workspace = true
+strata-csm-types.workspace = true
+strata-db-store-sled.workspace = true
+threadpool.workspace = true

@@ -11,6 +11,7 @@ mod init;
 pub mod l1;
 pub mod l2;
 pub mod macros;
+pub mod mempool;
 pub mod ol;
 pub mod ol_state;
 pub mod prover;
@@ -31,11 +32,12 @@ pub use config::SledDbConfig;
 pub use global_mmr::GlobalMmrDb;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
+use mempool::db::MempoolDBSled;
 use ol::db::OLBlockDBSled;
 use ol_state::db::OLStateDBSled;
 use strata_db_types::{
     DbResult,
-    traits::{DatabaseBackend, OLBlockDatabase, OLStateDatabase},
+    traits::{DatabaseBackend, MempoolDatabase, OLBlockDatabase, OLStateDatabase},
 };
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
@@ -74,6 +76,7 @@ pub struct SledBackend {
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
     global_mmr_db: Arc<GlobalMmrDb>,
+    mempool_db: Arc<MempoolDBSled>,
 }
 
 impl SledBackend {
@@ -92,7 +95,8 @@ impl SledBackend {
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
         let global_mmr_db = Arc::new(GlobalMmrDb::new(db_ref.clone(), config_ref.clone())?);
-        let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db, config)?);
+        let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db.clone(), config_ref.clone())?);
+        let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
             l1_db,
@@ -106,6 +110,7 @@ impl SledBackend {
             prover_db,
             broadcast_db,
             global_mmr_db,
+            mempool_db,
         })
     }
 }
@@ -153,6 +158,10 @@ impl DatabaseBackend for SledBackend {
 
     fn broadcast_db(&self) -> Arc<impl strata_db_types::traits::L1BroadcastDatabase> {
         self.broadcast_db.clone()
+    }
+
+    fn mempool_db(&self) -> Arc<impl MempoolDatabase> {
+        self.mempool_db.clone()
     }
 }
 
