@@ -22,6 +22,8 @@ use strata_sp1_guest_builder as _;
 use strata_tasks::TaskManager;
 use tracing::{debug, info};
 #[cfg(feature = "sp1")]
+use vk_check::validate_checkpoint_vk;
+#[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
 
 mod args;
@@ -31,6 +33,9 @@ mod errors;
 mod operators;
 mod rpc_server;
 mod service;
+
+#[cfg(feature = "sp1")]
+mod vk_check;
 
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -71,6 +76,11 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let rollup_params = args
         .resolve_and_validate_rollup_params()
         .context("Failed to resolve and validate rollup parameters")?;
+
+    // Validate checkpoint VK matches between params and loaded ELF
+    #[cfg(feature = "sp1")]
+    validate_checkpoint_vk(&rollup_params)
+        .context("Checkpoint verification key validation failed")?;
 
     let el_client = HttpClientBuilder::default()
         .build(config.get_reth_rpc_url())

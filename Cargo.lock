@@ -14860,9 +14860,12 @@ dependencies = [
  "bincode",
  "bitcoind-async-client",
  "borsh",
+ "hex",
  "jsonrpsee",
  "serde",
  "serde_json",
+ "sp1-sdk",
+ "sp1-verifier",
  "strata-common",
  "strata-db-store-sled",
  "strata-db-types",
@@ -14887,6 +14890,7 @@ dependencies = [
  "tracing",
  "zkaleido",
  "zkaleido-native-adapter",
+ "zkaleido-sp1-groth16-verifier",
  "zkaleido-sp1-host",
 ]
 

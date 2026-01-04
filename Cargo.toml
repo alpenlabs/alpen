@@ -275,6 +275,7 @@ moho-types = { git = "https://github.com/alpenlabs/moho" }
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
 zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc18" }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
@@ -379,6 +380,7 @@ rsp-mpt = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.9.1b" }
 rsp-primitives = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.9.1b" }
 sp1-helper = "5.2.1"
 sp1-sdk = "5.2.1"
+sp1-verifier = "5.2.1"
 
 anyhow = "1.0.86"
 arbitrary = { version = "1.3.2", features = ["derive"] }
