@@ -16,12 +16,13 @@ class ProverCheckpointSettings:
     consecutive_proofs_required: int = 3
     # waiting time for inner functions should end after 20 seconds, so 60 is more than enough
     prover_timeout_seconds: int = 60
-    #prover_timeout_seconds: int = 600
+    # prover_timeout_seconds: int = 600
 
 
 @flexitest.register
 class ProverCheckpointRunnerTest(testenv.StrataTestBase):
     """This tests the prover's checkpoint runner with an unreliable sequencer service."""
+
     # We check that a few (3) checkpoints are posted, restart the sequencer,
     # and test that a few more (3) checkpoints get posted -- if so, the prover works properly
 
@@ -88,9 +89,9 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         def _ck2():
             ckpt_idx = sequencer_rpc.strata_getLatestCheckpointIndex(False)
             logging.info(f"cur checkpoint idx: {ckpt_idx}")
-            return ckpt_idx == (self.checkpoint_settings.consecutive_proofs_required * 2)
+            return ckpt_idx == self.checkpoint_settings.consecutive_proofs_required * 2
 
-        # We check the the proves were submitted after sequencer restart:
+        # We check that proofs are submitted after sequencer restart:
         # we wait until the most recent checkpoint we observed before the restart
         # actually became finalized.
         # This can only happen if checkpointing continued and proofs for several next
