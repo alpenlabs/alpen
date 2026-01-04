@@ -22,6 +22,8 @@ class ProverCheckpointSettings:
 @flexitest.register
 class ProverCheckpointRunnerTest(testenv.StrataTestBase):
     """This tests the prover's checkpoint runner with an unreliable sequencer service."""
+    # We check that a few (3) checkpoints are posted, restart the sequencer,
+    # and test that a few more (3) checkpoints get posted -- if so, the prover works properly
 
     def __init__(self, ctx: flexitest.InitContext):
         # Increase the proof timeout so that the checkpoint index increments only
