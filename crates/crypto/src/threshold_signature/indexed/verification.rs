@@ -51,7 +51,7 @@ mod tests {
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
     use super::*;
-    use crate::keys::pubkey::CompressedPublicKey;
+    use crate::keys::compressed::CompressedPublicKey;
 
     fn generate_keypair(seed: u8) -> (SecretKey, CompressedPublicKey) {
         let secp = Secp256k1::new();

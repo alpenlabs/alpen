@@ -10,7 +10,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use super::ThresholdSignatureError;
-use crate::keys::pubkey::CompressedPublicKey;
+use crate::keys::compressed::CompressedPublicKey;
 
 /// Maximum number of signers allowed in a threshold configuration.
 ///

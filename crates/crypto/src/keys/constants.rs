@@ -1,3 +1,8 @@
+//! Key derivation constants and paths for Strata.
+//!
+//! This module defines the BIP-32 derivation paths and cryptographic constants
+//! used throughout Strata for generating and managing keys.
+
 use std::sync::LazyLock;
 
 use bitcoin::{bip32::ChildNumber, XOnlyPublicKey};

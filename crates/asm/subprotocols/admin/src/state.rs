@@ -118,7 +118,7 @@ mod tests {
     use rand::rngs::OsRng;
     use strata_asm_txs_admin::actions::UpdateAction;
     use strata_crypto::{
-        keys::pubkey::CompressedPublicKey,
+        keys::compressed::CompressedPublicKey,
         threshold_signature::{ThresholdConfig, ThresholdConfigUpdate},
     };
     use strata_primitives::roles::Role;

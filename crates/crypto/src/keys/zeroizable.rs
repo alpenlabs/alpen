@@ -1,6 +1,8 @@
-//! Key types used in the Strata library.
+//! Zeroizable wrappers for secure key material handling.
 //!
-//! [`Zeroize`] and [`Zeroize`] on drop should always ensure that keys are zeroized.
+//! This module provides wrappers around sensitive key types that automatically
+//! zeroize (securely erase) their contents when dropped, preventing key material
+//! from lingering in memory.
 
 use std::ops::Deref;
 

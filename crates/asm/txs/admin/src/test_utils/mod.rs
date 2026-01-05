@@ -196,7 +196,7 @@ mod tests {
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
     use strata_crypto::{
-        keys::pubkey::CompressedPublicKey,
+        keys::compressed::CompressedPublicKey,
         threshold_signature::{ThresholdConfig, verify_threshold_signatures},
     };
     use strata_l1_txfmt::ParseConfig;
