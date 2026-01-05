@@ -14548,7 +14548,7 @@ dependencies = [
  "bitcoin",
  "ed25519-dalek",
  "secp256k1 0.29.1",
- "strata-primitives",
+ "strata-crypto",
  "thiserror 2.0.17",
  "zeroize",
 ]
@@ -14854,7 +14854,6 @@ dependencies = [
  "bitcoin-bosd",
  "borsh",
  "hex",
- "secp256k1 0.29.1",
  "serde",
  "strata-btc-types",
  "strata-crypto",

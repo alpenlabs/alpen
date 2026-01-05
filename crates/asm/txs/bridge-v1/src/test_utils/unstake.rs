@@ -4,9 +4,8 @@ use bitcoin::{
     secp256k1::Secp256k1,
     taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
 };
-use strata_crypto::EvenSecretKey;
+use strata_crypto::{EvenSecretKey, keys::constants::UNSPENDABLE_PUBLIC_KEY};
 use strata_l1_txfmt::ParseConfig;
-use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
 use strata_test_utils_btcio::{
     BtcioTestHarness, address::derive_musig2_p2tr_address, create_dummy_tx,
     signing::sign_musig2_scriptpath,

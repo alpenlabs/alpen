@@ -32,7 +32,7 @@ pub(crate) static CHANGE_DESCRIPTOR: LazyLock<&'static str> =
 mod tests {
     use bdk_wallet::bitcoin::Address;
     use secp256k1::SECP256K1;
-    use strata_primitives::constants::UNSPENDABLE_PUBLIC_KEY;
+    use strata_crypto::keys::constants::UNSPENDABLE_PUBLIC_KEY;
 
     use super::*;
 

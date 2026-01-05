@@ -1,5 +1,7 @@
 //! Cryptographic primitives.
 
+pub mod keys;
+
 pub mod musig2;
 pub mod schnorr;
 #[cfg(feature = "test-utils")]

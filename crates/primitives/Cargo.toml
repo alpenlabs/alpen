@@ -21,7 +21,6 @@ bitcoin-bosd = { workspace = true, features = [
 ] }
 borsh.workspace = true
 hex.workspace = true
-secp256k1 = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
@@ -29,5 +28,3 @@ zeroize.workspace = true
 [dev-dependencies]
 
 [features]
-default = ["std"]
-std = ["dep:secp256k1"]
