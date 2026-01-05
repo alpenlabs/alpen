@@ -111,7 +111,7 @@ def setup_revert_chainstate_test(
         send_tx(web3)
 
     # Wait for epoch finalization
-    seq_waiter.wait_until_epoch_finalized(epoch_to_finalize, timeout=30)
+    seq_waiter.wait_until_epoch_finalized(epoch_to_finalize, timeout=60)
 
     # Generate additional transactions
     for _ in range(additional_txs):
