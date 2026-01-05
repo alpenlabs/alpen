@@ -105,39 +105,86 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
 }
 
 /// Output from block construction containing the template, failed transactions, and final state.
-#[expect(dead_code, reason = "Used in next commit")]
 pub(crate) struct ConstructBlockOutput<S> {
     /// The constructed block template.
     pub(crate) template: FullBlockTemplate,
     /// Transactions that failed during block assembly.
     pub(crate) failed_txs: Vec<FailedMempoolTx>,
     /// The post state after applying all transactions.
+    // Used by tests to chain blocks without re-executing through STF.
+    #[cfg_attr(not(test), expect(dead_code, reason = "only used by tests"))]
     pub(crate) post_state: S,
 }
 
-/// Generate a block template (stub implementation).
+/// Generate a block template from the given configuration.
 ///
-/// This is a placeholder that will be fully implemented in the next commit.
-/// For now, it returns an error to indicate that the implementation is pending.
+/// Fetches transactions from the mempool, generates accumulator proofs, validates execution
+/// with per-transaction staging, and constructs a complete block template.
+///
+/// Transactions that fail proof generation or execution are reported to the mempool.
 ///
 /// Returns a [`BlockTemplateResult`] containing both the generated template and
 /// any transactions that failed validation during assembly.
 pub(crate) async fn generate_block_template_inner<C, E>(
-    _ctx: &C,
-    _epoch_sealing_policy: &E,
-    _sequencer_config: &SequencerConfig,
-    _block_generation_config: BlockGenerationConfig,
+    ctx: &C,
+    epoch_sealing_policy: &E,
+    sequencer_config: &SequencerConfig,
+    block_generation_config: BlockGenerationConfig,
 ) -> BlockAssemblyResult<BlockTemplateResult>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
     C::State: BlockAssemblyStateAccess,
     E: EpochSealingPolicy,
 {
-    Err(BlockAssemblyError::Database(DbError::Other(
-        "Block assembly implementation pending".to_string(),
-    )))
-}
+    let max_txs_per_block = sequencer_config.max_txs_per_block;
 
+    // 1. Fetch parent state
+    let parent_commitment = block_generation_config.parent_block_commitment();
+    assert!(
+        !parent_commitment.is_null(),
+        "generate_block_template_inner called with null parent - genesis must be built via init_ol_genesis"
+    );
+
+    let parent_state = ctx
+        .fetch_state_for_tip(parent_commitment)
+        .await?
+        .ok_or_else(|| {
+            BlockAssemblyError::Database(DbError::Other(format!(
+                "Parent state not found for commitment: {parent_commitment}"
+            )))
+        })?;
+
+    // 2. Calculate next slot and epoch
+    let (block_slot, block_epoch) =
+        calculate_block_slot_and_epoch(&parent_commitment, parent_state.as_ref());
+
+    // 3. Get transactions from mempool
+    let mempool_txs = MempoolProvider::get_transactions(ctx, max_txs_per_block).await?;
+
+    // 4. Construct block (handles terminal detection and manifest fetching internally)
+    let output = construct_block(
+        ctx,
+        epoch_sealing_policy,
+        &block_generation_config,
+        parent_state,
+        block_slot,
+        block_epoch,
+        mempool_txs,
+    )
+    .await?;
+
+    // 5. Report failed transactions to mempool
+    if !output.failed_txs.is_empty() {
+        debug!(
+            component = "ol_block_assembly",
+            count = output.failed_txs.len(),
+            "Reporting failed transactions to mempool"
+        );
+        MempoolProvider::report_invalid_transactions(ctx, &output.failed_txs).await?;
+    }
+
+    Ok(BlockTemplateResult::new(output.template, output.failed_txs))
+}
 /// Calculates the next slot and epoch based on parent commitment and state.
 ///
 /// Returns `(parent_slot + 1, parent_state.cur_epoch())`
@@ -149,7 +196,6 @@ where
 /// # Panics
 /// Panics if `parent_commitment` is null. Genesis blocks must be created via
 /// `init_ol_genesis`, not through block assembly.
-#[expect(dead_code, reason = "Used in next commit")]
 fn calculate_block_slot_and_epoch<S: IStateAccessor>(
     parent_commitment: &OLBlockCommitment,
     parent_state: &S,
@@ -170,7 +216,6 @@ fn calculate_block_slot_and_epoch<S: IStateAccessor>(
 /// 4. Filters out invalid transactions (proof failures, execution failures)
 /// 5. Detects terminal blocks and fetches L1 manifests
 /// 6. Builds the complete block with only valid transactions
-#[expect(dead_code, reason = "Used in next commit")]
 async fn construct_block<C, E>(
     ctx: &C,
     epoch_sealing_policy: &E,
@@ -285,7 +330,7 @@ fn execute_block_initialization<S>(
 ) -> WriteBatch<S::AccountState>
 where
     S: IStateAccessor,
-    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
+    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync,
 {
     let mut accumulated_batch = WriteBatch::new_from_state(parent_state);
 
@@ -327,7 +372,7 @@ fn process_transactions<P, S>(
 where
     P: AccumulatorProofGenerator,
     S: IStateAccessor,
-    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
+    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync,
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
@@ -394,7 +439,7 @@ fn build_block_template<S>(
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
     S: IStateBatchApplicable + IStateAccessor + Clone,
-    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
+    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync,
 {
     // Clone parent state and apply accumulated batch to get state after transactions
     let mut final_state = parent_state.as_ref().clone();
@@ -540,15 +585,19 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator>(
 #[cfg(test)]
 mod tests {
     use strata_acct_types::AcctError;
-    use strata_identifiers::OLBlockId;
+    use strata_identifiers::{Buf32, Buf64, OLBlockId};
+    use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
     use strata_ol_state_types::OLState;
     use strata_snark_acct_types::AccumulatorClaim;
+    use strata_storage::NodeStorage;
 
     use super::*;
     use crate::test_utils::{
-        MempoolSnarkTxBuilder, StorageAsmMmr, StorageInboxMmr, add_snark_account_to_state,
-        create_test_context, create_test_storage, generate_message_entries, test_account_id,
-        test_hash,
+        DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, StorageAsmMmr, StorageInboxMmr,
+        TestEnvBuilder, add_snark_account_to_state, create_test_block_assembly_context,
+        create_test_context, create_test_parent_header, create_test_storage,
+        generate_message_entries, insert_inbox_messages_into_state,
+        insert_inbox_messages_into_storage_state, test_account_id, test_hash,
     };
 
     #[test]
@@ -556,7 +605,7 @@ mod tests {
         let storage = create_test_storage();
 
         // Use StorageAsmMmr to populate L1 headers with random hashes
-        let mut asm_mmr = StorageAsmMmr::new(&storage);
+        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_random_headers(1);
 
         // Create state with snark account
@@ -613,7 +662,7 @@ mod tests {
         // Use StorageInboxMmr to populate inbox messages
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(&storage, account_id);
+        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
         inbox_mmr.add_messages(messages.clone());
 
         // Create tx using builder
@@ -661,7 +710,7 @@ mod tests {
         let storage = create_test_storage();
 
         // Use StorageAsmMmr with random hashes
-        let mut asm_mmr = StorageAsmMmr::new(&storage);
+        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_random_headers(1);
 
         // Create claim with correct index but WRONG hash (deterministic to guarantee mismatch)
@@ -702,7 +751,7 @@ mod tests {
         let storage = create_test_storage();
 
         // Use StorageAsmMmr with random hashes
-        let mut asm_mmr = StorageAsmMmr::new(&storage);
+        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_random_headers(1);
 
         // Create claim with non-existent index (index 999 doesn't exist)
@@ -844,8 +893,8 @@ mod tests {
         // Use StorageInboxMmr to add only 1 message
         let source_account = test_account_id(2);
         let messages = generate_message_entries(1, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(&storage, account_id);
-        inbox_mmr.add_messages(messages);
+        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
+        inbox_mmr.add_messages(messages.clone());
 
         // Create transaction claiming to process messages at indices [5, 6]
         // which don't exist (only index 0 exists)
@@ -854,6 +903,8 @@ mod tests {
             .with_processed_messages(fake_messages)
             .with_new_msg_idx(7) // Claims next_inbox_msg_idx = 7 after processing
             .build();
+
+        insert_inbox_messages_into_state(&mut state, account_id, &messages);
 
         let ctx = create_test_context(storage.clone());
         let mempool_payload = match mempool_tx.payload() {
@@ -888,16 +939,18 @@ mod tests {
         // Use StorageInboxMmr to add 2 messages
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(&storage, account_id);
+        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
         inbox_mmr.add_messages(messages.clone());
 
         // Account has next_inbox_msg_idx = 0 on-chain
         // Create transaction claiming WRONG new next_inbox_msg_idx
         // Claims to process 2 messages but sets next_inbox_msg_idx = 10 (should be 2)
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_processed_messages(messages)
+            .with_processed_messages(messages.clone())
             .with_new_msg_idx(10) // Wrong! Should be 2
             .build();
+
+        insert_inbox_messages_into_state(&mut state, account_id, &messages);
 
         let ctx = create_test_context(storage.clone());
         let mempool_payload = match mempool_tx.payload() {
@@ -920,6 +973,813 @@ mod tests {
             ),
             "Expected Acct(InvalidMsgIndex) or inbox MMR error, got: {:?}",
             err
+        );
+    }
+
+    // Helper to validate block slot and epoch
+    fn check_block_slot_epoch(
+        block_template: &FullBlockTemplate,
+        expected_slot: u64,
+        expected_epoch: u32,
+    ) {
+        let header = block_template.header();
+        assert_eq!(
+            header.slot(),
+            expected_slot,
+            "Block should be at slot {}",
+            expected_slot
+        );
+        assert_eq!(
+            header.epoch(),
+            expected_epoch,
+            "Block should be in epoch {}",
+            expected_epoch
+        );
+    }
+
+    // Helper to validate terminal block with L1 updates
+    fn check_terminal_block_with_manifests(
+        block_template: &FullBlockTemplate,
+        expected_heights: &[u64],
+    ) {
+        let body = block_template.body();
+        let l1_update = body.l1_update();
+        assert!(
+            l1_update.is_some(),
+            "Terminal block should contain L1 update"
+        );
+
+        let manifest_cont = l1_update.unwrap().manifest_cont();
+        let manifests = manifest_cont.manifests();
+        assert_eq!(
+            manifests.len(),
+            expected_heights.len(),
+            "Should have {} L1 manifests",
+            expected_heights.len()
+        );
+
+        for (i, expected_height) in expected_heights.iter().enumerate() {
+            assert_eq!(
+                manifests[i].height(),
+                *expected_height,
+                "Manifest {} should have height {}",
+                i,
+                expected_height
+            );
+        }
+    }
+
+    // Helper to validate non-terminal block without L1 updates
+    fn check_non_terminal_block(block_template: &FullBlockTemplate) {
+        let body = block_template.body();
+        let l1_update = body.l1_update();
+        assert!(
+            l1_update.is_none(),
+            "Non-terminal block should NOT contain L1 update"
+        );
+    }
+
+    // Helper to build blocks from start_commitment up to (but not including) target_slot.
+    // Stores blocks and states so subsequent blocks can find their parent.
+    async fn build_blocks_to_slot<C, E>(
+        start_commitment: OLBlockCommitment,
+        target_slot: u64,
+        ctx: &C,
+        storage: &NodeStorage,
+        epoch_sealing_policy: &E,
+    ) -> OLBlockCommitment
+    where
+        C: BlockAssemblyAnchorContext<State = OLState> + AccumulatorProofGenerator,
+        E: EpochSealingPolicy,
+    {
+        let mut current_commitment = start_commitment;
+
+        let start_slot = if current_commitment.is_null() {
+            0
+        } else {
+            start_commitment.slot() + 1
+        };
+
+        for slot in start_slot..target_slot {
+            let config = BlockGenerationConfig::new(current_commitment);
+
+            // Fetch parent state
+            let parent_state = ctx
+                .fetch_state_for_tip(config.parent_block_commitment())
+                .await
+                .unwrap_or_else(|e| panic!("Failed to fetch parent state at slot {slot}: {e:?}"))
+                .unwrap_or_else(|| panic!("Missing parent state at slot {slot}"));
+
+            // Calculate slot and epoch
+            let (block_slot, block_epoch) = calculate_block_slot_and_epoch(
+                &config.parent_block_commitment(),
+                parent_state.as_ref(),
+            );
+
+            // Construct block (no mempool txs for helper)
+            let output = construct_block(
+                ctx,
+                epoch_sealing_policy,
+                &config,
+                parent_state,
+                block_slot,
+                block_epoch,
+                vec![],
+            )
+            .await
+            .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
+
+            // Create commitment from header
+            let header = output.template.header();
+            let new_commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
+
+            // Store block (with dummy signature)
+            let signed_header = SignedOLBlockHeader::new(header.clone(), Buf64::zero());
+            let block = OLBlock::new(signed_header, output.template.body().clone());
+            storage
+                .ol_block()
+                .put_block_data_async(block)
+                .await
+                .unwrap_or_else(|e| panic!("Failed to store block at slot {slot}: {e:?}"));
+
+            // Store post-state at new commitment
+            storage
+                .ol_state()
+                .put_toplevel_ol_state_async(new_commitment, output.post_state)
+                .await
+                .unwrap_or_else(|e| panic!("Failed to store state at slot {slot}: {e:?}"));
+
+            current_commitment = new_commitment;
+        }
+
+        current_commitment
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[should_panic(expected = "generate_block_template_inner called with null parent")]
+    async fn test_block_assembly_panics_on_null_parent() {
+        let env = TestEnvBuilder::new().build().await;
+
+        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let _ = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_non_terminal_block_at_slot_1() {
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .build()
+            .await;
+
+        let (ctx, _mempool) = create_test_block_assembly_context(env.storage);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let result = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "Block generation should succeed: {:?}",
+            result.err()
+        );
+
+        let block_template = result.unwrap().into_template();
+        check_block_slot_epoch(&block_template, 1, 1);
+        check_non_terminal_block(&block_template);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_block_at_slot_10() {
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .build()
+            .await;
+
+        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        let current_commitment = build_blocks_to_slot(
+            env.parent_commitment,
+            10,
+            &ctx,
+            env.storage.as_ref(),
+            &env.epoch_sealing_policy,
+        )
+        .await;
+
+        let config = BlockGenerationConfig::new(current_commitment);
+        let result = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "Block generation should succeed: {:?}",
+            result.err()
+        );
+
+        let block_template = result.unwrap().into_template();
+        check_block_slot_epoch(&block_template, 10, 1);
+        check_terminal_block_with_manifests(&block_template, &[1, 2, 3]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_block_manifest_boundary_from_last_l1_height() {
+        // Set last_l1_height to 2, but only provide manifests starting at 3.
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(1)
+            .with_claim_manifests(2)
+            .with_asm_manifests(&[3, 4])
+            .build()
+            .await;
+
+        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        let current_commitment = build_blocks_to_slot(
+            env.parent_commitment,
+            10,
+            &ctx,
+            env.storage.as_ref(),
+            &env.epoch_sealing_policy,
+        )
+        .await;
+
+        let config = BlockGenerationConfig::new(current_commitment);
+        let result = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        let block_template = result.into_template();
+        check_terminal_block_with_manifests(&block_template, &[3, 4]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_non_terminal_block_at_slot_11() {
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .build()
+            .await;
+
+        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        let current_commitment = build_blocks_to_slot(
+            env.parent_commitment,
+            11,
+            &ctx,
+            env.storage.as_ref(),
+            &env.epoch_sealing_policy,
+        )
+        .await;
+
+        let config = BlockGenerationConfig::new(current_commitment);
+        let result = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "Block generation should succeed: {:?}",
+            result.err()
+        );
+
+        let block_template = result.unwrap().into_template();
+        check_block_slot_epoch(&block_template, 11, 2);
+        check_non_terminal_block(&block_template);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_valid_tx_included_in_block() {
+        // Setup env with snark account (seq_no=0 initially)
+        let account_id = test_account_id(1);
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account_id, DEFAULT_ACCOUNT_BALANCE)
+            .build()
+            .await;
+
+        // Setup inbox MMR with real messages using StorageInboxMmr
+        let source_account = test_account_id(2);
+        let messages = generate_message_entries(2, source_account);
+        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account_id);
+        inbox_mmr.add_messages(messages.clone());
+
+        // Create tx and add to mock provider
+        let valid_tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_processed_messages(messages.clone())
+            .build();
+        let txid = valid_tx.compute_txid();
+
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        insert_inbox_messages_into_storage_state(
+            env.storage.as_ref(),
+            env.parent_commitment,
+            account_id,
+            &messages,
+        )
+        .await;
+        mempool.add_transaction(txid, valid_tx);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let output = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        // Assert: tx included in block
+        let txs = output
+            .template()
+            .body()
+            .tx_segment()
+            .expect("Should have tx segment")
+            .txs();
+        assert_eq!(txs.len(), 1, "Block should contain 1 transaction");
+        assert_eq!(
+            txs[0].target(),
+            Some(account_id),
+            "Included tx should target the expected account"
+        );
+    }
+
+    #[test]
+    fn test_block_template_result_into_parts() {
+        let header = create_test_parent_header();
+        let body =
+            OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("Failed to create tx segment"));
+        let template = FullBlockTemplate::new(header, body);
+
+        let failed_txs = vec![(
+            OLTxId::from(Buf32::from([1u8; 32])),
+            MempoolTxInvalidReason::Invalid,
+        )];
+
+        let result = BlockTemplateResult::new(template, failed_txs.clone());
+        let (out_template, out_failed) = result.into_parts();
+
+        assert_eq!(
+            out_template.get_blockid(),
+            out_template.header().compute_blkid()
+        );
+        assert_eq!(out_failed, failed_txs);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_mmr_claims() {
+        // Setup env with two snark accounts
+        let account1 = test_account_id(1);
+        let account2 = test_account_id(2);
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account1, DEFAULT_ACCOUNT_BALANCE)
+            .with_account(account2, DEFAULT_ACCOUNT_BALANCE)
+            .build()
+            .await;
+
+        // Generate messages and insert into account1's inbox MMR using StorageInboxMmr
+        let source_account = test_account_id(3);
+        let real_messages = generate_message_entries(2, source_account);
+        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account1);
+        inbox_mmr.add_messages(real_messages.clone());
+
+        // Valid tx for account1: messages exist in MMR, proof generation succeeds
+        let valid_tx = MempoolSnarkTxBuilder::new(account1)
+            .with_seq_no(0)
+            .with_processed_messages(real_messages.clone())
+            .build();
+        let valid_txid = valid_tx.compute_txid();
+
+        // Invalid tx for account2: fake message NOT in MMR, proof generation fails
+        let fake_message = generate_message_entries(1, test_account_id(3))
+            .pop()
+            .unwrap();
+        let invalid_tx = MempoolSnarkTxBuilder::new(account2)
+            .with_seq_no(0)
+            .with_processed_messages(vec![fake_message])
+            .build();
+        let invalid_txid = invalid_tx.compute_txid();
+
+        // Build block
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        insert_inbox_messages_into_storage_state(
+            env.storage.as_ref(),
+            env.parent_commitment,
+            account1,
+            &real_messages,
+        )
+        .await;
+        mempool.add_transaction(valid_txid, valid_tx);
+        mempool.add_transaction(invalid_txid, invalid_tx);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let output = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        // Assert: block has 1 transaction (valid included, invalid rejected)
+        let txs = output
+            .template()
+            .body()
+            .tx_segment()
+            .expect("Should have tx segment")
+            .txs();
+        assert_eq!(
+            txs.len(),
+            1,
+            "Block should contain 1 tx (valid included, invalid rejected)"
+        );
+        // Verify the included tx is for account1 (the valid one)
+        assert_eq!(
+            txs[0].target(),
+            Some(account1),
+            "Included tx should be from account1 (valid tx)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_mmr_claims() {
+        // Setup env with two snark accounts and manifests in both state and storage MMRs
+        let account1 = test_account_id(1);
+        let account2 = test_account_id(2);
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_account(account1, DEFAULT_ACCOUNT_BALANCE)
+            .with_account(account2, DEFAULT_ACCOUNT_BALANCE)
+            .with_claim_manifests(2)
+            .build()
+            .await;
+
+        // Valid tx for account1: L1 header claims exist in both MMRs
+        let valid_claims = vec![AccumulatorClaim::new(
+            env.manifests[0].index,
+            env.manifests[0].hash,
+        )];
+        let valid_tx = MempoolSnarkTxBuilder::new(account1)
+            .with_seq_no(0)
+            .with_l1_claims(valid_claims)
+            .build();
+        let valid_txid = valid_tx.compute_txid();
+
+        // Invalid tx for account2: fake L1 header claim NOT in MMR
+        let fake_hash = test_hash(99);
+        let invalid_claims = vec![AccumulatorClaim::new(0, fake_hash)];
+        let invalid_tx = MempoolSnarkTxBuilder::new(account2)
+            .with_seq_no(0)
+            .with_l1_claims(invalid_claims)
+            .build();
+        let invalid_txid = invalid_tx.compute_txid();
+
+        // Build block
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        mempool.add_transaction(valid_txid, valid_tx);
+        mempool.add_transaction(invalid_txid, invalid_tx);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let output = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        // Assert: block has 1 transaction (valid included, invalid rejected)
+        let txs = output
+            .template()
+            .body()
+            .tx_segment()
+            .expect("Should have tx segment")
+            .txs();
+        assert_eq!(
+            txs.len(),
+            1,
+            "Block should contain 1 tx (valid included, invalid rejected)"
+        );
+        // Verify the included tx is for account1 (the valid one)
+        assert_eq!(
+            txs[0].target(),
+            Some(account1),
+            "Included tx should be from account1 (valid tx)"
+        );
+    }
+
+    /// Tests that dependent transactions with sequential seq_no are both included.
+    /// tx1: seq_no=0, tx2: seq_no=1
+    /// Both should succeed because tx2 sees tx1's state changes (seq_no incremented to 1).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_sequential_seq_no_both_succeed() {
+        let account_id = test_account_id(1);
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account_id, DEFAULT_ACCOUNT_BALANCE)
+            .build()
+            .await;
+
+        // Setup inbox MMR with messages for both txs using StorageInboxMmr
+        let source_account = test_account_id(2);
+        let messages = generate_message_entries(4, source_account);
+        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account_id);
+        inbox_mmr.add_messages(messages.clone());
+
+        // tx1: seq_no=0, processes messages[0..2]
+        let tx1_messages = messages[0..2].to_vec();
+        let tx1 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_processed_messages(tx1_messages)
+            .build();
+        let tx1_id = tx1.compute_txid();
+
+        // tx2: seq_no=1, processes messages[2..4]
+        let tx2_messages = messages[2..4].to_vec();
+        let tx2 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .with_processed_messages(tx2_messages)
+            .with_new_msg_idx(4) // After processing tx1's 2 + tx2's 2 = 4
+            .build();
+        let tx2_id = tx2.compute_txid();
+
+        // Build block
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        insert_inbox_messages_into_storage_state(
+            env.storage.as_ref(),
+            env.parent_commitment,
+            account_id,
+            &messages,
+        )
+        .await;
+        mempool.add_transaction(tx1_id, tx1);
+        mempool.add_transaction(tx2_id, tx2);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let output = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        // Assert: both txs included (tx2 succeeds because it sees tx1's seq_no increment)
+        let txs = output
+            .template()
+            .body()
+            .tx_segment()
+            .expect("Should have tx segment")
+            .txs();
+        assert_eq!(
+            txs.len(),
+            2,
+            "Block should contain both txs (tx2 sees tx1's state changes)"
+        );
+    }
+
+    /// Tests that tx with seq_no=1 fails if tx with seq_no=0 is not present.
+    /// Only tx2 (seq_no=1) submitted - should fail during execution because account has seq_no=0.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_dependent_tx_fails_without_predecessor() {
+        let account_id = test_account_id(1);
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account_id, DEFAULT_ACCOUNT_BALANCE)
+            .build()
+            .await;
+
+        // Setup inbox MMR with messages using StorageInboxMmr
+        let source_account = test_account_id(2);
+        let messages = generate_message_entries(2, source_account);
+        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account_id);
+        inbox_mmr.add_messages(messages.clone());
+
+        // Only submit tx with seq_no=1 (no seq_no=0 predecessor)
+        // Block assembly will reject during execution because account has seq_no=0
+        let tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .with_processed_messages(messages.clone())
+            .build();
+        let txid = tx.compute_txid();
+
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        insert_inbox_messages_into_storage_state(
+            env.storage.as_ref(),
+            env.parent_commitment,
+            account_id,
+            &messages,
+        )
+        .await;
+        mempool.add_transaction(txid, tx);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let output = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        // Block should have no txs - the seq_no=1 tx is rejected during execution
+        let tx_segment = output.template().body().tx_segment();
+        let tx_count = tx_segment.map(|seg| seg.txs().len()).unwrap_or(0);
+        assert_eq!(
+            tx_count, 0,
+            "Block should be empty - tx with seq_no=1 rejected when account has seq_no=0"
+        );
+    }
+
+    /// Tests that an independent tx succeeds even when another tx fails.
+    /// tx1: account1 with invalid MMR claim (fails proof generation)
+    /// tx2: account2 with valid empty tx (succeeds - different account, independent)
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_independent_tx_succeeds_when_other_fails() {
+        let account1 = test_account_id(1);
+        let account2 = test_account_id(2);
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account1, DEFAULT_ACCOUNT_BALANCE)
+            .with_account(account2, DEFAULT_ACCOUNT_BALANCE)
+            .build()
+            .await;
+
+        // Setup inbox MMRs for both accounts using StorageInboxMmr
+        let source_account = test_account_id(3);
+        let account1_messages = generate_message_entries(2, source_account);
+        let mut inbox_mmr1 = StorageInboxMmr::new(&env.storage, account1);
+        inbox_mmr1.add_messages(account1_messages.clone());
+
+        let account2_messages = generate_message_entries(2, source_account);
+        let mut inbox_mmr2 = StorageInboxMmr::new(&env.storage, account2);
+        inbox_mmr2.add_messages(account2_messages.clone());
+
+        // tx1: account1 claims fake message at index 100, but MMR only has indices 0-1
+        let fake_message = generate_message_entries(1, test_account_id(99))
+            .pop()
+            .unwrap();
+        let tx1 = MempoolSnarkTxBuilder::new(account1)
+            .with_seq_no(0)
+            .with_processed_messages(vec![fake_message])
+            .with_new_msg_idx(100) // Claims invalid index
+            .build();
+        let tx1_id = tx1.compute_txid();
+
+        // tx2: account2 with valid messages at correct indices
+        let tx2 = MempoolSnarkTxBuilder::new(account2)
+            .with_seq_no(0)
+            .with_processed_messages(account2_messages.clone())
+            .build();
+        let tx2_id = tx2.compute_txid();
+
+        // Build block
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+
+        insert_inbox_messages_into_storage_state(
+            env.storage.as_ref(),
+            env.parent_commitment,
+            account1,
+            &account1_messages,
+        )
+        .await;
+        insert_inbox_messages_into_storage_state(
+            env.storage.as_ref(),
+            env.parent_commitment,
+            account2,
+            &account2_messages,
+        )
+        .await;
+        mempool.add_transaction(tx1_id, tx1);
+        mempool.add_transaction(tx2_id, tx2);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let output = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        // Assert: tx2 included, tx1 rejected
+        let tx_segment = output.template().body().tx_segment();
+        let tx_count = tx_segment.map(|seg| seg.txs().len()).unwrap_or(0);
+        assert_eq!(tx_count, 1, "Block should contain tx2 only");
+
+        // Assert: tx1 removed (ConsensusInvalid), tx2 still in mempool (included txs not
+        // auto-removed)
+        let remaining = mempool.get_transactions(10).await.unwrap();
+        assert_eq!(
+            remaining.len(),
+            1,
+            "tx1 removed as invalid, tx2 still in mempool until block applied"
+        );
+    }
+
+    /// Tests that tx1 sends balance to account2, and tx2 can spend that balance.
+    /// tx1: account1 sends 1000 sats to account2
+    /// tx2: account2 sends 500 sats (from received balance) to account3
+    /// Both should succeed because tx2 sees tx1's balance transfer.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_balance_transfer_dependency_both_succeed() {
+        let account1 = test_account_id(1);
+        let account2 = test_account_id(2);
+        let account3 = test_account_id(3);
+
+        // Setup with custom balances: account1 has 10000 sats, account2 has 0 sats
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account1, 10000)
+            .with_account(account2, 0)
+            .with_account(account3, 0)
+            .build()
+            .await;
+
+        // tx1: account1 sends 1000 sats to account2
+        let tx1 = MempoolSnarkTxBuilder::new(account1)
+            .with_seq_no(0)
+            .with_outputs(vec![(account2, 1000)])
+            .build();
+        let tx1_id = tx1.compute_txid();
+
+        // tx2: account2 sends 500 sats to account3 (using balance received from tx1)
+        let tx2 = MempoolSnarkTxBuilder::new(account2)
+            .with_seq_no(0)
+            .with_outputs(vec![(account3, 500)])
+            .build();
+        let tx2_id = tx2.compute_txid();
+
+        // Build block
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage);
+        mempool.add_transaction(tx1_id, tx1);
+        mempool.add_transaction(tx2_id, tx2);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let output = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("Block generation should succeed");
+
+        // Assert: both txs included
+        // tx1 executes first, transferring 1000 to account2
+        // tx2 executes second, account2 now has 1000 and can send 500
+        let txs = output
+            .template()
+            .body()
+            .tx_segment()
+            .expect("Should have tx segment")
+            .txs();
+        assert_eq!(
+            txs.len(),
+            2,
+            "Block should contain both txs (tx2 sees tx1's balance transfer)"
         );
     }
 }

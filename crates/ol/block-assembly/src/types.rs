@@ -145,7 +145,6 @@ pub(crate) struct BlockTemplateResult {
 
 impl BlockTemplateResult {
     /// Create a new block template result.
-    #[expect(dead_code, reason = "used in later commits")]
     pub(crate) fn new(template: FullBlockTemplate, failed_txs: Vec<FailedMempoolTx>) -> Self {
         Self {
             template,
@@ -154,13 +153,13 @@ impl BlockTemplateResult {
     }
 
     /// Returns the block template.
-    #[expect(dead_code, reason = "used by tests in later commits")]
+    #[cfg_attr(not(test), expect(dead_code, reason = "used in tests"))]
     pub(crate) fn template(&self) -> &FullBlockTemplate {
         &self.template
     }
 
     /// Consumes self and returns the template.
-    #[expect(dead_code, reason = "used by tests in later commits")]
+    #[cfg_attr(not(test), expect(dead_code, reason = "used in tests"))]
     pub(crate) fn into_template(self) -> FullBlockTemplate {
         self.template
     }
