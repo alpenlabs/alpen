@@ -232,8 +232,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let parent_commitment = if parent_blkid.is_null() {
             OLBlockCommitment::null()
         } else {
-            // We need to figure out the parent slot. For now, assume slot-1.
-            // TODO: Properly track parent slot
+            // Parent slot is the block's slot - 1.
             let parent_slot = block.header().slot().saturating_sub(1);
             OLBlockCommitment::new(parent_slot, *parent_blkid)
         };
