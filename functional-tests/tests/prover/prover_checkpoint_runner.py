@@ -76,6 +76,7 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         time.sleep(10)
         sequencer.start()
         sequencer_rpc = sequencer.create_rpc()
+        seq_waiter.wait_until_client_ready(timeout=15)
 
         # Wait for target epoch to be confirmed; for debug use the same function as above,
         # it has more logs.
