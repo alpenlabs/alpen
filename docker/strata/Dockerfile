@@ -1,34 +1,37 @@
 # syntax=docker/dockerfile:1.7
 
 ARG RUST_VERSION=1.92
-ARG RUST_TOOLCHAIN=nightly-2025-12-01
 
 FROM rust:${RUST_VERSION}-slim-trixie AS builder
 
-ARG RUST_TOOLCHAIN
 WORKDIR /app
 
 ENV CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
     CARGO_INCREMENTAL=0 \
-    CARGO_TERM_COLOR=always \
-    RUSTUP_TOOLCHAIN=${RUST_TOOLCHAIN}
+    CARGO_TERM_COLOR=always
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       build-essential ca-certificates clang libclang-dev pkg-config libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-RUN rustup toolchain install --profile minimal "${RUST_TOOLCHAIN}"
+# Copy toolchain + cargo manifests early for better layer caching
+COPY rust-toolchain.toml ./
+COPY Cargo.toml Cargo.lock ./
 
+# This reads rust-toolchain.toml and installs the right toolchain/components/targets
+RUN rustup toolchain install
+
+# Now copy the rest of the repo
 COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
-    cargo +"${RUST_TOOLCHAIN}" build --locked --release --bin strata && \
+    cargo build --locked --release --bin strata && \
     install -d /out && \
-    install -m 0555 /app/target/release/strata /out/strata
+    install -m 0555 /app/target/release/strata /usr/local/bin/strata
 
 
 FROM debian:13-slim AS runtime
@@ -49,7 +52,7 @@ WORKDIR "${APP_HOME}"
 RUN mkdir -p /app/data /app/.cache /app/.local/share && \
     chown -R alpen:alpen /app
 
-COPY --from=builder /out/strata /usr/local/bin/strata
+COPY --from=builder /usr/local/bin/strata /usr/local/bin/strata
 COPY docker/strata/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/entrypoint.sh

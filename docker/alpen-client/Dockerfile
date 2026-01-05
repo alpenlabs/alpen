@@ -1,10 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
 ARG RUST_VERSION=1.92
-ARG RUST_TOOLCHAIN=nightly-2025-12-01
 FROM rust:${RUST_VERSION}-slim-trixie AS builder
 
-ARG RUST_TOOLCHAIN
 WORKDIR /app
 
 ENV CARGO_HOME=/usr/local/cargo \
@@ -17,15 +15,22 @@ RUN apt-get update && \
       build-essential ca-certificates clang libclang-dev pkg-config libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-RUN rustup toolchain install --profile minimal "${RUST_TOOLCHAIN}"
+# Copy toolchain + cargo manifests early for better caching
+COPY rust-toolchain.toml ./
+COPY Cargo.toml Cargo.lock ./
 
+# This reads rust-toolchain.toml and installs the right toolchain/components/targets
+RUN rustup toolchain install
+
+# Now copy the rest of the repo
 COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
-    cargo +"${RUST_TOOLCHAIN}" build --locked --release --bin alpen-client && \
+    cargo build --locked --release --bin alpen-client && \
     install -m 0555 /app/target/release/alpen-client /usr/local/bin/alpen-client
+
 
 FROM debian:13-slim AS runtime
 

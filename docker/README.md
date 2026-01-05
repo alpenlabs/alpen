@@ -93,17 +93,17 @@ docker start alpen_reth_fn # if you want to test the full node
 
 This setup builds both `strata` (OL) and `alpen-client` (EL) from the repo Dockerfiles and wires them to a local bitcoind.
 
-1) Ensure config files exist:
+1. Ensure config files exist:
    - `docker/configs/config.toml`
    - `docker/configs/params.json`
-2) From repo root, start the stack:
+2. From repo root, start the stack:
    ```bash
    docker compose -f docker/docker-compose-ol-el.yml up -d --build
    ```
-3) Services:
+3. Services:
    - `strata` listens on `8432` and reads the mounted config/params at `/config/config.toml` and `/config/params.json`.
    - `alpen-client` exposes `8545/8546/30303` and is pointed at `http://strata:8432`.
-4) Stop the stack when done:
+4. Stop the stack when done:
    ```bash
    docker compose -f docker/docker-compose-ol-el.yml down
    ```

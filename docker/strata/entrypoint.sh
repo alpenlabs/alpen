@@ -1,24 +1,28 @@
 #!/bin/sh
+# Entrypoint script
+
 set -eu
+# Fail fast on errors and unset variables
 
 umask 027
+# Restrict default permissions for newly created files
+
 
 CONFIG_PATH=${CONFIG_PATH:-/config/config.toml}
 PARAM_PATH=${PARAM_PATH:-/config/params.json}
 
-if [ ! -f "${CONFIG_PATH}" ]; then
-    echo "Error: missing config file '${CONFIG_PATH}'." >&2
-    exit 1
-fi
+# Validate required files exist
+[ -f "${CONFIG_PATH}" ] || {
+  echo "Error: missing config '${CONFIG_PATH}'" >&2
+  exit 1
+}
 
-if [ -n "${PARAM_PATH}" ] && [ ! -f "${PARAM_PATH}" ]; then
-    echo "Error: missing params file '${PARAM_PATH}'." >&2
-    exit 1
-fi
+[ -f "${PARAM_PATH}" ] || {
+  echo "Error: missing params '${PARAM_PATH}'" >&2
+  exit 1
+}
 
-set -- --config "${CONFIG_PATH}" "$@"
-if [ -n "${PARAM_PATH}" ]; then
-    set -- "$@" --rollup-params "${PARAM_PATH}"
-fi
-
-exec strata "$@"
+exec strata \
+  --config "${CONFIG_PATH}" \
+  --rollup-params "${PARAM_PATH}" \
+  "$@"

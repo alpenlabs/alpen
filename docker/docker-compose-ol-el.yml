@@ -22,7 +22,7 @@ services:
       context: ..
       dockerfile: docker/alpen-client/Dockerfile
     image: alpen-client:latest
-    command: >
+    command: 
       --ol-client-http http://strata:8432
       --sequencer-pubkey 4f8c8a1b39e9c7f61b0d2c5f8d1a3345c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1
     environment:
@@ -36,12 +36,7 @@ services:
     volumes:
       - alpen-client-data:/app/.local
       - alpen-client-data:/app/.cache
-    # depends_on:
-    #   - strata
-    # links:
-    #   - strata
   strata:
-    # image: strata:latest
     build:
       context: ..
       dockerfile: docker/strata/Dockerfile    

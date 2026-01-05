@@ -24,10 +24,10 @@ client_poll_dur_ms = 10_000
 write_poll_dur_ms = 10_000
 fee_policy = "smart"
 reveal_amount = 100
-bundle_interval_ms = 1000
+bundle_interval_ms = 1_000
 
 [btcio.broadcaster]
-poll_interval_ms = 1000
+poll_interval_ms = 1_000
 
 
 [exec.reth]
