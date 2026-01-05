@@ -15,6 +15,7 @@
 //!   state tracking
 
 mod builder;
+mod context;
 mod errors;
 mod handle;
 mod message;
@@ -24,6 +25,7 @@ mod state;
 mod traits;
 
 pub use builder::ChainWorkerBuilder;
+pub use context::ChainWorkerContextImpl;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::ChainWorkerHandle;
 pub use message::ChainWorkerMessage;

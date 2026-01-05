@@ -19,6 +19,7 @@ strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-status.workspace = true
+strata-storage.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true
