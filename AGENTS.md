@@ -88,10 +88,6 @@ The OL manages L2 state, accounts, and epoch processing. It produces checkpoints
 - **Epochs & Checkpoints**: Time ranges of blocks with DA diffs posted to L1
 - **DA Reconstruction**: State can be reconstructed from L1 DA payloads
 
-**State Structure:**
-- **Toplevel State**: Global fields, always accessible
-- **Bulk State**: Key-value mapping of accounts, selectively loaded
-
 #### EE Layer (Execution Environment)
 
 The EE provides EVM execution, decoupled from OL. Currently implemented via Alpen Reth.
@@ -223,8 +219,8 @@ Zero-knowledge proof generation.
 | Crate | Description |
 |-------|-------------|
 | `proof-impl/checkpoint` | Checkpoint proof implementation |
-| `proof-impl/cl-stf` | Consensus layer STF proof |
-| `proof-impl/evm-ee-stf` | EVM EE STF proof |
+| `proof-impl/cl-stf` | Orchestration layer STF proof |
+| `proof-impl/evm-ee-stf` | EE Layer STF proof |
 | `zkvm/hosts` | ZKVM host implementations (SP1, RISC0, Native) |
 
 ### Reth Integration (`crates/reth/`)
@@ -454,72 +450,6 @@ fn process_block(block: &Block) -> Result<()> {
 **`strata-codec`** is a lightweight, compact format for on-chain data where space is critical.
 
 **`rkyv`** provides zero-copy deserialization for proof guest programs where performance matters.
-
-### Design Patterns
-
-**Pseudo-Actors**: Worker tasks receiving inputs on a channel, processing in order.
-
-```rust
-struct FooWorker {
-    rx: mpsc::Receiver<FooMsg>,
-    state: FooState,
-}
-
-impl FooWorker {
-    async fn run(mut self) {
-        while let Some(msg) = self.rx.recv().await {
-            self.handle(msg).await;
-        }
-    }
-}
-```
-
-**Worker Handles**: Decouple control interface from internal state.
-
-```rust
-// Public handle (Clone, Send)
-pub struct FooHandle {
-    tx: mpsc::Sender<FooMsg>,
-}
-
-impl FooHandle {
-    pub async fn do_thing(&self, arg: Arg) -> Result<Output> {
-        let (resp_tx, resp_rx) = oneshot::channel();
-        self.tx.send(FooMsg::DoThing { arg, resp: resp_tx }).await?;
-        resp_rx.await?
-    }
-}
-
-// Internal state (not exposed)
-struct FooState { /* ... */ }
-
-// Worker task
-async fn foo_task(rx: mpsc::Receiver<FooMsg>, state: FooState) {
-    // Process messages
-}
-```
-
-**Definitions Crates**: Separate interface from implementation.
-
-```
-rpc-types/   # Just types, minimal dependencies
-rpc-api/     # Trait definitions using types
-rpc-server/  # Implementation
-```
-
-**Effectful State Machines**: State machines that emit "actions" for an executor to carry out side effects, improving testability.
-
-```rust
-enum Action {
-    SendMessage(Peer, Message),
-    PersistState(State),
-    EmitLog(Log),
-}
-
-fn transition(state: &mut State, event: Event) -> Vec<Action> {
-    // Pure state transition, returns effects to execute
-}
-```
 
 ## Git Best Practices
 
