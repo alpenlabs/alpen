@@ -19,11 +19,9 @@ arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
 borsh.workspace = true
 const-hex = "1.14"
-digest.workspace = true
 hex.workspace = true
 int-enum.workspace = true
 serde.workspace = true
-sha2.workspace = true
 zeroize.workspace = true
 
 [build-dependencies]
@@ -36,7 +34,6 @@ ssz_types.workspace = true
 bitcoin.workspace = true
 bincode.workspace = true
 proptest.workspace = true
-rand.workspace = true
 serde_json.workspace = true
 
 [features]

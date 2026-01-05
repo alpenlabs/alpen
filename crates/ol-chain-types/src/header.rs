@@ -3,6 +3,7 @@ use std::io::{self, Cursor, Write};
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_crypto::hash;
 use strata_primitives::{
     buf::{Buf32, Buf64},
     hash::{self, raw},

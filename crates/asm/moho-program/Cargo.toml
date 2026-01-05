@@ -14,6 +14,7 @@ strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
+strata-crypto.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 

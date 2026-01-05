@@ -1,16 +1,14 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_crypto::hash::{compute_borsh_hash, raw};
 use strata_l1_txfmt::TxType;
-use strata_primitives::{
-    hash,
-    roles::{ProofType, Role},
-};
+use strata_primitives::roles::{ProofType, Role};
 
 mod cancel;
 pub mod updates;
 
 pub use cancel::CancelAction;
-use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
+use strata_primitives::buf::Buf32;
 pub use updates::UpdateAction;
 
 use crate::constants::{
@@ -48,7 +46,7 @@ impl MultisigAction {
         let mut data = [0u8; 40];
         data[..32].copy_from_slice(&action_hash);
         data[32..].copy_from_slice(&seqno_bytes);
-        hash::raw(&data)
+        raw(&data)
     }
 
     pub fn tx_type(&self) -> TxType {

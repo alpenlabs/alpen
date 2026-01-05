@@ -4,9 +4,9 @@ use bitcoin::absolute;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
 use strata_asm_manifest_types::AsmManifest;
 use strata_codec::{Codec, encode_to_vec};
+use strata_crypto::hash::raw;
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot,
-    hash::raw,
 };
 use strata_ledger_types::*;
 

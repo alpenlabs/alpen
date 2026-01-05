@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 strata-btc-types.workspace = true
+strata-crypto.workspace = true
 strata-identifiers = { workspace = true, features = ["bitcoin"] }
 
 arbitrary.workspace = true

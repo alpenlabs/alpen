@@ -3,9 +3,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::Checkpoint;
+use strata_crypto::hash::compute_borsh_hash;
 use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
-use strata_primitives::{buf::Buf32, hash::compute_borsh_hash};
+use strata_primitives::buf::Buf32;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Describes when we'll stop working to fulfill a duty.

@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-bridge-types.workspace = true
+strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
