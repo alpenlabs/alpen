@@ -14,6 +14,7 @@ use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
+use strata_params::RollupParams;
 use strata_primitives::constants::RECOVER_DELAY as DEFAULT_RECOVER_DELAY;
 use terrors::OneOf;
 
@@ -64,6 +65,8 @@ pub struct SettingsFromFile {
     pub bridge_alpen_address: Option<String>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
+    /// Path to the rollup params JSON file.
+    pub rollup_params_path: Option<PathBuf>,
     /// Seed that can be passed directly for functional test.
     #[cfg(feature = "test-mode")]
     pub seed: Hex<[u8; SEED_LEN]>,
@@ -91,6 +94,7 @@ pub struct Settings {
     pub bridge_in_amount: Amount,
     pub bridge_out_amount: Amount,
     pub finality_depth: u32,
+    pub params: RollupParams,
     #[cfg(feature = "test-mode")]
     pub seed: Seed,
 }
@@ -104,6 +108,12 @@ pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var("CLI_CONF
     Some(path) => PathBuf::from_str(&path).expect("valid config path"),
     None => PROJ_DIRS.config_dir().to_owned().join("config.toml"),
 });
+
+pub static ROLLUP_PARAMS_FILE: LazyLock<PathBuf> =
+    LazyLock::new(|| match std::env::var("STRATA_NETWORK_PARAMS").ok() {
+        Some(path) => PathBuf::from_str(&path).expect("valid rollup params path"),
+        None => PROJ_DIRS.config_dir().to_owned().join("rollup_params.json"),
+    });
 
 impl Settings {
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
@@ -152,6 +162,15 @@ impl Settings {
             ))));
         }
 
+        // Load rollup params from config, environment variable, or default location
+        let params_path = from_file
+            .rollup_params_path
+            .unwrap_or_else(|| ROLLUP_PARAMS_FILE.clone());
+
+        let params_json = std::fs::read_to_string(&params_path).map_err(OneOf::new)?;
+        let params: RollupParams = serde_json::from_str(&params_json)
+            .map_err(|e| OneOf::new(config::ConfigError::Message(format!("Failed to parse rollup params: {}", e))))?;
+
         Ok(Settings {
             esplora: from_file.esplora,
             alpen_endpoint: from_file.alpen_endpoint,
@@ -184,6 +203,7 @@ impl Settings {
                 .map(Amount::from_sat)
                 .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
+            params,
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),
         })

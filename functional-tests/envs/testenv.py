@@ -91,6 +91,7 @@ class StrataRunContext(flexitest.RunContext):
 
         rollup_cfg = env.rollup_cfg()
         agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
+        rollup_params_json = env.rollup_params_json()
 
         builder = (
             AlpenCliBuilder()
@@ -111,6 +112,9 @@ class StrataRunContext(flexitest.RunContext):
             .with_datadir(os.path.join(self.datadir_root, name))
         )
 
+        if rollup_params_json:
+            builder = builder.with_rollup_params(rollup_params_json)
+
         self.alpen_cli = builder.build(self)
 
 
@@ -119,7 +123,7 @@ class BasicLiveEnv(flexitest.LiveEnv):
     A common thin layer for all instances of the Environments.
     """
 
-    def __init__(self, srvs, bridge_pk, rollup_cfg: RollupConfig):
+    def __init__(self, srvs, bridge_pk, rollup_cfg: RollupConfig, rollup_params_json: str = None):
         super().__init__(srvs)
         self._el_address_gen = (
             f"deada00{x:04X}dca3ebeefdeadf001900dca3ebeef" for x in range(16**4)
@@ -128,6 +132,7 @@ class BasicLiveEnv(flexitest.LiveEnv):
         self._rec_btc_addr_idx = 0
         self._bridge_pk = bridge_pk
         self._rollup_cfg = rollup_cfg
+        self._rollup_params_json = rollup_params_json
 
     def gen_el_address(self) -> str:
         """
@@ -146,6 +151,10 @@ class BasicLiveEnv(flexitest.LiveEnv):
 
     def rollup_cfg(self) -> RollupConfig:
         return self._rollup_cfg
+
+    def rollup_params_json(self) -> str | None:
+        """Returns the rollup params as a JSON string"""
+        return self._rollup_params_json
 
 
 class BasicEnvConfig(flexitest.EnvConfig):
@@ -346,7 +355,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
         )
         svcs["prover_client"] = prover_client
 
-        return BasicLiveEnv(svcs, bridge_pk, rollup_cfg)
+        return BasicLiveEnv(svcs, bridge_pk, rollup_cfg, params)
 
 
 class HubNetworkEnvConfig(flexitest.EnvConfig):
@@ -497,7 +506,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         fn_waiter.wait_until_client_ready()
         # TODO: add others like prover, reth, btc
 
-        return BasicLiveEnv(svcs, bridge_pk, rollup_cfg)
+        return BasicLiveEnv(svcs, bridge_pk, rollup_cfg, params)
 
 
 class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
@@ -583,7 +592,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             "prover_client_strict": strict_bundle["prover"],
             "prover_client_fast": fast_bundle["prover"],
         }
-        return BasicLiveEnv(services, bridge_pk, rollup_cfg_strict)
+        return BasicLiveEnv(services, bridge_pk, rollup_cfg_strict, params["strict"])
 
     def _generate_params(self, init_dir: str, bitcoind_config: BitcoindConfig) -> dict[str, str]:
         settings_fast = RollupParamsSettings.new_default().fast_batch()
@@ -749,4 +758,4 @@ class LoadEnvConfig(BasicEnvConfig):
             load_cfg: LoadConfig = builder(svcs)
             svcs[f"load_generator.{builder.name}"] = load_fac.create_simple_loadgen(load_cfg)
 
-        return BasicLiveEnv(svcs, basic_live_env._bridge_pk, basic_live_env._rollup_cfg)
+        return BasicLiveEnv(svcs, basic_live_env._bridge_pk, basic_live_env._rollup_cfg, basic_live_env._rollup_params_json)

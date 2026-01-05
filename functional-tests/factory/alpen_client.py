@@ -125,6 +125,7 @@ class AlpenCliBuilder:
         self.pubkey = None
         self.magic_bytes = None
         self.datadir = None
+        self.rollup_params = None
 
     def with_pubkey(self, pubkey: str):
         self.pubkey = pubkey
@@ -136,6 +137,11 @@ class AlpenCliBuilder:
 
     def with_datadir(self, datadir: str):
         self.datadir = datadir
+        return self
+
+    def with_rollup_params(self, rollup_params: str):
+        """Set rollup params JSON string"""
+        self.rollup_params = rollup_params
         return self
 
     def requires_service(self, service_name: str, transform_lambda):
@@ -164,6 +170,15 @@ class AlpenCliBuilder:
         if not os.path.exists(path):
             os.makedirs(path)
         config_file = os.path.join(self.datadir, "alpen-cli.toml")
+
+        # Write rollup params to file if provided
+        rollup_params_line = ""
+        if self.rollup_params:
+            rollup_params_file = os.path.join(self.datadir, "rollup_params.json")
+            with open(rollup_params_file, "w") as f:
+                f.write(self.rollup_params)
+            rollup_params_line = f'\nrollup_params_path = "{rollup_params_file}"'
+
         config_content = f"""# Alpen-cli Configuration for functional test
 # Generated automatically by functional test factory
 alpen_endpoint = "{reth_endpoint}"
@@ -174,7 +189,7 @@ faucet_endpoint = "{bitcoin_config.rpc_url}"
 bridge_pubkey = "{self.pubkey}"
 magic_bytes = "{self.magic_bytes}"
 network = "regtest"
-seed = "838d8ba290a3066abb35b663858fa839"
+seed = "838d8ba290a3066abb35b663858fa839"{rollup_params_line}
 """
         with open(config_file, "w") as f:
             f.write(config_content)
