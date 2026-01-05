@@ -1,5 +1,6 @@
 //! Error types for the chain worker.
 
+use strata_db_types::errors::DbError;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_primitives::epoch::EpochCommitment;
 use thiserror::Error;
@@ -46,7 +47,7 @@ pub enum WorkerError {
 
     /// Database error.
     #[error("database failure: {0}")]
-    Database(String),
+    Database(#[from] DbError),
 
     /// Missing a required dependency for operation.
     #[error("missing required dependency: {0}")]

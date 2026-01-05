@@ -13958,6 +13958,7 @@ dependencies = [
  "anyhow",
  "serde",
  "strata-checkpoint-types",
+ "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "strata-ol-state-support-types",
