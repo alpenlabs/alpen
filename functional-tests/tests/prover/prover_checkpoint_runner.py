@@ -22,7 +22,8 @@ class ProverCheckpointSettings:
 class ProverCheckpointRunnerTest(testenv.StrataTestBase):
     """This tests the prover's checkpoint runner with an unreliable sequencer service.
     We check that a few (3) checkpoints are posted, restart the sequencer,
-    and test that a few more (3) checkpoints get posted -- if so, the prover works properly."""
+    and test that a few more (3) checkpoints get posted -- if so, the prover works properly.
+    """
 
     def __init__(self, ctx: flexitest.InitContext):
         # Increase the proof timeout so that the checkpoint index increments only
@@ -76,7 +77,8 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         sequencer.start()
         sequencer_rpc = sequencer.create_rpc()
 
-        # Wait for target epoch to be confirmed; for debug use the same function as above, it has more logs.
+        # Wait for target epoch to be confirmed; for debug use the same function as above,
+        # it has more logs.
         # Use syncStatus because it's quicker (than clientStatus)
         seq_waiter.wait_until_chain_epoch(
             2 * self.checkpoint_settings.consecutive_proofs_required,
