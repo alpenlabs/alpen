@@ -18,6 +18,7 @@ rand = { workspace = true, optional = true }
 secp256k1 = { workspace = true, features = ["global-context", "recovery"] }
 serde.workspace = true
 thiserror.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 bitcoin.workspace = true

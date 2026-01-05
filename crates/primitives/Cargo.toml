@@ -23,7 +23,6 @@ borsh.workspace = true
 hex.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-zeroize.workspace = true
 
 [dev-dependencies]
 

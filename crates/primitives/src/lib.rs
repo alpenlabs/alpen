@@ -41,7 +41,6 @@ pub mod block_credential;
 pub mod constants;
 pub mod errors;
 pub mod indexed;
-pub mod keys;
 pub mod l1;
 pub mod prelude;
 pub mod proof;

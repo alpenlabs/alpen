@@ -14190,6 +14190,7 @@ dependencies = [
  "serde",
  "strata-identifiers",
  "thiserror 2.0.17",
+ "zeroize",
 ]
 
 [[package]]
@@ -14261,6 +14262,7 @@ dependencies = [
  "sp1-verifier",
  "strata-asm-types",
  "strata-bridge-types",
+ "strata-crypto",
  "strata-key-derivation",
  "strata-l1-txfmt",
  "strata-params",
@@ -14859,7 +14861,6 @@ dependencies = [
  "strata-crypto",
  "strata-identifiers",
  "thiserror 2.0.17",
- "zeroize",
 ]
 
 [[package]]
