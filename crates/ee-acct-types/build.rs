@@ -1,9 +1,9 @@
-use std::path::Path;
+use std::{env, path::Path};
 
 use ssz_codegen::{ModuleGeneration, build_ssz_files};
 
 fn main() {
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set by cargo");
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set by cargo");
     let output_path = Path::new(&out_dir).join("generated.rs");
 
     let entry_points = ["state.ssz"];

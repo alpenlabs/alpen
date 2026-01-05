@@ -6,6 +6,8 @@
 //! *not* use `VecDeque` internally, as it's designed around being easily
 //! serializable.
 
+use std::mem;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -184,7 +186,7 @@ impl<T> StateQueue<T> {
         // Split the queue entries we want to keep into its own vec.
         let out = {
             let mut new_entries = self.entries.split_off(n);
-            std::mem::swap(&mut self.entries, &mut new_entries);
+            mem::swap(&mut self.entries, &mut new_entries);
             new_entries
         };
 
@@ -208,7 +210,7 @@ impl<T> StateQueue<T> {
         // Split the queue entries we want to keep into its own vec.
         let out = {
             let mut new_entries = self.entries.split_off(N);
-            std::mem::swap(&mut self.entries, &mut new_entries);
+            mem::swap(&mut self.entries, &mut new_entries);
             new_entries
         };
 
@@ -217,7 +219,7 @@ impl<T> StateQueue<T> {
         let slice_ptr = slice_box.as_ptr();
         assert_eq!(slice_box.len(), N);
         let arr_box = unsafe {
-            std::mem::forget(slice_box);
+            mem::forget(slice_box);
             Box::<[T; N]>::from_raw(slice_ptr as *mut [T; N])
         };
 

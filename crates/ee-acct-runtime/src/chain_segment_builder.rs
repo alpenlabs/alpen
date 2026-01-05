@@ -158,6 +158,8 @@ impl<E: ExecutionEnvironment + BlockAssembler> ChainSegmentBuilder<E> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use strata_acct_types::{BitcoinAmount, SubjectId};
     use strata_ee_acct_types::PendingInputEntry;
     use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
@@ -251,7 +253,7 @@ mod tests {
         let ee = SimpleExecutionEnvironment;
 
         // Create initial state
-        let mut initial_accounts = std::collections::BTreeMap::new();
+        let mut initial_accounts = BTreeMap::new();
         let alice = SubjectId::from([1u8; 32]);
         initial_accounts.insert(alice, 1000u64);
         let state = SimplePartialState::new(initial_accounts);

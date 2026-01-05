@@ -3,6 +3,8 @@
 //! This module defines the ProofTask newtype wrapper around ProofContext
 //! and implements the ProgramType trait for registry-based dispatch.
 
+use std::ops;
+
 use serde::{Deserialize, Serialize};
 use strata_paas::ProgramType;
 use strata_primitives::proof::ProofContext;
@@ -39,7 +41,7 @@ impl From<ProofTask> for ProofContext {
     }
 }
 
-impl std::ops::Deref for ProofTask {
+impl ops::Deref for ProofTask {
     type Target = ProofContext;
 
     fn deref(&self) -> &Self::Target {

@@ -5,7 +5,7 @@ use bitcoind_async_client::traits::{Broadcaster, Wallet};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_params::Params;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
-use tokio::sync::mpsc::Receiver;
+use tokio::{sync::mpsc::Receiver, time::interval};
 use tracing::*;
 
 use crate::broadcaster::{
@@ -22,7 +22,7 @@ pub async fn broadcaster_task(
     broadcast_poll_interval: u64,
 ) -> BroadcasterResult<()> {
     info!("Starting Broadcaster task");
-    let interval = tokio::time::interval(Duration::from_millis(broadcast_poll_interval));
+    let interval = interval(Duration::from_millis(broadcast_poll_interval));
     tokio::pin!(interval);
 
     let mut state = BroadcasterState::initialize(&ops).await?;

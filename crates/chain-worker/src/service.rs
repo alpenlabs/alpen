@@ -1,9 +1,10 @@
 //! Service framework integration for chain worker.
 
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 use strata_chainexec::{BlockExecutionOutput, ChainExecutor};
+use strata_chaintsn::context::L2HeaderAndParent;
 use strata_checkpoint_types::EpochSummary;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_ol_chain_types::{L2Block, L2Header};
@@ -25,7 +26,7 @@ use crate::{
 /// Chain worker service implementation using the service framework.
 #[derive(Debug)]
 pub struct ChainWorkerService<W> {
-    _phantom: std::marker::PhantomData<W>,
+    _phantom: PhantomData<W>,
 }
 
 impl<W: WorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W> {
@@ -193,7 +194,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             .try_exec_el_payload_blocking(*block)
             .map_err(|_| WorkerError::InvalidExecPayload(*block))?;
 
-        let header_ctx = strata_chaintsn::context::L2HeaderAndParent::new(
+        let header_ctx = L2HeaderAndParent::new(
             bundle.header().header().clone(),
             *parent_blkid,
             parent_header,

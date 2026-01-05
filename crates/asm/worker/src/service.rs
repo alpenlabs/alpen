@@ -1,5 +1,7 @@
 //! Service framework integration for ASM.
 
+use std::marker;
+
 use bitcoin::hashes::Hash;
 use serde::Serialize;
 use strata_primitives::prelude::*;
@@ -12,7 +14,7 @@ use crate::{AsmWorkerServiceState, traits::WorkerContext};
 /// ASM service implementation using the service framework.
 #[derive(Debug)]
 pub struct AsmWorkerService<W> {
-    _phantom: std::marker::PhantomData<W>,
+    _phantom: marker::PhantomData<W>,
 }
 
 impl<W: WorkerContext + Send + Sync + 'static> Service for AsmWorkerService<W> {

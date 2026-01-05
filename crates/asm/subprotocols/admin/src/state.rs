@@ -1,3 +1,5 @@
+use std::mem::take;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
@@ -100,7 +102,7 @@ impl AdministrationSubprotoState {
     /// Process all queued updates and remove any whose `activation_height` equals `current_height`
     /// from `queued`.
     pub fn process_queued(&mut self, current_height: u64) -> Vec<QueuedUpdate> {
-        let (ready, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.queued)
+        let (ready, rest): (Vec<_>, Vec<_>) = take(&mut self.queued)
             .into_iter()
             .partition(|u| u.activation_height() <= current_height);
         self.queued = rest;

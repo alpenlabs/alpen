@@ -5,7 +5,7 @@
 //! These functions are called from the CLI's subcommands.
 
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -73,7 +73,7 @@ pub(super) fn resolve_network(arg: Option<&str>) -> anyhow::Result<Network> {
     }
 
     // If no argument provided, check environment variable
-    if let Ok(env_network) = std::env::var(BITCOIN_NETWORK_ENVVAR) {
+    if let Ok(env_network) = env::var(BITCOIN_NETWORK_ENVVAR) {
         return match env_network.as_str() {
             "signet" => Ok(Network::Signet),
             "regtest" => Ok(Network::Regtest),
@@ -228,6 +228,8 @@ fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> 
 /// Fetches the genesis L1 view from a Bitcoin node at the specified height.
 #[cfg(feature = "btc-client")]
 fn exec_genl1view(cmd: SubcGenL1View, ctx: &mut CmdContext) -> anyhow::Result<()> {
+    use tokio::runtime;
+
     use crate::btc_client::fetch_genesis_l1_view_with_config;
 
     let config = ctx
@@ -239,7 +241,7 @@ fn exec_genl1view(cmd: SubcGenL1View, ctx: &mut CmdContext) -> anyhow::Result<()
             )
         })?;
 
-    let gl1view = tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
+    let gl1view = runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
         config,
         cmd.genesis_l1_height,
     ))?;
@@ -399,7 +401,7 @@ fn read_xpriv(path: &Path) -> anyhow::Result<Xpriv> {
 
 /// Parses an [`Xpriv`] from environment variable.
 fn parse_xpriv_from_env(env: &'static str) -> anyhow::Result<Xpriv> {
-    let env_val = match std::env::var(env) {
+    let env_val = match env::var(env) {
         Ok(v) => v,
         Err(_) => anyhow::bail!("got --key-from-env but {env} not set or invalid"),
     };
@@ -605,7 +607,9 @@ fn retrieve_genesis_l1_view(cmd: &SubcParams, ctx: &CmdContext) -> anyhow::Resul
         use crate::btc_client::fetch_genesis_l1_view_with_config;
 
         if let Some(config) = &ctx.bitcoind_config {
-            return tokio::runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
+            use tokio::runtime;
+
+            return runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
                 config,
                 cmd.genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
             ));

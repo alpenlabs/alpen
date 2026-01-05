@@ -1,6 +1,6 @@
 //! Prover client.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time};
 
 use anyhow::Context;
 use args::Args;
@@ -20,6 +20,7 @@ use strata_primitives::proof::ProofZkVm;
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder as _;
 use strata_tasks::TaskManager;
+use tokio::runtime;
 use tracing::{debug, info};
 #[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
@@ -129,7 +130,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let service_config = ProverServiceConfig::new(worker_counts);
 
     // Create runtime and task manager
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let runtime = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("prover-rt")
         .build()
@@ -209,7 +210,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     // Monitor tasks and block until shutdown
     task_manager.start_signal_listeners();
-    task_manager.monitor(Some(std::time::Duration::from_secs(5)))?;
+    task_manager.monitor(Some(time::Duration::from_secs(5)))?;
 
     info!("Shutting down");
     Ok(())

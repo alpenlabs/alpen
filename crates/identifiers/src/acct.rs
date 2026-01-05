@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, mem};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
@@ -86,7 +86,7 @@ impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
 type RawAccountSerial = u32;
 
 /// Size of RawAccountSerial (u32) in bytes
-const RAW_ACCOUNT_SERIAL_LEN: usize = std::mem::size_of::<RawAccountSerial>();
+const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
 
 /// Incrementally assigned account serial number.
 #[derive(

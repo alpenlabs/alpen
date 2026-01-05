@@ -5,6 +5,8 @@
 //! notary operators. We preserve the historical operator set that controlled each deposit
 //! since the operator set may change over time.
 
+use std::cmp;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{l1::BitcoinAmount, sorted_vec::SortedVec};
@@ -55,13 +57,13 @@ pub struct DepositEntry {
 }
 
 impl PartialOrd for DepositEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for DepositEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         self.idx().cmp(&other.idx())
     }
 }

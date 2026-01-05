@@ -1,6 +1,6 @@
 //! Compressed ECDSA public key type with Borsh serialization.
 
-use std::ops::Deref;
+use std::{io, ops::Deref};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -96,18 +96,18 @@ impl<'a> Arbitrary<'a> for CompressedPublicKey {
 }
 
 impl BorshSerialize for CompressedPublicKey {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         let bytes = self.0.serialize();
         writer.write_all(&bytes)
     }
 }
 
 impl BorshDeserialize for CompressedPublicKey {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let mut buf = [0u8; 33];
         reader.read_exact(&mut buf)?;
         let pk = PublicKey::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         Ok(Self(pk))
     }
 }

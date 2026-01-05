@@ -1,6 +1,6 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::L1WriterDatabase;
+use strata_db_types::traits::{DatabaseBackend, L1WriterDatabase};
 use strata_primitives::buf::Buf32;
 
 use super::checkpoint::{get_checkpoint_at_index, get_checkpoint_index_range};
@@ -36,7 +36,7 @@ pub(crate) struct GetWriterPayloadArgs {
 
 /// Get a summary of L1 writer database contents
 pub(crate) fn get_writer_summary(
-    db: &impl strata_db_types::traits::DatabaseBackend,
+    db: &impl DatabaseBackend,
     args: GetWriterSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let writer_db = db.writer_db();
@@ -91,7 +91,7 @@ pub(crate) fn get_writer_summary(
 
 /// Get a specific writer payload entry by index
 pub(crate) fn get_writer_payload(
-    db: &impl strata_db_types::traits::DatabaseBackend,
+    db: &impl DatabaseBackend,
     args: GetWriterPayloadArgs,
 ) -> Result<(), DisplayedError> {
     let writer_db = db.writer_db();

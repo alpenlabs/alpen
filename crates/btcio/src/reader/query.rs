@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::bail;
-use bitcoin::{Block, BlockHash, CompactTarget};
+use bitcoin::{params, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use strata_asm_types::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
 use strata_config::btcio::ReaderConfig;
@@ -17,6 +17,7 @@ use strata_primitives::{
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::{L1BlockManager, NodeStorage};
+use tokio::time::sleep;
 use tracing::*;
 
 use super::event::L1Event;
@@ -109,7 +110,7 @@ async fn do_reader_task<R: Reader>(
             }
         };
 
-        tokio::time::sleep(poll_dur).await;
+        sleep(poll_dur).await;
 
         status_updates.push(L1StatusUpdate::LastUpdate(
             SystemTime::now()
@@ -337,7 +338,7 @@ pub async fn fetch_genesis_l1_view(
 ) -> anyhow::Result<GenesisL1View> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
-    let btc_params = BtcParams::from(bitcoin::params::Params::from(network));
+    let btc_params = BtcParams::from(params::Params::from(network));
 
     // Get the difficulty adjustment block just before the given block height,
     // representing the start of the current epoch.

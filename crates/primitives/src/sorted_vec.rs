@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, mem};
+use std::{cmp::Ordering, io, mem};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use thiserror::Error;
@@ -186,10 +186,9 @@ impl<T: Ord> TryFrom<Vec<T>> for SortedVec<T> {
 /// Extra implementation logic that ensures that the deserialized vec is
 /// sorted.  Does not sort it itself, instead it errors.
 impl<T: Ord + BorshDeserialize> BorshDeserialize for SortedVec<T> {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let vec = <Vec<T> as BorshDeserialize>::deserialize_reader(reader)?;
-        Self::try_from(vec)
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "vec unsorted"))
+        Self::try_from(vec).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "vec unsorted"))
     }
 }
 
@@ -428,13 +427,10 @@ impl<T: TableEntry> TryFrom<Vec<T>> for FlatTable<T> {
 /// Extra implementation logic that ensures that the deserialized vec is
 /// sorted and has no duplicates.  Does not sort it itself, instead it errors.
 impl<T: TableEntry + BorshDeserialize> BorshDeserialize for FlatTable<T> {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let vec = <Vec<T> as BorshDeserialize>::deserialize_reader(reader)?;
         Self::try_from(vec).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "vec unsorted or has duplicates",
-            )
+            io::Error::new(io::ErrorKind::InvalidData, "vec unsorted or has duplicates")
         })
     }
 }

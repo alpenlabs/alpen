@@ -4,7 +4,7 @@ use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use jsonrpsee::{core::RpcResult, RpcModule};
+use jsonrpsee::{core::RpcResult, server, RpcModule};
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
 use strata_paas::{ProverHandle, TaskId};
@@ -45,7 +45,7 @@ where
     }
 
     info!("connecting to the server {:?}", rpc_url);
-    let rpc_server = jsonrpsee::server::ServerBuilder::new()
+    let rpc_server = server::ServerBuilder::new()
         .build(&rpc_url)
         .await
         .expect("build prover rpc server");

@@ -9,6 +9,8 @@
 //! 11bbbbbb_bbbbbbbb_bbbbbbbb_bbbbbbbb
 //! ```
 
+use std::ops;
+
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 /// The max value one of these varints can have, which is about 1 billion.
@@ -300,7 +302,7 @@ impl<T> Default for VarVec<T> {
     }
 }
 
-impl<T> std::ops::Deref for VarVec<T> {
+impl<T> ops::Deref for VarVec<T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -308,7 +310,7 @@ impl<T> std::ops::Deref for VarVec<T> {
     }
 }
 
-impl<T> std::ops::DerefMut for VarVec<T> {
+impl<T> ops::DerefMut for VarVec<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

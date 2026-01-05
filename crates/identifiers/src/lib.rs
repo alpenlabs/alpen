@@ -36,6 +36,7 @@ pub use strata_codec;
     clippy::all,
     unreachable_pub,
     clippy::allow_attributes,
+    clippy::absolute_paths,
     reason = "generated code"
 )]
 pub mod ssz_generated {

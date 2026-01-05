@@ -115,7 +115,7 @@ impl From<AccountChangesTuple> for AccountChanges {
 mod tests {
     use std::collections::HashMap;
 
-    use alloy_primitives::{B256, U256};
+    use alloy_primitives::{map::DefaultHashBuilder, B256, U256};
     use revm::database::states::StorageSlot;
     use revm_primitives::hex;
     use serde_json;
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_account_changes_serde() {
-        let mut map = HashMap::with_hasher(alloy_primitives::map::DefaultHashBuilder::default());
+        let mut map = HashMap::with_hasher(DefaultHashBuilder::default());
         map.insert(
             U256::from(147),
             StorageSlot::new_changed(U256::from(1), U256::from(2)),

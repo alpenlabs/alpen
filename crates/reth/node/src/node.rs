@@ -8,7 +8,7 @@ use reth_node_builder::{
     rpc::{
         BasicEngineApiBuilder, BasicEngineValidatorBuilder, EngineApiBuilder, EngineValidatorAddOn,
         EngineValidatorBuilder, EthApiBuilder, Identity, PayloadValidatorBuilder, RethRpcAddOns,
-        RpcAddOns, RpcHandle,
+        RpcAddOns, RpcHandle, RpcHooks,
     },
     Node, NodeAdapter, NodeComponentsBuilder,
 };
@@ -209,7 +209,7 @@ where
 {
     type EthApi = EthB::EthApi;
 
-    fn hooks_mut(&mut self) -> &mut reth_node_builder::rpc::RpcHooks<N, Self::EthApi> {
+    fn hooks_mut(&mut self) -> &mut RpcHooks<N, Self::EthApi> {
         self.rpc_add_ons.hooks_mut()
     }
 }

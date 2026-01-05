@@ -18,7 +18,7 @@
 //! - Requires Bitcoin node with transaction indexing enabled (`txindex=1`)
 //! - Returns `WorkerError::BitcoinTxNotFound` if transaction not found
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use strata_asm_common::{
     AsmMerkleProof, AuxData, AuxRequests, Hash32, ManifestHashRange, VerifiableManifestHash,
@@ -242,8 +242,8 @@ impl<'a> AuxDataResolver<'a> {
     }
 }
 
-impl<'a> std::fmt::Debug for AuxDataResolver<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> fmt::Debug for AuxDataResolver<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AuxDataResolver")
             .field("params", &self.params)
             .finish_non_exhaustive()

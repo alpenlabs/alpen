@@ -1,6 +1,9 @@
 //! Message related types using strata-msg-fmt.
 
-use std::any::Any;
+use std::{
+    any::Any,
+    io::{self, Write},
+};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_l1_txfmt::SubprotocolId;
@@ -91,18 +94,18 @@ impl Message {
 // TODO: Remove these Borsh implementations when upstream OwnedMsg implements
 // Serialize/Deserialize The Message wrapper was primarily created to add serialization support.
 impl BorshSerialize for Message {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize as (ty, body) tuple for Borsh compatibility
         (self.0.ty(), self.0.body().to_vec()).serialize(writer)
     }
 }
 
 impl BorshDeserialize for Message {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         // Deserialize as (ty, body) tuple for Borsh compatibility
         let (ty, body): (TypeId, Vec<u8>) = BorshDeserialize::deserialize_reader(reader)?;
-        let owned_msg = OwnedMsg::new(ty, body)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let owned_msg =
+            OwnedMsg::new(ty, body).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         Ok(Message(owned_msg))
     }
 }

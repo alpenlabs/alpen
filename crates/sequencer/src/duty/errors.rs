@@ -1,5 +1,6 @@
 //! Common error types for sequencer duty.
 
+use strata_db_types::errors::DbError;
 use strata_ol_chain_types::L2BlockId;
 use thiserror::Error;
 
@@ -16,5 +17,5 @@ pub enum Error {
 
     /// Other db error.
     #[error("db: {0}")]
-    Db(#[from] strata_db_types::errors::DbError),
+    Db(#[from] DbError),
 }

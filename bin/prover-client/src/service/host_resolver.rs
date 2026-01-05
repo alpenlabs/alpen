@@ -15,6 +15,7 @@
 //! All host instantiation logic from `strata_zkvm_hosts` is called from here.
 
 use strata_paas::{HostInstance, HostResolver, ZkVmBackend};
+use strata_zkvm_hosts::native::get_host;
 use zkaleido_native_adapter::NativeHost;
 #[cfg(feature = "sp1")]
 use zkaleido_sp1_host::SP1Host;
@@ -61,6 +62,8 @@ impl HostResolver<ProofTask> for CentralizedHostResolver {
                 #[cfg(feature = "sp1")]
                 {
                     // SP1 is enabled - resolve SP1 host from ProofContext
+
+                    #[expect(clippy::absolute_paths, reason = "cfg guards are annoying")]
                     let host = strata_zkvm_hosts::sp1::get_host(proof_context);
                     HostInstance::Remote(host)
                 }
@@ -87,7 +90,7 @@ impl HostResolver<ProofTask> for CentralizedHostResolver {
 
             ZkVmBackend::Native => {
                 // Native is always available - resolve Native host from ProofContext
-                let host = strata_zkvm_hosts::native::get_host(proof_context);
+                let host = get_host(proof_context);
                 HostInstance::Native(host)
             }
         }

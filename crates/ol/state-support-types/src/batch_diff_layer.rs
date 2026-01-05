@@ -4,6 +4,8 @@
 //! `WriteBatch` references before falling back to a base state. All write
 //! operations are unsupported since this is read-only.
 
+use std::fmt;
+
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
@@ -24,12 +26,12 @@ pub struct BatchDiffState<'batches, 'base, S: IStateAccessor> {
     batches: &'batches [WriteBatch<S::AccountState>],
 }
 
-impl<S: IStateAccessor> std::fmt::Debug for BatchDiffState<'_, '_, S>
+impl<S: IStateAccessor> fmt::Debug for BatchDiffState<'_, '_, S>
 where
-    S: std::fmt::Debug,
-    S::AccountState: std::fmt::Debug,
+    S: fmt::Debug,
+    S::AccountState: fmt::Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BatchDiffState")
             .field("base", &self.base)
             .field("batches", &self.batches)

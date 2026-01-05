@@ -235,10 +235,12 @@ impl BlockAssembler for EvmExecutionEnvironment {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::PathBuf};
+
     use strata_ee_acct_types::ExecBlock;
 
     use super::*;
-    use crate::types::{EvmBlock, EvmBlockBody, EvmHeader};
+    use crate::types::{EvmBlock, EvmBlockBody, EvmHeader, EvmPartialState};
     /// Test with real witness data from the reference implementation.
     /// This is an integration test that validates the full execution flow with real block data.
     #[test]
@@ -252,12 +254,12 @@ mod tests {
         }
 
         // Load test data from reference implementation
-        let test_data_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let test_data_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
             .join("proof-impl/evm-ee-stf/test_data/witness_params.json");
 
-        let json_content = std::fs::read_to_string(&test_data_path)
+        let json_content = fs::read_to_string(&test_data_path)
             .expect("Failed to read witness_params.json - make sure reference crate exists");
 
         let test_data: TestData =
@@ -268,7 +270,7 @@ mod tests {
         let env = EvmExecutionEnvironment::new(chain_spec);
 
         // Use the pre-state directly from witness data (it already has all the proofs!)
-        let pre_state = crate::types::EvmPartialState::new(
+        let pre_state = EvmPartialState::new(
             test_data.witness.parent_state,
             test_data.witness.bytecodes,
             test_data.witness.ancestor_headers,

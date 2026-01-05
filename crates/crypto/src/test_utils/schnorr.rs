@@ -140,7 +140,12 @@ pub fn create_agg_pubkey_from_privkeys(operators_privkeys: &[EvenSecretKey]) -> 
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, key::TapTweak, secp256k1::Secp256k1, TapNodeHash};
+    use bitcoin::{
+        hashes::Hash,
+        key::TapTweak,
+        secp256k1::{self, schnorr::Signature, Secp256k1},
+        TapNodeHash,
+    };
     use rand::rngs::OsRng;
     use secp256k1::SecretKey;
 
@@ -191,18 +196,16 @@ mod tests {
 
         // Verify signature without tweak
         let verification_result = secp.verify_schnorr(
-            &bitcoin::secp256k1::schnorr::Signature::from_slice(&signature_no_tweak.serialize())
-                .expect("Valid signature"),
-            &bitcoin::secp256k1::Message::from_digest(message),
+            &Signature::from_slice(&signature_no_tweak.serialize()).expect("Valid signature"),
+            &secp256k1::Message::from_digest(message),
             &agg_pubkey_no_tweak,
         );
         assert!(verification_result.is_ok());
 
         // Verify signature with tweak
         let tweaked_verification_result = secp.verify_schnorr(
-            &bitcoin::secp256k1::schnorr::Signature::from_slice(&signature_with_tweak.serialize())
-                .expect("Valid signature"),
-            &bitcoin::secp256k1::Message::from_digest(message),
+            &Signature::from_slice(&signature_with_tweak.serialize()).expect("Valid signature"),
+            &secp256k1::Message::from_digest(message),
             &agg_pubkey_with_tweak,
         );
         assert!(tweaked_verification_result.is_ok());

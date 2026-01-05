@@ -1,5 +1,7 @@
 //! ProverService implementation using AsyncService pattern
 
+use std::{fmt, marker::PhantomData};
+
 use strata_service::{AsyncService, Response, Service};
 use tracing::{debug, info};
 
@@ -14,11 +16,11 @@ use crate::{
 
 /// Prover service that manages proof generation tasks
 pub struct ProverService<P: ProgramType> {
-    _phantom: std::marker::PhantomData<P>,
+    _phantom: PhantomData<P>,
 }
 
-impl<P: ProgramType> std::fmt::Debug for ProverService<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<P: ProgramType> fmt::Debug for ProverService<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverService").finish()
     }
 }

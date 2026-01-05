@@ -1,13 +1,13 @@
 //! Builder for direct handler-based prover service
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 use tokio::sync::{mpsc, Semaphore};
 
 use crate::{
-    config::ProverServiceConfig,
+    config::{ProverServiceConfig, RetryConfig},
     error::{ProverServiceError, ProverServiceResult},
     handler::ProofHandler,
     persistence::TaskStore,
@@ -39,8 +39,8 @@ pub struct ProverServiceBuilder<P: ProgramType> {
     task_store: Option<Arc<dyn TaskStore<P>>>,
 }
 
-impl<P: ProgramType> std::fmt::Debug for ProverServiceBuilder<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<P: ProgramType> fmt::Debug for ProverServiceBuilder<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverServiceBuilder")
             .field("config", &self.config)
             .field("handler_count", &self.handlers.len())
@@ -102,7 +102,7 @@ impl<P: ProgramType> ProverServiceBuilder<P> {
     ///     .with_retry_config(retry_config)
     ///     // ... other configuration
     /// ```
-    pub fn with_retry_config(mut self, retry_config: crate::config::RetryConfig) -> Self {
+    pub fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
         self.config.retry = Some(retry_config);
         self
     }

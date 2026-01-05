@@ -1,9 +1,9 @@
 //! EVM related test utilities for the Alpen codebase.
 
-use std::path::PathBuf;
+use std::{fs::read_to_string, path::PathBuf};
 
 use strata_chainexec::MemStateAccessor;
-use strata_chaintsn::context::StateAccessor;
+use strata_chaintsn::{context::StateAccessor, transition};
 use strata_ol_chain_types::{
     L1Segment, L2Block, L2BlockBody, L2BlockHeader, L2Header, SignedL2BlockHeader,
 };
@@ -42,7 +42,7 @@ impl EvmSegment {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/evm_ee/");
         for height in start_height..=end_height {
             let witness_path = dir.join(format!("witness_{height}.json"));
-            let json_file = std::fs::read_to_string(witness_path).expect("Expected JSON file");
+            let json_file = read_to_string(witness_path).expect("Expected JSON file");
             let el_proof_input: EvmBlockStfInput =
                 serde_json::from_str(&json_file).expect("Invalid JSON file");
             inputs.push(el_proof_input.clone());
@@ -124,13 +124,8 @@ impl L2Segment {
 
             let pre_state = prev_chainstate.clone();
             let mut state_accessor = MemStateAccessor::new(pre_state.clone());
-            strata_chaintsn::transition::process_block(
-                &mut state_accessor,
-                &fake_header,
-                &body,
-                params.rollup(),
-            )
-            .unwrap();
+            transition::process_block(&mut state_accessor, &fake_header, &body, params.rollup())
+                .unwrap();
             let post_state = state_accessor.state_untracked().clone();
             let new_state_root = post_state.compute_state_root();
 
@@ -140,7 +135,7 @@ impl L2Segment {
 
             // Note: We need to do this double as of now.
             let mut state_accessor = MemStateAccessor::new(pre_state.clone());
-            strata_chaintsn::transition::process_block(
+            transition::process_block(
                 &mut state_accessor,
                 block.header().header(),
                 block.body(),

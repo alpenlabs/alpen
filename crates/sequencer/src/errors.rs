@@ -1,5 +1,6 @@
 //! Errors used in sequencer related logic.
 
+use strata_db_types::errors;
 use strata_primitives::{epoch::EpochCommitment, prelude::*};
 use thiserror::Error;
 
@@ -40,5 +41,5 @@ pub enum Error {
 
     /// Database error.
     #[error("db: {0}")]
-    Db(#[from] strata_db_types::errors::DbError),
+    Db(#[from] errors::DbError),
 }

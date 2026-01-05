@@ -39,6 +39,8 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
 #[cfg(test)]
 mod tests {
 
+    use std::{fs::read_to_string, path::PathBuf};
+
     use serde::{Deserialize, Serialize};
 
     use super::{process_block, EvmBlockStfInput, EvmBlockStfOutput};
@@ -50,9 +52,8 @@ mod tests {
     }
 
     fn get_mock_data() -> TestData {
-        let json_content = std::fs::read_to_string(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("test_data/witness_params.json"),
+        let json_content = read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/witness_params.json"),
         )
         .expect("Failed to read the blob data file");
 

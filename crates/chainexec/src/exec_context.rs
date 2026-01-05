@@ -1,6 +1,6 @@
 //! Execution context traits.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, error};
 
 use strata_ol_chain_types::{L2BlockHeader, L2BlockId};
 use strata_ol_chainstate_types::Chainstate;
@@ -11,7 +11,7 @@ use crate::Error as ExecError;
 /// External context the block executor needs to operate.
 pub trait ExecContext {
     /// The error type for context operations
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: error::Error + Send + Sync + 'static;
 
     /// Fetches an L2 block's header.
     fn fetch_l2_header(&self, blkid: &L2BlockId) -> Result<L2BlockHeader, ExecError<Self::Error>>;

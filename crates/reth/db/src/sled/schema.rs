@@ -1,6 +1,6 @@
 use revm_primitives::alloy_primitives::B256;
 use strata_db_store_sled::define_table_without_codec;
-use typed_sled::codec::{KeyCodec, ValueCodec};
+use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
 
 // First define the table structures without codecs
 define_table_without_codec!(
@@ -20,27 +20,27 @@ define_table_without_codec!(
 
 // Custom codec for B256 key using big-endian serialization for ordering
 impl KeyCodec<BlockWitnessSchema> for B256 {
-    fn encode_key(&self) -> Result<Vec<u8>, typed_sled::codec::CodecError> {
+    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
         use bincode::Options;
 
         let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
-        bincode_options.serialize(self).map_err(|err| {
-            typed_sled::codec::CodecError::SerializationFailed {
+        bincode_options
+            .serialize(self)
+            .map_err(|err| CodecError::SerializationFailed {
                 schema: "BlockWitnessSchema",
                 source: err.into(),
-            }
-        })
+            })
     }
 
-    fn decode_key(data: &[u8]) -> Result<Self, typed_sled::codec::CodecError> {
+    fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
         use bincode::Options;
 
         let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
         bincode_options
             .deserialize_from(&mut &data[..])
-            .map_err(|err| typed_sled::codec::CodecError::SerializationFailed {
+            .map_err(|err| CodecError::SerializationFailed {
                 schema: "BlockWitnessSchema",
                 source: err.into(),
             })
@@ -48,27 +48,27 @@ impl KeyCodec<BlockWitnessSchema> for B256 {
 }
 
 impl KeyCodec<BlockStateDiffSchema> for B256 {
-    fn encode_key(&self) -> Result<Vec<u8>, typed_sled::codec::CodecError> {
+    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
         use bincode::Options;
 
         let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
-        bincode_options.serialize(self).map_err(|err| {
-            typed_sled::codec::CodecError::SerializationFailed {
+        bincode_options
+            .serialize(self)
+            .map_err(|err| CodecError::SerializationFailed {
                 schema: "BlockStateDiffSchema",
                 source: err.into(),
-            }
-        })
+            })
     }
 
-    fn decode_key(data: &[u8]) -> Result<Self, typed_sled::codec::CodecError> {
+    fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
         use bincode::Options;
 
         let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
 
         bincode_options
             .deserialize_from(&mut &data[..])
-            .map_err(|err| typed_sled::codec::CodecError::SerializationFailed {
+            .map_err(|err| CodecError::SerializationFailed {
                 schema: "BlockStateDiffSchema",
                 source: err.into(),
             })
@@ -77,31 +77,31 @@ impl KeyCodec<BlockStateDiffSchema> for B256 {
 
 // Vec<u8> value codec - stored as raw bytes
 impl ValueCodec<BlockWitnessSchema> for Vec<u8> {
-    fn encode_value(&self) -> Result<Vec<u8>, typed_sled::codec::CodecError> {
+    fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, typed_sled::codec::CodecError> {
+    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
         Ok(data.to_vec())
     }
 }
 
 impl ValueCodec<BlockStateDiffSchema> for Vec<u8> {
-    fn encode_value(&self) -> Result<Vec<u8>, typed_sled::codec::CodecError> {
+    fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, typed_sled::codec::CodecError> {
+    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
         Ok(data.to_vec())
     }
 }
 
 impl ValueCodec<BlockHashByNumber> for Vec<u8> {
-    fn encode_value(&self) -> Result<Vec<u8>, typed_sled::codec::CodecError> {
+    fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, typed_sled::codec::CodecError> {
+    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
         Ok(data.to_vec())
     }
 }

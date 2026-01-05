@@ -66,7 +66,7 @@ impl<'a> fmt::Debug for BroadcasterTxInfo<'a> {
 
         f.debug_struct("BroadcasterTxInfo")
             .field("index", &self.index)
-            .field("txid", &unsafe { std::str::from_utf8_unchecked(&txid_buf) })
+            .field("txid", &unsafe { str::from_utf8_unchecked(&txid_buf) })
             .field("status", &self.status)
             .field("raw_tx", &self.raw_tx)
             .finish()

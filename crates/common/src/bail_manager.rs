@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{process, sync::LazyLock};
 
 use tokio::sync::watch;
 use tracing::*;
@@ -30,7 +30,7 @@ pub fn check_bail_trigger(ctx: &str) {
     if let Some(val) = BAIL_RECEIVER.borrow().clone() {
         warn!(%ctx, "tripped bail interrupt, exiting...");
         if ctx == val {
-            std::process::exit(0);
+            process::exit(0);
         }
     }
 }

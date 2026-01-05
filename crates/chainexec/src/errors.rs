@@ -1,7 +1,10 @@
+use std::error;
+
+use strata_chaintsn::errors::TsnError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error<C = Box<dyn std::error::Error + Send + Sync>> {
+pub enum Error<C = Box<dyn error::Error + Send + Sync>> {
     /// Context-related errors (IO, missing data, etc.)
     /// These indicate system/process issues, not block validation failures
     #[error("context: {0}")]
@@ -12,7 +15,7 @@ pub enum Error<C = Box<dyn std::error::Error + Send + Sync>> {
     StateRootMismatch,
 
     #[error("transition: {0}")]
-    Transition(#[from] strata_chaintsn::errors::TsnError),
+    Transition(#[from] TsnError),
 
     #[error("not yet implemented")]
     Unimplemented,

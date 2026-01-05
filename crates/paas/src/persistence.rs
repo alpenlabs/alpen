@@ -1,6 +1,6 @@
 //! Persistence traits for task tracking
 
-use std::time::Instant;
+use std::{fmt, hash, time::Instant};
 
 use crate::{
     error::ProverServiceResult,
@@ -12,7 +12,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct TaskRecord<T>
 where
-    T: Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
+    T: Clone + Eq + hash::Hash + fmt::Debug + Send + Sync + 'static,
 {
     task_id: T,
     uuid: String,
@@ -23,7 +23,7 @@ where
 
 impl<T> TaskRecord<T>
 where
-    T: Clone + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static,
+    T: Clone + Eq + hash::Hash + fmt::Debug + Send + Sync + 'static,
 {
     /// Create a new task record
     pub fn new(task_id: T, uuid: String, status: TaskStatus) -> Self {

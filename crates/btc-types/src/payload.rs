@@ -2,10 +2,12 @@
 //!
 //! These types don't care about the *purpose* of the payloads, we only care about what's in them.
 
+use std::io;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::TagData;
 
@@ -146,7 +148,7 @@ impl L1Payload {
 }
 
 impl BorshSerialize for L1Payload {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize payload Vec<Vec<u8>>
         BorshSerialize::serialize(&self.data, writer)?;
 
@@ -160,7 +162,7 @@ impl BorshSerialize for L1Payload {
 }
 
 impl BorshDeserialize for L1Payload {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         // Deserialize payload Vec<Vec<u8>>
         let data = Vec::<Vec<u8>>::deserialize_reader(reader)?;
 
@@ -170,8 +172,8 @@ impl BorshDeserialize for L1Payload {
         let aux_data = Vec::<u8>::deserialize_reader(reader)?;
 
         let tag = TagData::new(subproto_id, tx_type, aux_data).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
+            io::Error::new(
+                io::ErrorKind::InvalidData,
                 format!("Invalid TagData: {}", e),
             )
         })?;
@@ -216,7 +218,7 @@ impl<'de> Deserialize<'de> for L1Payload {
                     data: h.payload,
                     tag,
                 })
-                .map_err(serde::de::Error::custom)
+                .map_err(de::Error::custom)
         })
     }
 }

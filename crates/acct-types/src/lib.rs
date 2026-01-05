@@ -20,6 +20,7 @@ mod varint_vec;
     clippy::all,
     unreachable_pub,
     clippy::allow_attributes,
+    clippy::absolute_paths,
     reason = "generated code"
 )]
 mod ssz_generated {

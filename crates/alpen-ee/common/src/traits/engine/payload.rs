@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{error, fmt::Debug};
 
 use alloy_eips::eip7685::Requests;
 use alloy_primitives::{B256, U256};
@@ -16,7 +16,7 @@ use tracing::error;
 
 /// Trait for engine payloads that can be serialized and provide block metadata.
 pub trait EnginePayload: Sized + Clone {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: error::Error + Send + Sync + 'static;
 
     /// Returns the block number of this payload.
     fn blocknum(&self) -> u64;

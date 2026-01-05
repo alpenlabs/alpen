@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use sled::transaction::ConflictableTransactionResult;
 use strata_db_types::DbResult;
-use typed_sled::transaction::{Backoff, ConstantBackoff, SledTransactional};
+use typed_sled::{
+    error::Error,
+    transaction::{Backoff, ConstantBackoff, SledTransactional},
+};
 
 use crate::utils::to_db_error;
 
@@ -48,7 +51,7 @@ impl SledDbConfig {
     pub fn with_retry<Trees, F, R>(&self, trees: Trees, f: F) -> DbResult<R>
     where
         Trees: SledTransactional,
-        F: Fn(Trees::View) -> ConflictableTransactionResult<R, typed_sled::error::Error>,
+        F: Fn(Trees::View) -> ConflictableTransactionResult<R, Error>,
     {
         trees
             .transaction_with_retry(self.backoff.as_ref(), self.retry_count.into(), f)

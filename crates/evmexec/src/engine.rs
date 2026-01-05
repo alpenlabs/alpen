@@ -435,7 +435,7 @@ fn to_bridge_withdrawal_intent(
 mod tests {
     use alloy_rpc_types::engine::{
         ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4, ExecutionPayloadV1,
-        ExecutionPayloadV2, ExecutionPayloadV3, ForkchoiceUpdated,
+        ExecutionPayloadV2, ExecutionPayloadV3, ForkchoiceUpdated, PayloadStatus,
     };
     use alpen_reth_node::AlpenExecutionPayloadEnvelopeV4;
     use rand::{rngs::OsRng, Rng};
@@ -661,7 +661,7 @@ mod tests {
         mock_client
             .expect_new_payload_v4()
             .returning(move |_, _, _, _| {
-                Ok(alloy_rpc_types::engine::PayloadStatus {
+                Ok(PayloadStatus {
                     status: PayloadStatusEnum::Valid,
                     latest_valid_hash: None,
                 })
