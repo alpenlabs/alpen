@@ -84,7 +84,7 @@ mod tests {
         let tx = create_test_withdrawal_fulfillment_tx(&info);
 
         // Parse the transaction using the SPS-50 parser
-        let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
+        let parser = ParseConfig::new(TEST_MAGIC_BYTES);
         let tag_data = parser.try_parse_tx(&tx).expect("Should parse transaction");
         let tx_input_ref = TxInputRef::new(&tx, tag_data);
 
@@ -106,7 +106,7 @@ mod tests {
         tx.output.truncate(1);
 
         // Parse the transaction using the SPS-50 parser
-        let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
+        let parser = ParseConfig::new(TEST_MAGIC_BYTES);
         let tag_data = parser.try_parse_tx(&tx).expect("Should parse transaction");
         let tx_input_ref = TxInputRef::new(&tx, tag_data);
 

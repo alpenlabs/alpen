@@ -411,7 +411,6 @@ mod tests {
 
         let compact = db.get_compact(mmr_id.clone()).unwrap();
         assert_eq!(compact.entries, 4);
-        // cap_log2 is always 64 for Mmr64B32
         assert!(!compact.roots.is_empty());
     }
 

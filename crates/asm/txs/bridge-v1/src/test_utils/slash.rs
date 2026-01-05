@@ -16,7 +16,7 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
 
     // Encode auxiliary data and construct SPS 50 op_return script.
     let tag_data = info.header_aux().build_tag_data();
-    let op_return_script = ParseConfig::new(*TEST_MAGIC_BYTES)
+    let op_return_script = ParseConfig::new(TEST_MAGIC_BYTES)
         .encode_script_buf(&tag_data.as_ref())
         .expect("encoding SPS50 script must succeed");
 

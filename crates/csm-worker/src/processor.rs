@@ -213,7 +213,7 @@ mod tests {
         // rollup params (taken from a fntests run).
         // Don't we have some util fn for such?
         let params_json = r#"{
-            "magic_bytes": [65, 76, 80, 78],
+            "magic_bytes": "ALPN",
             "block_time": 1000,
             "cred_rule": {
                 "schnorr_key": "c18d86b16f91b01a6599c3a290c1f255784f89dfe31ea65f64c4bdbd01564873"

@@ -691,7 +691,7 @@ mod tests {
         let _reveal_script = ScriptBuf::from_hex("62a58f2674fd840b6144bea2e63ebd35c16d7fd40252a2f28b2a01a648df356343e47976d7906a0e688bf5e134b6fd21bd365c016b57b1ace85cf30bf1206e27").unwrap();
 
         let td = TagDataRef::new(1, 1, &[]).unwrap();
-        let tag_script = ParseConfig::new(*b"ALPN").encode_script_buf(&td).unwrap();
+        let tag_script = ParseConfig::new((*b"ALPN").into()).encode_script_buf(&td).unwrap();
 
         let control_block = ControlBlock::decode(&[
             193, 165, 246, 250, 6, 222, 28, 9, 130, 28, 217, 67, 171, 11, 229, 62, 48, 206, 219,
