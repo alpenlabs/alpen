@@ -16,6 +16,6 @@ pub enum ChainWorkerMessage {
     /// Finalize an epoch, updating database state accordingly.
     FinalizeEpoch(EpochCommitment, CommandCompletionSender<WorkerResult<()>>),
 
-    /// Update the safe tip, informing the EE of the new tip.
+    /// Update the safe tip.
     UpdateSafeTip(OLBlockCommitment, CommandCompletionSender<WorkerResult<()>>),
 }

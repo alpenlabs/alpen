@@ -60,7 +60,7 @@ impl ChainWorkerHandle {
             .map_err(convert_service_error)?
     }
 
-    /// Update the safe tip, informing the EE of the new tip (async).
+    /// Update the safe tip (async).
     pub async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> WorkerResult<()> {
         self.command_handle
             .send_and_wait(|completion| ChainWorkerMessage::UpdateSafeTip(safe_tip, completion))
@@ -68,7 +68,7 @@ impl ChainWorkerHandle {
             .map_err(convert_service_error)?
     }
 
-    /// Update the safe tip, informing the EE of the new tip (blocking).
+    /// Update the safe tip (blocking).
     pub fn update_safe_tip_blocking(&self, safe_tip: OLBlockCommitment) -> WorkerResult<()> {
         self.command_handle
             .send_and_wait_blocking(|completion| {
