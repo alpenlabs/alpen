@@ -9,7 +9,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
 use strata_btc_types::BitcoinScriptBuf;
-use strata_crypto::{aggregate_schnorr_keys, EvenPublicKey};
+use strata_crypto::{EvenPublicKey, aggregate_schnorr_keys};
 use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
 
 use super::bitmap::OperatorBitmap;

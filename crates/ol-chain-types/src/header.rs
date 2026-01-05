@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use strata_crypto::hash;
 use strata_primitives::{
     buf::{Buf32, Buf64},
-    hash::{self, raw},
     l2::{L2BlockCommitment, L2BlockId},
 };
 
@@ -88,7 +87,7 @@ impl L2BlockHeader {
         // 8 + 8 + 8 + 32 + 32 + 32 + 32 = 152
         let mut buf = [0; 152];
         fill_sighash_buf(self, &mut buf).expect("blockasm: compute sighash");
-        raw(&buf)
+        hash::raw(&buf)
     }
 }
 

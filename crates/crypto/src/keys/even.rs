@@ -152,7 +152,6 @@ impl<'de> Deserialize<'de> for EvenPublicKey {
 }
 
 /// Ensures a keypair is even by checking the public key's parity and negating if odd.
-#[cfg(not(target_os = "zkvm"))]
 pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKey) {
     match (sk, pk) {
         (sk, pk) if pk.x_only_public_key().1 == Parity::Odd => (
