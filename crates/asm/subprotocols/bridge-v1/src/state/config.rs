@@ -5,7 +5,7 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_crypto::schnorr::EvenPublicKey;
+use strata_crypto::EvenPublicKey;
 use strata_primitives::l1::BitcoinAmount;
 
 /// Configuration for the BridgeV1 subprotocol.

@@ -10,4 +10,6 @@ pub mod threshold_signature;
 
 // Re-export MuSig2 key aggregation
 pub use musig2::{aggregate_schnorr_keys, Musig2Error};
+// Re-export even parity key types
+pub use keys::even::{even_kp, EvenPublicKey, EvenSecretKey};
 pub use schnorr::*;

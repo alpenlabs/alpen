@@ -34,7 +34,7 @@ pub mod ol {
 
 // Re-export crypto types
 pub mod crypto {
-    pub use strata_crypto::schnorr::*;
+    pub use strata_crypto::{even_kp, schnorr::*, EvenPublicKey, EvenSecretKey};
 }
 
 pub mod block_credential;
