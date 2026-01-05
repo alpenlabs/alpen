@@ -359,6 +359,8 @@ fn process(v: &[u32]) {
 
 **Avoid heap allocation** in pure library crates. Prefer stack allocation and avoid unnecessary `Arc`ing.
 
+**Avoid absolute paths**. There's even a clippy lint for that that will error in CI `clippy::absolute_paths`.
+
 **Naming conventions**:
 - Directories: `kebab-case`
 - Files: `snake_case`
