@@ -73,7 +73,7 @@ impl UpdateOperationData {
         self.input.seq_no()
     }
 
-    pub fn new_state(&self) -> ProofState {
+    pub fn new_proof_state(&self) -> ProofState {
         self.input.new_state()
     }
 

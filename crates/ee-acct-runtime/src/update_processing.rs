@@ -180,7 +180,7 @@ pub fn verify_and_apply_update_operation<'i>(
     apply_final_update_changes(astate, &extra)?;
 
     // 4. Verify the final EE state matches `new_state`.
-    verify_acct_state_matches(astate, &operation.new_state().inner_state())?;
+    verify_acct_state_matches(astate, &operation.new_proof_state().inner_state())?;
 
     Ok(())
 }

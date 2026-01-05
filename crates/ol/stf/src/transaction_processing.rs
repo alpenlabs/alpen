@@ -158,8 +158,8 @@ fn process_update_tx<S: IStateAccessor>(
         check_snark_account_seq_no(target, seqno, current_seqno)?;
 
         snrk_acct_state.update_inner_state(
-            operation.new_state().inner_state(),
-            operation.new_state().next_inbox_msg_idx(),
+            operation.new_proof_state().inner_state(),
+            operation.new_proof_state().next_inbox_msg_idx(),
             operation.seq_no().into(),
             operation.extra_data(),
         )?;

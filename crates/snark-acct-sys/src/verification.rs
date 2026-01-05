@@ -32,7 +32,7 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     // 2. Check message counts / proof indices line up
     let expected_idx =
         snark_state.next_inbox_msg_idx() + operation.processed_messages().len() as u64;
-    let claimed_idx = operation.new_state().next_inbox_msg_idx();
+    let claimed_idx = operation.new_proof_state().next_inbox_msg_idx();
 
     if expected_idx != claimed_idx {
         return Err(AcctError::InvalidMsgIndex {
@@ -179,7 +179,7 @@ fn compute_update_claim(
     );
     let pub_params = UpdateProofPubParams::new(
         cur_state,
-        operation.new_state(),
+        operation.new_proof_state(),
         operation.processed_messages().to_vec(),
         operation.ledger_refs().clone(),
         operation.outputs().clone(),

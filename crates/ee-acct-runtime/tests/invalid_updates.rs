@@ -63,7 +63,7 @@ fn test_mismatched_processed_inputs_count() {
     // Replace extra_data (we need to rebuild the operation)
     let tampered_operation = strata_snark_acct_types::UpdateOperationData::new(
         operation.seq_no(),
-        operation.new_state(),
+        operation.new_proof_state(),
         operation.processed_messages().to_vec(),
         operation.ledger_refs().clone(),
         operation.outputs().clone(),
