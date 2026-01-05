@@ -49,8 +49,12 @@ pub async fn withdraw(
         })
         .transpose()?;
 
-    let mut l1w = SignetWallet::new(&seed, settings.params.network, settings.signet_backend.clone())
-        .internal_error("Failed to load signet wallet")?;
+    let mut l1w = SignetWallet::new(
+        &seed,
+        settings.params.network,
+        settings.signet_backend.clone(),
+    )
+    .internal_error("Failed to load signet wallet")?;
     l1w.sync()
         .await
         .internal_error("Failed to sync signet wallet")?;
@@ -67,16 +71,15 @@ pub async fn withdraw(
         }
     };
 
-    println!("Bridging out {} to {address}", settings.bridge_out_amount);
+    let bridge_out_amount = settings.params.deposit_amount;
+    println!("Bridging out {} to {address}", bridge_out_amount);
 
     let bosd: Descriptor = address.into();
 
     let tx = l2w
         .transaction_request()
         .with_to(settings.bridge_alpen_address)
-        .with_value(U256::from(
-            settings.bridge_out_amount.to_sat() as u128 * SATS_TO_WEI,
-        ))
+        .with_value(U256::from(bridge_out_amount.to_sat() as u128 * SATS_TO_WEI))
         // calldata for the Alpen EVM-BOSD descriptor
         .input(TransactionInput::new(bosd.to_bytes().into()));
 

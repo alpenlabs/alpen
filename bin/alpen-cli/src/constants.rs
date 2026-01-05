@@ -9,12 +9,10 @@ pub const DEFAULT_FINALITY_DEPTH: u32 = 6;
 
 pub const RECOVERY_DESC_CLEANUP_DELAY: u32 = 100;
 
-/// 10 BTC + 1,000 satoshi to cover fees in the following transaction where the bridge spends it
-/// into the federation.
-pub const DEFAULT_BRIDGE_IN_AMOUNT: Amount = Amount::from_sat(1_000_001_000);
-
-/// Bridge outs are enforced to be exactly 10 BTC
-pub const DEFAULT_BRIDGE_OUT_AMOUNT: Amount = Amount::from_int_btc(10);
+/// Fee to cover the mining fees for creating the deposit transaction from the deposit request
+/// transaction. This includes the cost for the bridge to spend the deposit request output into the
+/// federation.
+pub const DEFAULT_BRIDGE_FEE: Amount = Amount::from_sat(1_000);
 
 pub const BTC_TO_WEI: u128 = ETH_TO_WEI;
 pub const SATS_TO_WEI: u128 = BTC_TO_WEI / 100_000_000;

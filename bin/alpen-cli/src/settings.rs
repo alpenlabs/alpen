@@ -20,10 +20,7 @@ use terrors::OneOf;
 #[cfg(feature = "test-mode")]
 use crate::{constants::SEED_LEN, seed::Seed};
 use crate::{
-    constants::{
-        DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
-        DEFAULT_FINALITY_DEPTH,
-    },
+    constants::{DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_FEE, DEFAULT_FINALITY_DEPTH},
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -50,12 +47,10 @@ pub struct SettingsFromFile {
     pub blockscout_endpoint: Option<String>,
     /// The aggregated Musig2 public key for the bridge.
     pub bridge_pubkey: Hex<[u8; 32]>,
-    /// The amount for bridge-in transactions in satoshis.
-    pub bridge_in_amount_sats: Option<u64>,
-    /// The amount for bridge-out transactions in satoshis.
-    pub bridge_out_amount_sats: Option<u64>,
     /// The address of the bridge precompile in alpen evm in hex.
     pub bridge_alpen_address: Option<String>,
+    /// Fee to cover mining costs for the bridge to process deposits, in satoshis.
+    pub bridge_fee_sats: Option<u64>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
     /// Path to the rollup params JSON file.
@@ -81,8 +76,7 @@ pub struct Settings {
     pub linux_seed_file: PathBuf,
     pub config_file: PathBuf,
     pub signet_backend: Arc<dyn SignetBackend>,
-    pub bridge_in_amount: Amount,
-    pub bridge_out_amount: Amount,
+    pub bridge_fee: Amount,
     pub finality_depth: u32,
     pub params: RollupParams,
     #[cfg(feature = "test-mode")]
@@ -173,14 +167,10 @@ impl Settings {
             linux_seed_file,
             config_file: CONFIG_FILE.clone(),
             signet_backend: sync_backend,
-            bridge_in_amount: from_file
-                .bridge_in_amount_sats
+            bridge_fee: from_file
+                .bridge_fee_sats
                 .map(Amount::from_sat)
-                .unwrap_or(DEFAULT_BRIDGE_IN_AMOUNT),
-            bridge_out_amount: from_file
-                .bridge_out_amount_sats
-                .map(Amount::from_sat)
-                .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
+                .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
             params,
             #[cfg(feature = "test-mode")]

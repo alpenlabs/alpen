@@ -132,8 +132,12 @@ pub async fn deposit(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let mut l1w = SignetWallet::new(&seed, settings.params.network, settings.signet_backend.clone())
-        .internal_error("Failed to load signet wallet")?;
+    let mut l1w = SignetWallet::new(
+        &seed,
+        settings.params.network,
+        settings.signet_backend.clone(),
+    )
+    .internal_error("Failed to load signet wallet")?;
     let l2w = AlpenWallet::new(&seed, &settings.alpen_endpoint)
         .user_error("Invalid Alpen endpoint URL. Check the config file")?;
 
@@ -149,9 +153,10 @@ pub async fn deposit(
         })
         .transpose()?;
     let alpen_address = requested_alpen_address.unwrap_or(l2w.default_signer_address());
+    let drt_amount = settings.params.deposit_amount + settings.bridge_fee;
     println!(
         "Bridging {} to Alpen address {}",
-        settings.bridge_in_amount.to_string().green(),
+        drt_amount.to_string().green(),
         alpen_address.to_string().cyan(),
     );
 
@@ -160,7 +165,7 @@ pub async fn deposit(
         settings.params.network,
         settings.params.recovery_delay,
         alpen_address,
-        settings.bridge_in_amount,
+        drt_amount,
     );
 
     println!(
@@ -176,7 +181,8 @@ pub async fn deposit(
 
     // Number of blocks after which the wallet actually enables recovery. This is mostly to account
     // for any reorgs that may happen at the recovery height.
-    let recover_at = current_block_height + settings.params.recovery_delay + settings.finality_depth;
+    let recover_at =
+        current_block_height + settings.params.recovery_delay + settings.finality_depth;
 
     println!(
         "Using {} as bridge in address",
