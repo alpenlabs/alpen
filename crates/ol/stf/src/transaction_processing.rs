@@ -1,13 +1,15 @@
 //! Block transactional processing.
 
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
-use strata_codec::encode_to_vec;
-use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
+use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, MsgPayload, SentMessage};
+use strata_codec::{CodecError, encode_to_vec};
+use strata_ledger_types::{
+    IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
+};
 use strata_ol_chain_types_new::{
     OLLog, OLTransaction, OLTxSegment, SnarkAccountUpdateLogData, TransactionAttachment,
     TransactionPayload,
 };
-use strata_snark_acct_types::SnarkAccountUpdateContainer;
+use strata_snark_acct_types::{Seqno, SnarkAccountUpdateContainer};
 
 use crate::{
     account_processing,
@@ -42,9 +44,7 @@ pub fn process_single_tx<S: IStateAccessor>(
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Check the transaction's attachments.
-    if !check_tx_attachments(tx.attachment(), &context.to_block_context()) {
-        return Err(ExecError::TxConditionCheckFailed);
-    }
+    check_tx_attachment(tx.attachment(), state)?;
 
     // 2. Depending on its payload type, we handle it different ways.
     match tx.payload() {
@@ -113,6 +113,10 @@ fn process_update_tx<S: IStateAccessor>(
             .as_snark_account_mut()
             .map_err(|_| ExecError::IncorrectTxTargetType)?;
 
+        // Validate sequence number
+        let current_seqno = *sastate.seqno().inner();
+        check_snark_account_seq_no(target, seqno, current_seqno)?;
+
         // 2. Call the snark account machinery to process the update.
         //
         // XXX This implementation is very limited because we don't want to support
@@ -122,12 +126,12 @@ fn process_update_tx<S: IStateAccessor>(
         // TODO make this the full implementation, this is where we'd call out to it
         // instead of just doing it here
 
-        // This just calls the function to update the state as we would if we
-        // actually were doing the real implementation.
+        // Update account state. Increment seq_no to set next expected value.
+        let next_seqno = Seqno::new(seqno).incr();
         sastate.update_inner_state(
             new_state.inner_state(),
             new_state.next_inbox_msg_idx(),
-            seqno.into(),
+            next_seqno,
             extra_data,
         )?;
 
@@ -157,9 +161,8 @@ fn process_update_tx<S: IStateAccessor>(
     // - extra_data: The extra data from the update operation
     // TODO improve codec error handling here when more stuff is SSZed
     let log_data =
-        SnarkAccountUpdateLogData::new(new_state.next_inbox_msg_idx, extra_data.to_vec()).ok_or(
-            ExecError::Codec(strata_codec::CodecError::OverflowContainer),
-        )?;
+        SnarkAccountUpdateLogData::new(new_state.next_inbox_msg_idx, extra_data.to_vec())
+            .ok_or(ExecError::Codec(CodecError::OverflowContainer))?;
 
     // Encode the log data and emit it
     let log_payload = encode_to_vec(&log_data)?;
@@ -183,23 +186,95 @@ fn apply_interactions<S: IStateAccessor>(
     Ok(())
 }
 
-/// Checks that a tx is valid based on conditions in its attachments.  Returns
-/// false if any condition is not satisfied.
+/// Checks that a transaction's slot bounds are valid for the current slot in state.
+///
+/// Returns:
+/// - `Ok(())` if transaction is valid for current slot
+/// - `Err(TransactionExpired)` if `max_slot` is set and `current_slot > max_slot`
+/// - `Err(TransactionNotMature)` if `min_slot` is set and `current_slot < min_slot`
+///
+/// This can be used by mempool for early rejection and by block assembly/STF for validation.
+pub(crate) fn check_slot_bounds<S: IStateAccessor>(
+    attachment: &TransactionAttachment,
+    state: &S,
+) -> ExecResult<()> {
+    let current_slot = state.cur_slot();
+
+    // Check min_slot (transaction not yet valid)
+    if let Some(min_slot) = attachment.min_slot()
+        && current_slot < min_slot
+    {
+        return Err(ExecError::TransactionNotMature(min_slot, current_slot));
+    }
+
+    // Check max_slot (transaction expired)
+    if let Some(max_slot) = attachment.max_slot()
+        && current_slot > max_slot
+    {
+        return Err(ExecError::TransactionExpired(max_slot, current_slot));
+    }
+
+    Ok(())
+}
+
+/// Validates transaction sequence number using next-expected semantics.
+pub fn check_snark_account_seq_no(
+    account: AccountId,
+    tx_seq_no: u64,
+    expected_seq_no: u64,
+) -> ExecResult<()> {
+    if tx_seq_no != expected_seq_no {
+        return Err(ExecError::InvalidSequenceNumber(
+            account,
+            expected_seq_no,
+            tx_seq_no,
+        ));
+    }
+    Ok(())
+}
+
+/// Gets an account state, returning an error if it doesn't exist.
+///
+/// Returns Ok(account_state) if account exists.
+/// Returns Err(UnknownAccount) if account doesn't exist.
+///
+/// This helper is used by mempool and block assembly for account existence validation.
+pub fn get_account_state<S: IStateAccessor>(
+    state: &S,
+    account: AccountId,
+) -> ExecResult<&S::AccountState> {
+    state
+        .get_account_state(account)?
+        .ok_or(ExecError::UnknownAccount(account))
+}
+
+/// Gets the current sequence number for a Snark account.
+///
+/// Returns Ok(seq_no) if account exists and is a Snark account.
+/// Returns Err if account doesn't exist or is not a Snark account.
+///
+/// This helper is used by mempool and block assembly for sequence number validation.
+pub fn get_snark_account_seq_no<S: IStateAccessor>(
+    state: &S,
+    account: AccountId,
+) -> ExecResult<u64> {
+    let account_state = get_account_state(state, account)?;
+
+    if account_state.ty() != AccountTypeId::Snark {
+        return Err(ExecError::IncorrectTxTargetType);
+    }
+
+    let snark_state = account_state.as_snark_account()?;
+
+    Ok(*snark_state.seqno().inner())
+}
+
+/// Checks that a tx is valid based on conditions in its attachments.
 ///
 /// This DOES NOT perform any other validation on the tx.
-fn check_tx_attachments(atch: &TransactionAttachment, context: &BlockContext<'_>) -> bool {
-    // Check slot ranges.
-    if let Some(min_slot) = atch.min_slot()
-        && context.slot() < min_slot
-    {
-        return false;
-    }
-
-    if let Some(max_slot) = atch.max_slot()
-        && context.slot() > max_slot
-    {
-        return false;
-    }
-
-    true
+pub fn check_tx_attachment<S: IStateAccessor>(
+    attachment: &TransactionAttachment,
+    state: &S,
+) -> ExecResult<()> {
+    check_slot_bounds(attachment, state)
 }

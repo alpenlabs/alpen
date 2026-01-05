@@ -1,7 +1,7 @@
 //! Error types for block assembly operations.
 
 use strata_db_types::errors::DbError;
-use strata_ol_mempool::MempoolError;
+use strata_ol_mempool::OLMempoolError;
 
 /// Errors that can occur during block assembly operations.
 #[derive(Debug, thiserror::Error)]
@@ -12,7 +12,7 @@ pub enum BlockAssemblyError {
 
     /// Mempool operation failed.
     #[error("mempool: {0}")]
-    Mempool(#[from] MempoolError),
+    Mempool(#[from] OLMempoolError),
 
     /// Invalid L1 block range where `from_block` height > `to_block` height.
     #[error("invalid L1 block height range (from {from_height} to {to_height})")]
