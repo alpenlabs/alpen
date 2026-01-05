@@ -1,8 +1,11 @@
 //! Error types for block assembly operations.
 
+use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Hash, OLBlockId};
+use strata_ol_chain_types_new::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
+use strata_ol_stf::ExecError;
 
 /// Errors that can occur during block assembly operations.
 #[derive(Debug, thiserror::Error)]
@@ -11,9 +14,21 @@ pub enum BlockAssemblyError {
     #[error("db: {0}")]
     Database(#[from] DbError),
 
+    /// Various account errors.
+    #[error("acct: {0}")]
+    Acct(#[from] AcctError),
+
+    /// Chain types construction failed.
+    #[error("chain types: {0}")]
+    ChainTypes(#[from] ChainTypesError),
+
     /// Mempool operation failed.
     #[error("mempool: {0}")]
     Mempool(#[from] OLMempoolError),
+
+    /// Block construction/execution failed.
+    #[error("block construction: {0}")]
+    BlockConstruction(#[from] ExecError),
 
     /// Invalid L1 block range where `from_block` height > `to_block` height.
     #[error("invalid L1 block height range (from {from_height} to {to_height})")]
@@ -73,6 +88,15 @@ pub enum BlockAssemblyError {
     /// Block timestamp is too early (violates minimum block time).
     #[error("block timestamp too early: {0}")]
     TimestampTooEarly(u64),
+
+    /// Invalid accumulator claim in transaction.
+    #[error("invalid accumulator claim: {0}")]
+    InvalidAccumulatorClaim(String),
+
+    /// Attempted to build genesis block via block assembly.
+    /// Genesis must be created via `init_ol_genesis` at node startup.
+    #[error("cannot build genesis block via block assembly")]
+    CannotBuildGenesis,
 
     /// Request channel closed (service shutdown).
     #[error("request channel closed")]

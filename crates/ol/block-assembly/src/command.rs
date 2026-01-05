@@ -23,6 +23,7 @@ pub(crate) enum BlockasmCommand {
         completion: CommandCompletionSender<GenerateBlockTemplateResult>,
     },
     CompleteBlockTemplate {
+        /// The ID of a previously generated template, used to look up the cached template.
         template_id: OLBlockId,
         data: BlockCompletionData,
         completion: CommandCompletionSender<CompleteBlockTemplateResult>,

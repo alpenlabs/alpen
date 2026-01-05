@@ -2,10 +2,18 @@
 
 use std::sync::Arc;
 
+use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, tree_hash::TreeHash};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_identifiers::MmrId;
-use strata_snark_acct_types::{AccumulatorClaim, MessageEntry};
+use strata_ledger_types::{AccountTypeState, IStateAccessor, NewAccountData};
+use strata_ol_chain_types_new::{TransactionAttachment, test_utils as ol_test_utils};
+use strata_ol_mempool::OLMempoolTransaction;
+use strata_ol_state_types::{OLSnarkAccountState, OLState};
+use strata_predicate::PredicateKey;
+use strata_snark_acct_types::{
+    AccumulatorClaim, LedgerRefs, MessageEntry, ProofState, UpdateOperationData,
+};
 use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
 
@@ -46,6 +54,10 @@ pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyCon
 }
 
 // ===== Storage MMR Helpers =====
+//
+// These helpers write directly to `NodeStorage` so block assembly can read the
+// MMRs it uses during proof generation. They intentionally avoid in-memory
+// trackers to keep test setup aligned with production.
 
 /// Tracks inbox MMR entries for a specific account in storage.
 ///
@@ -98,7 +110,6 @@ impl<'a> StorageInboxMmr<'a> {
             .collect()
     }
 
-    /// Returns the tracked message entries.
     pub(crate) fn entries(&self) -> &[MessageEntry] {
         &self.entries
     }
@@ -137,6 +148,12 @@ impl<'a> StorageAsmMmr<'a> {
         hashes.into_iter().map(|h| self.add_header(h)).collect()
     }
 
+    /// Adds random header hashes using proptest.
+    pub(crate) fn add_random_headers(&mut self, count: usize) -> Vec<u64> {
+        let hashes = generate_header_hashes(count);
+        hashes.into_iter().map(|h| self.add_header(h)).collect()
+    }
+
     /// Returns the tracked header hashes.
     pub(crate) fn hashes(&self) -> &[Hash] {
         &self.entries
@@ -147,7 +164,7 @@ impl<'a> StorageAsmMmr<'a> {
         &self.indices
     }
 
-    /// Returns all (index, hash) pairs suitable for creating L1 claims.
+    /// Returns all claims as AccumulatorClaim objects.
     pub(crate) fn claims(&self) -> Vec<AccumulatorClaim> {
         self.indices
             .iter()
@@ -155,4 +172,162 @@ impl<'a> StorageAsmMmr<'a> {
             .map(|(&idx, &hash)| AccumulatorClaim::new(idx, hash))
             .collect()
     }
+}
+
+// ===== Mempool Transaction Builder =====
+
+/// Builder for creating OLMempoolTransaction for snark account updates.
+///
+/// Simplifies test setup by providing a fluent API for specifying only the fields
+/// needed for each test case.
+pub(crate) struct MempoolSnarkTxBuilder {
+    account_id: AccountId,
+    seq_no: u64,
+    processed_messages: Vec<MessageEntry>,
+    new_msg_idx: u64,
+    l1_claims: Vec<AccumulatorClaim>,
+}
+
+impl MempoolSnarkTxBuilder {
+    /// Creates a new builder for the given account.
+    pub(crate) fn new(account_id: AccountId) -> Self {
+        Self {
+            account_id,
+            seq_no: 0,
+            processed_messages: Vec::new(),
+            new_msg_idx: 0,
+            l1_claims: Vec::new(),
+        }
+    }
+
+    /// Sets the sequence number for this update.
+    #[expect(dead_code, reason = "used by next commit")]
+    pub(crate) fn with_seq_no(mut self, seq_no: u64) -> Self {
+        self.seq_no = seq_no;
+        self
+    }
+
+    /// Sets the processed inbox messages and updates new_msg_idx accordingly.
+    pub(crate) fn with_processed_messages(mut self, messages: Vec<MessageEntry>) -> Self {
+        self.new_msg_idx = messages.len() as u64;
+        self.processed_messages = messages;
+        self
+    }
+
+    /// Sets L1 header claims from AccumulatorClaim objects.
+    pub(crate) fn with_l1_claims(mut self, claims: Vec<AccumulatorClaim>) -> Self {
+        self.l1_claims = claims;
+        self
+    }
+
+    /// Explicitly sets the new message index (for testing invalid indices).
+    pub(crate) fn with_new_msg_idx(mut self, idx: u64) -> Self {
+        self.new_msg_idx = idx;
+        self
+    }
+
+    /// Builds the mempool transaction.
+    pub(crate) fn build(self) -> OLMempoolTransaction {
+        let mut runner = TestRunner::default();
+        let attachment = TransactionAttachment::new(None, None);
+
+        let full_payload = ol_test_utils::snark_account_update_tx_payload_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current();
+
+        let inner_state = full_payload
+            .update_container
+            .base_update
+            .operation
+            .new_proof_state()
+            .inner_state();
+        let new_proof_state = ProofState::new(inner_state, self.new_msg_idx);
+
+        let claims: Vec<AccumulatorClaim> = self.l1_claims.into_iter().collect();
+        let ledger_refs = if claims.is_empty() {
+            LedgerRefs::new_empty()
+        } else {
+            LedgerRefs::new(claims)
+        };
+
+        let operation = UpdateOperationData::new(
+            self.seq_no,
+            new_proof_state,
+            self.processed_messages,
+            ledger_refs,
+            full_payload
+                .update_container
+                .base_update
+                .operation
+                .outputs()
+                .clone(),
+            full_payload
+                .update_container
+                .base_update
+                .operation
+                .extra_data()
+                .to_vec(),
+        );
+
+        let mut update = full_payload.update_container.base_update;
+        update.operation = operation;
+
+        OLMempoolTransaction::new_snark_account_update(self.account_id, update, attachment)
+    }
+}
+
+pub(crate) fn add_snark_account_to_state(
+    state: &mut OLState,
+    account_id: AccountId,
+    state_root_seed: u8,
+    initial_balance: u64,
+) {
+    let snark_state =
+        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(state_root_seed));
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(initial_balance),
+        AccountTypeState::Snark(snark_state),
+    );
+    state.create_new_account(account_id, new_acct).unwrap();
+}
+
+/// Generate random MessageEntry objects using proptest.
+pub(crate) fn generate_message_entries(
+    count: usize,
+    source_account: AccountId,
+) -> Vec<MessageEntry> {
+    let mut runner = TestRunner::default();
+    (0..count)
+        .map(|_| {
+            let incl_epoch = (1u32..1000u32).new_tree(&mut runner).unwrap().current();
+            let value_sats = (1u64..1000000u64).new_tree(&mut runner).unwrap().current();
+            let data_len: usize = (0usize..32usize).new_tree(&mut runner).unwrap().current();
+            let data: Vec<u8> = (0..data_len)
+                .map(|_| {
+                    arbitrary::any::<u8>()
+                        .new_tree(&mut runner)
+                        .unwrap()
+                        .current()
+                })
+                .collect();
+
+            let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), data);
+            MessageEntry::new(source_account, incl_epoch, payload)
+        })
+        .collect()
+}
+
+/// Generate random L1 header hashes using proptest.
+pub(crate) fn generate_header_hashes(count: usize) -> Vec<Hash> {
+    let mut runner = TestRunner::default();
+    (0..count)
+        .map(|_| {
+            arbitrary::any::<[u8; 32]>()
+                .new_tree(&mut runner)
+                .unwrap()
+                .current()
+                .into()
+        })
+        .collect()
 }
