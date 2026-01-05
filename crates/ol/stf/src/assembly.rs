@@ -29,7 +29,8 @@ pub struct BlockExecOutputs {
 }
 
 impl BlockExecOutputs {
-    fn new(post_state_roots: BlockPostStateCommitments, logs: Vec<OLLog>) -> Self {
+    /// Creates a new `BlockExecOutputs` with the given post-state roots and logs.
+    pub fn new(post_state_roots: BlockPostStateCommitments, logs: Vec<OLLog>) -> Self {
         Self {
             post_state_roots,
             logs,
