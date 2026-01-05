@@ -6,12 +6,10 @@
 
 mod config;
 mod errors;
-mod pubkey;
 mod signature;
 mod verification;
 
 pub use config::{ThresholdConfig, ThresholdConfigUpdate, MAX_SIGNERS};
 pub use errors::ThresholdSignatureError;
-pub use pubkey::CompressedPublicKey;
 pub use signature::{IndexedSignature, SignatureSet};
 pub use verification::verify_threshold_signatures;

@@ -188,8 +188,9 @@ mod tests {
         },
         test_utils::create_signature_set,
     };
-    use strata_crypto::threshold_signature::{
-        CompressedPublicKey, SignatureSet, ThresholdConfig, ThresholdSignatureError,
+    use strata_crypto::{
+        keys::pubkey::CompressedPublicKey,
+        threshold_signature::{SignatureSet, ThresholdConfig, ThresholdSignatureError},
     };
     use strata_predicate::PredicateKey;
     use strata_primitives::roles::{ProofType, Role};

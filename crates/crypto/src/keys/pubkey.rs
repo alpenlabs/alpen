@@ -4,10 +4,8 @@ use std::{io, ops::Deref};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
-
-use super::ThresholdSignatureError;
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
@@ -29,12 +27,8 @@ impl CompressedPublicKey {
     /// Create a new `CompressedPublicKey` from a byte slice.
     ///
     /// The slice must be exactly 33 bytes in compressed format (0x02 or 0x03 prefix).
-    pub fn from_slice(data: &[u8]) -> Result<Self, ThresholdSignatureError> {
-        let pk =
-            PublicKey::from_slice(data).map_err(|e| ThresholdSignatureError::InvalidPublicKey {
-                index: None,
-                reason: e.to_string(),
-            })?;
+    pub fn from_slice(data: &[u8]) -> Result<Self, Error> {
+        let pk = PublicKey::from_slice(data)?;
         Ok(Self(pk))
     }
 
