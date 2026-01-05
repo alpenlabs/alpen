@@ -14,10 +14,10 @@ strata-primitives.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
-const-hex = "1.14"
 serde.workspace = true
 
 [dev-dependencies]
+bitcoin.workspace = true
 
 [features]
 default = ["std"]
