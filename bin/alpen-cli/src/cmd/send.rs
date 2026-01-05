@@ -58,13 +58,13 @@ pub async fn send(args: SendArgs, seed: Seed, settings: Settings) -> Result<(), 
                     "Invalid signet address: '{}'. Must be a valid Bitcoin address.",
                     args.address
                 ))?
-                .require_network(settings.network)
+                .require_network(settings.params.network)
                 .user_error(format!(
                     "Provided address '{}' is not valid for network '{}'",
-                    args.address, settings.network
+                    args.address, settings.params.network
                 ))?;
             let mut l1w =
-                SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
+                SignetWallet::new(&seed, settings.params.network, settings.signet_backend.clone())
                     .internal_error("Failed to load signet wallet")?;
             l1w.sync()
                 .await

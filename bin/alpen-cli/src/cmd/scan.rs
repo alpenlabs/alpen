@@ -9,7 +9,7 @@ use crate::{seed::Seed, settings::Settings, signet::SignetWallet};
 pub struct ScanArgs {}
 
 pub async fn scan(_args: ScanArgs, seed: Seed, settings: Settings) -> Result<(), DisplayedError> {
-    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
+    let mut l1w = SignetWallet::new(&seed, settings.params.network, settings.signet_backend.clone())
         .internal_error("Failed to load signet wallet")?;
     l1w.scan()
         .await

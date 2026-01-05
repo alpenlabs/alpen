@@ -123,16 +123,11 @@ class AlpenCliBuilder:
     def __init__(self):
         self.service_resolver = EnvControlBuilder()
         self.pubkey = None
-        self.magic_bytes = None
         self.datadir = None
         self.rollup_params = None
 
     def with_pubkey(self, pubkey: str):
         self.pubkey = pubkey
-        return self
-
-    def with_magic_bytes(self, magic_bytes: str):
-        self.magic_bytes = magic_bytes
         return self
 
     def with_datadir(self, datadir: str):
@@ -151,8 +146,8 @@ class AlpenCliBuilder:
 
     def build(self, ctx) -> AlpenCli | None:
         """Build AlpenCli instance with resolved service configs"""
-        if not self.pubkey or not self.magic_bytes or not self.datadir:
-            raise ValueError("pubkey, magic_bytes, and datadir must be set before building")
+        if not self.pubkey or not self.datadir:
+            raise ValueError("pubkey and datadir must be set before building")
 
         # Get resolved configs using service resolver
         try:
@@ -187,8 +182,6 @@ bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
 bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
 faucet_endpoint = "{bitcoin_config.rpc_url}"
 bridge_pubkey = "{self.pubkey}"
-magic_bytes = "{self.magic_bytes}"
-network = "regtest"
 seed = "838d8ba290a3066abb35b663858fa839"{rollup_params_line}
 """
         with open(config_file, "w") as f:
