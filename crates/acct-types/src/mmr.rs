@@ -10,16 +10,16 @@ use strata_merkle::*;
 pub type StrataHasher = Sha256Hasher;
 
 /// Compact 64 bit merkle mountain range.
-pub type CompactMmr64 = CompactMmr64B32;
+pub type CompactMmr64 = Mmr64B32;
 
 /// Compact 64 bit merkle mountain range reference.
-pub type CompactMmr64Ref<'a> = CompactMmr64B32Ref<'a>;
+pub type CompactMmr64Ref<'a> = Mmr64B32Ref<'a>;
 
 /// 64 bit merkle mountain range.
-pub type Mmr64 = MerkleMr64B32;
+pub type Mmr64 = Mmr64B32;
 
 /// 64 bit merkle mountain range reference.
-pub type Mmr64Ref<'a> = MerkleMr64B32Ref<'a>;
+pub type Mmr64Ref<'a> = Mmr64B32Ref<'a>;
 
 /// Universal MMR merkle proof.
 pub type MerkleProof = MerkleProofB32;

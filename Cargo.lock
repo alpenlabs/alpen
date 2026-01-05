@@ -1079,7 +1079,7 @@ dependencies = [
  "reth-payload-builder",
  "reth-primitives",
  "reth-provider",
- "ssz",
+ "ssz 0.11.1",
  "strata-acct-types",
  "strata-common",
  "strata-identifiers",
@@ -1156,7 +1156,7 @@ dependencies = [
  "borsh",
  "eyre",
  "sled",
- "ssz",
+ "ssz 0.11.1",
  "strata-acct-types",
  "strata-db-store-sled",
  "strata-ee-acct-types",
@@ -7003,15 +7003,15 @@ source = "git+https://github.com/alpenlabs/moho#cb2eb6985d1070b18f49cc249a59ae81
 dependencies = [
  "hex",
  "sha2",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.0",
+ "ssz_codegen 0.11.0",
+ "ssz_derive 0.11.0",
+ "ssz_primitives 0.11.0",
+ "ssz_types 0.11.0",
  "strata-merkle",
  "thiserror 2.0.17",
- "tree_hash 0.11.1",
- "tree_hash_derive 0.11.1",
+ "tree_hash 0.11.0",
+ "tree_hash_derive 0.11.0",
  "zkaleido",
 ]
 
@@ -12798,6 +12798,14 @@ checksum = "9fed904c7fb2856d868b92464fc8fa597fce366edea1a9cbfaa8cb5fe080bd6d"
 
 [[package]]
 name = "sizzle-parser"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "sizzle-parser"
 version = "0.11.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
@@ -13428,6 +13436,16 @@ dependencies = [
 
 [[package]]
 name = "ssz"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "itertools 0.13.0",
+ "smallvec",
+ "ssz_primitives 0.11.0",
+]
+
+[[package]]
+name = "ssz"
 version = "0.11.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
@@ -13435,8 +13453,27 @@ dependencies = [
  "itertools 0.13.0",
  "serde",
  "smallvec",
- "ssz_primitives",
+ "ssz_primitives 0.11.1",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "ssz_codegen"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "sizzle-parser 0.11.0",
+ "ssz 0.11.0",
+ "ssz_derive 0.11.0",
+ "ssz_types 0.11.0",
+ "syn 2.0.111",
+ "toml 0.8.23",
+ "tree_hash 0.11.0",
+ "tree_hash_derive 0.11.0",
 ]
 
 [[package]]
@@ -13448,14 +13485,24 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "sizzle-parser",
- "ssz",
- "ssz_derive",
- "ssz_types",
+ "sizzle-parser 0.11.1",
+ "ssz 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_types 0.11.1",
  "syn 2.0.111",
  "toml 0.8.23",
  "tree_hash 0.11.1",
  "tree_hash_derive 0.11.1",
+]
+
+[[package]]
+name = "ssz_derive"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "darling 0.20.11",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -13470,6 +13517,16 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "ruint",
+]
+
+[[package]]
+name = "ssz_primitives"
 version = "0.11.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
@@ -13480,14 +13537,24 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "ssz 0.11.0",
+ "ssz_primitives 0.11.0",
+ "tree_hash 0.11.0",
+]
+
+[[package]]
+name = "ssz_types"
 version = "0.11.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "itertools 0.13.0",
  "serde",
  "serde_derive",
- "ssz",
- "ssz_primitives",
+ "ssz 0.11.1",
+ "ssz_primitives 0.11.1",
  "thiserror 2.0.17",
  "tree_hash 0.11.1",
 ]
@@ -13543,11 +13610,11 @@ dependencies = [
  "digest 0.10.7",
  "proptest",
  "sha2",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-btc-types",
  "strata-codec",
  "strata-identifiers",
@@ -13622,11 +13689,11 @@ dependencies = [
  "borsh",
  "proptest",
  "serde",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",
@@ -13771,6 +13838,7 @@ dependencies = [
  "strata-asm-common",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-merkle",
 ]
 
 [[package]]
@@ -13869,8 +13937,8 @@ dependencies = [
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
- "ssz",
- "ssz_derive",
+ "ssz 0.11.1",
+ "ssz_derive 0.11.1",
  "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -14078,8 +14146,8 @@ name = "strata-codec-utils"
 version = "0.1.0"
 dependencies = [
  "borsh",
- "ssz",
- "ssz_derive",
+ "ssz 0.11.1",
+ "ssz_derive 0.11.1",
  "strata-codec",
 ]
 
@@ -14256,9 +14324,10 @@ dependencies = [
  "borsh",
  "proptest",
  "sled",
- "ssz",
- "ssz_derive",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_types 0.11.1",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-codec",
@@ -14266,7 +14335,6 @@ dependencies = [
  "strata-db-tests",
  "strata-db-types",
  "strata-identifiers",
- "strata-merkle",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
@@ -14312,6 +14380,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "serde",
  "serde_json",
+ "strata-acct-types",
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-csm-types",
@@ -14370,11 +14439,11 @@ name = "strata-ee-acct-types"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-chain-types",
@@ -14391,11 +14460,11 @@ name = "strata-ee-chain-types"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-acct-types",
  "strata-test-utils-ssz",
  "tree_hash 0.11.1",
@@ -14503,11 +14572,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-codec",
  "strata-test-utils-ssz",
  "tree_hash 0.11.1",
@@ -14564,11 +14633,11 @@ dependencies = [
  "digest 0.10.7",
  "serde",
  "sha2",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-codec",
  "thiserror 2.0.17",
  "tree_hash 0.11.1",
@@ -14634,11 +14703,11 @@ version = "0.1.0"
 dependencies = [
  "int-enum",
  "proptest",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-acct-types",
  "strata-asm-common",
  "strata-codec",
@@ -14680,9 +14749,9 @@ dependencies = [
  "anyhow",
  "proptest",
  "serde",
- "ssz",
- "ssz_derive",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_types 0.11.1",
  "strata-acct-types",
  "strata-csm-types",
  "strata-db-store-sled",
@@ -14732,7 +14801,7 @@ name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "ssz",
+ "ssz 0.11.1",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
@@ -14808,11 +14877,11 @@ dependencies = [
  "k256",
  "serde",
  "signature",
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "thiserror 2.0.17",
  "tree_hash 0.11.1",
  "tree_hash_derive 0.11.1",
@@ -15120,11 +15189,11 @@ dependencies = [
 name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
- "ssz",
- "ssz_codegen",
- "ssz_derive",
- "ssz_primitives",
- "ssz_types",
+ "ssz 0.11.1",
+ "ssz_codegen 0.11.1",
+ "ssz_derive 0.11.1",
+ "ssz_primitives 0.11.1",
+ "ssz_types 0.11.1",
  "strata-acct-types",
  "thiserror 2.0.17",
  "tree_hash 0.11.1",
@@ -15346,7 +15415,7 @@ name = "strata-test-utils-ssz"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "ssz",
+ "ssz 0.11.1",
  "tree_hash 0.11.1",
 ]
 
@@ -16305,14 +16374,26 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "digest 0.10.7",
+ "sha2",
+ "smallvec",
+ "ssz 0.11.0",
+ "ssz_primitives 0.11.0",
+]
+
+[[package]]
+name = "tree_hash"
 version = "0.11.1"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "digest 0.10.7",
  "sha2",
  "smallvec",
- "ssz",
- "ssz_primitives",
+ "ssz 0.11.1",
+ "ssz_primitives 0.11.1",
  "thiserror 2.0.17",
 ]
 
@@ -16324,6 +16405,16 @@ checksum = "0bee2ea1551f90040ab0e34b6fb7f2fa3bad8acc925837ac654f2c78a13e3089"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.11.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+dependencies = [
+ "darling 0.20.11",
  "quote",
  "syn 2.0.111",
 ]

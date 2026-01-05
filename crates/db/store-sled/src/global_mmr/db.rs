@@ -5,7 +5,7 @@ use strata_db_types::{
     traits::GlobalMmrDatabase,
 };
 use strata_identifiers::{Hash, RawMmrId};
-use strata_merkle::CompactMmr64B32 as CompactMmr64;
+use strata_acct_types::CompactMmr64;
 use strata_primitives::buf::Buf32;
 use typed_sled::{error, tree::SledTransactionalTree};
 
@@ -132,7 +132,6 @@ impl GlobalMmrDatabase for GlobalMmrDb {
 
         Ok(CompactMmr64 {
             entries: metadata.num_leaves,
-            cap_log2: 64,
             roots: roots_vec.into(),
         })
     }
@@ -412,7 +411,7 @@ mod tests {
 
         let compact = db.get_compact(mmr_id.clone()).unwrap();
         assert_eq!(compact.entries, 4);
-        assert_eq!(compact.cap_log2, 64);
+        // cap_log2 is always 64 for Mmr64B32
         assert!(!compact.roots.is_empty());
     }
 
