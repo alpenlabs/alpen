@@ -4,14 +4,14 @@ use anyhow::{anyhow, Result};
 use hex::encode as hex_encode;
 use sp1_sdk::HashableKey;
 use sp1_verifier::GROTH16_VK_BYTES;
-use strata_params::RollupParams;
 use strata_zkvm_hosts::sp1::CHECKPOINT_HOST;
 use tracing::info;
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
 /// Extracts Groth16 VK from CHECKPOINT_HOST.
 ///
-/// Note: CHECKPOINT_HOST is lazily initialized on first access, loading the checkpoint ELF from disk.
+/// Note: CHECKPOINT_HOST is lazily initialized on first access, loading the checkpoint ELF from
+/// disk.
 pub(crate) fn get_checkpoint_groth16_vk() -> Result<Vec<u8>> {
     let sp1_vk = &CHECKPOINT_HOST.proving_key.vk;
     let groth16_verifier = SP1Groth16Verifier::load(&GROTH16_VK_BYTES, sp1_vk.bytes32_raw())

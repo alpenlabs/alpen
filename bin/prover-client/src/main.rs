@@ -82,8 +82,8 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     {
         // The checkpoint elf lazily initializes after this call and later
         // the checkpoint proving task utilizes the same.
-        let checkpoint_vk = get_checkpoint_groth16_vk()
-            .context("Failed to get checkpoint verification key")?;
+        let checkpoint_vk =
+            get_checkpoint_groth16_vk().context("Failed to get checkpoint verification key")?;
         let params_vk = rollup_params
             .checkpoint_predicate
             .as_buf_ref()
