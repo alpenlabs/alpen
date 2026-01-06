@@ -262,6 +262,12 @@ fn has_expected_checkpoint(
     expected_checkpoint: Option<&Checkpoint>,
     _params: &RollupParams,
 ) -> bool {
+    // Must have expected checkpoint.
+    // Can be None before first checkpoint creation, where we dont care about this.
+    let Some(expected) = expected_checkpoint else {
+        return false;
+    };
+
     // Look for checkpoint ack logs in the ASM manifest
     for log in manifest.logs() {
         // Try to parse as SPS-52 message
@@ -269,27 +275,21 @@ fn has_expected_checkpoint(
             continue;
         };
 
-        // Check if this is a checkpoint ack log
+        // Extract epoch from checkpoint log
         if msg.ty() != CHECKPOINT_UPDATE_LOG_TYPE {
             continue;
         }
 
-        // Try to decode checkpoint ack data
-        let Ok(ack_data) = log.try_into_log::<CheckpointUpdate>() else {
-            warn!(blockid = %manifest.blkid(), "failed to decode checkpoint ack log");
+        let Ok(checkpoint_update) = log.try_into_log::<CheckpointUpdate>() else {
             continue;
         };
 
-        // Must have expected checkpoint.
-        // Can be None before first checkpoint creation, where we dont care about this.
-        let Some(expected) = expected_checkpoint else {
-            continue;
-        };
+        let epoch_commitment = checkpoint_update.epoch_commitment();
 
         // Check if the ack epoch matches our expected checkpoint
-        if ack_data.epoch_commitment().epoch() == expected.batch_info().epoch() {
+        if epoch_commitment.epoch() == expected.batch_info().epoch() {
             // Found checkpoint ack for expected epoch. Should end current epoch.
-            debug!(epoch = %ack_data.epoch_commitment(), "found checkpoint ack in ASM manifest");
+            debug!(epoch = %epoch_commitment, "found checkpoint ack in ASM manifest");
             return true;
         }
     }

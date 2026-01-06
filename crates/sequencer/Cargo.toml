@@ -12,6 +12,8 @@ strata-asm-logs.workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-checkpoint-types.workspace = true
+strata-checkpoint-types-ssz.workspace = true
+strata-codec.workspace = true
 strata-common.workspace = true
 strata-consensus-logic.workspace = true
 strata-csm-types.workspace = true
@@ -20,7 +22,9 @@ strata-eectl.workspace = true
 strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types.workspace = true
+strata-ol-chain-types-new.workspace = true
 strata-ol-chainstate-types.workspace = true
+strata-ol-stf.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
@@ -30,7 +34,11 @@ strata-tasks.workspace = true
 
 anyhow.workspace = true
 borsh.workspace = true
+
+# k256 for BIP-340 Schnorr verification of checkpoint payloads
+k256 = { workspace = true, features = ["schnorr"] }
 serde.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
