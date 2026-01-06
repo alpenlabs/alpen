@@ -5,7 +5,7 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{ChainSegmentBuilder, ChunkOperationData, UpdateBuilder};
+use strata_ee_acct_runtime::{ChainSegmentBuilder, UpdateBuilder, UpdateTransitionData};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState, ExecHeader, PendingInputEntry};
 use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
@@ -16,21 +16,21 @@ use strata_simple_ee::{
 use strata_snark_acct_types::{MessageEntry, ProofState, UpdateOperationData};
 use tree_hash::{Sha256Hasher, TreeHash};
 
-/// Converts a full UpdateOperationData into a single ChunkOperationData.
+/// Converts a full UpdateOperationData into UpdateTransitionData.
 ///
-/// This is used for testing that a single chunk covering the entire update
+/// This is used for testing that a single transition covering the entire update
 /// is equivalent to unconditional application. The SharedPrivateInput remains
 /// unchanged since it contains all the blocks to execute.
-pub fn update_to_single_chunk_op(
+pub fn update_to_transition_data(
     operation: &UpdateOperationData,
     initial_state: &EeAccountState,
-) -> ChunkOperationData {
-    // Compute initial state hash - this becomes the chunk's prev_state
+) -> UpdateTransitionData {
+    // Compute initial state hash - this becomes the transition's prev_state
     let initial_state_hash = TreeHash::<Sha256Hasher>::tree_hash_root(initial_state);
     let prev_state = ProofState::new(Hash::from(initial_state_hash.0), 0);
 
-    // A single chunk processes all messages, outputs, and blocks
-    ChunkOperationData::new(
+    // A single transition processes all messages, outputs, and blocks
+    UpdateTransitionData::new(
         prev_state,
         operation.new_state(),
         operation.processed_messages().to_vec(),
@@ -110,6 +110,51 @@ pub(crate) fn build_chain_segment_with_deposits(
     builder.build()
 }
 
+/// Helper to build a chain segment with multiple blocks (one block per deposit).
+///
+/// Unlike `build_chain_segment_with_deposits` which creates a single block consuming all deposits,
+/// this function creates one block for each deposit.
+///
+/// Returns the segment along with the final execution state and header.
+pub(crate) fn build_chain_segment_with_multiple_blocks(
+    ee: SimpleExecutionEnvironment,
+    initial_state: SimplePartialState,
+    initial_header: SimpleHeader,
+    deposits: Vec<SubjectDepositData>,
+) -> (CommitChainSegment, SimplePartialState, SimpleHeader) {
+    let pending_inputs: Vec<PendingInputEntry> = deposits
+        .iter()
+        .map(|d| PendingInputEntry::Deposit(d.clone()))
+        .collect();
+
+    let mut builder =
+        ChainSegmentBuilder::new(ee, initial_state, initial_header.clone(), pending_inputs);
+
+    // Create one block per deposit
+    for (i, deposit) in deposits.into_iter().enumerate() {
+        let body = SimpleBlockBody::new(vec![]);
+        let mut inputs = BlockInputs::new_empty();
+        inputs.add_subject_deposit(deposit);
+
+        let parent_blkid = builder.current_header().compute_block_id();
+        let intrinsics = SimpleHeaderIntrinsics {
+            parent_blkid,
+            index: initial_header.index() + 1 + (i as u64),
+        };
+
+        builder
+            .append_block_body(&intrinsics, body, inputs)
+            .expect("append block should succeed");
+    }
+
+    // Extract final state and header before building
+    let final_state = builder.current_state().clone();
+    let final_header = builder.current_header().clone();
+    let segment = builder.build();
+
+    (segment, final_state, final_header)
+}
+
 /// Helper to build an update operation using UpdateBuilder.
 ///
 /// This properly constructs the UpdateOperationData along with SharedPrivateInput
@@ -146,12 +191,12 @@ pub(crate) fn build_update_operation(
         .expect("build should succeed")
 }
 
-/// Helper to build a chunk operation for testing.
+/// Helper to build a transition operation for testing.
 ///
 /// This is a convenience wrapper that builds an UpdateOperationData and
-/// converts it to a single ChunkOperationData. Use this when you want to
-/// test chunk-based processing.
-pub(crate) fn build_chunk_operation(
+/// converts it to UpdateTransitionData. Use this when you want to
+/// test transition-based processing.
+pub(crate) fn build_transition_data(
     seq_no: u64,
     messages: Vec<MessageEntry>,
     segments: Vec<CommitChainSegment>,
@@ -159,7 +204,7 @@ pub(crate) fn build_chunk_operation(
     prev_header: &SimpleHeader,
     prev_partial_state: &SimplePartialState,
 ) -> (
-    ChunkOperationData,
+    UpdateTransitionData,
     strata_ee_acct_runtime::SharedPrivateInput,
     Vec<Vec<u8>>,
 ) {
@@ -171,15 +216,15 @@ pub(crate) fn build_chunk_operation(
         prev_header,
         prev_partial_state,
     );
-    let chunk_op = update_to_single_chunk_op(&operation, initial_state);
-    (chunk_op, shared_private, coinputs)
+    let transition_data = update_to_transition_data(&operation, initial_state);
+    (transition_data, shared_private, coinputs)
 }
 
-/// Assert that chunk-based verification and unconditional update application produce identical
+/// Assert that transition-based verification and unconditional update application produce identical
 /// results.
 ///
 /// This helper function is used by tests to verify equivalence between:
-/// 1. Chunk-based processing (with verification)
+/// 1. Transition-based processing (with verification)
 /// 2. Unconditional update application
 pub(crate) fn assert_update_paths_match<E: strata_ee_acct_types::ExecutionEnvironment>(
     initial_state: &EeAccountState,
@@ -188,17 +233,17 @@ pub(crate) fn assert_update_paths_match<E: strata_ee_acct_types::ExecutionEnviro
     coinputs: &[Vec<u8>],
     ee: &E,
 ) {
-    // Convert to chunk and apply with verification
-    let chunk_op = update_to_single_chunk_op(operation, initial_state);
-    let mut state_chunk = initial_state.clone();
-    strata_ee_acct_runtime::verify_and_apply_chunk_operation(
-        &mut state_chunk,
-        &chunk_op,
+    // Convert to transition and apply with verification
+    let transition_data = update_to_transition_data(operation, initial_state);
+    let mut state_transition = initial_state.clone();
+    strata_ee_acct_runtime::verify_and_apply_update_transition(
+        &mut state_transition,
+        &transition_data,
         coinputs.iter().map(|v| v.as_slice()),
         shared_private,
         ee,
     )
-    .expect("chunk verification should succeed");
+    .expect("transition verification should succeed");
 
     // Apply unconditionally
     let mut state_unconditional = initial_state.clone();
@@ -211,7 +256,7 @@ pub(crate) fn assert_update_paths_match<E: strata_ee_acct_types::ExecutionEnviro
 
     // Assert both paths match
     assert_eq!(
-        state_chunk, state_unconditional,
-        "Chunk-based and unconditional paths should produce identical states"
+        state_transition, state_unconditional,
+        "Transition-based and unconditional paths should produce identical states"
     );
 }

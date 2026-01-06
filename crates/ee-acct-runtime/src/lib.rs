@@ -8,18 +8,17 @@
 #![cfg_attr(test, expect(unused_crate_dependencies, reason = "test weirdness"))]
 
 mod block_assembly;
-mod chunk_operation;
-mod chunk_processing;
 mod exec_processing;
 mod private_input;
 mod update_processing;
 mod verification_state;
 
 pub use block_assembly::apply_input_messages;
-pub use chunk_operation::ChunkOperationData;
-pub use chunk_processing::verify_and_apply_chunk_operation;
 pub use private_input::SharedPrivateInput;
-pub use update_processing::{MsgData, apply_extra_data, apply_update_operation_unconditionally};
+pub use update_processing::{
+    MsgData, UpdateTransitionData, apply_final_update_changes,
+    apply_update_operation_unconditionally, verify_and_apply_update_transition,
+};
 
 // Builder utils
 //

@@ -1,24 +1,136 @@
-//! High-level procedures for processing updates.
+//! State transition processing for EE accounts.
 //!
-//! This module contains update/batch-level operations and generic utilities
-//! shared between chunk and update processing.
+//! This module provides functions for verifying and applying state transitions:
 //!
-//! The main function is [`apply_update_operation_unconditionally`], which is used
-//! outside the proof, after verifying the proof, to update our view of the
-//! state, presumably with information extracted from DA.  This does not require
-//! understanding the execution environment.
+//! - [`verify_and_apply_update_transition`]: Used within proofs to verify that a state transition
+//!   is valid by executing blocks and checking the result against expected outputs. Requires an
+//!   execution environment.
 //!
-//! For chunk-level processing, see [`crate::chunk_processing`].
+//! - [`apply_update_operation_unconditionally`]: Used outside proofs, after proof verification, to
+//!   apply state changes based on verified data from DA. Does not require an execution environment.
 
+use ssz_derive::{Decode, Encode};
 use strata_acct_types::{AccountId, BitcoinAmount, Hash};
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_types::{
-    DecodedEeMessageData, EeAccountState, EnvError, EnvResult, MessageDecodeResult,
-    PendingInputEntry, UpdateExtraData,
+    DecodedEeMessageData, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
+    MessageDecodeResult, PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::SubjectDepositData;
-use strata_snark_acct_types::{MessageEntry, UpdateInputData};
+use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateOutputs};
 use tree_hash::{Sha256Hasher, TreeHash};
+
+use crate::{
+    exec_processing::process_segments,
+    private_input::SharedPrivateInput,
+    verification_state::{InputTracker, PendingCommit, UpdateTransitionVerificationState},
+};
+
+/// Common data from various sources passed around together.
+struct SharedData<'v> {
+    update_transition: &'v UpdateTransitionData,
+    extra: &'v UpdateExtraData,
+    shared_private: &'v SharedPrivateInput,
+}
+
+impl<'v> SharedData<'v> {
+    #[expect(dead_code, reason = "for future use")]
+    fn outputs(&self) -> &'v UpdateOutputs {
+        self.update_transition.outputs()
+    }
+
+    fn extra(&self) -> &'v UpdateExtraData {
+        self.extra
+    }
+
+    fn private_input(&self) -> &'v SharedPrivateInput {
+        self.shared_private
+    }
+}
+
+/// Data describing a state transition for verification within proofs.
+///
+/// This represents a state transition over one or more blocks.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct UpdateTransitionData {
+    /// Expected starting state for this transition
+    prev_state: ProofState,
+
+    /// Expected ending state after executing blocks
+    new_state: ProofState,
+
+    /// Expected messages to be processed in this transition
+    processed_messages: Vec<MessageEntry>,
+
+    /// Expected outputs (messages + transfers) from this transition
+    outputs: UpdateOutputs,
+
+    /// Application-specific extra data
+    extra_data: Vec<u8>,
+}
+
+impl UpdateTransitionData {
+    /// Create a new UpdateTransitionData
+    pub fn new(
+        prev_state: ProofState,
+        new_state: ProofState,
+        processed_messages: Vec<MessageEntry>,
+        outputs: UpdateOutputs,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            prev_state,
+            new_state,
+            processed_messages,
+            outputs,
+            extra_data,
+        }
+    }
+
+    /// Get the previous state
+    pub fn prev_state(&self) -> &ProofState {
+        &self.prev_state
+    }
+
+    /// Get the new state
+    pub fn new_state(&self) -> &ProofState {
+        &self.new_state
+    }
+
+    /// Get processed messages
+    pub fn processed_messages(&self) -> &[MessageEntry] {
+        &self.processed_messages
+    }
+
+    /// Get outputs
+    pub fn outputs(&self) -> &UpdateOutputs {
+        &self.outputs
+    }
+
+    /// Get extra data
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+
+    /// Consume and destructure into all components
+    pub fn into_parts(
+        self,
+    ) -> (
+        ProofState,
+        ProofState,
+        Vec<MessageEntry>,
+        UpdateOutputs,
+        Vec<u8>,
+    ) {
+        (
+            self.prev_state,
+            self.new_state,
+            self.processed_messages,
+            self.outputs,
+            self.extra_data,
+        )
+    }
+}
 
 /// Meta fields extracted from a message.
 #[derive(Debug)]
@@ -76,6 +188,136 @@ impl MsgData {
     }
 }
 
+/// Verify if a state transition is valid. Accepts coinputs corresponding to
+/// each message to privately attest validity before applying effects.
+///
+/// This function verifies state transitions within proofs by executing blocks
+/// and checking against expected outputs.
+pub fn verify_and_apply_update_transition<'i>(
+    astate: &mut EeAccountState,
+    update_transition: &UpdateTransitionData,
+    coinputs: impl IntoIterator<Item = &'i [u8]>,
+    shared_private: &SharedPrivateInput,
+    ee: &impl ExecutionEnvironment,
+) -> EnvResult<()> {
+    let mut coinp_iter = coinputs.into_iter().fuse();
+
+    // Basic parsing/handling for things.
+    // TODO clean this up a little
+    let extra = decode_buf_exact(update_transition.extra_data())
+        .map_err(|_| EnvError::MalformedExtraData)?;
+    let shared = SharedData {
+        update_transition,
+        extra: &extra,
+        shared_private,
+    };
+
+    // 1. Process each message in order.
+    let mut verification_state = UpdateTransitionVerificationState::new_from_state(astate);
+    let processed_messages = update_transition.processed_messages();
+
+    for (i, inp) in processed_messages.iter().enumerate() {
+        // Get the corresponding coinput for this message.
+        let Some(coinp) = coinp_iter.next() else {
+            return Err(EnvError::MismatchedCoinputCnt);
+        };
+
+        let Some(msg) = MsgData::from_entry(inp).ok() else {
+            // Don't allow coinputs if we're ignoring it.
+            if !coinp.is_empty() {
+                return Err(EnvError::MismatchedCoinputIdx(i));
+            }
+
+            // Other type or invalid message, skip.
+            continue;
+        };
+
+        // Process the coinput and message, probably verifying them against each
+        // other and inserting entries in the verification state for later.
+        handle_coinput_for_message(&mut verification_state, astate, &msg, coinp, &shared, ee)
+            .map_err(make_inp_err_indexer(i))?;
+
+        // Then apply the message.  This doesn't rely on the private coinput.
+        apply_message(astate, &msg).map_err(make_inp_err_indexer(i))?;
+    }
+
+    // Make sure there are no more leftover coinputs we haven't recognized.
+    if coinp_iter.next().is_some() {
+        return Err(EnvError::MismatchedCoinputCnt);
+    }
+
+    // 2. Ensure that the accumulated effects match the final state.
+    verify_accumulated_state(&mut verification_state, astate, &shared, ee)?;
+    verification_state.check_obligations()?;
+
+    // 3. Apply final changes.
+    apply_final_update_changes(astate, &extra)?;
+
+    // 4. Verify the final EE state matches `new_state`.
+    verify_acct_state_matches(astate, &update_transition.new_state().inner_state())?;
+
+    Ok(())
+}
+
+fn handle_coinput_for_message(
+    _verification_state: &mut UpdateTransitionVerificationState,
+    _astate: &EeAccountState,
+    _msg: &MsgData,
+    coinp: &[u8],
+    _shared: &SharedData<'_>,
+    _ee: &impl ExecutionEnvironment,
+) -> EnvResult<()> {
+    // Actually, new plan, we don't need any message coinputs right now.
+    if !coinp.is_empty() {
+        return Err(EnvError::MalformedCoinput);
+    }
+
+    Ok(())
+}
+
+fn verify_accumulated_state(
+    verification_state: &mut UpdateTransitionVerificationState,
+    astate: &EeAccountState,
+    shared: &SharedData<'_>,
+    ee: &impl ExecutionEnvironment,
+) -> EnvResult<()> {
+    // Temporary measure: interpret the new tip blkid in the extra data as a
+    // commit, but only if it changed from the current tip.
+    if *shared.extra.new_tip_blkid() != astate.last_exec_blkid() {
+        verification_state.add_pending_commit(PendingCommit::new(*shared.extra.new_tip_blkid()));
+    }
+
+    // 1. Validate that we got chain segments corresponding to the pending commits.
+    if verification_state.pending_commits().len() != shared.private_input().commit_data().len() {
+        return Err(EnvError::MismatchedChainSegment);
+    }
+
+    // 2. Verify segments against the accumulated state.
+    let mut input_tracker = InputTracker::new(astate.pending_inputs());
+    process_segments(
+        verification_state,
+        &mut input_tracker,
+        shared.shared_private.commit_data(),
+        shared.private_input().raw_partial_pre_state(),
+        shared.private_input().raw_prev_header(),
+        ee,
+    )?;
+
+    // 3. Check that the inputs we consumed match the number we're syaing were
+    // consumed.
+    if input_tracker.consumed() != *shared.extra().processed_inputs() as usize {
+        return Err(EnvError::InvalidBlock);
+    }
+
+    // A. Check balance changes are consistent.
+    // TODO
+
+    // C. Check ledger references (DA) match what was ultimately computed.
+    // TODO figure out DA plan
+
+    Ok(())
+}
+
 /// Applies the effects of an update, but does not check the messages.  It's
 /// assumed we have a proof attesting to the validity that transitively attests
 /// to this.
@@ -98,8 +340,8 @@ pub fn apply_update_operation_unconditionally(
         apply_message(astate, &msg).map_err(make_inp_err_indexer(i))?;
     }
 
-    // 2. Apply the extra data.
-    apply_extra_data(astate, &extra)?;
+    // 2. Apply the final update changes.
+    apply_final_update_changes(astate, &extra)?;
 
     // 3. Verify the final EE state matches `new_state`.
     verify_acct_state_matches(astate, &operation.new_state().inner_state())?;
@@ -132,15 +374,13 @@ pub(crate) fn apply_message(astate: &mut EeAccountState, msg: &MsgData) -> EnvRe
     Ok(())
 }
 
-/// Applies account state changes described by [`UpdateExtraData`].
+/// Applies the final changes to the account state.
 ///
-/// This is a **generic utility** used at multiple levels:
-/// - **Block level**: After building a single block
-/// - **Chunk level**: After processing a chunk of blocks
-/// - **Update/Batch level**: After processing a full update
-///
-/// Updates the execution tip block ID and removes pending entries based on the extra data.
-pub fn apply_extra_data(state: &mut EeAccountState, extra: &UpdateExtraData) -> EnvResult<()> {
+/// This just updates the exec tip blkid and removes pending entries.
+pub fn apply_final_update_changes(
+    state: &mut EeAccountState,
+    extra: &UpdateExtraData,
+) -> EnvResult<()> {
     // 1. Update final execution head block.
     state.set_last_exec_blkid(*extra.new_tip_blkid());
 

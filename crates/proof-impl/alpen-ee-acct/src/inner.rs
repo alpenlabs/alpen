@@ -9,7 +9,7 @@ use rsp_primitives::genesis::Genesis;
 use ssz::Decode;
 use strata_codec::decode_buf_exact;
 use strata_ee_acct_runtime::{
-    ChunkOperationData, SharedPrivateInput, verify_and_apply_chunk_operation,
+    SharedPrivateInput, UpdateTransitionData, verify_and_apply_update_transition,
 };
 use strata_ee_acct_types::EeAccountState;
 use strata_evm_ee::EvmExecutionEnvironment;
@@ -29,8 +29,8 @@ pub fn process_chunk_proof(zkvm: &impl ZkVmEnv) {
         EeAccountState::from_ssz_bytes(&zkvm.read_buf()).expect("Failed to decode EeAccountState");
     let prev_proof_state =
         ProofState::from_ssz_bytes(&zkvm.read_buf()).expect("Failed to decode ProofState");
-    let chunk_operation = ChunkOperationData::from_ssz_bytes(&zkvm.read_buf())
-        .expect("Failed to decode ChunkOperationData");
+    let update_transition = UpdateTransitionData::from_ssz_bytes(&zkvm.read_buf())
+        .expect("Failed to decode UpdateTransitionData");
 
     verify_proof_state_matches(&astate, prev_proof_state.inner_state());
 
@@ -51,16 +51,16 @@ pub fn process_chunk_proof(zkvm: &impl ZkVmEnv) {
     let shared_private =
         SharedPrivateInput::new(commit_segments, raw_prev_header, raw_partial_pre_state);
 
-    verify_and_apply_chunk_operation(
+    verify_and_apply_update_transition(
         &mut astate,
-        &chunk_operation,
+        &update_transition,
         coinputs.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
     )
-    .expect("Chunk verification failed");
+    .expect("Update transition verification failed");
 
-    let (_, new_state, processed_messages, outputs, extra_data) = chunk_operation.into_parts();
+    let (_, new_state, processed_messages, outputs, extra_data) = update_transition.into_parts();
     let chunk_output = ChunkProofOutput::new(
         prev_proof_state,
         new_state,

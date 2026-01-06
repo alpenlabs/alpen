@@ -15,10 +15,8 @@ use crate::types::ChunkProofOutput;
 
 /// Processes a batch proof in the zkVM guest.
 ///
-/// The chunk verification key is hardcoded in the guest binary for security.
-///
 /// This function:
-/// 1. Reads and verifies each chunk proof using the hardcoded chunk_vkey
+/// 1. Reads and verifies each chunk proof using the chunk_vkey
 /// 2. Verifies state continuity between chunks
 /// 3. Aggregates outputs from all chunks
 /// 4. Builds and commits UpdateProofPubParams

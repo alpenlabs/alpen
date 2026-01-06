@@ -9,7 +9,7 @@ mod common;
 
 use common::{
     build_chain_segment_with_deposits, build_update_operation, create_deposit_message,
-    create_initial_state, update_to_single_chunk_op,
+    create_initial_state, update_to_transition_data,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
 use strata_ee_acct_runtime::ChainSegmentBuilder;
@@ -71,11 +71,11 @@ fn test_mismatched_processed_inputs_count() {
     );
 
     // Convert to chunk and try to verify - should fail
-    let chunk_op = update_to_single_chunk_op(&tampered_operation, &initial_state);
+    let transition_data = update_to_transition_data(&tampered_operation, &initial_state);
     let mut test_state = initial_state.clone();
-    let result = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
+    let result = strata_ee_acct_runtime::verify_and_apply_update_transition(
         &mut test_state,
-        &chunk_op,
+        &transition_data,
         coinputs.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
@@ -122,11 +122,11 @@ fn test_mismatched_segment_count() {
     );
 
     // Convert to chunk and try to verify - should fail with MismatchedChainSegment
-    let chunk_op = update_to_single_chunk_op(&operation, &initial_state);
+    let transition_data = update_to_transition_data(&operation, &initial_state);
     let mut test_state = initial_state.clone();
-    let result = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
+    let result = strata_ee_acct_runtime::verify_and_apply_update_transition(
         &mut test_state,
-        &chunk_op,
+        &transition_data,
         coinputs.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
@@ -226,15 +226,15 @@ fn test_mismatched_coinput_count() {
     );
 
     // Convert to chunk
-    let chunk_op = update_to_single_chunk_op(&operation, &initial_state);
+    let transition_data = update_to_transition_data(&operation, &initial_state);
 
     // Try to verify with wrong number of coinputs (too many)
     let mut test_state = initial_state.clone();
     let wrong_coinputs = [vec![], vec![]]; // Too many!
 
-    let result = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
+    let result = strata_ee_acct_runtime::verify_and_apply_update_transition(
         &mut test_state,
-        &chunk_op,
+        &transition_data,
         wrong_coinputs.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,
@@ -246,9 +246,9 @@ fn test_mismatched_coinput_count() {
     let mut test_state2 = initial_state.clone();
     let wrong_coinputs2: Vec<Vec<u8>> = vec![]; // Too few!
 
-    let result2 = strata_ee_acct_runtime::verify_and_apply_chunk_operation(
+    let result2 = strata_ee_acct_runtime::verify_and_apply_update_transition(
         &mut test_state2,
-        &chunk_op,
+        &transition_data,
         wrong_coinputs2.iter().map(|v| v.as_slice()),
         &shared_private,
         &ee,

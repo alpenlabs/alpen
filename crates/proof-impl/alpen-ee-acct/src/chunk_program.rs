@@ -8,7 +8,7 @@ use std::{
 use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode};
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::ChunkOperationData;
+use strata_ee_acct_runtime::UpdateTransitionData;
 use strata_ee_acct_types::EeAccountState;
 use strata_snark_acct_types::ProofState;
 use zkaleido::{
@@ -32,7 +32,7 @@ pub type ChunkProofProgramOutput = ChunkProofOutput;
 pub struct ChunkProofInput {
     pub astate: EeAccountState,
     pub prev_proof_state: ProofState,
-    pub chunk_operation: ChunkOperationData,
+    pub update_transition: UpdateTransitionData,
     pub coinputs: Vec<Vec<u8>>,
     pub block_bytes: Vec<Vec<u8>>,
     pub raw_prev_header: Vec<u8>,
@@ -65,7 +65,7 @@ impl ZkVmProgram for AlpenChunkProofProgram {
         // Write SSZ-serialized buffers directly (no extra wrapper)
         input_builder.write_buf(&input.astate.as_ssz_bytes())?;
         input_builder.write_buf(&input.prev_proof_state.as_ssz_bytes())?;
-        input_builder.write_buf(&input.chunk_operation.as_ssz_bytes())?;
+        input_builder.write_buf(&input.update_transition.as_ssz_bytes())?;
 
         // Write Vec<Vec<u8>> using BytesList (TODO: optimize to avoid clone)
         let coinputs_bytes = encode_to_vec(&BytesList(input.coinputs.clone()))

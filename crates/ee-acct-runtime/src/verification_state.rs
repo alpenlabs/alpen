@@ -7,9 +7,9 @@ use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
 
-/// State tracker for chunk execution verification.
+/// State tracker for update transition verification.
 #[derive(Debug)]
-pub(crate) struct ChunkVerificationState {
+pub(crate) struct UpdateTransitionVerificationState {
     // balance bookkeeping as additional checks to avoid overdraw
     #[expect(dead_code, reason = "for future use")]
     orig_tracked_balance: BitcoinAmount,
@@ -31,7 +31,7 @@ pub(crate) struct ChunkVerificationState {
     l1_da_blob_hashes: Vec<Hash>,
 }
 
-impl ChunkVerificationState {
+impl UpdateTransitionVerificationState {
     /// Constructs a verification state using the account's initial state as a
     /// reference.
     ///
