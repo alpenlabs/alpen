@@ -8,11 +8,30 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-bridge-types.workspace = true
-strata-checkpoint-types.workspace = true
+strata-checkpoint-types-ssz.workspace = true
 strata-l1-envelope-fmt.workspace = true
-strata-ol-chainstate-types.workspace = true
 
 bitcoin.workspace = true
-borsh.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
+
+strata-btc-types = { workspace = true, optional = true }
+strata-identifiers = { workspace = true, optional = true }
+strata-l1-txfmt = { workspace = true, optional = true }
+strata-predicate = { workspace = true, optional = true }
+strata-test-utils = { workspace = true, optional = true }
+
+k256 = { workspace = true, optional = true }
+
+[features]
+test-utils = [
+  "dep:k256",
+  "dep:strata-btc-types",
+  "dep:strata-identifiers",
+  "dep:strata-l1-txfmt",
+  "dep:strata-predicate",
+  "dep:strata-test-utils",
+]
+
+[dev-dependencies]
+strata-test-utils.workspace = true

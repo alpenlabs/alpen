@@ -1,14 +1,10 @@
-use borsh::io::Error as BorshIoError;
+use ssz::DecodeError;
 use strata_l1_envelope_fmt::errors::EnvelopeParseError;
 use thiserror::Error;
 
 /// Errors that can occur while parsing checkpoint transactions from SPS-50 envelopes.
 #[derive(Debug, Error)]
 pub enum CheckpointTxError {
-    /// Encountered an SPS-50 tag with an unexpected transaction type.
-    #[error("unsupported checkpoint tx type: expected {expected}, got {actual}")]
-    UnexpectedTxType { expected: u8, actual: u8 },
-
     /// Transaction did not contain any inputs.
     #[error("checkpoint transaction missing inputs")]
     MissingInputs,
@@ -21,9 +17,15 @@ pub enum CheckpointTxError {
     #[error("failed to parse checkpoint envelope script: {0}")]
     EnvelopeParse(#[from] EnvelopeParseError),
 
-    /// Failed to deserialize data embedded inside the envelope.
-    #[error("failed to deserialize checkpoint payload")]
-    Deserialization(#[source] BorshIoError),
+    /// Failed to deserialize SSZ checkpoint payload.
+    #[error("failed to deserialize checkpoint payload: {0:?}")]
+    SszDecode(DecodeError),
+}
+
+impl From<DecodeError> for CheckpointTxError {
+    fn from(err: DecodeError) -> Self {
+        Self::SszDecode(err)
+    }
 }
 
 /// Result alias for checkpoint transaction helpers.
