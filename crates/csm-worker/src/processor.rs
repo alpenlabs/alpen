@@ -4,11 +4,16 @@ use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
-use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
+use strata_checkpoint_types::{
+    BatchInfo, BatchTransition, ChainstateRootTransition, Checkpoint, CheckpointSidecar,
+};
+use strata_checkpoint_types_ssz::{
+    BatchInfo as SszBatchInfo, BatchTransition as SszBatchTransition,
+};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, L2BlockCommitment};
 use strata_primitives::prelude::*;
 use tracing::*;
 
@@ -21,7 +26,7 @@ pub(crate) fn process_log(
 ) -> anyhow::Result<()> {
     match log.ty() {
         Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
-            let ckpt_upd = log
+            let ckpt_upd: CheckpointUpdate = log
                 .try_into_log()
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
 
@@ -34,56 +39,6 @@ pub(crate) fn process_log(
             warn!("logs without a type ID?");
         }
     }
-    Ok(())
-}
-
-/// Process a single ASM log entry, extracting and handling checkpoint updates.
-fn process_checkpoint_log(
-    state: &mut CsmWorkerState,
-    checkpoint_update: &CheckpointUpdate,
-    asm_block: &L1BlockCommitment,
-) -> anyhow::Result<()> {
-    let epoch = checkpoint_update.batch_info().epoch();
-
-    info!(
-        %epoch,
-        %asm_block,
-        checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
-        "CSM is processing checkpoint update from ASM log"
-    );
-
-    // Create L1 checkpoint reference from the log data
-    let l1_reference = CheckpointL1Ref::new(
-        *asm_block,
-        checkpoint_update.checkpoint_txid().inner_raw(),
-        checkpoint_update.checkpoint_txid().inner_raw(), // TODO: get wtxid if available
-    );
-
-    // Create L1Checkpoint for client state
-    let l1_checkpoint = L1Checkpoint::new(
-        checkpoint_update.batch_info().clone(),
-        BatchTransition {
-            epoch,
-            chainstate_transition: *checkpoint_update.chainstate_transition(),
-        },
-        l1_reference.clone(),
-    );
-
-    // Update the client state with this checkpoint
-    update_client_state_with_checkpoint(state, l1_checkpoint, epoch)?;
-
-    // Create sync action to update checkpoint entry in database
-    let sync_action = SyncAction::UpdateCheckpointInclusion {
-        checkpoint: create_checkpoint_from_update(checkpoint_update),
-        l1_reference,
-    };
-
-    // Apply the sync action
-    apply_action(sync_action, &state.storage)?;
-
-    // Track the last processed epoch
-    state.last_processed_epoch = Some(epoch);
-
     Ok(())
 }
 
@@ -158,7 +113,86 @@ fn update_client_state_with_checkpoint(
     Ok(())
 }
 
-/// Create a [`Checkpoint`] from a [`CheckpointUpdate`] log.
+/// Process a single ASM log entry for checkpoint updates.
+fn process_checkpoint_log(
+    state: &mut CsmWorkerState,
+    checkpoint_update: &CheckpointUpdate,
+    asm_block: &L1BlockCommitment,
+) -> anyhow::Result<()> {
+    let ssz_batch_info = checkpoint_update.batch_info();
+    let epoch = ssz_batch_info.epoch;
+
+    info!(
+        %epoch,
+        %asm_block,
+        checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
+        "CSM is processing checkpoint update from ASM log (SSZ)"
+    );
+
+    // Convert SSZ types to regular types
+    let batch_info = convert_ssz_batch_info(ssz_batch_info);
+    let batch_transition = convert_ssz_batch_transition(checkpoint_update.transition(), epoch);
+
+    // Create L1 checkpoint reference from the log data
+    let l1_reference = CheckpointL1Ref::new(
+        *asm_block,
+        checkpoint_update.checkpoint_txid().inner_raw(),
+        checkpoint_update.checkpoint_txid().inner_raw(), // TODO: get wtxid if available
+    );
+
+    // Create L1Checkpoint for client state
+    let l1_checkpoint =
+        L1Checkpoint::new(batch_info.clone(), batch_transition, l1_reference.clone());
+
+    // Update the client state with this checkpoint
+    update_client_state_with_checkpoint(state, l1_checkpoint, epoch)?;
+
+    // Create sync action to update checkpoint entry in database
+    let sync_action = SyncAction::UpdateCheckpointInclusion {
+        checkpoint: create_checkpoint_from_ssz_types(&batch_info, &batch_transition),
+        l1_reference,
+    };
+
+    // Apply the sync action
+    apply_action(sync_action, &state.storage)?;
+
+    // Track the last processed epoch
+    state.last_processed_epoch = Some(epoch);
+
+    Ok(())
+}
+
+/// Convert SSZ BatchInfo to regular BatchInfo.
+fn convert_ssz_batch_info(ssz: &SszBatchInfo) -> BatchInfo {
+    // Convert L1 commitments - SSZ uses u32 for height, need to convert to L1BlockCommitment
+    let l1_start = L1BlockCommitment::from_height_u64(
+        ssz.l1_range.start.height as u64,
+        ssz.l1_range.start.blkid,
+    )
+    .expect("valid L1 height");
+    let l1_end =
+        L1BlockCommitment::from_height_u64(ssz.l1_range.end.height as u64, ssz.l1_range.end.blkid)
+            .expect("valid L1 height");
+
+    // Convert L2 commitments
+    let l2_start = L2BlockCommitment::new(ssz.l2_range.start.slot, ssz.l2_range.start.blkid);
+    let l2_end = L2BlockCommitment::new(ssz.l2_range.end.slot, ssz.l2_range.end.blkid);
+
+    BatchInfo::new(ssz.epoch, (l1_start, l1_end), (l2_start, l2_end))
+}
+
+/// Convert SSZ BatchTransition to regular BatchTransition.
+fn convert_ssz_batch_transition(ssz: &SszBatchTransition, epoch: Epoch) -> BatchTransition {
+    BatchTransition {
+        epoch,
+        chainstate_transition: ChainstateRootTransition {
+            pre_state_root: ssz.pre_state_root,
+            post_state_root: ssz.post_state_root,
+        },
+    }
+}
+
+/// Create a [`Checkpoint`] from converted SSZ types.
 ///
 /// Note: The log doesn't contain the full signed checkpoint, so we reconstruct
 /// what we can. The signature verification was already done by ASM.
@@ -166,18 +200,16 @@ fn update_client_state_with_checkpoint(
 /// TODO: This function is created for compatibility reason to avoid making larger changes.
 /// This will be largely changed as we move to the new OL STF as the checkpoint structure
 /// will be different than the existing ones.
-fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
-    let epoch = update.batch_info().epoch();
-
+fn create_checkpoint_from_ssz_types(
+    batch_info: &BatchInfo,
+    batch_transition: &BatchTransition,
+) -> Checkpoint {
     // Create empty sidecar - checkpoint was already verified by ASM
     let sidecar = CheckpointSidecar::new(vec![]);
 
     Checkpoint::new(
-        update.batch_info().clone(),
-        BatchTransition {
-            epoch,
-            chainstate_transition: *update.chainstate_transition(),
-        },
+        batch_info.clone(),
+        *batch_transition,
         Default::default(), // Empty proof - actual proof was already verified by ASM
         sidecar,
     )
@@ -190,17 +222,14 @@ mod tests {
     use bitcoin::absolute::Height;
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
-    use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
+    use strata_checkpoint_types_ssz::{
+        BatchInfo, BatchTransition, L1BlockRange, L1Commitment, L2BlockRange,
+    };
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_identifiers::OLBlockCommitment;
     use strata_params::{Params, RollupParams, SyncParams};
-    use strata_primitives::{
-        buf::Buf32,
-        epoch::EpochCommitment,
-        l1::BitcoinTxid,
-        l2::{L2BlockCommitment, L2BlockId},
-        prelude::*,
-    };
+    use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l1::BitcoinTxid, prelude::*};
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
@@ -379,53 +408,53 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
 
         for epoch in 1u32..=3u32 {
-            // Create L1 block commitment for this checkpoint
+            // Create L1 block commitment for this checkpoint (used for asm_block tracking)
             let asm_block = L1BlockCommitment::new(
                 Height::from_consensus(100 + epoch).unwrap(),
                 arbgen.generate(),
             );
             state.last_asm_block = Some(asm_block);
 
-            // Create L2 block range
-            let l2_start = L2BlockCommitment::new(
+            // Create L2 block range using SSZ OLBlockCommitment
+            let l2_start = OLBlockCommitment::new(
                 ((epoch - 1) * 10) as u64,
-                L2BlockId::from(Buf32::from([epoch as u8; 32])),
+                Buf32::from([epoch as u8; 32]).into(),
             );
-            let l2_end = L2BlockCommitment::new(
+            let l2_end = OLBlockCommitment::new(
                 (epoch * 10) as u64,
-                L2BlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
+                Buf32::from([(epoch + 1) as u8; 32]).into(),
             );
+            let l2_range = L2BlockRange::new(l2_start, l2_end);
 
-            // Create L1 block range
-            let l1_start = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch - 1).unwrap(),
-                arbgen.generate(),
-            );
-            let l1_end = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch).unwrap(),
-                arbgen.generate(),
-            );
+            // Create L1 block range using SSZ L1Commitment
+            let l1_start = L1Commitment {
+                height: 90 + epoch - 1,
+                blkid: arbgen.generate(),
+            };
+            let l1_end = L1Commitment {
+                height: 90 + epoch,
+                blkid: arbgen.generate(),
+            };
+            let l1_range = L1BlockRange::new(l1_start, l1_end);
 
-            // Create batch info
-            let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (l2_start, l2_end));
+            // Create batch info using SSZ types
+            let batch_info = BatchInfo::new(epoch, l1_range, l2_range);
 
             // Create epoch commitment
             let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
 
-            // Create chainstate transition
-            let chainstate_transition = ChainstateRootTransition {
-                pre_state_root: Buf32::from([0u8; 32]),
-                post_state_root: Buf32::from([epoch as u8; 32]),
-            };
+            // Create batch transition using SSZ type
+            let batch_transition =
+                BatchTransition::new(Buf32::from([0u8; 32]), Buf32::from([epoch as u8; 32]));
 
             // Create checkpoint txid
             let checkpoint_txid: BitcoinTxid = arbgen.generate();
 
-            // Create CheckpointUpdate
+            // Create CheckpointUpdate with SSZ types
             let checkpoint_update = CheckpointUpdate::new(
                 epoch_commitment,
                 batch_info,
-                chainstate_transition,
+                batch_transition,
                 checkpoint_txid,
             );
 
