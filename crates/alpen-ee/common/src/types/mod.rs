@@ -1,4 +1,5 @@
 pub(crate) mod batch;
+pub(crate) mod blocknumhash;
 pub(crate) mod chunk;
 pub(crate) mod consensus_heads;
 pub(crate) mod ee_account_state;
