@@ -10,7 +10,7 @@ use strata_asm_manifest_types::DepositIntentLogData;
 use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, SubjectId, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_merkle::{MerkleMr64, MerkleProof, hasher::MerkleHasher};
-use strata_msg_fmt::Msg;
+use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{
     GamTxPayload, SimpleWithdrawalIntentLogData, SnarkAccountUpdateLogData,
     SnarkAccountUpdateTxPayload, TransactionPayload,
@@ -190,8 +190,6 @@ fn test_snark_account_deposit_and_withdrawal() {
         .create_new_account(snark_account_id, new_acct_data)
         .expect("Should create snark account");
 
-    // Note: Bridge gateway is a special account and doesn't need to exist in the ledger
-
     // Create a genesis block with a manifest containing a deposit to the snark account
     let deposit_amount = 150_000_000u64; // 1.5 BTC in satoshis (must be enough to cover withdrawal)
     let dest_subject = SubjectId::from([42u8; 32]);
@@ -237,18 +235,19 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Check inbox state after genesis
     let snark_state_after_genesis = account_after_deposit.as_snark_account().unwrap();
-    let inbox_idx_after_genesis = snark_state_after_genesis.next_inbox_msg_idx();
+    let nxt_inbox_idx_after_gen = snark_state_after_genesis.next_inbox_msg_idx();
+    assert_eq!(
+        nxt_inbox_idx_after_gen, 0,
+        "Next inbox idx should still be zero"
+    );
     eprintln!(
         "DEBUG: Inbox MMR has {} messages (next insert at index {})",
-        inbox_idx_after_genesis, inbox_idx_after_genesis
+        nxt_inbox_idx_after_gen, nxt_inbox_idx_after_gen
     );
 
     // Check the proof state (next message to PROCESS)
-    let current_processing_idx = snark_state_after_genesis.inner_state_root(); // Wrong field, but let's see
-    eprintln!(
-        "DEBUG: Current inner_state_root: {:?}",
-        current_processing_idx
-    );
+    let new_inner_st_root = snark_state_after_genesis.inner_state_root();
+    eprintln!("DEBUG: New inner_state_root: {:?}", new_inner_st_root);
 
     // Now create a snark account update transaction that produces a withdrawal
     let withdrawal_amount = 100_000_000u64; // Withdraw exactly 1 BTC (required denomination)
@@ -261,9 +260,8 @@ fn test_snark_account_deposit_and_withdrawal() {
         .expect("Should encode withdrawal message");
 
     // Create OwnedMsg with proper format
-    let withdrawal_msg =
-        strata_msg_fmt::OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body)
-            .expect("Should create withdrawal message");
+    let withdrawal_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body)
+        .expect("Should create withdrawal message");
 
     // Convert to bytes for the MsgPayload
     let withdrawal_payload_data = withdrawal_msg.to_vec();
@@ -282,17 +280,18 @@ fn test_snark_account_deposit_and_withdrawal() {
     let update_outputs = UpdateOutputs::new(vec![], vec![output_message]);
 
     // Create the snark account update operation data
-    let new_seqno = 0u64; // First sequence number (account expects seq_no=0)
+    let seq_no = 0u64; // This is the first update.
     let new_state_root = Hash::from([2u8; 32]); // New state after update
 
     // Process the deposit message that was added during genesis
     let account_after_genesis = state.get_account_state(snark_account_id).unwrap().unwrap();
     let snark_state_after_genesis = account_after_genesis.as_snark_account().unwrap();
 
-    // Get the current processing index (NOT insertion index)
+    // Get the current processing index
     let cur_processing_idx = snark_state_after_genesis.next_inbox_msg_idx();
     eprintln!("DEBUG: Processing from index {}", cur_processing_idx);
 
+    // Create a processed deposit message
     let deposit_msg = MessageEntry::new(
         BRIDGE_GATEWAY_ACCT_ID,
         1, // genesis epoch
@@ -303,9 +302,9 @@ fn test_snark_account_deposit_and_withdrawal() {
     let new_proof_state = ProofState::new(new_state_root, cur_processing_idx + 1);
 
     let operation_data = UpdateOperationData::new(
-        new_seqno,
+        seq_no,
         new_proof_state.clone(),
-        vec![deposit_msg],       // Process the deposit message
+        vec![deposit_msg],       // Processed deposit message
         LedgerRefs::new_empty(), // No ledger references
         update_outputs,
         vec![], // No extra data
@@ -416,7 +415,7 @@ fn test_snark_update_invalid_sequence_number() {
     assert!(result.is_err(), "Update with wrong sequence should fail");
     match result.unwrap_err() {
         ExecError::Acct(AcctError::InvalidUpdateSequence { expected, got, .. }) => {
-            assert_eq!(expected, 1);
+            assert_eq!(expected, 0);
             assert_eq!(got, 5);
         }
         err => panic!("Expected InvalidUpdateSequence, got: {:?}", err),
@@ -444,7 +443,7 @@ fn test_snark_update_insufficient_balance() {
         )],
         vec![],
     );
-    let bad_tx = create_update_tx(&state, snark_id, 1, Hash::from([2u8; 32]), outputs);
+    let bad_tx = create_update_tx(&state, snark_id, 0, Hash::from([2u8; 32]), outputs);
 
     let (slot, epoch) = (1, 0);
     let result = execute_tx_in_block(&mut state, &genesis_header, bad_tx, slot, epoch);
@@ -483,7 +482,7 @@ fn test_snark_update_nonexistent_recipient() {
         )],
         vec![],
     );
-    let bad_tx = create_update_tx(&state, snark_id, 1, Hash::from([2u8; 32]), outputs);
+    let bad_tx = create_update_tx(&state, snark_id, 0, Hash::from([2u8; 32]), outputs);
 
     let (slot, epoch) = (1, 0);
     let result = execute_tx_in_block(&mut state, &genesis_header, bad_tx, slot, epoch);
@@ -524,7 +523,7 @@ fn test_snark_update_invalid_message_index() {
     // Create proof state claiming to have processed 5 messages (but inbox is empty)
     let new_proof_state = ProofState::new(Hash::from([2u8; 32]), 5); // Claim we're at idx 5
     let operation_data = UpdateOperationData::new(
-        1, // the first update, seq_no = 1
+        0, // the first update, seq_no = 0
         new_proof_state,
         vec![], // No messages processed
         LedgerRefs::new_empty(),
@@ -577,7 +576,7 @@ fn test_snark_update_success_with_transfer() {
         )],
         vec![],
     );
-    let tx = create_update_tx(&state, snark_id, 1, Hash::from([2u8; 32]), outputs);
+    let tx = create_update_tx(&state, snark_id, 0, Hash::from([2u8; 32]), outputs);
 
     let (slot, epoch) = (1, 0);
     let result = execute_tx_in_block(&mut state, &genesis_header, tx, slot, epoch);
@@ -734,7 +733,7 @@ fn test_snark_update_process_inbox_message_with_valid_proof() {
     // After processing 1 message starting at index 0, next_msg_read_idx should be 1
     let new_proof_state = ProofState::new(Hash::from([2u8; 32]), 1);
     let operation_data = UpdateOperationData::new(
-        1, // seq_no
+        0, // seq_no
         new_proof_state,
         vec![gam_msg_entry], // processed_messages
         LedgerRefs::new_empty(),
@@ -828,7 +827,7 @@ fn test_snark_update_invalid_message_proof() {
     let new_msg_idx = 1;
     let new_proof_state = ProofState::new(Hash::from([2u8; 32]), new_msg_idx);
     let operation_data = UpdateOperationData::new(
-        1,
+        0,
         new_proof_state,
         vec![deposit_msg],
         LedgerRefs::new_empty(),
@@ -916,7 +915,7 @@ fn test_snark_update_skip_message_out_of_order() {
     // Claiming to process 1 message but jumping to index 2 (skipping first GAM)
     let new_proof_state = ProofState::new(Hash::from([2u8; 32]), 2); // Skip to index 2
     let operation_data = UpdateOperationData::new(
-        1,
+        0,
         new_proof_state,
         vec![msg2_entry], // Only 1 message processed
         LedgerRefs::new_empty(),

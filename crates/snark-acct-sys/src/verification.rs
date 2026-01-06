@@ -20,7 +20,7 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     let outputs = operation.outputs();
 
     // 1. Check seq_no matches
-    let expected_seq = snark_state.seqno().incr();
+    let expected_seq = snark_state.seqno();
     if operation.seq_no() != *expected_seq.inner() {
         return Err(AcctError::InvalidUpdateSequence {
             account_id: target,

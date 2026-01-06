@@ -53,7 +53,7 @@ impl UpdateOperationData {
     pub fn new(
         seq_no: u64,
         proof_state: ProofState,
-        messages: Vec<MessageEntry>,
+        processed_messages: Vec<MessageEntry>,
         ledger_refs: LedgerRefs,
         outputs: UpdateOutputs,
         extra_data: Vec<u8>,
@@ -61,7 +61,7 @@ impl UpdateOperationData {
         Self {
             input: UpdateInputData::new(
                 seq_no,
-                messages,
+                processed_messages,
                 UpdateStateData::new(proof_state, extra_data),
             ),
             ledger_refs,
