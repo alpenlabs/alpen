@@ -17,6 +17,7 @@ strata-asm-txs-bridge-v1.workspace = true
 strata-bridge-types.workspace = true
 strata-btcio.workspace = true
 strata-checkpoint-types.workspace = true
+strata-checkpoint-types-ssz.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-config.workspace = true
 strata-consensus-logic = { workspace = true, default-features = true }
@@ -51,6 +52,7 @@ format_serde_error.workspace = true
 futures.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 serde_json.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true

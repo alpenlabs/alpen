@@ -5,6 +5,7 @@ use strata_rpc_api::StrataSequencerApiClient;
 use strata_rpc_types::HexBytes64;
 use strata_sequencer::{
     block_template::{BlockCompletionData, BlockGenerationConfig},
+    checkpoint::convert_checkpoint_to_payload,
     duty::types::{BlockSigningDuty, CheckpointDuty, Duty, DutyId, IdentityData},
     utils::now_millis,
 };
@@ -132,6 +133,10 @@ where
     Ok(())
 }
 
+#[expect(
+    deprecated,
+    reason = "using inner() for backward compatibility during migration"
+)]
 async fn handle_commit_batch_duty<R>(
     rpc: Arc<R>,
     duty: CheckpointDuty,
@@ -141,12 +146,15 @@ async fn handle_commit_batch_duty<R>(
 where
     R: StrataSequencerApiClient + Send + Sync,
 {
-    let epoch = duty.inner().batch_info().epoch();
-    let sig = sign_checkpoint(duty.inner(), &idata.key);
+    // Reconstruct the SSZ CheckpointPayload from the old checkpoint
+    let old_checkpoint = duty.inner();
+    let payload = convert_checkpoint_to_payload(old_checkpoint);
+    let epoch = payload.epoch();
+    let sig = sign_checkpoint(&payload, &idata.key);
 
     debug!(%epoch, %duty_id, %sig, "signed checkpoint");
 
-    rpc.complete_checkpoint_signature(duty.inner().batch_info().epoch() as u64, HexBytes64(sig.0))
+    rpc.complete_checkpoint_signature(epoch as u64, HexBytes64(sig.0))
         .await
         .map_err(DutyExecError::CompleteCheckpoint)?;
 

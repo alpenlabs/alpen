@@ -1,7 +1,9 @@
 use std::{fs, path::Path, str::FromStr};
 
 use bitcoin::bip32::Xpriv;
-use strata_checkpoint_types::Checkpoint;
+use k256::schnorr::{signature::Signer, Signature, SigningKey};
+use ssz::Encode;
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_crypto::sign_schnorr_sig;
 use strata_key_derivation::sequencer::SequencerKeys;
 use strata_ol_chain_types::L2BlockHeader;
@@ -47,9 +49,22 @@ pub(crate) fn sign_header(header: &L2BlockHeader, ik: &IdentityKey) -> Buf64 {
     }
 }
 
-pub(crate) fn sign_checkpoint(checkpoint: &Checkpoint, ik: &IdentityKey) -> Buf64 {
-    let msg = checkpoint.hash();
+/// Signs the new SSZ CheckpointPayload for the SPS-62 checkpoint subprotocol.
+///
+/// This uses k256 for BIP-340 Schnorr signing of raw SSZ bytes,
+/// which is compatible with the predicate framework used by the checkpoint handler.
+/// The predicate framework's Bip340Schnorr verifier expects signatures over raw bytes
+/// (it handles the tagged hashing internally per BIP-340 spec).
+pub(crate) fn sign_checkpoint(payload: &CheckpointPayload, ik: &IdentityKey) -> Buf64 {
+    // Sign the SSZ-serialized payload bytes using k256's BIP-340 Schnorr implementation
+    // The checkpoint handler's predicate framework verifies against raw SSZ bytes
+    let payload_bytes = payload.as_ssz_bytes();
     match ik {
-        IdentityKey::Sequencer(sk) => sign_schnorr_sig(&msg, sk),
+        IdentityKey::Sequencer(sk) => {
+            let signing_key =
+                SigningKey::from_bytes(sk.as_ref()).expect("sequencer secret key should be valid");
+            let signature: Signature = signing_key.sign(&payload_bytes);
+            Buf64::from(signature.to_bytes())
+        }
     }
 }
