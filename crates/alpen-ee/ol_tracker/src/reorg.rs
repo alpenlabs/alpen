@@ -362,6 +362,7 @@ mod tests {
                 AccountId::new([0; 32]),
                 B256::ZERO,
                 B256::ZERO,
+                0,
                 genesis_epoch,
                 0,
                 OLBlockId::from(Buf32::new(bytes)),
