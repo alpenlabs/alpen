@@ -7,22 +7,25 @@ use std::{
 
 use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode};
-use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::UpdateTransitionData;
 use strata_ee_acct_types::EeAccountState;
+use strata_ee_chain_types::ExecBlockPackage;
 use strata_snark_acct_types::ProofState;
 use zkaleido::{
     ProofType, PublicValues, ZkVmError, ZkVmInputError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
-use crate::{
-    inner::process_chunk_proof,
-    types::{BytesList, ChunkProofOutput},
-};
+use crate::{inner::process_chunk_proof, types::ChunkProofOutput};
 
 /// Output from chunk proof (inner proof).
 pub type ChunkProofProgramOutput = ChunkProofOutput;
+
+/// Encoded full block (header + body) bytes.
+type BlockBytes = Vec<u8>;
+
+/// Coinput bytes for message verification.
+type CoinputBytes = Vec<u8>;
 
 /// Input data for chunk proof.
 ///
@@ -33,8 +36,9 @@ pub struct ChunkProofInput {
     pub astate: EeAccountState,
     pub prev_proof_state: ProofState,
     pub update_transition: UpdateTransitionData,
-    pub coinputs: Vec<Vec<u8>>,
-    pub block_bytes: Vec<Vec<u8>>,
+    pub coinputs: Vec<CoinputBytes>,
+    pub exec_block_packages: Vec<ExecBlockPackage>,
+    pub block_bytes: Vec<BlockBytes>,
     pub raw_prev_header: Vec<u8>,
     pub raw_partial_pre_state: Vec<u8>,
     pub genesis: Genesis,
@@ -62,26 +66,46 @@ impl ZkVmProgram for AlpenChunkProofProgram {
     {
         let mut input_builder = B::new();
 
-        // Write SSZ-serialized buffers directly (no extra wrapper)
+        // Validate that exec_block_packages and block_bytes have matching lengths
+        if input.exec_block_packages.len() != input.block_bytes.len() {
+            return Err(ZkVmInputError::InputBuild(format!(
+                "Length mismatch: {} exec_block_packages vs {} block_bytes",
+                input.exec_block_packages.len(),
+                input.block_bytes.len()
+            )));
+        }
+
+        // Write account state, proof state, and update transition
         input_builder.write_buf(&input.astate.as_ssz_bytes())?;
         input_builder.write_buf(&input.prev_proof_state.as_ssz_bytes())?;
         input_builder.write_buf(&input.update_transition.as_ssz_bytes())?;
 
-        // Write Vec<Vec<u8>> using BytesList (TODO: optimize to avoid clone)
-        let coinputs_bytes = encode_to_vec(&BytesList(input.coinputs.clone()))
-            .map_err(|e| ZkVmInputError::InputBuild(format!("Failed to encode coinputs: {}", e)))?;
-        input_builder.write_buf(&coinputs_bytes)?;
+        // Write coinputs: count + items
+        let coinputs_count = input.coinputs.len() as u32;
+        input_builder.write_buf(&coinputs_count.to_le_bytes())?;
+        for coinput in &input.coinputs {
+            input_builder.write_buf(coinput)?;
+        }
 
-        let blocks_bytes = encode_to_vec(&BytesList(input.block_bytes.clone())).map_err(|e| {
-            ZkVmInputError::InputBuild(format!("Failed to encode block_bytes: {}", e))
-        })?;
-        input_builder.write_buf(&blocks_bytes)?;
+        // Write exec_block_packages: count + items
+        let packages_count = input.exec_block_packages.len() as u32;
+        input_builder.write_buf(&packages_count.to_le_bytes())?;
+        for package in &input.exec_block_packages {
+            input_builder.write_buf(&package.as_ssz_bytes())?;
+        }
 
-        // Write raw buffers directly
+        // Write block_bytes: count + items
+        let blocks_count = input.block_bytes.len() as u32;
+        input_builder.write_buf(&blocks_count.to_le_bytes())?;
+        for block in &input.block_bytes {
+            input_builder.write_buf(block)?;
+        }
+
+        // Write raw buffers
         input_builder.write_buf(&input.raw_prev_header)?;
         input_builder.write_buf(&input.raw_partial_pre_state)?;
 
-        // Write genesis via serde
+        // Write genesis
         input_builder.write_serde(&input.genesis)?;
 
         input_builder.build()

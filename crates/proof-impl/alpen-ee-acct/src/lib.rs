@@ -27,4 +27,4 @@ mod types;
 
 pub use batch_program::{AlpenBatchProofProgram, BatchProofInput, BatchProofProgramOutput};
 pub use chunk_program::{AlpenChunkProofProgram, ChunkProofInput, ChunkProofProgramOutput};
-pub use types::{ChunkProofOutput, CommitBlockPackage, EeAccountInit};
+pub use types::{ChunkProofOutput, EeAccountInit};
