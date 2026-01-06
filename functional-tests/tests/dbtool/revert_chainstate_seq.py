@@ -1,3 +1,5 @@
+# import time
+
 import flexitest
 
 from envs import net_settings, testenv
@@ -10,7 +12,7 @@ from utils.dbtool import (
     verify_checkpoint_preserved,
     verify_revert_success,
 )
-from utils.utils import ProverClientSettings
+from utils.utils import ProverClientSettings, wait_until
 
 
 @flexitest.register
@@ -29,6 +31,20 @@ class RevertChainstateSeqTest(SequencerDbtoolMixin):
     def main(self, ctx: flexitest.RunContext):
         # Setup: generate blocks and finalize epoch
         setup_revert_chainstate_test(self)
+        prover = ctx.get_service("prover_client")
+        # stop prover -- additional safety to make sure we don't produce checkpoints too quickly
+        prover.stop()
+
+        cur_block = int(self.rethrpc.eth_blockNumber(), base=16)
+        # ensure there are some blocks more than our tip height
+        wait_until(
+            lambda: int(self.rethrpc.eth_blockNumber(), base=16) > cur_block + 3,
+            error_with="not building blocks",
+            timeout=10,
+        )
+
+        # Stop signer early to ensure no more blocks
+        self.seq_signer.stop()
 
         # Capture state before revert
         old_ol_block_number = self.seqrpc.strata_syncStatus()["tip_height"]
@@ -44,24 +60,18 @@ class RevertChainstateSeqTest(SequencerDbtoolMixin):
             )
 
         # Stop services to use dbtool
-        self.seq_signer.stop()
         self.seq.stop()
         self.reth.stop()
 
+        # NOT NEEDED AS WE ADDED MORE BLOCKS AFTER PROVER RESTART
+        # # extra buffer time to let latest checkpoint get final
+        # time.sleep(2)
         # Get checkpoint info and target block
         checkpt = get_latest_checkpoint(self)
         if not checkpt:
             return False
 
         target_block_id, target_slot = target_end_of_epoch(checkpt["l2_range"])
-
-        # Ensure we have blocks outside checkpointed range
-        sync_info = self.get_syncinfo()
-        tip_slot = sync_info.get("l2_tip_height")
-
-        if tip_slot and tip_slot <= target_slot:
-            self.info("No blocks outside checkpointed range - test cannot proceed")
-            return True
 
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
@@ -84,6 +94,7 @@ class RevertChainstateSeqTest(SequencerDbtoolMixin):
             return False
 
         # Restart services and verify
+        prover.start()
         restart_sequencer_after_revert(self, target_slot, old_ol_block_number, checkpt["idx"])
 
         # Verify final state
