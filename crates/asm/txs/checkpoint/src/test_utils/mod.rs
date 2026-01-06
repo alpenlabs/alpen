@@ -1,6 +1,7 @@
 mod mmr;
 
 use k256::schnorr::{Signature, SigningKey, signature::Signer};
+pub use mmr::{TestMmr, verified_aux_data_for_heights};
 use ssz::Encode;
 use strata_btc_types::payload::L1Payload;
 use strata_checkpoint_types_ssz::{
@@ -13,8 +14,6 @@ use strata_identifiers::{
 use strata_l1_txfmt::TagData;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_test_utils::ArbitraryGenerator;
-
-pub use mmr::{TestMmr, verified_aux_data_for_heights};
 
 use crate::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 
@@ -137,8 +136,10 @@ impl CheckpointGenerator {
         // L2 range: start = first covered slot (previous_terminal + 1, or 1 for first checkpoint)
         let l2_start_slot = self.last_l2_terminal.map(|t| t.slot() + 1).unwrap_or(1);
         let l2_start = OLBlockCommitment::new(l2_start_slot, self.arb.generate::<OLBlockId>());
-        let l2_end =
-            OLBlockCommitment::new(l2_start_slot + l2_slots - 1, self.arb.generate::<OLBlockId>());
+        let l2_end = OLBlockCommitment::new(
+            l2_start_slot + l2_slots - 1,
+            self.arb.generate::<OLBlockId>(),
+        );
 
         let batch_info = BatchInfo::new(
             self.epoch,

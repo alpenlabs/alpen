@@ -58,7 +58,7 @@ impl CheckpointState {
     /// - The sentinel is consistently set via [`OLBlockCommitment::null()`] constructor
     /// - After the first checkpoint is verified, terminal is set to the actual L2 block
     pub fn is_genesis(&self) -> bool {
-        Buf32::from(*self.epoch_summary.terminal().blkid()).is_zero()
+        self.epoch_summary.terminal() == &OLBlockCommitment::null()
     }
 
     /// Returns the sequencer predicate for signature verification.
@@ -157,9 +157,9 @@ impl CheckpointState {
 
         self.epoch_summary = EpochSummary::new(
             batch_info.epoch,
-            batch_info.l2_range.end,            // terminal: this epoch's final L2 block
-            prev_terminal,                      // prev_terminal: from current state
-            batch_info.l1_range.end,            // l1_end: this epoch's final L1 block
+            batch_info.l2_range.end, // terminal: this epoch's final L2 block
+            prev_terminal,           // prev_terminal: from current state
+            batch_info.l1_range.end, // l1_end: this epoch's final L1 block
             checkpoint.commitment.post_state_root, // final_state: post-execution state
         );
     }

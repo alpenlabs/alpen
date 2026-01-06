@@ -180,7 +180,6 @@ impl VerifiedAuxData {
             .map(|height| self.get_manifest_hash(height))
             .collect()
     }
-
 }
 
 #[cfg(test)]

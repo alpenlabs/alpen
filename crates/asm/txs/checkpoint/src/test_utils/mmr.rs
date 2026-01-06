@@ -6,14 +6,14 @@
 use std::collections::HashMap;
 
 use strata_asm_common::{
-    AsmCompactMmr, AsmMerkleProof, AsmMmr, AuxData, Hash32, VerifiableManifestHash, VerifiedAuxData,
-    ASM_MMR_CAP_LOG2,
+    ASM_MMR_CAP_LOG2, AsmCompactMmr, AsmMerkleProof, AsmMmr, AuxData, Hash32,
+    VerifiableManifestHash, VerifiedAuxData,
 };
 use strata_db_types::mmr_helpers::{
     BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrError as DbMmrError, MmrMetadata,
 };
-use thiserror::Error;
 use strata_merkle::MerkleProofB32 as MerkleProof;
+use thiserror::Error;
 
 /// Test MMR that stores all nodes in memory for proof generation.
 ///
