@@ -3,6 +3,8 @@
 mod batch_builder;
 mod block_builder;
 mod ol_chain_tracker;
+#[cfg(test)]
+pub(crate) mod test_utils;
 mod update_submitter;
 
 pub use batch_builder::{

@@ -15,29 +15,41 @@
 //!
 //! # Reorg Handling
 //!
-//! Two types of reorgs are handled:
-//! - **Deep reorg**: The last sealed batch's end block is no longer canonical. Batches are reverted
-//!   in storage and state is reset.
-//! - **Shallow reorg**: Only blocks in the accumulator (not yet in a batch) are affected. The
-//!   accumulator is simply reset.
+//! Four reorg scenarios are handled:
+//! - **No reorg**: The tip is canonical, no action needed.
+//! - **Shallow reorg**: Only blocks in the accumulator or pending queue are affected. The
+//!   accumulator and pending queue are reset, but no batches are reverted.
+//! - **Batch reorg**: The last sealed batch's end block is no longer canonical. Batches are
+//!   reverted in storage to the last canonical batch and state is reset.
+//! - **Deep reorg**: The reorg extends below finalized batches. This requires manual intervention
+//!   as finalized batches cannot be automatically reverted.
 //!
 //! # Usage
 //!
-//! Use [`BatchBuilderBuilder`] to construct the task:
+//! Use [`create_batch_builder`] to construct the task.
+//!
+//! **Important**: [`alpen_ee_genesis::ensure_batch_genesis`] must be called before
+//! [`init_batch_builder_state`] to ensure the genesis batch exists in storage.
 //!
 //! ```ignore
+//! use alpen_ee_genesis::ensure_batch_genesis;
 //! use alpen_ee_sequencer::{
-//!     BatchBuilderBuilder, BatchBuilderState, BlockCountPolicy, FixedBlockCountSealing,
+//!     create_batch_builder, BatchBuilderState, BlockCountPolicy, FixedBlockCountSealing,
 //!     init_batch_builder_state,
 //! };
 //!
+//! // Ensure genesis batch exists (must be called before init_batch_builder_state)
+//! ensure_batch_genesis(&config, &batch_storage).await?;
+//!
+//! // Initialize state from storage
 //! let state: BatchBuilderState<BlockCountPolicy> =
-//!     init_batch_builder_state(genesis_hash, &batch_storage).await?;
+//!     init_batch_builder_state(&batch_storage).await?;
 //!
 //! let sealing = FixedBlockCountSealing::new(100);
 //!
-//! let task = BatchBuilderBuilder::new(
-//!     genesis_hash,
+//! let (handle, task) = create_batch_builder(
+//!     initial_batch_id,
+//!     genesis,
 //!     state,
 //!     preconf_rx,
 //!     block_data_provider,
@@ -45,10 +57,12 @@
 //!     block_storage,
 //!     batch_storage,
 //!     exec_chain,
-//! )
-//! .with_max_blocks_per_batch(100)
-//! .build();
+//! );
 //!
+//! // Use handle to watch for batch updates
+//! let watcher = handle.latest_batch_watcher();
+//!
+//! // Run the task
 //! task.await;
 //! ```
 
@@ -57,6 +71,7 @@ mod block_count;
 mod canonical;
 mod ctx;
 mod handle;
+mod reorg;
 mod state;
 mod task;
 mod traits;

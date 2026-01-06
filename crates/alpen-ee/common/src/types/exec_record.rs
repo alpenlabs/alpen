@@ -4,6 +4,8 @@ use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::OLBlockCommitment;
 use strata_snark_acct_types::MessageEntry;
 
+use crate::BlockNumHash;
+
 /// Additional metadata associated with the block.
 /// Most of these can be derived from data in package or account_state, but are cached
 /// here for ease of access.
@@ -71,6 +73,10 @@ impl ExecBlockRecord {
 
     pub fn account_state(&self) -> &EeAccountState {
         &self.account_state
+    }
+
+    pub fn blocknumhash(&self) -> BlockNumHash {
+        BlockNumHash::new(self.blockhash(), self.blocknum())
     }
 
     pub fn blocknum(&self) -> u64 {
