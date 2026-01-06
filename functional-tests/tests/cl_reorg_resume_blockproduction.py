@@ -53,10 +53,10 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
 
         seq_waiter.wait_until_epoch_finalized(1, timeout=30)
 
-        orig_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
-
         # stop prover -- additional safety to make sure we don't produce checkpoints too quickly
         prover.stop()
+
+        orig_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
 
         # ensure there are some blocks more than our tip height
         wait_until(
@@ -93,7 +93,7 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
 
         self.info("start sequencer")
         seq.start()
-        # wait for reth to start
+        # wait for sequencer to start
         wait_until(
             lambda: seqrpc.strata_syncStatus()["tip_height"] > 0,
             error_with="reth did not start in time",
