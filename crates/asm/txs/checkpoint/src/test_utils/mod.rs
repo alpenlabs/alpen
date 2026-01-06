@@ -4,8 +4,8 @@ use k256::schnorr::{Signature, SigningKey, signature::Signer};
 use ssz::Encode;
 use strata_btc_types::payload::L1Payload;
 use strata_checkpoint_types_ssz::{
-    BatchInfo, BatchTransition, CheckpointCommitment, CheckpointPayload, CheckpointSidecar,
-    L1BlockRange, L1Commitment, L2BlockRange, OLLog, SignedCheckpointPayload,
+    BatchInfo, CheckpointCommitment, CheckpointPayload, CheckpointSidecar, L1BlockRange,
+    L1Commitment, L2BlockRange, OLLog, SignedCheckpointPayload,
 };
 use strata_identifiers::{
     Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
@@ -146,12 +146,12 @@ impl CheckpointGenerator {
             L2BlockRange::new(l2_start, l2_end),
         );
 
-        let transition = BatchTransition::new(self.pre_state_root, self.arb.generate::<Buf32>());
+        let post_state_root = self.arb.generate::<Buf32>();
         let sidecar = CheckpointSidecar::new(Vec::new(), encode_ol_logs(&ol_logs))
             .expect("failed to build sidecar");
 
         CheckpointPayload::new(
-            CheckpointCommitment::new(batch_info, transition),
+            CheckpointCommitment::new(batch_info, post_state_root),
             sidecar,
             Vec::new(), // empty proof; use PredicateKey::always_accept in tests
         )
@@ -176,7 +176,7 @@ impl CheckpointGenerator {
         let batch_info = &payload.commitment.batch_info;
         self.last_l1_end = batch_info.l1_range.end;
         self.last_l2_terminal = Some(batch_info.l2_range.end);
-        self.pre_state_root = payload.commitment.transition.post_state_root;
+        self.pre_state_root = payload.commitment.post_state_root;
         self.epoch += 1;
     }
 }

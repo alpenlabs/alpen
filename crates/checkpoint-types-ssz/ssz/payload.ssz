@@ -67,13 +67,14 @@ class BatchTransition(Container):
     ### Chainstate root after batch execution.
     post_state_root: strata_identifiers.Buf32
 
-### Core commitment data combining batch metadata and state transition.
+### Core commitment data combining batch metadata and post-state.
+### Pre-state is not included as it's derived from ASM state during verification.
 #~# derive: Copy, Serialize, Deserialize
 class CheckpointCommitment(Container):
     ### Batch metadata (epoch, L1/L2 ranges).
     batch_info: BatchInfo
-    ### State transition (pre/post state roots).
-    transition: BatchTransition
+    ### Chainstate root after batch execution.
+    post_state_root: strata_identifiers.Buf32
 
 ### Sidecar data posted alongside the checkpoint.
 ### Contains DA state diff and output messages.

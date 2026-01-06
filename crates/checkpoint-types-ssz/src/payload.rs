@@ -2,7 +2,7 @@
 
 use ssz::{Decode, Encode};
 use ssz_types::VariableList;
-use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockCommitment, hash};
+use strata_identifiers::{Buf32, Buf64, Epoch, L1BlockCommitment, OLBlockCommitment, hash};
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
@@ -12,6 +12,21 @@ use crate::{
         L1BlockRange, L2BlockRange, SignedCheckpointPayload,
     },
 };
+
+impl From<&L1BlockCommitment> for L1Commitment {
+    fn from(commitment: &L1BlockCommitment) -> Self {
+        Self {
+            height: commitment.height_u64() as u32,
+            blkid: *commitment.blkid(),
+        }
+    }
+}
+
+impl From<L1BlockCommitment> for L1Commitment {
+    fn from(commitment: L1BlockCommitment) -> Self {
+        Self::from(&commitment)
+    }
+}
 
 impl L1BlockRange {
     pub fn new(start: L1Commitment, end: L1Commitment) -> Self {
@@ -45,10 +60,10 @@ impl BatchTransition {
 }
 
 impl CheckpointCommitment {
-    pub fn new(batch_info: BatchInfo, transition: BatchTransition) -> Self {
+    pub fn new(batch_info: BatchInfo, post_state_root: Buf32) -> Self {
         Self {
             batch_info,
-            transition,
+            post_state_root,
         }
     }
 

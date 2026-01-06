@@ -39,7 +39,7 @@ impl CheckpointClaim {
         input_msgs_commitment: Buf32,
     ) -> Self {
         let batch_info = &payload.commitment.batch_info;
-        let post_state_root = payload.commitment.transition.post_state_root;
+        let post_state_root = payload.commitment.post_state_root;
 
         Self {
             epoch: batch_info.epoch,

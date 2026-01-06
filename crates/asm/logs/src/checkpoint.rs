@@ -31,7 +31,7 @@ pub struct CheckpointUpdate {
 }
 
 impl CheckpointUpdate {
-    /// Create a new CheckpointUpdateSsz instance.
+    /// Create a new CheckpointUpdate instance.
     pub fn new(
         epoch_commitment: EpochCommitment,
         batch_info: BatchInfo,
@@ -46,16 +46,24 @@ impl CheckpointUpdate {
         }
     }
 
-    /// Construct a `CheckpointUpdateSsz` from a `CheckpointPayload`.
-    pub fn from_payload(payload: &CheckpointPayload, checkpoint_txid: BitcoinTxid) -> Self {
+    /// Construct a `CheckpointUpdate` from a `CheckpointPayload` and pre-state root.
+    ///
+    /// The `pre_state_root` comes from ASM state (not the payload) since SPS-62
+    /// only stores post-state in the on-chain payload to save L1 cost.
+    pub fn from_payload(
+        payload: &CheckpointPayload,
+        pre_state_root: strata_identifiers::Buf32,
+        checkpoint_txid: BitcoinTxid,
+    ) -> Self {
         let batch_info = &payload.commitment.batch_info;
-        let transition = &payload.commitment.transition;
+        let post_state_root = payload.commitment.post_state_root;
+        let transition = BatchTransition::new(pre_state_root, post_state_root);
 
         // Construct epoch commitment from epoch and terminal L2 block
         let epoch_commitment =
             EpochCommitment::from_terminal(batch_info.epoch, batch_info.l2_range.end);
 
-        Self::new(epoch_commitment, *batch_info, *transition, checkpoint_txid)
+        Self::new(epoch_commitment, *batch_info, transition, checkpoint_txid)
     }
 
     /// Returns the epoch commitment.
