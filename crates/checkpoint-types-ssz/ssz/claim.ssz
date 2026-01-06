@@ -1,0 +1,23 @@
+import strata_identifiers
+import payload
+
+### Checkpoint claim used as public input for proof verification.
+### Reconstructed from checkpoint payload, local state and aux data for verification.
+#~# derive: Serialize, Deserialize
+class CheckpointClaim(Container):
+    ### Epoch number.
+    epoch: strata_identifiers.Epoch
+    ### L1 block range.
+    l1_range: payload.L1BlockRange
+    ### L2 block range.
+    l2_range: payload.L2BlockRange
+    ### State transition (pre/post state roots).
+    ### Pre comes from local state, post from payload.
+    transition: payload.BatchTransition
+    ### Hash of the state diff blob.
+    state_diff_hash: strata_identifiers.Buf32
+    ### Commitment to input messages from L1.
+    ### This is a rolling hash of ASM manifest hashes from L1 blocks in the range.
+    input_msgs_commitment: strata_identifiers.Buf32
+    ### Hash of OL logs blob.
+    ol_logs_hash: strata_identifiers.Buf32

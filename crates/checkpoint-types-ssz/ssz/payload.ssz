@@ -1,0 +1,103 @@
+import strata_identifiers
+
+### State diff blob max size (256 KiB) (from SPS-62)
+OL_DA_DIFF_MAX_SIZE = 1 << 18
+
+### Output messages blob max size (16 KiB) (from SPS-62)
+OUTPUT_MSG_MAX_SIZE = 1 << 14
+
+### ZK proof max size (4 KiB)
+### SP1 Groth16 proofs are ~260 bytes, using 4 KiB for safety margin with metadata.
+### TODO: Validate this limit based on actual checkpoint proof format.
+MAX_PROOF_LEN = 1 << 12
+
+### L1 block commitment (height + block ID).
+###
+# NOTE: This type is defined inline rather than using strata_identifiers::L1BlockCommitment
+# due to a type mismatch issue when the `bitcoin` feature is enabled:
+# - strata_identifiers::L1BlockCommitment uses `absolute::Height` (custom type)
+# - strata_identifiers::L1BlockCommitmentRef::to_owned() returns the SSZ-generated type (u32)
+# - This causes type mismatches in generated code when using `external_kind: container`
+#
+# TODO: Fix ssz_codegen to use trait method (ToOwnedSsz::to_owned) instead of inherent
+# method, which would allow proper type conversion via the From impl in strata_identifiers.
+# Once fixed, this can be replaced with: strata_identifiers.L1BlockCommitment
+#~# derive: Copy, Serialize, Deserialize
+class L1Commitment(Container):
+    ### L1 block height
+    height: strata_identifiers.L1Height
+    ### L1 block ID (hash)
+    blkid: strata_identifiers.L1BlockId
+
+### Range of L1 blocks covered by a checkpoint batch.
+### The start is the first L1 block covered by this checkpoint (height = previous_end + 1).
+### The end is the final L1 block covered by this checkpoint (inclusive).
+#~# derive: Copy, Serialize, Deserialize
+class L1BlockRange(Container):
+    start: L1Commitment
+    end: L1Commitment
+
+### Range of L2 (OL) blocks covered by a checkpoint batch.
+### The start is the first L2 block covered by this checkpoint (slot = previous_terminal + 1).
+### The end is the terminal L2 block of this checkpoint (inclusive).
+#~# derive: Copy, Serialize, Deserialize
+class L2BlockRange(Container):
+    #~# external_kind: container
+    start: strata_identifiers.OLBlockCommitment
+    #~# external_kind: container
+    end: strata_identifiers.OLBlockCommitment
+
+### Metadata describing a batch checkpoint.
+#~# derive: Copy, Serialize, Deserialize
+class BatchInfo(Container):
+    ### Checkpoint epoch number.
+    epoch: strata_identifiers.Epoch
+    ### L1 block range covered by this checkpoint (inclusive).
+    l1_range: L1BlockRange
+    ### L2 block range covered by this checkpoint (inclusive).
+    l2_range: L2BlockRange
+
+### State transition info verified by the proof.
+### Pre-state is before executing the first block of the batch.
+### Post-state is after executing the last block of the batch.
+#~# derive: Copy, Serialize, Deserialize
+class BatchTransition(Container):
+    ### Chainstate root prior to batch execution.
+    pre_state_root: strata_identifiers.Buf32
+    ### Chainstate root after batch execution.
+    post_state_root: strata_identifiers.Buf32
+
+### Core commitment data combining batch metadata and state transition.
+#~# derive: Copy, Serialize, Deserialize
+class CheckpointCommitment(Container):
+    ### Batch metadata (epoch, L1/L2 ranges).
+    batch_info: BatchInfo
+    ### State transition (pre/post state roots).
+    transition: BatchTransition
+
+### Sidecar data posted alongside the checkpoint.
+### Contains DA state diff and output messages.
+class CheckpointSidecar(Container):
+    ### OL state diff blob for DA reconstruction.
+    ol_state_diff: List[uint8, OL_DA_DIFF_MAX_SIZE]
+    ### Output messages blob (packed OL logs including withdrawal intents).
+    ### SSZ-encoded `Vec<OLLog>` from ol-chain-types.
+    ol_logs: List[uint8, OUTPUT_MSG_MAX_SIZE]
+
+### Checkpoint payload posted to L1.
+### This is the on-chain artifact for a checkpoint transaction.
+class CheckpointPayload(Container):
+    ### Core commitment data.
+    commitment: CheckpointCommitment
+    ### Sidecar with state diff and output messages.
+    sidecar: CheckpointSidecar
+    ### ZK proof bytes attesting to checkpoint correctness.
+    proof: List[uint8, MAX_PROOF_LEN]
+
+### Signed checkpoint payload for L1 posting.
+### The signature is over the hash of the inner payload.
+class SignedCheckpointPayload(Container):
+    ### The checkpoint payload.
+    inner: CheckpointPayload
+    ### Schnorr signature over the payload hash.
+    signature: strata_identifiers.Buf64
