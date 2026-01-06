@@ -1,7 +1,7 @@
-//! Tests for invalid chunk conditions and error handling.
+//! Tests for invalid update-transition conditions and error handling.
 //!
-//! These tests verify that chunk verification logic correctly rejects
-//! malformed or invalid chunks.
+//! These tests verify that update-transition verification logic correctly rejects
+//! malformed or invalid update-transitions.
 
 #![expect(unused_crate_dependencies, reason = "test dependencies")]
 
@@ -70,7 +70,7 @@ fn test_mismatched_processed_inputs_count() {
         tampered_extra_buf,
     );
 
-    // Convert to chunk and try to verify - should fail
+    // Convert to update-transition and try to verify - should fail
     let transition_data = update_to_transition_data(&tampered_operation, &initial_state);
     let mut test_state = initial_state.clone();
     let result = strata_ee_acct_runtime::verify_and_apply_update_transition(
@@ -121,7 +121,7 @@ fn test_mismatched_segment_count() {
         prev_state_buf,
     );
 
-    // Convert to chunk and try to verify - should fail with MismatchedChainSegment
+    // Convert to update-transition and try to verify - should fail with MismatchedChainSegment
     let transition_data = update_to_transition_data(&operation, &initial_state);
     let mut test_state = initial_state.clone();
     let result = strata_ee_acct_runtime::verify_and_apply_update_transition(
@@ -225,7 +225,7 @@ fn test_mismatched_coinput_count() {
         &exec_state,
     );
 
-    // Convert to chunk
+    // Convert to update-transition
     let transition_data = update_to_transition_data(&operation, &initial_state);
 
     // Try to verify with wrong number of coinputs (too many)

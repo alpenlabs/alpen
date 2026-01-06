@@ -1,7 +1,7 @@
-//! Integration tests for chunk-based verification and application.
+//! Integration tests for update-transition-based verification and application.
 //!
 //! These tests verify the complete flow of constructing chain segments,
-//! building chunk operations, and ensuring both verified and unconditional
+//! building update-transition operations, and ensuring both verified and unconditional
 //! application paths yield identical results.
 
 #![expect(unused_crate_dependencies, reason = "test dependencies")]
