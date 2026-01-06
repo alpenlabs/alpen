@@ -61,7 +61,6 @@ class RollupConfig(BaseModel):
     evm_genesis_block_state_root: StrBuf32
     l1_reorg_safe_depth: int
     target_l2_batch_size: int
-    max_address_length: int
     deposit_amount: int
     checkpoint_predicate: str
     dispatch_assignment_dur: int

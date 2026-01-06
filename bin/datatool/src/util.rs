@@ -501,7 +501,6 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         // TODO make configurable
         l1_reorg_safe_depth: 4,
         target_l2_batch_size: config.epoch_slots as u64,
-        max_address_length: 20,
         deposit_amount: Amount::from_sat(config.deposit_sats),
         checkpoint_predicate: config.checkpoint_predicate,
         // TODO make configurable
