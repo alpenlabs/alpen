@@ -56,12 +56,12 @@ impl ExecChainState {
 
     /// Returns the hash of the current best chain tip.
     pub fn tip_blockhash(&self) -> Hash {
-        self.unfinalized.best().hash
+        self.unfinalized.best().hash()
     }
 
     /// Returns the hash of the current finalized block.
     pub fn finalized_blockhash(&self) -> Hash {
-        self.unfinalized.finalized().hash
+        self.unfinalized.finalized().hash()
     }
 
     /// Appends a new block to the chain state.
@@ -101,7 +101,7 @@ impl ExecChainState {
             let blockhash = block.blockhash;
             match self.unfinalized.attach_block(block) {
                 AttachBlockRes::Ok(best) => {
-                    tip = best;
+                    tip = best.hash();
                     attachable_blocks.append(&mut self.orphans.take_children(&blockhash).into());
                 }
                 AttachBlockRes::ExistingBlock => {
@@ -119,7 +119,7 @@ impl ExecChainState {
     /// Returns the current best block record.
     pub(crate) fn get_best_block(&self) -> &ExecBlockRecord {
         self.blocks
-            .get(&self.unfinalized.best().hash)
+            .get(&self.unfinalized.best().hash())
             .expect("should exist")
     }
 
