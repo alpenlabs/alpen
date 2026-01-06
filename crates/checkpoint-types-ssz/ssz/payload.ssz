@@ -1,0 +1,56 @@
+import strata_identifiers
+
+### State diff blob max size (256 KiB) (from SPS-62)
+OL_DA_DIFF_MAX_SIZE = 1 << 18
+
+### Output messages blob max size (16 KiB) (from SPS-62)
+OUTPUT_MSG_MAX_SIZE = 1 << 14
+
+### ZK proof max size (4 KiB)
+### SP1 Groth16 proofs are ~260 bytes, using 4 KiB for safety margin with metadata.
+### TODO: Validate this limit based on actual checkpoint proof format.
+MAX_PROOF_LEN = 1 << 12
+
+### Checkpoint tip position after processing an epoch.
+#~# derive: Copy, Serialize, Deserialize
+class CheckpointTip(Container):
+    ### L1 block height up to which L1 messages were consumed.
+    l1_height: strata_identifiers.L1Height
+    ### OL block commitment at the tip of this checkpoint.
+    #~# external_kind: container
+    l2_commitment: strata_identifiers.OLBlockCommitment
+
+### Checkpoint payload posted to L1.
+### Contains only the incremental data not already on L1 (previous CheckpointTip is in ASM state).
+### ASM reconstructs full CheckpointClaim by combining this with stored state and auxiliary L1 data.
+class CheckpointPayload(Container):
+    ### Checkpoint epoch number.
+    epoch: strata_identifiers.Epoch
+    ### New claimed checkpoint tip.
+    new_tip: CheckpointTip
+    ### State diff and output messages for this checkpoint epoch.
+    sidecar: CheckpointSidecar
+    ### ZK proof attesting to the validity of the checkpoint claim.
+    proof: List[uint8, MAX_PROOF_LEN]
+
+### Checkpoint sidecar with state diff and output messages.
+### Provides data availability for OL state reconstruction and message processing.
+class CheckpointSidecar(Container):
+    ### OL state diff that transforms last verified state to new claimed state.
+    ### Applying this diff to CheckpointTip(previous).l2_commitment yields CheckpointTip(new).l2_commitment.
+    ol_state_diff: List[uint8, OL_DA_DIFF_MAX_SIZE]
+    ### Output messages produced during this checkpoint epoch (withdrawals, etc.).
+    ### SSZ-encoded `Vec<OLLog>` from ol-chain-types-new.
+    # TODO: (@prajwolrg) Figure out if we should instead define this as
+    # List[ol_chain_types_new.OLLog, MAX_OL_LOGS]. The OLLog currently also
+    # includes account_serial, which might not be necessary to be part of the
+    # checkpoint payload.
+    ol_logs: List[uint8, OUTPUT_MSG_MAX_SIZE]
+
+### Signed checkpoint payload for L1 posting.
+### The signature is over the hash of the inner payload.
+class SignedCheckpointPayload(Container):
+    ### The checkpoint payload.
+    inner: CheckpointPayload
+    ### Schnorr signature over the payload hash.
+    signature: strata_identifiers.Buf64

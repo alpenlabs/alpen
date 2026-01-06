@@ -12,6 +12,8 @@ use hex::encode_to_slice;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "bitcoin")]
 use serde::{Deserializer, Serializer, de, ser};
+#[cfg(feature = "bitcoin")]
+use ssz::view;
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
@@ -214,6 +216,15 @@ impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for L1BlockCommitment 
     }
 }
 
+// Manual DecodeView implementation for bitcoin feature
+#[cfg(feature = "bitcoin")]
+impl<'a> view::DecodeView<'a> for L1BlockCommitment {
+    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
+        // Decode using the regular SSZ Decode implementation
+        ssz::Decode::from_ssz_bytes(bytes)
+    }
+}
+
 // Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
 crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
 
@@ -396,6 +407,17 @@ impl L1BlockCommitment {
                 height: height as u32,
                 blkid,
             })
+        }
+    }
+
+    pub fn height_u32(&self) -> u32 {
+        #[cfg(feature = "bitcoin")]
+        {
+            self.height.to_consensus_u32()
+        }
+        #[cfg(not(feature = "bitcoin"))]
+        {
+            self.height
         }
     }
 
