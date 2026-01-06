@@ -37,6 +37,7 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
         seq_signer = ctx.get_service("sequencer_signer")
         reth = ctx.get_service("reth")
         web3: Web3 = reth.create_web3()
+        prover = ctx.get_service("prover_client")
 
         seqrpc = seq.create_rpc()
         rethrpc = reth.create_rpc()
@@ -54,15 +55,18 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
 
         orig_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
 
+        # stop prover -- additional safety to make sure we don't produce checkpoints too quickly
+        prover.stop()
+
         # ensure there are some blocks more than our tip height
         wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > orig_blocknumber + 1,
+            lambda: int(rethrpc.eth_blockNumber(), base=16) > orig_blocknumber + 5,
             error_with="not building blocks",
-            timeout=5,
+            timeout=15,
         )
 
-        # stop sequencer
-        self.info("stop sequencer")
+        # stop sequencer signer
+        self.info("stop sequencer signer")
         seq_signer.stop()
         final_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
 
@@ -71,14 +75,13 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
         sync_info = seqrpc.strata_syncStatus()
         revert_target_blkid = sync_info.get("prev_epoch").get("last_blkid")
 
-        self.info(f"stop reth @{final_blocknumber}")
-
         original_el_blockhash = rethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
 
+        self.info(f"stop sequencer, stopping reth @{final_blocknumber}")
         seq.stop()
-        # revert chainstate to target blkid
+        # revert chainstate to target blkid -- allow reverting non-finalized checkpoint in this test
         self.info(f"Reverting chainstate to {revert_target_blkid}")
-        return_code, stdout, stderr = self.revert_chainstate(revert_target_blkid, "-f", "-d")
+        return_code, stdout, stderr = self.revert_chainstate(revert_target_blkid, "-f", "-d", "-c")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")
