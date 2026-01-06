@@ -13604,7 +13604,6 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "strata-asm-common",
- "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils",
@@ -13724,15 +13723,17 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "k256",
- "rand 0.8.5",
  "ssz",
  "strata-asm-common",
  "strata-btc-types",
  "strata-checkpoint-types-ssz",
+ "strata-db-types",
  "strata-identifiers",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
+ "strata-merkle",
  "strata-predicate",
+ "strata-test-utils",
  "thiserror 2.0.17",
 ]
 
@@ -13851,7 +13852,6 @@ dependencies = [
  "strata-asm-stf",
  "strata-asm-types",
  "strata-btc-types",
- "strata-identifiers",
  "strata-merkle",
  "strata-params",
  "strata-primitives",

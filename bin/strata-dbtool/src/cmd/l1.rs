@@ -113,9 +113,19 @@ pub(crate) fn get_l1_summary(
     let start_height = args.height_from;
     let start_block_id = get_l1_block_id_at_height(db, start_height)?;
 
-    // Check if all L1 blocks from L1 horizon to tip are present
+    // Genesis block (start_height) has no manifest by design:
+    // - Genesis is an anchor point for the ASM, not a processed block
+    // - The ASM worker creates initial state at genesis with an empty MMR
+    // - Manifests are only generated when blocks are processed through compute_asm_transition()
+    // - The first manifest (MMR index 0) corresponds to genesis_height + 1
+    // - This is correct for SP1 proof compatibility where all state changes go through the STF
+    //
+    // Therefore, we check manifests starting from start_height + 1.
+    let manifest_check_start = start_height + 1;
+
+    // Check if all L1 blocks from start_height+1 to tip have manifests
     let mut missing_heights = Vec::new();
-    let all_l1_manifests_present = (start_height..=l1_tip_height).all(|l1_height| {
+    let all_l1_manifests_present = (manifest_check_start..=l1_tip_height).all(|l1_height| {
         let Some(block_id) = l1_db
             .get_canonical_blockid_at_height(l1_height)
             .ok()

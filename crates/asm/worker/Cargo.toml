@@ -12,7 +12,6 @@ strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
 strata-asm-types.workspace = true
 strata-btc-types.workspace = true
-strata-identifiers.workspace = true
 strata-merkle = { workspace = true, features = ["ssz"] }
 strata-params.workspace = true
 strata-primitives.workspace = true
