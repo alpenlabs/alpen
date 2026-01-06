@@ -1,11 +1,8 @@
 name: Nix
 
 on:
+  merge_group:
   push:
-    branches:
-      - master
-      - main
-  pull_request:
     branches:
       - master
       - main
