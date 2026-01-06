@@ -1,0 +1,265 @@
+//! Admin subprotocol test utilities
+//!
+//! Provides ergonomic helpers for testing admin subprotocol transactions.
+//!
+//! # Example
+//!
+//! ```ignore
+//! use common::harness::create_test_harness;
+//! use common::admin::{AdminExt, sequencer_update};
+//!
+//! let harness = create_test_harness().await?;
+//! let mut ctx = harness.admin_context();
+//! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
+//! let state = harness.admin_state()?;
+//! ```
+
+use std::{future::Future, num::NonZero, time::Duration};
+
+use bitcoin::{secp256k1::SecretKey, BlockHash};
+use strata_asm_common::{AnchorState, Subprotocol};
+use strata_asm_proto_administration::{
+    state::AdministrationSubprotoState, AdministrationSubprotocol,
+};
+use strata_asm_txs_admin::{
+    actions::{
+        updates::{
+            multisig::MultisigUpdate, operator::OperatorSetUpdate, predicate::PredicateUpdate,
+            seq::SequencerUpdate,
+        },
+        CancelAction, MultisigAction, UpdateAction,
+    },
+    parser::SignedPayload,
+    test_utils::create_signature_set,
+};
+use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfigUpdate};
+use strata_params::Params;
+use strata_predicate::PredicateKey;
+use strata_primitives::{
+    buf::Buf32,
+    roles::{ProofType, Role},
+};
+use strata_test_utils_l2::get_test_operator_secret_key;
+
+use super::harness::AsmTestHarness;
+
+/// Admin subprotocol ID per SPS-50.
+pub const SUBPROTOCOL_ID: u8 = 0;
+
+/// Extension trait for admin subprotocol operations on the test harness.
+///
+/// This trait provides admin-specific convenience methods while keeping
+/// the core harness infrastructure-focused.
+pub trait AdminExt {
+    /// Get an admin signing context.
+    fn admin_context(&self) -> AdminContext;
+
+    /// Get admin subprotocol state.
+    fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState>;
+
+    /// Submit an admin action: sign, build tx, submit, mine, and wait.
+    fn submit_admin_action(
+        &self,
+        ctx: &mut AdminContext,
+        action: MultisigAction,
+    ) -> impl Future<Output = anyhow::Result<BlockHash>>;
+
+    /// Submit an admin action with a specific sequence number (for replay testing).
+    fn submit_admin_action_with_seqno(
+        &self,
+        ctx: &AdminContext,
+        action: MultisigAction,
+        seqno: u64,
+    ) -> impl Future<Output = anyhow::Result<BlockHash>>;
+}
+
+/// Context for signing admin transactions.
+///
+/// Tracks the sequence number and provides signing operations for admin actions.
+/// The sequence number auto-increments after each successful sign operation.
+#[derive(Debug)]
+pub struct AdminContext {
+    privkeys: Vec<SecretKey>,
+    signer_indices: Vec<u8>,
+    seqno: u64,
+}
+
+impl AdminContext {
+    /// Create admin context from rollup parameters.
+    ///
+    /// Extracts operator keys from params matching how ASM spec initializes authorities.
+    pub fn from_params(_params: &Params) -> Self {
+        let operator_sk = get_test_operator_secret_key();
+        Self {
+            privkeys: vec![operator_sk],
+            signer_indices: vec![0],
+            seqno: 0,
+        }
+    }
+
+    /// Sign an action and return (serialized_payload, tx_type).
+    ///
+    /// Auto-increments the sequence number after signing.
+    pub fn sign(&mut self, action: MultisigAction) -> (Vec<u8>, u8) {
+        let tx_type = action.tx_type();
+        let sighash = action.compute_sighash(self.seqno);
+        let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
+        let signed = SignedPayload::new(action, sig_set);
+        self.seqno += 1;
+        (
+            borsh::to_vec(&signed).expect("serialization should succeed"),
+            tx_type,
+        )
+    }
+
+    /// Sign an action with a specific sequence number (for testing invalid seqnos).
+    ///
+    /// Does NOT auto-increment the internal sequence number.
+    pub fn sign_with_seqno(&self, action: MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
+        let tx_type = action.tx_type();
+        let sighash = action.compute_sighash(seqno);
+        let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
+        let signed = SignedPayload::new(action, sig_set);
+        (
+            borsh::to_vec(&signed).expect("serialization should succeed"),
+            tx_type,
+        )
+    }
+
+    /// Get current sequence number.
+    pub fn seqno(&self) -> u64 {
+        self.seqno
+    }
+
+    /// Manually set the sequence number (for testing).
+    pub fn set_seqno(&mut self, seqno: u64) {
+        self.seqno = seqno;
+    }
+
+    /// Get the private keys (for advanced signing scenarios).
+    pub fn privkeys(&self) -> &[SecretKey] {
+        &self.privkeys
+    }
+
+    /// Get the signer indices.
+    pub fn signer_indices(&self) -> &[u8] {
+        &self.signer_indices
+    }
+}
+
+// ============================================================================
+// Action Builders
+// ============================================================================
+
+/// Create a sequencer update action.
+pub fn sequencer_update(key: [u8; 32]) -> MultisigAction {
+    MultisigAction::Update(UpdateAction::Sequencer(SequencerUpdate::new(Buf32::from(
+        key,
+    ))))
+}
+
+/// Create an operator set update action.
+pub fn operator_set_update(add: Vec<[u8; 32]>, remove: Vec<[u8; 32]>) -> MultisigAction {
+    MultisigAction::Update(UpdateAction::OperatorSet(OperatorSetUpdate::new(
+        add.into_iter().map(Buf32::from).collect(),
+        remove.into_iter().map(Buf32::from).collect(),
+    )))
+}
+
+/// Create a cancel action for a queued update.
+pub fn cancel_update(id: u32) -> MultisigAction {
+    MultisigAction::Cancel(CancelAction::new(id))
+}
+
+/// Create a multisig config update action.
+///
+/// This updates the threshold configuration for a specific role (admin or sequencer manager).
+pub fn multisig_config_update(
+    role: Role,
+    add_members: Vec<CompressedPublicKey>,
+    remove_members: Vec<CompressedPublicKey>,
+    new_threshold: u8,
+) -> MultisigAction {
+    let config = ThresholdConfigUpdate::new(
+        add_members,
+        remove_members,
+        NonZero::new(new_threshold).expect("threshold must be non-zero"),
+    );
+    MultisigAction::Update(UpdateAction::Multisig(MultisigUpdate::new(config, role)))
+}
+
+/// Create a predicate (verifying key) update action.
+///
+/// This updates the verification key used for proof verification.
+pub fn predicate_update(key: PredicateKey, proof_type: ProofType) -> MultisigAction {
+    MultisigAction::Update(UpdateAction::VerifyingKey(PredicateUpdate::new(
+        key, proof_type,
+    )))
+}
+
+/// Extract admin subprotocol state from AnchorState.
+pub fn extract_admin_state(
+    anchor_state: &AnchorState,
+) -> anyhow::Result<AdministrationSubprotoState> {
+    let section = anchor_state
+        .find_section(AdministrationSubprotocol::ID)
+        .ok_or_else(|| anyhow::anyhow!("Admin section not found"))?;
+    let admin_state = section.try_to_state::<AdministrationSubprotocol>()?;
+    Ok(admin_state)
+}
+
+impl AdminExt for AsmTestHarness {
+    fn admin_context(&self) -> AdminContext {
+        AdminContext::from_params(&self.params)
+    }
+
+    fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState> {
+        let (_, asm_state) = self
+            .get_latest_asm_state()?
+            .ok_or_else(|| anyhow::anyhow!("No ASM state available"))?;
+        extract_admin_state(asm_state.state())
+    }
+
+    async fn submit_admin_action(
+        &self,
+        ctx: &mut AdminContext,
+        action: MultisigAction,
+    ) -> anyhow::Result<BlockHash> {
+        let (payload, tx_type) = ctx.sign(action);
+        let target_height = self.get_processed_height()? + 1;
+        let tx = self
+            .build_envelope_tx(
+                SUBPROTOCOL_ID,
+                tx_type,
+                payload,
+                AsmTestHarness::DEFAULT_FEE,
+            )
+            .await?;
+        let hash = self.submit_and_mine_tx(&tx).await?;
+        self.wait_for_height(target_height, Duration::from_secs(5))
+            .await?;
+        Ok(hash)
+    }
+
+    async fn submit_admin_action_with_seqno(
+        &self,
+        ctx: &AdminContext,
+        action: MultisigAction,
+        seqno: u64,
+    ) -> anyhow::Result<BlockHash> {
+        let (payload, tx_type) = ctx.sign_with_seqno(action, seqno);
+        let target_height = self.get_processed_height()? + 1;
+        let tx = self
+            .build_envelope_tx(
+                SUBPROTOCOL_ID,
+                tx_type,
+                payload,
+                AsmTestHarness::DEFAULT_FEE,
+            )
+            .await?;
+        let hash = self.submit_and_mine_tx(&tx).await?;
+        self.wait_for_height(target_height, Duration::from_secs(5))
+            .await?;
+        Ok(hash)
+    }
+}
