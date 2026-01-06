@@ -28,6 +28,13 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Fetches a block's header by its ID.
     fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeader>>;
 
+    /// Fetches the current chain tip from the database.
+    ///
+    /// Returns the highest slot block that has been stored. If there are multiple
+    /// blocks at the tip slot (forks), returns one of them.
+    /// Returns `None` if no blocks have been stored yet.
+    fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>>;
+
     // =========================================================================
     // State access
     // =========================================================================

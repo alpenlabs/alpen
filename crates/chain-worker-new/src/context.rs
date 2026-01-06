@@ -70,6 +70,32 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(block_opt.map(|block| block.header().clone()))
     }
 
+    fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>> {
+        // Get the highest slot with a block
+        let tip_slot = self.ol_block_mgr.get_tip_slot_blocking()?;
+
+        // Slot 0 with no blocks means no chain yet
+        if tip_slot == 0 {
+            let blocks = self.fetch_blocks_at_slot(0)?;
+            if blocks.is_empty() {
+                return Ok(None);
+            }
+        }
+
+        // Get blocks at the tip slot
+        let block_ids = self.fetch_blocks_at_slot(tip_slot)?;
+
+        // Return the first block at the tip slot
+        // If there are multiple (forks), we just pick one - the caller can
+        // use fork choice logic if needed
+        let blkid = match block_ids.first() {
+            Some(id) => *id,
+            None => return Ok(None),
+        };
+
+        Ok(Some(OLBlockCommitment::new(tip_slot, blkid)))
+    }
+
     fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLState>> {
         let state_opt = self
             .ol_state_mgr
@@ -147,13 +173,34 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
-        // Get the epoch summary to find the block range
         let summary = self.fetch_summary(epoch)?;
-
-        // Get the current finalized state (or start from prev_terminal's state)
+        let terminal = *summary.terminal();
         let prev_terminal = *summary.prev_terminal();
+
+        // Collect canonical chain by walking backwards from terminal via parent pointers.
+        // This ensures we only apply write batches for blocks in the canonical chain,
+        // not fork blocks that may also have write batches stored.
+        let mut chain: Vec<OLBlockCommitment> = Vec::new();
+        let mut current = terminal;
+
+        while current != prev_terminal && !current.is_null() {
+            chain.push(current);
+            // Get header to find parent
+            let header = self
+                .fetch_header(current.blkid())?
+                .ok_or(WorkerError::MissingOLBlock(*current.blkid()))?;
+            let parent_blkid = header.parent_blkid();
+            if parent_blkid.is_null() {
+                break;
+            }
+            current = OLBlockCommitment::new(current.slot().saturating_sub(1), *parent_blkid);
+        }
+
+        // Reverse to get forward order (excluding prev_terminal which is already finalized)
+        chain.reverse();
+
+        // Get base state from prev_terminal (or genesis)
         let mut current_state = if prev_terminal.is_null() {
-            // Genesis case - get genesis state
             self.fetch_ol_state(OLBlockCommitment::null())?
                 .ok_or(WorkerError::MissingPreState(OLBlockCommitment::null()))?
         } else {
@@ -161,29 +208,16 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
                 .ok_or(WorkerError::MissingPreState(prev_terminal))?
         };
 
-        // Walk through all blocks from prev_terminal to terminal and apply write batches
-        let terminal = *summary.terminal();
-        let mut current_slot = prev_terminal.slot();
-
-        // Process blocks slot by slot until we reach the terminal
-        while current_slot < terminal.slot() {
-            current_slot += 1;
-
-            // Get blocks at this slot
-            let block_ids = self.fetch_blocks_at_slot(current_slot)?;
-
-            // For each block, check if it's in our chain and apply its write batch
-            for blkid in block_ids {
-                let commitment = OLBlockCommitment::new(current_slot, blkid);
-
-                // Try to get the write batch - if it exists, this block was executed
-                if let Some(wb) = self.fetch_write_batch(commitment)? {
-                    // Apply the write batch to advance the state
-                    current_state.apply_write_batch(wb).map_err(|e| {
-                        WorkerError::Unexpected(format!("failed to apply batch: {e}"))
-                    })?;
-                }
-            }
+        // Apply write batches in canonical order.
+        // Every block in the canonical chain must have a write batch - a missing one
+        // indicates data corruption or a bug, so we error out rather than skip.
+        for commitment in chain {
+            let wb = self
+                .fetch_write_batch(commitment)?
+                .ok_or(WorkerError::MissingWriteBatch(commitment))?;
+            current_state
+                .apply_write_batch(wb)
+                .map_err(|e| WorkerError::Unexpected(format!("failed to apply batch: {e}")))?;
         }
 
         // Store the final merged state at the terminal commitment

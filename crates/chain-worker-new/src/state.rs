@@ -141,37 +141,34 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     }
 
     /// Waits for genesis and resolves the initial tip commitment.
+    ///
+    /// This first checks the database for an existing chain tip (highest executed block).
+    /// If found, it resumes from there. Otherwise, it waits for genesis and starts fresh.
     pub(crate) fn wait_for_genesis_and_resolve_tip(&self) -> WorkerResult<OLBlockCommitment> {
+        // First, check if we have an existing chain tip in the database.
+        // This allows us to resume from where we left off after a restart,
+        // including unfinalized blocks.
+        if let Some(db_tip) = self.deps.context.fetch_chain_tip()? {
+            info!(slot = db_tip.slot(), %db_tip, "resuming from database chain tip");
+            return Ok(db_tip);
+        }
+
+        // No existing chain - wait for genesis
         info!("waiting until genesis");
 
-        let init_state = self
+        let _init_state = self
             .deps
             .runtime_handle
             .block_on(self.deps.status_channel.wait_until_genesis())
             .map_err(|_| WorkerError::ShutdownBeforeGenesis)?;
 
-        // Get the last finalized epoch from the checkpoint, if any
-        let finalized_epoch = init_state
-            .get_last_finalized_checkpoint()
-            .map(|ckpt| ckpt.batch_info.get_epoch_commitment());
+        // Start from genesis block
+        let genesis_block_ids = self.deps.context.fetch_blocks_at_slot(0)?;
+        let genesis_blkid = *genesis_block_ids
+            .first()
+            .ok_or(WorkerError::MissingGenesisBlock)?;
 
-        let cur_tip = match finalized_epoch {
-            Some(epoch) => {
-                // Resume from the last finalized epoch's block
-                let l2bc = epoch.to_block_commitment();
-                OLBlockCommitment::new(l2bc.slot(), *l2bc.blkid())
-            }
-            None => {
-                // No finalized checkpoint yet - start from genesis
-                let genesis_block_ids = self.deps.context.fetch_blocks_at_slot(0)?;
-                let genesis_blkid = *genesis_block_ids
-                    .first()
-                    .ok_or(WorkerError::MissingGenesisBlock)?;
-                OLBlockCommitment::new(0, genesis_blkid)
-            }
-        };
-
-        Ok(cur_tip)
+        Ok(OLBlockCommitment::new(0, genesis_blkid))
     }
 
     /// Initializes the worker with the given tip commitment.
@@ -272,13 +269,12 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let (write_batch, indexer_writes) =
             Self::run_stf_verification(&parent_state, block, parent_header)?;
 
-        // Use the state root from the header (verify_block validated it)
+        // Use the state root from the header (verify_block validated it).
+        // Note: logs are validated internally by verify_block via the logs_root commitment.
         let computed_state_root = *block.header().state_root();
-        let logs = Vec::new(); // TODO: Collect logs from execution context when available
 
         Ok(OLBlockExecutionOutput::new(
             computed_state_root,
-            logs,
             write_batch,
             indexer_writes,
         ))

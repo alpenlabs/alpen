@@ -1,7 +1,6 @@
 //! Output types for block execution.
 
 use strata_identifiers::Buf32;
-use strata_ol_chain_types_new::OLLog;
 use strata_ol_state_support_types::IndexerWrites;
 use strata_ol_state_types::{NativeAccountState, WriteBatch};
 
@@ -9,13 +8,13 @@ use strata_ol_state_types::{NativeAccountState, WriteBatch};
 ///
 /// This encapsulates all the results from block execution that need to be
 /// persisted to the database.
+///
+/// Note: Logs are not included here because the STF's `verify_block` validates
+/// them internally via the `logs_root` commitment in the header.
 #[derive(Clone, Debug)]
 pub struct OLBlockExecutionOutput {
     /// Computed state root after execution.
     computed_state_root: Buf32,
-
-    /// Logs emitted during execution.
-    logs: Vec<OLLog>,
 
     /// State changes to persist (the diff).
     write_batch: WriteBatch<NativeAccountState>,
@@ -28,13 +27,11 @@ impl OLBlockExecutionOutput {
     /// Creates a new execution output.
     pub fn new(
         computed_state_root: Buf32,
-        logs: Vec<OLLog>,
         write_batch: WriteBatch<NativeAccountState>,
         indexer_writes: IndexerWrites,
     ) -> Self {
         Self {
             computed_state_root,
-            logs,
             write_batch,
             indexer_writes,
         }
@@ -43,11 +40,6 @@ impl OLBlockExecutionOutput {
     /// Returns the computed state root after execution.
     pub fn computed_state_root(&self) -> &Buf32 {
         &self.computed_state_root
-    }
-
-    /// Returns the logs emitted during execution.
-    pub fn logs(&self) -> &[OLLog] {
-        &self.logs
     }
 
     /// Returns the state changes (write batch).
@@ -61,17 +53,9 @@ impl OLBlockExecutionOutput {
     }
 
     /// Consumes self and returns the inner components.
-    pub fn into_parts(
-        self,
-    ) -> (
-        Buf32,
-        Vec<OLLog>,
-        WriteBatch<NativeAccountState>,
-        IndexerWrites,
-    ) {
+    pub fn into_parts(self) -> (Buf32, WriteBatch<NativeAccountState>, IndexerWrites) {
         (
             self.computed_state_root,
-            self.logs,
             self.write_batch,
             self.indexer_writes,
         )
@@ -100,34 +84,29 @@ mod tests {
     #[test]
     fn test_output_creation_and_accessors() {
         let state_root = Buf32::from([1u8; 32]);
-        let logs = vec![];
         let global = GlobalState::new(100);
         let epochal = test_epochal_state();
         let write_batch = WriteBatch::new(global, epochal);
         let indexer_writes = IndexerWrites::new();
 
-        let output =
-            OLBlockExecutionOutput::new(state_root, logs.clone(), write_batch, indexer_writes);
+        let output = OLBlockExecutionOutput::new(state_root, write_batch, indexer_writes);
 
         assert_eq!(output.computed_state_root(), &state_root);
-        assert!(output.logs().is_empty());
         assert!(output.indexer_writes().is_empty());
     }
 
     #[test]
     fn test_output_into_parts() {
         let state_root = Buf32::from([2u8; 32]);
-        let logs = vec![];
         let global = GlobalState::new(200);
         let epochal = test_epochal_state();
         let write_batch = WriteBatch::new(global, epochal);
         let indexer_writes = IndexerWrites::new();
 
-        let output = OLBlockExecutionOutput::new(state_root, logs, write_batch, indexer_writes);
+        let output = OLBlockExecutionOutput::new(state_root, write_batch, indexer_writes);
 
-        let (root, logs, _batch, writes) = output.into_parts();
+        let (root, _batch, writes) = output.into_parts();
         assert_eq!(root, state_root);
-        assert!(logs.is_empty());
         assert!(writes.is_empty());
     }
 }
