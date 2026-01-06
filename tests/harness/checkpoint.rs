@@ -5,8 +5,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use common::harness::create_test_harness;
-//! use common::checkpoint::CheckpointExt;
+//! use harness::test_harness::create_test_harness;
+//! use harness::checkpoint::CheckpointExt;
 //!
 //! let harness = create_test_harness().await?;
 //! let state = harness.checkpoint_state()?;
@@ -15,7 +15,7 @@
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_proto_checkpoint_v0::{CheckpointV0Subproto, CheckpointV0VerifierState};
 
-use super::harness::AsmTestHarness;
+use super::test_harness::AsmTestHarness;
 
 /// Checkpoint subprotocol ID per SPS-50.
 pub const SUBPROTOCOL_ID: u8 = 1;

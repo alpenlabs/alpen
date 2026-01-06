@@ -8,8 +8,8 @@
 )]
 
 use bitcoin::Network;
-use common::{harness::create_test_harness, worker_context::TestAsmWorkerContext};
-use integration_tests::common;
+use harness::{test_harness::create_test_harness, worker_context::TestAsmWorkerContext};
+use integration_tests::harness;
 use strata_asm_worker::WorkerContext;
 use strata_primitives::L1BlockId;
 use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};

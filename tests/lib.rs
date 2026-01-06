@@ -2,7 +2,7 @@
 //!
 //! This module exposes common test utilities to all integration test binaries.
 
-pub mod common;
+pub mod harness;
 
 // Suppress unused extern crate warnings - these are used by test binaries
 // This centralized list prevents each test file from needing duplicate suppressions

@@ -18,8 +18,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use common::harness::create_test_harness;
-//! use common::admin::{AdminExt, sequencer_update};
+//! use harness::test_harness::create_test_harness;
+//! use harness::admin::{AdminExt, sequencer_update};
 //!
 //! let harness = create_test_harness().await?;
 //! let mut ctx = harness.admin_context();  // From AdminExt

@@ -5,8 +5,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use common::harness::create_test_harness;
-//! use common::admin::{AdminExt, sequencer_update};
+//! use harness::test_harness::create_test_harness;
+//! use harness::admin::{AdminExt, sequencer_update};
 //!
 //! let harness = create_test_harness().await?;
 //! let mut ctx = harness.admin_context();
@@ -41,7 +41,7 @@ use strata_primitives::{
 };
 use strata_test_utils_l2::get_test_operator_secret_key;
 
-use super::harness::AsmTestHarness;
+use super::test_harness::AsmTestHarness;
 
 /// Admin subprotocol ID per SPS-50.
 pub const SUBPROTOCOL_ID: u8 = 0;

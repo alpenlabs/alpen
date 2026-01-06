@@ -41,10 +41,6 @@ name = "integration_tests"
 path = "lib.rs"
 
 [[test]]
-name = "stub"
-path = "stub.rs"
-
-[[test]]
 name = "asm_core"
 path = "asm/core.rs"
 

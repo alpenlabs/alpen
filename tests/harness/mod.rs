@@ -21,5 +21,5 @@
 
 pub mod admin;
 pub mod checkpoint;
-pub mod harness;
+pub mod test_harness;
 pub mod worker_context;

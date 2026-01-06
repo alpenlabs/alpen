@@ -21,15 +21,15 @@ use std::{num::NonZero, time::Duration};
 
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoind_async_client::traits::Reader;
-use common::{
+use harness::{
     admin::{
         cancel_update, multisig_config_update, operator_set_update, predicate_update,
         sequencer_update, AdminExt, SUBPROTOCOL_ID as ADMIN_SUBPROTOCOL_ID,
     },
     checkpoint::CheckpointExt,
-    harness::{create_test_harness, AsmTestHarness},
+    test_harness::{create_test_harness, AsmTestHarness},
 };
-use integration_tests::common;
+use integration_tests::harness;
 use rand::rngs::OsRng;
 use strata_asm_txs_admin::{parser::SignedPayload, test_utils::create_signature_set};
 use strata_crypto::threshold_signature::{
