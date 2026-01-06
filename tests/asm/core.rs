@@ -88,10 +88,7 @@ async fn test_multiple_block_processing() {
         .await
         .expect("Failed to create test harness");
 
-    let block_hashes = harness
-        .mine_blocks(3)
-        .await
-        .expect("Failed to mine blocks");
+    let block_hashes = harness.mine_blocks(3).await.expect("Failed to mine blocks");
     assert_eq!(block_hashes.len(), 3);
 
     let tip_height = harness

@@ -32,10 +32,15 @@ use common::{
 use integration_tests::common;
 use rand::rngs::OsRng;
 use strata_asm_txs_admin::{parser::SignedPayload, test_utils::create_signature_set};
-use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfig};
+use strata_crypto::threshold_signature::{
+    CompressedPublicKey, IndexedSignature, SignatureSet, ThresholdConfig,
+};
 use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;
-use strata_primitives::roles::{ProofType, Role};
+use strata_primitives::{
+    block_credential::CredRule,
+    roles::{ProofType, Role},
+};
 
 // ============================================================================
 // Sequencer Updates (StrataSequencerManager role - applied immediately)
@@ -94,7 +99,7 @@ async fn test_sequencer_update_propagates_to_checkpoint() {
 
     // Verify it's specifically a SchnorrKey with our new key
     match &final_checkpoint_state.cred_rule {
-        strata_primitives::block_credential::CredRule::SchnorrKey(key) => {
+        CredRule::SchnorrKey(key) => {
             assert_eq!(
                 key.as_ref(),
                 &new_key,
@@ -400,11 +405,10 @@ async fn test_corrupted_signature_rejected() {
         sig_bytes[1..33].copy_from_slice(sig.r());
         sig_bytes[33..65].copy_from_slice(sig.s());
         sig_bytes[1] ^= 0xFF; // Corrupt r component
-        *sig = strata_crypto::threshold_signature::IndexedSignature::new(index, sig_bytes);
+        *sig = IndexedSignature::new(index, sig_bytes);
     }
 
-    let corrupted_sig_set =
-        strata_crypto::threshold_signature::SignatureSet::new(indexed_sigs).unwrap();
+    let corrupted_sig_set = SignatureSet::new(indexed_sigs).unwrap();
     let signed = SignedPayload::new(action.clone(), corrupted_sig_set);
     let payload = borsh::to_vec(&signed).unwrap();
 
