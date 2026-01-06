@@ -52,7 +52,7 @@ pub(crate) struct UnfinalizedTracker {
 /// Possible results of attaching block to [`UnfinalizedTracker`].
 pub(crate) enum AttachBlockRes {
     /// Attached successfully.
-    Ok(Hash),
+    Ok(BlockNumHash),
     /// Block already exists.
     ExistingBlock,
     /// Block is below finalized height, cannot be attached.
@@ -67,8 +67,8 @@ impl UnfinalizedTracker {
         let hash = finalized_block.blockhash;
         let height = finalized_block.blocknum;
         Self {
-            finalized: BlockNumHash { hash, height },
-            best: BlockNumHash { hash, height },
+            finalized: BlockNumHash::new(hash, height),
+            best: BlockNumHash::new(hash, height),
             tips: HashMap::from([(hash, height)]),
             blocks: HashMap::from([(hash, finalized_block)]),
         }
@@ -86,7 +86,7 @@ impl UnfinalizedTracker {
 
         // 2. Is it below finalized ?
         let block_height = block.blocknum;
-        if block_height < self.finalized.height {
+        if block_height < self.finalized.blocknum() {
             return AttachBlockRes::BelowFinalized(block);
         }
 
@@ -97,8 +97,8 @@ impl UnfinalizedTracker {
             self.tips.remove(&parent_blockhash);
             self.tips.insert(blockhash, block_height);
 
-            (self.best.hash, self.best.height) = self.compute_best_tip();
-            return AttachBlockRes::Ok(self.best.hash);
+            self.best = self.compute_best_tip();
+            return AttachBlockRes::Ok(self.best);
         };
 
         // 4. does it create a new tip ?
@@ -106,8 +106,8 @@ impl UnfinalizedTracker {
             self.blocks.insert(blockhash, block);
             self.tips.insert(blockhash, block_height);
 
-            (self.best.hash, self.best.height) = self.compute_best_tip();
-            return AttachBlockRes::Ok(self.best.hash);
+            self.best = self.compute_best_tip();
+            return AttachBlockRes::Ok(self.best);
         }
 
         // does not extend any known block
@@ -115,18 +115,19 @@ impl UnfinalizedTracker {
     }
 
     /// Finds the tip with the highest block height.
-    fn compute_best_tip(&self) -> (Hash, u64) {
+    /// On tie with current best, current best will not change.
+    fn compute_best_tip(&self) -> BlockNumHash {
         let (hash, height) = self.tips.iter().fold(
-            (&self.best.hash, &self.best.height),
+            (self.best.hash(), self.best.blocknum()),
             |(a_hash, a_height), (b_hash, b_height)| {
-                if b_height > a_height {
-                    (b_hash, b_height)
+                if *b_height > a_height {
+                    (*b_hash, *b_height)
                 } else {
                     (a_hash, a_height)
                 }
             },
         );
-        (*hash, *height)
+        BlockNumHash::new(hash, height)
     }
 
     /// Checks if a block with the given hash is tracked.
@@ -150,7 +151,7 @@ impl UnfinalizedTracker {
     /// the best tip back to the finalized block, or is the best tip itself.
     pub(crate) fn is_canonical(&self, hash: &Hash) -> bool {
         // Check if it's the finalized block
-        if *hash == self.finalized.hash {
+        if *hash == self.finalized.hash() {
             return true;
         }
 
@@ -160,8 +161,8 @@ impl UnfinalizedTracker {
         }
 
         // Walk backwards from best tip to finalized, checking if we encounter the hash
-        let mut current = self.best.hash;
-        while current != self.finalized.hash {
+        let mut current = self.best.hash();
+        while current != self.finalized.hash() {
             if current == *hash {
                 return true;
             }
@@ -184,7 +185,7 @@ impl UnfinalizedTracker {
         &mut self,
         new_finalized: Hash,
     ) -> Result<FinalizeReport, UnfinalizedTrackerError> {
-        if new_finalized == self.finalized.hash {
+        if new_finalized == self.finalized.hash() {
             // noop
             return Ok(FinalizeReport::new_empty());
         }
@@ -195,7 +196,7 @@ impl UnfinalizedTracker {
         };
 
         // get all blocks that are newly finalized
-        let finalized_blocks_count = new_finalized_block.blocknum - self.finalized.height;
+        let finalized_blocks_count = new_finalized_block.blocknum - self.finalized.blocknum();
         let mut finalized_hashes = Vec::<Hash>::with_capacity(finalized_blocks_count as usize);
         let mut block = new_finalized_block.clone();
         for _ in 0..finalized_blocks_count {
@@ -204,7 +205,7 @@ impl UnfinalizedTracker {
         }
 
         // sanity check
-        if block.blockhash != self.finalized.hash {
+        if block.blockhash != self.finalized.hash() {
             return Err(UnfinalizedTrackerError::InvalidState);
         }
 
@@ -286,7 +287,7 @@ mod tests {
         let result = tracker.attach_block(block1);
 
         assert!(matches!(result, AttachBlockRes::Ok(_)));
-        assert_eq!(tracker.best().hash, hash_from_u8(1));
+        assert_eq!(tracker.best().hash(), hash_from_u8(1));
         assert!(tracker.contains_block(&hash_from_u8(1)));
     }
 
@@ -303,8 +304,8 @@ mod tests {
         tracker.attach_block(block2);
         tracker.attach_block(block3);
 
-        assert_eq!(tracker.best().hash, hash_from_u8(3));
-        assert_eq!(tracker.best().height, 3);
+        assert_eq!(tracker.best().hash(), hash_from_u8(3));
+        assert_eq!(tracker.best().blocknum(), 3);
     }
 
     #[test]
@@ -326,8 +327,8 @@ mod tests {
         tracker.attach_block(block3);
 
         // Block 3 is tallest, so it should be best
-        assert_eq!(tracker.best().hash, hash_from_u8(3));
-        assert_eq!(tracker.best().height, 2);
+        assert_eq!(tracker.best().hash(), hash_from_u8(3));
+        assert_eq!(tracker.best().blocknum(), 2);
         assert!(tracker.contains_block(&hash_from_u8(1)));
         assert!(tracker.contains_block(&hash_from_u8(2)));
         assert!(tracker.contains_block(&hash_from_u8(3)));
@@ -383,14 +384,14 @@ mod tests {
         tracker.attach_block(make_block(1, hash_from_u8(3), hash_from_u8(0)));
 
         // All at height 1, best should be one of them
-        assert_eq!(tracker.best().height, 1);
+        assert_eq!(tracker.best().blocknum(), 1);
 
         // Add block 4 extending block 2
         tracker.attach_block(make_block(2, hash_from_u8(4), hash_from_u8(2)));
 
         // Now block 4 should be best (height 2)
-        assert_eq!(tracker.best().hash, hash_from_u8(4));
-        assert_eq!(tracker.best().height, 2);
+        assert_eq!(tracker.best().hash(), hash_from_u8(4));
+        assert_eq!(tracker.best().blocknum(), 2);
     }
 
     #[test]
@@ -420,8 +421,8 @@ mod tests {
         assert!(!tracker.contains_block(&hash_from_u8(1)));
 
         // New finalized should be block 2
-        assert_eq!(tracker.finalized().hash, hash_from_u8(2));
-        assert_eq!(tracker.finalized().height, 2);
+        assert_eq!(tracker.finalized().hash(), hash_from_u8(2));
+        assert_eq!(tracker.finalized().blocknum(), 2);
     }
 
     #[test]
@@ -457,7 +458,7 @@ mod tests {
         assert!(!tracker.contains_block(&hash_from_u8(1)));
         assert!(!tracker.contains_block(&hash_from_u8(3)));
 
-        assert_eq!(tracker.finalized().hash, hash_from_u8(2));
+        assert_eq!(tracker.finalized().hash(), hash_from_u8(2));
     }
 
     #[test]
@@ -492,7 +493,7 @@ mod tests {
 
         // Only block 5 should remain
         assert!(tracker.contains_block(&hash_from_u8(5)));
-        assert_eq!(tracker.finalized().hash, hash_from_u8(3));
+        assert_eq!(tracker.finalized().hash(), hash_from_u8(3));
     }
 
     #[test]
@@ -508,7 +509,7 @@ mod tests {
         // Nothing should change
         assert!(report.finalize.is_empty());
         assert!(report.remove.is_empty());
-        assert_eq!(tracker.finalized().hash, hash_from_u8(0));
+        assert_eq!(tracker.finalized().hash(), hash_from_u8(0));
         assert!(tracker.contains_block(&hash_from_u8(1)));
     }
 
@@ -563,7 +564,7 @@ mod tests {
         tracker.attach_block(make_block(2, hash_from_u8(3), hash_from_u8(1)));
 
         // Best tip is 3 (height 2)
-        assert_eq!(tracker.best().hash, hash_from_u8(3));
+        assert_eq!(tracker.best().hash(), hash_from_u8(3));
 
         // Blocks on canonical chain (0 -> 1 -> 3)
         assert!(tracker.is_canonical(&hash_from_u8(0))); // finalized
@@ -591,7 +592,7 @@ mod tests {
         tracker.attach_block(make_block(2, hash_from_u8(5), hash_from_u8(3)));
 
         // Both 4 and 5 are at height 2, but one will be best
-        let best = tracker.best().hash;
+        let best = tracker.best().hash();
 
         // Finalized is always canonical
         assert!(tracker.is_canonical(&hash_from_u8(0)));
@@ -651,7 +652,7 @@ mod tests {
 
         // Only block 5 should remain
         assert!(tracker.contains_block(&hash_from_u8(5)));
-        assert_eq!(tracker.finalized().hash, hash_from_u8(4));
-        assert_eq!(tracker.finalized().height, 4);
+        assert_eq!(tracker.finalized().hash(), hash_from_u8(4));
+        assert_eq!(tracker.finalized().blocknum(), 4);
     }
 }
