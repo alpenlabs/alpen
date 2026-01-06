@@ -4414,32 +4414,17 @@ dependencies = [
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
- "digest 0.10.7",
  "num_enum",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
- "sha2",
  "ssz",
  "ssz_derive",
- "strata-checkpoint-types",
  "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
  "thiserror 2.0.17",
  "tree_hash",
-]
-
-[[package]]
-name = "strata-checkpoint-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "borsh",
- "serde",
- "strata-crypto",
- "strata-identifiers",
- "zkaleido",
 ]
 
 [[package]]
@@ -4467,7 +4452,6 @@ dependencies = [
  "arbitrary",
  "borsh",
  "hex",
- "k256",
  "musig2",
  "secp256k1 0.29.1",
  "serde",
