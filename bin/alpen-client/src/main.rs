@@ -419,5 +419,6 @@ async fn ensure_genesis<TStorage: Storage + ExecBlockStorage>(
     ensure_genesis_ee_account_state(config, storage).await?;
     #[cfg(feature = "sequencer")]
     ensure_finalized_exec_chain_genesis(config, storage).await?;
+    // TODO: ensure_batch_genesis after BatchStorage is implemented
     Ok(())
 }

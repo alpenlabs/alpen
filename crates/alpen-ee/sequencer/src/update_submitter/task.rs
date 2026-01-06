@@ -54,9 +54,9 @@ impl UpdateCache {
 /// 1. New batch ready notifications
 /// 2. OL chain status updates
 ///
-/// On either trigger, it queries the OL client for the current account state,
-/// finds all batches in `ProofReady` state starting from the next expected
-/// sequence number, and submits them in order.
+/// On either trigger, it queries the OL client for the current account state, finds all batches in
+/// `ProofReady` state starting from the next expected sequence number, and submits them in order.
+/// Depends on OL to dedupe transactions already in mempool.
 pub async fn update_submitter_task<C, S, ES, P>(
     ol_client: Arc<C>,
     batch_storage: Arc<S>,
@@ -113,8 +113,9 @@ async fn process_ready_batches(
     // Get latest account state from OL to determine next expected seq_no
     let account_state = ol_client.get_latest_account_state().await?;
     // seq_no is the last processed update, so next is seq_no + 1
-    // For batch idx, we use the same value (batch idx == seq_no for now)
+    // NOTE: For batch idx, we use the same value (batch idx == seq_no for now)
     let current_seq_no = *account_state.seq_no.inner();
+    // NOTE: ensure batch 0 (genesis batch) is never sent in an update.
     let next_batch_idx = current_seq_no.saturating_add(1);
 
     // Evict cache entries for batches that have been accepted
