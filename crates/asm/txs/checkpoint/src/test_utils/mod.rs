@@ -1,3 +1,5 @@
+mod mmr;
+
 use k256::schnorr::{Signature, SigningKey, signature::Signer};
 use ssz::Encode;
 use strata_btc_types::payload::L1Payload;
@@ -11,6 +13,8 @@ use strata_identifiers::{
 use strata_l1_txfmt::TagData;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_test_utils::ArbitraryGenerator;
+
+pub use mmr::{TestMmr, verified_aux_data_for_heights};
 
 use crate::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 

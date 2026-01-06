@@ -19,7 +19,7 @@ use crate::{
 /// it in efficient lookup structures for O(1) access:
 ///
 /// - **Bitcoin transactions**: Decoded and indexed by txid in a hashmap
-/// - **Manifest hashes**: MMR proofs verified and indexed by MMR position
+/// - **Manifest hashes**: MMR proofs verified and indexed by L1 block height
 ///
 /// All verification happens during construction via [`try_new`](Self::try_new), so
 /// subsequent getter method calls return already-verified data without additional
@@ -28,7 +28,7 @@ use crate::{
 pub struct VerifiedAuxData {
     /// Verified Bitcoin transactions indexed by txid
     txs: HashMap<Txid, Transaction>,
-    /// Verified manifest hashes indexed by MMR index
+    /// Verified manifest hashes indexed by L1 block height
     manifest_hashes: HashMap<u64, Hash32>,
 }
 
@@ -97,7 +97,7 @@ impl VerifiedAuxData {
     /// Verifies and indexes manifest hashes using MMR proofs.
     ///
     /// Verifies each manifest hash's MMR proof against the provided compact MMR
-    /// and indexes verified hashes by their MMR position.
+    /// and indexes verified hashes by their L1 block height.
     ///
     /// # Errors
     ///
@@ -115,7 +115,8 @@ impl VerifiedAuxData {
                     hash: *item.hash(),
                 });
             }
-            manifest_hashes.insert(item.proof().index(), *item.hash());
+            // Index by L1 block height, not MMR index, since consumers query by height
+            manifest_hashes.insert(item.height(), *item.hash());
         }
 
         Ok(manifest_hashes)
@@ -149,32 +150,37 @@ impl VerifiedAuxData {
             })
     }
 
-    /// Gets a verified manifest hash by MMR index.
+    /// Gets a verified manifest hash by L1 block height.
     ///
-    /// Returns the manifest hash if it exists at the given index.
+    /// Returns the manifest hash if it exists for the given height.
     ///
     /// # Errors
     ///
-    /// Returns `AuxError::ManifestHashNotFound` if the hash is not found at the given index.
-    pub fn get_manifest_hash(&self, index: u64) -> AuxResult<Hash32> {
+    /// Returns `AuxError::ManifestHashNotFound` if the hash is not found at the given height.
+    pub fn get_manifest_hash(&self, height: u64) -> AuxResult<Hash32> {
         self.manifest_hashes
-            .get(&index)
+            .get(&height)
             .copied()
-            .ok_or(AuxError::ManifestHashNotFound { index })
+            .ok_or(AuxError::ManifestHashNotFound { height })
     }
 
-    /// Gets a range of verified manifest hashes by their MMR indices.
+    /// Gets a range of verified manifest hashes by their L1 block heights.
     ///
-    /// Returns a vector of manifest hashes for the given index range (inclusive).
+    /// Returns a vector of manifest hashes for the given height range (inclusive).
     ///
     /// # Errors
     ///
     /// Returns an error if any hash in the range is not found.
-    pub fn get_manifest_hashes(&self, start: u64, end: u64) -> AuxResult<Vec<Hash32>> {
-        (start..=end)
-            .map(|idx| self.get_manifest_hash(idx))
+    pub fn get_manifest_hashes(
+        &self,
+        start_height: u64,
+        end_height: u64,
+    ) -> AuxResult<Vec<Hash32>> {
+        (start_height..=end_height)
+            .map(|height| self.get_manifest_hash(height))
             .collect()
     }
+
 }
 
 #[cfg(test)]

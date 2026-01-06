@@ -16,8 +16,10 @@ ssz.workspace = true
 thiserror.workspace = true
 
 strata-btc-types = { workspace = true, optional = true }
+strata-db-types = { workspace = true, optional = true }
 strata-identifiers = { workspace = true, optional = true }
 strata-l1-txfmt = { workspace = true, optional = true }
+strata-merkle = { workspace = true, optional = true }
 strata-predicate = { workspace = true, optional = true }
 strata-test-utils = { workspace = true, optional = true }
 
@@ -27,8 +29,10 @@ k256 = { workspace = true, optional = true }
 test-utils = [
   "dep:k256",
   "dep:strata-btc-types",
+  "dep:strata-db-types",
   "dep:strata-identifiers",
   "dep:strata-l1-txfmt",
+  "dep:strata-merkle",
   "dep:strata-predicate",
   "dep:strata-test-utils",
 ]

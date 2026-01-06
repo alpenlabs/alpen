@@ -52,10 +52,10 @@ pub enum AuxError {
         vout: u32,
     },
 
-    /// Manifest hash not found at the given MMR index.
-    #[error("manifest hash not found at index {index}")]
+    /// Manifest hash not found at the given MMR height.
+    #[error("manifest hash not found at height {height}")]
     ManifestHashNotFound {
         /// The requested MMR index
-        index: u64,
+        height: u64,
     },
 }

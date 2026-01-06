@@ -100,15 +100,21 @@ impl ManifestHashRange {
     }
 }
 
-/// Manifest hash with its MMR proof.
+/// Manifest hash with its MMR proof and L1 block height.
 ///
 /// Contains a hash of an [`AsmManifest`](crate::AsmManifest) along with an MMR proof
 /// that can be used to verify the hash's inclusion in the manifest MMR at a specific position.
+///
+/// The L1 block height is stored alongside the hash and proof to enable consumers
+/// to index manifest hashes by their original L1 height rather than MMR index.
+/// This is important because checkpoint subprotocols query manifest hashes by L1 height.
 ///
 /// This is unverified data - the proof must be verified against a trusted compact MMR
 /// before the hash can be considered valid.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct VerifiableManifestHash {
+    /// L1 block height this manifest hash corresponds to
+    height: u64,
     /// The hash of an [`AsmManifest`](crate::AsmManifest)
     hash: Hash32,
     /// The MMR proof for this manifest hash
@@ -117,8 +123,23 @@ pub struct VerifiableManifestHash {
 
 impl VerifiableManifestHash {
     /// Creates a new verifiable manifest hash.
-    pub fn new(hash: Hash32, proof: AsmMerkleProof) -> Self {
-        Self { hash, proof }
+    ///
+    /// # Arguments
+    ///
+    /// * `height` - The L1 block height this manifest corresponds to
+    /// * `hash` - The manifest hash
+    /// * `proof` - The MMR proof for this hash
+    pub fn new(height: u64, hash: Hash32, proof: AsmMerkleProof) -> Self {
+        Self {
+            height,
+            hash,
+            proof,
+        }
+    }
+
+    /// Returns the L1 block height this manifest corresponds to.
+    pub fn height(&self) -> u64 {
+        self.height
     }
 
     /// Returns the manifest hash.
