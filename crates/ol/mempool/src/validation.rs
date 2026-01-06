@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use strata_acct_types::AccountId;
 use strata_identifiers::OLTxId;
-use strata_ol_state_types::OLState;
+use strata_ledger_types::IStateAccessor;
 use strata_ol_stf::{
     ExecError, check_snark_account_seq_no, check_tx_attachment, get_account_state,
     get_snark_account_seq_no,
@@ -21,12 +21,12 @@ use crate::{
 /// - Mempool state (if there are pending
 ///   [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions)
 /// - On-chain state (if no pending transactions)
-fn validate_snark_account_update_tx_seq_no(
+fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
     txid: OLTxId,
     tx_seq_no: u64,
     target_account: AccountId,
     mempool_seq_no_range: Option<(u64, u64)>,
-    state_accessor: &Arc<OLState>,
+    state_accessor: &Arc<S>,
 ) -> OLMempoolResult<()> {
     if let Some((min_seq_no, max_seq_no)) = mempool_seq_no_range {
         // Has SnarkAccountUpdate transactions in mempool - validate against range
@@ -92,10 +92,10 @@ fn validate_snark_account_update_tx_seq_no(
 /// - Account existence checking
 /// - Sequence number validation (for
 ///   [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions)
-pub(crate) fn validate_transaction(
+pub(crate) fn validate_transaction<S: IStateAccessor>(
     txid: OLTxId,
     tx: &OLMempoolTransaction,
-    state_accessor: &Arc<OLState>,
+    state_accessor: &Arc<S>,
     account_state: &HashMap<AccountId, AccountMempoolState>,
 ) -> OLMempoolResult<()> {
     let target_account = tx.target();
