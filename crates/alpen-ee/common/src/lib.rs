@@ -7,8 +7,8 @@ mod utils;
 pub use traits::{
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
-        chain_status_checked, get_inbox_messages_checked, OLAccountState, OLBlockData, OLClient,
-        OLClientError, SequencerOLClient,
+        chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
+        OLClient, OLClientError, SequencerOLClient,
     },
     prover::{BatchProver, ProofGenerationStatus},
     storage::{BatchStorage, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError},

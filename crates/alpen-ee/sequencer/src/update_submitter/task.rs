@@ -6,7 +6,7 @@ use alpen_ee_common::{
     BatchId, BatchProver, BatchStatus, BatchStorage, ExecBlockStorage, OLFinalizedStatus,
     SequencerOLClient,
 };
-use eyre::Result;
+use eyre::{eyre, Result};
 use strata_snark_acct_types::SnarkAccountUpdate;
 use tokio::sync::watch;
 use tracing::{debug, error, warn};
@@ -42,9 +42,9 @@ impl UpdateCache {
         }
     }
 
-    /// Evict entries for batches that have been accepted (batch_idx <= current_seq_no).
+    /// Evict entries for batches that have been accepted (batch_idx < current_seq_no).
     fn evict_accepted(&mut self, current_seq_no: u64) {
-        self.entries.retain(|_, (idx, _)| *idx > current_seq_no);
+        self.entries.retain(|_, (idx, _)| *idx >= current_seq_no);
     }
 }
 
@@ -112,14 +112,14 @@ async fn process_ready_batches(
 ) -> Result<()> {
     // Get latest account state from OL to determine next expected seq_no
     let account_state = ol_client.get_latest_account_state().await?;
-    // seq_no is the last processed update, so next is seq_no + 1
-    // NOTE: For batch idx, we use the same value (batch idx == seq_no for now)
-    let current_seq_no = *account_state.seq_no.inner();
+    let next_sequence_no = *account_state.seq_no.inner();
     // NOTE: ensure batch 0 (genesis batch) is never sent in an update.
-    let next_batch_idx = current_seq_no.saturating_add(1);
+    let next_batch_idx = next_sequence_no
+        .checked_add(1)
+        .ok_or_else(|| eyre!("max sequence number exceeded"))?; // shouldn't happen
 
     // Evict cache entries for batches that have been accepted
-    update_cache.evict_accepted(current_seq_no);
+    update_cache.evict_accepted(next_sequence_no);
 
     let mut batch_idx = next_batch_idx;
 

@@ -45,9 +45,12 @@ pub struct OLBlockData {
     pub next_inbox_msg_idx: u64,
 }
 
+/// View of OL Account State used by EE.
 #[derive(Debug, Clone)]
-pub struct OLAccountState {
+pub struct OLAccountStateView {
+    /// Next expected update sequence number.
     pub seq_no: Seqno,
+    /// State stored in Account in OL.
     pub proof_state: ProofState,
 }
 
@@ -74,7 +77,7 @@ pub trait SequencerOLClient {
     ) -> Result<Vec<OLBlockData>, OLClientError>;
 
     /// Retrieves latest account state in the OL Chain for this account.
-    async fn get_latest_account_state(&self) -> Result<OLAccountState, OLClientError>;
+    async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError>;
 
     /// Submits an account update with proof to the OL chain sequencer.
     async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError>;
