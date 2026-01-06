@@ -6,6 +6,7 @@
 //! **Security Note**: This spec should only be used in testing environments.
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
+use strata_asm_proto_administration::AdministrationSubprotoParams;
 use strata_asm_proto_bridge_v1::BridgeV1Config;
 use strata_asm_proto_checkpoint_v0::CheckpointV0Params;
 use strata_asm_proto_debug_v1::DebugSubproto;
@@ -55,8 +56,14 @@ impl DebugAsmSpec {
         magic_bytes: strata_l1_txfmt::MagicBytes,
         checkpoint_v0_params: CheckpointV0Params,
         bridge_v1_genesis: BridgeV1Config,
+        admin_params: AdministrationSubprotoParams,
     ) -> Self {
-        let inner = StrataAsmSpec::new(magic_bytes, checkpoint_v0_params, bridge_v1_genesis);
+        let inner = StrataAsmSpec::new(
+            magic_bytes,
+            checkpoint_v0_params,
+            bridge_v1_genesis,
+            admin_params,
+        );
         Self { inner }
     }
 }

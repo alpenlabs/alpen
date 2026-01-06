@@ -10,7 +10,8 @@ mod config;
 mod error;
 mod handler;
 mod queued_update;
-mod state;
+pub mod state;
 mod subprotocol;
 
+pub use config::AdministrationSubprotoParams;
 pub use subprotocol::AdministrationSubprotocol;
