@@ -140,6 +140,16 @@ fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> OperatorPubkeys {
     OperatorPubkeys::new(pk.into(), pk.into())
 }
 
+/// Gets the operator secret key for testing.
+/// This matches the key generation in `make_dummy_operator_pubkeys_with_seed(0)`.
+pub fn get_test_operator_secret_key() -> SecretKey {
+    let mut rng = StdRng::seed_from_u64(0);
+    let sk = SecretKey::new(&mut rng);
+    // Ensure the key has even parity for taproot compatibility
+    let even_sk = EvenSecretKey::from(sk);
+    SecretKey::from(even_sk)
+}
+
 /// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.
 pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
     make_l2_genesis(params)
