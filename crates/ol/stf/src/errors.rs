@@ -66,6 +66,9 @@ pub enum ExecError {
     #[error("incorrect epoch sequencing (parent {0}, parent terminal {2}, self {1})")]
     IncorrectEpoch(Epoch, Epoch, bool),
 
+    #[error("incorrect slot (expected {expected}, got {got})")]
+    IncorrectSlot { expected: u64, got: u64 },
+
     #[error("body inconsistent with header terminal flag")]
     InconsistentBodyTerminality,
 
