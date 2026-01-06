@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
+use strata_acct_types::CompactMmr64;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot};
-use strata_acct_types::CompactMmr64;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};

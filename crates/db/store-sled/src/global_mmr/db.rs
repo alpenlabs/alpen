@@ -1,11 +1,11 @@
 use ssz_types::FixedBytes;
+use strata_acct_types::CompactMmr64;
 use strata_db_types::{
     DbError, DbResult,
     mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrMetadata},
     traits::GlobalMmrDatabase,
 };
 use strata_identifiers::{Hash, RawMmrId};
-use strata_acct_types::CompactMmr64;
 use strata_primitives::buf::Buf32;
 use typed_sled::{error, tree::SledTransactionalTree};
 
