@@ -3,7 +3,7 @@ use std::mem;
 // TODO: remove this "dummy" implementation once OL RPCs are ready and `RpcOLCLient`` can be
 // used instead.
 use alpen_ee_common::{
-    OLAccountState, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
     SequencerOLClient,
 };
 use async_trait::async_trait;
@@ -70,10 +70,10 @@ impl SequencerOLClient for DummyOLClient {
         Ok(blocks)
     }
 
-    async fn get_latest_account_state(&self) -> Result<OLAccountState, OLClientError> {
+    async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError> {
         let proof_state = ProofState::new(Hash::zero(), 0);
         let seq_no = Seqno::zero();
-        Ok(OLAccountState {
+        Ok(OLAccountStateView {
             seq_no,
             proof_state,
         })

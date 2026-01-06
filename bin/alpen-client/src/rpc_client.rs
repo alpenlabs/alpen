@@ -1,5 +1,5 @@
 use alpen_ee_common::{
-    OLAccountState, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
     SequencerOLClient,
 };
 use async_trait::async_trait;
@@ -140,7 +140,7 @@ impl SequencerOLClient for RpcOLClient {
     }
 
     /// Retrieves latest account state in the OL Chain for this account.
-    async fn get_latest_account_state(&self) -> Result<OLAccountState, OLClientError> {
+    async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError> {
         let snark_account_state = self
             .client
             .get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
@@ -148,7 +148,7 @@ impl SequencerOLClient for RpcOLClient {
             .map_err(|e| OLClientError::rpc(e.to_string()))?
             .ok_or_else(|| OLClientError::Rpc("missing latest account state".into()))?;
 
-        Ok(OLAccountState {
+        Ok(OLAccountStateView {
             seq_no: snark_account_state.seq_no().into(),
             proof_state: ProofState::new(
                 snark_account_state.inner_state().0.into(),
