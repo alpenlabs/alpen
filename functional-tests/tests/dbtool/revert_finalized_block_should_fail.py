@@ -39,10 +39,6 @@ class RevertFinalizedBlockShouldFailTest(SequencerDbtoolMixin):
 
         self.info(f"Finalized epoch last slot: {finalized_epoch_last_slot}")
 
-        if finalized_epoch_last_slot == 0:
-            self.info("No finalized epoch yet, skipping this test")
-            return True
-
         # Target a block that's BEFORE the finalized epoch (should fail)
         target_slot = finalized_epoch_last_slot - 1
         self.info(f"Targeting slot {target_slot}")
