@@ -73,10 +73,6 @@ class RevertChainstateDeleteBlocksTest(SequencerDbtoolMixin):
         sync_info = self.get_syncinfo()
         tip_slot = sync_info.get("l2_tip_height")
 
-        if tip_slot and tip_slot <= target_slot:
-            self.info("No blocks outside checkpointed range - test cannot proceed")
-            return True
-
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
         # Execute revert chainstate with -d flag (to delete blocks)
