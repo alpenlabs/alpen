@@ -23,6 +23,7 @@ pub use traits::{
 };
 pub use types::{
     batch::{Batch, BatchId, BatchStatus},
+    blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     consensus_heads::ConsensusHeads,
     ee_account_state::EeAccountStateAtEpoch,

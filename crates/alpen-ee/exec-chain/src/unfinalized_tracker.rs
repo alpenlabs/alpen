@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use alpen_ee_common::ExecBlockRecord;
+use alpen_ee_common::{BlockNumHash, ExecBlockRecord};
 use strata_acct_types::Hash;
 use thiserror::Error;
 
@@ -13,13 +13,6 @@ pub enum UnfinalizedTrackerError {
     /// Invalid tracker state
     #[error("invalid tracker state")]
     InvalidState,
-}
-
-/// A block identifier combining hash and height.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct BlockNumHash {
-    pub hash: Hash,
-    pub height: u64,
 }
 
 /// Block metadata needed for chain tracking.
