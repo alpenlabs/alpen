@@ -5,6 +5,7 @@ use std::time::Duration;
 use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
+use tokio::time;
 use tracing::{debug, error, warn};
 
 use super::{
@@ -120,7 +121,7 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     BS: BatchStorage,
     ES: ExecBlockStorage,
 {
-    let mut pending_poll_interval = tokio::time::interval(PENDING_BLOCK_POLL_INTERVAL);
+    let mut pending_poll_interval = time::interval(PENDING_BLOCK_POLL_INTERVAL);
 
     loop {
         let result = tokio::select! {

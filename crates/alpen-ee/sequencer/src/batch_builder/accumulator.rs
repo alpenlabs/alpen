@@ -75,6 +75,7 @@ impl<P: BatchPolicy> Accumulator<P> {
     /// # Panics
     ///
     /// Panics if the accumulator is empty.
+    #[allow(clippy::absolute_paths, clippy::allow_attributes, reason = "std")]
     pub fn drain_for_batch(&mut self) -> (Vec<BlockNumHash>, BlockNumHash) {
         debug_assert!(!self.blocks.is_empty(), "Cannot drain empty accumulator");
         let last = self.blocks.pop().expect("accumulator is not empty");
