@@ -698,7 +698,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     // The snark account starts with next_msg_read_idx = 0 (no messages processed yet)
     assert_eq!(snark_state.next_inbox_msg_idx(), 0);
 
-    // Step 3: Create update that processes the GAM message
+    // Step 3: Create update that indicates that the GAM message was processed.
     let outputs = UpdateOutputs::new(
         vec![OutputTransfer::new(
             recipient_id,
@@ -743,7 +743,14 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     assert_eq!(
         snark_account.balance(),
         BitcoinAmount::from_sat(90_000_000),
-        "Snark account should be debited"
+        "Sender account should be debited"
+    );
+
+    let snark_state = snark_account.as_snark_account().unwrap();
+    assert_eq!(
+        snark_state.next_inbox_msg_idx(),
+        1,
+        "Next inbox msg index should increment"
     );
 
     let recipient_account = state.get_account_state(recipient_id).unwrap().unwrap();
@@ -769,8 +776,9 @@ fn test_snark_update_invalid_message_proof() {
         GamTxPayload::new(snark_id, msg_data.clone()).expect("Should create GAM payload"),
     );
     let (slot, epoch) = (1, 0);
-    execute_tx_in_block(&mut state, &genesis_header, gam_tx, slot, epoch)
+    let blk = execute_tx_in_block(&mut state, &genesis_header, gam_tx, slot, epoch)
         .expect("GAM should succeed");
+    let header = blk.header();
 
     let (_, snark_state) = get_snark_state_expect(&state, snark_id);
     assert_eq!(
@@ -822,8 +830,8 @@ fn test_snark_update_invalid_message_proof() {
     ));
 
     // Step 3: Execute and expect failure
-    let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, invalid_tx, slot, epoch);
+    let (slot, epoch) = (2, 0);
+    let result = execute_tx_in_block(&mut state, header, invalid_tx, slot, epoch);
 
     assert!(
         result.is_err(),
@@ -856,15 +864,17 @@ fn test_snark_update_skip_message_out_of_order() {
         GamTxPayload::new(snark_id, msg1_data.clone()).expect("Should create GAM payload"),
     );
     let (slot, epoch) = (1, 0);
-    execute_tx_in_block(&mut state, &genesis_header, gam_tx1.clone(), slot, epoch)
+    let blk = execute_tx_in_block(&mut state, &genesis_header, gam_tx1.clone(), slot, epoch)
         .expect("GAM 1 should succeed");
+    let header = blk.header();
 
     let msg2_data = vec![5u8, 6, 7, 8];
     let gam_tx2 = TransactionPayload::GenericAccountMessage(
         GamTxPayload::new(snark_id, msg2_data.clone()).expect("Should create GAM payload"),
     );
-    execute_tx_in_block(&mut state, &genesis_header, gam_tx2, slot, epoch)
+    let blk = execute_tx_in_block(&mut state, header, gam_tx2, slot + 1, epoch)
         .expect("GAM 2 should succeed");
+    let header = blk.header();
 
     // Verify we have 2 messages (2 GAMs, no deposit)
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -909,8 +919,8 @@ fn test_snark_update_skip_message_out_of_order() {
     ));
 
     // Step 3: Execute and expect failure
-    let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, invalid_tx, slot, epoch);
+    let (slot, epoch) = (3, 0);
+    let result = execute_tx_in_block(&mut state, header, invalid_tx, slot, epoch);
 
     assert!(result.is_err(), "Update skipping messages should fail");
     match result.unwrap_err() {
