@@ -88,12 +88,13 @@ fn main() {
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
             let params = AlpenEeParams::new(
-                AccountId::new([0; 32]),
+                AccountId::new([0; 32]), // TODO: correct values
                 genesis_info.blockhash(),
                 genesis_info.stateroot(),
+                genesis_info.blocknum(),
                 0,
                 0,
-                OLBlockId::from(Buf32([1; 32])), // TODO
+                OLBlockId::from(Buf32([1; 32])), // TODO: correct values
             );
 
             info!(?params, sequencer = ext.sequencer, "Starting EE Node");

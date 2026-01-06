@@ -15,6 +15,10 @@ pub struct AlpenEeParams {
     /// Genesis stateroot of execution chain
     genesis_stateroot: B256,
 
+    /// Block number of execution chain genesis block
+    /// This can potentially be non-zero, but is very unlikely.
+    genesis_blocknum: u64,
+
     /// OL Epoch of Alpen ee account genesis
     genesis_ol_epoch: u32,
 
@@ -31,6 +35,7 @@ impl AlpenEeParams {
         account_id: AccountId,
         genesis_blockhash: B256,
         genesis_stateroot: B256,
+        genesis_blocknum: u64,
         genesis_ol_epoch: u32,
         genesis_ol_slot: u64,
         genesis_ol_blockid: OLBlockId,
@@ -39,6 +44,7 @@ impl AlpenEeParams {
             account_id,
             genesis_blockhash,
             genesis_stateroot,
+            genesis_blocknum,
             genesis_ol_epoch,
             genesis_ol_slot,
             genesis_ol_blockid,
@@ -58,6 +64,11 @@ impl AlpenEeParams {
     /// Returns the genesis state root of the execution chain.
     pub fn genesis_stateroot(&self) -> B256 {
         self.genesis_stateroot
+    }
+
+    /// Returns the genesis block hash of the execution chain.
+    pub fn genesis_blocknum(&self) -> u64 {
+        self.genesis_blocknum
     }
 
     /// Returns the OL slot number at genesis.
