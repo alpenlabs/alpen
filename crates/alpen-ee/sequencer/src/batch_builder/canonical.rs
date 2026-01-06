@@ -12,9 +12,11 @@ use strata_acct_types::Hash;
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 pub(crate) trait CanonicalChainReader: Send + Sync {
-    #[allow(unused, clippy::allow_attributes, reason = "todo")]
     /// Returns `true` if the block is on the canonical chain.
     async fn is_canonical(&self, hash: Hash) -> Result<bool>;
+
+    /// Returns `true` if the block is finalized.
+    async fn is_finalized(&self, hash: Hash) -> Result<bool>;
 }
 
 /// Implementation of `CanonicalChainReader` using `ExecChainHandle` and `ExecBlockStorage`.
@@ -48,5 +50,9 @@ impl<S: ExecBlockStorage> CanonicalChainReader for ExecChainCanonicalReader<S> {
         }
         // Check unfinalized canonical chain
         self.exec_chain.is_canonical(hash).await
+    }
+
+    async fn is_finalized(&self, _hash: Hash) -> Result<bool> {
+        unimplemented!()
     }
 }
