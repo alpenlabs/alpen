@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
-use strata_db_types::DbError;
+use strata_db_types::{mmr_helpers::leaf_index_to_pos, DbError};
 use strata_identifiers::Hash;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
@@ -138,8 +138,12 @@ impl WorkerContext for AsmWorkerCtx {
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>> {
-        self.mmr_handle.get_node_blocking(index).map_err(|e| {
-            error!(?e, index, "Failed to get leaf hash from MMR");
+        // Convert leaf index to MMR position
+        // Leaf indices are sequential (0, 1, 2, ...) but MMR positions differ due to internal nodes
+        // e.g., leaf_index_to_pos(0)=0, leaf_index_to_pos(1)=1, leaf_index_to_pos(2)=3 (not 2!)
+        let pos = leaf_index_to_pos(index);
+        self.mmr_handle.get_node_blocking(pos).map_err(|e| {
+            error!(?e, index, pos, "Failed to get leaf hash from MMR");
             WorkerError::DbError
         })
     }
