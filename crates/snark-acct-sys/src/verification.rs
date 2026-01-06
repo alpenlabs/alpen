@@ -189,7 +189,7 @@ fn compute_update_claim(
 }
 
 /// Type safe update that indicates it has been verified.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct VerifiedUpdate<'a> {
     operation: &'a UpdateOperationData,
 }

@@ -120,8 +120,6 @@ fn process_update_tx<S: IStateAccessor>(
     update: &SnarkAccountUpdateContainer,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
-    let operation = update.base_update().operation();
-
     // Step 1: Read account state outside closure for verification
     let account_state = state
         .get_account_state(target)?
@@ -139,6 +137,7 @@ fn process_update_tx<S: IStateAccessor>(
     // Step 3: Mutate and collect effects (inside closure)
     let fx_buf = state.update_account(target, |astate| -> ExecResult<_> {
         // Deduct balance for all outputs first
+        let operation = verified_update.operation();
         let total_sent = operation
             .outputs()
             .compute_total_value()

@@ -2,11 +2,10 @@
 //!
 //! This can be completely omitted from DA.
 
-use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher};
+use strata_acct_types::{BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 use strata_merkle::Mmr;
-use tree_hash::TreeHash;
 
 use crate::ssz_generated::ssz::state::EpochalState;
 

@@ -26,6 +26,7 @@ use strata_snark_acct_types::{
 use tree_hash::TreeHash;
 
 use crate::{
+    SEQUENCER_ACCT_ID,
     assembly::BlockComponents,
     constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
     context::BlockInfo,
@@ -57,7 +58,7 @@ impl InboxMmrTracker {
     fn add_message(&mut self, entry: &MessageEntry) -> MessageEntryProof {
         use strata_merkle::hasher::MerkleHasher;
 
-        // Compute hash the SAME way as verification does in verification.rs:93-94
+        // Compute hash the SAME way as verification does in `verify_input_mmr_proofs`.
         let msg_bytes: Vec<u8> = entry.as_ssz_bytes();
         let hash = StrataHasher::hash_leaf(&msg_bytes);
 
@@ -682,7 +683,7 @@ fn test_snark_update_process_inbox_message_with_valid_proof() {
 
     // Track the message in parallel MMR (must match exactly what was inserted)
     let gam_msg_entry = MessageEntry::new(
-        crate::constants::SEQUENCER_ACCT_ID,
+        SEQUENCER_ACCT_ID,
         epoch, // epoch when message was added
         MsgPayload::new(BitcoinAmount::from_sat(0), msg_data),
     );
@@ -897,7 +898,7 @@ fn test_snark_update_skip_message_out_of_order() {
     // Step 2: Try to process only the SECOND message (skipping first)
     // This should fail because messages must be processed in order starting from index 0
     let msg2_entry = MessageEntry::new(
-        crate::constants::SEQUENCER_ACCT_ID,
+        SEQUENCER_ACCT_ID,
         0,
         MsgPayload::new(BitcoinAmount::from_sat(0), msg2_data),
     );
