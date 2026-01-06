@@ -10,7 +10,7 @@ use strata_snark_acct_types::{
 };
 use tree_hash::{Sha256Hasher, TreeHash};
 
-/// Build a SnarkAccountUpdate from a batch in ProofReady state.
+/// Build a [`SnarkAccountUpdate`] from a batch in ProofReady state.
 pub(super) async fn build_update_from_batch(
     batch: &Batch,
     proof_id: &ProofId,
@@ -49,7 +49,7 @@ pub(super) async fn build_update_from_batch(
     ))
 }
 
-/// Build a [`UpdateOperationData`] from data in a batch.
+/// Build an [`UpdateOperationData`] from data in a batch.
 fn build_update_operation(
     seq_no: u64,
     blocks: Vec<ExecBlockRecord>,
