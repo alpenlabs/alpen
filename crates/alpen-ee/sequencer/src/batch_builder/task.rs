@@ -1,5 +1,7 @@
 //! Batch builder task implementation.
 
+use std::time::Duration;
+
 use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
@@ -9,6 +11,13 @@ use super::{
     ctx::BatchBuilderCtx, BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockDataProvider,
 };
 use crate::batch_builder::reorg::{check_and_handle_reorg, ReorgReport};
+
+/// Polling interval for checking pending block data availability.
+const PENDING_BLOCK_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Maximum number of blocks to process in a single polling cycle.
+/// This prevents blocking the select loop for too long when many blocks have data ready.
+const MAX_BLOCKS_PER_CYCLE: usize = 10;
 
 /// Get block hashes and heights from `from_hash` (exclusive) to `to_hash` (inclusive).
 ///
@@ -93,22 +102,6 @@ async fn seal_batch<P: BatchPolicy>(
     Ok(Some(batch_id))
 }
 
-/// Check if the first pending block has data available.
-///
-/// Returns `Some(block_data)` if the first pending block exists and has data ready,
-/// otherwise returns `None`. This is used to gate the processing branch in the select.
-async fn check_first_pending_block_data<P: BatchPolicy, D: BlockDataProvider<P>>(
-    state: &BatchBuilderState<P>,
-    block_data_provider: &D,
-) -> Option<P::BlockData> {
-    let block = state.first_pending_block()?;
-    // Assumes data lookup is cached or cheap to recompute
-    block_data_provider
-        .get_block_data(block.hash())
-        .await
-        .ok()?
-}
-
 /// Main batch builder task.
 ///
 /// This task monitors the canonical chain and builds batches according to the
@@ -127,6 +120,8 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     BS: BatchStorage,
     ES: ExecBlockStorage,
 {
+    let mut pending_poll_interval = tokio::time::interval(PENDING_BLOCK_POLL_INTERVAL);
+
     loop {
         let result = tokio::select! {
             // Branch 1: New canonical tip received
@@ -139,8 +134,8 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
                 handle_new_tip(&mut state, &ctx, new_tip).await
             }
 
-            // Branch 2: Process pending blocks when first block's data is ready
-            Some(_) = check_first_pending_block_data(&state, ctx.block_data_provider.as_ref()) => {
+            // Branch 2: Periodically poll pending blocks when queue is non-empty
+            _ = pending_poll_interval.tick(), if state.has_pending_blocks() => {
                 process_pending_blocks(&mut state, &ctx).await
             }
         };
@@ -224,7 +219,8 @@ where
 /// Process pending blocks whose data is ready.
 ///
 /// Processes blocks sequentially from the front of the queue. Stops when
-/// a block's data is not yet available or the queue is empty.
+/// a block's data is not yet available, the queue is empty, or the maximum
+/// number of blocks per cycle is reached.
 async fn process_pending_blocks<P, D, S, BS, ES>(
     state: &mut BatchBuilderState<P>,
     ctx: &BatchBuilderCtx<P, D, S, BS, ES>,
@@ -236,8 +232,14 @@ where
     BS: BatchStorage,
     ES: ExecBlockStorage,
 {
-    // Process blocks while data is available
-    while let Some(block) = state.first_pending_block() {
+    let mut processed = 0;
+
+    // Process blocks while data is available, up to the max per cycle
+    while processed < MAX_BLOCKS_PER_CYCLE {
+        let Some(block) = state.first_pending_block() else {
+            break;
+        };
+
         // Try to get block data (non-blocking check)
         let Some(block_data) = ctx.block_data_provider.get_block_data(block.hash()).await? else {
             // Data not ready yet, stop processing
@@ -263,6 +265,7 @@ where
         state.accumulator_mut().add_block(block, &block_data);
 
         debug!(hash = %block.hash(), "Processed block");
+        processed += 1;
     }
 
     Ok(())
