@@ -15,12 +15,11 @@ pub(crate) trait CanonicalChainReader: Send + Sync {
     /// Returns `true` if the block is on the canonical chain.
     async fn is_canonical(&self, hash: Hash) -> Result<bool>;
 
-    /// Returns `true` if the block is finalized.
-    async fn is_finalized(&self, hash: Hash) -> Result<bool>;
+    /// Returns the block number of the latest finalized block.
+    async fn finalized_blocknum(&self) -> Result<u64>;
 }
 
 /// Implementation of `CanonicalChainReader` using `ExecChainHandle` and `ExecBlockStorage`.
-#[expect(dead_code, reason = "todo")]
 pub(crate) struct ExecChainCanonicalReader<S> {
     exec_chain: Arc<ExecChainHandle>,
     block_storage: Arc<S>,
@@ -52,7 +51,7 @@ impl<S: ExecBlockStorage> CanonicalChainReader for ExecChainCanonicalReader<S> {
         self.exec_chain.is_canonical(hash).await
     }
 
-    async fn is_finalized(&self, _hash: Hash) -> Result<bool> {
+    async fn finalized_blocknum(&self) -> Result<u64> {
         unimplemented!()
     }
 }

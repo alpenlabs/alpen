@@ -2,9 +2,8 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{BatchId, BatchStorage, ExecBlockStorage};
+use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
-use strata_acct_types::Hash;
 use tokio::sync::watch;
 
 use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
@@ -23,9 +22,9 @@ where
     ES: ExecBlockStorage,
 {
     /// Genesis block hash, used as the starting point for the first batch.
-    pub genesis_hash: Hash,
+    pub genesis: BlockNumHash,
     /// Receiver for canonical tip updates from ExecChain.
-    pub preconf_rx: watch::Receiver<Hash>,
+    pub preconf_rx: watch::Receiver<BlockNumHash>,
     /// Provider for fetching block data (e.g., DA size).
     pub block_data_provider: Arc<D>,
     /// Policy for determining when to seal a batch.
@@ -37,7 +36,7 @@ where
     /// Handle to query canonical chain status.
     pub exec_chain: Arc<ExecChainHandle>,
     /// Sender to notify about latest batch updates (new batch sealed or reorg).
-    pub latest_batch_tx: watch::Sender<Option<BatchId>>,
+    pub latest_batch_tx: watch::Sender<BatchId>,
     /// Marker for the policy type.
     pub _policy: PhantomData<P>,
 }
@@ -50,7 +49,6 @@ where
     BS: BatchStorage,
     ES: ExecBlockStorage + Send + Sync,
 {
-    #[expect(unused, reason = "todo")]
     pub(crate) fn canonical_reader(&self) -> impl CanonicalChainReader {
         ExecChainCanonicalReader::new(self.exec_chain.clone(), self.block_storage.clone())
     }

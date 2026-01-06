@@ -32,7 +32,7 @@ impl ChunkId {
 }
 
 /// Represents a sequence of blocks that are processed together as a unit during proving.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     /// Sequential chunk index.
     idx: u64,

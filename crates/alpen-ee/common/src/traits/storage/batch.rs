@@ -22,6 +22,10 @@ use crate::{Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, StorageErr
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 pub trait BatchStorage: Send + Sync {
+    /// Save the genesis batch.
+    ///
+    /// If any batches exist in storage, this is a noop.
+    async fn save_genesis_batch(&self, genesis_batch: Batch) -> Result<(), StorageError>;
     /// Save the next ee update
     ///
     /// The entry must extend the last batch present in storage.
@@ -32,8 +36,8 @@ pub trait BatchStorage: Send + Sync {
         batch_id: BatchId,
         status: BatchStatus,
     ) -> Result<(), StorageError>;
-    /// Remove all ee updates where idx > to_idx
-    async fn revert_batch(&self, to_idx: u64) -> Result<(), StorageError>;
+    /// Remove all batches where idx > to_idx
+    async fn revert_batches(&self, to_idx: u64) -> Result<(), StorageError>;
     /// Get an ee update by its id, if it exists
     async fn get_batch_by_id(
         &self,
@@ -44,8 +48,10 @@ pub trait BatchStorage: Send + Sync {
         &self,
         idx: u64,
     ) -> Result<Option<(Batch, BatchStatus)>, StorageError>;
-    /// Get the ee update with the highest idx, if it exists.
-    async fn get_latest_batch(&self) -> Result<Option<(Batch, BatchStatus)>, StorageError>;
+    /// Get the ee update with the highest idx.
+    ///
+    /// Genesis batch must always exist, so latest batch must always exist.
+    async fn get_latest_batch(&self) -> Result<(Batch, BatchStatus), StorageError>;
 
     /// Save the next chunk
     ///
@@ -57,8 +63,8 @@ pub trait BatchStorage: Send + Sync {
         chunk_id: ChunkId,
         status: ChunkStatus,
     ) -> Result<(), StorageError>;
-    /// Remove all chunks where idx > to_idx
-    async fn revert_chunks(&self, to_idx: u64) -> Result<(), StorageError>;
+    /// Remove all chunks where idx >= from_idx
+    async fn revert_chunks_from(&self, form_idx: u64) -> Result<(), StorageError>;
     /// Get a chunk by its id, if it exists
     async fn get_chunk_by_id(
         &self,

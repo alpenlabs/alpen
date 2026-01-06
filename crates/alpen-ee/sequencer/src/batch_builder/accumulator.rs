@@ -1,6 +1,6 @@
 //! Accumulator for pending batch blocks and policy-specific values.
 
-use strata_acct_types::Hash;
+use alpen_ee_common::BlockNumHash;
 
 use super::BatchPolicy;
 
@@ -8,7 +8,7 @@ use super::BatchPolicy;
 #[derive(Debug)]
 pub struct Accumulator<P: BatchPolicy> {
     /// Blocks accumulated so far (in order)
-    blocks: Vec<Hash>,
+    blocks: Vec<BlockNumHash>,
     /// Policy-specific accumulated value
     value: P::AccumulatedValue,
 }
@@ -32,8 +32,8 @@ impl<P: BatchPolicy> Accumulator<P> {
     ///
     /// This appends the block hash to the list and calls the policy's
     /// accumulate function to update the accumulated value.
-    pub fn add_block(&mut self, hash: Hash, data: &P::BlockData) {
-        self.blocks.push(hash);
+    pub fn add_block(&mut self, block: BlockNumHash, data: &P::BlockData) {
+        self.blocks.push(block);
         P::accumulate(&mut self.value, data);
     }
 
@@ -43,12 +43,12 @@ impl<P: BatchPolicy> Accumulator<P> {
     }
 
     /// All accumulated block hashes in order.
-    pub fn blocks(&self) -> &[Hash] {
+    pub fn blocks(&self) -> &[BlockNumHash] {
         &self.blocks
     }
 
     /// Last block hash, if any.
-    pub fn last_block(&self) -> Option<Hash> {
+    pub fn last_block(&self) -> Option<BlockNumHash> {
         self.blocks.last().copied()
     }
 
@@ -75,7 +75,7 @@ impl<P: BatchPolicy> Accumulator<P> {
     /// # Panics
     ///
     /// Panics if the accumulator is empty.
-    pub fn drain_for_batch(&mut self) -> (Vec<Hash>, Hash) {
+    pub fn drain_for_batch(&mut self) -> (Vec<BlockNumHash>, BlockNumHash) {
         debug_assert!(!self.blocks.is_empty(), "Cannot drain empty accumulator");
         let last = self.blocks.pop().expect("accumulator is not empty");
         let inner = std::mem::take(&mut self.blocks);
@@ -87,6 +87,7 @@ impl<P: BatchPolicy> Accumulator<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::*;
 
     // Simple test policy for unit tests
     struct TestPolicy;
@@ -110,10 +111,6 @@ mod tests {
         }
     }
 
-    fn test_hash(n: u8) -> Hash {
-        Hash::from([n; 32])
-    }
-
     #[test]
     fn test_new_accumulator_is_empty() {
         let acc: Accumulator<TestPolicy> = Accumulator::new();
@@ -126,14 +123,14 @@ mod tests {
     #[test]
     fn test_add_block() {
         let mut acc: Accumulator<TestPolicy> = Accumulator::new();
-        let hash = test_hash(1);
+        let block = test_blocknumhash(1);
         let data = TestBlockData { value: 10 };
 
-        acc.add_block(hash, &data);
+        acc.add_block(block, &data);
 
         assert!(!acc.is_empty());
         assert_eq!(acc.block_count(), 1);
-        assert_eq!(acc.last_block(), Some(hash));
+        assert_eq!(acc.last_block(), Some(block));
         assert_eq!(acc.value().total, 10);
     }
 
@@ -141,21 +138,28 @@ mod tests {
     fn test_add_multiple_blocks() {
         let mut acc: Accumulator<TestPolicy> = Accumulator::new();
 
-        acc.add_block(test_hash(1), &TestBlockData { value: 10 });
-        acc.add_block(test_hash(2), &TestBlockData { value: 20 });
-        acc.add_block(test_hash(3), &TestBlockData { value: 30 });
+        acc.add_block(test_blocknumhash(1), &TestBlockData { value: 10 });
+        acc.add_block(test_blocknumhash(2), &TestBlockData { value: 20 });
+        acc.add_block(test_blocknumhash(3), &TestBlockData { value: 30 });
 
         assert_eq!(acc.block_count(), 3);
-        assert_eq!(acc.last_block(), Some(test_hash(3)));
+        assert_eq!(acc.last_block(), Some(test_blocknumhash(3)));
         assert_eq!(acc.value().total, 60);
-        assert_eq!(acc.blocks(), &[test_hash(1), test_hash(2), test_hash(3)]);
+        assert_eq!(
+            acc.blocks(),
+            &[
+                test_blocknumhash(1),
+                test_blocknumhash(2),
+                test_blocknumhash(3)
+            ]
+        );
     }
 
     #[test]
     fn test_reset() {
         let mut acc: Accumulator<TestPolicy> = Accumulator::new();
-        acc.add_block(test_hash(1), &TestBlockData { value: 10 });
-        acc.add_block(test_hash(2), &TestBlockData { value: 20 });
+        acc.add_block(test_blocknumhash(1), &TestBlockData { value: 10 });
+        acc.add_block(test_blocknumhash(2), &TestBlockData { value: 20 });
 
         acc.reset();
 
@@ -167,14 +171,14 @@ mod tests {
     #[test]
     fn test_drain_for_batch() {
         let mut acc: Accumulator<TestPolicy> = Accumulator::new();
-        acc.add_block(test_hash(1), &TestBlockData { value: 10 });
-        acc.add_block(test_hash(2), &TestBlockData { value: 20 });
-        acc.add_block(test_hash(3), &TestBlockData { value: 30 });
+        acc.add_block(test_blocknumhash(1), &TestBlockData { value: 10 });
+        acc.add_block(test_blocknumhash(2), &TestBlockData { value: 20 });
+        acc.add_block(test_blocknumhash(3), &TestBlockData { value: 30 });
 
         let (inner, last) = acc.drain_for_batch();
 
-        assert_eq!(inner, vec![test_hash(1), test_hash(2)]);
-        assert_eq!(last, test_hash(3));
+        assert_eq!(inner, vec![test_blocknumhash(1), test_blocknumhash(2)]);
+        assert_eq!(last, test_blocknumhash(3));
         assert!(acc.is_empty());
         assert_eq!(acc.value().total, 0);
     }
@@ -182,11 +186,11 @@ mod tests {
     #[test]
     fn test_drain_single_block() {
         let mut acc: Accumulator<TestPolicy> = Accumulator::new();
-        acc.add_block(test_hash(1), &TestBlockData { value: 10 });
+        acc.add_block(test_blocknumhash(1), &TestBlockData { value: 10 });
 
         let (inner, last) = acc.drain_for_batch();
 
         assert!(inner.is_empty());
-        assert_eq!(last, test_hash(1));
+        assert_eq!(last, test_blocknumhash(1));
     }
 }

@@ -2,9 +2,8 @@
 
 use std::collections::VecDeque;
 
-use alpen_ee_common::BatchStorage;
+use alpen_ee_common::{BatchStorage, BlockNumHash};
 use eyre::Result;
-use strata_acct_types::Hash;
 
 use super::{Accumulator, BatchPolicy};
 
@@ -12,36 +11,24 @@ use super::{Accumulator, BatchPolicy};
 ///
 /// This tracks the current position in the chain and the accumulator for
 /// the pending batch. This state is not persisted; it is rebuilt from
-/// `BatchStorage` on restart.
+/// [`BatchStorage`] on restart.
 #[derive(Debug)]
 pub struct BatchBuilderState<P: BatchPolicy> {
     /// Hash of the last block in the most recent sealed batch (or genesis if no batches).
-    prev_batch_end: Hash,
+    prev_batch_end: BlockNumHash,
     /// Index for the next batch to be created.
     next_batch_idx: u64,
     /// Accumulator for the pending batch.
     accumulator: Accumulator<P>,
     /// Queue of block hashes waiting to be processed (data may not be ready yet).
-    pending_blocks: VecDeque<Hash>,
+    pending_blocks: VecDeque<BlockNumHash>,
 }
 
 impl<P: BatchPolicy> BatchBuilderState<P> {
-    /// Initialize state from genesis (no batches exist yet).
-    ///
-    /// The first batch will have `prev_block` set to the genesis hash.
-    pub fn from_genesis(genesis_hash: Hash) -> Self {
-        Self {
-            prev_batch_end: genesis_hash,
-            next_batch_idx: 0,
-            accumulator: Accumulator::new(),
-            pending_blocks: VecDeque::new(),
-        }
-    }
-
     /// Initialize state from the last sealed batch.
     ///
     /// Used when resuming from storage where batches already exist.
-    pub fn from_last_batch(batch_idx: u64, last_block: Hash) -> Self {
+    pub fn from_last_batch(batch_idx: u64, last_block: BlockNumHash) -> Self {
         Self {
             prev_batch_end: last_block,
             next_batch_idx: batch_idx + 1,
@@ -51,7 +38,7 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
     }
 
     /// Get the hash of the last block in the previous batch.
-    pub fn prev_batch_end(&self) -> Hash {
+    pub fn prev_batch_end(&self) -> BlockNumHash {
         self.prev_batch_end
     }
 
@@ -73,14 +60,14 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
     /// Called after sealing a batch.
     ///
     /// Advances the state to prepare for the next batch.
-    pub fn advance_batch(&mut self, new_prev_batch_end: Hash) {
+    pub fn advance_batch(&mut self, new_prev_batch_end: BlockNumHash) {
         self.prev_batch_end = new_prev_batch_end;
         self.next_batch_idx += 1;
         self.accumulator.reset();
     }
 
     /// Returns the first pending block hash, if any.
-    pub fn first_pending_block(&self) -> Option<Hash> {
+    pub fn first_pending_block(&self) -> Option<BlockNumHash> {
         self.pending_blocks.front().copied()
     }
 
@@ -90,12 +77,12 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
     }
 
     /// Removes and returns the first pending block.
-    pub fn pop_pending_block(&mut self) -> Option<Hash> {
+    pub fn pop_pending_block(&mut self) -> Option<BlockNumHash> {
         self.pending_blocks.pop_front()
     }
 
     /// Adds blocks to the pending queue.
-    pub fn push_pending_blocks(&mut self, blocks: impl IntoIterator<Item = Hash>) {
+    pub fn push_pending_blocks(&mut self, blocks: impl IntoIterator<Item = BlockNumHash>) {
         self.pending_blocks.extend(blocks);
     }
 
@@ -107,7 +94,7 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
     /// Returns the last block in the pending queue, or the last accumulated block,
     /// or the previous batch end. Used to determine the starting point for fetching
     /// new blocks.
-    pub fn last_known_block(&self) -> Hash {
+    pub fn last_known_block(&self) -> BlockNumHash {
         self.pending_blocks
             .back()
             .copied()
@@ -121,40 +108,23 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
 /// If batches exist in storage, resumes from the last batch.
 /// Otherwise, starts fresh from genesis.
 pub async fn init_batch_builder_state<P: BatchPolicy>(
-    genesis_hash: Hash,
     batch_storage: &impl BatchStorage,
 ) -> Result<BatchBuilderState<P>> {
-    match batch_storage.get_latest_batch().await? {
-        Some((batch, _status)) => Ok(BatchBuilderState::from_last_batch(
-            batch.idx(),
-            batch.last_block(),
-        )),
-        None => Ok(BatchBuilderState::from_genesis(genesis_hash)),
-    }
+    let (batch, _) = batch_storage.get_latest_batch().await?;
+    Ok(BatchBuilderState::from_last_batch(
+        batch.idx(),
+        batch.last_blocknumhash(),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::batch_builder::block_count::BlockCountPolicy;
-
-    fn test_hash(n: u8) -> Hash {
-        Hash::from([n; 32])
-    }
-
-    #[test]
-    fn test_from_genesis() {
-        let genesis = test_hash(0);
-        let state: BatchBuilderState<BlockCountPolicy> = BatchBuilderState::from_genesis(genesis);
-
-        assert_eq!(state.prev_batch_end(), genesis);
-        assert_eq!(state.next_batch_idx(), 0);
-        assert!(state.accumulator().is_empty());
-    }
+    use crate::{batch_builder::block_count::BlockCountPolicy, test_utils::*};
 
     #[test]
     fn test_from_last_batch() {
-        let last_block = test_hash(10);
+        let last_block = test_blocknumhash(10);
         let state: BatchBuilderState<BlockCountPolicy> =
             BatchBuilderState::from_last_batch(5, last_block);
 
@@ -165,15 +135,19 @@ mod tests {
 
     #[test]
     fn test_advance_batch() {
-        let genesis = test_hash(0);
+        let genesis = test_blocknumhash(0);
         let mut state: BatchBuilderState<BlockCountPolicy> =
-            BatchBuilderState::from_genesis(genesis);
+            BatchBuilderState::from_last_batch(0, genesis);
 
-        let new_end = test_hash(5);
+        // After from_last_batch(0, ...), next_batch_idx is 1
+        assert_eq!(state.next_batch_idx(), 1);
+
+        let new_end = test_blocknumhash(5);
         state.advance_batch(new_end);
 
+        // After advance_batch, next_batch_idx is incremented to 2
         assert_eq!(state.prev_batch_end(), new_end);
-        assert_eq!(state.next_batch_idx(), 1);
+        assert_eq!(state.next_batch_idx(), 2);
         assert!(state.accumulator().is_empty());
     }
 }

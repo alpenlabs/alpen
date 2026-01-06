@@ -1,126 +1,53 @@
 //! Batch builder task implementation.
 
-use alpen_ee_common::{Batch, BatchId, BatchStorage, ExecBlockStorage};
-use alpen_ee_exec_chain::ExecChainHandle;
-use eyre::Result;
+use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
+use eyre::{eyre, Result};
 use strata_acct_types::Hash;
 use tracing::{debug, error, warn};
 
 use super::{
     ctx::BatchBuilderCtx, BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockDataProvider,
 };
+use crate::batch_builder::reorg::{check_and_handle_reorg, ReorgReport};
 
-/// Check if a block is on the canonical chain (finalized or unfinalized canonical).
-async fn is_block_canonical(
-    hash: Hash,
-    exec_chain: &ExecChainHandle,
-    block_storage: &impl ExecBlockStorage,
-) -> Result<bool> {
-    // Check finalized first (avoids async query to exec_chain)
-    if block_storage.get_finalized_height(hash).await?.is_some() {
-        return Ok(true);
-    }
-    // Check unfinalized canonical chain
-    exec_chain.is_canonical(hash).await
-}
-
-/// Find the last batch whose end block is still canonical.
-///
-/// Returns `(batch_idx, last_block_hash, batch_id)` or `None` if no batches exist or none are
-/// canonical.
-async fn find_last_canonical_batch(
-    exec_chain: &ExecChainHandle,
-    batch_storage: &impl BatchStorage,
-    block_storage: &impl ExecBlockStorage,
-) -> Result<Option<(u64, Hash, BatchId)>> {
-    let Some((batch, _status)) = batch_storage.get_latest_batch().await? else {
-        return Ok(None);
-    };
-
-    let mut idx = batch.idx();
-    loop {
-        let Some((batch, _)) = batch_storage.get_batch_by_idx(idx).await? else {
-            return Ok(None);
-        };
-
-        if is_block_canonical(batch.last_block(), exec_chain, block_storage).await? {
-            return Ok(Some((idx, batch.last_block(), batch.id())));
-        }
-
-        if idx == 0 {
-            return Ok(None);
-        }
-        idx -= 1;
-    }
-}
-
-/// Check for reorgs and handle them.
-///
-/// Returns `Some(new_latest_batch_id)` if a deep reorg was detected and batches were reverted.
-/// The inner `Option<BatchId>` is `None` if all batches were reverted, `Some(id)` otherwise.
-/// Returns `None` if no deep reorg occurred (including shallow reorgs).
-async fn check_and_handle_reorg<P: BatchPolicy>(
-    state: &mut BatchBuilderState<P>,
-    exec_chain: &ExecChainHandle,
-    block_storage: &impl ExecBlockStorage,
-    batch_storage: &impl BatchStorage,
-    genesis_hash: Hash,
-) -> Result<Option<Option<BatchId>>> {
-    // Check if prev_batch_end is still canonical
-    if !is_block_canonical(state.prev_batch_end(), exec_chain, block_storage).await? {
-        // Deep reorg - find last canonical batch
-        if let Some((idx, last_block, batch_id)) =
-            find_last_canonical_batch(exec_chain, batch_storage, block_storage).await?
-        {
-            // Revert batches after the canonical one
-            batch_storage.revert_batch(idx).await?;
-            *state = BatchBuilderState::from_last_batch(idx, last_block);
-            warn!(
-                reverted_to_idx = idx,
-                "Deep reorg detected, reverted batches"
-            );
-            return Ok(Some(Some(batch_id)));
-        } else {
-            // No canonical batches - revert all and reset to genesis
-            batch_storage.revert_batch(0).await?;
-            *state = BatchBuilderState::from_genesis(genesis_hash);
-            warn!("Deep reorg detected, reverted all batches to genesis");
-            return Ok(Some(None));
-        }
-    }
-
-    // Check shallow reorg in accumulator (doesn't affect sealed batches)
-    for hash in state.accumulator().blocks() {
-        if !is_block_canonical(*hash, exec_chain, block_storage).await? {
-            state.accumulator_mut().reset();
-            state.clear_pending_blocks();
-            debug!("Shallow reorg detected, reset accumulator and pending blocks");
-            // No notification needed - latest batch unchanged
-            return Ok(None);
-        }
-    }
-
-    Ok(None)
-}
-
-/// Get block hashes from `from_hash` (exclusive) to `to_hash` (inclusive).
+/// Get block hashes and heights from `from_hash` (exclusive) to `to_hash` (inclusive).
 ///
 /// Walks backwards from `to_hash` until reaching `from_hash`.
+/// Returns an empty vec if `from_hash == to_hash`.
 async fn get_block_range(
     from_hash: Hash,
     to_hash: Hash,
     block_storage: &impl ExecBlockStorage,
-) -> Result<Vec<Hash>> {
-    let mut blocks = Vec::new();
-    let mut current = to_hash;
+) -> Result<Vec<BlockNumHash>> {
+    // Ensure endpoint exists
+    let from_block = block_storage
+        .get_exec_block(from_hash)
+        .await?
+        .ok_or_else(|| eyre::eyre!("Block not found: from_hash = {}", from_hash))?;
 
-    while current != from_hash {
-        blocks.push(current);
-        let block = block_storage
-            .get_exec_block(current)
+    if from_hash == to_hash {
+        return Ok(Vec::new());
+    }
+
+    let mut blocks = Vec::new();
+    let mut current_hash = to_hash;
+
+    while current_hash != from_hash {
+        let current_block = block_storage
+            .get_exec_block(current_hash)
             .await?
-            .ok_or_else(|| eyre::eyre!("Block not found: {}", current))?;
-        current = block.parent_blockhash();
+            .ok_or_else(|| eyre::eyre!("Block not found: {}", current_hash))?;
+
+        if current_block.blocknum() < from_block.blocknum() {
+            return Err(eyre!(
+                "to_hash ({}) does not extend from_hash ({})",
+                to_hash,
+                from_hash
+            ));
+        }
+
+        blocks.push(current_block.blocknumhash());
+        current_hash = current_block.parent_blockhash();
     }
 
     blocks.reverse();
@@ -140,15 +67,23 @@ async fn seal_batch<P: BatchPolicy>(
 
     let prev_block = state.prev_batch_end();
     let (inner_blocks, last_block) = state.accumulator_mut().drain_for_batch();
+    let inner_blocks = inner_blocks.into_iter().map(|b| b.hash()).collect();
 
     let batch_idx = state.next_batch_idx();
-    let batch = Batch::new(batch_idx, prev_block, last_block, inner_blocks);
+    let batch = Batch::new(
+        batch_idx,
+        prev_block.hash(),
+        last_block.hash(),
+        last_block.blocknum(),
+        inner_blocks,
+    )
+    .map_err(|err| eyre!(err))?;
     let batch_id = batch.id();
 
     debug!(
         batch_idx = batch.idx(),
-        prev_block = %prev_block,
-        last_block = %last_block,
+        prev_block = %prev_block.hash(),
+        last_block = %last_block.hash(),
         "Sealing batch"
     );
 
@@ -166,9 +101,12 @@ async fn check_first_pending_block_data<P: BatchPolicy, D: BlockDataProvider<P>>
     state: &BatchBuilderState<P>,
     block_data_provider: &D,
 ) -> Option<P::BlockData> {
-    let hash = state.first_pending_block()?;
+    let block = state.first_pending_block()?;
     // Assumes data lookup is cached or cheap to recompute
-    block_data_provider.get_block_data(hash).await.ok()?
+    block_data_provider
+        .get_block_data(block.hash())
+        .await
+        .ok()?
 }
 
 /// Main batch builder task.
@@ -219,7 +157,7 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
 async fn handle_new_tip<P, D, S, BS, ES>(
     state: &mut BatchBuilderState<P>,
     ctx: &BatchBuilderCtx<P, D, S, BS, ES>,
-    new_tip: Hash,
+    new_tip: BlockNumHash,
 ) -> Result<()>
 where
     P: BatchPolicy,
@@ -229,32 +167,52 @@ where
     ES: ExecBlockStorage,
 {
     // Check and handle reorgs first
-    if let Some(new_latest) = check_and_handle_reorg(
+    match check_and_handle_reorg(
         state,
-        &ctx.exec_chain,
-        ctx.block_storage.as_ref(),
+        &ctx.canonical_reader(),
         ctx.batch_storage.as_ref(),
-        ctx.genesis_hash,
+        ctx.genesis,
     )
     .await?
     {
-        // Deep reorg occurred, notify watchers
-        let _ = ctx.latest_batch_tx.send(new_latest);
-        // State was reset, pending blocks were cleared
-        // Fall through to queue new blocks from the reset point
+        ReorgReport::NoReorg => {
+            // No reorg detected.
+            // Continue normal execution.
+        }
+        ReorgReport::ShallowReorg => {
+            // Shallow reorg. Pending blocks and accumulator reset.
+            // Latest batch has not changed.
+            // Continue execution with new state.
+        }
+        ReorgReport::Reorg(batch_id) => {
+            // Unfinalized batch is has been reorg'd.
+            // Latest batch reverted. Pending blocks and accumulator reset.
+            // notify new latest batch
+            let _ = ctx.latest_batch_tx.send(batch_id);
+            // Continue execution with new state.
+        }
+        ReorgReport::DeepReorg => {
+            // TODO: unrecoverable error
+            return Err(eyre!("deep reorg detected"));
+        }
     }
 
     // Determine starting point for fetching new blocks
-    let start_hash = state.last_known_block();
+    let last_known = state.last_known_block();
 
     // Get blocks from start to new tip and add to pending queue
-    let blocks = get_block_range(start_hash, new_tip, ctx.block_storage.as_ref()).await?;
+    let blocks = get_block_range(
+        last_known.hash(),
+        new_tip.hash(),
+        ctx.block_storage.as_ref(),
+    )
+    .await?;
 
     if !blocks.is_empty() {
         debug!(
             count = blocks.len(),
-            start = %start_hash,
-            tip = %new_tip,
+            start = %last_known.hash(),
+            tip = %new_tip.hash(),
             "Queuing new blocks"
         );
         state.push_pending_blocks(blocks);
@@ -279,9 +237,9 @@ where
     ES: ExecBlockStorage,
 {
     // Process blocks while data is available
-    while let Some(hash) = state.first_pending_block() {
+    while let Some(block) = state.first_pending_block() {
         // Try to get block data (non-blocking check)
-        let Some(block_data) = ctx.block_data_provider.get_block_data(hash).await? else {
+        let Some(block_data) = ctx.block_data_provider.get_block_data(block.hash()).await? else {
             // Data not ready yet, stop processing
             break;
         };
@@ -297,14 +255,14 @@ where
         {
             if let Some(batch_id) = seal_batch(state, ctx.batch_storage.as_ref()).await? {
                 // Notify watchers of new batch
-                let _ = ctx.latest_batch_tx.send(Some(batch_id));
+                let _ = ctx.latest_batch_tx.send(batch_id);
             }
         }
 
         // Add block to accumulator
-        state.accumulator_mut().add_block(hash, &block_data);
+        state.accumulator_mut().add_block(block, &block_data);
 
-        debug!(hash = %hash, "Processed block");
+        debug!(hash = %block.hash(), "Processed block");
     }
 
     Ok(())

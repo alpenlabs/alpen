@@ -66,13 +66,8 @@ impl BatchSealingPolicy<BlockCountPolicy> for FixedBlockCountSealing {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::Hash;
-
     use super::*;
-
-    fn test_hash(n: u8) -> Hash {
-        Hash::from([n; 32])
-    }
+    use crate::test_utils::*;
 
     #[test]
     fn test_would_not_exceed_when_empty() {
@@ -87,10 +82,10 @@ mod tests {
         let sealing = FixedBlockCountSealing::new(3);
         let mut accumulator: Accumulator<BlockCountPolicy> = Accumulator::new();
 
-        accumulator.add_block(test_hash(1), &BlockCountData);
+        accumulator.add_block(test_blocknumhash(1), &BlockCountData);
         assert!(!sealing.would_exceed(&accumulator, &BlockCountData));
 
-        accumulator.add_block(test_hash(2), &BlockCountData);
+        accumulator.add_block(test_blocknumhash(2), &BlockCountData);
         assert!(!sealing.would_exceed(&accumulator, &BlockCountData));
     }
 
@@ -99,9 +94,9 @@ mod tests {
         let sealing = FixedBlockCountSealing::new(3);
         let mut accumulator: Accumulator<BlockCountPolicy> = Accumulator::new();
 
-        accumulator.add_block(test_hash(1), &BlockCountData);
-        accumulator.add_block(test_hash(2), &BlockCountData);
-        accumulator.add_block(test_hash(3), &BlockCountData);
+        accumulator.add_block(test_blocknumhash(1), &BlockCountData);
+        accumulator.add_block(test_blocknumhash(2), &BlockCountData);
+        accumulator.add_block(test_blocknumhash(3), &BlockCountData);
 
         // Now at 3 blocks, adding another would exceed
         assert!(sealing.would_exceed(&accumulator, &BlockCountData));
