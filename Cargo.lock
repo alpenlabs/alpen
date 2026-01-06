@@ -6089,6 +6089,34 @@ dependencies = [
 [[package]]
 name = "integration-tests"
 version = "0.3.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "bitcoind-async-client",
+ "borsh",
+ "corepc-node",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "strata-asm-common",
+ "strata-asm-manifest-types",
+ "strata-asm-proto-administration",
+ "strata-asm-proto-checkpoint-v0",
+ "strata-asm-txs-admin",
+ "strata-asm-worker",
+ "strata-bridge-types",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-l1-txfmt",
+ "strata-merkle",
+ "strata-params",
+ "strata-predicate",
+ "strata-primitives",
+ "strata-state",
+ "strata-tasks",
+ "strata-test-utils-btcio",
+ "strata-test-utils-l2",
+ "tokio",
+]
 
 [[package]]
 name = "interprocess"
@@ -13760,9 +13788,12 @@ dependencies = [
 name = "strata-asm-spec"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "strata-asm-common",
+ "strata-asm-proto-administration",
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-v0",
+ "strata-crypto",
  "strata-l1-txfmt",
  "strata-params",
  "strata-primitives",
@@ -13773,6 +13804,7 @@ name = "strata-asm-spec-debug"
 version = "0.1.0"
 dependencies = [
  "strata-asm-common",
+ "strata-asm-proto-administration",
  "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-v0",
  "strata-asm-proto-debug-v1",

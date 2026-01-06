@@ -7,9 +7,51 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+anyhow.workspace = true
+bitcoin.workspace = true
+bitcoind-async-client.workspace = true
+borsh.workspace = true
+corepc-node.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+strata-asm-common.workspace = true
+strata-asm-manifest-types.workspace = true
+strata-asm-proto-administration.workspace = true
+strata-asm-proto-checkpoint-v0.workspace = true
+strata-asm-txs-admin = { workspace = true, features = ["test-utils"] }
+strata-asm-worker.workspace = true
+strata-bridge-types.workspace = true
+strata-btc-types.workspace = true
+strata-crypto.workspace = true
+strata-l1-txfmt.workspace = true
+strata-merkle.workspace = true
+strata-params.workspace = true
+strata-predicate.workspace = true
+strata-primitives.workspace = true
+strata-state.workspace = true
+strata-tasks.workspace = true
+strata-test-utils-btcio.workspace = true
+strata-test-utils-l2.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
+
+[lib]
+name = "integration_tests"
+path = "lib.rs"
 
 [[test]]
 name = "stub"
 path = "stub.rs"
+
+[[test]]
+name = "asm_core"
+path = "asm/core.rs"
+
+[[test]]
+name = "asm_admin"
+path = "asm/admin.rs"
+
+[[test]]
+name = "asm_bridge"
+path = "asm/bridge.rs"
