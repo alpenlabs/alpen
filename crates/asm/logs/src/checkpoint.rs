@@ -1,14 +1,20 @@
+//! SSZ-compatible checkpoint update log type.
+//!
+//! This module provides the `CheckpointUpdate` log type for the checkpoint subprotocol,
+//! using the SPS-62 SSZ-based checkpoint types.
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
-use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
+use strata_checkpoint_types_ssz::{BatchInfo, BatchTransition, CheckpointPayload};
 use strata_codec::Codec;
 use strata_codec_utils::CodecBorsh;
+use strata_identifiers::EpochCommitment;
 use strata_msg_fmt::TypeId;
-use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
+use strata_primitives::l1::BitcoinTxid;
 
 use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE;
 
-/// Details for a checkpoint update event.
+/// Checkpoint update log
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Codec)]
 pub struct CheckpointUpdate {
     /// Commitment to the epoch terminal block.
@@ -17,55 +23,57 @@ pub struct CheckpointUpdate {
     /// Metadata describing the checkpoint batch.
     batch_info: CodecBorsh<BatchInfo>,
 
-    /// Chainstate transition committed by the checkpoint proof.
-    chainstate_transition: CodecBorsh<ChainstateRootTransition>,
+    /// State transition committed by the checkpoint proof.
+    transition: CodecBorsh<BatchTransition>,
 
     /// Hash of the L1 transaction that carried the checkpoint proof.
     checkpoint_txid: CodecBorsh<BitcoinTxid>,
 }
 
 impl CheckpointUpdate {
-    /// Create a new CheckpointUpdate instance.
+    /// Create a new CheckpointUpdateSsz instance.
     pub fn new(
         epoch_commitment: EpochCommitment,
         batch_info: BatchInfo,
-        chainstate_transition: ChainstateRootTransition,
+        transition: BatchTransition,
         checkpoint_txid: BitcoinTxid,
     ) -> Self {
         Self {
             epoch_commitment,
             batch_info: CodecBorsh::new(batch_info),
-            chainstate_transition: CodecBorsh::new(chainstate_transition),
+            transition: CodecBorsh::new(transition),
             checkpoint_txid: CodecBorsh::new(checkpoint_txid),
         }
     }
 
-    /// Construct a `CheckpointUpdate` from a verified checkpoint instance.
-    pub fn from_checkpoint(checkpoint: &Checkpoint, checkpoint_txid: BitcoinTxid) -> Self {
-        let batch_info = checkpoint.batch_info();
-        let transition = checkpoint.batch_transition();
-        let chainstate_transition = transition.chainstate_transition;
+    /// Construct a `CheckpointUpdateSsz` from a `CheckpointPayload`.
+    pub fn from_payload(payload: &CheckpointPayload, checkpoint_txid: BitcoinTxid) -> Self {
+        let batch_info = &payload.commitment.batch_info;
+        let transition = &payload.commitment.transition;
 
-        Self::new(
-            batch_info.get_epoch_commitment(),
-            batch_info.clone(),
-            chainstate_transition,
-            checkpoint_txid,
-        )
+        // Construct epoch commitment from epoch and terminal L2 block
+        let epoch_commitment =
+            EpochCommitment::from_terminal(batch_info.epoch, batch_info.l2_range.end);
+
+        Self::new(epoch_commitment, *batch_info, *transition, checkpoint_txid)
     }
 
+    /// Returns the epoch commitment.
     pub fn epoch_commitment(&self) -> EpochCommitment {
         self.epoch_commitment
     }
 
+    /// Returns the batch info.
     pub fn batch_info(&self) -> &BatchInfo {
         self.batch_info.inner()
     }
 
-    pub fn chainstate_transition(&self) -> &ChainstateRootTransition {
-        self.chainstate_transition.inner()
+    /// Returns the state transition.
+    pub fn transition(&self) -> &BatchTransition {
+        self.transition.inner()
     }
 
+    /// Returns the checkpoint transaction ID.
     pub fn checkpoint_txid(&self) -> &BitcoinTxid {
         self.checkpoint_txid.inner()
     }
