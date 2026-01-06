@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Debug, Display},
+    fmt::{self, Debug, Display},
     str::FromStr,
 };
 
@@ -51,6 +51,11 @@ impl Serialize for OLBlockOrTag {
     }
 }
 
+#[allow(
+    clippy::absolute_paths,
+    clippy::allow_attributes,
+    reason = "distinguish serde Error"
+)]
 impl<'de> Deserialize<'de> for OLBlockOrTag {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -88,7 +93,7 @@ impl FromStr for OLBlockOrTag {
 }
 
 impl Display for OLBlockOrTag {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Slot(x) => write!(f, "{x}"),
             Self::OLBlockId(olblock_id) => write!(f, "0x{}", hex::encode(olblock_id.as_ref())),
@@ -100,7 +105,7 @@ impl Display for OLBlockOrTag {
 }
 
 impl Debug for OLBlockOrTag {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
