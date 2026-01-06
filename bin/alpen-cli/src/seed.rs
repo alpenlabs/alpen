@@ -15,7 +15,7 @@ use bdk_wallet::{
 use bip39::{Language, Mnemonic};
 use dialoguer::{Confirm, Input};
 use password::{HashVersion, IncorrectPassword, Password};
-use rand_core::{CryptoRngCore, OsRng};
+use rand_core::{CryptoRngCore, OsRng, RngCore};
 use sha2::{Digest, Sha256};
 #[cfg(feature = "test-mode")]
 use shrex::Hex;
@@ -48,12 +48,6 @@ impl Seed {
     #[cfg(feature = "test-mode")]
     pub fn from_file(bytes: Hex<[u8; SEED_LEN]>) -> Self {
         let bytes = Zeroizing::new(*bytes);
-        Self(bytes)
-    }
-
-    fn gen<R: CryptoRngCore>(rng: &mut R) -> Self {
-        let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
-        rng.fill_bytes(bytes.as_mut());
         Self(bytes)
     }
 
@@ -225,7 +219,9 @@ pub fn load_or_create(
             }
         } else {
             println!("Creating new wallet");
-            Seed::gen(&mut OsRng)
+            let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
+            OsRng.fill_bytes(bytes.as_mut());
+            Seed(bytes)
         };
 
         let mut password = Password::read(true).map_err(OneOf::new)?;
@@ -294,7 +290,7 @@ pub mod password;
 
 #[cfg(test)]
 mod test {
-    use rand_core::OsRng;
+    use rand_core::{OsRng, RngCore};
     use sha2::digest::generic_array::GenericArray;
 
     use super::*;
@@ -336,7 +332,9 @@ mod test {
     // Test valid seed encryption and decryption
     fn seed_encrypt_decrypt() {
         let mut password = Password::new(String::from("swordfish"));
-        let seed = Seed::gen(&mut OsRng);
+        let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
+        OsRng.fill_bytes(bytes.as_mut());
+        let seed = Seed(bytes);
 
         let encrypted_seed = seed.encrypt(&mut password, &mut OsRng).unwrap();
         let decrypted_seed = encrypted_seed.decrypt(&mut password).unwrap();
@@ -349,7 +347,9 @@ mod test {
     fn evil_password() {
         let mut password = Password::new(String::from("swordfish"));
         let mut evil_password = Password::new(String::from("evil"));
-        let seed = Seed::gen(&mut OsRng);
+        let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
+        OsRng.fill_bytes(bytes.as_mut());
+        let seed = Seed(bytes);
 
         let encrypted_seed = seed.encrypt(&mut password, &mut OsRng).unwrap();
 
@@ -360,7 +360,9 @@ mod test {
     // Using an evil salt fails decryption
     fn evil_salt() {
         let mut password = Password::new(String::from("swordfish"));
-        let seed = Seed::gen(&mut OsRng);
+        let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
+        OsRng.fill_bytes(bytes.as_mut());
+        let seed = Seed(bytes);
 
         let mut encrypted_seed = seed.encrypt(&mut password, &mut OsRng).unwrap();
         let index = 0;
@@ -373,7 +375,9 @@ mod test {
     // Using an evil nonce fails decryption
     fn evil_nonce() {
         let mut password = Password::new(String::from("swordfish"));
-        let seed = Seed::gen(&mut OsRng);
+        let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
+        OsRng.fill_bytes(bytes.as_mut());
+        let seed = Seed(bytes);
 
         let mut encrypted_seed = seed.encrypt(&mut password, &mut OsRng).unwrap();
         let index = PW_SALT_LEN;
@@ -386,7 +390,9 @@ mod test {
     // Using an evil seed fails decryption
     fn evil_seed() {
         let mut password = Password::new(String::from("swordfish"));
-        let seed = Seed::gen(&mut OsRng);
+        let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
+        OsRng.fill_bytes(bytes.as_mut());
+        let seed = Seed(bytes);
 
         let mut encrypted_seed = seed.encrypt(&mut password, &mut OsRng).unwrap();
         let index = PW_SALT_LEN + AES_NONCE_LEN;
@@ -399,7 +405,9 @@ mod test {
     // Using an evil tag fails decryption
     fn evil_tag() {
         let mut password = Password::new(String::from("swordfish"));
-        let seed = Seed::gen(&mut OsRng);
+        let mut bytes = Zeroizing::new([0u8; SEED_LEN]);
+        OsRng.fill_bytes(bytes.as_mut());
+        let seed = Seed(bytes);
 
         let mut encrypted_seed = seed.encrypt(&mut password, &mut OsRng).unwrap();
         let index = PW_SALT_LEN + AES_NONCE_LEN + SEED_LEN;
