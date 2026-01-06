@@ -6,11 +6,13 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
-use strata_asm_proto_checkpoint_v0::{
-    CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
-};
+use strata_asm_proto_checkpoint::{CheckpointConfig, CheckpointSubprotocol};
+use strata_checkpoint_types_ssz::L1Commitment;
+use strata_identifiers::CredRule;
 use strata_l1_txfmt::MagicBytes;
+use strata_ol_chainstate_types::compute_genesis_ol_state_root;
 use strata_params::{OperatorConfig, RollupParams};
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
 
 /// ASM specification for the Strata protocol.
@@ -23,8 +25,8 @@ pub struct StrataAsmSpec {
 
     // subproto params, which right now currently just contain the genesis data
     // TODO rename these
-    checkpoint_v0_params: CheckpointV0Params,
     bridge_v1_genesis: BridgeV1Config,
+    checkpoint_genesis: CheckpointConfig,
 }
 
 impl AsmSpec for StrataAsmSpec {
@@ -34,12 +36,12 @@ impl AsmSpec for StrataAsmSpec {
 
     fn load_subprotocols(&self, loader: &mut impl Loader) {
         // TODO avoid clone?
-        loader.load_subprotocol::<CheckpointV0Subproto>(self.checkpoint_v0_params.clone());
+        loader.load_subprotocol::<CheckpointSubprotocol>(self.checkpoint_genesis.clone());
         loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
     }
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
-        stage.invoke_subprotocol::<CheckpointV0Subproto>();
+        stage.invoke_subprotocol::<CheckpointSubprotocol>();
         stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
 }
@@ -48,26 +50,22 @@ impl StrataAsmSpec {
     /// Creates a new ASM spec instance.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
-        checkpoint_v0_params: CheckpointV0Params,
         bridge_v1_genesis: BridgeV1Config,
+        checkpoint_genesis: CheckpointConfig,
     ) -> Self {
         Self {
             magic_bytes,
-            checkpoint_v0_params,
             bridge_v1_genesis,
+            checkpoint_genesis,
         }
     }
 
+    /// Creates an ASM spec from rollup parameters.
+    ///
+    /// The genesis OL state root is computed deterministically from the rollup
+    /// parameters, enabling proper validation of the first checkpoint's pre-state root.
     pub fn from_params(params: &RollupParams) -> Self {
         let OperatorConfig::Static(operators) = params.operator_config.clone();
-
-        let checkpoint_v0_params = CheckpointV0Params {
-            verification_params: CheckpointV0VerificationParams {
-                genesis_l1_block: params.genesis_l1_view.blk,
-                cred_rule: params.cred_rule.clone(),
-                predicate: params.checkpoint_predicate.clone(),
-            },
-        };
 
         let operators = operators
             .iter()
@@ -82,10 +80,37 @@ impl StrataAsmSpec {
             operator_fee: BitcoinAmount::ZERO,
         };
 
+        let genesis_l1_blk = &params.genesis_l1_view.blk;
+        let sequencer_predicate = cred_rule_to_predicate(&params.cred_rule);
+
+        // Compute the genesis OL state root deterministically from rollup params.
+        let genesis_ol_state_root = compute_genesis_ol_state_root(
+            *genesis_l1_blk,
+            params.evm_genesis_block_hash,
+            params.evm_genesis_block_state_root,
+        );
+
+        let checkpoint_genesis = CheckpointConfig {
+            sequencer_predicate,
+            checkpoint_predicate: params.checkpoint_predicate.clone(),
+            genesis_l1: L1Commitment::from(genesis_l1_blk),
+            genesis_ol_state_root,
+        };
+
         Self {
             magic_bytes: params.magic_bytes,
-            checkpoint_v0_params,
             bridge_v1_genesis,
+            checkpoint_genesis,
+        }
+    }
+}
+
+/// Convert a `CredRule` to a `PredicateKey` for sequencer signature verification.
+fn cred_rule_to_predicate(cred_rule: &CredRule) -> PredicateKey {
+    match cred_rule {
+        CredRule::Unchecked => PredicateKey::always_accept(),
+        CredRule::SchnorrKey(pubkey) => {
+            PredicateKey::new(PredicateTypeId::Bip340Schnorr, pubkey.as_ref().to_vec())
         }
     }
 }

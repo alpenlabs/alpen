@@ -7,7 +7,7 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::BridgeV1Config;
-use strata_asm_proto_checkpoint_v0::CheckpointV0Params;
+use strata_asm_proto_checkpoint::CheckpointConfig;
 use strata_asm_proto_debug_v1::DebugSubproto;
 use strata_asm_spec::StrataAsmSpec;
 use strata_l1_txfmt::MagicBytes;
@@ -53,10 +53,10 @@ impl DebugAsmSpec {
     /// This adds debug capabilities to an existing production spec.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
-        checkpoint_v0_params: CheckpointV0Params,
         bridge_v1_genesis: BridgeV1Config,
+        checkpoint_genesis: CheckpointConfig,
     ) -> Self {
-        let inner = StrataAsmSpec::new(magic_bytes, checkpoint_v0_params, bridge_v1_genesis);
+        let inner = StrataAsmSpec::new(magic_bytes, bridge_v1_genesis, checkpoint_genesis);
         Self { inner }
     }
 }
