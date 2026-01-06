@@ -18,7 +18,7 @@ pub trait BatchPolicy: Send + Sync + 'static {
     type BlockData: Send + Sync + Clone;
 
     /// Accumulated value across blocks (e.g., count, DA size).
-    /// Must implement `Default` for initialization and reset.
+    /// Must implement [`Default`] for initialization and reset.
     type AccumulatedValue: Default + Send + Sync + Debug;
 
     /// Accumulate block data into the value.

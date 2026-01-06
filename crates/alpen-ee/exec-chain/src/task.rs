@@ -74,7 +74,7 @@ pub(crate) fn create_task_channels(buffer: usize) -> (TaskSenders, TaskChannels)
 /// Processes incoming messages to update chain state, handle new blocks, and respond to queries.
 /// The task exits if the preconf head channel is closed, as this is considered a fatal error.
 ///
-/// Message priority (highest to lowest): NewBlock -> OLConsensusUpdate -> Query
+/// Message priority (highest to lowest): `NewBlock` -> `OLConsensusUpdate` -> `Query`
 pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
     channels: TaskChannels,
     mut state: ExecChainState,
