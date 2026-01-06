@@ -1145,8 +1145,8 @@ dependencies = [
 
 [[package]]
 name = "sizzle-parser"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -1226,20 +1226,21 @@ dependencies = [
 
 [[package]]
 name = "ssz"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "hex",
  "itertools 0.13.0",
  "serde",
  "smallvec",
  "ssz_primitives",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
 name = "ssz_codegen"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -1257,8 +1258,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_derive"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "darling",
  "quote",
@@ -1267,8 +1268,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -1277,14 +1278,15 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "itertools 0.13.0",
  "serde",
  "serde_derive",
  "ssz",
  "ssz_primitives",
+ "thiserror 2.0.17",
  "tree_hash",
 ]
 
@@ -1346,6 +1348,7 @@ dependencies = [
  "strata-asm-common",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-merkle",
 ]
 
 [[package]]
@@ -1443,13 +1446,13 @@ dependencies = [
  "serde",
  "strata-crypto",
  "strata-identifiers",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "zkaleido",
 ]
 
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#b504cf613eacb861629fbedb36b17a7e54d229f1"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.17",
@@ -1458,7 +1461,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#b504cf613eacb861629fbedb36b17a7e54d229f1"
 dependencies = [
  "quote",
  "syn",
@@ -1494,7 +1497,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "borsh",
- "const-hex",
  "serde",
  "strata-btc-types",
  "strata-checkpoint-types",
@@ -1529,7 +1531,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#b504cf613eacb861629fbedb36b17a7e54d229f1"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.17",
@@ -1537,8 +1539,8 @@ dependencies = [
 
 [[package]]
 name = "strata-merkle"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+version = "0.2.0"
+source = "git+https://github.com/alpenlabs/strata-common#b504cf613eacb861629fbedb36b17a7e54d229f1"
 dependencies = [
  "borsh",
  "digest",
@@ -1551,7 +1553,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#b504cf613eacb861629fbedb36b17a7e54d229f1"
 dependencies = [
  "thiserror 2.0.17",
 ]
@@ -1588,7 +1590,6 @@ dependencies = [
 name = "strata-params"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "bitcoin",
  "borsh",
  "serde",
@@ -1603,14 +1604,21 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common#7d14bce8341e4b4c18adb27dd3af726fdb05e18c"
+source = "git+https://github.com/alpenlabs/strata-common#b504cf613eacb861629fbedb36b17a7e54d229f1"
 dependencies = [
  "borsh",
  "hex",
  "k256",
  "serde",
  "signature",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "thiserror 2.0.17",
+ "tree_hash",
+ "tree_hash_derive",
  "zkaleido-sp1-groth16-verifier",
 ]
 
@@ -1643,7 +1651,7 @@ dependencies = [
  "strata-ol-chainstate-types",
  "strata-params",
  "strata-primitives",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "zkaleido",
  "zkaleido-native-adapter",
 ]
 
@@ -1843,20 +1851,21 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "digest",
  "sha2",
  "smallvec",
  "ssz",
  "ssz_primitives",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
 name = "tree_hash_derive"
-version = "0.11.0"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.0#5695787b88b50ba9330fcf6c5d3d8cd7ff33a8e6"
+version = "0.11.1"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.11.1#a22b12f83a569599744412990934683dd7466cc4"
 dependencies = [
  "darling",
  "quote",
@@ -1966,19 +1975,6 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17#3cd4f232d2807fa61b6545847f695a7119841adb"
-dependencies = [
- "arbitrary",
- "async-trait",
- "bincode",
- "borsh",
- "serde",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "zkaleido"
-version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
 dependencies = [
  "arbitrary",
@@ -1999,13 +1995,13 @@ dependencies = [
  "borsh",
  "hex",
  "serde",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "zkaleido",
 ]
 
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17#3cd4f232d2807fa61b6545847f695a7119841adb"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
 dependencies = [
  "blake3",
  "borsh",
@@ -2014,7 +2010,7 @@ dependencies = [
  "sha2",
  "substrate-bn",
  "thiserror 1.0.69",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc17)",
+ "zkaleido",
 ]
 
 [[package]]
@@ -2027,5 +2023,5 @@ dependencies = [
  "serde",
  "sha2",
  "sp1-zkvm",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18)",
+ "zkaleido",
 ]
