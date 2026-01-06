@@ -13982,7 +13982,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
  "serde",
- "sha2",
+ "strata-identifiers",
  "strata-primitives",
 ]
 

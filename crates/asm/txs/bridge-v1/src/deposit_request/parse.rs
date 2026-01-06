@@ -47,7 +47,6 @@ pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, TxStructureErro
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
 
     use bitcoin::Transaction;
     use strata_primitives::l1::BitcoinAmount;

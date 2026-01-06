@@ -249,6 +249,8 @@ impl<'a> Arbitrary<'a> for DepositDescriptor {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::repeat_n;
+
     use proptest::prelude::*;
 
     use super::*;
@@ -348,7 +350,7 @@ mod tests {
     #[test]
     fn decode_rejects_subject_too_long() {
         let mut bytes = vec![0b0000_0000_u8, 0x00];
-        bytes.extend(std::iter::repeat_n(0u8, SUBJ_ID_LEN + 1));
+        bytes.extend(repeat_n(0u8, SUBJ_ID_LEN + 1));
         let err = DepositDescriptor::decode_from_slice(&bytes).unwrap_err();
         assert!(matches!(err, DepositDescriptorError::SubjectTooLong(_, _)));
     }
