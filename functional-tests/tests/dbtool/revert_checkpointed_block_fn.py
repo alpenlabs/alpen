@@ -70,7 +70,7 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         self.follower_1_reth.stop()
 
         # extra buffer time to let latest checkpoint get final
-        time.sleep(2)
+        time.sleep(4)
         # Get checkpoint info and target block
         checkpt = get_latest_checkpoint(self)
         if not checkpt:
