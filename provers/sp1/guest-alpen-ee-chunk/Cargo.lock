@@ -4642,7 +4642,6 @@ dependencies = [
  "strata-ee-chain-types",
  "strata-evm-ee",
  "strata-identifiers",
- "strata-primitives",
  "strata-snark-acct-types",
  "thiserror 2.0.17",
  "tree_hash",
