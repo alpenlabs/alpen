@@ -6,7 +6,7 @@
 //! For custom error types, use `inst_ops_generic!` directly from `strata-storage-common`.
 
 pub(crate) use strata_db_types::errors::DbError;
-pub(crate) use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_generic};
+pub(crate) use strata_storage_common::inst_ops_generic;
 
 /// Automatically generates an `Ops` interface with shim functions for database operations within a
 /// context without having to define any extra functions, using `DbError` as the error type.
@@ -18,11 +18,12 @@ pub(crate) use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_gener
 /// - A `Context<T>` struct that wraps the database
 /// - An ops struct with async, blocking, and channel-based methods
 /// - Shim functions that delegate to the database methods
+/// - Automatic instrumentation with configurable component name
 ///
 /// ### Usage
 /// ```ignore
 /// inst_ops_simple! {
-///     (<D: L1BroadcastDatabase> => BroadcastDbOps) {
+///     (<D: L1BroadcastDatabase> => BroadcastDbOps, component = "storage:l1") {
 ///         get_tx_entry(idx: u64) => Option<()>;
 ///         get_tx_entry_by_id(id: u32) => Option<()>;
 ///         get_txid(idx: u64) => Option<u32>;
@@ -34,9 +35,11 @@ pub(crate) use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_gener
 /// }
 /// ```
 ///
-/// ### Parameters
+/// ### Parameters (all required)
 /// - **Database trait**: The trait bound for the database (e.g., `L1BroadcastDatabase`)
 /// - **Ops struct name**: The name of the generated operations struct (e.g., `BroadcastDbOps`)
+/// - **component**: The component name for tracing instrumentation (e.g., `"storage:l1"`). Use
+///   constants from `strata_common::instrumentation::components`.
 /// - **Methods**: Each operation is defined with its inputs and outputs
 ///
 /// ### Generated API
@@ -51,7 +54,7 @@ pub(crate) use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_gener
 #[macro_export]
 macro_rules! inst_ops_simple {
     (
-        ( < $tparam:ident : $tpconstr:tt > => $base:ident )
+        ( < $tparam:ident : $tpconstr:tt > => $base:ident, component = $component:expr )
         {
             $(
                 $iname:ident ( $( $aname:ident : $aty:ty ),* $(,)? ) => $ret:ty;
@@ -59,7 +62,7 @@ macro_rules! inst_ops_simple {
         }
     ) => {
         inst_ops_generic! {
-            ( < $tparam : $tpconstr > => $base, DbError )
+            ( < $tparam : $tpconstr > => $base, DbError, component = $component )
             {
                 $( $iname( $( $aname : $aty ),* ) => $ret; )*
             }

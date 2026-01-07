@@ -160,13 +160,14 @@ macro_rules! inst_ops {
 /// context without having to define any extra functions, with support for custom error types.
 ///
 /// This macro generates a complete database operations interface including context management,
-/// async/sync method variants, and automatic shim function generation. Unlike `inst_ops!`, this
-/// macro generates both the context struct and shim functions automatically.
+/// async/sync method variants, automatic shim function generation, and instrumentation.
+/// Unlike `inst_ops!`, this macro generates both the context struct and shim functions
+/// automatically.
 ///
 /// ### Usage
 /// ```ignore
 /// inst_ops_generic! {
-///     (<D: L1BroadcastDatabase> => BroadcastDbOps, CustomError) {
+///     (<D: L1BroadcastDatabase> => BroadcastDbOps, CustomError, component = "storage:l1") {
 ///         get_tx_entry(idx: u64) => Option<()>;
 ///         get_tx_entry_by_id(id: u32) => Option<()>;
 ///         get_txid(idx: u64) => Option<u32>;
@@ -178,17 +179,20 @@ macro_rules! inst_ops {
 /// }
 /// ```
 ///
+/// ### Parameters (all required)
 /// - **Database trait**: The trait bound for the database type (e.g., `L1BroadcastDatabase`).
 /// - **Ops struct name**: The name of the generated operations interface (e.g., `BroadcastDbOps`).
 /// - **Error type**: The custom error type to use (e.g., `CustomError`). This error type must
 ///   implement `From<OpsError>` to handle conversion of internal errors.
+/// - **component**: The component name for tracing instrumentation (e.g., `"storage:l1"`). This
+///   should use constants from `strata_common::instrumentation::components`.
 /// - **Methods**: Each operation is defined with its inputs and outputs, generating async and sync
 ///   variants automatically.
 ///
 /// ### Generated Components
 /// - `Context<D>` struct wrapping the database
 /// - `{OpName}` struct with `new()` and operation methods
-/// - Shim functions delegating to database methods
+/// - Instrumented shim functions delegating to database methods
 ///
 /// ### Requirements
 /// The custom error type must:
@@ -199,7 +203,7 @@ macro_rules! inst_ops {
 #[macro_export]
 macro_rules! inst_ops_generic {
     {
-        (< $tparam:ident: $tpconstr:tt > => $base:ident, $error:ty) {
+        (< $tparam:ident: $tpconstr:tt > => $base:ident, $error:ty, component = $component:expr) {
             $($iname:ident($($aname:ident: $aty:ty),*) => $ret:ty;)*
         }
     } => {
@@ -225,16 +229,20 @@ macro_rules! inst_ops_generic {
         }
 
         $(
-            inst_ops_ctx_shim_generic!($iname<$tparam: $tpconstr>($($aname: $aty),*) -> $ret, $error);
+            $crate::inst_ops_ctx_shim_generic!($iname<$tparam: $tpconstr>($($aname: $aty),*) -> $ret, $error, component = $component);
         )*
     }
 }
 
 /// A macro that generates the context shim functions with a generic error type. This assumes that
 /// the `Context` struct has a `db` attribute and that the db object has all the methods defined.
+///
+/// Generated shim functions are automatically instrumented with tracing spans using the provided
+/// component name for observability.
 #[macro_export]
 macro_rules! inst_ops_ctx_shim_generic {
-    ($iname:ident<$tparam: ident : $tpconstr:tt>($($aname:ident: $aty:ty),*) -> $ret:ty, $error:ty) => {
+    ($iname:ident<$tparam: ident : $tpconstr:tt>($($aname:ident: $aty:ty),*) -> $ret:ty, $error:ty, component = $component:expr) => {
+        #[tracing::instrument(skip(context), fields(component = $component))]
         fn $iname < $tparam : $tpconstr > (context: &Context<$tparam>, $($aname : $aty),* ) -> Result<$ret, $error> {
             context.db.as_ref(). $iname ( $($aname),* )
         }

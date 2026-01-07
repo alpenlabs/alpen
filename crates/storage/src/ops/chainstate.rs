@@ -1,3 +1,4 @@
+use strata_common::instrumentation::components;
 use strata_db_types::chainstate::*;
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::buf::Buf32;
@@ -5,7 +6,7 @@ use strata_primitives::buf::Buf32;
 use crate::exec::*;
 
 inst_ops_simple! {
-    (<D: ChainstateDatabase> => ChainstateOps) {
+    (<D: ChainstateDatabase> => ChainstateOps, component = components::STORAGE_CHAINSTATE) {
         create_new_inst(toplevel: Chainstate) => StateInstanceId;
         clone_inst(id: StateInstanceId) => StateInstanceId;
         del_inst(id: StateInstanceId) => ();

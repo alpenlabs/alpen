@@ -10,6 +10,7 @@ workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-checkpoint-types.workspace = true
+strata-common.workspace = true
 strata-eectl.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true

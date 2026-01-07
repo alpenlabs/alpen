@@ -3,9 +3,10 @@ use alpen_ee_common::{
     ExecBlockRecord,
 };
 use strata_acct_types::Hash;
+use strata_common::instrumentation::components;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
-use strata_storage_common::{inst_ops_ctx_shim_generic, inst_ops_generic};
+use strata_storage_common::inst_ops_generic;
 
 use crate::{error::DbError, DbResult};
 
@@ -118,7 +119,7 @@ pub(crate) mod ops {
     use super::*;
 
     inst_ops_generic! {
-        (<D: EeNodeDb> => EeNodeOps, DbError) {
+        (<D: EeNodeDb> => EeNodeOps, DbError, component = components::STORAGE_EE_NODE) {
             store_ee_account_state(ol_epoch: EpochCommitment, ee_account_state: EeAccountState) =>();
             rollback_ee_account_state(to_epoch: u32) => ();
             get_ol_blockid(epoch: u32) => Option<OLBlockId>;

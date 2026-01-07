@@ -5,10 +5,12 @@ use strata_asm_common::{ASM_MMR_CAP_LOG2, AnchorState, AsmMmr, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
+use strata_common::instrumentation::services;
 use strata_params::Params;
 use strata_primitives::{Buf32, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
+use tracing::field::Empty;
 
 use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResolver};
 
@@ -93,9 +95,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
 
         // Pre process transition next block against current anchor state.
         let pre_process = {
-            let span = tracing::debug_span!("asm.stf.pre_process",
-                protocol_txs = tracing::field::Empty
-            );
+            let span = tracing::debug_span!("asm.stf.pre_process", protocol_txs = Empty);
             let _guard = span.enter();
 
             let result = strata_asm_stf::pre_process_asm(&self.asm_spec, cur_state.state(), block)
@@ -147,7 +147,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> ServiceState for AsmWorkerServiceState<W> {
     fn name(&self) -> &str {
-        "asm_worker"
+        services::ASM_WORKER
     }
 }
 

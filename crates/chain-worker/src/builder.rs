@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use strata_common::instrumentation::services;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
@@ -118,7 +119,7 @@ impl<W> ChainWorkerBuilder<W> {
 
         // Launch the service using the sync worker.
         let _service_monitor = service_builder
-            .launch_sync("chain_worker", executor)
+            .launch_sync(services::CHAIN_WORKER, executor)
             .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 
         // Create and return the handle.

@@ -1,10 +1,11 @@
+use strata_common::instrumentation::components;
 use strata_db_types::{traits::*, types::L1TxEntry};
 use strata_primitives::buf::Buf32;
 
 use crate::exec::*;
 
 inst_ops_simple! {
-    (<D: L1BroadcastDatabase> => BroadcastDbOps) {
+    (<D: L1BroadcastDatabase> => BroadcastDbOps, component = components::STORAGE_L1_BROADCAST) {
         get_tx_entry(idx: u64) => Option<L1TxEntry>;
         get_tx_entry_by_id(id: Buf32) => Option<L1TxEntry>;
         get_txid(idx: u64) => Option<Buf32>;

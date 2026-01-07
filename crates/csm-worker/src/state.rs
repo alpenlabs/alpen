@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use strata_common::instrumentation::services;
 use strata_csm_types::ClientState;
 use strata_identifiers::Epoch;
 use strata_params::Params;
@@ -69,6 +70,6 @@ impl CsmWorkerState {
 
 impl ServiceState for CsmWorkerState {
     fn name(&self) -> &str {
-        "csm_worker"
+        services::CSM_WORKER
     }
 }
