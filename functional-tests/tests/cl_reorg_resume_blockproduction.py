@@ -4,19 +4,7 @@ from web3 import Web3
 from envs import net_settings, testenv
 from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils import *
-
-
-def send_tx(web3: Web3) -> None:
-    dest = web3.to_checksum_address("deedf001900dca3ebeefdeadf001900dca3ebeef")
-    txid = web3.eth.send_transaction(
-        {
-            "to": dest,
-            "value": hex(1),
-            "gas": hex(100000),
-            "from": web3.address,
-        }
-    )
-    web3.eth.wait_for_transaction_receipt(txid, timeout=5)
+from utils.dbtool import send_tx
 
 
 @flexitest.register
