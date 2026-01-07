@@ -30,9 +30,6 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
     def main(self, ctx: flexitest.RunContext):
         # Setup: generate blocks, finalize epoch 1, and wait for checkpoint 2
         setup_revert_chainstate_test(self, web3_attr="web3")
-        prover = ctx.get_service("prover_client")
-        # stop prover -- additional safety to make sure we don't produce checkpoints too quickly
-        prover.stop()
 
         cur_block = int(self.rethrpc.eth_blockNumber(), base=16)
 
@@ -80,7 +77,7 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         self.follower_1_reth.stop()
 
         # extra buffer time to let latest checkpoint get final
-        time.sleep(12)
+        time.sleep(6)
         # Get checkpoint info and target block
         checkpt = get_latest_checkpoint(self)
         if not checkpt:
