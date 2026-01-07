@@ -10,14 +10,19 @@ use jsonrpsee::{
         error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
     },
 };
-use strata_identifiers::{AccountId, Epoch, OLTxId};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLTxId};
+use strata_ledger_types::{
+    IAccountState, ISnarkAccountState, ISnarkAccountStateExt, IStateAccessor,
+};
+use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
 use strata_rpc_api_new::OLClientRpcServer;
 use strata_rpc_types_new::{
     RpcAccountBlockSummary, RpcAccountEpochSummary, RpcOLChainStatus, RpcOLTransaction,
 };
+use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
-use tracing::{error, warn};
+use tracing::error;
 
 /// OL RPC server implementation.
 pub(crate) struct OLRpcServer {
@@ -26,14 +31,22 @@ pub(crate) struct OLRpcServer {
 
     /// Status channel.
     status_channel: Arc<StatusChannel>,
+
+    /// Mempool handle for transaction submission.
+    mempool_handle: MempoolHandle,
 }
 
 impl OLRpcServer {
     /// Creates a new [`OLRpcServer`].
-    pub(crate) fn new(storage: Arc<NodeStorage>, status_channel: Arc<StatusChannel>) -> Self {
+    pub(crate) fn new(
+        storage: Arc<NodeStorage>,
+        status_channel: Arc<StatusChannel>,
+        mempool_handle: MempoolHandle,
+    ) -> Self {
         Self {
             storage,
             status_channel,
+            mempool_handle,
         }
     }
 }
@@ -93,15 +106,18 @@ impl OLClientRpcServer for OLRpcServer {
                 )
             })?;
 
-        // Get chainstate at the terminal block to extract account-specific data
-        let terminal_blkid = epoch_summary.terminal().blkid();
-        let chainstate = self
+        // Get OL state at the terminal block
+        let terminal_commitment = OLBlockCommitment::new(
+            epoch_summary.terminal().slot(),
+            *epoch_summary.terminal().blkid(),
+        );
+        let ol_state = self
             .storage
-            .chainstate()
-            .get_slot_write_batch_async(*terminal_blkid)
+            .ol_state()
+            .get_toplevel_ol_state_async(terminal_commitment)
             .await
             .map_err(|e| {
-                error!(?e, %terminal_blkid, "Failed to get chainstate");
+                error!(?e, %terminal_commitment, "Failed to get OL state");
                 ErrorObjectOwned::owned(
                     INTERNAL_ERROR_CODE,
                     format!("Database error: {e}"),
@@ -111,23 +127,65 @@ impl OLClientRpcServer for OLRpcServer {
             .ok_or_else(|| {
                 ErrorObjectOwned::owned(
                     INVALID_PARAMS_CODE,
-                    format!("No chainstate found for terminal block {terminal_blkid}"),
+                    format!("No OL state found for terminal block {terminal_commitment}"),
                     None::<()>,
                 )
             })?;
 
-        // TODO: Access OL account state from execution environment state
-        // For now, return placeholder data as OL account state access is not yet implemented
-        // The account state is stored in the execution environment's state root (cur_state),
-        // but we need a way to access the actual account data from that root.
-        let _chainstate = chainstate.into_toplevel();
+        // Extract account state
+        let account_state = ol_state.get_account_state(account_id).map_err(|e| {
+            error!(?e, %account_id, "Failed to get account state");
+            ErrorObjectOwned::owned(
+                INTERNAL_ERROR_CODE,
+                format!("Account error: {e}"),
+                None::<()>,
+            )
+        })?;
 
-        Err(ErrorObjectOwned::owned(
-            INTERNAL_ERROR_CODE,
-            format!(
-                "Account state extraction for account {account_id} at epoch {epoch} not implemented"
-            ),
-            None::<()>,
+        let account_state = account_state.ok_or_else(|| {
+            ErrorObjectOwned::owned(
+                INVALID_PARAMS_CODE,
+                format!("Account {account_id} not found"),
+                None::<()>,
+            )
+        })?;
+
+        // Extract snark-specific data if applicable
+        let (next_seq_no, proof_state) = match account_state.as_snark_account() {
+            Ok(snark_state) => {
+                let seqno: u64 = *snark_state.seqno().inner();
+                let inner_state = snark_state.inner_state_root();
+                let next_inbox_idx = snark_state.get_next_inbox_msg_idx();
+                (seqno, ProofState::new(inner_state, next_inbox_idx))
+            }
+            Err(_) => {
+                // Non-snark account - return default values
+                (0, ProofState::new([0u8; 32].into(), 0))
+            }
+        };
+
+        // Get previous epoch commitment if available
+        let prev_epoch_commitment = if epoch > 0 {
+            let prev_commitments = self
+                .storage
+                .checkpoint()
+                .get_epoch_commitments_at((epoch - 1) as u64)
+                .await
+                .ok()
+                .and_then(|c| c.first().copied());
+            prev_commitments.unwrap_or_else(EpochCommitment::null)
+        } else {
+            EpochCommitment::null()
+        };
+
+        Ok(RpcAccountEpochSummary::new(
+            *epoch_commitment,
+            prev_epoch_commitment,
+            account_state.balance().to_sat(),
+            next_seq_no,
+            proof_state,
+            vec![], // extra_data - not tracked per-epoch currently
+            vec![], // processed_msgs - requires additional tracking infrastructure
         ))
     }
 
@@ -161,29 +219,134 @@ impl OLClientRpcServer for OLRpcServer {
             ));
         }
 
-        Err(ErrorObjectOwned::owned(
-            INTERNAL_ERROR_CODE,
-            format!(
-                "Account state extraction for account {account_id} not implemented for slots {start_slot}-{end_slot}"
-            ),
-            None::<()>,
-        ))
+        let mut summaries = Vec::new();
+
+        for slot in start_slot..=end_slot {
+            // Get block IDs at this slot
+            let block_ids = self
+                .storage
+                .ol_block()
+                .get_blocks_at_height_async(slot)
+                .await
+                .map_err(|e| {
+                    error!(?e, slot, "Failed to get blocks at slot");
+                    ErrorObjectOwned::owned(
+                        INTERNAL_ERROR_CODE,
+                        format!("Database error: {e}"),
+                        None::<()>,
+                    )
+                })?;
+
+            // Use first block ID if available (canonical chain selection)
+            let Some(block_id) = block_ids.first() else {
+                continue; // Skip slots with no blocks
+            };
+
+            let block_commitment = OLBlockCommitment::new(slot, *block_id);
+
+            // Get OL state at this block
+            let ol_state = self
+                .storage
+                .ol_state()
+                .get_toplevel_ol_state_async(block_commitment)
+                .await
+                .map_err(|e| {
+                    error!(?e, %block_commitment, "Failed to get OL state");
+                    ErrorObjectOwned::owned(
+                        INTERNAL_ERROR_CODE,
+                        format!("Database error: {e}"),
+                        None::<()>,
+                    )
+                })?;
+
+            let Some(ol_state) = ol_state else {
+                continue; // Skip if state not available
+            };
+
+            // Get account state
+            let account_state = ol_state.get_account_state(account_id).map_err(|e| {
+                error!(?e, %account_id, slot, "Failed to get account state");
+                ErrorObjectOwned::owned(
+                    INTERNAL_ERROR_CODE,
+                    format!("Account error: {e}"),
+                    None::<()>,
+                )
+            })?;
+
+            let Some(account_state) = account_state else {
+                continue; // Account not found at this slot
+            };
+
+            // Extract snark-specific data if applicable
+            let (next_seq_no, next_inbox_msg_idx) = match account_state.as_snark_account() {
+                Ok(snark_state) => {
+                    let seqno: u64 = *snark_state.seqno().inner();
+                    let next_inbox_idx = snark_state.get_next_inbox_msg_idx();
+                    (seqno, next_inbox_idx)
+                }
+                Err(_) => (0, 0),
+            };
+
+            summaries.push(RpcAccountBlockSummary::new(
+                account_id,
+                block_commitment,
+                account_state.balance(),
+                next_seq_no,
+                vec![], // updates - requires write batch analysis
+                vec![], // new_inbox_messages - requires write batch analysis
+                next_inbox_msg_idx,
+            ));
+        }
+
+        Ok(summaries)
     }
 
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
-        // Log the transaction
-        warn!(
-            ?tx,
-            "Received transaction submission (OL mempool not yet implemented)"
-        );
+        // Convert RPC transaction to mempool transaction
+        let mempool_tx: OLMempoolTransaction = tx.try_into().map_err(|e| {
+            ErrorObjectOwned::owned(
+                INVALID_PARAMS_CODE,
+                format!("Invalid transaction: {e}"),
+                None::<()>,
+            )
+        })?;
 
-        // TODO: Optionally persist to storage if there's a suitable table
-        // For now, just log and return unimplemented error
+        // Submit to mempool
+        let txid = self
+            .mempool_handle
+            .submit_transaction(mempool_tx)
+            .await
+            .map_err(map_mempool_error_to_rpc)?;
 
-        Err(ErrorObjectOwned::owned(
-            INTERNAL_ERROR_CODE,
-            "OL mempool not implemented; transaction was logged but not processed",
-            None::<()>,
-        ))
+        Ok(txid)
+    }
+}
+
+/// Maps mempool errors to RPC errors with appropriate error codes.
+fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
+    match &err {
+        // Capacity-related errors
+        OLMempoolError::MempoolFull { .. } | OLMempoolError::MempoolByteLimitExceeded { .. } => {
+            ErrorObjectOwned::owned(-32001, err.to_string(), None::<()>)
+        }
+        // Validation errors that are user's fault
+        OLMempoolError::AccountDoesNotExist { .. }
+        | OLMempoolError::AccountTypeMismatch { .. }
+        | OLMempoolError::TransactionTooLarge { .. }
+        | OLMempoolError::TransactionExpired { .. }
+        | OLMempoolError::TransactionNotMature { .. }
+        | OLMempoolError::UsedSequenceNumber { .. }
+        | OLMempoolError::SequenceNumberGap { .. } => {
+            ErrorObjectOwned::owned(INVALID_PARAMS_CODE, err.to_string(), None::<()>)
+        }
+        // Internal errors
+        OLMempoolError::AccountStateAccess(_)
+        | OLMempoolError::TransactionNotFound(_)
+        | OLMempoolError::Database(_)
+        | OLMempoolError::Serialization(_)
+        | OLMempoolError::ServiceClosed(_) => {
+            error!(?err, "Internal mempool error");
+            ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, err.to_string(), None::<()>)
+        }
     }
 }
