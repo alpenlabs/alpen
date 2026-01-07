@@ -283,7 +283,7 @@ impl AsmTestHarness {
             }
         }
 
-        anyhow::bail!("Transaction {} not included after 10 blocks", txid)
+        anyhow::bail!("Transaction {txid} not included after 10 blocks")
     }
 
     // ========================================================================
@@ -302,7 +302,7 @@ impl AsmTestHarness {
         let start = Instant::now();
         loop {
             if start.elapsed() > timeout {
-                anyhow::bail!("Timeout waiting for height {}", target_height);
+                anyhow::bail!("Timeout waiting for height {target_height}");
             }
 
             if let Some((commitment, _state)) = self.context.get_latest_asm_state()? {
@@ -448,14 +448,13 @@ impl AsmTestHarness {
     /// * `subprotocol_id` - SPS-50 subprotocol ID (0=admin, 1=checkpoint, 2=bridge)
     /// * `tx_type` - Transaction type within the subprotocol
     /// * `payload` - Serialized payload to embed in witness
-    /// * `fee` - Transaction fee
     pub async fn build_envelope_tx(
         &self,
         subprotocol_id: u8,
         tx_type: u8,
         payload: Vec<u8>,
-        fee: Amount,
     ) -> anyhow::Result<Transaction> {
+        let fee = Self::DEFAULT_FEE;
         // Calculate funding amount needed (outputs + fee buffer)
         let dust_amount = Amount::from_sat(1000);
         let funding_amount = fee + dust_amount + Amount::from_sat(1000);

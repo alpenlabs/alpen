@@ -14,7 +14,7 @@
 //! let state = harness.admin_state()?;
 //! ```
 
-use std::{future::Future, num::NonZero, time::Duration};
+use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
 use bitcoin::BlockHash;
 use strata_crypto::schnorr::EvenSecretKey;
@@ -76,75 +76,69 @@ pub trait AdminExt {
 
 /// Context for signing admin transactions.
 ///
-/// Tracks the sequence number and provides signing operations for admin actions.
-/// The sequence number auto-increments after each successful sign operation.
+/// Tracks sequence numbers per role and provides signing operations for admin actions.
+/// Each role's sequence number auto-increments after each successful sign operation.
 #[derive(Debug)]
 pub struct AdminContext {
     privkeys: Vec<EvenSecretKey>,
     signer_indices: Vec<u8>,
-    seqno: u64,
+    seqnos: HashMap<Role, u64>,
 }
 
 impl AdminContext {
     /// Create admin context from rollup parameters.
     ///
-    /// Extracts operator keys from params matching how ASM spec initializes authorities.
+    /// Uses the test operator key which is configured for both admin roles.
     pub fn from_params(_params: &Params) -> Self {
-        let operator_sk = get_test_operator_secret_key();
         Self {
-            privkeys: vec![operator_sk],
+            privkeys: vec![get_test_operator_secret_key()],
             signer_indices: vec![0],
-            seqno: 0,
+            seqnos: HashMap::new(),
         }
     }
 
     /// Sign an action and return (serialized_payload, tx_type).
     ///
-    /// Auto-increments the sequence number after signing.
+    /// Auto-increments the appropriate role's sequence number after signing.
     pub fn sign(&mut self, action: MultisigAction) -> (Vec<u8>, u8) {
-        let tx_type = action.tx_type();
-        let sighash = action.compute_sighash(self.seqno);
-        let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        let signed = SignedPayload::new(action, sig_set);
-        self.seqno += 1;
-        (
-            borsh::to_vec(&signed).expect("serialization should succeed"),
-            tx_type,
-        )
+        let role = Self::role_for_action(&action);
+        let seqno = *self.seqnos.entry(role).or_insert(0);
+        let result = self.sign_impl(&action, seqno);
+        *self.seqnos.get_mut(&role).unwrap() += 1;
+        result
     }
 
-    /// Sign an action with a specific sequence number (for testing invalid seqnos).
+    /// Sign an action with a specific sequence number (for replay attack testing).
     ///
     /// Does NOT auto-increment the internal sequence number.
     pub fn sign_with_seqno(&self, action: MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
-        let tx_type = action.tx_type();
-        let sighash = action.compute_sighash(seqno);
-        let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        let signed = SignedPayload::new(action, sig_set);
-        (
-            borsh::to_vec(&signed).expect("serialization should succeed"),
-            tx_type,
-        )
+        self.sign_impl(&action, seqno)
     }
 
-    /// Get current sequence number.
-    pub fn seqno(&self) -> u64 {
-        self.seqno
-    }
-
-    /// Manually set the sequence number (for testing).
-    pub fn set_seqno(&mut self, seqno: u64) {
-        self.seqno = seqno;
-    }
-
-    /// Get the private keys (for advanced signing scenarios).
+    /// Get the private keys (for manual signature construction in tests).
     pub fn privkeys(&self) -> &[EvenSecretKey] {
         &self.privkeys
     }
 
-    /// Get the signer indices.
+    /// Get the signer indices (for manual signature construction in tests).
     pub fn signer_indices(&self) -> &[u8] {
         &self.signer_indices
+    }
+
+    fn role_for_action(action: &MultisigAction) -> Role {
+        match action {
+            MultisigAction::Update(update) => update.required_role(),
+            // Cancel targets StrataAdministrator (sequencer updates are never queued).
+            MultisigAction::Cancel(_) => Role::StrataAdministrator,
+        }
+    }
+
+    fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
+        let sighash = action.compute_sighash(seqno);
+        let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
+        let payload = borsh::to_vec(&SignedPayload::new(action.clone(), sig_set))
+            .expect("serialization should succeed");
+        (payload, action.tx_type())
     }
 }
 
@@ -229,12 +223,7 @@ impl AdminExt for AsmTestHarness {
         let (payload, tx_type) = ctx.sign(action);
         let target_height = self.get_processed_height()? + 1;
         let tx = self
-            .build_envelope_tx(
-                SUBPROTOCOL_ID,
-                tx_type,
-                payload,
-                AsmTestHarness::DEFAULT_FEE,
-            )
+            .build_envelope_tx(SUBPROTOCOL_ID, tx_type, payload)
             .await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))
@@ -251,12 +240,7 @@ impl AdminExt for AsmTestHarness {
         let (payload, tx_type) = ctx.sign_with_seqno(action, seqno);
         let target_height = self.get_processed_height()? + 1;
         let tx = self
-            .build_envelope_tx(
-                SUBPROTOCOL_ID,
-                tx_type,
-                payload,
-                AsmTestHarness::DEFAULT_FEE,
-            )
+            .build_envelope_tx(SUBPROTOCOL_ID, tx_type, payload)
             .await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))
