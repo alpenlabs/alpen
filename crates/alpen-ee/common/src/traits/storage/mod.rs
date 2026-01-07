@@ -8,7 +8,7 @@ pub use account::{tests, MockStorage};
 pub use account::{OLBlockOrEpoch, Storage};
 pub use batch::BatchStorage;
 #[cfg(feature = "test-utils")]
-pub use batch::MockBatchStorage;
+pub use batch::{tests as batch_storage_test_fns, MockBatchStorage};
 pub use errors::StorageError;
 pub use exec_block::ExecBlockStorage;
 #[cfg(feature = "test-utils")]

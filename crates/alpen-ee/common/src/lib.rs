@@ -17,8 +17,8 @@ pub use traits::{
 pub use traits::{
     ol_client::{MockOLClient, MockSequencerOLClient},
     storage::{
-        exec_block_storage_test_fns, tests as storage_test_fns, MockBatchStorage,
-        MockExecBlockStorage, MockStorage,
+        batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
+        MockBatchStorage, MockExecBlockStorage, MockStorage,
     },
 };
 pub use types::{
