@@ -111,7 +111,7 @@ impl StrataAsmSpec {
         let admin_params = AdministrationSubprotoParams::new(
             admin_config.clone(),
             admin_config,
-            1, // confirmation_depth for queuing updates
+            2, // confirmation_depth: updates activate 2 blocks after submission
         );
 
         Self {

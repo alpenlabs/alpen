@@ -28,7 +28,7 @@ use harness::{
         sequencer_update, AdminExt, SUBPROTOCOL_ID as ADMIN_SUBPROTOCOL_ID,
     },
     checkpoint::CheckpointExt,
-    test_harness::{create_test_harness, AsmTestHarness},
+    test_harness::create_test_harness,
 };
 use integration_tests::harness;
 use rand::rngs::OsRng;
@@ -232,7 +232,7 @@ async fn test_predicate_update_is_queued() {
 /// Verifies queued updates activate after confirmation_depth blocks.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_queued_update_activates() {
-    // In test params, confirmation_depth=1, so updates activate after 1 block
+    // confirmation_depth=2, so updates activate 2 blocks after submission
     let harness = create_test_harness().await.unwrap();
     let mut ctx = harness.admin_context();
 
@@ -272,7 +272,8 @@ async fn test_queued_update_activates() {
         "Member count should not change until activation"
     );
 
-    // Mine another block to trigger activation (confirmation_depth=1)
+    // Mine blocks to trigger activation (confirmation_depth=2)
+    harness.mine_block(None).await.unwrap();
     harness.mine_block(None).await.unwrap();
 
     // Verify update has been activated
@@ -358,12 +359,7 @@ async fn test_wrong_key_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(
-            ADMIN_SUBPROTOCOL_ID,
-            action.tx_type(),
-            payload,
-            AsmTestHarness::DEFAULT_FEE,
-        )
+        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, action.tx_type(), payload)
         .await
         .unwrap();
 
@@ -414,12 +410,7 @@ async fn test_corrupted_signature_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(
-            ADMIN_SUBPROTOCOL_ID,
-            action.tx_type(),
-            payload,
-            AsmTestHarness::DEFAULT_FEE,
-        )
+        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, action.tx_type(), payload)
         .await
         .unwrap();
 
@@ -486,30 +477,15 @@ async fn test_multiple_updates_same_block() {
     let (payload3, tx_type3) = ctx.sign(sequencer_update([9u8; 32]));
 
     let tx1 = harness
-        .build_envelope_tx(
-            ADMIN_SUBPROTOCOL_ID,
-            tx_type1,
-            payload1,
-            AsmTestHarness::DEFAULT_FEE,
-        )
+        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, tx_type1, payload1)
         .await
         .unwrap();
     let tx2 = harness
-        .build_envelope_tx(
-            ADMIN_SUBPROTOCOL_ID,
-            tx_type2,
-            payload2,
-            AsmTestHarness::DEFAULT_FEE,
-        )
+        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, tx_type2, payload2)
         .await
         .unwrap();
     let tx3 = harness
-        .build_envelope_tx(
-            ADMIN_SUBPROTOCOL_ID,
-            tx_type3,
-            payload3,
-            AsmTestHarness::DEFAULT_FEE,
-        )
+        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, tx_type3, payload3)
         .await
         .unwrap();
 
@@ -559,5 +535,235 @@ async fn test_multiple_updates_same_block() {
         (1..=3).contains(&processed),
         "Expected 1-3 transactions to process, got {}",
         processed
+    );
+}
+
+// ============================================================================
+// Admin → Checkpoint Subprotocol Interactions
+// ============================================================================
+
+/// Verifies predicate (verifying key) updates propagate to checkpoint after activation.
+///
+/// Flow:
+/// 1. Submit predicate update (gets queued)
+/// 2. Mine blocks to trigger activation (confirmation_depth=2)
+/// 3. Verify checkpoint's predicate field is updated
+#[tokio::test(flavor = "multi_thread")]
+async fn test_predicate_update_propagates_to_checkpoint() {
+    let harness = create_test_harness().await.unwrap();
+    let mut ctx = harness.admin_context();
+
+    // Initialize subprotocols
+    harness.mine_block(None).await.unwrap();
+
+    let initial_checkpoint_state = harness.checkpoint_state().unwrap();
+    let initial_predicate = initial_checkpoint_state.predicate.clone();
+
+    // Submit a predicate update (gets queued for StrataAdministrator role)
+    let new_predicate = PredicateKey::always_accept();
+    harness
+        .submit_admin_action(&mut ctx, predicate_update(new_predicate.clone(), ProofType::OLStf))
+        .await
+        .unwrap();
+
+    // Verify it's queued, not applied yet
+    let state = harness.admin_state().unwrap();
+    assert_eq!(state.queued().len(), 1, "Predicate update should be queued");
+
+    // Checkpoint predicate should be unchanged while update is queued
+    let checkpoint_state = harness.checkpoint_state().unwrap();
+    assert_eq!(
+        checkpoint_state.predicate, initial_predicate,
+        "Checkpoint predicate should not change while update is queued"
+    );
+
+    // Mine blocks to trigger activation (confirmation_depth=2)
+    harness.mine_block(None).await.unwrap();
+    harness.mine_block(None).await.unwrap();
+
+    // Now verify checkpoint's predicate has been updated
+    let final_checkpoint_state = harness.checkpoint_state().unwrap();
+    assert_eq!(
+        final_checkpoint_state.predicate, new_predicate,
+        "Checkpoint predicate should be updated after activation"
+    );
+
+    // And admin queue should be empty
+    let final_state = harness.admin_state().unwrap();
+    assert_eq!(
+        final_state.queued().len(),
+        0,
+        "Queue should be empty after activation"
+    );
+}
+
+/// Verifies multiple sequential sequencer key updates result in checkpoint having the latest key.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_multiple_sequencer_updates_checkpoint_has_latest() {
+    let harness = create_test_harness().await.unwrap();
+    let mut ctx = harness.admin_context();
+
+    // Initialize subprotocols
+    harness.mine_block(None).await.unwrap();
+
+    // Submit 3 sequencer key updates in sequence
+    let key1 = [1u8; 32];
+    let key2 = [2u8; 32];
+    let key3 = [3u8; 32];
+
+    harness
+        .submit_admin_action(&mut ctx, sequencer_update(key1))
+        .await
+        .unwrap();
+    harness
+        .submit_admin_action(&mut ctx, sequencer_update(key2))
+        .await
+        .unwrap();
+    harness
+        .submit_admin_action(&mut ctx, sequencer_update(key3))
+        .await
+        .unwrap();
+
+    // Checkpoint should have the latest key (key3)
+    let checkpoint_state = harness.checkpoint_state().unwrap();
+    match &checkpoint_state.cred_rule {
+        CredRule::SchnorrKey(key) => {
+            assert_eq!(
+                key.as_ref(),
+                &key3,
+                "Checkpoint should have the latest sequencer key"
+            );
+        }
+        other => panic!("Expected SchnorrKey cred_rule, got {:?}", other),
+    }
+
+    // All 3 updates should have been processed
+    let state = harness.admin_state().unwrap();
+    assert_eq!(state.next_update_id(), 3, "All 3 updates should be processed");
+}
+
+/// Verifies cancelling a queued update before activation prevents it from executing.
+///
+/// With confirmation_depth=2, updates submitted in block H activate in block H+2.
+/// This gives us block H+1 to submit a cancel, making the test deterministic.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_prevents_queued_update_activation() {
+    let harness = create_test_harness().await.unwrap();
+    let mut ctx = harness.admin_context();
+
+    // Initialize subprotocols
+    harness.mine_block(None).await.unwrap();
+
+    // Submit operator update (gets queued, will activate in current_height + 2)
+    harness
+        .submit_admin_action(&mut ctx, operator_set_update(vec![[10u8; 32]], vec![]))
+        .await
+        .unwrap();
+
+    // Verify it's queued with ID=0
+    let state = harness.admin_state().unwrap();
+    assert_eq!(state.queued().len(), 1, "Update should be queued");
+    assert_eq!(state.next_update_id(), 1, "Update ID should be 1");
+
+    // Submit cancel in the next block (before activation)
+    harness
+        .submit_admin_action(&mut ctx, cancel_update(0))
+        .await
+        .unwrap();
+
+    // Verify update was cancelled
+    let state = harness.admin_state().unwrap();
+    assert_eq!(state.queued().len(), 0, "Update should be cancelled");
+
+    // Mine block that would have activated the update
+    harness.mine_block(None).await.unwrap();
+
+    // Verify queue is still empty (update didn't sneak back in)
+    let final_state = harness.admin_state().unwrap();
+    assert_eq!(
+        final_state.queued().len(),
+        0,
+        "Queue should remain empty after would-be activation block"
+    );
+}
+
+/// Verifies sequencer key update followed by predicate update both affect checkpoint.
+///
+/// Tests the interaction between immediate updates (sequencer) and queued updates (predicate).
+#[tokio::test(flavor = "multi_thread")]
+async fn test_sequencer_and_predicate_updates_both_apply() {
+    let harness = create_test_harness().await.unwrap();
+    let mut ctx = harness.admin_context();
+
+    // Initialize subprotocols
+    harness.mine_block(None).await.unwrap();
+
+    let initial_checkpoint_state = harness.checkpoint_state().unwrap();
+
+    // Submit sequencer update (applies immediately)
+    let new_sequencer_key = [99u8; 32];
+    harness
+        .submit_admin_action(&mut ctx, sequencer_update(new_sequencer_key))
+        .await
+        .unwrap();
+
+    // Checkpoint should already have new sequencer key
+    let mid_checkpoint_state = harness.checkpoint_state().unwrap();
+    match &mid_checkpoint_state.cred_rule {
+        CredRule::SchnorrKey(key) => {
+            assert_eq!(
+                key.as_ref(),
+                &new_sequencer_key,
+                "Sequencer key should be updated immediately"
+            );
+        }
+        other => panic!("Expected SchnorrKey cred_rule, got {:?}", other),
+    }
+
+    // Submit predicate update (gets queued with activation_height = current + confirmation_depth)
+    let new_predicate = PredicateKey::always_accept();
+    harness
+        .submit_admin_action(&mut ctx, predicate_update(new_predicate.clone(), ProofType::OLStf))
+        .await
+        .unwrap();
+
+    // Predicate should still be initial (update is queued)
+    let checkpoint_state = harness.checkpoint_state().unwrap();
+    assert_eq!(
+        checkpoint_state.predicate, initial_checkpoint_state.predicate,
+        "Predicate should not change yet (update is queued)"
+    );
+
+    // Admin should have the update queued
+    let admin_state = harness.admin_state().unwrap();
+    assert_eq!(admin_state.queued().len(), 1, "Predicate update should be queued");
+
+    // Mine blocks to trigger activation (confirmation_depth=2)
+    harness.mine_block(None).await.unwrap();
+    harness.mine_block(None).await.unwrap();
+
+    // Admin queue should be empty (update activated)
+    let admin_state = harness.admin_state().unwrap();
+    assert_eq!(
+        admin_state.queued().len(),
+        0,
+        "Queue should be empty after activation"
+    );
+
+    // Now both should be updated in checkpoint
+    let final_checkpoint_state = harness.checkpoint_state().unwrap();
+    match &final_checkpoint_state.cred_rule {
+        CredRule::SchnorrKey(key) => {
+            assert_eq!(
+                key.as_ref(),
+                &new_sequencer_key,
+                "Sequencer key should still be the new value"
+            );
+        }
+        other => panic!("Expected SchnorrKey cred_rule, got {:?}", other),
+    }
+    assert_eq!(
+        final_checkpoint_state.predicate, new_predicate,
+        "Predicate should now be updated after activation"
     );
 }
