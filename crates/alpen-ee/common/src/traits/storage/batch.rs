@@ -48,10 +48,8 @@ pub trait BatchStorage: Send + Sync {
         &self,
         idx: u64,
     ) -> Result<Option<(Batch, BatchStatus)>, StorageError>;
-    /// Get the ee update with the highest idx.
-    ///
-    /// Genesis batch must always exist, so latest batch must always exist.
-    async fn get_latest_batch(&self) -> Result<(Batch, BatchStatus), StorageError>;
+    /// Get the ee update with the highest idx, if it exists.
+    async fn get_latest_batch(&self) -> Result<Option<(Batch, BatchStatus)>, StorageError>;
 
     /// Save the next chunk
     ///
@@ -64,7 +62,7 @@ pub trait BatchStorage: Send + Sync {
         status: ChunkStatus,
     ) -> Result<(), StorageError>;
     /// Remove all chunks where idx >= from_idx
-    async fn revert_chunks_from(&self, form_idx: u64) -> Result<(), StorageError>;
+    async fn revert_chunks_from(&self, from_idx: u64) -> Result<(), StorageError>;
     /// Get a chunk by its id, if it exists
     async fn get_chunk_by_id(
         &self,
