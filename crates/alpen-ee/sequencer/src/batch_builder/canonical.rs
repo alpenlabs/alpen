@@ -9,7 +9,7 @@ use eyre::Result;
 use strata_acct_types::Hash;
 
 /// Checks if blocks are on the canonical chain (finalized or unfinalized canonical).
-#[cfg_attr(feature = "test-utils", mockall::automock)]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub(crate) trait CanonicalChainReader: Send + Sync {
     /// Returns `true` if the block is on the canonical chain.
