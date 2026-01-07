@@ -1,5 +1,7 @@
 use ssz::Encode as _;
-use strata_acct_types::{AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash};
+use strata_acct_types::{
+    AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash,
+};
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_merkle::MerkleProof;
 use strata_snark_acct_types::{

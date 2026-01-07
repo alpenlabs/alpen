@@ -3,12 +3,16 @@
 #![allow(unreachable_pub, reason = "test util module")]
 
 use ssz_primitives::FixedBytes;
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, Mmr64, RawMerkleProof, StrataHasher, tree_hash::TreeHash};
+use strata_acct_types::{
+    AccountId, BitcoinAmount, Hash, Mmr64, RawMerkleProof, StrataHasher, tree_hash::TreeHash,
+};
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, WtxidsRoot};
-use strata_ledger_types::{AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData};
+use strata_ledger_types::{
+    AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData,
+};
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
-use strata_ol_chain_types_new::{OLBlockHeader, TransactionPayload};
+use strata_ol_chain_types_new::{OLBlockHeader, SnarkAccountUpdateTxPayload, TransactionPayload};
 use strata_ol_state_types::{NativeSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{
@@ -16,7 +20,6 @@ use strata_snark_acct_types::{
     ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer, UpdateAccumulatorProofs,
     UpdateOperationData, UpdateOutputs,
 };
-use strata_ol_chain_types_new::SnarkAccountUpdateTxPayload;
 
 use crate::{
     ExecResult,
@@ -367,8 +370,7 @@ pub fn setup_genesis_with_snark_account(
 
     let genesis_info = BlockInfo::new_genesis(1_000_000);
     let genesis_components = BlockComponents::new_empty();
-    execute_block(state, &genesis_info, None, genesis_components)
-        .expect("Genesis should execute")
+    execute_block(state, &genesis_info, None, genesis_components).expect("Genesis should execute")
 }
 
 /// Helper to create additional empty accounts (for testing transfers/messages)
@@ -514,7 +516,9 @@ impl SnarkUpdateBuilder {
 
     /// Build the transaction without querying state (requires setting message index explicitly)
     pub fn build_simple(self, target: AccountId) -> TransactionPayload {
-        let new_msg_idx = self.new_msg_idx.expect("Message index must be set for build_simple");
+        let new_msg_idx = self
+            .new_msg_idx
+            .expect("Message index must be set for build_simple");
 
         let new_proof_state = ProofState::new(self.new_state_root, new_msg_idx);
         let operation_data = UpdateOperationData::new(

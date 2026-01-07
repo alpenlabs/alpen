@@ -14089,6 +14089,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-db-types",
  "strata-identifiers",
+ "strata-merkle",
  "strata-ol-chain-types-new",
  "strata-ol-state-support-types",
  "strata-ol-state-types",

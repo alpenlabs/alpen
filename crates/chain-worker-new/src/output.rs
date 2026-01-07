@@ -65,6 +65,7 @@ impl OLBlockExecutionOutput {
 #[cfg(test)]
 mod tests {
     use strata_identifiers::{L1BlockId, OLBlockId};
+    use strata_merkle::{CompactMmr64, Mmr64B32};
     use strata_ol_state_types::{EpochalState, GlobalState};
     use strata_primitives::{
         epoch::EpochCommitment, l1::L1BlockCommitment, prelude::BitcoinAmount,
@@ -78,6 +79,7 @@ mod tests {
             0,
             L1BlockCommitment::from_height_u64(0, L1BlockId::from(Buf32::zero())).unwrap(),
             EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
+            Mmr64B32::from_generic(&CompactMmr64::new(64)),
         )
     }
 
