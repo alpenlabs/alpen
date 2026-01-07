@@ -1,0 +1,50 @@
+name: Provision Grafana Dashboard
+
+# Run this workflow manually or on push to update dashboard
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    paths:
+      - '.github/grafana-dashboard.json'
+      - '.github/scripts/provision-grafana-dashboard.py'
+      - '.github/workflows/provision-grafana-dashboard.yml'
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    name: Provision dashboard to Grafana Cloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Provision dashboard
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          python .github/scripts/provision-grafana-dashboard.py \
+            --dashboard-file .github/grafana-dashboard.json
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ Dashboard provisioned successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View at: ${{ secrets.GRAFANA_URL }}/d/test-flakiness/test-flakiness-tracker" >> $GITHUB_STEP_SUMMARY
