@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
+use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_rpc_api_new::OLClientRpcServer;
 
 use crate::{context::NodeContext, rpc::OLRpcServer, run_context::RunContext};
@@ -29,8 +30,9 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         asm_handle.monitor(),
     )?;
 
-    // TODO: Start other tasks like l1writer, mempool, broadcaster, fcm, btcio reader, etc. all as
-    // service, returning the monitors.
+    // Start mempool service
+    let mempool_handle = start_mempool(&nodectx)?;
+
     Ok(RunContext {
         runtime: nodectx.runtime,
         config: nodectx.config,
@@ -41,6 +43,29 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         csm_monitor,
         storage: nodectx.storage,
         status_channel: nodectx.status_channel,
+        mempool_handle,
+    })
+}
+
+/// Starts the mempool service.
+fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
+    let config = OLMempoolConfig::default();
+
+    // Get current chain tip from status channel
+    let current_tip = nodectx
+        .status_channel
+        .get_chain_sync_status()
+        .map(|status| status.tip)
+        .ok_or_else(|| anyhow!("Chain sync status not available, cannot start mempool"))?;
+
+    let storage = nodectx.storage.clone();
+    let status_channel = (*nodectx.status_channel).clone();
+    let executor = nodectx.executor.clone();
+
+    nodectx.runtime.block_on(async {
+        MempoolBuilder::new(config, storage, status_channel, current_tip)
+            .launch(&executor)
+            .await
     })
 }
 
@@ -50,9 +75,10 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     let rpc_port = runctx.config.client.rpc_port;
     let storage = runctx.storage.clone();
     let status_channel = runctx.status_channel.clone();
+    let mempool_handle = runctx.mempool_handle.clone();
     runctx.executor.spawn_critical_async(
         "main-rpc",
-        spawn_rpc(rpc_host, rpc_port, storage, status_channel),
+        spawn_rpc(rpc_host, rpc_port, storage, status_channel, mempool_handle),
     );
     Ok(())
 }
@@ -63,6 +89,7 @@ async fn spawn_rpc(
     rpc_port: u16,
     storage: Arc<strata_storage::NodeStorage>,
     status_channel: Arc<strata_status::StatusChannel>,
+    mempool_handle: MempoolHandle,
 ) -> Result<()> {
     let mut module = RpcModule::new(());
 
@@ -72,7 +99,7 @@ async fn spawn_rpc(
     });
 
     // Create and register OL RPC server
-    let ol_rpc_server = OLRpcServer::new(storage, status_channel);
+    let ol_rpc_server = OLRpcServer::new(storage, status_channel, mempool_handle);
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)

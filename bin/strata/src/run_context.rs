@@ -5,6 +5,7 @@ use std::sync::Arc;
 use strata_asm_worker::AsmWorkerHandle;
 use strata_config::Config;
 use strata_csm_worker::CsmWorkerStatus;
+use strata_ol_mempool::MempoolHandle;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
@@ -27,4 +28,5 @@ pub(crate) struct RunContext {
     // RPC dependencies
     pub storage: Arc<NodeStorage>,
     pub status_channel: Arc<StatusChannel>,
+    pub mempool_handle: MempoolHandle,
 }
