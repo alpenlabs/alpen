@@ -617,7 +617,10 @@ impl StrataApiServer for StrataRpcImpl {
         // that behavior here
         // Finalized check
         if let Some(last_checkpoint) = cstate.get_last_checkpoint() {
-            if last_checkpoint.batch_info.includes_l2_block(block_slot) {
+            if last_checkpoint
+                .batch_info
+                .l2_slot_at_or_before_end(block_slot)
+            {
                 return Ok(L2BlockStatus::Finalized(
                     last_checkpoint.l1_reference.block_height(),
                 ));
@@ -626,7 +629,7 @@ impl StrataApiServer for StrataRpcImpl {
 
         // Verified check
         let verified_l1_height = cstate.get_last_checkpoint().and_then(|ckpt| {
-            if ckpt.batch_info.includes_l2_block(block_slot) {
+            if ckpt.batch_info.l2_slot_at_or_before_end(block_slot) {
                 Some(ckpt.l1_reference.block_height())
             } else {
                 None
