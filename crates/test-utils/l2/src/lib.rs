@@ -100,7 +100,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
         .unwrap();
     Params {
         rollup: RollupParams {
-            magic_bytes: *b"ALPN",
+            magic_bytes: (*b"ALPN").into(),
             block_time: 1000,
             cred_rule: block_credential::CredRule::Unchecked,
             genesis_l1_view,

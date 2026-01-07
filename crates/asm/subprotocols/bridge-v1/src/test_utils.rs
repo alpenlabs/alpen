@@ -1,9 +1,7 @@
 use std::any::Any;
 
 use rand::Rng;
-use strata_asm_common::{
-    AsmCompactMmr, AsmLogEntry, AsmMmr, AuxData, InterprotoMsg, MsgRelayer, VerifiedAuxData,
-};
+use strata_asm_common::{AsmLogEntry, AsmMmr, AuxData, InterprotoMsg, MsgRelayer, VerifiedAuxData};
 use strata_asm_txs_bridge_v1::{
     deposit::{DepositInfo, parse_deposit_tx},
     deposit_request::DrtHeaderAux,
@@ -140,8 +138,7 @@ pub(crate) fn create_withdrawal_info_from_assignment(
 pub(crate) fn create_verified_aux_data(txs: Vec<RawBitcoinTx>) -> VerifiedAuxData {
     let aux_data = AuxData::new(vec![], txs);
     let mmr = AsmMmr::new(16); // Dummy MMR, not used for tx lookup in tests
-    let compact_mmr: AsmCompactMmr = mmr.into();
-    VerifiedAuxData::try_new(&aux_data, &compact_mmr).expect("Should verify aux data")
+    VerifiedAuxData::try_new(&aux_data, &mmr).expect("Should verify aux data")
 }
 
 /// Helper function to setup a complete deposit test scenario.

@@ -313,25 +313,11 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     let evm_genesis_info = get_alpen_ee_genesis_block_info(&chainspec_json)?;
 
     let magic: MagicBytes = if let Some(name_str) = &cmd.name {
-        // Validate that the name is ASCII
-        if !name_str.is_ascii() {
-            return Err(anyhow::anyhow!("Name must contain only ASCII characters"));
-        }
-
-        // Validate that the name is exactly 4 bytes
-        let name_bytes = name_str.as_bytes();
-        if name_bytes.len() != 4 {
-            return Err(anyhow::anyhow!(
-                "Name must be exactly 4 bytes long, got {}",
-                name_bytes.len()
-            ));
-        }
-
-        let mut magic_bytes: [u8; 4] = [0; 4];
-        magic_bytes.copy_from_slice(name_bytes);
-        magic_bytes
+        name_str
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid magic bytes: {}", e))?
     } else {
-        *b"alpn"
+        "alpn".parse().expect("default magic bytes should be valid")
     };
 
     let config = ParamsConfig {

@@ -78,7 +78,7 @@ CredRule = SchnorrVerify | Literal["unchecked"]
 
 @dataclass
 class RollupParams:
-    magic_bytes: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
+    magic_bytes: str = "ALPN"
     block_time: int = field(default=5000)  # millisecs
     cred_rule: CredRule = field(default="unchecked")
     genesis_l1_view: GenesisL1View = field(default_factory=GenesisL1View)

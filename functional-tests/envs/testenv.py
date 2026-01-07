@@ -107,7 +107,7 @@ class StrataRunContext(flexitest.RunContext):
                 lambda s: f"http://localhost:{s.get_prop('eth_rpc_http_port')}",
             )
             .with_pubkey(agg_pubkey)
-            .with_magic_bytes("".join(chr(b) for b in rollup_cfg.magic_bytes))
+            .with_magic_bytes(rollup_cfg.magic_bytes)
             .with_datadir(os.path.join(self.datadir_root, name))
         )
 

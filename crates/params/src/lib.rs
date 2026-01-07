@@ -12,13 +12,14 @@ use thiserror::Error;
 
 pub mod serde_helpers;
 
-use serde_helpers::serde_amount_sat;
+use serde_helpers::{serde_amount_sat, serde_magic_bytes};
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RollupParams {
     /// Rollup name
+    #[serde(with = "serde_magic_bytes")]
     pub magic_bytes: MagicBytes,
 
     /// Block time in milliseconds.

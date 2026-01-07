@@ -71,7 +71,7 @@ pub(crate) fn create_deposit_transaction_cli(
 
     // Use canonical OP_RETURN construction from asm/txs/bridge-v1
     let dt_tag = DepositTxHeaderAux::new(dt_index).build_tag_data();
-    let sps50_script = ParseConfig::new(*MAGIC_BYTES)
+    let sps50_script = ParseConfig::new(MAGIC_BYTES)
         .encode_script_buf(&dt_tag.as_ref())
         .map_err(|e| Error::TxBuilder(e.to_string()))?;
 
