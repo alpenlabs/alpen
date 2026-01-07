@@ -22,7 +22,7 @@ pub use traits::{
     },
 };
 pub use types::{
-    batch::{Batch, BatchId, BatchStatus},
+    batch::{Batch, BatchId, BatchStatus, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     consensus_heads::ConsensusHeads,
