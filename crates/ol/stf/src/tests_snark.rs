@@ -3,13 +3,13 @@
 use ssz::Encode as _;
 use ssz_primitives::FixedBytes;
 use strata_acct_types::{
-    AccountId, AcctError, BitcoinAmount, Hash, MsgPayload, RawMerkleProof, StrataHasher,
+    AccountId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload, RawMerkleProof, StrataHasher,
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest, logging::debug};
 use strata_asm_manifest_types::DepositIntentLogData;
 use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, SubjectId, WtxidsRoot};
 use strata_ledger_types::*;
-use strata_merkle::{MerkleMr64, MerkleProof, hasher::MerkleHasher};
+use strata_merkle::{CompactMmr64, MerkleProof, Mmr, hasher::MerkleHasher};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{
     GamTxPayload, SimpleWithdrawalIntentLogData, SnarkAccountUpdateLogData,
@@ -40,33 +40,31 @@ use crate::{
 /// Helper to track inbox MMR proofs in parallel with the actual STF inbox MMR.
 /// This allows generating valid MMR proofs for testing by maintaining proofs as leaves are added.
 struct InboxMmrTracker {
-    mmr: MerkleMr64<StrataHasher>,
+    mmr: Mmr64,
     proofs: Vec<MerkleProof<[u8; 32]>>,
 }
 
 impl InboxMmrTracker {
     fn new() -> Self {
         Self {
-            mmr: MerkleMr64::new(64),
+            mmr: Mmr64::from_generic(&CompactMmr64::new(64)),
             proofs: Vec::new(),
         }
     }
 
     /// Adds a message entry to the tracker and returns a proof for it.
-    /// CRITICAL: Must use the SAME hash computation as verification (not insertion!)
-    /// Insertion uses TreeHash but verification uses SSZ + hash_leaf.
+    /// Uses TreeHash for consistent hashing with insertion and verification.
     fn add_message(&mut self, entry: &MessageEntry) -> MessageEntryProof {
-        use strata_merkle::hasher::MerkleHasher;
-
-        // Compute hash the SAME way as verification does in `verify_input_mmr_proofs`.
-        let msg_bytes: Vec<u8> = entry.as_ssz_bytes();
-        let hash = StrataHasher::hash_leaf(&msg_bytes);
+        // Compute hash using TreeHash, matching both insertion and verification
+        let hash = <MessageEntry as TreeHash>::tree_hash_root(entry);
 
         // Add to MMR with proof tracking
-        let proof = self
-            .mmr
-            .add_leaf_updating_proof_list(hash, &mut self.proofs)
-            .expect("Failed to add leaf to tracker MMR");
+        let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
+            &mut self.mmr,
+            hash.into_inner(),
+            &mut self.proofs,
+        )
+        .expect("mmr: can't add leaf");
 
         self.proofs.push(proof.clone());
 

@@ -1,8 +1,7 @@
-use ssz::Encode as _;
 use ssz_derive::{Decode, Encode};
-use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher};
+use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher, tree_hash::TreeHash};
 use strata_ledger_types::*;
-use strata_merkle::{CompactMmr64, Mmr, hasher::MerkleHasher as _};
+use strata_merkle::{CompactMmr64, Mmr};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 

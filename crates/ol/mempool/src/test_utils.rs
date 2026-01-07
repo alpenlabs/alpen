@@ -20,6 +20,7 @@ use strata_ledger_types::{
 };
 use strata_ol_chain_types_new::{TransactionAttachment, test_utils as ol_test_utils};
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
@@ -158,7 +159,8 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     // Set the slot
     state.set_cur_slot(slot);
     // Create a fresh snark account, then update its sequence number
-    let snark_state = OLSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+    let pred_key = PredicateKey::always_accept();
+    let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::from([0u8; 32]));
     let new_acct =
         NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
     state.create_new_account(account_id, new_acct).unwrap();
@@ -274,7 +276,7 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
             .update_container
             .base_update
             .operation
-            .new_state(),
+            .new_proof_state(),
         full_payload
             .update_container
             .base_update
@@ -325,7 +327,8 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
     // Most tests use SnarkAccountUpdate transactions which require Snark accounts
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
-        let snark_state = OLSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+        let pred_key = PredicateKey::always_accept();
+        let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::from([0u8; 32]));
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         // Ignore errors if account already exists

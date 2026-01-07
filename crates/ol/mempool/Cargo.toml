@@ -32,6 +32,7 @@ tracing.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 ssz_types.workspace = true
+strata-predicate.workspace = true
 strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
 threadpool.workspace = true

@@ -1,9 +1,9 @@
 use ssz::Encode as _;
-use strata_acct_types::{AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher};
+use strata_acct_types::{AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash};
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
-use strata_merkle::{MerkleProof, hasher::MerkleHasher};
+use strata_merkle::MerkleProof;
 use strata_snark_acct_types::{
-    LedgerRefProofs, MessageEntryProof, ProofState, SnarkAccountUpdate,
+    LedgerRefProofs, MessageEntry, MessageEntryProof, ProofState, SnarkAccountUpdate,
     SnarkAccountUpdateContainer, UpdateOperationData, UpdateOutputs, UpdateProofPubParams,
 };
 
@@ -93,13 +93,12 @@ pub(crate) fn verify_input_mmr_proofs(
     let generic_mmr = state.inbox_mmr().to_generic();
     let mut cur_index = state.next_inbox_msg_idx();
     for msg_proof in msg_proofs {
-        let msg_bytes: Vec<u8> = msg_proof.entry().as_ssz_bytes();
-        let hash = StrataHasher::hash_leaf(&msg_bytes);
+        let hash = <MessageEntry as TreeHash>::tree_hash_root(msg_proof.entry());
 
         let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes();
         let proof = MerkleProof::from_cohashes(cohashes, cur_index);
 
-        if !generic_mmr.verify::<StrataHasher>(&proof, &hash) {
+        if !generic_mmr.verify::<StrataHasher>(&proof, &hash.into_inner()) {
             return Err(AcctError::InvalidMessageProof {
                 account_id,
                 msg_idx: cur_index,
