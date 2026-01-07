@@ -24,11 +24,14 @@ pub type BatchProofProgramOutput = UpdateProofPubParams;
 /// the hardcoded key in the guest for security.
 #[derive(Debug, Clone)]
 pub struct BatchProofInput {
-    /// Chunk proof receipts with metadata (each contains Proof + PublicValues + Metadata)
-    pub chunk_receipts: Vec<ProofReceiptWithMetadata>,
+    /// Chunk proof receipts with metadata.
+    ///
+    /// Each contains [`Proof`](zkaleido::Proof) + [`PublicValues`] +
+    /// [`Metadata`](zkaleido::Metadata).
+    chunk_receipts: Vec<ProofReceiptWithMetadata>,
 
-    /// Verification key for all chunk proofs (single key, same program)
-    pub chunk_vkey: VerifyingKey,
+    /// Verification key for all chunk proofs (single key, same program).
+    chunk_vkey: VerifyingKey,
 }
 
 impl BatchProofInput {
@@ -87,7 +90,7 @@ impl ZkVmProgram for AlpenBatchProofProgram {
 }
 
 impl AlpenBatchProofProgram {
-    /// Create a native host for testing without SP1
+    /// Create a native host for testing without SP1.
     pub fn native_host() -> NativeHost {
         const MOCK_CHUNK_VK: [u32; 8] = [0u32; 8];
         NativeHost {
@@ -101,7 +104,7 @@ impl AlpenBatchProofProgram {
         }
     }
 
-    /// Execute the program with native host (for testing)
+    /// Execute the program with native host (for testing).
     pub fn execute(
         input: &<Self as ZkVmProgram>::Input,
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {

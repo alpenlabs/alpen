@@ -12,7 +12,6 @@ strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-evm-ee = { path = "../../evm-ee" }
 strata-identifiers.workspace = true
-strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 tree_hash.workspace = true
 zkaleido.workspace = true

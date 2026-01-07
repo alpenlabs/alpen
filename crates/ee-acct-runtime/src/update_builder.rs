@@ -90,10 +90,9 @@ impl UpdateBuilder {
 
         // Accumulate outputs from all blocks in the segment
         for block in segment.blocks() {
-            // REVIEW: why `block_notpackage`?
-            let block_notpackage = block.package();
-            let block_outputs = block_notpackage.outputs();
-            let block_inputs = block_notpackage.inputs();
+            let block_package = block.package();
+            let block_outputs = block_package.outputs();
+            let block_inputs = block_package.inputs();
 
             // Count inputs consumed by this block
             total_inputs_consumed += block_inputs.total_inputs();

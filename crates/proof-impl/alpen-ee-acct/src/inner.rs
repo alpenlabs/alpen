@@ -20,14 +20,14 @@ use zkaleido::ZkVmEnv;
 
 use crate::{guest_builder::build_commit_segments, types::ChunkProofOutput};
 
-/// Helper to read count-prefixed vector of buffers
+/// Helper to read count-prefixed vector of buffers.
 fn read_counted_bufs(zkvm: &impl ZkVmEnv) -> Vec<Vec<u8>> {
     let count_buf = zkvm.read_buf();
     let count = u32::from_le_bytes(count_buf.try_into().expect("count must be 4 bytes")) as usize;
     (0..count).map(|_| zkvm.read_buf()).collect()
 }
 
-/// Helper to read exec block packages
+/// Helper to read [`ExecBlockPackage`] instances.
 fn read_exec_block_packages(zkvm: &impl ZkVmEnv) -> Vec<ExecBlockPackage> {
     read_counted_bufs(zkvm)
         .iter()
@@ -48,20 +48,20 @@ pub fn process_chunk_proof(zkvm: &impl ZkVmEnv) {
 
     let coinputs = read_counted_bufs(zkvm);
     let exec_block_packages = read_exec_block_packages(zkvm);
-    let block_bytes = read_counted_bufs(zkvm);
+    let raw_blocks = read_counted_bufs(zkvm);
 
     // Assert lengths match
     assert_eq!(
         exec_block_packages.len(),
-        block_bytes.len(),
-        "Block packages and block bytes length mismatch"
+        raw_blocks.len(),
+        "Block packages and raw blocks length mismatch"
     );
 
     let raw_prev_header = zkvm.read_buf();
     let raw_partial_pre_state = zkvm.read_buf();
     let genesis: Genesis = zkvm.read_serde();
 
-    let commit_segments = build_commit_segments(&exec_block_packages, &block_bytes)
+    let commit_segments = build_commit_segments(&exec_block_packages, &raw_blocks)
         .expect("Failed to build commit segments");
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().expect("Invalid genesis"));
     let ee = EvmExecutionEnvironment::new(chain_spec);
@@ -90,9 +90,6 @@ pub fn process_chunk_proof(zkvm: &impl ZkVmEnv) {
 }
 
 fn verify_proof_state_matches(astate: &EeAccountState, expected_inner_state: Hash) {
-    let computed_hash = Hash::from(TreeHash::<Sha256Hasher>::tree_hash_root(astate).0);
-    assert_eq!(
-        computed_hash, expected_inner_state,
-        "Initial state mismatch"
-    );
+    let computed_hash = Hash::new(TreeHash::<Sha256Hasher>::tree_hash_root(astate).0);
+    assert_eq!(computed_hash, expected_inner_state);
 }

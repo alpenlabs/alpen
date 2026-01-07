@@ -11,9 +11,7 @@ use strata_ee_acct_runtime::UpdateTransitionData;
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_snark_acct_types::ProofState;
-use zkaleido::{
-    ProofType, PublicValues, ZkVmError, ZkVmInputError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
-};
+use zkaleido::{ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
 use crate::{inner::process_chunk_proof, types::ChunkProofOutput};
@@ -29,19 +27,60 @@ type CoinputBytes = Vec<u8>;
 
 /// Input data for chunk proof.
 ///
-/// This is a data container for passing to prepare_input - it does NOT need to implement
-/// serialization traits. We write each field as separate buffers to avoid extra layers.
+/// This is a data container for passing to `prepare_input`. It does NOT need to implement
+/// serialization traits as each field is written as separate buffers to avoid extra layers.
 #[derive(Debug, Clone)]
 pub struct ChunkProofInput {
-    pub astate: EeAccountState,
-    pub prev_proof_state: ProofState,
-    pub update_transition: UpdateTransitionData,
-    pub coinputs: Vec<CoinputBytes>,
-    pub exec_block_packages: Vec<ExecBlockPackage>,
-    pub block_bytes: Vec<BlockBytes>,
-    pub raw_prev_header: Vec<u8>,
-    pub raw_partial_pre_state: Vec<u8>,
-    pub genesis: Genesis,
+    astate: EeAccountState,
+    prev_proof_state: ProofState,
+    update_transition: UpdateTransitionData,
+    coinputs: Vec<CoinputBytes>,
+    exec_block_packages: Vec<ExecBlockPackage>,
+    raw_blocks: Vec<BlockBytes>,
+    raw_prev_header: Vec<u8>,
+    raw_partial_pre_state: Vec<u8>,
+    genesis: Genesis,
+}
+
+impl ChunkProofInput {
+    /// Create a new chunk proof input.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `exec_block_packages` and `raw_blocks` have different lengths.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Constructor mirrors all struct fields"
+    )]
+    pub fn new(
+        astate: EeAccountState,
+        prev_proof_state: ProofState,
+        update_transition: UpdateTransitionData,
+        coinputs: Vec<Vec<u8>>,
+        exec_block_packages: Vec<ExecBlockPackage>,
+        raw_blocks: Vec<Vec<u8>>,
+        raw_prev_header: Vec<u8>,
+        raw_partial_pre_state: Vec<u8>,
+        genesis: Genesis,
+    ) -> Self {
+        assert_eq!(
+            exec_block_packages.len(),
+            raw_blocks.len(),
+            "exec_block_packages and raw_blocks must have the same length"
+        );
+
+        Self {
+            astate,
+            prev_proof_state,
+            update_transition,
+            coinputs,
+            exec_block_packages,
+            raw_blocks,
+            raw_prev_header,
+            raw_partial_pre_state,
+            genesis,
+        }
+    }
 }
 
 /// The proof program for chunk execution (inner proof).
@@ -66,15 +105,6 @@ impl ZkVmProgram for AlpenChunkProofProgram {
     {
         let mut input_builder = B::new();
 
-        // Validate that exec_block_packages and block_bytes have matching lengths
-        if input.exec_block_packages.len() != input.block_bytes.len() {
-            return Err(ZkVmInputError::InputBuild(format!(
-                "Length mismatch: {} exec_block_packages vs {} block_bytes",
-                input.exec_block_packages.len(),
-                input.block_bytes.len()
-            )));
-        }
-
         // Write account state, proof state, and update transition
         input_builder.write_buf(&input.astate.as_ssz_bytes())?;
         input_builder.write_buf(&input.prev_proof_state.as_ssz_bytes())?;
@@ -94,10 +124,10 @@ impl ZkVmProgram for AlpenChunkProofProgram {
             input_builder.write_buf(&package.as_ssz_bytes())?;
         }
 
-        // Write block_bytes: count + items
-        let blocks_count = input.block_bytes.len() as u32;
+        // Write raw_blocks: count + items
+        let blocks_count = input.raw_blocks.len() as u32;
         input_builder.write_buf(&blocks_count.to_le_bytes())?;
-        for block in &input.block_bytes {
+        for block in &input.raw_blocks {
             input_builder.write_buf(block)?;
         }
 
@@ -124,7 +154,7 @@ impl ZkVmProgram for AlpenChunkProofProgram {
 }
 
 impl AlpenChunkProofProgram {
-    /// Create a native host for testing without SP1
+    /// Create a native host for testing without SP1.
     pub fn native_host() -> NativeHost {
         NativeHost {
             process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
@@ -137,7 +167,7 @@ impl AlpenChunkProofProgram {
         }
     }
 
-    /// Execute the program with native host (for testing)
+    /// Execute the program with native host (for testing).
     pub fn execute(
         input: &<Self as ZkVmProgram>::Input,
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
