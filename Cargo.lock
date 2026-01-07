@@ -1153,6 +1153,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-common",
  "async-trait",
+ "bitcoin",
  "borsh",
  "eyre",
  "sled",
