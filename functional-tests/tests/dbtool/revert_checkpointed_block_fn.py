@@ -12,6 +12,7 @@ from utils.dbtool import (
     verify_checkpoint_deleted,
     verify_revert_success,
 )
+from utils.utils import wait_until
 
 
 @flexitest.register
@@ -32,6 +33,15 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         prover = ctx.get_service("prover_client")
         # stop prover -- additional safety to make sure we don't produce checkpoints too quickly
         prover.stop()
+
+        cur_block = int(self.rethrpc.eth_blockNumber(), base=16)
+
+        # ensure there are some blocks more than our tip height
+        wait_until(
+            lambda: int(self.rethrpc.eth_blockNumber(), base=16) > cur_block + 3,
+            error_with="not building blocks",
+            timeout=10,
+        )
 
         # Stop signer early to ensure no more blocks
         self.seq_signer.stop()
@@ -70,7 +80,7 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         self.follower_1_reth.stop()
 
         # extra buffer time to let latest checkpoint get final
-        time.sleep(4)
+        time.sleep(2)
         # Get checkpoint info and target block
         checkpt = get_latest_checkpoint(self)
         if not checkpt:
