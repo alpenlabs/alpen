@@ -242,7 +242,7 @@ mod tests {
         // rollup params (taken from a fntests run).
         // Don't we have some util fn for such?
         let params_json = r#"{
-            "magic_bytes": [65, 76, 80, 78],
+            "magic_bytes": "ALPN",
             "block_time": 1000,
             "cred_rule": {
                 "schnorr_key": "c18d86b16f91b01a6599c3a290c1f255784f89dfe31ea65f64c4bdbd01564873"
@@ -275,7 +275,6 @@ mod tests {
             "evm_genesis_block_state_root": "351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
             "l1_reorg_safe_depth": 4,
             "target_l2_batch_size": 64,
-            "max_address_length": 20,
             "deposit_amount": 1000000000,
             "checkpoint_predicate": "AlwaysAccept",
             "dispatch_assignment_dur": 64,

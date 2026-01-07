@@ -10,7 +10,7 @@ use crate::test_utils::TEST_MAGIC_BYTES;
 
 // Helper function to mutate SPS 50 transaction auxiliary data
 pub fn mutate_aux_data(tx: &mut Transaction, new_aux: Vec<u8>) {
-    let config = ParseConfig::new(*TEST_MAGIC_BYTES);
+    let config = ParseConfig::new(TEST_MAGIC_BYTES);
     let td = config.try_parse_tx(tx).expect("dummy tx must parse");
     let new_td = TagData::new(td.subproto_id(), td.tx_type(), new_aux)
         .expect("tag data construction must succeed");
@@ -22,7 +22,7 @@ pub fn mutate_aux_data(tx: &mut Transaction, new_aux: Vec<u8>) {
 
 // Helper function to parse transaction
 pub fn parse_sps50_tx(tx: &Transaction) -> TxInputRef<'_> {
-    let parser = ParseConfig::new(*TEST_MAGIC_BYTES);
+    let parser = ParseConfig::new(TEST_MAGIC_BYTES);
     let tag_data = parser.try_parse_tx(tx).expect("Should parse transaction");
     TxInputRef::new(tx, tag_data)
 }

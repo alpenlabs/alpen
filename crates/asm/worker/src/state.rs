@@ -62,7 +62,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             None => {
                 // Create genesis anchor state.
                 let genesis_l1_view = &self.params.rollup().genesis_l1_view;
-                let empty_mmr = AsmMmr::new(ASM_MMR_CAP_LOG2).into();
+                let empty_mmr = AsmMmr::new(ASM_MMR_CAP_LOG2);
                 let state = AnchorState {
                     chain_view: ChainViewState {
                         pow_state: HeaderVerificationState::new(

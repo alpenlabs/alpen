@@ -12,13 +12,14 @@ use thiserror::Error;
 
 pub mod serde_helpers;
 
-use serde_helpers::serde_amount_sat;
+use serde_helpers::{serde_amount_sat, serde_magic_bytes};
 
 /// Consensus parameters that don't change for the lifetime of the network
 /// (unless there's some weird hard fork).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RollupParams {
     /// Rollup name
+    #[serde(with = "serde_magic_bytes")]
     pub magic_bytes: MagicBytes,
 
     /// Block time in milliseconds.
@@ -42,9 +43,6 @@ pub struct RollupParams {
 
     /// target batch size in number of l2 blocks
     pub target_l2_batch_size: u64,
-
-    /// Maximum length of an EE address in a deposit.
-    pub max_address_length: u8,
 
     /// Exact "at-rest" deposit amount, in sats.
     #[serde(with = "serde_amount_sat")]
@@ -87,10 +85,6 @@ impl RollupParams {
 
         if self.target_l2_batch_size == 0 {
             return Err(ParamsError::ZeroProperty("target_l2_batch_size"));
-        }
-
-        if self.max_address_length == 0 {
-            return Err(ParamsError::ZeroProperty("max_address_length"));
         }
 
         if self.deposit_amount == Amount::ZERO {

@@ -177,17 +177,17 @@ impl<A: LinearAccumulator> DaBuilder<A> for DaLinaccBuilder<A> {
 #[cfg(test)]
 mod tests {
     use strata_codec::BufDecoder;
-    use strata_merkle::{MerkleMr64, Sha256Hasher, hasher::MerkleHasher};
+    use strata_merkle::{CompactMmr64, Mmr, MmrState, Sha256Hasher, hasher::MerkleHasher};
 
     use super::*;
     use crate::{CompoundMember, DaWrite};
 
-    /// Wrapper for MerkleMr64 to implement LinearAccumulator
-    struct TestMmr(MerkleMr64<Sha256Hasher>);
+    /// Wrapper for CompactMmr64 to implement LinearAccumulator
+    struct TestMmr(CompactMmr64<[u8; 32]>);
 
     impl TestMmr {
         fn new() -> Self {
-            Self(MerkleMr64::new(14))
+            Self(CompactMmr64::new(14))
         }
     }
 
@@ -198,7 +198,7 @@ mod tests {
 
         fn insert(&mut self, entry: &Self::EntryData) {
             let hash = Sha256Hasher::hash_leaf(entry);
-            self.0.add_leaf(hash).expect("test: insert should succeed");
+            Mmr::<Sha256Hasher>::add_leaf(&mut self.0, hash).expect("test: insert should succeed");
         }
     }
 
@@ -252,8 +252,8 @@ mod tests {
         assert_eq!(mmr2.0.num_entries(), 3);
 
         // Verify that the peaks are identical
-        let peaks1: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
-        let peaks2: Vec<_> = mmr2.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let peaks1: Vec<_> = mmr.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
+        let peaks2: Vec<_> = mmr2.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
         assert_eq!(peaks1, peaks2, "test: MMR peaks should be identical");
     }
 
@@ -274,12 +274,12 @@ mod tests {
 
         // Apply decoded diff - should be a no-op
         let initial_entries = mmr.0.num_entries();
-        let initial_peaks: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let initial_peaks: Vec<_> = mmr.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
         DaWrite::apply(&decoded, &mut mmr, &()).expect("test: apply should succeed");
         assert_eq!(mmr.0.num_entries(), initial_entries);
 
         // Verify peaks unchanged
-        let final_peaks: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let final_peaks: Vec<_> = mmr.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
         assert_eq!(
             initial_peaks, final_peaks,
             "test: empty diff should not change MMR peaks"
@@ -309,8 +309,8 @@ mod tests {
         let mut mmr2 = TestMmr::new();
         DaWrite::apply(&diff, &mut mmr2, &()).expect("test: apply should succeed");
 
-        let peaks1: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
-        let peaks2: Vec<_> = mmr2.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let peaks1: Vec<_> = mmr.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
+        let peaks2: Vec<_> = mmr2.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
         assert_eq!(
             peaks1, peaks2,
             "test: MMR peaks should be identical after applying decoded diff"
@@ -364,8 +364,8 @@ mod tests {
         assert_eq!(mmr2.0.num_entries(), 4);
 
         // Verify that the peaks are identical
-        let peaks1: Vec<_> = mmr.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
-        let peaks2: Vec<_> = mmr2.0.peaks_iter().map(|(h, p)| (h, *p)).collect();
+        let peaks1: Vec<_> = mmr.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
+        let peaks2: Vec<_> = mmr2.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
         assert_eq!(
             peaks1, peaks2,
             "test: MMR peaks should be identical after sequential diffs"

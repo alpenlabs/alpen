@@ -14,12 +14,16 @@ class ProverCheckpointSettings:
     """Test configuration for checkpoint-based prover"""
 
     consecutive_proofs_required: int = 3
-    prover_timeout_seconds: int = 600
+    # waiting time for inner functions should end after 20 seconds, so 60 is more than enough
+    prover_timeout_seconds: int = 60
 
 
 @flexitest.register
 class ProverCheckpointRunnerTest(testenv.StrataTestBase):
-    """This tests the prover's checkpoint runner with an unreliable sequencer service."""
+    """This tests the prover's checkpoint runner with an unreliable sequencer service.
+    We check that a few (3) checkpoints are posted, restart the sequencer,
+    and test that a few more (3) checkpoints get posted -- if so, the prover works properly.
+    """
 
     def __init__(self, ctx: flexitest.InitContext):
         # Increase the proof timeout so that the checkpoint index increments only
@@ -59,16 +63,10 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         epoch = seq_waiter.wait_until_next_chain_epoch()
         logging.info(f"it's now epoch {epoch}")
 
-        # Note: weird implementation of `getLatestCheckpointIndex`.
-        # with True - waits until *the most recent* checkpoint reaches the value.
-        def consecutive_checkpoints_verified():
-            ckpt_idx = sequencer_rpc.strata_getLatestCheckpointIndex(True)
-            logging.info(f"cur checkpoint idx: {ckpt_idx}")
-            return ckpt_idx == self.checkpoint_settings.consecutive_proofs_required
-
-        # Wait until the required number of consecutive checkpoint proofs are generated and verified
-        wait_until(
-            consecutive_checkpoints_verified,
+        # Wait for target epoch to be 'final'
+        # Use syncStatus because it's quicker (than clientStatus)
+        seq_waiter.wait_until_epoch_observed_final(
+            self.checkpoint_settings.consecutive_proofs_required,
             timeout=self.checkpoint_settings.prover_timeout_seconds,
         )
 
@@ -78,17 +76,12 @@ class ProverCheckpointRunnerTest(testenv.StrataTestBase):
         time.sleep(10)
         sequencer.start()
         sequencer_rpc = sequencer.create_rpc()
+        seq_waiter.wait_until_client_ready(timeout=15)
 
-        # Note: weird implementation of `getLatestCheckpointIndex`.
-        # with False - waits until the *finalized* checkpoint reaches the value.
-        def _ck2():
-            ckpt_idx = sequencer_rpc.strata_getLatestCheckpointIndex(False)
-            logging.info(f"cur checkpoint idx: {ckpt_idx}")
-            return ckpt_idx == self.checkpoint_settings.consecutive_proofs_required
-
-        # We check the the proves were submitted after sequencer restart:
-        # we wait until the most recent checkpoint we observed before the restart
-        # actually became finalized.
-        # This can only happen if checkpointing continued and proofs for several next
-        # checkpoints were accepted (otherwise the checkpoint wouldn't become finalized).
-        wait_until(_ck2, timeout=self.checkpoint_settings.prover_timeout_seconds)
+        # Wait for target epoch to be confirmed; for debug use the same function as above,
+        # it has more logs.
+        # Use syncStatus because it's quicker (than clientStatus)
+        seq_waiter.wait_until_chain_epoch(
+            2 * self.checkpoint_settings.consecutive_proofs_required,
+            timeout=self.checkpoint_settings.prover_timeout_seconds,
+        )

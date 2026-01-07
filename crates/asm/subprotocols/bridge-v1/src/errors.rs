@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
 use strata_asm_common::AuxError;
-use strata_asm_txs_bridge_v1::errors::{BridgeTxParseError, Mismatch};
+use strata_asm_txs_bridge_v1::errors::{BridgeTxParseError, Mismatch, TxStructureError};
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::BitcoinAmount;
 use thiserror::Error;
@@ -59,6 +59,10 @@ pub enum DepositValidationError {
     /// The DRT output script does not match the expected locking script.
     #[error("DRT output script mismatch")]
     DrtOutputScriptMismatch(Mismatch<ScriptBuf>),
+
+    /// Failed to parse the Deposit Request Transaction.
+    #[error("failed to parse DRT")]
+    DrtParseError(#[from] TxStructureError),
 
     /// Failed to fetch required auxiliary data (e.g., Deposit Request Tx).
     #[error("auxiliary data lookup failed")]

@@ -1,12 +1,14 @@
 use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
 use strata_asm_logs::{DepositLog, NewExportEntry};
-use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::ParsedTx};
+use strata_asm_txs_bridge_v1::{
+    BRIDGE_V1_SUBPROTOCOL_ID, deposit_request::parse_drt, parser::ParsedTx,
+};
 
 use crate::{
-    errors::BridgeSubprotocolError,
+    errors::{BridgeSubprotocolError, DepositValidationError},
     state::{BridgeV1State, OperatorClaimUnlock},
     validation::{
-        validate_deposit_info, validate_slash_info, validate_unstake_info,
+        validate_deposit_info, validate_slash_stake_connector, validate_unstake_info,
         validate_withdrawal_fulfillment_info,
     },
 };
@@ -29,11 +31,14 @@ pub(crate) fn handle_parsed_tx(
 ) -> Result<(), BridgeSubprotocolError> {
     match parsed_tx {
         ParsedTx::Deposit(info) => {
-            validate_deposit_info(state, &info, verified_aux_data)?;
+            let drt_tx = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
+            let drt_info = parse_drt(drt_tx).map_err(DepositValidationError::from)?;
+
+            validate_deposit_info(state, &info, &drt_info)?;
             state.add_deposit(&info)?;
 
             let deposit_log =
-                DepositLog::new(0, info.amt().to_sat(), *info.header_aux().ee_address());
+                DepositLog::new(0, info.amt().to_sat(), *drt_info.header_aux().ee_address());
             relayer
                 .emit_log(AsmLogEntry::from_log(&deposit_log).expect("deposit log must not fail"));
 
@@ -58,7 +63,9 @@ pub(crate) fn handle_parsed_tx(
             Ok(())
         }
         ParsedTx::Slash(info) => {
-            validate_slash_info(state, &info, verified_aux_data)?;
+            let stake_connector_txout =
+                verified_aux_data.get_bitcoin_txout(info.stake_inpoint().outpoint())?;
+            validate_slash_stake_connector(state, &stake_connector_txout.script_pubkey)?;
             state.remove_operator(info.header_aux().operator_idx());
             Ok(())
         }

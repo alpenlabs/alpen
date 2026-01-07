@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
+use strata_acct_types::CompactMmr64;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot};
-use strata_merkle::CompactMmr64B32;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
@@ -381,7 +381,7 @@ pub trait GlobalMmrDatabase: Send + Sync + 'static {
     fn get_peaks(&self, mmr_id: RawMmrId) -> DbResult<Vec<Hash>>;
 
     /// Get a compact representation of the MMR
-    fn get_compact(&self, mmr_id: RawMmrId) -> DbResult<CompactMmr64B32>;
+    fn get_compact(&self, mmr_id: RawMmrId) -> DbResult<CompactMmr64>;
 
     /// Remove the last leaf from the MMR
     fn pop_leaf(&self, mmr_id: RawMmrId) -> DbResult<Option<Hash>>;

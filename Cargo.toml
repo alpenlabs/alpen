@@ -36,6 +36,7 @@ members = [
   "crates/chainexec",
   "crates/chaintsn",
   "crates/chain-worker",
+  "crates/chain-worker-new",
   "crates/checkpoint-types",
   "crates/checkpoint-types-ssz",
   "crates/cli-common",
@@ -191,6 +192,7 @@ strata-btc-types = { path = "crates/btc-types" }
 strata-btc-verification = { path = "crates/btc-verification" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
+strata-chain-worker-new = { path = "crates/chain-worker-new" }
 strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
@@ -468,13 +470,13 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.0" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.0" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.0" }
-ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.0" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.0" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.0" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.0" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.1" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.1" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.1" }
+ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.1" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.1" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.1" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.11.1" }
 
 # This is needed for custom build of SP1
 [profile.release.build-override]

@@ -14,9 +14,10 @@ use bitcoin::{
 };
 use rand::{RngCore, rngs::OsRng};
 use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 
-pub(crate) const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
+pub(crate) const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
 
 use crate::{
     actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::SignedPayload,
@@ -100,7 +101,7 @@ pub fn create_test_admin_tx(
     // Create the minimal SPS-50 tag for OP_RETURN (no aux data needed)
     // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE]
     let mut tagged_payload = Vec::new();
-    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES); // 4 bytes magic
+    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES.as_bytes()); // 4 bytes magic
     tagged_payload.extend_from_slice(&ADMINISTRATION_SUBPROTOCOL_ID.to_be_bytes()); // 1 byte subprotocol ID
     tagged_payload.extend_from_slice(&[action.tx_type()]); // 1 byte TxType
 
@@ -255,7 +256,7 @@ mod tests {
 
         let action: MultisigAction = arb.generate();
         let tx = create_test_admin_tx(&privkeys, &signer_indices, &action, seqno);
-        let tag_data_ref = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag_data_ref = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .unwrap();
         let tx_input = TxInputRef::new(&tx, tag_data_ref);

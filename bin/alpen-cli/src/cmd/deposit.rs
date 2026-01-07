@@ -20,7 +20,7 @@ use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_l1_txfmt::ParseConfig;
+use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_primitives::crypto::even_kp;
 
 use crate::{
@@ -53,7 +53,7 @@ fn build_deposit_request_tx(
     l1w: &mut Wallet,
     header_aux: &DrtHeaderAux,
     deposit_output: &TxOut,
-    magic_bytes: [u8; 4],
+    magic_bytes: MagicBytes,
     fee_rate: FeeRate,
 ) -> Result<Transaction, DisplayedError> {
     let drt_sps50_tag = header_aux.build_tag_data();
@@ -187,10 +187,9 @@ pub async fn deposit(
     log_fee_rate(&fee_rate);
 
     // Convert to PushBytes (ensures length ≤ 80 bytes)
-    let magic_bytes: [u8; 4] = settings
+    let magic_bytes: MagicBytes = settings
         .magic_bytes
-        .as_bytes()
-        .try_into()
+        .parse()
         .expect("magic_bytes validated to be 4 bytes");
 
     let tx = build_deposit_request_tx(
@@ -374,7 +373,7 @@ mod tests {
             &mut wallet,
             &header_aux,
             &deposit_output,
-            *b"alpn",
+            "alpn".parse().expect("valid magic bytes"),
             FeeRate::from_sat_per_vb(1).expect("valid fee rate"),
         )
         .expect("tx should be built");

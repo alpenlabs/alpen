@@ -493,7 +493,9 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
     let reveal_script = build_envelope_script(&concatenated_payload).unwrap();
 
     let td = TagDataRef::new(1, 1, &[]).unwrap();
-    let tag_script = ParseConfig::new(*b"ALPN").encode_script_buf(&td).unwrap();
+    let tag_script = ParseConfig::new((*b"ALPN").into())
+        .encode_script_buf(&td)
+        .unwrap();
 
     // Create controlblock
     let mut rand_bytes = [0; 32];

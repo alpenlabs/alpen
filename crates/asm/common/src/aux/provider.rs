@@ -190,16 +190,14 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{AsmCompactMmr, AsmMmr, AuxError};
+    use crate::{AsmMmr, AuxError};
 
     #[test]
     fn test_verified_aux_data_empty() {
         let mmr = AsmMmr::new(16);
-        let compact: AsmCompactMmr = mmr.into();
-
         let aux_data = AuxData::default();
 
-        let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0u8; 32].into();
@@ -218,11 +216,9 @@ mod tests {
         let txid = tx.compute_txid().as_raw_hash().to_byte_array();
 
         let mmr = AsmMmr::new(16);
-        let compact: AsmCompactMmr = mmr.into();
-
         let aux_data = AuxData::new(vec![], vec![raw_tx]);
 
-        let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
 
         // Should successfully return the bitcoin tx
         let txid_buf: Buf32 = txid.into();
@@ -233,11 +229,9 @@ mod tests {
     #[test]
     fn test_verified_aux_data_bitcoin_tx_not_found() {
         let mmr = AsmMmr::new(16);
-        let compact: AsmCompactMmr = mmr.into();
-
         let aux_data = AuxData::default();
 
-        let verified = VerifiedAuxData::try_new(&aux_data, &compact).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0xFF; 32].into();

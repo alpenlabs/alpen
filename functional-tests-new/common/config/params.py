@@ -78,7 +78,7 @@ CredRule = SchnorrVerify | Literal["unchecked"]
 
 @dataclass
 class RollupParams:
-    magic_bytes: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
+    magic_bytes: str = "ALPN"
     block_time: int = field(default=5000)  # millisecs
     cred_rule: CredRule = field(default="unchecked")
     genesis_l1_view: GenesisL1View = field(default_factory=GenesisL1View)
@@ -87,7 +87,6 @@ class RollupParams:
     evm_genesis_block_state_root: str = field(default_factory=lambda: hex_bytes_repeated(0))
     l1_reorg_safe_depth: int = field(default=6)
     target_l2_batch_size: int = field(default=64)
-    max_address_length: int = field(default=32)
     deposit_amount: int = field(default=100000)
     checkpoint_predicate: str = field(default="AlwaysAccept")
     dispatch_assignment_dur: int = field(default=144)
@@ -103,7 +102,6 @@ class RollupParams:
 @dataclass
 class DepositTxParams:
     magic_bytes: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
-    max_address_length: int = field(default=128)
     deposit_amount: int = field(default=100000)
     address: str = field(default="")
     operators_pubkey: str = field(default="")

@@ -9,25 +9,15 @@ use crate::{BRIDGE_V1_SUBPROTOCOL_ID, constants::BridgeTxType};
 pub struct DepositTxHeaderAux {
     /// idx of the deposit as given by the N/N multisig.
     deposit_idx: u32,
-    // TODO:PG- This is not really required, we are adding it here just to make sure that the
-    // existing functional tests pass.
-    ee_address: [u8; 20],
 }
 
 impl DepositTxHeaderAux {
-    pub fn new(deposit_idx: u32, ee_address: [u8; 20]) -> Self {
-        Self {
-            deposit_idx,
-            ee_address,
-        }
+    pub fn new(deposit_idx: u32) -> Self {
+        Self { deposit_idx }
     }
 
     pub fn deposit_idx(&self) -> u32 {
         self.deposit_idx
-    }
-
-    pub fn ee_address(&self) -> &[u8; 20] {
-        &self.ee_address
     }
 
     /// Builds a `TagData` instance from this auxiliary data.
@@ -56,15 +46,10 @@ mod tests {
 
     use super::*;
 
-    fn bytes_20() -> impl Strategy<Value = [u8; 20]> {
-        prop::collection::vec(any::<u8>(), 20)
-            .prop_map(|bytes| bytes.try_into().expect("length is fixed"))
-    }
-
     proptest! {
         #[test]
-        fn build_tag_data_is_infallible(deposit_idx in any::<u32>(), ee_address in bytes_20()) {
-            let aux = DepositTxHeaderAux::new(deposit_idx, ee_address);
+        fn build_tag_data_is_infallible(deposit_idx in any::<u32>()) {
+            let aux = DepositTxHeaderAux::new(deposit_idx);
             let tag = aux.build_tag_data();
             prop_assert_eq!(tag.subproto_id(), BRIDGE_V1_SUBPROTOCOL_ID);
             prop_assert_eq!(tag.tx_type(), BridgeTxType::Deposit as u8);

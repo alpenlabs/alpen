@@ -1,3 +1,5 @@
+use strata_l1_txfmt::MagicBytes;
+
 mod deposit;
 mod deposit_request;
 mod slash;
@@ -5,7 +7,7 @@ mod unstake;
 mod utils;
 mod withdrawal_fulfillment;
 
-pub const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
+pub const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
 
 pub use deposit::create_connected_drt_and_dt;
 pub use deposit_request::create_test_deposit_request_tx;

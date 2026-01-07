@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, StringConstraints
 
 # A string that optionally starts with 0x, followed by exactly 64 hex characters
 StrBuf32 = Annotated[str, StringConstraints(pattern=r"^(0x)?[0-9A-Fa-f]{64}$")]
@@ -52,7 +52,7 @@ class RollupConfig(BaseModel):
     Can be used to work with config values conveniently.
     """
 
-    magic_bytes: Annotated[list[int], Field(min_length=4, max_length=4)]
+    magic_bytes: Annotated[str, StringConstraints(min_length=4, max_length=4)]
     block_time: int
     cred_rule: CredRule
     operator_config: OperatorConfig
@@ -61,7 +61,6 @@ class RollupConfig(BaseModel):
     evm_genesis_block_state_root: StrBuf32
     l1_reorg_safe_depth: int
     target_l2_batch_size: int
-    max_address_length: int
     deposit_amount: int
     checkpoint_predicate: str
     dispatch_assignment_dur: int

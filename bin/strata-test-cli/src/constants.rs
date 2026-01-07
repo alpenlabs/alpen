@@ -1,9 +1,10 @@
 use std::sync::LazyLock;
 
 use bdk_wallet::bitcoin::{Amount, Network};
+use strata_l1_txfmt::MagicBytes;
 
 /// Magic bytes to add to the metadata output in transactions to help identify them.
-pub(crate) const MAGIC_BYTES: &[u8; 4] = b"ALPN";
+pub(crate) const MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
 
 /// Bridge outs are enforced to be exactly 10 BTC
 pub(crate) const BRIDGE_OUT_AMOUNT: Amount = Amount::from_int_btc(10);
