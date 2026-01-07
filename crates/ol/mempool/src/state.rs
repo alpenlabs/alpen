@@ -220,6 +220,12 @@ impl<P: StateProvider> MempoolServiceState<P> {
                     "Skipping invalid transaction from database"
                 );
                 let _ = self.ctx.storage.mempool().del_tx(tx_data.txid);
+
+                // Update reject stats if this is a trackable rejection reason
+                if let Some(reason) = OLMempoolRejectReason::from_error(&e) {
+                    self.update_stats_on_reject(reason);
+                }
+
                 skipped_count += 1;
                 continue;
             }
@@ -237,8 +243,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         if skipped_count > 0 {
             tracing::info!(
-                loaded = loaded_count,
-                skipped = skipped_count,
+                loaded_count,
+                skipped_count,
                 "Loaded transactions from database"
             );
         }
