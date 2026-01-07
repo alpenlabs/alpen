@@ -17,11 +17,8 @@
 use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
 use bitcoin::BlockHash;
-use strata_crypto::schnorr::EvenSecretKey;
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_proto_administration::{
-    AdministrationSubprotoState, AdministrationSubprotocol,
-};
+use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
     actions::{
         updates::{
@@ -33,7 +30,10 @@ use strata_asm_txs_admin::{
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
-use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfigUpdate};
+use strata_crypto::{
+    schnorr::EvenSecretKey,
+    threshold_signature::{CompressedPublicKey, ThresholdConfigUpdate},
+};
 use strata_params::Params;
 use strata_predicate::PredicateKey;
 use strata_primitives::{

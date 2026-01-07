@@ -93,7 +93,7 @@ impl StrataAsmSpec {
         };
 
         // For now, use the same operator config for admin roles
-        // TODO: Add proper admin config to RollupParams
+        // TODO(STR-2024): Add proper admin config to RollupParams
         let OperatorConfig::Static(ref operators) = params.operator_config;
         let admin_pubkeys: Vec<CompressedPublicKey> = operators
             .iter()

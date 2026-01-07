@@ -489,7 +489,7 @@ impl AsmTestHarness {
 
         // Build SPS-50 compliant OP_RETURN tag
         let mut sps50_tag = Vec::with_capacity(6);
-        sps50_tag.extend_from_slice(&self.params.rollup().magic_bytes); // 4 bytes
+        sps50_tag.extend_from_slice(self.params.rollup().magic_bytes.as_bytes()); // 4 bytes
         sps50_tag.push(subprotocol_id); // 1 byte
         sps50_tag.push(tx_type); // 1 byte
 

@@ -20,7 +20,6 @@
 use std::{num::NonZero, time::Duration};
 
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-use strata_crypto::schnorr::EvenSecretKey;
 use bitcoind_async_client::traits::Reader;
 use harness::{
     admin::{
@@ -33,8 +32,9 @@ use harness::{
 use integration_tests::harness;
 use rand::rngs::OsRng;
 use strata_asm_txs_admin::{parser::SignedPayload, test_utils::create_signature_set};
-use strata_crypto::threshold_signature::{
-    CompressedPublicKey, IndexedSignature, SignatureSet, ThresholdConfig,
+use strata_crypto::{
+    schnorr::EvenSecretKey,
+    threshold_signature::{CompressedPublicKey, IndexedSignature, SignatureSet, ThresholdConfig},
 };
 use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;
@@ -562,7 +562,10 @@ async fn test_predicate_update_propagates_to_checkpoint() {
     // Submit a predicate update (gets queued for StrataAdministrator role)
     let new_predicate = PredicateKey::always_accept();
     harness
-        .submit_admin_action(&mut ctx, predicate_update(new_predicate.clone(), ProofType::OLStf))
+        .submit_admin_action(
+            &mut ctx,
+            predicate_update(new_predicate.clone(), ProofType::OLStf),
+        )
         .await
         .unwrap();
 
@@ -639,7 +642,11 @@ async fn test_multiple_sequencer_updates_checkpoint_has_latest() {
 
     // All 3 updates should have been processed
     let state = harness.admin_state().unwrap();
-    assert_eq!(state.next_update_id(), 3, "All 3 updates should be processed");
+    assert_eq!(
+        state.next_update_id(),
+        3,
+        "All 3 updates should be processed"
+    );
 }
 
 /// Verifies cancelling a queued update before activation prevents it from executing.
@@ -723,7 +730,10 @@ async fn test_sequencer_and_predicate_updates_both_apply() {
     // Submit predicate update (gets queued with activation_height = current + confirmation_depth)
     let new_predicate = PredicateKey::always_accept();
     harness
-        .submit_admin_action(&mut ctx, predicate_update(new_predicate.clone(), ProofType::OLStf))
+        .submit_admin_action(
+            &mut ctx,
+            predicate_update(new_predicate.clone(), ProofType::OLStf),
+        )
         .await
         .unwrap();
 
@@ -736,7 +746,11 @@ async fn test_sequencer_and_predicate_updates_both_apply() {
 
     // Admin should have the update queued
     let admin_state = harness.admin_state().unwrap();
-    assert_eq!(admin_state.queued().len(), 1, "Predicate update should be queued");
+    assert_eq!(
+        admin_state.queued().len(),
+        1,
+        "Predicate update should be queued"
+    );
 
     // Mine blocks to trigger activation (confirmation_depth=2)
     harness.mine_block(None).await.unwrap();
