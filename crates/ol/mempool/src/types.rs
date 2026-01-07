@@ -4,7 +4,8 @@ use std::{cmp::Ordering, collections::BTreeMap};
 
 use ssz_derive::{Decode, Encode};
 use strata_acct_types::AccountId;
-use strata_identifiers::{OLTxId, hash};
+use strata_crypto::hash;
+use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::{GamTxPayload, TransactionAttachment};
 use strata_snark_acct_types::SnarkAccountUpdate;
 

@@ -3,7 +3,10 @@
 //! This module provides key types that guarantee even parity for the x-only public key,
 //! which is required for BIP340 Schnorr signatures and taproot.
 
-use std::ops::Deref;
+use std::{
+    io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
+    ops::Deref,
+};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
@@ -106,17 +109,17 @@ impl TryFrom<Buf32> for EvenPublicKey {
 }
 
 impl BorshSerialize for EvenPublicKey {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, writer: &mut W) -> IoResult<()> {
         let x_only = self.0.x_only_public_key().0;
         BorshSerialize::serialize(&Buf32::from(x_only.serialize()), writer)
     }
 }
 
 impl BorshDeserialize for EvenPublicKey {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> IoResult<Self> {
         let buf = Buf32::deserialize_reader(reader)?;
         let x_only = XOnlyPublicKey::from_slice(buf.as_ref())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            .map_err(|e| IoError::new(ErrorKind::InvalidData, e))?;
         Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even).into())
     }
 }
