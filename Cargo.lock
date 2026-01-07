@@ -14934,13 +14934,7 @@ dependencies = [
  "strata-predicate",
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
-<<<<<<< HEAD
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
-=======
- "thiserror 2.0.17",
- "tree_hash 0.12.0",
->>>>>>> 9fad242cc (Fix failing tests after rebase)
 ]
 
 [[package]]

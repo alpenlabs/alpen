@@ -2,14 +2,11 @@
 
 use ssz::Encode as _;
 use ssz_primitives::FixedBytes;
-use strata_acct_types::{
-    AccountId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload, RawMerkleProof, StrataHasher,
-};
+use strata_acct_types::{AccountId, AcctError, BitcoinAmount, Hash, MsgPayload, RawMerkleProof};
 use strata_asm_common::{AsmLogEntry, AsmManifest, logging::debug};
 use strata_asm_manifest_types::DepositIntentLogData;
 use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, SubjectId, WtxidsRoot};
 use strata_ledger_types::*;
-use strata_merkle::{CompactMmr64, MerkleProof, Mmr, hasher::MerkleHasher};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{
     GamTxPayload, SimpleWithdrawalIntentLogData, SnarkAccountUpdateLogData,
@@ -23,7 +20,6 @@ use strata_snark_acct_types::{
     ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer, UpdateAccumulatorProofs,
     UpdateOperationData, UpdateOutputs,
 };
-use tree_hash::TreeHash;
 
 use crate::{
     CompletedBlock, SEQUENCER_ACCT_ID,
@@ -31,7 +27,12 @@ use crate::{
     constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
     context::BlockInfo,
     errors::ExecError,
-    test_utils::{execute_block, execute_block_with_outputs, test_account_id, test_l1_block_id},
+    test_utils::{
+        InboxMmrTracker, SnarkUpdateBuilder, TEST_NONEXISTENT_ID, TEST_RECIPIENT_ID,
+        TEST_SNARK_ACCOUNT_ID, create_empty_account, execute_block, execute_block_with_outputs,
+        execute_tx_in_block, setup_genesis_with_snark_account, test_account_id, test_l1_block_id,
+        test_recipient_account_id, test_snark_account_id, test_state_root,
+    },
     verification::*,
 };
 
@@ -126,46 +127,10 @@ fn create_empty_account(state: &mut OLState, account_id: AccountId) -> AccountSe
 /// Queries the current state to determine inbox index and processes all pending messages
 fn create_update_tx(
     state: &OLState,
-    target: AccountId,
-    seq_no: u64,
-    new_state_root: Hash,
-    outputs: UpdateOutputs,
-) -> TransactionPayload {
-    // Get current inbox state
-    let account = state.get_account_state(target).unwrap().unwrap();
-    let snark_state = account.as_snark_account().unwrap();
-    let cur_inbox_idx = snark_state.next_inbox_msg_idx();
-
-    // For simplicity, just advance the index without actually processing messages
-    // (in real usage, you'd need to include the actual messages and proofs)
-    let new_proof_state = ProofState::new(new_state_root, cur_inbox_idx);
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state,
-        vec![], // No messages processed (tests that don't care about messages)
-        LedgerRefs::new_empty(),
-        outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let sau_tx_payload = SnarkAccountUpdateTxPayload::new(target, update_container);
-    TransactionPayload::SnarkAccountUpdate(sau_tx_payload)
-}
-
-/// Helper to execute a transaction in a non-genesis block
-fn execute_tx_in_block(
-    state: &mut OLState,
-    parent_header: &strata_ol_chain_types_new::OLBlockHeader,
-    tx: TransactionPayload,
-    slot: Slot,
-    epoch: Epoch,
-) -> Result<CompletedBlock, ExecError> {
-    let block_info = BlockInfo::new(1_001_000, slot, epoch);
-    let components = BlockComponents::new_txs(vec![tx]);
-    execute_block(state, &block_info, Some(parent_header), components)
+    snark_id: AccountId,
+) -> (&NativeAccountState, &NativeSnarkAccountState) {
+    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    (snark_account, snark_account.as_snark_account().unwrap())
 }
 
 // === Tests ===
@@ -176,7 +141,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     let mut state = OLState::new_genesis();
 
     // Create a snark account in the state
-    let snark_account_id = test_account_id(100);
+    let snark_account_id = test_snark_account_id();
     let initial_state_root = Hash::from([1u8; 32]);
 
     // Create a OLSnarkAccountState with always-accept predicate key for testing
@@ -276,7 +241,7 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Create the snark account update operation data
     let seq_no = 0u64; // This is the first update.
-    let new_state_root = Hash::from([2u8; 32]); // New state after update
+    let new_state_root = test_state_root(2); // New state after update
 
     let account_after_genesis = state.get_account_state(snark_account_id).unwrap().unwrap();
     let snark_state_after_genesis = account_after_genesis.as_snark_account().unwrap();
@@ -378,29 +343,24 @@ fn test_snark_account_deposit_and_withdrawal() {
 #[test]
 fn test_snark_update_invalid_sequence_number() {
     let mut state = OLState::new_genesis();
-    let snark_id = test_account_id(100);
-    let recipient_id = test_account_id(200);
+    let snark_id = test_snark_account_id();
+    let recipient_id = test_recipient_account_id();
 
     // Setup: genesis with snark account
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
 
-    // Try to submit update with wrong sequence number (should be 1, but we use 5)
-    let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(
-            recipient_id,
-            BitcoinAmount::from_sat(10_000_000),
-        )],
-        vec![],
-    );
-    let invalid_tx = create_update_tx(&state, snark_id, 5, Hash::from([2u8; 32]), outputs);
+    // Try to submit update with wrong sequence number (should be 0, but we use 5)
+    let invalid_tx = SnarkUpdateBuilder::new(5, test_state_root(2))
+        .with_transfer(recipient_id, 10_000_000)
+        .with_message_index(0) // Must set index for simple build
+        .build_simple(snark_id);
 
     // Execute and expect failure
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, invalid_tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(result.is_err(), "Update with wrong sequence should fail");
     match result.unwrap_err() {
@@ -415,28 +375,22 @@ fn test_snark_update_invalid_sequence_number() {
 #[test]
 fn test_snark_update_insufficient_balance() {
     let mut state = OLState::new_genesis();
-    let snark_id = test_account_id(100);
-    let recipient_id = test_account_id(200);
+    let snark_id = test_snark_account_id();
+    let recipient_id = test_recipient_account_id();
 
     // Setup: genesis with snark account of only 50M sats
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 50_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 50_000_000);
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
 
     // Try to send 100M sats (more than balance)
-    let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(
-            recipient_id,
-            BitcoinAmount::from_sat(100_000_000),
-        )],
-        vec![],
-    );
-    let invalid_tx = create_update_tx(&state, snark_id, 0, Hash::from([2u8; 32]), outputs);
+    let invalid_tx = SnarkUpdateBuilder::new(0, test_state_root(2))
+        .with_transfer(recipient_id, 100_000_000)
+        .build(snark_id, &state);
 
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, invalid_tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(
         result.is_err(),
@@ -457,25 +411,19 @@ fn test_snark_update_insufficient_balance() {
 #[test]
 fn test_snark_update_nonexistent_recipient() {
     let mut state = OLState::new_genesis();
-    let snark_id = test_account_id(100);
-    let nonexistent_id = test_account_id(999); // Not created
+    let snark_id = test_snark_account_id();
+    let nonexistent_id = test_account_id(TEST_NONEXISTENT_ID); // Not created
 
     // Setup: genesis with snark account
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Try to send to non-existent account
-    let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(
-            nonexistent_id,
-            BitcoinAmount::from_sat(10_000_000),
-        )],
-        vec![],
-    );
-    let invalid_tx = create_update_tx(&state, snark_id, 0, Hash::from([2u8; 32]), outputs);
+    let invalid_tx = SnarkUpdateBuilder::new(0, test_state_root(2))
+        .with_transfer(nonexistent_id, 10_000_000)
+        .build(snark_id, &state);
 
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, invalid_tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(
         result.is_err(),
@@ -496,8 +444,7 @@ fn test_snark_update_invalid_message_index() {
     let recipient_id = test_account_id(200);
 
     // Setup: genesis with snark account with balance (no deposit message)
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
@@ -511,7 +458,7 @@ fn test_snark_update_invalid_message_index() {
     );
 
     // Create proof state claiming to have processed 5 messages (but inbox is empty)
-    let new_proof_state = ProofState::new(Hash::from([2u8; 32]), 5); // Claim we're at idx 5
+    let new_proof_state = ProofState::new(test_state_root(2), 5); // Claim we're at idx 5
     let operation_data = UpdateOperationData::new(
         0, // the first update, seq_no = 0
         new_proof_state,
@@ -529,7 +476,7 @@ fn test_snark_update_invalid_message_index() {
         update_container,
     ));
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, invalid_tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(
         result.is_err(),
@@ -547,29 +494,23 @@ fn test_snark_update_invalid_message_index() {
 #[test]
 fn test_snark_update_success_with_transfer() {
     let mut state = OLState::new_genesis();
-    let snark_id = test_account_id(100);
-    let recipient_id = test_account_id(200);
+    let snark_id = test_snark_account_id();
+    let recipient_id = test_recipient_account_id();
 
     // Setup: genesis with snark account
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
 
     // Create valid update with transfer
     let transfer_amount = 30_000_000u64;
-    let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(
-            recipient_id,
-            BitcoinAmount::from_sat(transfer_amount),
-        )],
-        vec![],
-    );
-    let tx = create_update_tx(&state, snark_id, 0, Hash::from([2u8; 32]), outputs);
+    let tx = SnarkUpdateBuilder::new(0, test_state_root(2))
+        .with_transfer(recipient_id, transfer_amount)
+        .build(snark_id, &state);
 
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
     assert!(
         result.is_ok(),
         "Valid update should succeed: {:?}",
@@ -604,8 +545,7 @@ fn test_snark_inbox_message_insertion() {
     let snark_id = test_account_id(100);
 
     // Setup: genesis with snark account
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Send a message to snark account via GAM(Generic Account Message) tx (from sequencer, value=0)
     let msg_data = vec![1u8, 2, 3, 4, 5];
@@ -617,7 +557,7 @@ fn test_snark_inbox_message_insertion() {
 
     // Execute transaction
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, &genesis_header, gam_tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch);
     assert!(
         result.is_ok(),
         "GAM transaction should succeed: {:?}",
@@ -660,12 +600,11 @@ fn get_snark_state_expect(
 #[test]
 fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     let mut state = OLState::new_genesis();
-    let snark_id = test_account_id(100);
-    let recipient_id = test_account_id(200);
+    let snark_id = test_snark_account_id();
+    let recipient_id = test_recipient_account_id();
 
     // Setup: genesis with snark account
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
@@ -679,7 +618,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
         GamTxPayload::new(snark_id, msg_data.clone()).expect("Should create GAM payload"),
     );
     let (slot, epoch) = (1, 0);
-    let blk1 = execute_tx_in_block(&mut state, &genesis_header, gam_tx, slot, epoch)
+    let blk1 = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
     let header = blk1.header();
 
@@ -716,7 +655,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     );
 
     // After processing 1 message starting at index 0, next_msg_read_idx should be 1
-    let new_proof_state = ProofState::new(Hash::from([2u8; 32]), 1);
+    let new_proof_state = ProofState::new(test_state_root(2), 1);
     let operation_data = UpdateOperationData::new(
         0, // seq_no
         new_proof_state,
@@ -781,8 +720,7 @@ fn test_snark_update_invalid_message_proof() {
     let snark_id = test_account_id(100);
 
     // Setup: genesis with snark account
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Step 1: Send a gam message to snark's inbox
     let msg_data = vec![1u8, 2, 3, 4];
@@ -790,7 +728,7 @@ fn test_snark_update_invalid_message_proof() {
         GamTxPayload::new(snark_id, msg_data.clone()).expect("Should create GAM payload"),
     );
     let (slot, epoch) = (1, 0);
-    let blk = execute_tx_in_block(&mut state, &genesis_header, gam_tx, slot, epoch)
+    let blk = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
     let header = blk.header();
 
@@ -824,7 +762,7 @@ fn test_snark_update_invalid_message_proof() {
     let outputs = UpdateOutputs::new(vec![], vec![]);
 
     let new_msg_idx = 1;
-    let new_proof_state = ProofState::new(Hash::from([2u8; 32]), new_msg_idx);
+    let new_proof_state = ProofState::new(test_state_root(2), new_msg_idx);
     let operation_data = UpdateOperationData::new(
         0,
         new_proof_state,
@@ -862,12 +800,11 @@ fn test_snark_update_invalid_message_proof() {
 #[test]
 fn test_snark_update_skip_message_out_of_order() {
     let mut state = OLState::new_genesis();
-    let snark_id = test_account_id(100);
-    let recipient_id = test_account_id(200);
+    let snark_id = test_snark_account_id();
+    let recipient_id = test_recipient_account_id();
 
     // Setup: genesis with snark account
-    let (genesis_header, _snark_serial) =
-        setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
@@ -878,8 +815,14 @@ fn test_snark_update_skip_message_out_of_order() {
         GamTxPayload::new(snark_id, msg1_data.clone()).expect("Should create GAM payload"),
     );
     let (slot, epoch) = (1, 0);
-    let blk = execute_tx_in_block(&mut state, &genesis_header, gam_tx1.clone(), slot, epoch)
-        .expect("GAM 1 should succeed");
+    let blk = execute_tx_in_block(
+        &mut state,
+        genesis_block.header(),
+        gam_tx1.clone(),
+        slot,
+        epoch,
+    )
+    .expect("GAM 1 should succeed");
     let header = blk.header();
 
     let msg2_data = vec![5u8, 6, 7, 8];
@@ -914,7 +857,7 @@ fn test_snark_update_skip_message_out_of_order() {
     );
 
     // Claiming to process 1 message but jumping to index 2 (skipping first GAM)
-    let new_proof_state = ProofState::new(Hash::from([2u8; 32]), 2); // Skip to index 2
+    let new_proof_state = ProofState::new(test_state_root(2), 2); // Skip to index 2
     let operation_data = UpdateOperationData::new(
         0,
         new_proof_state,
