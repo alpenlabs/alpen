@@ -1,8 +1,8 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
 use alpen_ee_common::{
-    EeAccountStateAtEpoch, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch,
-    Storage, StorageError,
+    Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkId, ChunkStatus, EeAccountStateAtEpoch,
+    ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
@@ -218,11 +218,130 @@ impl ExecBlockStorage for EeNodeStorage {
     }
 }
 
+#[async_trait]
+impl BatchStorage for EeNodeStorage {
+    async fn save_genesis_batch(&self, genesis_batch: Batch) -> Result<(), StorageError> {
+        self.ops
+            .save_genesis_batch_async(genesis_batch)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn save_next_batch(&self, batch: Batch) -> Result<(), StorageError> {
+        self.ops
+            .save_next_batch_async(batch)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn update_batch_status(
+        &self,
+        batch_id: BatchId,
+        status: BatchStatus,
+    ) -> Result<(), StorageError> {
+        self.ops
+            .update_batch_status_async(batch_id, status)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn revert_batches(&self, to_idx: u64) -> Result<(), StorageError> {
+        self.ops
+            .revert_batches_async(to_idx)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_batch_by_id(
+        &self,
+        batch_id: BatchId,
+    ) -> Result<Option<(Batch, BatchStatus)>, StorageError> {
+        self.ops
+            .get_batch_by_id_async(batch_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_batch_by_idx(
+        &self,
+        idx: u64,
+    ) -> Result<Option<(Batch, BatchStatus)>, StorageError> {
+        self.ops
+            .get_batch_by_idx_async(idx)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_latest_batch(&self) -> Result<Option<(Batch, BatchStatus)>, StorageError> {
+        self.ops.get_latest_batch_async().await.map_err(Into::into)
+    }
+
+    async fn save_next_chunk(&self, chunk: Chunk) -> Result<(), StorageError> {
+        self.ops
+            .save_next_chunk_async(chunk)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn update_chunk_status(
+        &self,
+        chunk_id: ChunkId,
+        status: ChunkStatus,
+    ) -> Result<(), StorageError> {
+        self.ops
+            .update_chunk_status_async(chunk_id, status)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn revert_chunks_from(&self, from_idx: u64) -> Result<(), StorageError> {
+        self.ops
+            .revert_chunks_from_async(from_idx)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_chunk_by_id(
+        &self,
+        chunk_id: ChunkId,
+    ) -> Result<Option<(Chunk, ChunkStatus)>, StorageError> {
+        self.ops
+            .get_chunk_by_id_async(chunk_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_chunk_by_idx(
+        &self,
+        idx: u64,
+    ) -> Result<Option<(Chunk, ChunkStatus)>, StorageError> {
+        self.ops
+            .get_chunk_by_idx_async(idx)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_latest_chunk(&self) -> Result<Option<(Chunk, ChunkStatus)>, StorageError> {
+        self.ops.get_latest_chunk_async().await.map_err(Into::into)
+    }
+
+    async fn set_batch_chunks(
+        &self,
+        batch_id: BatchId,
+        chunks: Vec<ChunkId>,
+    ) -> Result<(), StorageError> {
+        self.ops
+            .set_batch_chunks_async(batch_id, chunks)
+            .await
+            .map_err(Into::into)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use alpen_ee_common::{exec_block_storage_tests, storage_tests};
+    use alpen_ee_common::{batch_storage_tests, exec_block_storage_tests, storage_tests};
     use strata_db_store_sled::SledDbConfig;
     use typed_sled::SledDb;
 
@@ -243,4 +362,5 @@ mod tests {
 
     storage_tests!(setup_storage());
     exec_block_storage_tests!(setup_storage());
+    batch_storage_tests!(setup_storage());
 }
