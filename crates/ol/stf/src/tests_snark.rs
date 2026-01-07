@@ -5,7 +5,7 @@ use ssz_primitives::FixedBytes;
 use strata_acct_types::{
     AccountId, AcctError, BitcoinAmount, Hash, MsgPayload, RawMerkleProof, StrataHasher,
 };
-use strata_asm_common::{AsmLogEntry, AsmManifest};
+use strata_asm_common::{AsmLogEntry, AsmManifest, logging::debug};
 use strata_asm_manifest_types::DepositIntentLogData;
 use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, SubjectId, WtxidsRoot};
 use strata_ledger_types::*;
@@ -107,7 +107,7 @@ fn setup_genesis_with_snark_account(
         .create_new_account(snark_id, new_acct_data)
         .expect("Should create snark account");
 
-    let genesis_info = BlockInfo::new_genesis(1000000);
+    let genesis_info = BlockInfo::new_genesis(1_000_000);
     let genesis_components = BlockComponents::new_empty();
     let genesis_block = execute_block(state, &genesis_info, None, genesis_components)
         .expect("Genesis should execute");
@@ -165,7 +165,7 @@ fn execute_tx_in_block(
     slot: Slot,
     epoch: Epoch,
 ) -> Result<CompletedBlock, ExecError> {
-    let block_info = BlockInfo::new(1001000, slot, epoch);
+    let block_info = BlockInfo::new(1_001_000, slot, epoch);
     let components = BlockComponents::new_txs(vec![tx]);
     execute_block(state, &block_info, Some(parent_header), components)
 }
@@ -240,14 +240,11 @@ fn test_snark_account_deposit_and_withdrawal() {
         nxt_inbox_idx_after_gen, 0,
         "Next inbox idx should still be zero"
     );
-    eprintln!(
-        "DEBUG: Inbox MMR has {} messages (next insert at index {})",
-        nxt_inbox_idx_after_gen, nxt_inbox_idx_after_gen
-    );
+    debug!("Inbox MMR has {nxt_inbox_idx_after_gen} messages",);
 
     // Check the proof state (next message to PROCESS)
     let new_inner_st_root = snark_state_after_genesis.inner_state_root();
-    eprintln!("DEBUG: New inner_state_root: {:?}", new_inner_st_root);
+    debug!("New inner_state_root: {new_inner_st_root:?}");
 
     // Now create a snark account update transaction that produces a withdrawal
     let withdrawal_amount = 100_000_000u64; // Withdraw exactly 1 BTC (required denomination)
@@ -413,7 +410,7 @@ fn test_snark_update_invalid_sequence_number() {
             assert_eq!(expected, 0);
             assert_eq!(got, 5);
         }
-        err => panic!("Expected InvalidUpdateSequence, got: {:?}", err),
+        err => panic!("Expected InvalidUpdateSequence, got: {err:?}"),
     }
 }
 
@@ -455,7 +452,7 @@ fn test_snark_update_insufficient_balance() {
             assert_eq!(requested, BitcoinAmount::from_sat(100_000_000));
             assert_eq!(available, BitcoinAmount::from_sat(50_000_000));
         }
-        err => panic!("Expected InsufficientBalance, got: {:?}", err),
+        err => panic!("Expected InsufficientBalance, got: {err:?}"),
     }
 }
 
@@ -490,7 +487,7 @@ fn test_snark_update_nonexistent_recipient() {
         ExecError::Acct(AcctError::MissingExpectedAccount(id)) => {
             assert_eq!(id, nonexistent_id);
         }
-        err => panic!("Expected NonExistentAccount, got: {:?}", err),
+        err => panic!("Expected NonExistentAccount, got: {err:?}"),
     }
 }
 
@@ -545,7 +542,7 @@ fn test_snark_update_invalid_message_index() {
             assert_eq!(expected, 0); // Should stay at 0
             assert_eq!(got, 5); // But claimed 5
         }
-        err => panic!("Expected InvalidMsgIndex, got: {:?}", err),
+        err => panic!("Expected InvalidMsgIndex, got: {err:?}"),
     }
 }
 
@@ -586,7 +583,13 @@ fn test_snark_update_success_with_transfer() {
     assert_eq!(
         snark_account.balance(),
         BitcoinAmount::from_sat(70_000_000),
-        "Snark account balance should be 100M - 30M"
+        "Sender account balance should be 100M - 30M"
+    );
+    // Check the seq no of the sender
+    assert_eq!(
+        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        1,
+        "Sender account seq no should increase"
     );
 
     let recipient_account = state.get_account_state(recipient_id).unwrap().unwrap();
@@ -630,7 +633,14 @@ fn test_snark_inbox_message_insertion() {
     assert_eq!(
         snark_state.inbox_mmr().num_entries(),
         1,
-        "Inbox should have 2 messages (deposit + GAM)"
+        "Inbox should have 1 message (GAM)"
+    );
+
+    // Check the seq no of the sender
+    assert_eq!(
+        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        0,
+        "Sender account seq no should not increase for GAM"
     );
 
     // Balance unchanged (GAM messages have 0 value)
@@ -746,6 +756,12 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
         "Sender account should be debited"
     );
 
+    assert_eq!(
+        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        1,
+        "Sender seq no should increment"
+    );
+
     let snark_state = snark_account.as_snark_account().unwrap();
     assert_eq!(
         snark_state.next_inbox_msg_idx(),
@@ -841,7 +857,7 @@ fn test_snark_update_invalid_message_proof() {
         ExecError::Acct(AcctError::InvalidMessageProof { msg_idx, .. }) => {
             assert_eq!(msg_idx, 0, "Should fail on message index 0");
         }
-        err => panic!("Expected InvalidMessageProof, got: {:?}", err),
+        err => panic!("Expected InvalidMessageProof, got: {err:?}"),
     }
 }
 
@@ -931,6 +947,6 @@ fn test_snark_update_skip_message_out_of_order() {
             );
             assert_eq!(got, 2, "But got index 2 (skipped from 0 to 2)");
         }
-        err => panic!("Expected InvalidMsgIndex, got: {:?}", err),
+        err => panic!("Expected InvalidMsgIndex, got: {err:?}"),
     }
 }

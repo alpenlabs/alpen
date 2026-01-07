@@ -4,7 +4,9 @@ use strata_acct_types::{
     AccountId, AccountTypeId, AcctError, BitcoinAmount, MsgPayload, SentMessage, SentTransfer,
 };
 use strata_codec::{CodecError, encode_to_vec};
-use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
+use strata_ledger_types::{
+    IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
+};
 use strata_ol_chain_types_new::{
     OLLog, OLTransaction, OLTxSegment, SnarkAccountUpdateLogData, TransactionAttachment,
     TransactionPayload,
@@ -134,10 +136,15 @@ fn process_update_tx<S: IStateAccessor>(
     let verified_update =
         snark_sys::verify_update_correctness(state, target, snark_acct_state, update, cur_balance)?;
 
+    let operation = verified_update.operation();
+
+    // Validate sequence number
+    let current_seqno = *snark_acct_state.seqno().inner();
+    check_snark_account_seq_no(target, operation.seq_no(), current_seqno)?;
+
     // Step 3: Mutate and collect effects (inside closure)
     let fx_buf = state.update_account(target, |astate| -> ExecResult<_> {
         // Deduct balance for all outputs first
-        let operation = verified_update.operation();
         let total_sent = operation
             .outputs()
             .compute_total_value()
@@ -152,14 +159,11 @@ fn process_update_tx<S: IStateAccessor>(
             .as_snark_account_mut()
             .map_err(|_| ExecError::IncorrectTxTargetType)?;
 
-        // Validate sequence number
-        let current_seqno = *snark_acct_state.seqno().inner();
-        check_snark_account_seq_no(target, seqno, current_seqno)?;
-
+        let new_seqno = operation.seq_no().saturating_add(1);
         snrk_acct_state.update_inner_state(
             operation.new_proof_state().inner_state(),
             operation.new_proof_state().next_inbox_msg_idx(),
-            operation.seq_no().into(),
+            new_seqno.into(),
             operation.extra_data(),
         )?;
 
