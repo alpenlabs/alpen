@@ -16,10 +16,11 @@
 
 use std::{future::Future, num::NonZero, time::Duration};
 
-use bitcoin::{secp256k1::SecretKey, BlockHash};
+use bitcoin::BlockHash;
+use strata_crypto::schnorr::EvenSecretKey;
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_proto_administration::{
-    state::AdministrationSubprotoState, AdministrationSubprotocol,
+    AdministrationSubprotoState, AdministrationSubprotocol,
 };
 use strata_asm_txs_admin::{
     actions::{
@@ -79,7 +80,7 @@ pub trait AdminExt {
 /// The sequence number auto-increments after each successful sign operation.
 #[derive(Debug)]
 pub struct AdminContext {
-    privkeys: Vec<SecretKey>,
+    privkeys: Vec<EvenSecretKey>,
     signer_indices: Vec<u8>,
     seqno: u64,
 }
@@ -137,7 +138,7 @@ impl AdminContext {
     }
 
     /// Get the private keys (for advanced signing scenarios).
-    pub fn privkeys(&self) -> &[SecretKey] {
+    pub fn privkeys(&self) -> &[EvenSecretKey] {
         &self.privkeys
     }
 

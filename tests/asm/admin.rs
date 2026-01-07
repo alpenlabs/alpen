@@ -20,6 +20,7 @@
 use std::{num::NonZero, time::Duration};
 
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use strata_crypto::schnorr::EvenSecretKey;
 use bitcoind_async_client::traits::Reader;
 use harness::{
     admin::{
@@ -342,7 +343,7 @@ async fn test_wrong_key_rejected() {
 
     // Create a transaction signed with WRONG key (not the operator key)
     let secp = Secp256k1::new();
-    let wrong_privkey = SecretKey::new(&mut OsRng);
+    let wrong_privkey = EvenSecretKey::from(SecretKey::new(&mut OsRng));
     let wrong_pubkey = PublicKey::from_secret_key(&secp, &wrong_privkey);
     let compressed_pk = CompressedPublicKey::from(wrong_pubkey);
 
