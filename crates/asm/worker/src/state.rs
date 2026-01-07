@@ -92,12 +92,27 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         let cur_state = self.anchor.as_ref().expect("state should be set before");
 
         // Pre process transition next block against current anchor state.
-        let pre_process = strata_asm_stf::pre_process_asm(&self.asm_spec, cur_state.state(), block)
-            .map_err(WorkerError::AsmError)?;
+        let pre_process = {
+            let span = tracing::debug_span!("asm.stf.pre_process",
+                protocol_txs = tracing::field::Empty
+            );
+            let _guard = span.enter();
+
+            let result = strata_asm_stf::pre_process_asm(&self.asm_spec, cur_state.state(), block)
+                .map_err(WorkerError::AsmError)?;
+
+            span.record("protocol_txs", result.txs.len());
+            result
+        };
 
         // Resolve auxiliary data requests from subprotocols
-        let resolver = AuxDataResolver::new(&self.context, self.params.clone());
-        let aux_data = resolver.resolve(&pre_process.aux_requests)?;
+        let aux_data = {
+            let span = tracing::debug_span!("asm.stf.aux_resolve");
+            let _guard = span.enter();
+
+            let resolver = AuxDataResolver::new(&self.context, self.params.clone());
+            resolver.resolve(&pre_process.aux_requests)?
+        };
 
         // For blocks without witness data (pre-SegWit or legacy-only transactions),
         // the witness merkle root equals the transaction merkle root per Bitcoin protocol.
@@ -115,6 +130,9 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         };
 
         // Asm transition.
+        let stf_span = tracing::debug_span!("asm.stf.compute");
+        let _stf_guard = stf_span.enter();
+
         strata_asm_stf::compute_asm_transition(&self.asm_spec, cur_state.state(), stf_input)
             .map_err(WorkerError::AsmError)
     }
