@@ -192,17 +192,11 @@ pub async fn deposit(
     let fee_rate = get_fee_rate(fee_rate, settings.signet_backend.as_ref()).await;
     log_fee_rate(&fee_rate);
 
-    // Convert to PushBytes (ensures length ≤ 80 bytes)
-    let magic_bytes: MagicBytes = settings
-        .magic_bytes
-        .parse()
-        .expect("magic_bytes validated to be 4 bytes");
-
     let tx = build_deposit_request_tx(
         &mut l1w,
         &header_aux,
         &deposit_output,
-        magic_bytes,
+        settings.params.magic_bytes,
         fee_rate,
     )?;
     println!("Built transaction");

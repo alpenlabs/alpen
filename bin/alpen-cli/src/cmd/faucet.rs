@@ -72,9 +72,12 @@ pub async fn faucet(
 
     let (address, claim) = match network_type {
         NetworkType::Signet => {
-            let mut l1w =
-                SignetWallet::new(&seed, settings.params.network, settings.signet_backend.clone())
-                    .internal_error("Failed to load signet wallet")?;
+            let mut l1w = SignetWallet::new(
+                &seed,
+                settings.params.network,
+                settings.signet_backend.clone(),
+            )
+            .internal_error("Failed to load signet wallet")?;
 
             let addr = match &args.address {
                 None => {

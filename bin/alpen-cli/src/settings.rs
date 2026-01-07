@@ -1,6 +1,6 @@
 use std::{
     env::var,
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, read_to_string, File},
     io,
     path::PathBuf,
     str::FromStr,
@@ -94,7 +94,7 @@ pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var("CLI_CONF
 });
 
 pub static ROLLUP_PARAMS_FILE: LazyLock<PathBuf> =
-    LazyLock::new(|| match std::env::var("STRATA_NETWORK_PARAMS").ok() {
+    LazyLock::new(|| match var("STRATA_NETWORK_PARAMS").ok() {
         Some(path) => PathBuf::from_str(&path).expect("valid rollup params path"),
         None => PROJ_DIRS.config_dir().to_owned().join("rollup_params.json"),
     });
@@ -143,9 +143,13 @@ impl Settings {
             .rollup_params_path
             .unwrap_or_else(|| ROLLUP_PARAMS_FILE.clone());
 
-        let params_json = std::fs::read_to_string(&params_path).map_err(OneOf::new)?;
-        let params: RollupParams = serde_json::from_str(&params_json)
-            .map_err(|e| OneOf::new(config::ConfigError::Message(format!("Failed to parse rollup params: {}", e))))?;
+        let params_json = read_to_string(&params_path).map_err(OneOf::new)?;
+        let params: RollupParams = serde_json::from_str(&params_json).map_err(|e| {
+            OneOf::new(config::ConfigError::Message(format!(
+                "Failed to parse rollup params: {}",
+                e
+            )))
+        })?;
 
         Ok(Settings {
             esplora: from_file.esplora,

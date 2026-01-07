@@ -247,6 +247,7 @@ mod tests {
             "l1_reorg_safe_depth": 4,
             "target_l2_batch_size": 64,
             "deposit_amount": 1000000000,
+            "recovery_delay": 1008,
             "checkpoint_predicate": "AlwaysAccept",
             "dispatch_assignment_dur": 64,
             "proof_publish_mode": {

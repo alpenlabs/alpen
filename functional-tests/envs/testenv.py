@@ -758,4 +758,9 @@ class LoadEnvConfig(BasicEnvConfig):
             load_cfg: LoadConfig = builder(svcs)
             svcs[f"load_generator.{builder.name}"] = load_fac.create_simple_loadgen(load_cfg)
 
-        return BasicLiveEnv(svcs, basic_live_env._bridge_pk, basic_live_env._rollup_cfg, basic_live_env._rollup_params_json)
+        return BasicLiveEnv(
+            svcs,
+            basic_live_env._bridge_pk,
+            basic_live_env._rollup_cfg,
+            basic_live_env._rollup_params_json,
+        )

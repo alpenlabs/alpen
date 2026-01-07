@@ -83,8 +83,12 @@ pub async fn drain(
         .transpose()?;
 
     if let Some(address) = signet_address {
-        let mut l1w = SignetWallet::new(&seed, settings.params.network, settings.signet_backend.clone())
-            .internal_error("Failed to load signet wallet")?;
+        let mut l1w = SignetWallet::new(
+            &seed,
+            settings.params.network,
+            settings.signet_backend.clone(),
+        )
+        .internal_error("Failed to load signet wallet")?;
         l1w.sync()
             .await
             .internal_error("Failed to sync signet wallet")?;
