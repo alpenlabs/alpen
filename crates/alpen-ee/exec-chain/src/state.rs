@@ -64,6 +64,11 @@ impl ExecChainState {
         self.unfinalized.finalized().hash()
     }
 
+    /// Returns the block number of the current finalized block.
+    pub fn finalized_blocknum(&self) -> u64 {
+        self.unfinalized.finalized().blocknum()
+    }
+
     /// Appends a new block to the chain state.
     ///
     /// Attempts to attach the block to the unfinalized chain. If successful, checks if any
