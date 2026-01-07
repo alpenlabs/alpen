@@ -18,6 +18,7 @@ use strata_identifiers::{impl_borsh_via_ssz, impl_borsh_via_ssz_fixed};
     clippy::all,
     unreachable_pub,
     clippy::allow_attributes,
+    clippy::absolute_paths,
     reason = "generated code"
 )]
 mod ssz_generated {
@@ -33,18 +34,20 @@ pub use ssz_generated::ssz::{
     payload::{
         BatchInfo, BatchInfoRef, BatchTransition, BatchTransitionRef, CheckpointCommitment,
         CheckpointCommitmentRef, CheckpointPayload, CheckpointPayloadRef, CheckpointSidecar,
-        CheckpointSidecarRef, L1BlockRange, L1BlockRangeRef, L1Commitment, L1CommitmentRef,
-        L2BlockRange, L2BlockRangeRef, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE,
-        SignedCheckpointPayload, SignedCheckpointPayloadRef,
+        CheckpointSidecarRef, L1BlockRange, L1BlockRangeRef, L2BlockRange, L2BlockRangeRef,
+        MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE, SignedCheckpointPayload,
+        SignedCheckpointPayloadRef,
     },
     state::{EpochSummary, EpochSummaryRef},
 };
+// Re-export L1BlockCommitment from strata_identifiers (used in L1BlockRange)
+pub use strata_identifiers::L1BlockCommitment;
 // Re-export OLLog for consumers parsing checkpoint sidecar logs
 pub use strata_ol_chain_types_new::OLLog;
 
 // Borsh bridges for state persistence
 // Fixed-size types (no length prefix needed)
-impl_borsh_via_ssz_fixed!(L1Commitment);
+// Note: L1BlockCommitment has its own Borsh impl in strata_identifiers
 impl_borsh_via_ssz_fixed!(L1BlockRange);
 impl_borsh_via_ssz_fixed!(L2BlockRange);
 impl_borsh_via_ssz_fixed!(BatchInfo);

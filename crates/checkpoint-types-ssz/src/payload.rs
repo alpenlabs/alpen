@@ -6,30 +6,15 @@ use strata_identifiers::{Buf32, Buf64, Epoch, L1BlockCommitment, OLBlockCommitme
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
-    CheckpointPayloadError, L1Commitment, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE,
+    CheckpointPayloadError, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE,
     ssz_generated::ssz::payload::{
         BatchInfo, BatchTransition, CheckpointCommitment, CheckpointPayload, CheckpointSidecar,
         L1BlockRange, L2BlockRange, SignedCheckpointPayload,
     },
 };
 
-impl From<&L1BlockCommitment> for L1Commitment {
-    fn from(commitment: &L1BlockCommitment) -> Self {
-        Self {
-            height: commitment.height_u64() as u32,
-            blkid: *commitment.blkid(),
-        }
-    }
-}
-
-impl From<L1BlockCommitment> for L1Commitment {
-    fn from(commitment: L1BlockCommitment) -> Self {
-        Self::from(&commitment)
-    }
-}
-
 impl L1BlockRange {
-    pub fn new(start: L1Commitment, end: L1Commitment) -> Self {
+    pub fn new(start: L1BlockCommitment, end: L1BlockCommitment) -> Self {
         Self { start, end }
     }
 }

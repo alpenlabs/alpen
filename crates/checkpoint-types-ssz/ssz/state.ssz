@@ -1,5 +1,4 @@
 import strata_identifiers
-import payload
 
 ### Stored in checkpoint subprotocol state for tracking verified epochs.
 #~# derive: Copy, Serialize, Deserialize
@@ -14,6 +13,7 @@ class EpochSummary(Container):
     #~# external_kind: container
     prev_terminal: strata_identifiers.OLBlockCommitment
     ### The final L1 block covered by this epoch's checkpoint.
-    l1_end: payload.L1Commitment
+    #~# external_kind: container
+    l1_end: strata_identifiers.L1BlockCommitment
     ### The final state root of the epoch.
     final_state: strata_identifiers.Buf32

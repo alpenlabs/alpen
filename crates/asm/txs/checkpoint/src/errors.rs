@@ -19,13 +19,7 @@ pub enum CheckpointTxError {
 
     /// Failed to deserialize SSZ checkpoint payload.
     #[error("failed to deserialize checkpoint payload: {0:?}")]
-    SszDecode(DecodeError),
-}
-
-impl From<DecodeError> for CheckpointTxError {
-    fn from(err: DecodeError) -> Self {
-        Self::SszDecode(err)
-    }
+    SszDecode(#[from] DecodeError),
 }
 
 /// Result alias for checkpoint transaction helpers.

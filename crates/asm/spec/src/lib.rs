@@ -7,7 +7,6 @@
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
 use strata_asm_proto_checkpoint::{CheckpointConfig, CheckpointSubprotocol};
-use strata_checkpoint_types_ssz::L1Commitment;
 use strata_identifiers::CredRule;
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::compute_genesis_ol_state_root;
@@ -93,7 +92,7 @@ impl StrataAsmSpec {
         let checkpoint_genesis = CheckpointConfig {
             sequencer_predicate,
             checkpoint_predicate: params.checkpoint_predicate.clone(),
-            genesis_l1: L1Commitment::from(genesis_l1_blk),
+            genesis_l1: *genesis_l1_blk,
             genesis_ol_state_root,
         };
 

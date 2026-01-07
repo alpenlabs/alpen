@@ -2,14 +2,14 @@
 
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment};
 
-use crate::{L1Commitment, ssz_generated::ssz::state::EpochSummary};
+use crate::{L1BlockCommitment, ssz_generated::ssz::state::EpochSummary};
 
 impl EpochSummary {
     pub fn new(
         epoch: Epoch,
         terminal: OLBlockCommitment,
         prev_terminal: OLBlockCommitment,
-        l1_end: L1Commitment,
+        l1_end: L1BlockCommitment,
         final_state: Buf32,
     ) -> Self {
         Self {
@@ -33,7 +33,7 @@ impl EpochSummary {
         &self.prev_terminal
     }
 
-    pub fn l1_end(&self) -> &L1Commitment {
+    pub fn l1_end(&self) -> &L1BlockCommitment {
         &self.l1_end
     }
 
@@ -67,7 +67,7 @@ impl EpochSummary {
     pub fn create_next_epoch_summary(
         &self,
         new_terminal: OLBlockCommitment,
-        l1_end: L1Commitment,
+        l1_end: L1BlockCommitment,
         new_state: Buf32,
     ) -> EpochSummary {
         EpochSummary::new(

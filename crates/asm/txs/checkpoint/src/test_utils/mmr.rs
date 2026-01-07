@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use strata_asm_common::{
-    ASM_MMR_CAP_LOG2, AsmCompactMmr, AsmMerkleProof, AsmMmr, AuxData, Hash32,
+    ASM_MMR_CAP_LOG2, AsmCompactMmr, AsmHasher, AsmMerkleProof, AsmMmr, AuxData, Hash32,
     VerifiableManifestHash, VerifiedAuxData,
 };
 use strata_db_types::mmr_helpers::{
@@ -64,8 +64,7 @@ impl TestMmr {
         self.metadata = result.new_metadata;
 
         // Keep standard MMR in sync for compact conversion using add_leaf
-        self.standard_mmr
-            .add_leaf(hash)
+        strata_merkle::Mmr::<AsmHasher>::add_leaf(&mut self.standard_mmr, hash)
             .expect("add_leaf should succeed");
 
         result.leaf_index
@@ -96,7 +95,7 @@ impl TestMmr {
 
     /// Converts to a compact MMR for verification.
     pub fn to_compact(&self) -> AsmCompactMmr {
-        self.standard_mmr.clone().into()
+        self.standard_mmr.clone()
     }
 }
 

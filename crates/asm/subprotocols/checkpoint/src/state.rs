@@ -1,7 +1,7 @@
 //! Checkpoint subprotocol state and configuration types.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_checkpoint_types_ssz::{CheckpointPayload, EpochSummary, L1Commitment};
+use strata_checkpoint_types_ssz::{CheckpointPayload, EpochSummary, L1BlockCommitment};
 use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
@@ -106,11 +106,11 @@ impl CheckpointState {
 
     /// Returns the height of the last L1 block covered by the previous checkpoint.
     pub fn last_covered_l1_height(&self) -> u32 {
-        self.epoch_summary.l1_end().height
+        self.epoch_summary.l1_end().height_u64() as u32
     }
 
     /// Returns the last L1 block commitment covered by the previous checkpoint.
-    pub fn last_covered_l1(&self) -> L1Commitment {
+    pub fn last_covered_l1(&self) -> L1BlockCommitment {
         *self.epoch_summary.l1_end()
     }
 
@@ -175,7 +175,7 @@ pub struct CheckpointConfig {
     pub checkpoint_predicate: PredicateKey,
 
     /// Genesis L1 block commitment.
-    pub genesis_l1: L1Commitment,
+    pub genesis_l1: L1BlockCommitment,
 
     /// Genesis OL chainstate root.
     ///

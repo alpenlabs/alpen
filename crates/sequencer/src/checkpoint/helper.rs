@@ -5,7 +5,7 @@ use ssz::Encode;
 use strata_checkpoint_types::Checkpoint;
 use strata_checkpoint_types_ssz::{
     BatchInfo as SszBatchInfo, CheckpointCommitment, CheckpointPayload, CheckpointSidecar,
-    L1BlockRange, L1Commitment, L2BlockRange, SignedCheckpointPayload,
+    L1BlockRange, L2BlockRange, SignedCheckpointPayload,
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::OLBlockCommitment;
@@ -57,10 +57,8 @@ pub fn convert_checkpoint_to_payload(checkpoint: &Checkpoint) -> CheckpointPaylo
     let batch_info = checkpoint.batch_info();
     let batch_transition = checkpoint.batch_transition();
 
-    // Convert L1 range (L1Commitment.height is u32)
-    let l1_start = L1Commitment::from(&batch_info.l1_range.0);
-    let l1_end = L1Commitment::from(&batch_info.l1_range.1);
-    let l1_range = L1BlockRange::new(l1_start, l1_end);
+    // Convert L1 range using L1BlockCommitment directly
+    let l1_range = L1BlockRange::new(batch_info.l1_range.0, batch_info.l1_range.1);
 
     // Convert L2 range - map L2BlockCommitment to OLBlockCommitment
     let l2_start =

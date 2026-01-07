@@ -164,15 +164,17 @@ fn process_checkpoint_log(
 
 /// Convert SSZ BatchInfo to regular BatchInfo.
 fn convert_ssz_batch_info(ssz: &SszBatchInfo) -> BatchInfo {
-    // Convert L1 commitments - SSZ uses u32 for height, need to convert to L1BlockCommitment
+    // Convert L1 commitments - use accessor methods for L1BlockCommitment
     let l1_start = L1BlockCommitment::from_height_u64(
-        ssz.l1_range.start.height as u64,
-        ssz.l1_range.start.blkid,
+        ssz.l1_range.start.height_u64(),
+        *ssz.l1_range.start.blkid(),
     )
     .expect("valid L1 height");
-    let l1_end =
-        L1BlockCommitment::from_height_u64(ssz.l1_range.end.height as u64, ssz.l1_range.end.blkid)
-            .expect("valid L1 height");
+    let l1_end = L1BlockCommitment::from_height_u64(
+        ssz.l1_range.end.height_u64(),
+        *ssz.l1_range.end.blkid(),
+    )
+    .expect("valid L1 height");
 
     // Convert L2 commitments
     let l2_start = L2BlockCommitment::new(ssz.l2_range.start.slot, ssz.l2_range.start.blkid);
@@ -223,13 +225,13 @@ mod tests {
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
     use strata_checkpoint_types_ssz::{
-        BatchInfo, BatchTransition, L1BlockRange, L1Commitment, L2BlockRange,
+        BatchInfo, BatchTransition, L1BlockCommitment, L1BlockRange, L2BlockRange,
     };
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_identifiers::OLBlockCommitment;
+    use strata_identifiers::{L1BlockId, OLBlockCommitment};
     use strata_params::{Params, RollupParams, SyncParams};
-    use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l1::BitcoinTxid, prelude::*};
+    use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l1::BitcoinTxid};
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
@@ -425,15 +427,17 @@ mod tests {
             );
             let l2_range = L2BlockRange::new(l2_start, l2_end);
 
-            // Create L1 block range using SSZ L1Commitment
-            let l1_start = L1Commitment {
-                height: 90 + epoch - 1,
-                blkid: arbgen.generate(),
-            };
-            let l1_end = L1Commitment {
-                height: 90 + epoch,
-                blkid: arbgen.generate(),
-            };
+            // Create L1 block range using L1BlockCommitment
+            let l1_start = L1BlockCommitment::from_height_u64(
+                (90 + epoch - 1) as u64,
+                L1BlockId::from(arbgen.generate::<Buf32>()),
+            )
+            .expect("valid height");
+            let l1_end = L1BlockCommitment::from_height_u64(
+                (90 + epoch) as u64,
+                L1BlockId::from(arbgen.generate::<Buf32>()),
+            )
+            .expect("valid height");
             let l1_range = L1BlockRange::new(l1_start, l1_end);
 
             // Create batch info using SSZ types

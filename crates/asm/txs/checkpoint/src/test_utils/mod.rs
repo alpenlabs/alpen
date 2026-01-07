@@ -6,7 +6,7 @@ use ssz::Encode;
 use strata_btc_types::payload::L1Payload;
 use strata_checkpoint_types_ssz::{
     BatchInfo, CheckpointCommitment, CheckpointPayload, CheckpointSidecar, L1BlockRange,
-    L1Commitment, L2BlockRange, OLLog, SignedCheckpointPayload,
+    L2BlockRange, OLLog, SignedCheckpointPayload,
 };
 use strata_identifiers::{
     Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
@@ -82,7 +82,7 @@ pub struct CheckpointGenerator {
     epoch: Epoch,
     /// The L1 commitment at which the previous checkpoint ended (or genesis for first checkpoint).
     /// The next checkpoint's L1 range will start at height `last_l1_end.height + 1`.
-    last_l1_end: L1Commitment,
+    last_l1_end: L1BlockCommitment,
     /// The L2 terminal from the previous checkpoint (None before first checkpoint).
     /// The next checkpoint's L2 range will start at slot `last_l2_terminal.slot() + 1` (or 1 for
     /// first).
@@ -95,7 +95,7 @@ impl CheckpointGenerator {
     /// Create a new generator seeded with the genesis L1 commitment.
     ///
     /// The first checkpoint's L1 range will start at `genesis_l1.height + 1`.
-    pub fn new(genesis_l1: L1Commitment) -> Self {
+    pub fn new(genesis_l1: L1BlockCommitment) -> Self {
         Self {
             epoch: 0,
             last_l1_end: genesis_l1,
@@ -124,14 +124,17 @@ impl CheckpointGenerator {
         assert!(l2_slots > 0, "l2_slots must be greater than zero");
 
         // L1 range: [start, end] where start = previous_end + 1
-        let l1_start = L1Commitment {
-            height: self.last_l1_end.height + 1,
-            blkid: self.arb.generate::<L1BlockId>(),
-        };
-        let l1_end = L1Commitment {
-            height: l1_start.height + l1_blocks - 1,
-            blkid: self.arb.generate::<L1BlockId>(),
-        };
+        let start_height = self.last_l1_end.height_u64() as u32 + 1;
+        let l1_start = L1BlockCommitment::from_height_u64(
+            start_height as u64,
+            self.arb.generate::<L1BlockId>(),
+        )
+        .expect("valid L1 height");
+        let l1_end = L1BlockCommitment::from_height_u64(
+            (start_height + l1_blocks - 1) as u64,
+            self.arb.generate::<L1BlockId>(),
+        )
+        .expect("valid L1 height");
 
         // L2 range: start = first covered slot (previous_terminal + 1, or 1 for first checkpoint)
         let l2_start_slot = self.last_l2_terminal.map(|t| t.slot() + 1).unwrap_or(1);
@@ -189,12 +192,9 @@ pub fn build_l1_payload(signed_checkpoint: &SignedCheckpointPayload) -> L1Payloa
     L1Payload::new(vec![payload_bytes], tag)
 }
 
-/// Convert an `L1BlockCommitment` into a checkpoint `L1Commitment`.
-pub fn checkpoint_l1_from_block(commitment: &L1BlockCommitment) -> L1Commitment {
-    L1Commitment {
-        height: commitment.height_u64() as u32,
-        blkid: *commitment.blkid(),
-    }
+/// Clone an `L1BlockCommitment` (convenience wrapper for tests).
+pub fn checkpoint_l1_from_block(commitment: &L1BlockCommitment) -> L1BlockCommitment {
+    *commitment
 }
 
 fn encode_ol_logs(logs: &[OLLog]) -> Vec<u8> {

@@ -25,7 +25,7 @@ pub(crate) fn get_manifest_hash_range(
     // L1BlockRange is inclusive on both ends; start is the previous checkpoint's final L1 block.
     // We only need new manifests, so begin one past the last covered height.
     let start_height = state.last_covered_l1_height() as u64 + 1;
-    let end_height = batch_info.l1_range.end.height as u64;
+    let end_height = batch_info.l1_range.end.height_u64();
     (start_height, end_height)
 }
 

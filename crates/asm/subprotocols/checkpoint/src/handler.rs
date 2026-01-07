@@ -25,7 +25,7 @@ use crate::{
 ///
 /// Steps:
 /// 1. Extract signed checkpoint from envelope
-/// 2. Verify signature
+/// 2. Verify signature using predicate framework.
 /// 3. Validate start values match expected state
 /// 4. Validate state transitions (epoch, L1/L2 progression)
 /// 5. Get manifest hashes from auxiliary data
@@ -95,12 +95,12 @@ fn validate_start_values(state: &CheckpointState, batch_info: &BatchInfo) -> Che
     let last_l1_height = state.last_covered_l1_height();
     let expected_start_height = last_l1_height + 1;
     let l1_start = batch_info.l1_range.start;
-    if l1_start.height != expected_start_height {
+    if l1_start.height_u64() as u32 != expected_start_height {
         return Err(CheckpointError::InvalidL1Start {
             expected_height: expected_start_height,
-            expected_blkid: state.last_covered_l1().blkid, // For error context only
-            new_height: l1_start.height,
-            new_blkid: l1_start.blkid,
+            expected_blkid: *state.last_covered_l1().blkid(), // For error context only
+            new_height: l1_start.height_u64() as u32,
+            new_blkid: *l1_start.blkid(),
         });
     }
 
@@ -137,7 +137,7 @@ fn validate_state_transitions(
 
     // L1 end height must progress beyond last covered L1
     let last_l1_height = state.last_covered_l1_height();
-    let l1_end = batch_info.l1_range.end.height;
+    let l1_end = batch_info.l1_range.end.height_u64() as u32;
     if l1_end <= last_l1_height {
         return Err(CheckpointError::InvalidL1Progression {
             previous: last_l1_height,
@@ -222,10 +222,10 @@ mod tests {
         CheckpointGenerator, SequencerKeypair, build_l1_payload, verified_aux_data_for_heights,
     };
     use strata_btcio::test_utils::create_checkpoint_envelope_tx;
-    use strata_checkpoint_types_ssz::SignedCheckpointPayload;
+    use strata_checkpoint_types_ssz::{L1BlockCommitment, SignedCheckpointPayload};
     use strata_codec::encode_to_vec;
     use strata_identifiers::{Buf32, L1BlockId};
-    use strata_l1_txfmt::ParseConfig;
+    use strata_l1_txfmt::{MagicBytes, ParseConfig};
     use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
     use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
     use strata_predicate::PredicateKey;
@@ -234,7 +234,7 @@ mod tests {
     use super::*;
     use crate::CheckpointConfig;
 
-    const TEST_MAGIC_BYTES: &[u8; 4] = b"ALPN";
+    const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
     const TEST_ADDR: &str = "bcrt1q6u6qyya3sryhh42lahtnz2m7zuufe7dlt8j0j5";
 
     struct TestRelayer {
@@ -267,16 +267,17 @@ mod tests {
         }
     }
 
-    fn genesis_l1() -> strata_checkpoint_types_ssz::L1Commitment {
-        strata_checkpoint_types_ssz::L1Commitment {
-            height: 0,
-            blkid: L1BlockId::from(Buf32::zero()),
-        }
+    fn genesis_l1() -> strata_checkpoint_types_ssz::L1BlockCommitment {
+        strata_checkpoint_types_ssz::L1BlockCommitment::from_height_u64(
+            0,
+            L1BlockId::from(Buf32::zero()),
+        )
+        .expect("valid genesis height")
     }
 
     fn verified_aux_for(state: &CheckpointState, batch_info: &BatchInfo) -> VerifiedAuxData {
         let start_height = state.last_covered_l1_height() as u64 + 1;
-        let end_height = batch_info.l1_range.end.height as u64;
+        let end_height = batch_info.l1_range.end.height_u64();
         let (verified_aux, _compact_mmr) = verified_aux_data_for_heights(start_height, end_height);
         verified_aux
     }
@@ -297,7 +298,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
@@ -320,7 +321,7 @@ mod tests {
             .expect("checkpoint log emitted");
         assert_eq!(checkpoint_log.epoch_commitment().epoch(), 0);
         assert_eq!(checkpoint_log.batch_info().epoch, 0);
-        assert_eq!(checkpoint_log.batch_info().l1_range.end.height, 1);
+        assert_eq!(checkpoint_log.batch_info().l1_range.end.height_u64(), 1);
         assert_eq!(
             checkpoint_log.transition().post_state_root,
             payload.commitment.post_state_root
@@ -344,7 +345,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
@@ -375,7 +376,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
@@ -398,7 +399,11 @@ mod tests {
 
         // Tamper the L1 start height to mismatch expected (genesis_height + 1 = 1).
         // Use height 999 to ensure it doesn't match the expected value.
-        payload.commitment.batch_info.l1_range.start.height = 999;
+        payload.commitment.batch_info.l1_range.start = L1BlockCommitment::from_height_u64(
+            999,
+            *payload.commitment.batch_info.l1_range.start.blkid(),
+        )
+        .expect("valid L1 height");
 
         let signature = keypair.sign(&payload);
         let signed_checkpoint = SignedCheckpointPayload::new(payload.clone(), signature);
@@ -410,7 +415,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
@@ -448,7 +453,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
@@ -468,7 +473,7 @@ mod tests {
             .find_map(|l| l.try_into_log().ok())
             .expect("checkpoint log emitted");
         assert_eq!(checkpoint_log.epoch_commitment().epoch(), 0);
-        assert_eq!(checkpoint_log.batch_info().l1_range.end.height, 1);
+        assert_eq!(checkpoint_log.batch_info().l1_range.end.height_u64(), 1);
         assert_eq!(
             checkpoint_log.transition().post_state_root,
             payload.commitment.post_state_root
@@ -494,7 +499,7 @@ mod tests {
             let signed_checkpoint = SignedCheckpointPayload::new(payload.clone(), signature);
             let l1_payload = build_l1_payload(&signed_checkpoint);
             let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-            let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+            let tag = ParseConfig::new(TEST_MAGIC_BYTES)
                 .try_parse_tx(&tx)
                 .expect("tag data");
             let tx_ref = TxInputRef::new(&tx, tag);
@@ -541,7 +546,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
@@ -572,7 +577,7 @@ mod tests {
         let signed1 = SignedCheckpointPayload::new(payload1.clone(), signature1);
         let l1_payload1 = build_l1_payload(&signed1);
         let tx1 = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload1);
-        let tag1 = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag1 = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx1)
             .expect("tag data");
         let tx_ref1 = TxInputRef::new(&tx1, tag1);
@@ -593,7 +598,7 @@ mod tests {
         let signed2 = SignedCheckpointPayload::new(payload2.clone(), signature2);
         let l1_payload2 = build_l1_payload(&signed2);
         let tx2 = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload2);
-        let tag2 = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag2 = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx2)
             .expect("tag data");
         let tx_ref2 = TxInputRef::new(&tx2, tag2);
@@ -632,7 +637,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
@@ -666,7 +671,7 @@ mod tests {
             genesis_ol_state_root: Buf32::zero(),
         });
         let tx = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload);
-        let tag = ParseConfig::new(*TEST_MAGIC_BYTES)
+        let tag = ParseConfig::new(TEST_MAGIC_BYTES)
             .try_parse_tx(&tx)
             .expect("tag data");
         let tx_ref = TxInputRef::new(&tx, tag);
