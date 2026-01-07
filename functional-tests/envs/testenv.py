@@ -92,6 +92,8 @@ class StrataRunContext(flexitest.RunContext):
         rollup_cfg = env.rollup_cfg()
         agg_pubkey = get_bridge_pubkey_from_cfg(rollup_cfg)
         rollup_params_json = env.rollup_params_json()
+        if not rollup_params_json:
+            raise ValueError("rollup_params_json must be set for functional tests")
 
         builder = (
             AlpenCliBuilder()
@@ -108,12 +110,9 @@ class StrataRunContext(flexitest.RunContext):
                 lambda s: f"http://localhost:{s.get_prop('eth_rpc_http_port')}",
             )
             .with_pubkey(agg_pubkey)
-            .with_magic_bytes(rollup_cfg.magic_bytes)
             .with_datadir(os.path.join(self.datadir_root, name))
+            .with_rollup_params(rollup_params_json)
         )
-
-        if rollup_params_json:
-            builder = builder.with_rollup_params(rollup_params_json)
 
         self.alpen_cli = builder.build(self)
 
