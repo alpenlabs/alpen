@@ -74,6 +74,10 @@ impl From<Batch> for DBBatch {
 impl TryFrom<DBBatch> for Batch {
     type Error = &'static str;
 
+    /// Converts a database batch into a domain batch.
+    ///
+    /// Note: The return type is `Result` because `Batch::new` and `Batch::new_genesis_batch`
+    /// already return `Result<Batch, &'static str>`, which is propagated directly here.
     fn try_from(value: DBBatch) -> Result<Self, Self::Error> {
         let inner_blocks: Vec<Hash> = value.inner_blocks.into_iter().map(Hash::from).collect();
 
