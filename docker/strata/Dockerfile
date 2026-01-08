@@ -1,9 +1,7 @@
-# syntax=docker/dockerfile:1.7
-
 ARG RUST_VERSION=1.92
 
-FROM rust:${RUST_VERSION}-slim-trixie AS builder
-
+# base
+FROM rust:${RUST_VERSION}-slim-trixie AS chef
 WORKDIR /app
 
 ENV CARGO_HOME=/usr/local/cargo \
@@ -16,24 +14,39 @@ RUN apt-get update && \
       build-essential ca-certificates clang libclang-dev pkg-config libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy toolchain + cargo manifests early for better layer caching
-COPY rust-toolchain.toml ./
-COPY Cargo.toml Cargo.lock ./
+# Install cargo-chef (cached layer)
+RUN cargo install cargo-chef --locked
 
-# This reads rust-toolchain.toml and installs the right toolchain/components/targets
+# ---- planner: generate recipe.json ----
+FROM chef AS planner
+COPY rust-toolchain.toml ./
+RUN rustup toolchain install
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ---- builder
+FROM chef AS builder
+COPY rust-toolchain.toml ./
 RUN rustup toolchain install
 
-# Now copy the rest of the repo
+# Bring in the recipe from planner
+COPY --from=planner /app/recipe.json recipe.json
+
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=private,target=/app/target \
+    cargo chef cook --release --recipe-path recipe.json
+
 COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
     cargo build --locked --release --bin strata && \
-    install -d /out && \
     install -m 0555 /app/target/release/strata /usr/local/bin/strata
 
 
+# ---- runtime ----
 FROM debian:13-slim AS runtime
 
 ENV APP_HOME=/app \

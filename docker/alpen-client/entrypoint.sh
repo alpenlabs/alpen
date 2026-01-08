@@ -1,11 +1,10 @@
 #!/bin/sh
-# Entrypoint script
 
-set -eu
 # Fail fast on errors and unset variables
+set -eu
 
-umask 027
 # Restrict default permissions for newly created files
+umask 027
 
 
 if [ "${1-}" = "help" ] || [ "${1-}" = "--help" ] || [ "${1-}" = "-h" ]; then
