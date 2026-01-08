@@ -16,7 +16,7 @@
 
 use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
-use bitcoin::BlockHash;
+use bitcoin::{secp256k1::SecretKey, BlockHash};
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
@@ -30,10 +30,7 @@ use strata_asm_txs_admin::{
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
-use strata_crypto::{
-    schnorr::EvenSecretKey,
-    threshold_signature::{CompressedPublicKey, ThresholdConfigUpdate},
-};
+use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfigUpdate};
 use strata_params::Params;
 use strata_predicate::PredicateKey;
 use strata_primitives::{
@@ -80,7 +77,7 @@ pub trait AdminExt {
 /// Each role's sequence number auto-increments after each successful sign operation.
 #[derive(Debug)]
 pub struct AdminContext {
-    privkeys: Vec<EvenSecretKey>,
+    privkeys: Vec<SecretKey>,
     signer_indices: Vec<u8>,
     seqnos: HashMap<Role, u64>,
 }
@@ -116,7 +113,7 @@ impl AdminContext {
     }
 
     /// Get the private keys (for manual signature construction in tests).
-    pub fn privkeys(&self) -> &[EvenSecretKey] {
+    pub fn privkeys(&self) -> &[SecretKey] {
         &self.privkeys
     }
 

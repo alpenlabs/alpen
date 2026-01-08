@@ -188,11 +188,8 @@ mod tests {
         },
         test_utils::create_signature_set,
     };
-    use strata_crypto::{
-        schnorr::EvenSecretKey,
-        threshold_signature::{
-            CompressedPublicKey, SignatureSet, ThresholdConfig, ThresholdSignatureError,
-        },
+    use strata_crypto::threshold_signature::{
+        CompressedPublicKey, SignatureSet, ThresholdConfig, ThresholdSignatureError,
     };
     use strata_predicate::PredicateKey;
     use strata_primitives::roles::{ProofType, Role};
@@ -241,16 +238,10 @@ mod tests {
         }
     }
 
-    fn create_test_params() -> (
-        AdministrationSubprotoParams,
-        Vec<EvenSecretKey>,
-        Vec<EvenSecretKey>,
-    ) {
+    fn create_test_params() -> (AdministrationSubprotoParams, Vec<SecretKey>, Vec<SecretKey>) {
         let secp = Secp256k1::new();
 
-        let strata_admin_sks: Vec<EvenSecretKey> = (0..3)
-            .map(|_| EvenSecretKey::from(SecretKey::new(&mut OsRng)))
-            .collect();
+        let strata_admin_sks: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
         let strata_admin_pks: Vec<CompressedPublicKey> = strata_admin_sks
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))
@@ -258,9 +249,8 @@ mod tests {
         let strata_administrator =
             ThresholdConfig::try_new(strata_admin_pks, NonZero::new(2).unwrap()).unwrap();
 
-        let strata_seq_manager_sks: Vec<EvenSecretKey> = (0..3)
-            .map(|_| EvenSecretKey::from(SecretKey::new(&mut OsRng)))
-            .collect();
+        let strata_seq_manager_sks: Vec<SecretKey> =
+            (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
         let strata_seq_manager_pks: Vec<CompressedPublicKey> = strata_seq_manager_sks
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(&secp, sk)))

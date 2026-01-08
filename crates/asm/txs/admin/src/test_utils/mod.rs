@@ -13,10 +13,7 @@ use bitcoin::{
     transaction::Version,
 };
 use rand::{RngCore, rngs::OsRng};
-use strata_crypto::{
-    schnorr::EvenSecretKey,
-    threshold_signature::{IndexedSignature, SignatureSet},
-};
+use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 
@@ -54,7 +51,7 @@ pub fn sign_ecdsa_recoverable(message_hash: &[u8; 32], secret_key: &SecretKey) -
 /// # Returns
 /// A SignatureSet that can be used to authorize this action
 pub fn create_signature_set(
-    privkeys: &[EvenSecretKey],
+    privkeys: &[SecretKey],
     signer_indices: &[u8],
     sighash: Buf32,
 ) -> SignatureSet {
@@ -88,7 +85,7 @@ pub fn create_signature_set(
 /// A Bitcoin transaction that serves as the reveal transaction containing the administration
 /// payload
 pub fn create_test_admin_tx(
-    privkeys: &[EvenSecretKey],
+    privkeys: &[SecretKey],
     signer_indices: &[u8],
     action: &MultisigAction,
     seqno: u64,
@@ -196,7 +193,6 @@ mod tests {
     use std::num::NonZero;
 
     use bitcoin::secp256k1::PublicKey;
-    use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
     use strata_crypto::{
         keys::compressed::CompressedPublicKey,
@@ -214,10 +210,8 @@ mod tests {
         let seqno = 1;
         let threshold = NonZero::new(2).unwrap();
 
-        // Generate test private keys (converted to EvenSecretKey for taproot compatibility)
-        let privkeys: Vec<EvenSecretKey> = (0..3)
-            .map(|_| EvenSecretKey::from(SecretKey::new(&mut OsRng)))
-            .collect();
+        // Generate test private keys
+        let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
         let pubkeys: Vec<CompressedPublicKey> = privkeys
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(SECP256K1, sk)))
@@ -249,10 +243,8 @@ mod tests {
         let seqno = 1;
         let threshold = NonZero::new(2).unwrap();
 
-        // Generate test private keys (converted to EvenSecretKey for taproot compatibility)
-        let privkeys: Vec<EvenSecretKey> = (0..3)
-            .map(|_| EvenSecretKey::from(SecretKey::new(&mut OsRng)))
-            .collect();
+        // Generate test private keys
+        let privkeys: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
         let pubkeys: Vec<CompressedPublicKey> = privkeys
             .iter()
             .map(|sk| CompressedPublicKey::from(PublicKey::from_secret_key(SECP256K1, sk)))

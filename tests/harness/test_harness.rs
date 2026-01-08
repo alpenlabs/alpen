@@ -53,6 +53,7 @@ use bitcoind_async_client::{
 use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
+use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
 use strata_params::Params;
 use strata_primitives::{
     buf::Buf32,
@@ -450,8 +451,8 @@ impl AsmTestHarness {
     /// * `payload` - Serialized payload to embed in witness
     pub async fn build_envelope_tx(
         &self,
-        subprotocol_id: u8,
-        tx_type: u8,
+        subprotocol_id: SubprotocolId,
+        tx_type: TxType,
         payload: Vec<u8>,
     ) -> anyhow::Result<Transaction> {
         let fee = Self::DEFAULT_FEE;
@@ -487,15 +488,14 @@ impl AsmTestHarness {
             .await?;
         let commit_outpoint = OutPoint::new(commit_txid, commit_vout);
 
-        // Build SPS-50 compliant OP_RETURN tag
-        let mut sps50_tag = Vec::with_capacity(6);
-        sps50_tag.extend_from_slice(self.params.rollup().magic_bytes.as_bytes()); // 4 bytes
-        sps50_tag.push(subprotocol_id); // 1 byte
-        sps50_tag.push(tx_type); // 1 byte
+        // Build SPS-50 compliant OP_RETURN tag using TagData and ParseConfig
+        let tag_data = TagDataRef::new(subprotocol_id, tx_type, &[])?;
+        let parse_config = ParseConfig::new(self.params.rollup().magic_bytes);
+        let op_return_script = parse_config.encode_script_buf(&tag_data)?;
 
         let op_return_output = TxOut {
             value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return(PushBytesBuf::try_from(sps50_tag)?),
+            script_pubkey: op_return_script,
         };
 
         // Change output
