@@ -55,10 +55,10 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     // 4. Verify input mmr proofs
     verify_input_mmr_proofs(target, snark_state, accum_proofs.inbox_proofs())?;
 
-    // 4. Verify outputs can be applied safely
+    // 5. Verify outputs can be applied safely
     verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
-    // 5. Verify the witness check
+    // 6. Verify the witness check
     verify_update_witness(target, snark_state, update.base_update())?;
 
     Ok(VerifiedUpdate { operation })

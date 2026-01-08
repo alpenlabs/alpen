@@ -387,10 +387,7 @@ impl ManifestMmrTracker {
         // Create MmrEntryProof for ledger references
         let mmr_entry_proof = MmrEntryProof::new(
             hash.into_inner(),
-            strata_acct_types::MerkleProof::from_cohashes(
-                proof.cohashes().to_vec(),
-                index,
-            ),
+            strata_acct_types::MerkleProof::from_cohashes(proof.cohashes().to_vec(), index),
         );
 
         (index, mmr_entry_proof)

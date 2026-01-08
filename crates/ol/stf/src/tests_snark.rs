@@ -333,6 +333,7 @@ mod inbox {
         // Step 2: Verify the parallel MMR matches the actual inbox MMR
         let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
         let snark_state = snark_account.as_snark_account().unwrap();
+        let prev_seq_no = snark_state.seqno();
 
         assert_eq!(
             snark_state.inbox_mmr().num_entries(),
@@ -345,6 +346,7 @@ mod inbox {
         assert_eq!(snark_state.next_inbox_msg_idx(), 0);
 
         // Step 3: Create update that indicates that the GAM message was processed.
+        // Just to have something in the outputs, include a transfer.
         let outputs = UpdateOutputs::new(
             vec![OutputTransfer::new(
                 recipient_id,
@@ -394,7 +396,7 @@ mod inbox {
 
         assert_eq!(
             *snark_account.as_snark_account().unwrap().seqno().inner(),
-            1,
+            prev_seq_no.inner() + 1,
             "Sender seq no should increment"
         );
 
@@ -487,6 +489,7 @@ mod inbox {
             .expect("GAM should succeed");
         let header = blk.header();
 
+        // Verify the message was added to inbox
         let (_, snark_state) = get_snark_state_expect(&state, snark_id);
         assert_eq!(
             snark_state.inbox_mmr().num_entries(),
