@@ -1,6 +1,6 @@
 //! OL RPC server implementation.
 
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
 
 use async_trait::async_trait;
 use jsonrpsee::{
@@ -23,6 +23,33 @@ use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::error;
+
+/// Custom error code for mempool capacity-related errors.
+const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
+
+/// Creates an RPC error for database failures.
+fn db_error(e: impl Display) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(
+        INTERNAL_ERROR_CODE,
+        format!("Database error: {e}"),
+        None::<()>,
+    )
+}
+
+/// Creates an RPC error for resource not found.
+fn not_found_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
+}
+
+/// Creates an RPC error for internal failures.
+fn internal_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, msg.into(), None::<()>)
+}
+
+/// Creates an RPC error for invalid parameters.
+fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
+}
 
 /// OL RPC server implementation.
 pub(crate) struct OLRpcServer {
@@ -66,22 +93,14 @@ impl OLClientRpcServer for OLRpcServer {
             .await
             .map_err(|e| {
                 error!(?e, ?epoch, "Failed to get epoch commitments");
-                ErrorObjectOwned::owned(
-                    INTERNAL_ERROR_CODE,
-                    format!("Database error: {e}"),
-                    None::<()>,
-                )
+                db_error(e)
             })?;
 
         // For now, use the first commitment if available
         // TODO: This should be more sophisticated - we might need to determine which commitment
         // corresponds to the canonical chain
         let epoch_commitment = commitments.first().ok_or_else(|| {
-            ErrorObjectOwned::owned(
-                INVALID_PARAMS_CODE,
-                format!("No epoch commitment found for epoch {epoch}"),
-                None::<()>,
-            )
+            not_found_error(format!("No epoch commitment found for epoch {epoch}"))
         })?;
 
         // Get the epoch summary
@@ -92,18 +111,12 @@ impl OLClientRpcServer for OLRpcServer {
             .await
             .map_err(|e| {
                 error!(?e, %epoch_commitment, "Failed to get epoch summary");
-                ErrorObjectOwned::owned(
-                    INTERNAL_ERROR_CODE,
-                    format!("Database error: {e}"),
-                    None::<()>,
-                )
+                db_error(e)
             })?
             .ok_or_else(|| {
-                ErrorObjectOwned::owned(
-                    INVALID_PARAMS_CODE,
-                    format!("No epoch summary found for epoch commitment {epoch_commitment}"),
-                    None::<()>,
-                )
+                not_found_error(format!(
+                    "No epoch summary found for epoch commitment {epoch_commitment}"
+                ))
             })?;
 
         // Get OL state at the terminal block
@@ -118,37 +131,22 @@ impl OLClientRpcServer for OLRpcServer {
             .await
             .map_err(|e| {
                 error!(?e, %terminal_commitment, "Failed to get OL state");
-                ErrorObjectOwned::owned(
-                    INTERNAL_ERROR_CODE,
-                    format!("Database error: {e}"),
-                    None::<()>,
-                )
+                db_error(e)
             })?
             .ok_or_else(|| {
-                ErrorObjectOwned::owned(
-                    INVALID_PARAMS_CODE,
-                    format!("No OL state found for terminal block {terminal_commitment}"),
-                    None::<()>,
-                )
+                not_found_error(format!(
+                    "No OL state found for terminal block {terminal_commitment}"
+                ))
             })?;
 
         // Extract account state
-        let account_state = ol_state.get_account_state(account_id).map_err(|e| {
-            error!(?e, %account_id, "Failed to get account state");
-            ErrorObjectOwned::owned(
-                INTERNAL_ERROR_CODE,
-                format!("Account error: {e}"),
-                None::<()>,
-            )
-        })?;
-
-        let account_state = account_state.ok_or_else(|| {
-            ErrorObjectOwned::owned(
-                INVALID_PARAMS_CODE,
-                format!("Account {account_id} not found"),
-                None::<()>,
-            )
-        })?;
+        let account_state = ol_state
+            .get_account_state(account_id)
+            .map_err(|e| {
+                error!(?e, %account_id, "Failed to get account state");
+                internal_error(format!("Account error: {e}"))
+            })?
+            .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 
         // Extract snark-specific data if applicable
         let (next_seq_no, proof_state) = match account_state.as_snark_account() {
@@ -190,13 +188,10 @@ impl OLClientRpcServer for OLRpcServer {
     }
 
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus> {
-        let chain_sync_status = self.status_channel.get_chain_sync_status().ok_or_else(|| {
-            ErrorObjectOwned::owned(
-                INTERNAL_ERROR_CODE,
-                "Chain sync status not available",
-                None::<()>,
-            )
-        })?;
+        let chain_sync_status = self
+            .status_channel
+            .get_chain_sync_status()
+            .ok_or_else(|| internal_error("Chain sync status not available"))?;
 
         let latest = chain_sync_status.tip;
         let confirmed = chain_sync_status.prev_epoch;
@@ -212,11 +207,7 @@ impl OLClientRpcServer for OLRpcServer {
         end_slot: u64,
     ) -> RpcResult<Vec<RpcAccountBlockSummary>> {
         if start_slot > end_slot {
-            return Err(ErrorObjectOwned::owned(
-                INVALID_PARAMS_CODE,
-                "start_slot must be <= end_slot",
-                None::<()>,
-            ));
+            return Err(invalid_params_error("start_slot must be <= end_slot"));
         }
 
         let mut summaries = Vec::new();
@@ -230,11 +221,7 @@ impl OLClientRpcServer for OLRpcServer {
                 .await
                 .map_err(|e| {
                     error!(?e, slot, "Failed to get blocks at slot");
-                    ErrorObjectOwned::owned(
-                        INTERNAL_ERROR_CODE,
-                        format!("Database error: {e}"),
-                        None::<()>,
-                    )
+                    db_error(e)
                 })?;
 
             // Use first block ID if available (canonical chain selection)
@@ -252,11 +239,7 @@ impl OLClientRpcServer for OLRpcServer {
                 .await
                 .map_err(|e| {
                     error!(?e, %block_commitment, "Failed to get OL state");
-                    ErrorObjectOwned::owned(
-                        INTERNAL_ERROR_CODE,
-                        format!("Database error: {e}"),
-                        None::<()>,
-                    )
+                    db_error(e)
                 })?;
 
             let Some(ol_state) = ol_state else {
@@ -266,11 +249,7 @@ impl OLClientRpcServer for OLRpcServer {
             // Get account state
             let account_state = ol_state.get_account_state(account_id).map_err(|e| {
                 error!(?e, %account_id, slot, "Failed to get account state");
-                ErrorObjectOwned::owned(
-                    INTERNAL_ERROR_CODE,
-                    format!("Account error: {e}"),
-                    None::<()>,
-                )
+                internal_error(format!("Account error: {e}"))
             })?;
 
             let Some(account_state) = account_state else {
@@ -303,13 +282,9 @@ impl OLClientRpcServer for OLRpcServer {
 
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
         // Convert RPC transaction to mempool transaction
-        let mempool_tx: OLMempoolTransaction = tx.try_into().map_err(|e| {
-            ErrorObjectOwned::owned(
-                INVALID_PARAMS_CODE,
-                format!("Invalid transaction: {e}"),
-                None::<()>,
-            )
-        })?;
+        let mempool_tx: OLMempoolTransaction = tx
+            .try_into()
+            .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
 
         // Submit to mempool
         let txid = self
@@ -327,7 +302,7 @@ fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
     match &err {
         // Capacity-related errors
         OLMempoolError::MempoolFull { .. } | OLMempoolError::MempoolByteLimitExceeded { .. } => {
-            ErrorObjectOwned::owned(-32001, err.to_string(), None::<()>)
+            ErrorObjectOwned::owned(MEMPOOL_CAPACITY_ERROR_CODE, err.to_string(), None::<()>)
         }
         // Validation errors that are user's fault
         OLMempoolError::AccountDoesNotExist { .. }
@@ -336,17 +311,16 @@ fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
         | OLMempoolError::TransactionExpired { .. }
         | OLMempoolError::TransactionNotMature { .. }
         | OLMempoolError::UsedSequenceNumber { .. }
-        | OLMempoolError::SequenceNumberGap { .. } => {
-            ErrorObjectOwned::owned(INVALID_PARAMS_CODE, err.to_string(), None::<()>)
-        }
+        | OLMempoolError::SequenceNumberGap { .. } => invalid_params_error(err.to_string()),
         // Internal errors
         OLMempoolError::AccountStateAccess(_)
         | OLMempoolError::TransactionNotFound(_)
         | OLMempoolError::Database(_)
         | OLMempoolError::Serialization(_)
-        | OLMempoolError::ServiceClosed(_) => {
+        | OLMempoolError::ServiceClosed(_)
+        | OLMempoolError::StateProvider(_) => {
             error!(?err, "Internal mempool error");
-            ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, err.to_string(), None::<()>)
+            internal_error(err.to_string())
         }
     }
 }
