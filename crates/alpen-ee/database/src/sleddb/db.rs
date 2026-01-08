@@ -545,6 +545,29 @@ impl EeNodeDb for EeNodeDBSled {
     }
 
     fn save_next_batch(&self, batch: Batch) -> DbResult<()> {
+        // Verify batch extends previous batch
+        let Some((last_batch, _)) = self.get_latest_batch()? else {
+            return Err(DbError::Other(
+                "cannot save next batch: no previous batch exists".into(),
+            ));
+        };
+
+        if batch.prev_block() != last_batch.last_block() {
+            return Err(DbError::Other(format!(
+                "batch does not extend previous batch: expected prev_block {:?}, got {:?}",
+                last_batch.last_block(),
+                batch.prev_block()
+            )));
+        }
+
+        if batch.idx() != last_batch.idx() + 1 {
+            return Err(DbError::Other(format!(
+                "batch idx is not sequential: expected {}, got {}",
+                last_batch.idx() + 1,
+                batch.idx()
+            )));
+        }
+
         let idx = batch.idx();
         let batch_id: DBBatchId = batch.id().into();
         let db_batch = DBBatchWithStatus::new(batch, BatchStatus::Sealed);
