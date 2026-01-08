@@ -45,6 +45,8 @@ jobs:
       - name: Summary
         if: success()
         run: |
-          echo "✅ Dashboard provisioned successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "View at: ${{ secrets.GRAFANA_URL }}/d/test-flakiness/test-flakiness-tracker" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "Dashboard provisioned successfully"
+            echo ""
+            echo "View at: ${{ secrets.GRAFANA_URL }}/d/test-flakiness/test-flakiness-tracker"
+          } >> "$GITHUB_STEP_SUMMARY"

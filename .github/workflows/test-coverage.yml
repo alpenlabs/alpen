@@ -67,10 +67,14 @@ jobs:
 
       - name: Summary
         if: success()
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
         run: |
-          echo "Test metrics sent to Grafana Cloud" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "View dashboard: https://voidash.grafana.net/d/test-flakiness/test-flakiness-tracker" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "Test metrics sent to Grafana Cloud"
+            echo ""
+            echo "View dashboard: ${GRAFANA_URL}/d/test-flakiness/test-flakiness-tracker"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   publish-coverage:
     name: Publish coverage reports
