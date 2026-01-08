@@ -1,11 +1,11 @@
 //! High-level OL state interface.
 
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{future::Future, num::NonZeroUsize, sync::Arc};
 
 use futures::TryFutureExt;
 use strata_db_types::{errors::DbError, traits::OLStateDatabase, DbResult};
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
+use strata_ol_state_types::{NativeAccountState, OLState, StateProvider, WriteBatch};
 use strata_storage_common::exec::{GenericRecv, OpsError};
 use threadpool::ThreadPool;
 use tokio::sync::oneshot;
@@ -198,6 +198,26 @@ impl OLStateManager {
         self.ops.del_ol_write_batch_blocking(commitment)?;
         self.wb_cache.purge_blocking(&commitment);
         Ok(())
+    }
+}
+
+// Implement StateProvider trait for OLStateManager
+impl StateProvider for OLStateManager {
+    type State = OLState;
+    type Error = DbError;
+
+    fn get_state_for_tip_async(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+        self.get_toplevel_ol_state_async(tip)
+    }
+
+    fn get_state_for_tip_blocking(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+        self.get_toplevel_ol_state_blocking(tip)
     }
 }
 
