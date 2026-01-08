@@ -103,27 +103,9 @@ impl OLClientRpcServer for OLRpcServer {
             not_found_error(format!("No epoch commitment found for epoch {epoch}"))
         })?;
 
-        // Get the epoch summary
-        let epoch_summary = self
-            .storage
-            .checkpoint()
-            .get_epoch_summary(*epoch_commitment)
-            .await
-            .map_err(|e| {
-                error!(?e, %epoch_commitment, "Failed to get epoch summary");
-                db_error(e)
-            })?
-            .ok_or_else(|| {
-                not_found_error(format!(
-                    "No epoch summary found for epoch commitment {epoch_commitment}"
-                ))
-            })?;
-
-        // Get OL state at the terminal block
-        let terminal_commitment = OLBlockCommitment::new(
-            epoch_summary.terminal().slot(),
-            *epoch_summary.terminal().blkid(),
-        );
+        // Get OL state at the terminal block using the epoch commitment directly
+        // (EpochCommitment already contains the terminal slot and block ID)
+        let terminal_commitment = epoch_commitment.to_block_commitment();
         let ol_state = self
             .storage
             .ol_state()
