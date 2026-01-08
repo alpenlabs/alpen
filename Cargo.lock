@@ -13525,6 +13525,7 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "strata-asm-worker",
+ "strata-chain-worker-new",
  "strata-common",
  "strata-config",
  "strata-consensus-logic",
