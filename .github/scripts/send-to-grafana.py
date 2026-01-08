@@ -44,7 +44,7 @@ GIT_ACTOR = os.getenv("GITHUB_ACTOR", "unknown")
 
 
 def fetch_workflow_jobs() -> List[Dict]:
-    """Fetch all jobs from the workflow run using GitHub API."""
+    """Fetch all jobs from the workflow run using GitHub API with pagination."""
     if not GITHUB_TOKEN:
         print("ERROR: GITHUB_TOKEN not set")
         return []
@@ -57,36 +57,53 @@ def fetch_workflow_jobs() -> List[Dict]:
         print("ERROR: GITHUB_RUN_ID not set")
         return []
 
-    url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}/jobs"
-
     print(f"Fetching workflow jobs from GitHub API...")
     print(f"   Repository: {GITHUB_REPOSITORY}")
     print(f"   Run ID: {GITHUB_RUN_ID}")
 
+    all_jobs = []
+    page = 1
+    per_page = 100
+
     try:
-        response = requests.get(
-            url,
-            headers={
-                "Authorization": f"Bearer {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github.v3+json"
-            },
-            timeout=30
-        )
+        while True:
+            url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}/jobs?per_page={per_page}&page={page}"
 
-        if response.status_code != 200:
-            print(f"ERROR: Failed to fetch jobs: {response.status_code}")
-            print(f"   Response: {response.text}")
-            return []
+            response = requests.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json"
+                },
+                timeout=30
+            )
 
-        data = response.json()
-        jobs = data.get("jobs", [])
+            if response.status_code != 200:
+                print(f"ERROR: Failed to fetch jobs: {response.status_code}")
+                print(f"   Response: {response.text}")
+                return all_jobs
 
-        print(f"SUCCESS: Fetched {len(jobs)} jobs from API")
-        return jobs
+            data = response.json()
+            jobs = data.get("jobs", [])
+
+            if not jobs:
+                break
+
+            all_jobs.extend(jobs)
+            print(f"   Fetched page {page}: {len(jobs)} jobs")
+
+            # Check if there are more pages
+            if len(jobs) < per_page:
+                break
+
+            page += 1
+
+        print(f"SUCCESS: Fetched {len(all_jobs)} total jobs from API")
+        return all_jobs
 
     except Exception as e:
         print(f"ERROR: Error fetching jobs: {e}")
-        return []
+        return all_jobs
 
 
 def extract_test_results(jobs: List[Dict]) -> List[Dict]:
@@ -103,11 +120,12 @@ def extract_test_results(jobs: List[Dict]) -> List[Dict]:
         conclusion = job.get("conclusion", "")
 
         # Only process matrix test jobs (skip lint, discover-tests, etc.)
-        if not job_name.startswith("Test "):
+        # Job names from workflow_call appear as: "functional-tests / Test bridge/bridge_deposit_happy"
+        if " / Test " not in job_name:
             continue
 
-        # Extract test name from job name: "Test bridge/bridge_deposit_happy" -> "bridge/bridge_deposit_happy"
-        test_name = job_name.replace("Test ", "", 1).strip()
+        # Extract test name from job name: "functional-tests / Test bridge/bridge_deposit_happy" -> "bridge/bridge_deposit_happy"
+        test_name = job_name.split(" / Test ", 1)[1].strip()
 
         # Map GitHub conclusion to our status
         if conclusion == "success":
