@@ -10,7 +10,7 @@ use jsonrpsee::{
         error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
     },
 };
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLTxId};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{
     IAccountState, ISnarkAccountState, ISnarkAccountStateExt, IStateAccessor,
 };
@@ -192,26 +192,69 @@ impl OLClientRpcServer for OLRpcServer {
             return Err(invalid_params_error("start_slot must be <= end_slot"));
         }
 
-        let mut summaries = Vec::new();
+        // Walk backwards from end_slot via parent references to ensure blocks are chained.
+        // This guarantees all returned blocks are from the same chain, not different forks.
+        let mut chain_blocks: Vec<(u64, OLBlockId)> = Vec::new();
 
-        for slot in start_slot..=end_slot {
-            // Get block IDs at this slot
-            let block_ids = self
+        // Get the starting block at end_slot
+        let end_block_ids = self
+            .storage
+            .ol_block()
+            .get_blocks_at_height_async(end_slot)
+            .await
+            .map_err(|e| {
+                error!(?e, slot = end_slot, "Failed to get blocks at end_slot");
+                db_error(e)
+            })?;
+
+        let Some(current_block_id) = end_block_ids.first().copied() else {
+            // No block at end_slot, return empty
+            return Ok(Vec::new());
+        };
+
+        // Walk backwards from end_slot to start_slot following parent references
+        let mut current_id = current_block_id;
+
+        loop {
+            // Get the block data to access parent
+            let block = self
                 .storage
                 .ol_block()
-                .get_blocks_at_height_async(slot)
+                .get_block_data_async(current_id)
                 .await
                 .map_err(|e| {
-                    error!(?e, slot, "Failed to get blocks at slot");
+                    error!(?e, %current_id, "Failed to get block data");
                     db_error(e)
+                })?
+                .ok_or_else(|| {
+                    not_found_error(format!("Block {current_id} not found in database"))
                 })?;
 
-            // Use first block ID if available (canonical chain selection)
-            let Some(block_id) = block_ids.first() else {
-                continue; // Skip slots with no blocks
-            };
+            let header = block.header();
+            let current_slot = header.slot();
 
-            let block_commitment = OLBlockCommitment::new(slot, *block_id);
+            // Add this block if it's within our range
+            if current_slot >= start_slot && current_slot <= end_slot {
+                chain_blocks.push((current_slot, current_id));
+            }
+
+            // Stop if we've reached or passed start_slot
+            if current_slot <= start_slot {
+                break;
+            }
+
+            // Move to parent block
+            current_id = *header.parent_blkid();
+        }
+
+        // Reverse to get ascending slot order
+        chain_blocks.reverse();
+
+        // Now build summaries for each block in the chain
+        let mut summaries = Vec::with_capacity(chain_blocks.len());
+
+        for (slot, block_id) in chain_blocks {
+            let block_commitment = OLBlockCommitment::new(slot, block_id);
 
             // Get OL state at this block
             let ol_state = self
