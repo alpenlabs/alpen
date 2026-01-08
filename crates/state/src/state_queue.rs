@@ -214,14 +214,12 @@ impl<T> StateQueue<T> {
             new_entries
         };
 
-        // TODO verify that this is safe
         let slice_box = out.into_boxed_slice();
-        let slice_ptr = slice_box.as_ptr();
         assert_eq!(slice_box.len(), N);
-        let arr_box = unsafe {
-            mem::forget(slice_box);
-            Box::<[T; N]>::from_raw(slice_ptr as *mut [T; N])
-        };
+        // SAFETY: We've verified the slice has exactly N elements, so the pointer
+        // cast from [T] to [T; N] is valid. Box::into_raw consumes the Box and
+        // transfers ownership of the allocation to the new Box.
+        let arr_box = unsafe { Box::<[T; N]>::from_raw(Box::into_raw(slice_box) as *mut [T; N]) };
 
         // Now just copy it to the stack.
         self.base_idx += N as u64;
