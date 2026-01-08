@@ -8,11 +8,11 @@ use std::any::Any;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
-use strata_asm_proto_checkpoint_txs::CHECKPOINT_V0_SUBPROTOCOL_ID;
+use strata_asm_proto_checkpoint_txs::CHECKPOINT_SUBPROTOCOL_ID;
 use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
 
-/// Incoming messages that the checkpoint v0 subprotocol can receive from other subprotocols.
+/// Incoming messages that the checkpoint subprotocol can receive from other subprotocols.
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub enum CheckpointIncomingMsg {
     /// Update the Schnorr public key used to verify sequencer signatures embedded in checkpoints.
@@ -23,7 +23,7 @@ pub enum CheckpointIncomingMsg {
 
 impl InterprotoMsg for CheckpointIncomingMsg {
     fn id(&self) -> SubprotocolId {
-        CHECKPOINT_V0_SUBPROTOCOL_ID
+        CHECKPOINT_SUBPROTOCOL_ID
     }
 
     fn as_dyn_any(&self) -> &dyn Any {

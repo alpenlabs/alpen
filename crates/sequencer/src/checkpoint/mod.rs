@@ -7,5 +7,5 @@ pub mod worker;
 
 pub use checkpoint_handle::CheckpointHandle;
 pub use expiry::checkpoint_expiry_worker;
-pub use helper::verify_checkpoint_sig;
+pub use helper::{convert_checkpoint_to_payload, verify_checkpoint_payload_sig};
 pub use worker::checkpoint_worker;

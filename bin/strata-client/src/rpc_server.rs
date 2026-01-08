@@ -4,12 +4,14 @@ use async_trait::async_trait;
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
 use futures::{future, TryFutureExt};
 use jsonrpsee::core::RpcResult;
+use ssz::Encode;
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
-use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
+use strata_asm_proto_checkpoint_txs::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_bridge_types::{PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
-use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
+use strata_checkpoint_types::{Checkpoint, EpochSummary};
+use strata_checkpoint_types_ssz::SignedCheckpointPayload;
 #[cfg(feature = "debug-utils")]
 use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
@@ -42,7 +44,7 @@ use strata_sequencer::{
     block_template::{
         BlockCompletionData, BlockGenerationConfig, BlockTemplate, TemplateManagerHandle,
     },
-    checkpoint::{verify_checkpoint_sig, CheckpointHandle},
+    checkpoint::{convert_checkpoint_to_payload, verify_checkpoint_payload_sig, CheckpointHandle},
     duty::{extractor::extract_duties, types::Duty},
 };
 use strata_status::StatusChannel;
@@ -895,26 +897,33 @@ impl StrataSequencerApiServer for SequencerServerImpl {
             Err(Error::CheckpointAlreadyPosted(checkpoint_idx))?;
         }
 
+        // Convert old checkpoint to new SSZ format for checkpoint subprotocol
+        // The new checkpoint subprotocol expects SSZ-serialized SignedCheckpointPayload,
+        // with signature over the raw SSZ bytes of the payload (not a hash).
         let checkpoint = Checkpoint::from(entry);
-        let signed_checkpoint = SignedCheckpoint::new(checkpoint, sig.0.into());
+        let checkpoint_payload = convert_checkpoint_to_payload(&checkpoint);
+        let signature = sig.0.into();
 
-        if !verify_checkpoint_sig(&signed_checkpoint, &self.params) {
+        // Verify signature over SSZ bytes (new format)
+        if !verify_checkpoint_payload_sig(&checkpoint_payload, &signature, &self.params) {
             Err(Error::InvalidCheckpointSignature(checkpoint_idx))?;
         }
 
         trace!(%checkpoint_idx, "signature OK");
 
-        let checkpoint_tag = TagData::new(
-            CHECKPOINT_V0_SUBPROTOCOL_ID,
-            OL_STF_CHECKPOINT_TX_TYPE,
-            vec![],
-        )
-        .map_err(|e| Error::Other(e.to_string()))?;
+        // Create signed checkpoint payload with new SSZ format
+        let signed_checkpoint_payload = SignedCheckpointPayload::new(checkpoint_payload, signature);
+
+        let checkpoint_tag =
+            TagData::new(CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, vec![])
+                .map_err(|e| Error::Other(e.to_string()))?;
+
+        // Serialize using SSZ instead of Borsh for the checkpoint subprotocol
         let payload = L1Payload::new(
-            vec![borsh::to_vec(&signed_checkpoint).map_err(|e| Error::Other(e.to_string()))?],
+            vec![signed_checkpoint_payload.as_ssz_bytes()],
             checkpoint_tag,
         );
-        let sighash = signed_checkpoint.checkpoint().hash();
+        let sighash = signed_checkpoint_payload.inner.compute_hash();
 
         let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
         self.envelope_handle

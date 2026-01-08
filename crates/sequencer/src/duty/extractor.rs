@@ -1,5 +1,6 @@
 //! Extracts new duties for sequencer for a given consensus state.
 
+use strata_checkpoint_types::Checkpoint;
 use strata_csm_types::ClientState;
 use strata_db_types::types::CheckpointConfStatus;
 use strata_ol_chain_types::{L2BlockId, L2Header};
@@ -85,7 +86,11 @@ async fn extract_batch_duties(
 
         // Need to wait for a proof.  Also avoid generating a duty if it's already in the pipe
         if publish_ready {
-            let duty = CheckpointDuty::new(ckpt.into());
+            let old_checkpoint: Checkpoint = ckpt.into();
+            // CheckpointDuty only carries the old checkpoint format for RPC
+            // serialization. The SSZ CheckpointPayload is reconstructed on-demand using
+            // convert_checkpoint_to_payload().
+            let duty = CheckpointDuty::new(old_checkpoint);
             duties.push(Duty::CommitBatch(duty));
         }
     }

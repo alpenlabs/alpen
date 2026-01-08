@@ -46,7 +46,8 @@ impl Duty {
     pub fn expiry(&self) -> Expiry {
         match self {
             Self::SignBlock(_) => Expiry::NextBlock,
-            Self::CommitBatch(duty) => Expiry::CheckpointIdxFinalized(duty.0.batch_info().epoch()),
+            // Uses SSZ checkpoint payload epoch
+            Self::CommitBatch(duty) => Expiry::CheckpointIdxFinalized(duty.epoch()),
         }
     }
 
@@ -54,7 +55,8 @@ impl Duty {
     pub fn generate_id(&self) -> Buf32 {
         match self {
             // We want Batch commitment duty to be unique by the checkpoint idx
-            Self::CommitBatch(duty) => compute_borsh_hash(&duty.0.batch_info().epoch()),
+            // Uses SSZ checkpoint payload epoch
+            Self::CommitBatch(duty) => compute_borsh_hash(&duty.epoch()),
             _ => compute_borsh_hash(self),
         }
     }
@@ -102,23 +104,39 @@ impl BlockSigningDuty {
 /// This duty is created whenever a previous batch is found on L1 and verified.
 /// When this duty is created, in order to execute the duty, the sequencer looks for corresponding
 /// batch proof in the proof db.
+///
+/// This struct only carries the Checkpoint-v0 format for RPC serialization.
+/// The SSZ CheckpointPayload is constructed on-demand using `convert_checkpoint_to_payload()`.
 #[derive(Clone, Debug, BorshSerialize, Serialize, Deserialize)]
-pub struct CheckpointDuty(Checkpoint);
+pub struct CheckpointDuty {
+    /// The old checkpoint format (used for RPC serialization during migration)
+    old_checkpoint: Checkpoint,
+}
 
 impl CheckpointDuty {
-    /// Creates a new `CheckpointDuty` from a [`Checkpoint`].
-    pub fn new(batch_checkpoint: Checkpoint) -> Self {
-        Self(batch_checkpoint)
+    /// Creates a new `CheckpointDuty` from the old checkpoint format.
+    ///
+    /// The SSZ CheckpointPayload should be constructed using
+    /// `convert_checkpoint_to_payload()` when needed for signing/publishing.
+    pub fn new(old_checkpoint: Checkpoint) -> Self {
+        Self { old_checkpoint }
+    }
+
+    /// Returns the epoch from the checkpoint.
+    pub fn epoch(&self) -> Epoch {
+        self.old_checkpoint.batch_info().epoch
     }
 
     /// Consumes `self`, returning the inner [`Checkpoint`].
+    #[deprecated(note = "Use convert_checkpoint_to_payload() for checkpoint subprotocol")]
     pub fn into_inner(self) -> Checkpoint {
-        self.0
+        self.old_checkpoint
     }
 
     /// Returns a reference to the inner [`Checkpoint`].
+    #[deprecated(note = "Use convert_checkpoint_to_payload() for checkpoint subprotocol")]
     pub fn inner(&self) -> &Checkpoint {
-        &self.0
+        &self.old_checkpoint
     }
 }
 

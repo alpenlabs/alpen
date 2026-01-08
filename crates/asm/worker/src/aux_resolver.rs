@@ -195,9 +195,11 @@ impl<'a> AuxDataResolver<'a> {
             }
 
             // Calculate MMR indices from L1 heights
-            // MMR index 0 = genesis height, index 1 = genesis + 1, etc.
-            let start_index = start_height.saturating_sub(genesis_height);
-            let end_index = end_height - genesis_height;
+            // The MMR doesn't include a manifest for the genesis block itself.
+            // The first manifest (at index 0) is for the first block AFTER genesis.
+            // So: MMR index = L1_height - genesis_height - 1
+            let start_index = start_height.saturating_sub(genesis_height + 1);
+            let end_index = end_height - genesis_height - 1;
 
             debug!(
                 start_height,
@@ -222,12 +224,16 @@ impl<'a> AuxDataResolver<'a> {
                 let index = proof_b32.index();
                 let asm_proof = AsmMerkleProof::from_cohashes(cohashes, index);
 
+                // Calculate L1 height from MMR index for indexing by consumers
+                // MMR index 0 corresponds to L1 height genesis + 1 (first block after genesis)
+                let l1_height = genesis_height + mmr_index + 1;
+
                 let hash = Hash32::from(manifest_hash);
-                resolved.push(VerifiableManifestHash::new(hash, asm_proof));
+                resolved.push(VerifiableManifestHash::new(l1_height, hash, asm_proof));
 
                 trace!(
                     index = mmr_index,
-                    height = genesis_height + mmr_index,
+                    height = l1_height,
                     "Resolved manifest hash with proof"
                 );
             }

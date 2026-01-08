@@ -65,7 +65,7 @@ ASM is the core of the Strata protocol, functioning as a "virtual smart contract
 
 - **ASM STF**: State transition function processing L1 blocks
 - **Header Verification**: PoW verification state for L1 headers
-- **Subprotocols**: Modular components (Bridge V1, Checkpoint V1, Admin, Debug) with defined IDs
+- **Subprotocols**: Modular components (Bridge V1, Checkpoint, Admin, Debug) with defined IDs
 - **Moho Framework**: Upgradeable proof mechanism wrapping ASM transitions
 - **Export State**: Accumulator for bridge proofs and operator claims
 
@@ -124,7 +124,7 @@ Core Anchor State Machine implementation.
 | `asm/common` | Core ASM types, state, subprotocol traits, aux data handling |
 | `asm/stf` | ASM state transition function and processing stages |
 | `asm/subprotocols/bridge-v1` | Bridge subprotocol: deposits, withdrawals, operators |
-| `asm/subprotocols/checkpoint-v1` | Checkpoint verification subprotocol |
+| `asm/subprotocols/checkpoint` | Checkpoint verification subprotocol |
 | `asm/subprotocols/admin` | Administrative operations and upgrades |
 | `asm/subprotocols/debug-v1` | Debug subprotocol for testing |
 | `asm/txs/bridge-v1` | Bridge transaction parsing (deposit, withdrawal, slash, unstake) |

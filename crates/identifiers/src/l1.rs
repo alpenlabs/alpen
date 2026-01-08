@@ -13,11 +13,16 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "bitcoin")]
 use serde::{Deserializer, Serializer, de, ser};
 use ssz_derive::{Decode, Encode};
+#[cfg(feature = "bitcoin")]
+use ssz_types::view::ToOwnedSsz;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 // Use generated type when bitcoin feature is not enabled
 #[cfg(not(feature = "bitcoin"))]
 use crate::ssz_generated::ssz::commitments::L1BlockCommitment;
+// Import SSZ-generated ref type for ToOwnedSsz impl
+#[cfg(feature = "bitcoin")]
+use crate::ssz_generated::ssz::commitments::L1BlockCommitmentRef;
 use crate::{buf::Buf32, hash::sha256d};
 
 /// The bitcoin block height
@@ -492,6 +497,27 @@ impl Ord for L1BlockCommitment {
 impl PartialOrd for L1BlockCommitment {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+/// Implement `ToOwnedSsz` to convert from SSZ-generated view type to the manual
+/// `L1BlockCommitment` struct when the `bitcoin` feature is enabled.
+///
+/// This enables proper type resolution when using `external_kind: container` in SSZ schemas,
+/// allowing other crates to use `strata_identifiers.L1BlockCommitment` directly instead of
+/// defining redundant inline types.
+#[cfg(feature = "bitcoin")]
+impl ToOwnedSsz<L1BlockCommitment> for L1BlockCommitmentRef<'_> {
+    fn to_owned(&self) -> L1BlockCommitment {
+        let height_u32 = self.height().expect("valid L1BlockCommitmentRef");
+        let blkid = self.blkid().expect("valid L1BlockCommitmentRef");
+
+        let height = absolute::Height::from_consensus(height_u32)
+            .expect("valid height from SSZ-decoded L1BlockCommitmentRef");
+        // L1BlockId is a transparent wrapper around Buf32, both are [u8; 32]
+        let blkid = L1BlockId::from(Buf32::from(*blkid.as_ref()));
+
+        L1BlockCommitment::new(height, blkid)
     }
 }
 

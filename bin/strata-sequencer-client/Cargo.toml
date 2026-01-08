@@ -11,7 +11,7 @@ name = "strata-sequencer-client"
 path = "src/main.rs"
 
 [dependencies]
-strata-checkpoint-types.workspace = true
+strata-checkpoint-types-ssz.workspace = true
 strata-common.workspace = true
 strata-crypto.workspace = true
 strata-key-derivation.workspace = true
@@ -26,7 +26,9 @@ anyhow.workspace = true
 argh.workspace = true
 bitcoin.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
+k256 = { workspace = true, features = ["schnorr"] }
 serde.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
