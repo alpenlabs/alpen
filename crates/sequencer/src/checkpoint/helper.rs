@@ -52,7 +52,7 @@ pub fn verify_signed_checkpoint_payload(
     verify_checkpoint_payload_sig(&signed_payload.inner, &signed_payload.signature, params)
 }
 
-/// Converts an `Checkpoint-v0` to the SSZ `CheckpointPayload` format.
+/// Converts an `Checkpoint` to the SSZ `CheckpointPayload` format.
 pub fn convert_checkpoint_to_payload(checkpoint: &Checkpoint) -> CheckpointPayload {
     let batch_info = checkpoint.batch_info();
     let batch_transition = checkpoint.batch_transition();
@@ -75,7 +75,7 @@ pub fn convert_checkpoint_to_payload(checkpoint: &Checkpoint) -> CheckpointPaylo
     let commitment = CheckpointCommitment::new(ssz_batch_info, post_state_root);
 
     // Extract OL logs from the chainstate's pending_withdraws.
-    // The checkpoint-v0 sidecar contains serialized chainstate which includes pending withdrawal
+    // The checkpoint sidecar contains serialized chainstate which includes pending withdrawal
     // intents. We convert these to the OL log format expected by the checkpoint subprotocol.
     let ol_logs = extract_ol_logs_from_chainstate(checkpoint.sidecar().chainstate());
 
@@ -94,7 +94,7 @@ pub fn convert_checkpoint_to_payload(checkpoint: &Checkpoint) -> CheckpointPaylo
 
 /// Extracts withdrawal intents from chainstate and converts them to SSZ-encoded OL logs.
 ///
-/// The checkpoint-v0 format stores a serialized `Chainstate` in the sidecar, which contains
+/// The checkpoint format stores a serialized `Chainstate` in the sidecar, which contains
 /// `pending_withdraws` - a queue of withdrawal intents. This function:
 /// 1. Deserializes the chainstate from borsh bytes
 /// 2. Extracts each `WithdrawalIntent` from `pending_withdraws`

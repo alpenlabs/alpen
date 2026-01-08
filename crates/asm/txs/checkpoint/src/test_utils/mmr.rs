@@ -156,7 +156,7 @@ fn convert_proof(proof: MerkleProof) -> AsmMerkleProof {
 /// # Panics
 ///
 /// Panics if `start_height <= genesis_height` (first manifest must be after genesis).
-pub fn verified_aux_data_with_genesis(
+fn verified_aux_data_with_genesis(
     genesis_height: u64,
     start_height: u64,
     end_height: u64,
@@ -245,7 +245,7 @@ pub fn verified_aux_data_for_heights(
 ///
 /// This function should only be called for L1 heights **after genesis**.
 /// Genesis blocks do not have manifest hashes in the production MMR.
-pub fn manifest_hash_for_l1_height(l1_height: u64) -> Hash32 {
+fn manifest_hash_for_l1_height(l1_height: u64) -> Hash32 {
     // Use modulo to handle large heights while ensuring non-zero
     // The +1 ensures we never return [0u8; 32] even for height 0
     // (though height 0 = genesis shouldn't be called in production semantics)

@@ -360,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_epoch_sequence() {
+    fn test_invalid_genesis_epoch_number() {
         let keypair = SequencerKeypair::random();
         let genesis_l1 = genesis_l1();
         let mut generator = CheckpointGenerator::new(genesis_l1);
@@ -608,6 +608,63 @@ mod tests {
         let err = handle_checkpoint_tx(&mut state, &tx_ref2, &verified_aux2, &mut relayer2)
             .expect_err("non-progressing L2 should be rejected");
         assert!(matches!(err, CheckpointError::InvalidL2Progression { .. }));
+    }
+
+    #[test]
+    fn test_invalid_epoch_after_first_checkpoint() {
+        let keypair = SequencerKeypair::random();
+        let genesis_l1 = genesis_l1();
+        let mut generator = CheckpointGenerator::new(genesis_l1);
+        let mut state = CheckpointState::new(&CheckpointConfig {
+            sequencer_predicate: keypair.sequencer_predicate(),
+            checkpoint_predicate: PredicateKey::always_accept(),
+            genesis_l1,
+            genesis_ol_state_root: Buf32::zero(),
+        });
+
+        // First, process epoch 0 successfully
+        let payload1 = generator.gen_payload(1, 1, vec![]);
+        let signature1 = keypair.sign(&payload1);
+        let signed1 = SignedCheckpointPayload::new(payload1.clone(), signature1);
+        let l1_payload1 = build_l1_payload(&signed1);
+        let tx1 = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload1);
+        let tag1 = ParseConfig::new(TEST_MAGIC_BYTES)
+            .try_parse_tx(&tx1)
+            .expect("tag data");
+        let tx_ref1 = TxInputRef::new(&tx1, tag1);
+        let verified_aux1 = verified_aux_for(&state, &payload1.commitment.batch_info);
+        let mut relayer1 = TestRelayer::new();
+        handle_checkpoint_tx(&mut state, &tx_ref1, &verified_aux1, &mut relayer1).unwrap();
+        generator.advance(&payload1);
+
+        // Verify we're no longer in genesis state
+        assert!(!state.is_genesis());
+        assert_eq!(state.expected_next_epoch(), 1);
+
+        // Now create second checkpoint with wrong epoch (skip epoch 1, submit epoch 2)
+        let mut payload2 = generator.gen_payload(1, 1, vec![]);
+        payload2.commitment.batch_info.epoch = 2; // state expects 1
+
+        let signature2 = keypair.sign(&payload2);
+        let signed2 = SignedCheckpointPayload::new(payload2.clone(), signature2);
+        let l1_payload2 = build_l1_payload(&signed2);
+        let tx2 = create_checkpoint_envelope_tx(TEST_ADDR, l1_payload2);
+        let tag2 = ParseConfig::new(TEST_MAGIC_BYTES)
+            .try_parse_tx(&tx2)
+            .expect("tag data");
+        let tx_ref2 = TxInputRef::new(&tx2, tag2);
+        let verified_aux2 = verified_aux_for(&state, &payload2.commitment.batch_info);
+        let mut relayer2 = TestRelayer::new();
+
+        let err = handle_checkpoint_tx(&mut state, &tx_ref2, &verified_aux2, &mut relayer2)
+            .expect_err("skipped epoch should be rejected");
+        assert!(matches!(
+            err,
+            CheckpointError::InvalidEpoch {
+                expected: 1,
+                actual: 2
+            }
+        ));
     }
 
     #[test]
