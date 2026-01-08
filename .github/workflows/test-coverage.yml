@@ -27,6 +27,51 @@ jobs:
   functional-tests-new:
     uses: ./.github/workflows/functional-new.yml
 
+  collect-test-metrics:
+    name: Collect test metrics
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [functional-tests]
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Collect and send metrics
+        env:
+          GRAFANA_CLOUD_INFLUX_URL: ${{ secrets.GRAFANA_CLOUD_INFLUX_URL }}
+          GRAFANA_CLOUD_INFLUX_USER: ${{ secrets.GRAFANA_CLOUD_INFLUX_USER }}
+          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          python .github/scripts/send-to-grafana.py
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "Test metrics sent to Grafana Cloud" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View dashboard: https://voidash.grafana.net/d/test-flakiness/test-flakiness-tracker" >> $GITHUB_STEP_SUMMARY
+
   publish-coverage:
     name: Publish coverage reports
     runs-on: ubuntu-latest
