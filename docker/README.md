@@ -57,31 +57,44 @@ docker start alpen_reth_fn # if you want to test the full node
 
 > Before proceeding, make sure that all of the prerequisites listed above have been met.
 
-1. Build the datatool in `sp1` mode:
+1. Build the datatool with `sp1-builder` and `btc-client` features:
 
     ```bash
-    cargo build --bin strata-datatool -F "sp1-builder" --release
+    cargo build --bin strata-datatool -F "sp1-builder,btc-client" --release
     ```
 
-2. Export the generated ELF
+    **Note**: Both features are required:
+    - `sp1-builder`: Compiles guest programs and generates ELF files with VKs
+    - `btc-client`: Enables Bitcoin RPC connectivity for `genparams` command
+
+2. Export guest ELF files:
 
     ```bash
-    target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1
+    # Set Bitcoin RPC credentials (required by genparams)
+    export BITCOIN_NETWORK=signet  # or "regtest"
+    export BITCOIN_RPC_URL="http://<rpc-endpoint>"
+    export BITCOIN_RPC_USER="<user>"
+    export BITCOIN_RPC_PASSWORD="<password>"
+
+    # Export compiled guest ELF files to docker directory
+    target/release/strata-datatool -b "$BITCOIN_NETWORK" \
+      --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
+      --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
+      --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
+      genparams --elf-dir docker/prover-client/elfs/sp1
     ```
 
-3. Generate configs and params
+    **Note**: This step compiles guest programs and exports ELF files to `docker/prover-client/elfs/sp1/`. These ELF files will be copied into the Docker image and loaded by the prover-client at runtime using the `ELF_BASE_PATH` environment variable.
+
+3. Generate configs, keys, and params:
 
     ```bash
-    # Set Bitcoin network and RPC credentials
-    export BITCOIN_NETWORK=signet
-    export BITCOIN_RPC_URL="http://localhost:59191"
-    export BITCOIN_RPC_USER="user"
-    export BITCOIN_RPC_PASSWORD="password"
-
     # The --chain-config argument allows switching between different chainspecs during deployment
     # Available chainspecs: crates/reth/chainspec/src/res/{alpen-dev-chain.json, devnet-chain.json, testnet-chain.json (default)}
     cd docker && ./init-keys.sh ../target/release/strata-datatool --chain-config ../crates/reth/chainspec/src/res/testnet-chain.json
     ```
+
+    **Note**: This step generates JWT tokens, sequencer/operator keys, and `params.json`. Since the datatool was built with `sp1-builder` feature, the verification keys in `params.json` will match the ELF files exported in step 2 (both come from the same build).
 
 4. Run the prover-client
 

@@ -23,6 +23,8 @@ use strata_tasks::TaskManager;
 use tokio::runtime;
 use tracing::{debug, info};
 #[cfg(feature = "sp1")]
+use vk_check::{get_checkpoint_groth16_vk, validate_checkpoint_vk};
+#[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
 
 mod args;
@@ -32,6 +34,9 @@ mod errors;
 mod operators;
 mod rpc_server;
 mod service;
+
+#[cfg(feature = "sp1")]
+mod vk_check;
 
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -72,6 +77,22 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let rollup_params = args
         .resolve_and_validate_rollup_params()
         .context("Failed to resolve and validate rollup parameters")?;
+
+    // Validate checkpoint VK matches between params and the elf file.
+    #[cfg(feature = "sp1")]
+    {
+        // The checkpoint elf lazily initializes after this call and later
+        // the checkpoint proving task utilizes the same.
+        let checkpoint_vk =
+            get_checkpoint_groth16_vk().context("Failed to get checkpoint verification key")?;
+        let params_vk = rollup_params
+            .checkpoint_predicate
+            .as_buf_ref()
+            .condition()
+            .to_vec();
+        validate_checkpoint_vk(&checkpoint_vk, &params_vk)
+            .context("Checkpoint verification key validation failed")?;
+    }
 
     let el_client = HttpClientBuilder::default()
         .build(config.get_reth_rpc_url())
