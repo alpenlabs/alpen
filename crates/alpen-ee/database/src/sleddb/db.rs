@@ -567,23 +567,29 @@ impl EeNodeDb for EeNodeDBSled {
     fn update_batch_status(&self, batch_id: BatchId, status: BatchStatus) -> DbResult<()> {
         let db_batch_id: DBBatchId = batch_id.into();
 
-        // Look up idx by id
+        // Look up idx by id (outside transaction is fine - idx mapping is stable)
         let Some(idx) = self.batch_id_to_idx_tree.get(&db_batch_id)? else {
             return Err(DbError::BatchNotFound(batch_id));
         };
 
-        // Get current batch data
-        let Some(current) = self.batch_by_idx_tree.get(&idx)? else {
-            return Err(DbError::BatchNotFound(batch_id));
-        };
+        // Use transaction for read-modify-write to prevent race conditions
+        (&self.batch_by_idx_tree,).transaction_with_retry(
+            self.config.backoff.as_ref(),
+            self.config.retry_count.into(),
+            |(batch_tree,)| {
+                let Some(current) = batch_tree.get(&idx)? else {
+                    abort(DbError::BatchNotFound(batch_id))?
+                };
 
-        // Update status
-        let parts_result: Result<(Batch, BatchStatus), _> = current.into_parts();
-        let (batch, _old_status) =
-            parts_result.map_err(|e| DbError::BatchDeserialize(e.to_string()))?;
-        let updated = DBBatchWithStatus::new(batch, status);
+                let parts_result: Result<(Batch, BatchStatus), _> = current.into_parts();
+                let (batch, _old_status) = parts_result
+                    .map_err(|e| TSledError::abort(DbError::BatchDeserialize(e.to_string())))?;
+                let updated = DBBatchWithStatus::new(batch, status.clone());
 
-        self.batch_by_idx_tree.insert(&idx, &updated)?;
+                batch_tree.insert(&idx, &updated)?;
+                Ok(())
+            },
+        )?;
 
         Ok(())
     }
