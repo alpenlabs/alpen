@@ -8,6 +8,25 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_acct_types::Hash;
 use strata_identifiers::L1BlockCommitment;
 
+/// Database representation of a (Txid, Wtxid) pair.
+///
+/// Uses named fields to avoid confusion between the two identically-typed 32-byte arrays.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+pub(crate) struct DBTxidPair {
+    txid: [u8; 32],
+    wtxid: [u8; 32],
+}
+
+impl DBTxidPair {
+    fn new(txid: [u8; 32], wtxid: [u8; 32]) -> Self {
+        Self { txid, wtxid }
+    }
+
+    fn into_parts(self) -> ([u8; 32], [u8; 32]) {
+        (self.txid, self.wtxid)
+    }
+}
+
 /// Database representation of a BatchId.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub(crate) struct DBBatchId {
@@ -78,7 +97,7 @@ pub(crate) struct DBL1DaBlockRef {
     /// L1BlockCommitment serialized via its Borsh impl.
     block: L1BlockCommitment,
     /// Transactions as (txid, wtxid) pairs, stored as raw bytes.
-    txns: Vec<([u8; 32], [u8; 32])>,
+    txns: Vec<DBTxidPair>,
 }
 
 impl From<L1DaBlockRef> for DBL1DaBlockRef {
@@ -88,11 +107,7 @@ impl From<L1DaBlockRef> for DBL1DaBlockRef {
             txns: value
                 .txns
                 .into_iter()
-                .map(|(txid, wtxid)| {
-                    let txid_bytes: [u8; 32] = txid.to_byte_array();
-                    let wtxid_bytes: [u8; 32] = wtxid.to_byte_array();
-                    (txid_bytes, wtxid_bytes)
-                })
+                .map(|(txid, wtxid)| DBTxidPair::new(txid.to_byte_array(), wtxid.to_byte_array()))
                 .collect(),
         }
     }
@@ -105,10 +120,12 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
             txns: value
                 .txns
                 .into_iter()
-                .map(|(txid_bytes, wtxid_bytes)| {
-                    let txid = Txid::from_byte_array(txid_bytes);
-                    let wtxid = Wtxid::from_byte_array(wtxid_bytes);
-                    (txid, wtxid)
+                .map(|pair| {
+                    let (txid_bytes, wtxid_bytes) = pair.into_parts();
+                    (
+                        Txid::from_byte_array(txid_bytes),
+                        Wtxid::from_byte_array(wtxid_bytes),
+                    )
                 })
                 .collect(),
         }
@@ -120,7 +137,7 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
 pub(crate) enum DBBatchStatus {
     Sealed,
     DaPending {
-        txns: Vec<([u8; 32], [u8; 32])>,
+        txns: Vec<DBTxidPair>,
     },
     DaComplete {
         da: Vec<DBL1DaBlockRef>,
@@ -142,7 +159,7 @@ impl From<BatchStatus> for DBBatchStatus {
                 txns: txns
                     .into_iter()
                     .map(|(txid, wtxid): (Txid, Wtxid)| {
-                        (txid.to_byte_array(), wtxid.to_byte_array())
+                        DBTxidPair::new(txid.to_byte_array(), wtxid.to_byte_array())
                     })
                     .collect(),
             },
@@ -167,7 +184,8 @@ impl From<DBBatchStatus> for BatchStatus {
             DBBatchStatus::DaPending { txns } => Self::DaPending {
                 txns: txns
                     .into_iter()
-                    .map(|(txid_bytes, wtxid_bytes)| {
+                    .map(|pair| {
+                        let (txid_bytes, wtxid_bytes) = pair.into_parts();
                         (
                             Txid::from_byte_array(txid_bytes),
                             Wtxid::from_byte_array(wtxid_bytes),
