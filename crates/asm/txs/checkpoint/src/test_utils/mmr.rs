@@ -217,8 +217,7 @@ fn verified_aux_data_with_genesis(
 
 /// Creates verified auxiliary data for a range of L1 block heights.
 ///
-/// Convenience wrapper that uses genesis_height = 0.
-/// See [`verified_aux_data_with_genesis`] for full documentation.
+/// Convenience wrapper that uses `genesis_height = 0`.
 ///
 /// # Arguments
 ///
