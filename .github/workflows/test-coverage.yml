@@ -63,7 +63,7 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
           GITHUB_ACTOR: ${{ github.actor }}
         run: |
-          python .github/scripts/send-to-grafana.py
+          python .github/scripts/grafana/send-metrics.py
 
       - name: Summary
         if: success()

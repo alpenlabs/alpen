@@ -33,7 +33,7 @@ def load_dashboard_json(file_path: str) -> dict:
 
 
 def find_prometheus_datasource_uid(grafana_url: str, token: str) -> str:
-    """Find the UID of the Prometheus datasource."""
+    """Find the UID of the Prometheus datasource (excluding usage datasource)."""
     try:
         response = requests.get(
             f"{grafana_url}/api/datasources",
@@ -48,15 +48,34 @@ def find_prometheus_datasource_uid(grafana_url: str, token: str) -> str:
 
         datasources = response.json()
 
-        # Look for Prometheus or Mimir datasource
+        # Look for Prometheus or Mimir datasource, but exclude usage datasource
+        # Prefer datasources with "prom" in the name (user's metrics), not "usage" (billing metrics)
+        prom_datasources = []
         for ds in datasources:
             if ds.get("type") in ["prometheus", "prometheus-mimir"]:
+                name = ds.get("name", "")
                 uid = ds.get("uid")
-                name = ds.get("name", "Unknown")
-                print(f"Found Prometheus datasource: {name} (UID: {uid})")
-                return uid
 
-        print(" No Prometheus datasource found")
+                # Skip usage/billing datasources
+                if "usage" in name.lower():
+                    print(f"Skipping usage datasource: {name}")
+                    continue
+
+                prom_datasources.append({"name": name, "uid": uid})
+
+        # Prefer datasource with "prom" in name
+        for ds in prom_datasources:
+            if "prom" in ds["name"].lower():
+                print(f"Found Prometheus datasource: {ds['name']} (UID: {ds['uid']})")
+                return ds["uid"]
+
+        # Fallback to first non-usage datasource
+        if prom_datasources:
+            ds = prom_datasources[0]
+            print(f"Found Prometheus datasource: {ds['name']} (UID: {ds['uid']})")
+            return ds["uid"]
+
+        print("No Prometheus datasource found")
         return None
 
     except Exception as e:
@@ -152,7 +171,7 @@ def main():
     parser = argparse.ArgumentParser(description="Provision Grafana dashboard")
     parser.add_argument(
         "--dashboard-file",
-        default=".github/grafana-dashboard.json",
+        default=".github/scripts/grafana/dashboard.json",
         help="Path to dashboard JSON file"
     )
 
