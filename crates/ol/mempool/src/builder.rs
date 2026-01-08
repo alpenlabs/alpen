@@ -68,15 +68,9 @@ impl MempoolBuilder {
             self.storage.clone(),
         ));
 
-        // Get state accessor for current tip
-        let state_accessor = self
-            .storage
-            .ol_state()
-            .get_toplevel_ol_state_async(self.current_tip)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("State not found for tip {:?}", self.current_tip))?;
-
-        let mut state = MempoolServiceState::new_with_context(ctx.clone(), state_accessor);
+        // Create mempool state with context and current tip
+        let mut state =
+            MempoolServiceState::new_with_context(ctx.clone(), self.current_tip).await?;
 
         // Load existing transactions from database
         state.load_from_db().await?;
@@ -88,7 +82,7 @@ impl MempoolBuilder {
         let mempool_input = MempoolInput::new(command_rx, chain_sync_rx);
 
         // Launch service with mempool input
-        let monitor = ServiceBuilder::<MempoolService, _>::new()
+        let monitor = ServiceBuilder::<MempoolService<_>, _>::new()
             .with_state(state)
             .with_input(mempool_input)
             .launch_async("mempool", texec)

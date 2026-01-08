@@ -9,6 +9,7 @@ mod global;
 mod ledger;
 mod serial_map;
 mod snark_account;
+mod state_provider;
 mod toplevel;
 mod write_batch;
 
@@ -18,5 +19,6 @@ pub use global::*;
 pub use ledger::*;
 pub use serial_map::*;
 pub use snark_account::*;
+pub use state_provider::*;
 pub use toplevel::*;
 pub use write_batch::*;

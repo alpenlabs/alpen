@@ -494,6 +494,7 @@ impl OLMempoolRejectReason {
             OLMempoolError::AccountStateAccess(_)
             | OLMempoolError::TransactionNotFound(_)
             | OLMempoolError::Database(_)
+            | OLMempoolError::StateProvider(_)
             | OLMempoolError::Serialization(_)
             | OLMempoolError::ServiceClosed(_) => None,
         }

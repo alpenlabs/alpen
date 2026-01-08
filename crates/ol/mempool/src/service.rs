@@ -1,7 +1,10 @@
 //! Mempool service implementation.
 
+use std::marker::PhantomData;
+
 use serde::Serialize;
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_state_types::StateProvider;
 use strata_service::{AsyncService, Response, Service};
 
 use crate::{
@@ -15,11 +18,17 @@ pub struct MempoolServiceStatus {
 }
 
 /// Mempool service that processes commands.
+///
+/// # Type Parameters
+///
+/// - `P`: The state provider type that implements [`StateProvider`].
 #[derive(Debug)]
-pub(crate) struct MempoolService;
+pub(crate) struct MempoolService<P: StateProvider> {
+    _phantom: PhantomData<P>,
+}
 
-impl Service for MempoolService {
-    type State = MempoolServiceState;
+impl<P: StateProvider> Service for MempoolService<P> {
+    type State = MempoolServiceState<P>;
     type Msg = MempoolInputMessage;
     type Status = MempoolServiceStatus;
 
@@ -30,7 +39,7 @@ impl Service for MempoolService {
     }
 }
 
-impl AsyncService for MempoolService {
+impl<P: StateProvider> AsyncService for MempoolService<P> {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
     }
@@ -78,7 +87,7 @@ mod tests {
         OLMempoolResult, OLMempoolTransaction,
         test_utils::{
             create_test_block_commitment, create_test_context, create_test_snark_tx_with_seq_no,
-            get_ol_state_for_tip, setup_test_state_for_tip,
+            create_test_state_provider,
         },
         types::OLMempoolConfig,
     };
@@ -86,11 +95,15 @@ mod tests {
     #[tokio::test]
     async fn test_service_submit_transaction() {
         let tip = create_test_block_commitment(100);
-        let context = Arc::new(create_test_context(OLMempoolConfig::default()));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            provider.clone(),
+        ));
 
-        let mut state = MempoolServiceState::new_with_context(context, state_accessor);
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         let tx = create_test_snark_tx_with_seq_no(1, 0);
         let expected_txid = tx.compute_txid();
@@ -118,11 +131,10 @@ mod tests {
             let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 let tip = create_test_block_commitment(100);
-                let context = Arc::new(create_test_context(OLMempoolConfig::default()));
-                setup_test_state_for_tip(&context.storage, tip).await;
-                let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
+                let provider = Arc::new(create_test_state_provider(tip));
+                let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider.clone()));
 
-                let mut state = MempoolServiceState::new_with_context(context.clone(), state_accessor);
+                let mut state = MempoolServiceState::new_with_context(context.clone(), tip).await.unwrap();
 
                 // Add some transactions via handle_submit_transaction
                 // Use sequential seq_nos (0, 1) for the same account to pass gap checking
@@ -163,11 +175,15 @@ mod tests {
     #[tokio::test]
     async fn test_service_remove_transactions() {
         let tip = create_test_block_commitment(100);
-        let context = Arc::new(create_test_context(OLMempoolConfig::default()));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            provider.clone(),
+        ));
 
-        let mut state = MempoolServiceState::new_with_context(context.clone(), state_accessor);
+        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
+            .await
+            .unwrap();
 
         // Add a transaction via handle_submit_transaction
         let tx = create_test_snark_tx_with_seq_no(1, 0);
@@ -202,10 +218,14 @@ mod tests {
     #[tokio::test]
     async fn test_service_stats() {
         let tip = create_test_block_commitment(100);
-        let context = Arc::new(create_test_context(OLMempoolConfig::default()));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state = MempoolServiceState::new_with_context(context.clone(), state_accessor);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            provider.clone(),
+        ));
+        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
+            .await
+            .unwrap();
 
         // Add a transaction via handle_submit_transaction
         let tx = create_test_snark_tx_with_seq_no(1, 0);

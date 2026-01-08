@@ -1,6 +1,10 @@
 //! Test utilities for mempool tests.
 
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{Arc, RwLock},
+};
 
 use proptest::{
     arbitrary,
@@ -15,7 +19,7 @@ use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_ol_chain_types_new::{TransactionAttachment, test_utils as ol_test_utils};
-use strata_ol_state_types::{NativeSnarkAccountState, OLState};
+use strata_ol_state_types::{NativeSnarkAccountState, OLState, StateProvider};
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
@@ -341,8 +345,11 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
         .expect("Failed to set up test state");
 }
 
-/// Create a test mempool context with specified configuration.
-pub(crate) fn create_test_context(config: OLMempoolConfig) -> MempoolContext {
+/// Create a test mempool context with specified configuration and provider.
+pub(crate) fn create_test_context<P: StateProvider>(
+    config: OLMempoolConfig,
+    provider: Arc<P>,
+) -> MempoolContext<P> {
     let pool = ThreadPool::new(1);
 
     // Create a minimal test storage using a test sled database
@@ -352,24 +359,39 @@ pub(crate) fn create_test_context(config: OLMempoolConfig) -> MempoolContext {
     let test_storage =
         Arc::new(create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"));
 
-    MempoolContext {
-        config,
-        storage: test_storage,
-    }
+    MempoolContext::new_with_provider(config, test_storage, provider)
 }
 
-/// Get OL state from storage for a given tip.
-/// Returns `Arc<OLState>` for use in mempool state initialization and validation.
-pub(crate) async fn get_ol_state_for_tip(
-    storage: &NodeStorage,
-    tip: OLBlockCommitment,
-) -> Arc<OLState> {
-    storage
-        .ol_state()
-        .get_toplevel_ol_state_async(tip)
-        .await
-        .expect("Should get state from storage")
-        .expect("State should exist")
+/// Create an InMemoryStateProvider with initial test state at the given tip.
+///
+/// Creates a genesis state with Snark accounts for test account IDs (0-255).
+pub(crate) fn create_test_state_provider(tip: OLBlockCommitment) -> InMemoryStateProvider {
+    let state = create_test_ol_state_for_tip(tip.slot());
+    InMemoryStateProvider::with_initial_state(tip, state)
+}
+
+/// Create a test OL state at a given slot with Snark accounts.
+///
+/// Creates a genesis state with Snark accounts for test account IDs (0-255).
+pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
+    let mut state = OLState::new_genesis();
+    state.set_cur_slot(slot);
+
+    // Create Snark accounts for common test account IDs (0-255)
+    for id_byte in 0..=255u8 {
+        let account_id = create_test_account_id_with(id_byte);
+        let snark_state = NativeSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+        let new_acct =
+            NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
+        if state.create_new_account(account_id, new_acct).is_ok() {
+            let _ = state.update_account(account_id, |account| {
+                let snark_account = account.as_snark_account_mut().unwrap();
+                snark_account.set_proof_state_directly(Hash::from([0u8; 32]), 0, Seqno::from(0));
+            });
+        }
+    }
+
+    state
 }
 
 /// Create a test generic account message transaction for a specific account.
@@ -386,4 +408,79 @@ pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLMempoolTra
     payload.insert(0, account_id);
     OLMempoolTransaction::new_generic_account_message(target, payload, attachment)
         .expect("Should create transaction")
+}
+
+/// In-memory state provider for fast testing without database infrastructure.
+///
+/// Stores states in a `HashMap` for quick lookup. Thread-safe via `RwLock`.
+#[derive(Debug)]
+pub(crate) struct InMemoryStateProvider {
+    states: RwLock<HashMap<OLBlockCommitment, Arc<OLState>>>,
+}
+
+impl InMemoryStateProvider {
+    /// Create a provider with an initial state at the given tip.
+    pub(crate) fn with_initial_state(tip: OLBlockCommitment, state: OLState) -> Self {
+        let mut states = HashMap::new();
+        states.insert(tip, Arc::new(state));
+        Self {
+            states: RwLock::new(states),
+        }
+    }
+
+    /// Insert a state at the given tip (useful for test setup).
+    pub(crate) fn insert_state(&self, tip: OLBlockCommitment, state: OLState) {
+        let mut states = self.states.write().unwrap();
+        states.insert(tip, Arc::new(state));
+    }
+
+    /// Retrieves the state for a given chain tip asynchronously.
+    pub(crate) async fn get_state_for_tip_async(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> Result<Option<Arc<OLState>>, InMemoryStateProviderError> {
+        let states = self
+            .states
+            .read()
+            .map_err(|e| InMemoryStateProviderError::LockPoisoned(format!("{}", e)))?;
+        Ok(states.get(&tip).cloned())
+    }
+
+    /// Retrieves the state for a given chain tip in a blocking manner.
+    pub(crate) fn get_state_for_tip_blocking(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> Result<Option<Arc<OLState>>, InMemoryStateProviderError> {
+        let states = self
+            .states
+            .read()
+            .map_err(|e| InMemoryStateProviderError::LockPoisoned(format!("{}", e)))?;
+        Ok(states.get(&tip).cloned())
+    }
+}
+
+/// Error type for in-memory state provider (used in tests).
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum InMemoryStateProviderError {
+    #[error("lock poisoned: {0}")]
+    LockPoisoned(String),
+}
+
+impl StateProvider for InMemoryStateProvider {
+    type State = OLState;
+    type Error = InMemoryStateProviderError;
+
+    fn get_state_for_tip_async(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+        self.get_state_for_tip_async(tip)
+    }
+
+    fn get_state_for_tip_blocking(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+        self.get_state_for_tip_blocking(tip)
+    }
 }

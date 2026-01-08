@@ -69,6 +69,10 @@ pub enum OLMempoolError {
     #[error("database: {0}")]
     Database(#[from] DbError),
 
+    /// State provider error.
+    #[error("state provider: {0}")]
+    StateProvider(String),
+
     /// Serialization/deserialization error.
     #[error("serialization: {0}")]
     Serialization(String),

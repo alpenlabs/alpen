@@ -12,9 +12,9 @@ use strata_db_types::types::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::StateProvider;
 use strata_service::ServiceState;
-use strata_storage::NodeStorage;
+use strata_storage::{NodeStorage, OLStateManager};
 use tracing::warn;
 
 use crate::{
@@ -55,16 +55,45 @@ impl AccountMempoolState {
 
 /// Immutable context for mempool service (shared via Arc).
 #[derive(Clone)]
-pub(crate) struct MempoolContext {
+pub(crate) struct MempoolContext<P: StateProvider> {
     /// Mempool configuration.
     pub(crate) config: OLMempoolConfig,
 
-    /// Storage backend for creating StateAccessor instances.
-    /// Mempool creates StateAccessor per-operation based on current_tip.
+    /// Storage backend for database operations (transactions, blocks).
     pub(crate) storage: Arc<NodeStorage>,
+
+    /// State provider for fetching OL state at different chain tips.
+    pub(crate) provider: Arc<P>,
 }
 
-impl Debug for MempoolContext {
+impl MempoolContext<OLStateManager> {
+    /// Create new mempool context.
+    ///
+    /// Extracts the state provider from storage.
+    pub(crate) fn new(config: OLMempoolConfig, storage: Arc<NodeStorage>) -> Self {
+        let provider = storage.ol_state().clone();
+        Self {
+            config,
+            storage,
+            provider,
+        }
+    }
+
+    /// Create new mempool context with explicit provider.
+    pub(crate) fn new_with_provider<P: StateProvider>(
+        config: OLMempoolConfig,
+        storage: Arc<NodeStorage>,
+        provider: Arc<P>,
+    ) -> MempoolContext<P> {
+        MempoolContext {
+            config,
+            storage,
+            provider,
+        }
+    }
+}
+
+impl<P: StateProvider> Debug for MempoolContext<P> {
     #[expect(clippy::absolute_paths, reason = "qualified Result avoids ambiguity")]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MempoolContext")
@@ -74,9 +103,14 @@ impl Debug for MempoolContext {
 }
 
 /// Combined state for the service (context + mutable state).
+///
+/// # Type Parameters
+///
+/// - `P`: The state provider type that implements [`StateProvider`]. This enables production use
+///   with database-backed state and fast in-memory testing.
 #[derive(Debug)]
-pub(crate) struct MempoolServiceState {
-    ctx: Arc<MempoolContext>,
+pub(crate) struct MempoolServiceState<P: StateProvider> {
+    ctx: Arc<MempoolContext<P>>,
 
     /// In-memory entries indexed by transaction ID.
     entries: HashMap<OLTxId, MempoolEntry>,
@@ -89,35 +123,55 @@ pub(crate) struct MempoolServiceState {
     account_state: HashMap<AccountId, AccountMempoolState>,
 
     /// State accessor for validation. Updated when chain tip changes.
-    state_accessor: Arc<OLState>,
+    state_accessor: Arc<P::State>,
 
     /// Mempool statistics.
     stats: OLMempoolStats,
 }
 
-impl MempoolServiceState {
+impl<P: StateProvider> MempoolServiceState<P> {
     /// Create new mempool service state.
     #[expect(dead_code, reason = "another constructor is used")]
-    pub(crate) fn new(
+    pub(crate) async fn new(
         config: OLMempoolConfig,
         storage: Arc<NodeStorage>,
-        state_accessor: Arc<OLState>,
-    ) -> Self {
-        let ctx = Arc::new(MempoolContext::new(config, storage));
-        Self::new_with_context(ctx, state_accessor)
+        provider: Arc<P>,
+        tip: OLBlockCommitment,
+    ) -> OLMempoolResult<Self> {
+        let ctx = Arc::new(MempoolContext::new_with_provider(config, storage, provider));
+        Self::new_with_context(ctx, tip).await
     }
 
     /// Create new mempool service state with an existing context.
     /// Used for testing.
-    pub(crate) fn new_with_context(ctx: Arc<MempoolContext>, state_accessor: Arc<OLState>) -> Self {
-        Self {
+    ///
+    /// Fetches the state for the given tip from the provider.
+    pub(crate) async fn new_with_context(
+        ctx: Arc<MempoolContext<P>>,
+        tip: OLBlockCommitment,
+    ) -> OLMempoolResult<Self> {
+        let state_accessor = ctx
+            .provider
+            .get_state_for_tip_async(tip)
+            .await
+            .map_err(|e| {
+                OLMempoolError::StateProvider(format!(
+                    "Failed to get state for tip {:?}: {}",
+                    tip, e
+                ))
+            })?
+            .ok_or_else(|| {
+                OLMempoolError::StateProvider(format!("State not found for tip {:?}", tip))
+            })?;
+
+        Ok(Self {
             ctx,
             entries: HashMap::new(),
             ordering_index: BTreeMap::new(),
             account_state: HashMap::new(),
             state_accessor,
             stats: OLMempoolStats::default(),
-        }
+        })
     }
 
     /// Load existing transactions from database.
@@ -166,6 +220,12 @@ impl MempoolServiceState {
                     "Skipping invalid transaction from database"
                 );
                 let _ = self.ctx.storage.mempool().del_tx(tx_data.txid);
+
+                // Update reject stats if this is a trackable rejection reason
+                if let Some(reason) = OLMempoolRejectReason::from_error(&e) {
+                    self.update_stats_on_reject(reason);
+                }
+
                 skipped_count += 1;
                 continue;
             }
@@ -183,8 +243,8 @@ impl MempoolServiceState {
 
         if skipped_count > 0 {
             tracing::info!(
-                loaded = loaded_count,
-                skipped = skipped_count,
+                loaded_count,
+                skipped_count,
                 "Loaded transactions from database"
             );
         }
@@ -746,21 +806,20 @@ impl MempoolServiceState {
     ) -> OLMempoolResult<()> {
         let current_slot = self.state_accessor.cur_slot();
 
-        // Load state for new tip from storage
+        // Load state for new tip from provider
         let new_state = self
             .ctx
-            .storage
-            .ol_state()
-            .get_toplevel_ol_state_async(new_tip)
+            .provider
+            .get_state_for_tip_async(new_tip)
             .await
             .map_err(|e| {
-                OLMempoolError::AccountStateAccess(format!(
+                OLMempoolError::StateProvider(format!(
                     "Failed to load state for tip {:?}: {}",
                     new_tip, e
                 ))
             })?
             .ok_or_else(|| {
-                OLMempoolError::AccountStateAccess(format!("State not found for tip {:?}", new_tip))
+                OLMempoolError::StateProvider(format!("State not found for tip {:?}", new_tip))
             })?;
 
         // Update state accessor
@@ -787,14 +846,7 @@ impl MempoolServiceState {
     }
 }
 
-impl MempoolContext {
-    /// Create a new mempool context.
-    pub(crate) fn new(config: OLMempoolConfig, storage: Arc<NodeStorage>) -> Self {
-        Self { config, storage }
-    }
-}
-
-impl ServiceState for MempoolServiceState {
+impl<P: StateProvider> ServiceState for MempoolServiceState<P> {
     fn name(&self) -> &str {
         "mempool"
     }
@@ -812,8 +864,9 @@ mod tests {
         test_utils::{
             create_test_account_id_with, create_test_attachment_with_slots,
             create_test_block_commitment, create_test_context, create_test_generic_tx_with_size,
-            create_test_snark_tx_with_seq_no, create_test_snark_tx_with_seq_no_and_slots,
-            create_test_tx_with_id, get_ol_state_for_tip, setup_test_state_for_tip,
+            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
+            create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
+            create_test_tx_with_id,
         },
         types::OLMempoolConfig,
     };
@@ -828,10 +881,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state = MempoolServiceState::new_with_context(context, state_accessor);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
         let txid1 = state.add_transaction(tx1.clone()).await.unwrap();
@@ -856,10 +910,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state = MempoolServiceState::new_with_context(context, state_accessor);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add two transactions (at capacity) - use sequential seq_no
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -883,10 +938,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state = MempoolServiceState::new_with_context(context.clone(), state_accessor);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // SnarkAccountUpdate transactions ordered by seq_no
         // Use same account with sequential seq_no to verify seq_no ordering
@@ -921,10 +977,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state = MempoolServiceState::new_with_context(context, state_accessor);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add three GAM transactions
         // They should get different priorities due to insertion order
@@ -977,10 +1034,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state = MempoolServiceState::new_with_context(context, state_accessor);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add three SnarkAccountUpdate transactions from DIFFERENT accounts
         // All with seq_no=0 (valid for each account)
@@ -1016,11 +1074,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transaction with seq_no=0 for account 1
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1063,11 +1121,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add 5 transactions - each to different account with seq_no 0
         for i in 1..=5 {
@@ -1090,11 +1148,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Create snark updates with sequential seq_nos: 0, 1, 2 for same account
         let snark1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1129,11 +1187,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions - each to different account with seq_no 0
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1166,11 +1224,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Remove transaction that doesn't exist - should succeed with empty result
         let fake_txid = OLTxId::from(Buf32::from([0u8; 32]));
@@ -1190,11 +1248,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
+            .await
+            .unwrap();
 
         // Add transactions - mix of different accounts and sequential txs for same account
         let account1 = create_test_account_id_with(1);
@@ -1211,8 +1269,9 @@ mod tests {
         let txid4 = state.add_transaction(tx4).await.unwrap();
 
         // Create new state and load from DB
-        let mut state2 =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let mut state2 = MempoolServiceState::new_with_context(context.clone(), tip)
+            .await
+            .unwrap();
         state2.load_from_db().await.unwrap();
 
         // Should have 4 transactions
@@ -1249,11 +1308,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add multiple transactions with different accounts
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1298,11 +1357,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         let initial_stats = state.stats();
         assert_eq!(initial_stats.mempool_size(), 0);
@@ -1347,11 +1406,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         let initial_stats = state.stats();
         assert_eq!(initial_stats.enqueues_rejected(), 0);
@@ -1398,10 +1457,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context_tiny = Arc::new(create_test_context(config_tiny));
-        setup_test_state_for_tip(&context_tiny.storage, tip2).await;
-        let state_accessor2 = get_ol_state_for_tip(&context_tiny.storage, tip2).await;
-        let mut state2 = MempoolServiceState::new_with_context(context_tiny, state_accessor2);
+        let provider2 = Arc::new(create_test_state_provider(tip2));
+        let context_tiny = Arc::new(create_test_context(config_tiny, provider2.clone()));
+        let mut state2 = MempoolServiceState::new_with_context(context_tiny, tip2)
+            .await
+            .unwrap();
 
         let large_tx = create_test_tx_with_id(99);
         let result = state2.add_transaction(large_tx).await;
@@ -1428,11 +1488,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions for account 1: seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1506,11 +1566,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions for account 1: seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1574,11 +1634,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions with seq_no 0, 1, 2 where middle one expires first
         let mut tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1598,8 +1658,12 @@ mod tests {
 
         // Move to slot 111 where tx1 expires (max_slot=110, current=111 > 110)
         let tip_111 = create_test_block_commitment(111);
-        setup_test_state_for_tip(&context.storage, tip_111).await;
-        let state_accessor_111 = get_ol_state_for_tip(&context.storage, tip_111).await;
+        provider.insert_state(tip_111, create_test_ol_state_for_tip(111));
+        let state_accessor_111 = provider
+            .get_state_for_tip_async(tip_111)
+            .await
+            .unwrap()
+            .unwrap();
         state.state_accessor = state_accessor_111;
 
         // Revalidate all transactions - should find expired tx1
@@ -1629,11 +1693,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         let account = create_test_account_id_with(1);
 
@@ -1707,11 +1771,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Use a known account ID that exists in test state (accounts 0-255 are created)
         let account_200 = create_test_account_id_with(200);
@@ -1763,11 +1827,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add first transaction with seq_no=0 for account 1
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1798,11 +1862,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add first transaction with seq_no=0 for account 1
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1829,11 +1893,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add first transaction with seq_no=0 for account 1
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1862,11 +1926,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions with seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1912,11 +1976,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions with seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -1962,11 +2026,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions with seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -2004,11 +2068,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions with seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -2039,11 +2103,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions with seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
@@ -2074,11 +2138,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add initial transaction
         let tx0_v1 = create_test_snark_tx_with_seq_no(1, 0);
@@ -2109,11 +2173,11 @@ mod tests {
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
-        let context = Arc::new(create_test_context(config));
-        setup_test_state_for_tip(&context.storage, tip).await;
-        let state_accessor = get_ol_state_for_tip(&context.storage, tip).await;
-        let mut state =
-            MempoolServiceState::new_with_context(context.clone(), state_accessor.clone());
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(config, provider.clone()));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
         // Add transactions with seq_no 0, 1, 2
         let tx0 = create_test_snark_tx_with_seq_no(1, 0);
