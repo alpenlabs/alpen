@@ -691,22 +691,27 @@ impl EeNodeDb for EeNodeDBSled {
     fn update_chunk_status(&self, chunk_id: ChunkId, status: ChunkStatus) -> DbResult<()> {
         let db_chunk_id: DBChunkId = chunk_id.into();
 
-        // Look up idx by id
+        // Look up idx by id (outside transaction is fine - idx mapping is stable)
         let Some(idx) = self.chunk_id_to_idx_tree.get(&db_chunk_id)? else {
             return Err(DbError::ChunkNotFound(chunk_id));
         };
 
-        // Get current chunk data
-        let Some(current) = self.chunk_by_idx_tree.get(&idx)? else {
-            return Err(DbError::ChunkNotFound(chunk_id));
-        };
+        // Use transaction for read-modify-write to prevent race conditions
+        (&self.chunk_by_idx_tree,).transaction_with_retry(
+            self.config.backoff.as_ref(),
+            self.config.retry_count.into(),
+            |(chunk_tree,)| {
+                let Some(current) = chunk_tree.get(&idx)? else {
+                    abort(DbError::ChunkNotFound(chunk_id))?
+                };
 
-        // Update status
-        let parts: (Chunk, ChunkStatus) = current.into_parts();
-        let (chunk, _old_status) = parts;
-        let updated = DBChunkWithStatus::new(chunk, status);
+                let (chunk, _old_status) = current.into_parts();
+                let updated = DBChunkWithStatus::new(chunk, status.clone());
 
-        self.chunk_by_idx_tree.insert(&idx, &updated)?;
+                chunk_tree.insert(&idx, &updated)?;
+                Ok(())
+            },
+        )?;
 
         Ok(())
     }
