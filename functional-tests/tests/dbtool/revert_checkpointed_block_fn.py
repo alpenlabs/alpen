@@ -70,14 +70,15 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
                 f"EL={old_fn_el_block_number}"
             )
 
+        # extra buffer time to let latest checkpoint get final
+        time.sleep(50)
+
         # Stop services to use dbtool
         self.seq.stop()
         self.reth.stop()
         self.follower_1_node.stop()
         self.follower_1_reth.stop()
 
-        # extra buffer time to let latest checkpoint get final
-        time.sleep(50)
         # Get checkpoint info and target block
         checkpt = get_latest_checkpoint(self)
         if not checkpt:
