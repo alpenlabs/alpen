@@ -5,7 +5,7 @@ name: Collect test metrics
 
 on:
   workflow_run:
-    workflows: ["Run functional tests"]
+    workflows: ["Tests with coverage"]
     types:
       - completed
 
