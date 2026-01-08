@@ -71,7 +71,7 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
             )
 
         # extra buffer time to let latest checkpoint get final
-        time.sleep(50)
+        time.sleep(3)
 
         # Stop services to use dbtool
         self.seq.stop()
