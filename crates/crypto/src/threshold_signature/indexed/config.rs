@@ -9,7 +9,8 @@ use std::{
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use super::{CompressedPublicKey, ThresholdSignatureError};
+use super::ThresholdSignatureError;
+use crate::keys::compressed::CompressedPublicKey;
 
 /// Maximum number of signers allowed in a threshold configuration.
 ///

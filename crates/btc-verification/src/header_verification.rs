@@ -7,7 +7,8 @@ use bitcoin::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::{BtcParams, GenesisL1View};
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, hash::compute_borsh_hash};
+use strata_crypto::hash::compute_borsh_hash;
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
 use thiserror::Error;
 
 use crate::{BtcWork, timestamp_store::TimestampStore, utils_btc::compute_block_hash};

@@ -4,8 +4,9 @@ use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, compute_asm_transition, group_txs_by_subprotocol};
+use strata_crypto::hash::compute_borsh_hash;
 use strata_predicate::PredicateKey;
-use strata_primitives::{Buf32, hash::compute_borsh_hash};
+use strata_primitives::Buf32;
 
 use crate::{input::AsmStepInput, traits::MohoProgram};
 

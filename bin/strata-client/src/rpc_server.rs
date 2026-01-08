@@ -14,6 +14,7 @@ use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 use strata_common::BAIL_SENDER;
 use strata_common::{send_action_to_worker, Action, WorkerType};
 use strata_consensus_logic::{checkpoint_verification::verify_proof, sync_manager::SyncManager};
+use strata_crypto::hash;
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::{
     CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus,
@@ -26,7 +27,6 @@ use strata_primitives::{
     buf::Buf32,
     crypto::EvenPublicKey,
     epoch::EpochCommitment,
-    hash,
     l1::{L1BlockCommitment, L1BlockId},
 };
 use strata_rpc_api::{

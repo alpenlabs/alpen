@@ -8,6 +8,6 @@ pub mod indexed;
 
 // Re-export commonly used types from indexed
 pub use indexed::{
-    verify_threshold_signatures, CompressedPublicKey, IndexedSignature, SignatureSet,
-    ThresholdConfig, ThresholdConfigUpdate, ThresholdSignatureError,
+    verify_threshold_signatures, IndexedSignature, SignatureSet, ThresholdConfig,
+    ThresholdConfigUpdate, ThresholdSignatureError,
 };

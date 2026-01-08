@@ -14,6 +14,7 @@ path = "src/main.rs"
 alpen-chainspec.workspace = true
 strata-asm-types.workspace = true
 strata-bridge-types.workspace = true
+strata-crypto.workspace = true
 strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true
 strata-params.workspace = true

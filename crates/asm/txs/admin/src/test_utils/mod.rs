@@ -195,8 +195,9 @@ mod tests {
     use bitcoin::secp256k1::PublicKey;
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
-    use strata_crypto::threshold_signature::{
-        CompressedPublicKey, ThresholdConfig, verify_threshold_signatures,
+    use strata_crypto::{
+        keys::compressed::CompressedPublicKey,
+        threshold_signature::{ThresholdConfig, verify_threshold_signatures},
     };
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils::ArbitraryGenerator;

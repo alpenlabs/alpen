@@ -3,7 +3,8 @@
 use ssz::Encode;
 use ssz_types::VariableList;
 use strata_asm_common::AsmManifest;
-use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot, hash::raw};
+use strata_crypto::hash;
+use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot};
 
 use crate::{
     block_flags::BlockFlags,
@@ -133,7 +134,7 @@ impl OLBlockHeader {
     /// Computes the block ID by hashing the header's SSZ encoding.
     pub fn compute_blkid(&self) -> OLBlockId {
         let encoded = self.as_ssz_bytes();
-        let hash = raw(&encoded);
+        let hash = hash::raw(&encoded);
         OLBlockId::from(hash)
     }
 }
@@ -173,7 +174,7 @@ impl OLBlockBody {
     /// Computes the hash commitment of this block body.
     pub fn compute_hash_commitment(&self) -> Buf32 {
         let encoded = self.as_ssz_bytes();
-        raw(&encoded)
+        hash::raw(&encoded)
     }
 
     /// Checks if the body looks like an epoch terminal.  Ie. if the L1 update

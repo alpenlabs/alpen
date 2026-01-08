@@ -15,10 +15,10 @@ use serde::{Deserializer, Serializer, de, ser};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
+use crate::buf::Buf32;
 // Use generated type when bitcoin feature is not enabled
 #[cfg(not(feature = "bitcoin"))]
 use crate::ssz_generated::ssz::commitments::L1BlockCommitment;
-use crate::{buf::Buf32, hash::sha256d};
 
 /// The bitcoin block height
 pub type BitcoinBlockHeight = u64;
@@ -45,14 +45,6 @@ pub type L1Height = u32;
     Decode,
 )]
 pub struct L1BlockId(Buf32);
-
-impl L1BlockId {
-    /// Computes the [`L1BlockId`] from the header buf. This is expensive in proofs and
-    /// should only be done when necessary.
-    pub fn compute_from_header_buf(buf: &[u8]) -> L1BlockId {
-        Self::from(sha256d(buf))
-    }
-}
 
 // Custom implementation without Debug/Display to avoid conflicts
 impl From<Buf32> for L1BlockId {

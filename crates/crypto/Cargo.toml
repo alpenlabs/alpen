@@ -10,13 +10,16 @@ workspace = true
 strata-identifiers.workspace = true
 
 arbitrary.workspace = true
+bitcoin.workspace = true
 borsh.workspace = true
 hex.workspace = true
 musig2.workspace = true
 rand = { workspace = true, optional = true }
 secp256k1 = { workspace = true, features = ["global-context", "recovery"] }
 serde.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 bitcoin.workspace = true

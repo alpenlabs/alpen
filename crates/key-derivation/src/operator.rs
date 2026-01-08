@@ -19,7 +19,7 @@
 use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use secp256k1::SECP256K1;
-use strata_primitives::constants::{
+use strata_crypto::keys::constants::{
     STRATA_OPERATOR_BASE_DERIVATION_PATH, STRATA_OP_MESSAGE_DERIVATION_PATH,
     STRATA_OP_WALLET_DERIVATION_PATH,
 };

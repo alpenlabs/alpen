@@ -10,6 +10,7 @@ workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
 strata-acct-types.workspace = true
+strata-crypto.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true

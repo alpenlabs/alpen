@@ -48,17 +48,17 @@ pub fn verify_threshold_signatures(
 mod tests {
     use std::num::NonZero;
 
-    use secp256k1::{Secp256k1, SecretKey};
+    use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
     use super::*;
-    use crate::threshold_signature::indexed::CompressedPublicKey;
+    use crate::keys::compressed::CompressedPublicKey;
 
     fn generate_keypair(seed: u8) -> (SecretKey, CompressedPublicKey) {
         let secp = Secp256k1::new();
         let mut sk_bytes = [0u8; 32];
         sk_bytes[31] = seed.max(1);
         let sk = SecretKey::from_slice(&sk_bytes).unwrap();
-        let pk = CompressedPublicKey::from(secp256k1::PublicKey::from_secret_key(&secp, &sk));
+        let pk = CompressedPublicKey::from(PublicKey::from_secret_key(&secp, &sk));
         (sk, pk)
     }
 

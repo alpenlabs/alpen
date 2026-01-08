@@ -20,6 +20,7 @@ strata-checkpoint-types.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-config.workspace = true
 strata-consensus-logic = { workspace = true, default-features = true }
+strata-crypto.workspace = true
 strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true

@@ -3,7 +3,7 @@ use rand::{rngs::OsRng, RngCore};
 use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use strata_identifiers::Buf32;
 
-use crate::{musig2::aggregate_schnorr_keys, schnorr::EvenSecretKey};
+use crate::{keys::even::EvenSecretKey, musig2::aggregate_schnorr_keys};
 
 /// How to tweak the aggregated MuSig2 key when creating a signature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

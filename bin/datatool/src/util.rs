@@ -21,13 +21,12 @@ use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
 use shrex::Hex;
 use strata_bridge_types::OperatorPubkeys;
+use strata_crypto::keys::zeroizable::ZeroizableXpriv;
 use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, ProofPublishMode, RollupParams};
 use strata_predicate::PredicateKey;
-use strata_primitives::{
-    block_credential, buf::Buf32, crypto::EvenSecretKey, keys::ZeroizableXpriv, l1::GenesisL1View,
-};
+use strata_primitives::{block_credential, buf::Buf32, crypto::EvenSecretKey, l1::GenesisL1View};
 use zeroize::Zeroize;
 
 use crate::args::{

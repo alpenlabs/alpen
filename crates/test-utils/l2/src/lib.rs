@@ -11,7 +11,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use strata_bridge_types::OperatorPubkeys;
 use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
 use strata_consensus_logic::genesis::make_l2_genesis;
-use strata_crypto::schnorr::EvenSecretKey;
+use strata_crypto::EvenSecretKey;
 use strata_ol_chain_types::{
     L2Block, L2BlockAccessory, L2BlockBody, L2BlockBundle, L2BlockHeader, L2Header,
     SignedL2BlockHeader,

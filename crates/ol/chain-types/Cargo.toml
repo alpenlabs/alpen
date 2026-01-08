@@ -13,6 +13,7 @@ ssz_types.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-codec.workspace = true
+strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 tree_hash.workspace = true

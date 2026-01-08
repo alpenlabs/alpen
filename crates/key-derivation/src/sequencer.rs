@@ -2,7 +2,7 @@
 
 use bitcoin::bip32::{ChildNumber, Xpriv, Xpub};
 use secp256k1::SECP256K1;
-use strata_primitives::constants::STRATA_SEQUENCER_DERIVATION_PATH;
+use strata_crypto::keys::constants::STRATA_SEQUENCER_DERIVATION_PATH;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::error::KeyError;

@@ -8,6 +8,7 @@ strata-acct-types.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-codec.workspace = true
 strata-codec-utils.workspace = true
+strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-merkle.workspace = true
