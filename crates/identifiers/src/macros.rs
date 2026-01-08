@@ -617,8 +617,8 @@ macro_rules! impl_ssz_transparent_buf32_wrapper {
 
 /// Generates SSZ trait implementations for transparent wrappers around Buf32 that are also Copy.
 ///
-/// This macro generates everything from `impl_ssz_transparent_buf32_wrapper!` plus:
-/// - `ToOwnedSsz` implementation (for Copy types, returns self)
+/// This macro generates everything from `impl_ssz_transparent_buf32_wrapper!`.
+/// It is kept for clarity at call sites that are specifically `Copy` types.
 ///
 /// # Example
 ///
@@ -636,13 +636,6 @@ macro_rules! impl_ssz_transparent_buf32_wrapper {
 macro_rules! impl_ssz_transparent_buf32_wrapper_copy {
     ($wrapper:ty) => {
         $crate::impl_ssz_transparent_buf32_wrapper!($wrapper);
-
-        // ToOwnedSsz implementation - for Copy types, the reference IS the owned version
-        impl ::ssz_types::view::ToOwnedSsz<$wrapper> for $wrapper {
-            fn to_owned(&self) -> $wrapper {
-                *self
-            }
-        }
     };
 }
 
