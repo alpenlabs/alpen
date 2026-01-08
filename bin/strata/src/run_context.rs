@@ -25,8 +25,8 @@ pub(crate) struct RunContext {
     // Service handles
     pub asm_handle: AsmWorkerHandle,
     pub csm_monitor: ServiceMonitor<CsmWorkerStatus>,
-    // RPC dependencies
+    pub mempool_handle: MempoolHandle,
+    // Shared infrastructure
     pub storage: Arc<NodeStorage>,
     pub status_channel: Arc<StatusChannel>,
-    pub mempool_handle: MempoolHandle,
 }
