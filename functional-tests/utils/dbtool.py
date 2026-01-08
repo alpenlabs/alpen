@@ -17,7 +17,7 @@ def send_tx(web3: Web3):
         }
     )
     print("txid", txid.to_0x_hex())
-    web3.eth.wait_for_transaction_receipt(txid, timeout=10)
+    web3.eth.wait_for_transaction_receipt(txid, timeout=5)
 
 
 def run_dbtool_command(datadir: str, subcommand: str, *args) -> tuple[int, str, str]:
