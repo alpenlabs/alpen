@@ -72,17 +72,42 @@ def replace_datasource_placeholder(dashboard: dict, datasource_uid: str) -> dict
     return json.loads(dashboard_str)
 
 
+def check_dashboard_exists(grafana_url: str, token: str, dashboard_uid: str) -> bool:
+    """Check if dashboard already exists."""
+    try:
+        response = requests.get(
+            f"{grafana_url}/api/dashboards/uid/{dashboard_uid}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        return response.status_code == 200
+    except Exception:
+        return False
+
+
 def provision_dashboard(grafana_url: str, token: str, dashboard_json: dict) -> bool:
-    """Provision dashboard via Grafana API."""
+    """Provision dashboard via Grafana API (idempotent - creates if not exists, updates if exists)."""
+    dashboard_uid = dashboard_json.get("uid", "test-flakiness")
+
+    # Check if dashboard already exists
+    print(f"Checking if dashboard exists (UID: {dashboard_uid})...")
+    exists = check_dashboard_exists(grafana_url, token, dashboard_uid)
+
+    if exists:
+        print("   Dashboard already exists")
+    else:
+        print("   Dashboard does not exist")
+
     # Wrap dashboard in the required format
     payload = {
         "dashboard": dashboard_json,
-        "overwrite": True,  # Update if exists
+        "overwrite": True,  # Update if exists, create if not
         "message": "Provisioned by CI"
     }
 
     try:
-        print(f"Provisioning dashboard to Grafana...")
+        action = "Updating" if exists else "Creating"
+        print(f"{action} dashboard...")
 
         response = requests.post(
             f"{grafana_url}/api/dashboards/db",
@@ -98,17 +123,28 @@ def provision_dashboard(grafana_url: str, token: str, dashboard_json: dict) -> b
             result = response.json()
             dashboard_url = result.get("url", "")
             dashboard_uid = result.get("uid", "")
-            print(f"Dashboard provisioned successfully!")
-            print(f"UID: {dashboard_uid}")
-            print(f"URL: {grafana_url}{dashboard_url}")
+            status = result.get("status", "")
+
+            if status == "success":
+                print(f"SUCCESS: Dashboard provisioned!")
+            else:
+                print(f"SUCCESS: Dashboard operation completed")
+
+            print(f"   UID: {dashboard_uid}")
+            print(f"   URL: {grafana_url}{dashboard_url}")
+            return True
+        elif response.status_code == 412:
+            # Precondition failed - dashboard unchanged
+            print(f"   Dashboard already up to date (no changes needed)")
+            print(f"   URL: {grafana_url}/d/{dashboard_uid}/test-flakiness-tracker")
             return True
         else:
-            print(f"Failed to provision dashboard: {response.status_code}")
-            print(f"Response: {response.text}")
+            print(f"ERROR: Failed to provision dashboard: {response.status_code}")
+            print(f"   Response: {response.text}")
             return False
 
     except Exception as e:
-        print(f"Error provisioning dashboard: {e}")
+        print(f"ERROR: Exception during provisioning: {e}")
         return False
 
 
