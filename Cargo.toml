@@ -254,18 +254,18 @@ strata-test-utils-l2 = { path = "crates/test-utils/l2" }
 strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
-# strata-common
+# Dependencies from alpenlabs/strata-common pinned to commit  (main @ 2026-01-06)
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
-] }
-strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common" }
-strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
-strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
-strata-merkle = { git = "https://github.com/alpenlabs/strata-common" }
-strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
-strata-predicate = { git = "https://github.com/alpenlabs/strata-common" }
-strata-service = { git = "https://github.com/alpenlabs/strata-common" }
-strata-tasks = { git = "https://github.com/alpenlabs/strata-common" }
+], rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-merkle = { git = "https://github.com/alpenlabs/strata-common", rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common", rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-service = { git = "https://github.com/alpenlabs/strata-common", rev = "4223a23387fd632876964bc8391ef2becee10090" }
+strata-tasks = { git = "https://github.com/alpenlabs/strata-common" , rev = "4223a23387fd632876964bc8391ef2becee10090"}
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
