@@ -16,9 +16,9 @@ use strata_ol_chain_types_new::{OLBlockHeader, SnarkAccountUpdateTxPayload, Tran
 use strata_ol_state_types::{NativeSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, OutputMessage, OutputTransfer,
-    ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer, UpdateAccumulatorProofs,
-    UpdateOperationData, UpdateOutputs,
+    AccumulatorClaim, LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, MmrEntryProof,
+    OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer,
+    UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
 };
 
 use crate::{
@@ -346,6 +346,57 @@ impl InboxMmrTracker {
     }
 
     /// Returns the number of entries in the tracked MMR
+    pub fn num_entries(&self) -> u64 {
+        self.mmr.num_entries()
+    }
+}
+
+/// Tracks ASM manifests in a parallel MMR to generate proofs for ledger references.
+pub struct ManifestMmrTracker {
+    mmr: Mmr64,
+    proofs: Vec<MerkleProof<[u8; 32]>>,
+}
+
+impl ManifestMmrTracker {
+    pub fn new() -> Self {
+        Self {
+            mmr: Mmr64::from_generic(&CompactMmr64::new(64)),
+            proofs: Vec::new(),
+        }
+    }
+
+    /// Adds a manifest to the tracker and returns a proof for it.
+    /// Uses TreeHash for consistent hashing with the actual state MMR.
+    pub fn add_manifest(&mut self, manifest: &AsmManifest) -> (u64, MmrEntryProof) {
+        // Compute hash using TreeHash, matching the actual append_manifest implementation
+        let hash = <AsmManifest as TreeHash>::tree_hash_root(manifest);
+
+        // Get the current index (before adding)
+        let index = self.mmr.num_entries();
+
+        // Add to MMR with proof tracking
+        let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
+            &mut self.mmr,
+            hash.into_inner(),
+            &mut self.proofs,
+        )
+        .expect("mmr: can't add leaf");
+
+        self.proofs.push(proof.clone());
+
+        // Create MmrEntryProof for ledger references
+        let mmr_entry_proof = MmrEntryProof::new(
+            hash.into_inner(),
+            strata_acct_types::MerkleProof::from_cohashes(
+                proof.cohashes().to_vec(),
+                index,
+            ),
+        );
+
+        (index, mmr_entry_proof)
+    }
+
+    /// Returns the number of manifests in the tracked MMR
     pub fn num_entries(&self) -> u64 {
         self.mmr.num_entries()
     }

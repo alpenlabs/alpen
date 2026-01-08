@@ -22,6 +22,7 @@ pub fn process_epoch_initial<S: IStateAccessor>(
     let state_cur_epoch = state.cur_epoch();
     let block_cur_epoch = context.cur_epoch();
     if block_cur_epoch != state_cur_epoch {
+        eprintln!("state {state_cur_epoch}, block {block_cur_epoch}");
         return Err(ExecError::ChainIntegrity);
     }
 
