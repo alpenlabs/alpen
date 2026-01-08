@@ -265,7 +265,9 @@ strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common" }
-strata-predicate = { git = "https://github.com/alpenlabs/strata-common" }
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common", features = [
+  "schnorr",
+] }
 strata-service = { git = "https://github.com/alpenlabs/strata-common" }
 strata-tasks = { git = "https://github.com/alpenlabs/strata-common" }
 

@@ -33,15 +33,16 @@ impl CheckpointState {
     /// Initializes with a genesis epoch summary where:
     /// - `epoch` = 0 (first expected epoch)
     /// - `terminal` = null (indicates no epoch has been verified yet)
+    /// - `previous_terminal` = null (no previous terminal for genesis)
     /// - `l1_end` = genesis L1 commitment from config
     /// - `final_state` = genesis OL state root (pre-state for first checkpoint)
     pub fn new(config: &CheckpointConfig) -> Self {
         let genesis_summary = EpochSummary::new(
-            0,                            // First expected epoch
-            OLBlockCommitment::null(),    // Null terminal = genesis sentinel
-            OLBlockCommitment::null(),    // No previous terminal
-            config.genesis_l1,            // Genesis L1 commitment
-            config.genesis_ol_state_root, // Genesis OL state root
+            0,
+            OLBlockCommitment::null(),
+            OLBlockCommitment::null(),
+            config.genesis_l1,
+            config.genesis_ol_state_root,
         );
         Self {
             sequencer_predicate: config.sequencer_predicate.clone(),
