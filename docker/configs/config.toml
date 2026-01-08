@@ -1,0 +1,40 @@
+[client]
+rpc_host = "0.0.0.0"
+rpc_port = 8432
+l2_blocks_fetch_limit = 1_000
+datadir = "data"
+db_retry_count = 5
+# sequencer_rpc = "ws://strata-nodes-client-svc:8432"
+sync_endpoint = "ws://strata-client-strata-nodes-refactor-client-svc:8432"
+
+[bitcoind]
+rpc_url = "http://bitcoind:38332"
+rpc_user = "rpcuser"
+rpc_password = "rpcpassword"
+network = "signet"
+
+[sync]
+l1_follow_distance = 6
+client_checkpoint_interval = 20
+
+[btcio.reader]
+client_poll_dur_ms = 10_000
+
+[btcio.writer]
+write_poll_dur_ms = 10_000
+fee_policy = "smart"
+reveal_amount = 100
+bundle_interval_ms = 1_000
+
+[btcio.broadcaster]
+poll_interval_ms = 1_000
+
+
+[exec.reth]
+rpc_url = "rethfn1-strata-nodes-refactor-reth-fn-1-svc:8551"
+secret = "configs/jwt.fn.hex"
+
+[relayer]
+refresh_interval = 10
+stale_duration = 10
+relay_misc = true
