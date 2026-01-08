@@ -13,7 +13,10 @@ async fn find_last_canonical_unfinalized_batch(
     canonical_reader: &impl CanonicalChainReader,
     batch_storage: &impl BatchStorage,
 ) -> Result<Option<Batch>> {
-    let (batch, _) = batch_storage.get_latest_batch().await?;
+    let (batch, _) = batch_storage
+        .get_latest_batch()
+        .await?
+        .ok_or_else(|| eyre!("no batches in storage; genesis batch expected"))?;
 
     // TODO: get this directly
     let finalized_blocknum = canonical_reader.finalized_blocknum().await?;
@@ -289,9 +292,12 @@ mod tests {
             let batch1_for_idx = make_batch(1, genesis, batch1_end);
 
             let mut batch_storage = MockBatchStorage::new();
-            batch_storage
-                .expect_get_latest_batch()
-                .returning(move || Ok((genesis_batch_for_latest.clone(), BatchStatus::Sealed)));
+            batch_storage.expect_get_latest_batch().returning(move || {
+                Ok(Some((
+                    genesis_batch_for_latest.clone(),
+                    BatchStatus::Sealed,
+                )))
+            });
             batch_storage
                 .expect_get_batch_by_idx()
                 .withf(|idx| *idx == 1)
@@ -353,7 +359,7 @@ mod tests {
             let mut batch_storage = MockBatchStorage::new();
             batch_storage
                 .expect_get_latest_batch()
-                .returning(move || Ok((batch2_for_latest.clone(), BatchStatus::Sealed)));
+                .returning(move || Ok(Some((batch2_for_latest.clone(), BatchStatus::Sealed))));
             batch_storage
                 .expect_get_batch_by_idx()
                 .withf(|idx| *idx == 2)
@@ -405,7 +411,7 @@ mod tests {
             let mut batch_storage = MockBatchStorage::new();
             batch_storage
                 .expect_get_latest_batch()
-                .returning(move || Ok((batch1_for_latest.clone(), BatchStatus::Sealed)));
+                .returning(move || Ok(Some((batch1_for_latest.clone(), BatchStatus::Sealed))));
             batch_storage
                 .expect_get_batch_by_idx()
                 .withf(|idx| *idx == 1)
@@ -449,7 +455,7 @@ mod tests {
             let mut batch_storage = MockBatchStorage::new();
             batch_storage
                 .expect_get_latest_batch()
-                .returning(move || Ok((batch1_for_latest.clone(), BatchStatus::Sealed)));
+                .returning(move || Ok(Some((batch1_for_latest.clone(), BatchStatus::Sealed))));
             batch_storage
                 .expect_get_batch_by_idx()
                 .withf(|idx| *idx == 1)
