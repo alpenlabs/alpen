@@ -30,8 +30,8 @@ use crate::{
     test_utils::{
         InboxMmrTracker, SnarkUpdateBuilder, TEST_NONEXISTENT_ID, TEST_RECIPIENT_ID,
         TEST_SNARK_ACCOUNT_ID, create_empty_account, execute_block, execute_block_with_outputs,
-        execute_tx_in_block, setup_genesis_with_snark_account, test_account_id, test_l1_block_id,
-        test_recipient_account_id, test_snark_account_id, test_state_root,
+        execute_tx_in_block, get_test_recipient_account_id, get_test_snark_account_id,
+        get_test_state_root, setup_genesis_with_snark_account, test_account_id, test_l1_block_id,
     },
     verification::*,
 };
@@ -143,8 +143,8 @@ mod validation {
     #[test]
     fn test_snark_update_invalid_sequence_number() {
         let mut state = OLState::new_genesis();
-        let snark_id = test_snark_account_id();
-        let recipient_id = test_recipient_account_id();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
 
         // Setup: genesis with snark account
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
@@ -153,7 +153,7 @@ mod validation {
         create_empty_account(&mut state, recipient_id);
 
         // Try to submit update with wrong sequence number (should be 0, but we use 5)
-        let invalid_tx = SnarkUpdateBuilder::new(5, test_state_root(2))
+        let invalid_tx = SnarkUpdateBuilder::new(5, get_test_state_root(2))
             .with_transfer(recipient_id, 10_000_000)
             .with_message_index(0) // Must set index for simple build
             .build_simple(snark_id);
@@ -176,8 +176,8 @@ mod validation {
     #[test]
     fn test_snark_update_insufficient_balance() {
         let mut state = OLState::new_genesis();
-        let snark_id = test_snark_account_id();
-        let recipient_id = test_recipient_account_id();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
 
         // Setup: genesis with snark account of only 50M sats
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 50_000_000);
@@ -186,7 +186,7 @@ mod validation {
         create_empty_account(&mut state, recipient_id);
 
         // Try to send 100M sats (more than balance)
-        let invalid_tx = SnarkUpdateBuilder::new(0, test_state_root(2))
+        let invalid_tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
             .with_transfer(recipient_id, 100_000_000)
             .build(snark_id, &state);
 
@@ -213,14 +213,14 @@ mod validation {
     #[test]
     fn test_snark_update_nonexistent_recipient() {
         let mut state = OLState::new_genesis();
-        let snark_id = test_snark_account_id();
+        let snark_id = get_test_snark_account_id();
         let nonexistent_id = test_account_id(TEST_NONEXISTENT_ID); // Not created
 
         // Setup: genesis with snark account
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
         // Try to send to non-existent account
-        let invalid_tx = SnarkUpdateBuilder::new(0, test_state_root(2))
+        let invalid_tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
             .with_transfer(nonexistent_id, 10_000_000)
             .build(snark_id, &state);
 
@@ -299,8 +299,8 @@ mod inbox {
     #[test]
     fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
         let mut state = OLState::new_genesis();
-        let snark_id = test_snark_account_id();
-        let recipient_id = test_recipient_account_id();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
 
         // Setup: genesis with snark account
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
@@ -354,7 +354,7 @@ mod inbox {
         );
 
         // After processing 1 message starting at index 0, next_msg_read_idx should be 1
-        let new_proof_state = ProofState::new(test_state_root(2), 1);
+        let new_proof_state = ProofState::new(get_test_state_root(2), 1);
         let operation_data = UpdateOperationData::new(
             0, // seq_no
             new_proof_state,
@@ -434,7 +434,7 @@ mod inbox {
         );
 
         // Create proof state claiming to have processed 5 messages (but inbox is empty)
-        let new_proof_state = ProofState::new(test_state_root(2), 5); // Claim we're at idx 5
+        let new_proof_state = ProofState::new(get_test_state_root(2), 5); // Claim we're at idx 5
         let operation_data = UpdateOperationData::new(
             0, // the first update, seq_no = 0
             new_proof_state,
@@ -517,7 +517,7 @@ mod inbox {
         let outputs = UpdateOutputs::new(vec![], vec![]);
 
         let new_msg_idx = 1;
-        let new_proof_state = ProofState::new(test_state_root(2), new_msg_idx);
+        let new_proof_state = ProofState::new(get_test_state_root(2), new_msg_idx);
         let operation_data = UpdateOperationData::new(
             0,
             new_proof_state,
@@ -555,8 +555,8 @@ mod inbox {
     #[test]
     fn test_snark_update_skip_message_out_of_order() {
         let mut state = OLState::new_genesis();
-        let snark_id = test_snark_account_id();
-        let recipient_id = test_recipient_account_id();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
 
         // Setup: genesis with snark account
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
@@ -612,7 +612,7 @@ mod inbox {
         );
 
         // Claiming to process 1 message but jumping to index 2 (skipping first GAM)
-        let new_proof_state = ProofState::new(test_state_root(2), 2); // Skip to index 2
+        let new_proof_state = ProofState::new(get_test_state_root(2), 2); // Skip to index 2
         let operation_data = UpdateOperationData::new(
             0,
             new_proof_state,
@@ -655,8 +655,8 @@ mod updates {
     #[test]
     fn test_snark_update_success_with_transfer() {
         let mut state = OLState::new_genesis();
-        let snark_id = test_snark_account_id();
-        let recipient_id = test_recipient_account_id();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
 
         // Setup: genesis with snark account
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
@@ -666,7 +666,7 @@ mod updates {
 
         // Create valid update with transfer
         let transfer_amount = 30_000_000u64;
-        let tx = SnarkUpdateBuilder::new(0, test_state_root(2))
+        let tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
             .with_transfer(recipient_id, transfer_amount)
             .build(snark_id, &state);
 
@@ -711,7 +711,7 @@ mod deposit_withdrawal {
         let mut state = OLState::new_genesis();
 
         // Create a snark account in the state
-        let snark_account_id = test_snark_account_id();
+        let snark_account_id = get_test_snark_account_id();
         let initial_state_root = Hash::from([1u8; 32]);
 
         // Create a NativeSnarkAccountState with always-accept predicate key for testing
@@ -812,7 +812,7 @@ mod deposit_withdrawal {
 
         // Create the snark account update operation data
         let seq_no = 0u64; // This is the first update.
-        let new_state_root = test_state_root(2); // New state after update
+        let new_state_root = get_test_state_root(2); // New state after update
 
         let account_after_genesis = state.get_account_state(snark_account_id).unwrap().unwrap();
         let snark_state_after_genesis = account_after_genesis.as_snark_account().unwrap();
@@ -909,5 +909,448 @@ mod deposit_withdrawal {
         }
 
         assert!(withdrawal_found, "test: missing withdrawal intent log");
+    }
+}
+
+/// Tests for multiple operations in a single update
+mod multi_operations {
+    use super::*;
+
+    #[test]
+    fn test_snark_update_multiple_transfers() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+        let recipient1_id = test_account_id(200);
+        let recipient2_id = test_account_id(201);
+        let recipient3_id = test_account_id(202);
+
+        // Setup: genesis with snark account
+        let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+        // Create recipient accounts
+        create_empty_account(&mut state, recipient1_id);
+        create_empty_account(&mut state, recipient2_id);
+        create_empty_account(&mut state, recipient3_id);
+
+        // Create update with multiple transfers (30M + 20M + 10M = 60M total)
+        let tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
+            .with_transfer(recipient1_id, 30_000_000)
+            .with_transfer(recipient2_id, 20_000_000)
+            .with_transfer(recipient3_id, 10_000_000)
+            .build(snark_id, &state);
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+        assert!(
+            result.is_ok(),
+            "Multiple transfers should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify all balances
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(40_000_000),
+            "Sender should have 100M - 60M = 40M"
+        );
+
+        let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();
+        assert_eq!(
+            recipient1.balance(),
+            BitcoinAmount::from_sat(30_000_000),
+            "Recipient1 should receive 30M"
+        );
+
+        let recipient2 = state.get_account_state(recipient2_id).unwrap().unwrap();
+        assert_eq!(
+            recipient2.balance(),
+            BitcoinAmount::from_sat(20_000_000),
+            "Recipient2 should receive 20M"
+        );
+
+        let recipient3 = state.get_account_state(recipient3_id).unwrap().unwrap();
+        assert_eq!(
+            recipient3.balance(),
+            BitcoinAmount::from_sat(10_000_000),
+            "Recipient3 should receive 10M"
+        );
+    }
+
+    #[test]
+    fn test_snark_update_multiple_output_messages() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+
+        // Setup: genesis with snark account
+        let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+        // Create multiple output messages
+        let msg1_payload = MsgPayload::new(BitcoinAmount::from_sat(10_000_000), vec![1, 2, 3]);
+        let msg2_payload = MsgPayload::new(BitcoinAmount::from_sat(5_000_000), vec![4, 5, 6]);
+        let msg3_payload = MsgPayload::new(BitcoinAmount::from_sat(0), vec![7, 8, 9]);
+
+        let output_message1 = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg1_payload);
+        let output_message2 = OutputMessage::new(SEQUENCER_ACCT_ID, msg2_payload);
+        let output_message3 = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg3_payload);
+
+        // Create update with multiple messages
+        let update_outputs = UpdateOutputs::new(
+            vec![],
+            vec![output_message1, output_message2, output_message3],
+        );
+
+        let seq_no = 0u64;
+        let new_proof_state = ProofState::new(get_test_state_root(2), 0);
+        let operation_data = UpdateOperationData::new(
+            seq_no,
+            new_proof_state,
+            vec![],
+            LedgerRefs::new_empty(),
+            update_outputs,
+            vec![],
+        );
+
+        let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
+        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
+        let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
+        let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
+            snark_id,
+            update_container,
+        ));
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+        assert!(
+            result.is_ok(),
+            "Multiple output messages should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify balance reduced by message values (10M + 5M + 0 = 15M)
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(85_000_000),
+            "Balance should be reduced by total message value"
+        );
+    }
+
+    #[test]
+    fn test_snark_update_transfers_and_messages_combined() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
+
+        // Setup: genesis with snark account
+        let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+        // Create recipient account
+        create_empty_account(&mut state, recipient_id);
+
+        // Create update with both transfers and messages
+        let transfer = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(25_000_000));
+        let msg_payload = MsgPayload::new(BitcoinAmount::from_sat(15_000_000), vec![42, 43, 44]);
+        let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
+
+        let update_outputs = UpdateOutputs::new(vec![transfer], vec![output_message]);
+
+        let seq_no = 0u64;
+        let new_proof_state = ProofState::new(get_test_state_root(2), 0);
+        let operation_data = UpdateOperationData::new(
+            seq_no,
+            new_proof_state,
+            vec![],
+            LedgerRefs::new_empty(),
+            update_outputs,
+            vec![],
+        );
+
+        let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
+        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
+        let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
+        let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
+            snark_id,
+            update_container,
+        ));
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+        assert!(
+            result.is_ok(),
+            "Combined transfers and messages should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify balances (100M - 25M - 15M = 60M)
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(60_000_000),
+            "Sender should have 100M - 25M - 15M = 60M"
+        );
+
+        let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+        assert_eq!(
+            recipient.balance(),
+            BitcoinAmount::from_sat(25_000_000),
+            "Recipient should receive 25M"
+        );
+    }
+
+    #[test]
+    fn test_snark_update_partial_balance_multiple_outputs() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+        let recipient1_id = test_account_id(200);
+        let recipient2_id = test_account_id(201);
+
+        // Setup: genesis with snark account with 100M sats
+        let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+        // Create recipient accounts
+        create_empty_account(&mut state, recipient1_id);
+        create_empty_account(&mut state, recipient2_id);
+
+        // Try to send 60M + 50M = 110M (exceeds balance of 100M)
+        let tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
+            .with_transfer(recipient1_id, 60_000_000)
+            .with_transfer(recipient2_id, 50_000_000)
+            .build(snark_id, &state);
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+
+        assert!(result.is_err(), "Update exceeding balance should fail");
+        match result.unwrap_err() {
+            ExecError::Acct(AcctError::InsufficientBalance {
+                requested,
+                available,
+            }) => {
+                assert_eq!(requested, BitcoinAmount::from_sat(110_000_000));
+                assert_eq!(available, BitcoinAmount::from_sat(100_000_000));
+            }
+            err => panic!("Expected InsufficientBalance, got: {err:?}"),
+        }
+
+        // Verify no partial execution - all balances should be unchanged
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(100_000_000),
+            "Sender balance should be unchanged"
+        );
+
+        let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();
+        assert_eq!(
+            recipient1.balance(),
+            BitcoinAmount::from_sat(0),
+            "Recipient1 should have no balance"
+        );
+
+        let recipient2 = state.get_account_state(recipient2_id).unwrap().unwrap();
+        assert_eq!(
+            recipient2.balance(),
+            BitcoinAmount::from_sat(0),
+            "Recipient2 should have no balance"
+        );
+    }
+}
+
+/// Tests for edge cases in value transfers
+mod edge_cases {
+    use super::*;
+
+    #[test]
+    fn test_snark_update_zero_value_transfer() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
+
+        // Setup: genesis with snark account
+        let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+        // Create recipient account
+        create_empty_account(&mut state, recipient_id);
+
+        // Create update with zero value transfer
+        let tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
+            .with_transfer(recipient_id, 0) // Zero value
+            .build(snark_id, &state);
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+
+        // Should succeed - zero transfers are valid
+        assert!(
+            result.is_ok(),
+            "Zero value transfer should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify balances unchanged
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(100_000_000),
+            "Sender balance should be unchanged"
+        );
+        assert_eq!(
+            *snark_account.as_snark_account().unwrap().seqno().inner(),
+            1,
+            "Sequence number should still increment"
+        );
+
+        let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+        assert_eq!(
+            recipient.balance(),
+            BitcoinAmount::from_sat(0),
+            "Recipient balance should remain 0"
+        );
+    }
+
+    #[test]
+    fn test_snark_update_self_transfer() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+
+        // Setup: genesis with snark account
+        let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+        // Create update transferring to self
+        let tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
+            .with_transfer(snark_id, 30_000_000) // Transfer to self
+            .build(snark_id, &state);
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+
+        assert!(
+            result.is_ok(),
+            "Self transfer should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify balance unchanged (sent 30M to self)
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(100_000_000),
+            "Balance should be unchanged after self-transfer"
+        );
+        assert_eq!(
+            *snark_account.as_snark_account().unwrap().seqno().inner(),
+            1,
+            "Sequence number should increment"
+        );
+    }
+
+    #[test]
+    fn test_snark_update_exact_balance_transfer() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
+
+        // Setup: genesis with snark account
+        let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+        // Create recipient account
+        create_empty_account(&mut state, recipient_id);
+
+        // Transfer exactly the entire balance
+        let tx = SnarkUpdateBuilder::new(0, get_test_state_root(2))
+            .with_transfer(recipient_id, 100_000_000) // Entire balance
+            .build(snark_id, &state);
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+
+        assert!(
+            result.is_ok(),
+            "Exact balance transfer should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify balances
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(0),
+            "Sender should have 0 balance"
+        );
+
+        let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+        assert_eq!(
+            recipient.balance(),
+            BitcoinAmount::from_sat(100_000_000),
+            "Recipient should receive entire balance"
+        );
+    }
+
+    #[test]
+    fn test_snark_update_max_bitcoin_supply() {
+        let mut state = OLState::new_genesis();
+        let snark_id = get_test_snark_account_id();
+        let recipient_id = get_test_recipient_account_id();
+
+        // Setup: genesis with snark account with maximum Bitcoin supply
+        // Bitcoin max supply is 21M BTC = 2.1 quadrillion satoshis
+        let max_bitcoin_sats = 2_100_000_000_000_000u64; // 21M BTC in sats
+        let genesis_block =
+            setup_genesis_with_snark_account(&mut state, snark_id, max_bitcoin_sats);
+
+        // Create recipient account
+        create_empty_account(&mut state, recipient_id);
+
+        // Try multiple transfers that would exceed total Bitcoin supply
+        let transfer1 =
+            OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(max_bitcoin_sats));
+        let transfer2 = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(1)); // Even 1 sat more exceeds balance
+
+        let update_outputs = UpdateOutputs::new(vec![transfer1, transfer2], vec![]);
+
+        let seq_no = 0u64;
+        let new_proof_state = ProofState::new(get_test_state_root(2), 0);
+        let operation_data = UpdateOperationData::new(
+            seq_no,
+            new_proof_state,
+            vec![],
+            LedgerRefs::new_empty(),
+            update_outputs,
+            vec![],
+        );
+
+        let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
+        let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
+        let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
+        let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
+            snark_id,
+            update_container,
+        ));
+
+        let (slot, epoch) = (1, 0);
+        let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+
+        // Should fail due to insufficient balance
+        assert!(result.is_err(), "Update exceeding balance should fail");
+
+        match result.unwrap_err() {
+            ExecError::Acct(AcctError::InsufficientBalance {
+                requested,
+                available,
+            }) => {
+                assert_eq!(requested, BitcoinAmount::from_sat(max_bitcoin_sats + 1));
+                assert_eq!(available, BitcoinAmount::from_sat(max_bitcoin_sats));
+            }
+            err => panic!("Expected InsufficientBalance, got: {err:?}"),
+        }
+
+        // Verify no state change
+        let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+        assert_eq!(
+            snark_account.balance(),
+            BitcoinAmount::from_sat(max_bitcoin_sats),
+            "Balance should be unchanged after failed update"
+        );
     }
 }

@@ -287,17 +287,17 @@ pub const TEST_RECIPIENT_ID: u32 = 200;
 pub const TEST_NONEXISTENT_ID: u32 = 999;
 
 /// Get the standard test snark account ID
-pub fn test_snark_account_id() -> AccountId {
+pub fn get_test_snark_account_id() -> AccountId {
     test_account_id(TEST_SNARK_ACCOUNT_ID)
 }
 
 /// Get the standard test recipient account ID
-pub fn test_recipient_account_id() -> AccountId {
+pub fn get_test_recipient_account_id() -> AccountId {
     test_account_id(TEST_RECIPIENT_ID)
 }
 
 /// Get a test state root with a specific variant
-pub fn test_state_root(variant: u8) -> Hash {
+pub fn get_test_state_root(variant: u8) -> Hash {
     Hash::from([variant; 32])
 }
 
@@ -360,7 +360,7 @@ pub fn setup_genesis_with_snark_account(
 ) -> CompletedBlock {
     // Create snark account with initial balance directly
     let vk = PredicateKey::always_accept();
-    let initial_state_root = test_state_root(1);
+    let initial_state_root = get_test_state_root(1);
     let snark_state = NativeSnarkAccountState::new_fresh(vk, initial_state_root);
     let balance = BitcoinAmount::from_sat(initial_balance);
     let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
@@ -450,9 +450,7 @@ impl SnarkUpdateBuilder {
     /// Add a single transfer output
     pub fn with_transfer(mut self, dest: AccountId, amount: u64) -> Self {
         let transfer = OutputTransfer::new(dest, BitcoinAmount::from_sat(amount));
-        let transfers = vec![transfer];
-        let messages = self.outputs.messages().to_vec();
-        self.outputs = UpdateOutputs::new(transfers, messages);
+        self.outputs.transfers_mut().push(transfer);
         self
     }
 
@@ -491,27 +489,7 @@ impl SnarkUpdateBuilder {
             // Add the number of messages we're processing
             cur_idx + self.processed_messages.len() as u64
         };
-
-        let new_proof_state = ProofState::new(self.new_state_root, new_msg_idx);
-        let operation_data = UpdateOperationData::new(
-            self.seq_no,
-            new_proof_state,
-            self.processed_messages,
-            self.ledger_refs,
-            self.outputs,
-            vec![], // extra_data
-        );
-
-        let base_update = SnarkAccountUpdate::new(operation_data, self.proof);
-
-        // Build accumulator proofs
-        let ledger_ref_proofs = LedgerRefProofs::new(vec![]);
-        let accumulator_proofs = UpdateAccumulatorProofs::new(self.inbox_proofs, ledger_ref_proofs);
-
-        let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-        let sau_tx_payload = SnarkAccountUpdateTxPayload::new(target, update_container);
-
-        TransactionPayload::SnarkAccountUpdate(sau_tx_payload)
+        self.build_with_msg_idx(new_msg_idx, target)
     }
 
     /// Build the transaction without querying state (requires setting message index explicitly)
@@ -519,8 +497,11 @@ impl SnarkUpdateBuilder {
         let new_msg_idx = self
             .new_msg_idx
             .expect("Message index must be set for build_simple");
+        self.build_with_msg_idx(new_msg_idx, target)
+    }
 
-        let new_proof_state = ProofState::new(self.new_state_root, new_msg_idx);
+    fn build_with_msg_idx(self, msg_idx: u64, target: AccountId) -> TransactionPayload {
+        let new_proof_state = ProofState::new(self.new_state_root, msg_idx);
         let operation_data = UpdateOperationData::new(
             self.seq_no,
             new_proof_state,
