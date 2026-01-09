@@ -24,33 +24,6 @@ use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::error;
 
-/// Custom error code for mempool capacity-related errors.
-const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
-
-/// Creates an RPC error for database failures.
-fn db_error(e: impl Display) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(
-        INTERNAL_ERROR_CODE,
-        format!("Database error: {e}"),
-        None::<()>,
-    )
-}
-
-/// Creates an RPC error for resource not found.
-fn not_found_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
-}
-
-/// Creates an RPC error for internal failures.
-fn internal_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, msg.into(), None::<()>)
-}
-
-/// Creates an RPC error for invalid parameters.
-fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
-}
-
 /// OL RPC server implementation.
 pub(crate) struct OLRpcServer {
     /// Storage backend.
@@ -320,6 +293,35 @@ impl OLClientRpcServer for OLRpcServer {
 
         Ok(txid)
     }
+}
+
+// === RPC Error Helpers ===
+
+/// Custom error code for mempool capacity-related errors.
+const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
+
+/// Creates an RPC error for database failures.
+fn db_error(e: impl Display) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(
+        INTERNAL_ERROR_CODE,
+        format!("Database error: {e}"),
+        None::<()>,
+    )
+}
+
+/// Creates an RPC error for resource not found.
+fn not_found_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
+}
+
+/// Creates an RPC error for internal failures.
+fn internal_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, msg.into(), None::<()>)
+}
+
+/// Creates an RPC error for invalid parameters.
+fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
 }
 
 /// Maps mempool errors to RPC errors with appropriate error codes.
