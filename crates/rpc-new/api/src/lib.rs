@@ -20,7 +20,15 @@ pub trait OLClientRpc {
     #[method(name = "getChainStatus")]
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus>;
 
-    /// Get summaries associated with an account for given blocks.
+    /// Get account-specific summaries for blocks in a slot range.
+    ///
+    /// Returns the account's state (balance, sequence number, inbox position) at each block
+    /// in the range `[start_slot, end_slot]`. This is useful for clients that need to track
+    /// how an account's state evolved over a series of blocks, such as snark account provers
+    /// that need to know inbox messages and state transitions.
+    ///
+    /// Results are returned in ascending slot order. Only blocks on the canonical chain
+    /// are included; the implementation walks parent references to ensure chain continuity.
     #[method(name = "getBlocksSummaries")]
     async fn get_blocks_summaries(
         &self,
