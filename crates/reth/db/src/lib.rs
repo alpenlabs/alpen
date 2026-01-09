@@ -10,7 +10,7 @@ pub mod sled;
 extern crate sled as _;
 
 // Consume dev dependencies to avoid unused warnings in tests
-use alpen_reth_statediff::BlockStateDiff;
+use alpen_reth_statediff::da::DaEeStateDiff;
 use revm_primitives::alloy_primitives::B256;
 #[cfg(test)]
 use serde as _;
@@ -34,12 +34,12 @@ pub trait StateDiffStore {
         &self,
         block_hash: B256,
         block_number: u64,
-        state_diff: &BlockStateDiff,
+        state_diff: &DaEeStateDiff,
     ) -> DbResult<()>;
     fn del_state_diff(&self, block_hash: B256) -> DbResult<()>;
 }
 
 pub trait StateDiffProvider {
-    fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<BlockStateDiff>>;
-    fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<BlockStateDiff>>;
+    fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<DaEeStateDiff>>;
+    fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<DaEeStateDiff>>;
 }

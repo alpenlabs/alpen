@@ -13,6 +13,8 @@ eyre.workspace = true
 revm = { workspace = true, features = ["serde"] }
 revm-primitives.workspace = true
 serde.workspace = true
+strata-codec.workspace = true
+strata-da-framework.workspace = true
 strata-mpt.workspace = true
 thiserror.workspace = true
 

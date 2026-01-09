@@ -4,6 +4,7 @@ use alpen_chainspec::chain_value_parser;
 use revm_primitives::{alloy_primitives::Address, B256, U256};
 use strata_mpt::{keccak, MptNode, StateAccount, EMPTY_ROOT, KECCAK_EMPTY};
 
+use crate::da::{DaAccountChange, DaEeStateDiff};
 use crate::BatchStateDiff;
 
 /// An (in-memory) representation of the EVM state reconstructed only from [`BatchStateDiff`].
@@ -108,6 +109,112 @@ impl ReconstructedState {
             } else {
                 // Account was actually destructed.
                 self.state_trie.delete(&acc_info_trie_path)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Applies a [`DaEeStateDiff`] atop of the current State.
+    pub fn apply_da(&mut self, da_diff: &DaEeStateDiff) -> Result<(), StateError> {
+        for (address, change) in &da_diff.accounts {
+            let acc_info_trie_path = keccak(address);
+
+            match change {
+                DaAccountChange::Created(diff) | DaAccountChange::Updated(diff) => {
+                    // Get current account state (if exists)
+                    let current: Option<StateAccount> = self
+                        .state_trie
+                        .get_rlp(&acc_info_trie_path)
+                        .unwrap_or_default();
+
+                    let (current_balance, current_nonce, current_code_hash) = current
+                        .map(|acc| (acc.balance, acc.nonce, acc.code_hash))
+                        .unwrap_or((U256::ZERO, 0, KECCAK_EMPTY));
+
+                    // Apply diff
+                    let new_balance = diff
+                        .balance
+                        .new_value()
+                        .map(|v| v.0)
+                        .unwrap_or(current_balance);
+                    let new_nonce = current_nonce + diff.nonce_incr.unwrap_or(0) as u64;
+                    let new_code_hash = diff
+                        .code_hash
+                        .new_value()
+                        .map(|v| v.0)
+                        .unwrap_or(current_code_hash);
+
+                    let mut state_account = StateAccount {
+                        nonce: new_nonce,
+                        balance: new_balance,
+                        storage_root: Default::default(),
+                        code_hash: new_code_hash,
+                    };
+
+                    // Skip empty accounts
+                    if state_account.is_account_empty() {
+                        continue;
+                    }
+
+                    // Calculate storage root
+                    state_account.storage_root = {
+                        let acc_storage_trie = self.storage_trie.entry(*address).or_default();
+                        if let Some(storage_diff) = da_diff.storage.get(address) {
+                            for (slot_key, slot_value) in storage_diff.iter() {
+                                let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
+                                match slot_value {
+                                    Some(v) if !v.is_zero() => {
+                                        acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
+                                    }
+                                    _ => {
+                                        acc_storage_trie.delete(&slot_trie_path)?;
+                                    }
+                                }
+                            }
+                        }
+                        acc_storage_trie.hash()
+                    };
+
+                    self.state_trie
+                        .insert_rlp(&acc_info_trie_path, state_account)?;
+                }
+                DaAccountChange::Deleted => {
+                    self.state_trie.delete(&acc_info_trie_path)?;
+                    self.storage_trie.remove(address);
+                }
+            }
+        }
+
+        // Handle storage changes for accounts not in accounts map
+        // (e.g., storage-only changes)
+        for (address, storage_diff) in &da_diff.storage {
+            if da_diff.accounts.contains_key(address) {
+                continue; // Already handled above
+            }
+
+            let acc_info_trie_path = keccak(address);
+            let current: Option<StateAccount> = self
+                .state_trie
+                .get_rlp(&acc_info_trie_path)
+                .unwrap_or_default();
+
+            if let Some(mut state_account) = current {
+                let acc_storage_trie = self.storage_trie.entry(*address).or_default();
+                for (slot_key, slot_value) in storage_diff.iter() {
+                    let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
+                    match slot_value {
+                        Some(v) if !v.is_zero() => {
+                            acc_storage_trie.insert_rlp(&slot_trie_path, *v)?;
+                        }
+                        _ => {
+                            acc_storage_trie.delete(&slot_trie_path)?;
+                        }
+                    }
+                }
+                state_account.storage_root = acc_storage_trie.hash();
+                self.state_trie
+                    .insert_rlp(&acc_info_trie_path, state_account)?;
             }
         }
 

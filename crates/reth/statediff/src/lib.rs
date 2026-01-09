@@ -2,6 +2,8 @@
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
+pub mod da;
+
 use std::collections::hash_map::Entry;
 
 use account::Account;

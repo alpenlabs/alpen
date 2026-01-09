@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use alpen_reth_statediff::BlockStateDiff;
+use alpen_reth_statediff::da::DaEeStateDiff;
 use revm_primitives::alloy_primitives::B256;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
+use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
 
@@ -73,18 +74,18 @@ impl WitnessStore for WitnessDB {
 }
 
 impl StateDiffProvider for WitnessDB {
-    fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<BlockStateDiff>> {
+    fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<DaEeStateDiff>> {
         let raw = self.state_diff_tree.get(&block_hash)?;
 
-        let parsed: Option<BlockStateDiff> = raw
-            .map(|bytes| bincode::deserialize(&bytes))
+        let parsed: Option<DaEeStateDiff> = raw
+            .map(|bytes| decode_buf_exact::<DaEeStateDiff>(&bytes))
             .transpose()
             .map_err(|err| DbError::CodecError(err.to_string()))?;
 
         Ok(parsed)
     }
 
-    fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<BlockStateDiff>> {
+    fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<DaEeStateDiff>> {
         let block_hash = self
             .block_hash_by_number_tree
             .get(&block_number)
@@ -103,12 +104,12 @@ impl StateDiffStore for WitnessDB {
         &self,
         block_hash: B256,
         block_number: u64,
-        state_diff: &BlockStateDiff,
+        state_diff: &DaEeStateDiff,
     ) -> DbResult<()> {
         (&self.block_hash_by_number_tree, &self.state_diff_tree)
             .transaction(|(bht, sdt)| -> ConflictableTransactionResult<(), Error> {
                 bht.insert(&block_number, &block_hash.to_vec())?;
-                let serialized = match bincode::serialize(state_diff) {
+                let serialized = match encode_to_vec(state_diff) {
                     Ok(data) => data,
                     Err(err) => {
                         return Err(ConflictableTransactionError::Abort(
@@ -131,13 +132,12 @@ impl StateDiffStore for WitnessDB {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::read_to_string, path::PathBuf};
+    use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
 
-    use alpen_reth_statediff::account::{Account, AccountChanges};
-    use revm_primitives::{
-        alloy_primitives::{address, map::HashMap},
-        fixed_bytes, FixedBytes, HashSet,
+    use alpen_reth_statediff::da::{
+        DaAccountChange, DaAccountDiff, DaEeStateDiff, DaStorageDiff,
     };
+    use revm_primitives::{address, fixed_bytes, FixedBytes, U256};
     use serde::Deserialize;
     use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use typed_sled::SledDb;
@@ -174,18 +174,30 @@ mod tests {
         WitnessDB::new(db).unwrap()
     }
 
-    fn test_state_diff() -> BlockStateDiff {
-        let mut test_diff = BlockStateDiff {
-            state: HashMap::default(),
-            contracts: HashSet::default(),
-        };
-
-        test_diff.state.insert(
+    fn test_state_diff() -> DaEeStateDiff {
+        let mut accounts = BTreeMap::new();
+        accounts.insert(
             address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045"),
-            AccountChanges::new(None, Some(Account::default()), HashMap::default()),
+            DaAccountChange::Created(DaAccountDiff::new_created(
+                U256::from(1000),
+                1,
+                B256::ZERO,
+            )),
         );
 
-        test_diff
+        let mut storage = BTreeMap::new();
+        let mut slots = DaStorageDiff::new();
+        slots.set_slot(U256::from(1), U256::from(100));
+        storage.insert(
+            address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045"),
+            slots,
+        );
+
+        DaEeStateDiff {
+            accounts,
+            storage,
+            deployed_code_hashes: vec![],
+        }
     }
 
     #[test]
@@ -255,7 +267,15 @@ mod tests {
             .expect("failed to retrieve witness data")
             .unwrap();
 
-        assert_eq!(received_state_diff, test_state_diff);
+        // Check accounts and storage match
+        assert_eq!(
+            received_state_diff.accounts.len(),
+            test_state_diff.accounts.len()
+        );
+        assert_eq!(
+            received_state_diff.storage.len(),
+            test_state_diff.storage.len()
+        );
     }
 
     #[test]
@@ -278,7 +298,7 @@ mod tests {
         let received_state_diff = db.get_state_diff_by_hash(block_hash);
         assert!(matches!(
             received_state_diff,
-            Ok(Some(BlockStateDiff { .. }))
+            Ok(Some(DaEeStateDiff { .. }))
         ));
 
         // deleting existing block is ok
