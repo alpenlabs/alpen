@@ -30,7 +30,7 @@ impl ReconstructedState {
     pub fn new_from_spec(spec: &str) -> Result<Self, eyre::Error> {
         let chain_spec = chain_value_parser(spec)?;
 
-        let mut new: Self = Default::default();
+        let mut new = Self::new();
         for (address, account) in chain_spec.genesis.alloc.iter() {
             let mut state_account = StateAccount {
                 nonce: account.nonce.unwrap_or(0),
@@ -58,7 +58,7 @@ impl ReconstructedState {
             new.state_trie.insert_rlp(&keccak(address), state_account)?;
         }
 
-        Ok(Self::new())
+        Ok(new)
     }
 
     /// Applies a single [`BatchStateDiff`] atop of the current State.
