@@ -165,8 +165,16 @@ impl OLClientRpcServer for OLRpcServer {
             return Err(invalid_params_error("start_slot must be <= end_slot"));
         }
 
+        // Get finalized slot - blocks at or before this are guaranteed to be on canonical chain
+        let finalized_slot = self
+            .status_channel
+            .get_chain_sync_status()
+            .map(|css| css.finalized_epoch.last_slot())
+            .unwrap_or(0);
+
         // Walk backwards from end_slot via parent references to ensure blocks are chained.
         // This guarantees all returned blocks are from the same chain, not different forks.
+        // Once we reach a finalized block, we can fetch remaining blocks directly by slot.
         let mut chain_blocks: Vec<(u64, OLBlockId)> = Vec::new();
 
         // Get the block at end_slot (we'll walk backwards from here)
@@ -213,6 +221,28 @@ impl OLClientRpcServer for OLRpcServer {
 
             // Stop if we've reached or passed start_slot
             if current_slot <= start_slot {
+                break;
+            }
+
+            // Optimization: if we've reached a finalized slot, fetch remaining blocks directly
+            // by slot instead of walking parent references (finalized blocks have a single chain)
+            if current_slot <= finalized_slot {
+                // Fetch remaining blocks directly by slot
+                for slot in (start_slot..current_slot).rev() {
+                    let block_ids = self
+                        .storage
+                        .ol_block()
+                        .get_blocks_at_height_async(slot)
+                        .await
+                        .map_err(|e| {
+                            error!(?e, slot, "Failed to get block at slot");
+                            db_error(e)
+                        })?;
+
+                    if let Some(blkid) = block_ids.first().copied() {
+                        chain_blocks.push((slot, blkid));
+                    }
+                }
                 break;
             }
 
