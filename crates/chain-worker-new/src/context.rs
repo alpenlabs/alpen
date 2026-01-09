@@ -9,7 +9,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::IndexerWrites;
-use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
+use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 use strata_storage::{CheckpointDbManager, OLBlockManager, OLStateManager};
 use tracing::warn;
@@ -106,7 +106,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     fn fetch_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> WorkerResult<Option<WriteBatch<NativeAccountState>>> {
+    ) -> WorkerResult<Option<WriteBatch<OLAccountState>>> {
         Ok(self.ol_state_mgr.get_write_batch_blocking(commitment)?)
     }
 

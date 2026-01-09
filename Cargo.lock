@@ -14888,8 +14888,12 @@ name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "proptest",
  "ssz",
  "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
@@ -14899,7 +14903,9 @@ dependencies = [
  "strata-ledger-types",
  "strata-merkle",
  "strata-snark-acct-types",
+ "strata-test-utils-ssz",
  "tree_hash 0.12.3",
+ "tree_hash_derive 0.12.3",
 ]
 
 [[package]]
@@ -15291,6 +15297,7 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
+ "strata-identifiers",
  "thiserror 2.0.18",
  "tree_hash 0.12.3",
  "tree_hash_derive 0.12.3",

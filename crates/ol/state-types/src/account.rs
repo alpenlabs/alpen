@@ -1,24 +1,12 @@
 use strata_acct_types::*;
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{AccountTypeState, *};
 
-use crate::snark_account::NativeSnarkAccountState;
+use crate::ssz_generated::ssz::state::{OLAccountState, OLAccountTypeState, OLSnarkAccountState};
 
-#[derive(Clone, Debug, Eq, PartialEq, Codec)]
-pub struct NativeAccountState {
-    serial: AccountSerial,
-    balance: BitcoinAmount,
-    state: NativeAccountTypeState,
-}
-
-impl NativeAccountState {
+impl OLAccountState {
     /// Creates a new account state.
-    pub fn new(
-        serial: AccountSerial,
-        balance: BitcoinAmount,
-        state: NativeAccountTypeState,
-    ) -> Self {
+    pub fn new(serial: AccountSerial, balance: BitcoinAmount, state: OLAccountTypeState) -> Self {
         Self {
             serial,
             balance,
@@ -32,8 +20,8 @@ impl NativeAccountState {
     }
 }
 
-impl IAccountState for NativeAccountState {
-    type SnarkAccountState = NativeSnarkAccountState;
+impl IAccountState for OLAccountState {
+    type SnarkAccountState = OLSnarkAccountState;
 
     fn serial(&self) -> AccountSerial {
         self.serial
@@ -44,26 +32,29 @@ impl IAccountState for NativeAccountState {
     }
 
     fn ty(&self) -> AccountTypeId {
-        self.state.ty()
+        match &self.state {
+            OLAccountTypeState::Empty => AccountTypeId::Empty,
+            OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
+        }
     }
 
     fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
         match &self.state {
-            NativeAccountTypeState::Empty => AccountTypeStateRef::Empty,
-            NativeAccountTypeState::Snark(state) => AccountTypeStateRef::Snark(state),
+            OLAccountTypeState::Empty => AccountTypeStateRef::Empty,
+            OLAccountTypeState::Snark(state) => AccountTypeStateRef::Snark(state),
         }
     }
 
     fn as_snark_account(&self) -> AcctResult<&Self::SnarkAccountState> {
         match &self.state {
-            NativeAccountTypeState::Snark(state) => Ok(state),
+            OLAccountTypeState::Snark(state) => Ok(state),
             _ => Err(AcctError::MismatchedType(self.ty(), AccountTypeId::Snark)),
         }
     }
 }
 
-impl IAccountStateMut for NativeAccountState {
-    type SnarkAccountStateMut = NativeSnarkAccountState;
+impl IAccountStateMut for OLAccountState {
+    type SnarkAccountStateMut = OLSnarkAccountState;
 
     fn add_balance(&mut self, coin: Coin) {
         self.balance = self
@@ -84,81 +75,69 @@ impl IAccountStateMut for NativeAccountState {
     fn as_snark_account_mut(&mut self) -> AcctResult<&mut Self::SnarkAccountStateMut> {
         let ty = self.ty();
         match &mut self.state {
-            NativeAccountTypeState::Snark(state) => Ok(state),
+            OLAccountTypeState::Snark(state) => Ok(state),
             _ => Err(AcctError::MismatchedType(ty, AccountTypeId::Snark)),
         }
     }
 }
 
-impl IAccountStateConstructible for NativeAccountState {
+impl IAccountStateConstructible for OLAccountState {
     fn new_with_serial(new_acct_data: NewAccountData<Self>, serial: AccountSerial) -> Self {
         Self::new(
             serial,
             new_acct_data.initial_balance(),
-            NativeAccountTypeState::from_generic(new_acct_data.into_type_state()),
+            OLAccountTypeState::from_generic(new_acct_data.into_type_state()),
         )
     }
 }
 
-/// Internal impl of account state types.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum NativeAccountTypeState {
-    /// An empty/inert account entry that holds a balance but nothing else.
-    ///
-    /// Usable for testing/internal purposes.
-    Empty,
-
-    /// A snark account.
-    Snark(NativeSnarkAccountState),
-}
-
-impl NativeAccountTypeState {
+impl OLAccountTypeState {
     /// Returns the account type ID for this state.
     pub fn ty(&self) -> AccountTypeId {
         match self {
-            Self::Empty => AccountTypeId::Empty,
-            Self::Snark(_) => AccountTypeId::Snark,
+            OLAccountTypeState::Empty => AccountTypeId::Empty,
+            OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
         }
     }
 
     /// Converts from the generic wrapper.
-    pub fn from_generic(ts: AccountTypeState<NativeAccountState>) -> Self {
+    pub fn from_generic(ts: AccountTypeState<OLAccountState>) -> Self {
         match ts {
-            AccountTypeState::Empty => Self::Empty,
-            AccountTypeState::Snark(s) => Self::Snark(s),
+            AccountTypeState::Empty => OLAccountTypeState::Empty,
+            AccountTypeState::Snark(s) => OLAccountTypeState::Snark(s),
         }
     }
 
     /// Converts into the generic wrapper.
-    pub fn into_generic(self) -> AccountTypeState<NativeAccountState> {
+    pub fn into_generic(self) -> AccountTypeState<OLAccountState> {
         match self {
-            NativeAccountTypeState::Empty => AccountTypeState::Empty,
-            NativeAccountTypeState::Snark(s) => AccountTypeState::Snark(s),
+            OLAccountTypeState::Empty => AccountTypeState::Empty,
+            OLAccountTypeState::Snark(s) => AccountTypeState::Snark(s),
         }
     }
 }
 
-impl Codec for NativeAccountTypeState {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Encode the variant discriminant
-        match self {
-            Self::Empty => {
-                0u8.encode(enc)?;
-            }
-            Self::Snark(state) => {
-                1u8.encode(enc)?;
-                state.encode(enc)?;
-            }
-        }
-        Ok(())
+#[cfg(test)]
+mod tests {
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+    use crate::test_utils::{
+        ol_account_state_strategy, ol_account_type_state_strategy, ol_snark_account_state_strategy,
+    };
+
+    mod ol_account_state {
+        use super::*;
+        ssz_proptest!(OLAccountState, ol_account_state_strategy());
     }
 
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let variant = u8::decode(dec)?;
-        match variant {
-            0 => Ok(Self::Empty),
-            1 => Ok(Self::Snark(NativeSnarkAccountState::decode(dec)?)),
-            _ => Err(CodecError::InvalidVariant("NativeAccountTypeState")),
-        }
+    mod ol_account_type_state {
+        use super::*;
+        ssz_proptest!(OLAccountTypeState, ol_account_type_state_strategy());
+    }
+
+    mod ol_snark_account_state {
+        use super::*;
+        ssz_proptest!(OLSnarkAccountState, ol_snark_account_state_strategy());
     }
 }

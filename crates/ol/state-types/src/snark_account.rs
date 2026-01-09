@@ -1,19 +1,12 @@
 use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_codec_utils::CodecSsz;
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr};
 use strata_snark_acct_types::{MessageEntry, Seqno};
 use tree_hash::TreeHash;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NativeSnarkAccountState {
-    seqno: Seqno,
-    proof_state: ProofState,
-    inbox_mmr: Mmr64,
-}
+use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};
 
-impl NativeSnarkAccountState {
+impl OLSnarkAccountState {
     /// Creates an account instance with specific values.
     pub(crate) fn new(seqno: Seqno, proof_state: ProofState, inbox_mmr: Mmr64) -> Self {
         Self {
@@ -33,13 +26,13 @@ impl NativeSnarkAccountState {
     }
 }
 
-impl ISnarkAccountState for NativeSnarkAccountState {
+impl ISnarkAccountState for OLSnarkAccountState {
     fn seqno(&self) -> Seqno {
         self.seqno
     }
 
     fn inner_state_root(&self) -> Hash {
-        self.proof_state.inner_state_root
+        self.proof_state.inner_state_root()
     }
 
     fn inbox_mmr(&self) -> &Mmr64 {
@@ -47,7 +40,7 @@ impl ISnarkAccountState for NativeSnarkAccountState {
     }
 }
 
-impl ISnarkAccountStateMut for NativeSnarkAccountState {
+impl ISnarkAccountStateMut for OLSnarkAccountState {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
         self.proof_state = ProofState::new(state, next_read_idx);
         self.seqno = seqno;
@@ -74,22 +67,21 @@ impl ISnarkAccountStateMut for NativeSnarkAccountState {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Codec)]
-pub struct ProofState {
-    inner_state_root: Hash,
-    next_msg_read_idx: u64,
-}
-
 impl ProofState {
     pub fn new(inner_state_root: Hash, next_msg_read_idx: u64) -> Self {
+        // Convert Hash (Buf32) to [u8; 32] then to FixedBytes<32>
+        let hash_bytes: [u8; 32] = inner_state_root.into();
         Self {
-            inner_state_root,
+            inner_state_root: hash_bytes.into(),
             next_msg_read_idx,
         }
     }
 
     pub fn inner_state_root(&self) -> Hash {
-        self.inner_state_root
+        // Convert FixedBytes<32> to [u8; 32] then to Hash (Buf32)
+        let bytes: &[u8] = self.inner_state_root.as_ref();
+        let arr: [u8; 32] = bytes.try_into().expect("FixedBytes<32> is always 32 bytes");
+        Hash::from(arr)
     }
 
     pub fn next_msg_read_idx(&self) -> u64 {
@@ -97,30 +89,28 @@ impl ProofState {
     }
 }
 
-impl Codec for NativeSnarkAccountState {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.seqno.encode(enc)?;
-        self.proof_state.encode(enc)?;
+#[cfg(test)]
+mod tests {
+    use ssz::{Decode, Encode};
+    use strata_identifiers::Buf32;
+    use strata_test_utils_ssz::ssz_proptest;
 
-        // Encode the inbox_mmr directly using CodecSsz wrapper
-        let wrapped_mmr = CodecSsz::new(self.inbox_mmr.clone());
-        wrapped_mmr.encode(enc)?;
+    use super::*;
+    use crate::test_utils::proof_state_strategy;
 
-        Ok(())
-    }
+    mod proof_state {
+        use super::*;
 
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let seqno = Seqno::decode(dec)?;
-        let proof_state = ProofState::decode(dec)?;
+        ssz_proptest!(ProofState, proof_state_strategy());
 
-        // Decode the Mmr64 directly using CodecSsz wrapper
-        let wrapped_mmr: CodecSsz<Mmr64> = CodecSsz::decode(dec)?;
-        let inbox_mmr = wrapped_mmr.inner().clone();
+        #[test]
+        fn test_proof_state_basic() {
+            let state = ProofState::new(Buf32::zero(), 42);
+            assert_eq!(state.next_msg_read_idx(), 42);
 
-        Ok(Self {
-            seqno,
-            proof_state,
-            inbox_mmr,
-        })
+            let encoded = state.as_ssz_bytes();
+            let decoded = ProofState::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(state, decoded);
+        }
     }
 }

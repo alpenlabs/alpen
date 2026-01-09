@@ -15,7 +15,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::verify_block;
 use strata_params::Params;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
@@ -287,10 +287,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         parent_state: &OLState,
         block: &OLBlock,
         parent_header: Option<&OLBlockHeader>,
-    ) -> WorkerResult<(
-        strata_ol_state_types::WriteBatch<strata_ol_state_types::NativeAccountState>,
-        IndexerWrites,
-    )> {
+    ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
         // Build the state stack: IndexerState<WriteTrackingState<&OLState>>
         let tracking_state = WriteTrackingState::new_from_state(parent_state);
         let mut indexer_state = IndexerState::new(tracking_state);

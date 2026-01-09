@@ -19,7 +19,7 @@ use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_ol_chain_types_new::{TransactionAttachment, test_utils as ol_test_utils};
-use strata_ol_state_types::{NativeSnarkAccountState, OLState, StateProvider};
+use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
@@ -158,7 +158,7 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     // Set the slot
     state.set_cur_slot(slot);
     // Create a fresh snark account, then update its sequence number
-    let snark_state = NativeSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+    let snark_state = OLSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
     let new_acct =
         NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
     state.create_new_account(account_id, new_acct).unwrap();
@@ -325,7 +325,7 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
     // Most tests use SnarkAccountUpdate transactions which require Snark accounts
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
-        let snark_state = NativeSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+        let snark_state = OLSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         // Ignore errors if account already exists
@@ -380,7 +380,7 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
     // Create Snark accounts for common test account IDs (0-255)
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
-        let snark_state = NativeSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+        let snark_state = OLSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         if state.create_new_account(account_id, new_acct).is_ok() {

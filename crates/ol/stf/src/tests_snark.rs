@@ -11,7 +11,7 @@ use strata_ol_chain_types_new::{
     TransactionPayload,
 };
 use strata_ol_msg_types::{WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
-use strata_ol_state_types::{NativeSnarkAccountState, OLState};
+use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_snark_acct_types::{
     LedgerRefProofs, LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate,
     SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
@@ -36,7 +36,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     let initial_state_root = Hash::from([1u8; 32]);
 
     // Create a NativeSnarkAccountState using the public new_fresh method
-    let snark_state = NativeSnarkAccountState::new_fresh(initial_state_root);
+    let snark_state = OLSnarkAccountState::new_fresh(initial_state_root);
 
     let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
     let snark_serial = state

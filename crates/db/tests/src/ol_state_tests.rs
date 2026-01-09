@@ -1,7 +1,7 @@
 use strata_db_types::traits::OLStateDatabase;
 use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
 use strata_ledger_types::IStateAccessor;
-use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
+use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 
 pub fn test_put_and_get_ol_state(db: &impl OLStateDatabase) {
     let state = OLState::new_genesis();
@@ -65,7 +65,7 @@ pub fn test_delete_ol_state(db: &impl OLStateDatabase) {
 
 pub fn test_write_batch_operations(db: &impl OLStateDatabase) {
     let state = OLState::new_genesis();
-    let wb = WriteBatch::<NativeAccountState>::new_from_state(&state);
+    let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
     let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
 
     // Test putting and getting write batch

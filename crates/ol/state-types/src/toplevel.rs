@@ -1,9 +1,9 @@
 //! Toplevel state.
 
 use bitcoin::absolute;
+use ssz::Encode;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
 use strata_asm_manifest_types::AsmManifest;
-use strata_codec::{Codec, encode_to_vec};
 use strata_crypto::hash::raw;
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot,
@@ -12,18 +12,11 @@ use strata_ledger_types::*;
 
 use crate::{
     WriteBatch,
-    account::{NativeAccountState, NativeAccountTypeState},
-    epochal::EpochalState,
-    global::GlobalState,
-    ledger::TsnlLedgerAccountsTable,
+    ssz_generated::ssz::state::{
+        EpochalState, GlobalState, OLAccountState, OLAccountTypeState, OLState,
+        TsnlLedgerAccountsTable,
+    },
 };
-
-#[derive(Clone, Debug, Codec)]
-pub struct OLState {
-    epoch: EpochalState,
-    global: GlobalState,
-    ledger: TsnlLedgerAccountsTable,
-}
 
 impl OLState {
     /// Create a new genesis state for testing.
@@ -69,7 +62,7 @@ impl OLState {
     /// This function failing probably indicates the write batch was not
     /// intended for the state we're trying to apply it to, or some bug with how
     /// we're constructing write batches.
-    pub fn check_write_batch_safe(&self, batch: &WriteBatch<NativeAccountState>) -> AcctResult<()> {
+    pub fn check_write_batch_safe(&self, batch: &WriteBatch<OLAccountState>) -> AcctResult<()> {
         // Check serial ordering.
         let mut next_serial = self.ledger.next_avail_serial();
         for (serial, id) in batch.ledger().iter_new_accounts() {
@@ -125,7 +118,7 @@ impl OLState {
     /// with the modifications from the batch.
     ///
     /// If this returns an error then the state is left unmodified.
-    pub fn apply_write_batch(&mut self, batch: WriteBatch<NativeAccountState>) -> AcctResult<()> {
+    pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountState>) -> AcctResult<()> {
         // Safety check first so we can use `.expect`.
         self.check_write_batch_safe(&batch)?;
         let (global, epochal, ledger) = batch.into_parts();
@@ -158,8 +151,8 @@ impl OLState {
 }
 
 impl IStateAccessor for OLState {
-    type AccountState = NativeAccountState;
-    type AccountStateMut = NativeAccountState;
+    type AccountState = OLAccountState;
+    type AccountStateMut = OLAccountState;
 
     // ===== Global state methods =====
 
@@ -237,8 +230,8 @@ impl IStateAccessor for OLState {
     ) -> AcctResult<AccountSerial> {
         let serial = self.ledger.next_avail_serial();
         let bal = new_acct_data.initial_balance();
-        let state = NativeAccountTypeState::from_generic(new_acct_data.into_type_state());
-        let account = NativeAccountState::new(serial, bal, state);
+        let state = OLAccountTypeState::from_generic(new_acct_data.into_type_state());
+        let account = OLAccountState::new(serial, bal, state);
         self.ledger.create_account(id, account)
     }
 
@@ -251,10 +244,8 @@ impl IStateAccessor for OLState {
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // Compute the state root by hashing the Codec encoding of the state
-        // For now, we'll panic on encoding errors as they shouldn't happen in practice
-        // TODO change this to use SSZ
-        let encoded = encode_to_vec(self).expect("ol/state: encode");
+        // Compute the state root by hashing the SSZ encoding of the state
+        let encoded = self.as_ssz_bytes();
         let hash = raw(&encoded);
         Ok(hash)
     }
@@ -266,7 +257,7 @@ mod tests {
     use strata_ledger_types::{AccountTypeState, IAccountState, NewAccountData};
 
     use super::*;
-    use crate::{NativeAccountTypeState, NativeSnarkAccountState};
+    use crate::{OLAccountTypeState, OLSnarkAccountState};
 
     fn test_account_id(seed: u8) -> AccountId {
         let mut bytes = [0u8; 32];
@@ -307,7 +298,7 @@ mod tests {
         let mut batch = WriteBatch::new_from_state(&state);
 
         // Create a new account in the batch.
-        let snark_state = NativeSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state = OLSnarkAccountState::new_fresh([0u8; 32].into());
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
@@ -333,7 +324,7 @@ mod tests {
         let account_id = test_account_id(1);
 
         // Create an account directly in state.
-        let snark_state = NativeSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state = OLSnarkAccountState::new_fresh([0u8; 32].into());
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
@@ -342,11 +333,11 @@ mod tests {
 
         // Create a batch that updates the account.
         let mut batch = WriteBatch::new_from_state(&state);
-        let snark_state_updated = NativeSnarkAccountState::new_fresh([1u8; 32].into());
-        let updated_account = NativeAccountState::new(
+        let snark_state_updated = OLSnarkAccountState::new_fresh([1u8; 32].into());
+        let updated_account = OLAccountState::new(
             serial,
             BitcoinAmount::from_sat(2000),
-            NativeAccountTypeState::Snark(snark_state_updated),
+            OLAccountTypeState::Snark(snark_state_updated),
         );
         batch
             .ledger_mut()
@@ -375,7 +366,7 @@ mod tests {
         batch.epochal_mut().set_cur_epoch(10);
 
         // Create two new accounts.
-        let snark_state_1 = NativeSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state_1 = OLSnarkAccountState::new_fresh([0u8; 32].into());
         let new_acct_1 = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state_1),
@@ -385,7 +376,7 @@ mod tests {
             .ledger_mut()
             .create_account_from_data(account_id_1, new_acct_1, serial_1);
 
-        let snark_state_2 = NativeSnarkAccountState::new_fresh([1u8; 32].into());
+        let snark_state_2 = OLSnarkAccountState::new_fresh([1u8; 32].into());
         let new_acct_2 = NewAccountData::new(
             BitcoinAmount::from_sat(2000),
             AccountTypeState::Snark(snark_state_2),
@@ -420,7 +411,7 @@ mod tests {
         let new_id = test_account_id(2);
 
         // Create an existing account in state first.
-        let snark_state = NativeSnarkAccountState::new_fresh([0u8; 32].into());
+        let snark_state = OLSnarkAccountState::new_fresh([0u8; 32].into());
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
@@ -431,18 +422,18 @@ mod tests {
         let mut batch = WriteBatch::new_from_state(&state);
 
         // Update the existing account.
-        let updated_snark = NativeSnarkAccountState::new_fresh([1u8; 32].into());
-        let updated_account = NativeAccountState::new(
+        let updated_snark = OLSnarkAccountState::new_fresh([1u8; 32].into());
+        let updated_account = OLAccountState::new(
             existing_serial,
             BitcoinAmount::from_sat(5000),
-            NativeAccountTypeState::Snark(updated_snark),
+            OLAccountTypeState::Snark(updated_snark),
         );
         batch
             .ledger_mut()
             .update_account(existing_id, updated_account);
 
         // Create a new account.
-        let new_snark = NativeSnarkAccountState::new_fresh([2u8; 32].into());
+        let new_snark = OLSnarkAccountState::new_fresh([2u8; 32].into());
         let new_acct_data = NewAccountData::new(
             BitcoinAmount::from_sat(3000),
             AccountTypeState::Snark(new_snark),
@@ -465,5 +456,14 @@ mod tests {
         let new_account = state.get_account_state(new_id).unwrap().unwrap();
         assert_eq!(new_account.balance(), BitcoinAmount::from_sat(3000));
         assert_eq!(new_account.serial(), new_serial);
+    }
+
+    mod ol_state {
+        use strata_test_utils_ssz::ssz_proptest;
+
+        use super::*;
+        use crate::test_utils::ol_state_strategy;
+
+        ssz_proptest!(OLState, ol_state_strategy());
     }
 }

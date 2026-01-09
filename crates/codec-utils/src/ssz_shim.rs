@@ -17,6 +17,10 @@ impl<T: Decode + Encode> CodecSsz<T> {
     pub fn inner(&self) -> &T {
         &self.0
     }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
 }
 
 impl<T: Decode + Encode> Codec for CodecSsz<T> {

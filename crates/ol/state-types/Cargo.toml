@@ -5,6 +5,9 @@ edition = "2024"
 
 [dependencies]
 ssz.workspace = true
+ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types.workspace = true
 strata-acct-types.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-codec.workspace = true
@@ -15,11 +18,16 @@ strata-ledger-types.workspace = true
 strata-merkle.workspace = true
 strata-snark-acct-types.workspace = true
 tree_hash.workspace = true
+tree_hash_derive.workspace = true
 
 bitcoin.workspace = true
 
 [build-dependencies]
 ssz_codegen.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+strata-test-utils-ssz.workspace = true
 
 [lints]
 workspace = true

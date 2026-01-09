@@ -2,7 +2,7 @@
 
 use strata_identifiers::Buf32;
 use strata_ol_state_support_types::IndexerWrites;
-use strata_ol_state_types::{NativeAccountState, WriteBatch};
+use strata_ol_state_types::{OLAccountState, WriteBatch};
 
 /// Output from executing a block with the OL STF.
 ///
@@ -17,7 +17,7 @@ pub struct OLBlockExecutionOutput {
     computed_state_root: Buf32,
 
     /// State changes to persist (the diff).
-    write_batch: WriteBatch<NativeAccountState>,
+    write_batch: WriteBatch<OLAccountState>,
 
     /// Auxiliary data for indexing (inbox messages, manifests).
     indexer_writes: IndexerWrites,
@@ -27,7 +27,7 @@ impl OLBlockExecutionOutput {
     /// Creates a new execution output.
     pub fn new(
         computed_state_root: Buf32,
-        write_batch: WriteBatch<NativeAccountState>,
+        write_batch: WriteBatch<OLAccountState>,
         indexer_writes: IndexerWrites,
     ) -> Self {
         Self {
@@ -43,7 +43,7 @@ impl OLBlockExecutionOutput {
     }
 
     /// Returns the state changes (write batch).
-    pub fn write_batch(&self) -> &WriteBatch<NativeAccountState> {
+    pub fn write_batch(&self) -> &WriteBatch<OLAccountState> {
         &self.write_batch
     }
 
@@ -53,7 +53,7 @@ impl OLBlockExecutionOutput {
     }
 
     /// Consumes self and returns the inner components.
-    pub fn into_parts(self) -> (Buf32, WriteBatch<NativeAccountState>, IndexerWrites) {
+    pub fn into_parts(self) -> (Buf32, WriteBatch<OLAccountState>, IndexerWrites) {
         (
             self.computed_state_root,
             self.write_batch,

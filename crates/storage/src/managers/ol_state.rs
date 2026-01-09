@@ -5,7 +5,7 @@ use std::{future::Future, num::NonZeroUsize, sync::Arc};
 use futures::TryFutureExt;
 use strata_db_types::{errors::DbError, traits::OLStateDatabase, DbResult};
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::{NativeAccountState, OLState, StateProvider, WriteBatch};
+use strata_ol_state_types::{OLAccountState, OLState, StateProvider, WriteBatch};
 use strata_storage_common::exec::{GenericRecv, OpsError};
 use threadpool::ThreadPool;
 use tokio::sync::oneshot;
@@ -41,7 +41,7 @@ fn transform_ol_state_chan(
 pub struct OLStateManager {
     ops: OLStateOps,
     state_cache: CacheTable<OLBlockCommitment, Option<Arc<OLState>>>,
-    wb_cache: CacheTable<OLBlockCommitment, Option<WriteBatch<NativeAccountState>>>,
+    wb_cache: CacheTable<OLBlockCommitment, Option<WriteBatch<OLAccountState>>>,
 }
 
 impl OLStateManager {
@@ -145,7 +145,7 @@ impl OLStateManager {
     pub async fn put_write_batch_async(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<NativeAccountState>,
+        wb: WriteBatch<OLAccountState>,
     ) -> DbResult<()> {
         self.ops
             .put_ol_write_batch_async(commitment, wb.clone())
@@ -158,7 +158,7 @@ impl OLStateManager {
     pub fn put_write_batch_blocking(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<NativeAccountState>,
+        wb: WriteBatch<OLAccountState>,
     ) -> DbResult<()> {
         self.ops
             .put_ol_write_batch_blocking(commitment, wb.clone())?;
@@ -170,7 +170,7 @@ impl OLStateManager {
     pub async fn get_write_batch_async(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<NativeAccountState>>> {
+    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
         self.wb_cache
             .get_or_fetch(&commitment, || self.ops.get_ol_write_batch_chan(commitment))
             .await
@@ -180,7 +180,7 @@ impl OLStateManager {
     pub fn get_write_batch_blocking(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<NativeAccountState>>> {
+    ) -> DbResult<Option<WriteBatch<OLAccountState>>> {
         self.wb_cache.get_or_fetch_blocking(&commitment, || {
             self.ops.get_ol_write_batch_blocking(commitment)
         })
@@ -229,7 +229,7 @@ mod tests {
     use strata_db_types::traits::DatabaseBackend;
     use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
     use strata_ledger_types::IStateAccessor;
-    use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
+    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
     use threadpool::ThreadPool;
 
     use super::*;
@@ -389,7 +389,7 @@ mod tests {
     async fn test_write_batch_operations_async() {
         let manager = setup_manager();
         let state = OLState::new_genesis();
-        let wb = WriteBatch::<NativeAccountState>::new_from_state(&state);
+        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
         let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
 
         // Put write batch
@@ -429,7 +429,7 @@ mod tests {
     fn test_write_batch_operations_blocking() {
         let manager = setup_manager();
         let state = OLState::new_genesis();
-        let wb = WriteBatch::<NativeAccountState>::new_from_state(&state);
+        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
         let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
 
         // Put write batch

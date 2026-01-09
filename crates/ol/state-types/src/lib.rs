@@ -3,6 +3,18 @@
 // Will be required in the future.
 use ssz as _;
 
+// Include generated SSZ types from build.rs output
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
 mod account;
 mod epochal;
 mod global;
@@ -13,12 +25,11 @@ mod state_provider;
 mod toplevel;
 mod write_batch;
 
-pub use account::*;
-pub use epochal::*;
-pub use global::*;
-pub use ledger::*;
+#[cfg(test)]
+mod test_utils;
+
+// Re-export SSZ-generated types that are used publicly
 pub use serial_map::*;
-pub use snark_account::*;
+pub use ssz_generated::ssz::state::*;
 pub use state_provider::*;
-pub use toplevel::*;
 pub use write_batch::*;
