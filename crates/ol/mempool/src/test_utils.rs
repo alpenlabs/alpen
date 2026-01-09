@@ -383,7 +383,8 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
     // Create Snark accounts for common test account IDs (0-255)
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
-        let snark_state = OLSnarkAccountState::new_fresh(Hash::from([0u8; 32]));
+        let snark_state =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::from([0u8; 32]));
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         if state.create_new_account(account_id, new_acct).is_ok() {
