@@ -286,6 +286,11 @@ impl OLClientRpcServer for OLRpcServer {
             // Extract snark-specific data if applicable.
             // For non-snark accounts, these fields are zeroed since seqno and inbox
             // concepts don't apply to them.
+            //
+            // Note: Unlike `get_acct_epoch_summary` which returns a full `ProofState`,
+            // `RpcAccountBlockSummary` only has `next_inbox_msg_idx` as a separate field
+            // (no `inner_state`). This is by design - per-block summaries focus on
+            // tracking changes rather than full proof state.
             let (next_seq_no, next_inbox_msg_idx) = match account_state.as_snark_account() {
                 Ok(snark_state) => {
                     let seqno: u64 = *snark_state.seqno().inner();
