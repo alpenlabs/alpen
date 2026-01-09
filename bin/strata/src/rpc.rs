@@ -103,7 +103,9 @@ impl OLClientRpcServer for OLRpcServer {
             })?
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 
-        // Extract snark-specific data if applicable
+        // Extract snark-specific data if applicable.
+        // For non-snark accounts, these fields are zeroed since seqno and proof state
+        // concepts don't apply to them.
         let (next_seq_no, proof_state) = match account_state.as_snark_account() {
             Ok(snark_state) => {
                 let seqno: u64 = *snark_state.seqno().inner();
@@ -111,10 +113,7 @@ impl OLClientRpcServer for OLRpcServer {
                 let next_inbox_idx = snark_state.get_next_inbox_msg_idx();
                 (seqno, ProofState::new(inner_state, next_inbox_idx))
             }
-            Err(_) => {
-                // Non-snark account - return default values
-                (0, ProofState::new([0u8; 32].into(), 0))
-            }
+            Err(_) => (0, ProofState::new([0u8; 32].into(), 0)), // Non-snark account
         };
 
         // Get previous epoch commitment if available
@@ -284,14 +283,16 @@ impl OLClientRpcServer for OLRpcServer {
                 continue; // Account not found at this slot
             };
 
-            // Extract snark-specific data if applicable
+            // Extract snark-specific data if applicable.
+            // For non-snark accounts, these fields are zeroed since seqno and inbox
+            // concepts don't apply to them.
             let (next_seq_no, next_inbox_msg_idx) = match account_state.as_snark_account() {
                 Ok(snark_state) => {
                     let seqno: u64 = *snark_state.seqno().inner();
                     let next_inbox_idx = snark_state.get_next_inbox_msg_idx();
                     (seqno, next_inbox_idx)
                 }
-                Err(_) => (0, 0),
+                Err(_) => (0, 0), // Non-snark account
             };
 
             summaries.push(RpcAccountBlockSummary::new(
