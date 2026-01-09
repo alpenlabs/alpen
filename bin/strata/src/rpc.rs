@@ -169,7 +169,7 @@ impl OLClientRpcServer for OLRpcServer {
         // This guarantees all returned blocks are from the same chain, not different forks.
         let mut chain_blocks: Vec<(u64, OLBlockId)> = Vec::new();
 
-        // Get the starting block at end_slot
+        // Get the block at end_slot (we'll walk backwards from here)
         let end_block_ids = self
             .storage
             .ol_block()
