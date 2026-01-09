@@ -183,21 +183,22 @@ impl BatchInfo {
         &self.l1_range.1
     }
 
-    /// Check is whether the L2 slot is covered by the checkpoint
-    pub fn includes_l2_block(&self, slot: Slot) -> bool {
+    /// Check if the L2 slot is at or before the end of this checkpoint's L2 range.
+    ///
+    /// Note: This only checks the upper bound, not the lower bound. It returns `true`
+    /// if the slot is <= the checkpoint's final L2 slot. Use this to check if a slot
+    /// is included in any batch up to this one (including).
+    pub fn l2_slot_at_or_before_end(&self, slot: Slot) -> bool {
         let (_, last_l2_commitment) = self.l2_range;
-        if slot <= last_l2_commitment.slot() {
-            return true;
-        }
-        false
+        slot <= last_l2_commitment.slot()
     }
 
-    /// check for whether the L1 height is covered by the checkpoint
-    pub fn includes_l1_block(&self, height: u64) -> bool {
+    /// Check if the L1 height is at or before the end of this checkpoint's L1 range.
+    ///
+    /// Note: This only checks the upper bound, not the lower bound. It returns `true`
+    /// if the height is <= the checkpoint's final L1 height.
+    pub fn l1_height_at_or_before_end(&self, height: u64) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
-        if height <= last_l1_commitment.height_u64() {
-            return true;
-        }
-        false
+        height <= last_l1_commitment.height_u64()
     }
 }

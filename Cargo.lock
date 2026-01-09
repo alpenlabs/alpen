@@ -13511,6 +13511,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argh",
+ "async-trait",
  "bitcoin",
  "bitcoind-async-client",
  "format_serde_error",
@@ -13524,9 +13525,15 @@ dependencies = [
  "strata-csm-worker",
  "strata-db-store-sled",
  "strata-db-types",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-mempool",
  "strata-params",
  "strata-primitives",
+ "strata-rpc-api-new",
+ "strata-rpc-types-new",
  "strata-service",
+ "strata-snark-acct-types",
  "strata-status",
  "strata-storage",
  "strata-tasks",
@@ -15049,11 +15056,14 @@ name = "strata-rpc-types-new"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "ssz",
  "strata-acct-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
+ "strata-ol-mempool",
  "strata-primitives",
  "strata-snark-acct-types",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

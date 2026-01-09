@@ -5,8 +5,11 @@ use std::sync::Arc;
 use strata_asm_worker::AsmWorkerHandle;
 use strata_config::Config;
 use strata_csm_worker::CsmWorkerStatus;
+use strata_ol_mempool::MempoolHandle;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
+use strata_status::StatusChannel;
+use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::runtime::Runtime;
 
@@ -22,4 +25,8 @@ pub(crate) struct RunContext {
     // Service handles
     pub asm_handle: AsmWorkerHandle,
     pub csm_monitor: ServiceMonitor<CsmWorkerStatus>,
+    pub mempool_handle: MempoolHandle,
+    // Shared infrastructure
+    pub storage: Arc<NodeStorage>,
+    pub status_channel: Arc<StatusChannel>,
 }

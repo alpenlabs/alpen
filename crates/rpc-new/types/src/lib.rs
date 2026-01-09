@@ -10,4 +10,5 @@ pub use chain_status::RpcOLChainStatus;
 pub use snark_acct_update::RpcSnarkAccountUpdate;
 pub use txn::{
     RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionAttachment, RpcTransactionPayload,
+    RpcTxConversionError,
 };
