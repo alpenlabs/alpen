@@ -612,31 +612,28 @@ impl StrataApiServer for StrataRpcImpl {
             .ok_or(Error::BeforeGenesis)?;
         let cstate = self.status_channel.get_cur_client_state();
 
-        // FIXME when this was written, "finalized" just meant included in a
-        // checkpoint, not that the checkpoint was buried, so we're replicating
-        // that behavior here
-        // Finalized check
+        // Finalized check - checkpoint has been buried under enough L1 blocks
+        if let Some(finalized_ckpt) = cstate.get_last_finalized_checkpoint() {
+            if finalized_ckpt
+                .batch_info
+                .l2_slot_at_or_before_end(block_slot)
+            {
+                return Ok(L2BlockStatus::Finalized(
+                    finalized_ckpt.l1_reference.block_height(),
+                ));
+            }
+        }
+
+        // Verified check - checkpoint on L1 but not yet buried
         if let Some(last_checkpoint) = cstate.get_last_checkpoint() {
             if last_checkpoint
                 .batch_info
                 .l2_slot_at_or_before_end(block_slot)
             {
-                return Ok(L2BlockStatus::Finalized(
+                return Ok(L2BlockStatus::Verified(
                     last_checkpoint.l1_reference.block_height(),
                 ));
             }
-        }
-
-        // Verified check
-        let verified_l1_height = cstate.get_last_checkpoint().and_then(|ckpt| {
-            if ckpt.batch_info.l2_slot_at_or_before_end(block_slot) {
-                Some(ckpt.l1_reference.block_height())
-            } else {
-                None
-            }
-        });
-        if let Some(l1_height) = verified_l1_height {
-            return Ok(L2BlockStatus::Verified(l1_height));
         }
 
         // Confirmed check
