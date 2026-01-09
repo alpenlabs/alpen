@@ -187,7 +187,7 @@ impl BatchInfo {
     ///
     /// Note: This only checks the upper bound, not the lower bound. It returns `true`
     /// if the slot is <= the checkpoint's final L2 slot. Use this to check if a slot
-    /// could be covered by this checkpoint (assuming it's after the previous checkpoint's end).
+    /// is included in any batch up to this one (including).
     pub fn l2_slot_at_or_before_end(&self, slot: Slot) -> bool {
         let (_, last_l2_commitment) = self.l2_range;
         slot <= last_l2_commitment.slot()
