@@ -637,7 +637,7 @@ impl StrataApiServer for StrataRpcImpl {
         }
 
         // Confirmed check
-        if block_slot < css.tip_slot() {
+        if block_slot <= css.tip_slot() {
             return Ok(L2BlockStatus::Confirmed);
         }
 
