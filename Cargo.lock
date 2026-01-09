@@ -14370,6 +14370,7 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
+ "strata-asm-logs",
  "strata-checkpoint-types",
  "strata-cli-common",
  "strata-consensus-logic",
