@@ -53,7 +53,6 @@ pub(crate) enum Subcommand {
     Xpriv(SubcXpriv),
     SeqPubkey(SubcSeqPubkey),
     SeqPrivkey(SubcSeqPrivkey),
-    OpXpub(SubcOpXpub),
     Params(SubcParams),
     #[cfg(feature = "btc-client")]
     GenL1View(SubcGenL1View),
@@ -109,31 +108,6 @@ pub(crate) struct SubcSeqPrivkey {
         short = 'E'
     )]
     pub(crate) key_from_env: bool,
-}
-
-/// Generate operator xpub to pass around.
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(
-    subcommand,
-    name = "genopxpub",
-    description = "generates an operator xpub from a master xpriv"
-)]
-pub(crate) struct SubcOpXpub {
-    #[argh(option, description = "reads key from specified file", short = 'f')]
-    pub(crate) key_file: Option<PathBuf>,
-
-    #[argh(
-        switch,
-        description = "reads key from envvar STRATA_OP_KEY",
-        short = 'E'
-    )]
-    pub(crate) key_from_env: bool,
-
-    #[argh(switch, description = "print the p2p key", short = 'p')]
-    pub(crate) p2p: bool,
-
-    #[argh(switch, description = "print the wallet key", short = 'w')]
-    pub(crate) wallet: bool,
 }
 
 /// Generate a network's param file from inputs.

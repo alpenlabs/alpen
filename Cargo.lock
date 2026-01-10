@@ -14322,7 +14322,6 @@ dependencies = [
  "rand_core 0.6.4",
  "reth-chainspec",
  "serde_json",
- "shrex",
  "sp1-verifier",
  "strata-asm-types",
  "strata-bridge-types",

@@ -34,7 +34,6 @@ bitcoind-async-client = { workspace = true, optional = true }
 rand_core.workspace = true
 reth-chainspec.workspace = true
 serde_json.workspace = true
-shrex.workspace = true
 tokio = { workspace = true, optional = true }
 zeroize.workspace = true
 
