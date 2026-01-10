@@ -10,7 +10,6 @@ workspace = true
 strata-crypto.workspace = true
 
 bitcoin = { workspace = true, features = ["rand-std"] }
-ed25519-dalek.workspace = true
 secp256k1.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
