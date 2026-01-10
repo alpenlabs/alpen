@@ -7,7 +7,6 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-strata-bridge-types.workspace = true
 strata-btc-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true

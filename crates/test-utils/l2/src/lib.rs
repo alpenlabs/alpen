@@ -4,11 +4,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin::{
     secp256k1::{SecretKey, SECP256K1},
-    Amount,
+    Amount, XOnlyPublicKey,
 };
 use borsh::to_vec;
 use rand::{rngs::StdRng, SeedableRng};
-use strata_bridge_types::OperatorPubkeys;
 use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
 use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_crypto::EvenSecretKey;
@@ -17,7 +16,7 @@ use strata_ol_chain_types::{
     SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::Chainstate;
-use strata_params::{OperatorConfig, Params, ProofPublishMode, RollupParams, SyncParams};
+use strata_params::{Params, ProofPublishMode, RollupParams, SyncParams};
 use strata_predicate::PredicateKey;
 use strata_primitives::{block_credential, buf::Buf64};
 use strata_test_utils::ArbitraryGenerator;
@@ -94,7 +93,7 @@ pub fn gen_params() -> Params {
 }
 
 fn gen_params_with_seed(seed: u64) -> Params {
-    let opkeys = make_dummy_operator_pubkeys_with_seed(seed);
+    let opkey = make_dummy_operator_pubkeys_with_seed(seed);
     let genesis_l1_view = BtcChainSegment::load()
         .fetch_genesis_l1_view(40320)
         .unwrap();
@@ -104,7 +103,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
             block_time: 1000,
             cred_rule: block_credential::CredRule::Unchecked,
             genesis_l1_view,
-            operator_config: OperatorConfig::Static(vec![opkeys]),
+            operators: vec![opkey],
             evm_genesis_block_hash:
                 "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"
                     .parse()
@@ -130,14 +129,12 @@ fn gen_params_with_seed(seed: u64) -> Params {
     }
 }
 
-fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> OperatorPubkeys {
+fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> XOnlyPublicKey {
     let mut rng = StdRng::seed_from_u64(seed);
     let sk = SecretKey::new(&mut rng);
     // Ensure the key has even parity for taproot compatibility
     let even_sk = EvenSecretKey::from(sk);
-    let x_only_public_key = even_sk.x_only_public_key(SECP256K1);
-    let (pk, _parity) = x_only_public_key;
-    OperatorPubkeys::new(pk.into(), pk.into())
+    even_sk.x_only_public_key(SECP256K1).0
 }
 
 /// Gets the operator secret key for testing.

@@ -10,4 +10,4 @@ mod operator;
 // Re-export commonly used types
 pub use bridge::PublickeyTable;
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};
-pub use operator::{OperatorIdx, OperatorPubkeys};
+pub use operator::OperatorIdx;

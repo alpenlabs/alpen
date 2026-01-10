@@ -27,18 +27,6 @@ class GenesisL1View(BaseModel):
         return self.blk.height
 
 
-class OperatorConfigItem(BaseModel):
-    signing_pk: StrBuf32
-    wallet_pk: StrBuf32
-
-
-class OperatorConfig(BaseModel):
-    static: list[OperatorConfigItem]
-
-    def get_operators_pubkeys(self) -> list[str]:
-        return [operator.wallet_pk for operator in self.static]
-
-
 class ProofPublishModeTimeout(BaseModel):
     timeout: int
 
@@ -55,7 +43,7 @@ class RollupConfig(BaseModel):
     magic_bytes: Annotated[str, StringConstraints(min_length=4, max_length=4)]
     block_time: int
     cred_rule: CredRule
-    operator_config: OperatorConfig
+    operators: list[StrBuf32]
     genesis_l1_view: GenesisL1View
     evm_genesis_block_hash: StrBuf32
     evm_genesis_block_state_root: StrBuf32

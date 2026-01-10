@@ -6,7 +6,7 @@
 
 use std::num::NonZero;
 
-use bitcoin::secp256k1::{Parity, PublicKey, XOnlyPublicKey};
+use bitcoin::secp256k1::{Parity, PublicKey};
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_proto_administration::{AdministrationSubprotoParams, AdministrationSubprotocol};
 use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
@@ -15,8 +15,8 @@ use strata_asm_proto_checkpoint_v0::{
 };
 use strata_crypto::{keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig};
 use strata_l1_txfmt::MagicBytes;
-use strata_params::{OperatorConfig, RollupParams};
-use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
+use strata_params::RollupParams;
+use strata_primitives::l1::BitcoinAmount;
 
 /// ASM specification for the Strata protocol.
 ///
@@ -69,8 +69,6 @@ impl StrataAsmSpec {
     }
 
     pub fn from_params(params: &RollupParams) -> Self {
-        let OperatorConfig::Static(operators) = params.operator_config.clone();
-
         let checkpoint_v0_params = CheckpointV0Params {
             verification_params: CheckpointV0VerificationParams {
                 genesis_l1_block: params.genesis_l1_view.blk,
@@ -79,10 +77,7 @@ impl StrataAsmSpec {
             },
         };
 
-        let operators = operators
-            .iter()
-            .map(|o| EvenPublicKey::try_from(*o.wallet_pk()).unwrap())
-            .collect();
+        let operators = params.operators.iter().map(|o| (*o).into()).collect();
 
         let bridge_v1_genesis = BridgeV1Config {
             operators,
@@ -94,14 +89,11 @@ impl StrataAsmSpec {
 
         // For now, use the same operator config for admin roles
         // TODO(STR-2024): Add proper admin config to RollupParams
-        let OperatorConfig::Static(ref operators) = params.operator_config;
-        let admin_pubkeys: Vec<CompressedPublicKey> = operators
+        let admin_pubkeys: Vec<CompressedPublicKey> = params
+            .operators
             .iter()
-            .map(|o| {
-                let xonly_bytes = o.wallet_pk();
-                let xonly =
-                    XOnlyPublicKey::from_slice(xonly_bytes.as_ref()).expect("valid xonly pubkey");
-                let pk = PublicKey::from_x_only_public_key(xonly, Parity::Even);
+            .map(|xonly| {
+                let pk = PublicKey::from_x_only_public_key(*xonly, Parity::Even);
                 CompressedPublicKey::from(pk)
             })
             .collect();

@@ -1,9 +1,8 @@
 //! Global consensus parameters for the rollup.
 
-use bitcoin::{Amount, Network};
+use bitcoin::{Amount, Network, XOnlyPublicKey};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::OperatorPubkeys;
 use strata_btc_types::GenesisL1View;
 use strata_identifiers::{Buf32, CredRule};
 use strata_l1_txfmt::MagicBytes;
@@ -30,8 +29,8 @@ pub struct RollupParams {
 
     pub genesis_l1_view: GenesisL1View,
 
-    /// Config for how the genesis operator table is set up.
-    pub operator_config: OperatorConfig,
+    /// XOnlyPublicKey of the bridge operators at genesis.
+    pub operators: Vec<XOnlyPublicKey>,
 
     /// Hardcoded EL genesis info
     /// TODO: move elsewhere
@@ -66,12 +65,8 @@ pub struct RollupParams {
 
 impl RollupParams {
     pub fn check_well_formed(&self) -> Result<(), ParamsError> {
-        match &self.operator_config {
-            OperatorConfig::Static(optbl) => {
-                if optbl.is_empty() {
-                    return Err(ParamsError::NoOperators);
-                }
-            }
+        if self.operators.is_empty() {
+            return Err(ParamsError::NoOperators);
         }
 
         // TODO maybe make all these be a macro?
@@ -160,15 +155,6 @@ impl Params {
     }
 }
 
-/// Describes how we determine the list of operators at genesis.
-// TODO improve how this looks when serialized
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OperatorConfig {
-    /// Use this static list of predetermined operators.
-    Static(Vec<OperatorPubkeys>),
-}
-
 /// Error that can arise during params validation.
 #[derive(Debug, Error)]
 pub enum ParamsError {
@@ -183,13 +169,4 @@ pub enum ParamsError {
 
     #[error("no operators set")]
     NoOperators,
-}
-
-impl OperatorConfig {
-    #[cfg(test)]
-    pub fn get_static_operator_keys(&self) -> &[OperatorPubkeys] {
-        match self {
-            OperatorConfig::Static(op_keys) => op_keys.as_ref(),
-        }
-    }
 }

@@ -2,9 +2,7 @@ use bdk_wallet::bitcoin::{
     bip32::Xpriv, secp256k1::SECP256K1, taproot::TaprootBuilder, Address, Network, PublicKey,
     XOnlyPublicKey,
 };
-use strata_crypto::{
-    aggregate_schnorr_keys, keys::constants::STRATA_OP_WALLET_DERIVATION_PATH, EvenSecretKey,
-};
+use strata_crypto::{aggregate_schnorr_keys, EvenSecretKey};
 use strata_primitives::{buf::Buf32, l1::BitcoinAddress};
 
 use crate::error::Error;
@@ -24,12 +22,7 @@ pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<Even
         .iter()
         .map(|bytes| {
             let xpriv = Xpriv::decode(bytes).map_err(|_| Error::InvalidXpriv)?;
-
-            let derived_xpriv = xpriv
-                .derive_priv(SECP256K1, &STRATA_OP_WALLET_DERIVATION_PATH)
-                .map_err(|_| Error::InvalidXpriv)?;
-
-            Ok(EvenSecretKey::from(derived_xpriv.private_key))
+            Ok(EvenSecretKey::from(xpriv.private_key))
         })
         .collect::<Result<Vec<_>, Error>>()
 }
