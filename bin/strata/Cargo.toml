@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 strata-asm-worker.workspace = true
+strata-chain-worker-new.workspace = true
 strata-common.workspace = true
 strata-config.workspace = true
 strata-consensus-logic.workspace = true

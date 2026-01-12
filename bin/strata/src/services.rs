@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
+use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
 use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_rpc_api_new::OLClientRpcServer;
@@ -43,6 +44,22 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
     // Start mempool service
     let mempool_handle = start_mempool(&nodectx)?;
 
+    // Start Chain worker
+    let chain_worker_context = ChainWorkerContextImpl::new(
+        nodectx.storage.ol_block().clone(),
+        nodectx.storage.ol_state().clone(),
+        nodectx.storage.checkpoint().clone(),
+    );
+    let chain_worker_handle = ChainWorkerBuilder::new()
+        .with_context(chain_worker_context)
+        .with_params(nodectx.params.clone())
+        .with_status_channel((*nodectx.status_channel).clone())
+        .with_runtime(nodectx.executor.handle().clone())
+        .launch(&nodectx.executor)?;
+
+    // TODO: Start other tasks like l1writer, broadcaster, fcm, btcio reader, etc. all as
+    // service, returning the monitors.
+
     Ok(RunContext {
         runtime: nodectx.runtime,
         config: nodectx.config,
@@ -51,9 +68,10 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         executor: nodectx.executor,
         asm_handle,
         csm_monitor,
+        mempool_handle,
+        chain_worker_handle,
         storage: nodectx.storage,
         status_channel: nodectx.status_channel,
-        mempool_handle,
     })
 }
 
