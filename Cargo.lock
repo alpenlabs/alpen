@@ -1253,7 +1253,7 @@ dependencies = [
  "futures",
  "mockall",
  "strata-acct-types",
- "strata-codec",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
@@ -1261,7 +1261,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
- "tree_hash 0.11.0",
+ "tree_hash 0.12.1",
 ]
 
 [[package]]
