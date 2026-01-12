@@ -19,14 +19,13 @@ pub(crate) trait CanonicalChainReader: Send + Sync {
     async fn finalized_blocknum(&self) -> Result<u64>;
 }
 
-/// Implementation of `CanonicalChainReader` using `ExecChainHandle` and `ExecBlockStorage`.
+/// Implementation of [`CanonicalChainReader`] using [`ExecChainHandle`] and [`ExecBlockStorage`].
 pub(crate) struct ExecChainCanonicalReader<S> {
     exec_chain: Arc<ExecChainHandle>,
     block_storage: Arc<S>,
 }
 
 impl<S> ExecChainCanonicalReader<S> {
-    #[allow(unused, clippy::allow_attributes, reason = "todo")]
     pub(crate) fn new(exec_chain: Arc<ExecChainHandle>, block_storage: Arc<S>) -> Self {
         Self {
             exec_chain,
@@ -52,6 +51,6 @@ impl<S: ExecBlockStorage> CanonicalChainReader for ExecChainCanonicalReader<S> {
     }
 
     async fn finalized_blocknum(&self) -> Result<u64> {
-        unimplemented!()
+        self.exec_chain.get_finalized_blocknum().await
     }
 }

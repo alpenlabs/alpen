@@ -43,6 +43,18 @@ impl ExecChainHandle {
         rx.await.map_err(Into::into)
     }
 
+    /// Get the block number of the current finalized block.
+    pub async fn get_finalized_blocknum(&self) -> eyre::Result<u64> {
+        let (tx, rx) = oneshot::channel();
+
+        self.senders
+            .query_tx
+            .send(Query::GetFinalizedBlocknum(tx))
+            .await?;
+
+        rx.await.map_err(Into::into)
+    }
+
     /// Submit new exec block to be tracked.
     pub async fn new_block(&self, hash: Hash) -> eyre::Result<()> {
         self.senders

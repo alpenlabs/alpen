@@ -29,6 +29,7 @@ pub(crate) enum ChainTrackerError {
 pub(crate) enum Query {
     GetBestBlock(oneshot::Sender<ExecBlockRecord>),
     IsCanonical(Hash, oneshot::Sender<bool>),
+    GetFinalizedBlocknum(oneshot::Sender<u64>),
 }
 
 /// Channel receivers for the execution chain tracker task, split by priority.
@@ -132,6 +133,9 @@ async fn handle_query(state: &mut ExecChainState, query: Query) {
         }
         Query::IsCanonical(hash, tx) => {
             let _ = tx.send(state.is_canonical(&hash));
+        }
+        Query::GetFinalizedBlocknum(tx) => {
+            let _ = tx.send(state.finalized_blocknum());
         }
     }
 }
