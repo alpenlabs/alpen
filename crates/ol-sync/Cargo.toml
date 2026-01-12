@@ -1,0 +1,34 @@
+[package]
+edition = "2021"
+name = "strata-ol-sync"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+ssz.workspace = true
+ssz_types.workspace = true
+strata-common = { workspace = true, optional = true }
+strata-consensus-logic.workspace = true
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-state-types.workspace = true
+strata-primitives.workspace = true
+strata-rpc-api-new = { workspace = true, features = ["client"] }
+strata-status.workspace = true
+strata-storage.workspace = true
+
+async-trait.workspace = true
+futures.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+
+[dev-dependencies]
+
+
+[features]
+debug-utils = ["strata-common/debug-utils", "dep:strata-common"]
