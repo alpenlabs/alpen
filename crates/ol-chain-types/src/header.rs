@@ -7,6 +7,7 @@ use strata_crypto::hash;
 use strata_primitives::{
     buf::{Buf32, Buf64},
     l2::{L2BlockCommitment, L2BlockId},
+    SyncBlockHeader,
 };
 
 use crate::block::L2BlockBody;
@@ -218,5 +219,17 @@ impl L2Header for SignedL2BlockHeader {
 
     fn get_block_commitment(&self) -> L2BlockCommitment {
         self.header.get_block_commitment()
+    }
+}
+
+impl SyncBlockHeader for SignedL2BlockHeader {
+    type BlockId = L2BlockId;
+
+    fn slot(&self) -> u64 {
+        self.header.slot()
+    }
+
+    fn parent(&self) -> &L2BlockId {
+        self.header.parent()
     }
 }

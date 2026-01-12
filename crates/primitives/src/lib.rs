@@ -47,7 +47,9 @@ pub mod proof;
 pub mod roles;
 pub mod serde_helpers;
 pub mod sorted_vec;
+pub mod sync_block_header;
 pub mod utils;
 
 pub use bitcoin_bosd;
 pub use serde_helpers::serde_hex_bytes::*;
+pub use sync_block_header::SyncBlockHeader;

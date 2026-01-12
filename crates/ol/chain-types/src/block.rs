@@ -5,6 +5,7 @@ use ssz_types::VariableList;
 use strata_asm_common::AsmManifest;
 use strata_crypto::hash;
 use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot};
+use strata_primitives::SyncBlockHeader;
 
 use crate::{
     block_flags::BlockFlags,
@@ -63,6 +64,18 @@ impl SignedOLBlockHeader {
             ssz_types::Optional::Some(s) => Some(s),
             ssz_types::Optional::None => None,
         }
+    }
+}
+
+impl SyncBlockHeader for SignedOLBlockHeader {
+    type BlockId = OLBlockId;
+
+    fn slot(&self) -> u64 {
+        self.header.slot
+    }
+
+    fn parent(&self) -> &OLBlockId {
+        &self.header.parent_blkid
     }
 }
 

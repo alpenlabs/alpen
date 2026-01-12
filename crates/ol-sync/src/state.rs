@@ -1,5 +1,5 @@
 use strata_consensus_logic::unfinalized_tracker::UnfinalizedBlockTracker;
-use strata_identifiers::{OLBlockId, OLBlockCommitment, EpochCommitment};
+use strata_identifiers::{L2BlockId, L2BlockCommitment, EpochCommitment};
 use strata_ol_chain_types_new::SignedOLBlockHeader;
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
@@ -10,7 +10,7 @@ use crate::OLSyncError;
 #[derive(Debug)]
 pub(crate) struct OLSyncState {
     /// Height of highest unfinalized block in tracker
-    tip_block: OLBlockCommitment,
+    tip_block: L2BlockCommitment,
 
     // TODO make this just subscribe to FCM tip updates and go from there?
     tracker: UnfinalizedBlockTracker,
@@ -42,7 +42,7 @@ impl OLSyncState {
         Ok(())
     }
 
-    pub(crate) fn has_block(&self, block_id: &OLBlockId) -> bool {
+    pub(crate) fn has_block(&self, block_id: &L2BlockId) -> bool {
         self.tracker.is_seen_block(block_id)
     }
 
@@ -51,7 +51,7 @@ impl OLSyncState {
         self.tracker.finalized_epoch().last_slot()
     }
 
-    pub(crate) fn finalized_blockid(&self) -> &OLBlockId {
+    pub(crate) fn finalized_blockid(&self) -> &L2BlockId {
         self.tracker.finalized_epoch().last_blkid()
     }
 
