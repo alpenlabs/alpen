@@ -6,6 +6,7 @@ use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
 use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
+use strata_identifiers::OLBlockCommitment;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_rpc_api_new::OLClientRpcServer;
 
@@ -79,12 +80,22 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
 fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     let config = OLMempoolConfig::default();
 
-    // Get current chain tip from status channel
-    let current_tip = nodectx
-        .status_channel
-        .get_chain_sync_status()
-        .map(|status| status.tip)
-        .ok_or_else(|| anyhow!("Chain sync status not available, cannot start mempool"))?;
+    // Get current chain tip - try status channel first, fall back to genesis from storage
+    let current_tip = match nodectx.status_channel.get_chain_sync_status() {
+        Some(status) => status.tip,
+        None => {
+            // No chain sync status yet - get genesis block from OL storage
+            let genesis_blocks = nodectx
+                .storage
+                .ol_block()
+                .get_blocks_at_height_blocking(0)
+                .map_err(|e| anyhow!("Failed to get genesis block: {e}"))?;
+            let genesis_blkid = genesis_blocks
+                .first()
+                .ok_or_else(|| anyhow!("Genesis block not found, cannot start mempool"))?;
+            OLBlockCommitment::new(0, *genesis_blkid)
+        }
+    };
 
     let storage = nodectx.storage.clone();
     let status_channel = (*nodectx.status_channel).clone();
