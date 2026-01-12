@@ -58,11 +58,16 @@ pub trait OLFullNodeRpc {
     /// Get blocks in range as raw bytes of serialized `Vec<OLBlock>`.
     /// `start_height` and `end_height` are inclusive.
     #[method(name = "getRawBlocksRange")]
+<<<<<<< HEAD
     async fn get_raw_blocks_range(
         &self,
         start_height: u64,
         end_height: u64,
     ) -> RpcResult<Vec<RpcBlockRangeEntry>>;
+=======
+    async fn get_raw_blocks_range(&self, start_height: u64, end_height: u64)
+        -> RpcResult<HexBytes>;
+>>>>>>> cbd755a88 ((rpc-new): Add block apis in OL rpc)
 
     /// Get serialized block for a given block id.
     #[method(name = "getRawBlockById")]
