@@ -10,12 +10,16 @@ use jsonrpsee::{
         error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
     },
 };
+use ssz::Encode;
+use ssz_types::VariableList;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{
     IAccountState, ISnarkAccountState, ISnarkAccountStateExt, IStateAccessor,
 };
+use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
-use strata_rpc_api_new::OLClientRpcServer;
+use strata_primitives::HexBytes;
+use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_rpc_types_new::{
     OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcOLChainStatus,
     RpcOLTransaction, RpcSnarkAccountState,
@@ -49,6 +53,29 @@ impl OLRpcServer {
             status_channel,
             mempool_handle,
         }
+    }
+
+    async fn get_canonical_block_at_height(&self, height: u64) -> RpcResult<Option<OLBlockId>> {
+        let blkid = self
+            .storage
+            .ol_block()
+            .get_blocks_at_height_async(height)
+            .await
+            .map_err(db_error)?
+            .first() // TODO: Assumes the canonical is the first one, but need to define it
+            .copied();
+        Ok(blkid)
+    }
+
+    async fn get_block(&self, blkid: OLBlockId) -> RpcResult<OLBlock> {
+        let blk = self
+            .storage
+            .ol_block()
+            .get_block_data_async(blkid)
+            .await
+            .map_err(db_error)?
+            .ok_or(not_found_error(format!("block not found: {blkid}")))?;
+        Ok(blk)
     }
 }
 
@@ -178,17 +205,9 @@ impl OLClientRpcServer for OLRpcServer {
         let mut chain_blocks: Vec<(u64, OLBlockId)> = Vec::new();
 
         // Get the block at end_slot (we'll walk backwards from here)
-        let end_block_ids = self
-            .storage
-            .ol_block()
-            .get_blocks_at_height_async(end_slot)
-            .await
-            .map_err(|e| {
-                error!(?e, slot = end_slot, "Failed to get blocks at end_slot");
-                db_error(e)
-            })?;
+        let end_block_id = self.get_canonical_block_at_height(end_slot).await?;
 
-        let Some(current_block_id) = end_block_ids.first().copied() else {
+        let Some(current_block_id) = end_block_id else {
             // No block at end_slot, return empty
             return Ok(Vec::new());
         };
@@ -198,18 +217,7 @@ impl OLClientRpcServer for OLRpcServer {
 
         loop {
             // Get the block data to access parent
-            let block = self
-                .storage
-                .ol_block()
-                .get_block_data_async(current_id)
-                .await
-                .map_err(|e| {
-                    error!(?e, %current_id, "Failed to get block data");
-                    db_error(e)
-                })?
-                .ok_or_else(|| {
-                    not_found_error(format!("Block {current_id} not found in database"))
-                })?;
+            let block = self.get_block(current_id).await?;
 
             let header = block.header();
             let current_slot = header.slot();
@@ -229,17 +237,8 @@ impl OLClientRpcServer for OLRpcServer {
             if current_slot <= finalized_slot {
                 // Fetch remaining blocks directly by slot
                 for slot in (start_slot..current_slot).rev() {
-                    let block_ids = self
-                        .storage
-                        .ol_block()
-                        .get_blocks_at_height_async(slot)
-                        .await
-                        .map_err(|e| {
-                            error!(?e, slot, "Failed to get block at slot");
-                            db_error(e)
-                        })?;
-
-                    if let Some(blkid) = block_ids.first().copied() {
+                    let blkid = self.get_canonical_block_at_height(slot).await?;
+                    if let Some(blkid) = blkid {
                         chain_blocks.push((slot, blkid));
                     }
                 }
@@ -434,6 +433,54 @@ impl OLClientRpcServer for OLRpcServer {
             }
             Err(_) => Ok(None), // Not a snark account
         }
+    }
+}
+
+const MAX_RAW_BLOCKS_RANGE: usize = 5000; // FIXME: make this configurable
+
+#[async_trait]
+impl OLFullNodeRpcServer for OLRpcServer {
+    async fn get_raw_blocks_range(
+        &self,
+        start_height: u64,
+        end_height: u64,
+    ) -> RpcResult<HexBytes> {
+        let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
+
+        if start_height > end_height || block_count > MAX_RAW_BLOCKS_RANGE {
+            return Err(invalid_params_error("Invalid block range"));
+        }
+
+        let last = self
+            .get_canonical_block_at_height(end_height)
+            .await?
+            .ok_or(not_found_error(format!(
+                "No blocks found at slot {end_height}"
+            )))?;
+
+        let mut cur_blk = last;
+        let mut blocks = Vec::with_capacity(block_count);
+
+        // Fetch blocks in backward order to ensure a valid chain.
+        for _ in (start_height..=end_height).rev() {
+            let blk = self.get_block(cur_blk).await?;
+            cur_blk = blk.header().parent_blkid;
+            blocks.push(blk);
+        }
+        // Reverse back to get chronological sequence.
+        blocks.reverse();
+        let blks: VariableList<_, MAX_RAW_BLOCKS_RANGE> = VariableList::new(blocks)
+            .map_err(|e| internal_error(format!("cannot collect OL blocks: {e}")))?;
+
+        Ok(HexBytes(blks.as_ssz_bytes()))
+    }
+
+    async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes> {
+        let raw_blk = self
+            .get_block(block_id)
+            .await
+            .map(|b| HexBytes(b.as_ssz_bytes()))?;
+        Ok(raw_blk)
     }
 }
 

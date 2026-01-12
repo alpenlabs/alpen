@@ -1,7 +1,8 @@
 //! OL RPC API definitions.
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
-use strata_identifiers::{AccountId, Epoch, OLTxId};
+use strata_identifiers::{AccountId, Epoch, OLBlockId, OLTxId};
+use strata_primitives::HexBytes;
 use strata_rpc_types_new::*;
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
@@ -48,4 +49,19 @@ pub trait OLClientRpc {
     /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId>;
+}
+
+/// OL RPC methods served by block executing nodes.
+#[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
+#[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
+pub trait OLFullNodeRpc {
+    /// Get blocks in range as raw bytes of serialized `Vec<OLBlock>`.
+    /// `start_height` and `end_height` are inclusive.
+    #[method(name = "getRawBlocksRange")]
+    async fn get_raw_blocks_range(&self, start_height: u64, end_height: u64)
+        -> RpcResult<HexBytes>;
+
+    /// Get serialized block for a given block id.
+    #[method(name = "getRawBlockById")]
+    async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes>;
 }
