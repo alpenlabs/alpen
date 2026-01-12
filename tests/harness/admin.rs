@@ -30,7 +30,9 @@ use strata_asm_txs_admin::{
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
-use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfigUpdate};
+use strata_crypto::{
+    keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfigUpdate,
+};
 use strata_params::Params;
 use strata_predicate::PredicateKey;
 use strata_primitives::{

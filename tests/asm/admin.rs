@@ -33,8 +33,9 @@ use harness::{
 use integration_tests::harness;
 use rand::rngs::OsRng;
 use strata_asm_txs_admin::{parser::SignedPayload, test_utils::create_signature_set};
-use strata_crypto::threshold_signature::{
-    CompressedPublicKey, IndexedSignature, SignatureSet, ThresholdConfig,
+use strata_crypto::{
+    keys::compressed::CompressedPublicKey,
+    threshold_signature::{IndexedSignature, SignatureSet, ThresholdConfig},
 };
 use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;

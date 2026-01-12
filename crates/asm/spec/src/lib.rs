@@ -13,7 +13,7 @@ use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
 use strata_asm_proto_checkpoint_v0::{
     CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
-use strata_crypto::threshold_signature::{CompressedPublicKey, ThresholdConfig};
+use strata_crypto::{keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig};
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{OperatorConfig, RollupParams};
 use strata_primitives::{crypto::EvenPublicKey, l1::BitcoinAmount};
