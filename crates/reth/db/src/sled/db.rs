@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use alpen_reth_statediff::da::DaEeStateDiff;
+use alpen_reth_statediff::DaEeStateDiff;
 use revm_primitives::alloy_primitives::B256;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
 use strata_codec::{decode_buf_exact, encode_to_vec};
@@ -134,8 +134,8 @@ impl StateDiffStore for WitnessDB {
 mod tests {
     use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
 
-    use alpen_reth_statediff::da::{
-        DaAccountChange, DaAccountDiff, DaEeStateDiff, DaStorageDiff,
+    use alpen_reth_statediff::{
+        DaAccountChange, DaAccountDiff, DaAccountStorageDiff, DaEeStateDiff,
     };
     use revm_primitives::{address, fixed_bytes, FixedBytes, U256};
     use serde::Deserialize;
@@ -178,15 +178,11 @@ mod tests {
         let mut accounts = BTreeMap::new();
         accounts.insert(
             address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045"),
-            DaAccountChange::Created(DaAccountDiff::new_created(
-                U256::from(1000),
-                1,
-                B256::ZERO,
-            )),
+            DaAccountChange::Created(DaAccountDiff::new_created(U256::from(1000), 1, B256::ZERO)),
         );
 
         let mut storage = BTreeMap::new();
-        let mut slots = DaStorageDiff::new();
+        let mut slots = DaAccountStorageDiff::new();
         slots.set_slot(U256::from(1), U256::from(100));
         storage.insert(
             address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045"),

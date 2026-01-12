@@ -1456,7 +1456,8 @@ dependencies = [
  "revm",
  "revm-primitives",
  "serde",
- "serde_json",
+ "strata-codec",
+ "strata-da-framework",
  "strata-mpt",
  "thiserror 2.0.18",
 ]

@@ -10,7 +10,7 @@ pub mod sled;
 extern crate sled as _;
 
 // Consume dev dependencies to avoid unused warnings in tests
-use alpen_reth_statediff::da::DaEeStateDiff;
+use alpen_reth_statediff::DaEeStateDiff;
 use revm_primitives::alloy_primitives::B256;
 #[cfg(test)]
 use serde as _;

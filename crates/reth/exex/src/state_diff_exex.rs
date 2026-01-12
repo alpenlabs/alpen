@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_rpc_types::BlockNumHash;
 use alpen_reth_db::StateDiffStore;
-use alpen_reth_statediff::da::DaEeStateDiff;
+use alpen_reth_statediff::DaEeStateDiff;
 use futures_util::TryStreamExt;
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{FullNodeComponents, NodeTypes};

@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use alpen_reth_db::{StateDiffProvider, WitnessProvider};
-use alpen_reth_statediff::{
-    da::{DaEeStateDiff, DaEeStateDiffSerde},
-    state::ReconstructedState,
-};
+use alpen_reth_statediff::{DaEeStateDiff, DaEeStateDiffSerde, ReconstructedState};
 use jsonrpsee::core::RpcResult;
 use revm_primitives::alloy_primitives::B256;
 use strata_rpc_utils::{to_jsonrpsee_error, to_jsonrpsee_error_object};
@@ -72,7 +69,7 @@ where
             match block_diff {
                 Some(diff) => {
                     state
-                        .apply_da(&diff)
+                        .apply_diff(&diff)
                         .map_err(to_jsonrpsee_error("Error while applying state diff"))?;
                 }
                 None => {

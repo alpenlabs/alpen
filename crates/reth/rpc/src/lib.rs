@@ -4,7 +4,7 @@ pub mod eth;
 mod rpc;
 pub mod sequencer;
 
-use alpen_reth_statediff::da::DaEeStateDiffSerde;
+use alpen_reth_statediff::DaEeStateDiffSerde;
 pub use eth::{AlpenEthApi, StrataNodeCore};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use revm_primitives::alloy_primitives::B256;

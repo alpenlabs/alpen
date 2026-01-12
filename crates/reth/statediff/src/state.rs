@@ -4,10 +4,9 @@ use alpen_chainspec::chain_value_parser;
 use revm_primitives::{alloy_primitives::Address, B256, U256};
 use strata_mpt::{keccak, MptNode, StateAccount, EMPTY_ROOT, KECCAK_EMPTY};
 
-use crate::da::{DaAccountChange, DaEeStateDiff};
-use crate::BatchStateDiff;
+use crate::{account::DaAccountChange, diff::DaEeStateDiff};
 
-/// An (in-memory) representation of the EVM state reconstructed only from [`BatchStateDiff`].
+/// An (in-memory) representation of the EVM state reconstructed from [`DaEeStateDiff`].
 #[derive(Clone, Default, Debug)]
 pub struct ReconstructedState {
     state_trie: MptNode,
@@ -62,61 +61,8 @@ impl ReconstructedState {
         Ok(new)
     }
 
-    /// Applies a single [`BatchStateDiff`] atop of the current State.
-    pub fn apply(&mut self, batch_diff: BatchStateDiff) -> Result<(), StateError> {
-        // Adjust accounts based on the accounts into and its slots.
-        for (address, account_info) in batch_diff.accounts {
-            let acc_info_trie_path = keccak(address);
-
-            if let Some(account_info) = account_info {
-                // Create a rlp-serializable StateAccount from the info.
-                // Storage root is yet to be calculated below.
-                let mut state_account = StateAccount {
-                    nonce: account_info.nonce,
-                    balance: account_info.balance,
-                    storage_root: Default::default(),
-                    code_hash: account_info.code_hash,
-                };
-
-                // Do not put empty accounts into the state trie.
-                if state_account.is_account_empty() {
-                    continue;
-                }
-
-                // Calculate the actual account storage root - take an existing storage trie
-                // for the account and apply changed slots atop.
-                state_account.storage_root = {
-                    let acc_storage_trie = self.storage_trie.entry(address).or_default();
-                    let changed_storage_slots = batch_diff.storage_slots.get(&address);
-
-                    if let Some(changed_slots) = changed_storage_slots {
-                        for (slot_key, slot_value) in changed_slots {
-                            let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
-
-                            if slot_value == &U256::ZERO {
-                                acc_storage_trie.delete(&slot_trie_path)?;
-                            } else {
-                                acc_storage_trie.insert_rlp(&slot_trie_path, *slot_value)?;
-                            }
-                        }
-                    }
-                    acc_storage_trie.hash()
-                };
-
-                // Insert the up-to-date account into the trie.
-                self.state_trie
-                    .insert_rlp(&acc_info_trie_path, state_account)?;
-            } else {
-                // Account was actually destructed.
-                self.state_trie.delete(&acc_info_trie_path)?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Applies a [`DaEeStateDiff`] atop of the current State.
-    pub fn apply_da(&mut self, da_diff: &DaEeStateDiff) -> Result<(), StateError> {
+    pub fn apply_diff(&mut self, da_diff: &DaEeStateDiff) -> Result<(), StateError> {
         for (address, change) in &da_diff.accounts {
             let acc_info_trie_path = keccak(address);
 
