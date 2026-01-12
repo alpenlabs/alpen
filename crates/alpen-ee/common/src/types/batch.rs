@@ -20,6 +20,21 @@ impl BatchId {
             last_block,
         }
     }
+
+    /// Create a BatchId from its component parts.
+    pub fn from_parts(prev_block: Hash, last_block: Hash) -> Self {
+        Self::new(prev_block, last_block)
+    }
+
+    /// Get the prev_block component.
+    pub fn prev_block(&self) -> Hash {
+        self.prev_block
+    }
+
+    /// Get the last_block component.
+    pub fn last_block(&self) -> Hash {
+        self.last_block
+    }
 }
 
 /// Batch-DA related data in an L1 block
@@ -147,6 +162,11 @@ impl Batch {
 
     pub fn last_blocknumhash(&self) -> BlockNumHash {
         BlockNumHash::new(self.last_block(), self.last_blocknum())
+    }
+
+    /// Get the inner blocks (blocks between prev_block and last_block, exclusive of last_block).
+    pub fn inner_blocks(&self) -> &[Hash] {
+        &self.inner_blocks
     }
 
     /// Iterate over all blocks in range of this batch.

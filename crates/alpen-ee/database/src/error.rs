@@ -1,4 +1,4 @@
-use alpen_ee_common::StorageError;
+use alpen_ee_common::{BatchId, ChunkId, StorageError};
 use sled::transaction::TransactionError;
 use strata_acct_types::Hash;
 use strata_identifiers::OLBlockId;
@@ -54,6 +54,18 @@ pub enum DbError {
     /// Attempted to delete a finalized block.
     #[error("Cannot delete finalized block: {0:?}")]
     CannotDeleteFinalizedBlock(Hash),
+
+    /// Batch not found when trying to update status.
+    #[error("Batch not found: {0:?}")]
+    BatchNotFound(BatchId),
+
+    /// Chunk not found when trying to update status.
+    #[error("Chunk not found: {0:?}")]
+    ChunkNotFound(ChunkId),
+
+    /// Batch deserialization error.
+    #[error("Failed to deserialize batch: {0}")]
+    BatchDeserialize(String),
 
     /// Database operation error.
     #[error("Database: {0}")]

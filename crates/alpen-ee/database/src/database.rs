@@ -1,4 +1,7 @@
-use alpen_ee_common::{EeAccountStateAtEpoch, ExecBlockRecord};
+use alpen_ee_common::{
+    Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, EeAccountStateAtEpoch,
+    ExecBlockRecord,
+};
 use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
@@ -63,6 +66,52 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 
     /// Delete a single block and its payload by hash.
     fn delete_exec_block(&self, hash: Hash) -> DbResult<()>;
+
+    // Batch storage operations
+
+    /// Save the genesis batch. Noop if any batches exist.
+    fn save_genesis_batch(&self, batch: Batch) -> DbResult<()>;
+
+    /// Save the next batch. Must extend the last batch present in storage.
+    fn save_next_batch(&self, batch: Batch) -> DbResult<()>;
+
+    /// Update an existing batch's status.
+    fn update_batch_status(&self, batch_id: BatchId, status: BatchStatus) -> DbResult<()>;
+
+    /// Remove all batches where idx > to_idx.
+    fn revert_batches(&self, to_idx: u64) -> DbResult<()>;
+
+    /// Get a batch by its id, if it exists.
+    fn get_batch_by_id(&self, batch_id: BatchId) -> DbResult<Option<(Batch, BatchStatus)>>;
+
+    /// Get a batch by its idx, if it exists.
+    fn get_batch_by_idx(&self, idx: u64) -> DbResult<Option<(Batch, BatchStatus)>>;
+
+    /// Get the batch with the highest idx, if it exists.
+    fn get_latest_batch(&self) -> DbResult<Option<(Batch, BatchStatus)>>;
+
+    // Chunk storage operations
+
+    /// Save the next chunk.
+    fn save_next_chunk(&self, chunk: Chunk) -> DbResult<()>;
+
+    /// Update an existing chunk's status.
+    fn update_chunk_status(&self, chunk_id: ChunkId, status: ChunkStatus) -> DbResult<()>;
+
+    /// Remove all chunks where idx >= from_idx.
+    fn revert_chunks_from(&self, from_idx: u64) -> DbResult<()>;
+
+    /// Get a chunk by its id, if it exists.
+    fn get_chunk_by_id(&self, chunk_id: ChunkId) -> DbResult<Option<(Chunk, ChunkStatus)>>;
+
+    /// Get a chunk by its idx, if it exists.
+    fn get_chunk_by_idx(&self, idx: u64) -> DbResult<Option<(Chunk, ChunkStatus)>>;
+
+    /// Get the chunk with the highest idx, if it exists.
+    fn get_latest_chunk(&self) -> DbResult<Option<(Chunk, ChunkStatus)>>;
+
+    /// Set or update batch-chunk association.
+    fn set_batch_chunks(&self, batch_id: BatchId, chunks: Vec<ChunkId>) -> DbResult<()>;
 }
 
 pub(crate) mod ops {
@@ -88,6 +137,24 @@ pub(crate) mod ops {
             get_exec_block(hash: Hash) => Option<ExecBlockRecord>;
             get_block_payload(hash: Hash) => Option<Vec<u8>>;
             delete_exec_block(hash: Hash) => ();
+
+            // Batch operations
+            save_genesis_batch(batch: Batch) => ();
+            save_next_batch(batch: Batch) => ();
+            update_batch_status(batch_id: BatchId, status: BatchStatus) => ();
+            revert_batches(to_idx: u64) => ();
+            get_batch_by_id(batch_id: BatchId) => Option<(Batch, BatchStatus)>;
+            get_batch_by_idx(idx: u64) => Option<(Batch, BatchStatus)>;
+            get_latest_batch() => Option<(Batch, BatchStatus)>;
+
+            // Chunk operations
+            save_next_chunk(chunk: Chunk) => ();
+            update_chunk_status(chunk_id: ChunkId, status: ChunkStatus) => ();
+            revert_chunks_from(from_idx: u64) => ();
+            get_chunk_by_id(chunk_id: ChunkId) => Option<(Chunk, ChunkStatus)>;
+            get_chunk_by_idx(idx: u64) => Option<(Chunk, ChunkStatus)>;
+            get_latest_chunk() => Option<(Chunk, ChunkStatus)>;
+            set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
         }
     }
 }

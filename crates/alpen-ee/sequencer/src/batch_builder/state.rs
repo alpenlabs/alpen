@@ -110,7 +110,10 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
 pub async fn init_batch_builder_state<P: BatchPolicy>(
     batch_storage: &impl BatchStorage,
 ) -> Result<BatchBuilderState<P>> {
-    let (batch, _) = batch_storage.get_latest_batch().await?;
+    let (batch, _) = batch_storage
+        .get_latest_batch()
+        .await?
+        .ok_or_else(|| eyre::eyre!("no batches in storage; genesis batch expected"))?;
     Ok(BatchBuilderState::from_last_batch(
         batch.idx(),
         batch.last_blocknumhash(),

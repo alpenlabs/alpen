@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 alpen-ee-common.workspace = true
+bitcoin.workspace = true
 strata-acct-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-ee-acct-types.workspace = true
