@@ -1153,6 +1153,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-common",
  "async-trait",
+ "bitcoin",
  "borsh",
  "eyre",
  "sled",
@@ -1162,6 +1163,7 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
+ "strata-snark-acct-types",
  "strata-storage-common",
  "thiserror 2.0.17",
  "threadpool",
@@ -1246,8 +1248,12 @@ dependencies = [
  "alpen-ee-block-assembly",
  "alpen-ee-common",
  "alpen-ee-exec-chain",
+ "async-trait",
  "eyre",
+ "futures",
+ "mockall",
  "strata-acct-types",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
@@ -1255,6 +1261,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+ "tree_hash 0.12.1",
 ]
 
 [[package]]
@@ -15083,7 +15090,9 @@ dependencies = [
 name = "strata-rpc-types-new"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "serde",
+ "serde_json",
  "ssz",
  "strata-acct-types",
  "strata-identifiers",

@@ -2,6 +2,9 @@ use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::OLBlockCommitment;
+use strata_snark_acct_types::MessageEntry;
+
+use crate::BlockNumHash;
 
 /// Additional metadata associated with the block.
 /// Most of these can be derived from data in package or account_state, but are cached
@@ -30,6 +33,8 @@ struct ExecPackageMetadata {
 pub struct ExecBlockRecord {
     /// Additional metadata associated with this block.
     metadata: ExecPackageMetadata,
+    /// OL Account messages processed in this block.
+    messages: Vec<MessageEntry>,
     /// The execution block package with additional block data.
     package: ExecBlockPackage,
     /// The final account state as a result of this execution.
@@ -37,6 +42,7 @@ pub struct ExecBlockRecord {
 }
 
 impl ExecBlockRecord {
+    #[expect(clippy::too_many_arguments, reason = "need them")]
     pub fn new(
         package: ExecBlockPackage,
         account_state: EeAccountState,
@@ -45,10 +51,12 @@ impl ExecBlockRecord {
         timestamp_ms: u64,
         parent_blockhash: Hash,
         next_inbox_msg_idx: u64,
+        messages: Vec<MessageEntry>,
     ) -> Self {
         Self {
             package,
             account_state,
+            messages,
             metadata: ExecPackageMetadata {
                 blocknum,
                 ol_block,
@@ -65,6 +73,10 @@ impl ExecBlockRecord {
 
     pub fn account_state(&self) -> &EeAccountState {
         &self.account_state
+    }
+
+    pub fn blocknumhash(&self) -> BlockNumHash {
+        BlockNumHash::new(self.blockhash(), self.blocknum())
     }
 
     pub fn blocknum(&self) -> u64 {
@@ -91,8 +103,12 @@ impl ExecBlockRecord {
         self.metadata.next_inbox_msg_idx
     }
 
-    pub fn into_parts(self) -> (ExecBlockPackage, EeAccountState) {
-        (self.package, self.account_state)
+    pub fn messages(&self) -> &[MessageEntry] {
+        &self.messages
+    }
+
+    pub fn into_parts(self) -> (ExecBlockPackage, EeAccountState, Vec<MessageEntry>) {
+        (self.package, self.account_state, self.messages)
     }
 }
 

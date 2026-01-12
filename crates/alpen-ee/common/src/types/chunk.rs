@@ -29,10 +29,25 @@ impl ChunkId {
             last_block,
         }
     }
+
+    /// Create a ChunkId from its component parts.
+    pub fn from_parts(prev_block: Hash, last_block: Hash) -> Self {
+        Self::new(prev_block, last_block)
+    }
+
+    /// Get the prev_block component.
+    pub fn prev_block(&self) -> Hash {
+        self.prev_block
+    }
+
+    /// Get the last_block component.
+    pub fn last_block(&self) -> Hash {
+        self.last_block
+    }
 }
 
 /// Represents a sequence of blocks that are processed together as a unit during proving.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     /// Sequential chunk index.
     idx: u64,
@@ -74,6 +89,11 @@ impl Chunk {
     /// Last block of this chunk.
     pub fn last_block(&self) -> Hash {
         self.last_block
+    }
+
+    /// Get the inner blocks (blocks between prev_block and last_block, exclusive of last_block).
+    pub fn inner_blocks(&self) -> &[Hash] {
+        &self.inner_blocks
     }
 
     /// Iterate over all blocks in this chunk.

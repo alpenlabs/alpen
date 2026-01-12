@@ -12,12 +12,12 @@ use crate::{package::build_block_package, payload::build_exec_payload};
 
 /// All inputs that control the next built block.
 #[derive(Debug)]
-pub struct BlockAssemblyInputs {
+pub struct BlockAssemblyInputs<'a> {
     /// EeAccountState of last block.
     pub account_state: EeAccountState,
     /// New inbox messages to be included in this block.
     /// Can be empty.
-    pub inbox_messages: Vec<MessageEntry>,
+    pub inbox_messages: &'a [MessageEntry],
     /// Exec blkid of previous block.
     pub parent_exec_blkid: Hash,
     /// Timestamp of next block to be built in ms.
@@ -41,7 +41,7 @@ pub struct BlockAssemblyOutputs {
 
 /// Builds the next block using `inputs` and `payload_builder`.
 pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
-    inputs: BlockAssemblyInputs,
+    inputs: BlockAssemblyInputs<'_>,
     payload_builder: &E,
 ) -> eyre::Result<BlockAssemblyOutputs> {
     let BlockAssemblyInputs {
@@ -54,7 +54,7 @@ pub async fn build_next_exec_block<E: PayloadBuilderEngine>(
     } = inputs;
 
     // 1. apply new inbox messages to account state
-    let parsed_inputs = apply_input_messages(&mut account_state, &inbox_messages)
+    let parsed_inputs = apply_input_messages(&mut account_state, inbox_messages)
         .context("build_next_exec_block: failed to apply input messages")?;
 
     // 2. build exec block payload

@@ -4,7 +4,10 @@ use strata_db_store_sled::{
     impl_borsh_value_codec,
 };
 
-use crate::serialization_types::{DBAccountStateAtEpoch, DBExecBlockRecord, DBOLBlockId};
+use crate::serialization_types::{
+    DBAccountStateAtEpoch, DBBatchId, DBBatchWithStatus, DBChunkId, DBChunkWithStatus,
+    DBExecBlockRecord, DBOLBlockId,
+};
 
 define_table_without_codec!(
     /// store canonical final OL block id at OL epoch
@@ -38,4 +41,33 @@ impl_borsh_value_codec!(ExecBlockFinalizedSchema, Hash);
 define_table_with_default_codec!(
     /// ExecBlock payloads
     (ExecBlockPayloadSchema) Hash => Vec<u8>
+);
+
+// Batch storage schemas
+
+define_table_without_codec!(
+    /// Batch by sequential idx -> (Batch, Status)
+    (BatchByIdxSchema) u64 => DBBatchWithStatus
+);
+impl_borsh_value_codec!(BatchByIdxSchema, DBBatchWithStatus);
+
+define_table_with_default_codec!(
+    /// BatchId -> idx lookup
+    (BatchIdToIdxSchema) DBBatchId => u64
+);
+
+define_table_without_codec!(
+    /// Chunk by sequential idx -> (Chunk, Status)
+    (ChunkByIdxSchema) u64 => DBChunkWithStatus
+);
+impl_borsh_value_codec!(ChunkByIdxSchema, DBChunkWithStatus);
+
+define_table_with_default_codec!(
+    /// ChunkId -> idx lookup
+    (ChunkIdToIdxSchema) DBChunkId => u64
+);
+
+define_table_with_default_codec!(
+    /// Batch-Chunk association
+    (BatchChunksSchema) DBBatchId => Vec<DBChunkId>
 );

@@ -37,12 +37,13 @@ pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, Exe
         OLBlockCommitment::new(params.genesis_ol_slot(), params.genesis_ol_blockid());
 
     // These fields are for evm genesis block.
-    let genesis_blocknum = 0;
+    let genesis_blocknum = params.genesis_blocknum();
     // Note: This timestamp is only used during blockproduction, so its not necessary for this to be
     // accurate. Can be added to [`AlpenEeParams`] if correct value is required.
     let genesis_block_timestamp_ms = 0;
     let genesis_parent_blockhash = Buf32([0; 32]); // 0x0
     let genesis_next_inbox_msg_idx = 0;
+    let genesis_messages = vec![];
 
     let block = ExecBlockRecord::new(
         genesis_package,
@@ -52,6 +53,7 @@ pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, Exe
         genesis_block_timestamp_ms,
         genesis_parent_blockhash,
         genesis_next_inbox_msg_idx,
+        genesis_messages,
     );
     let payload = ExecBlockPayload::from_bytes(Vec::new());
 

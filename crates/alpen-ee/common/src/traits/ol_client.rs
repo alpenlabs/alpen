@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_snark_acct_types::{MessageEntry, SnarkAccountUpdate};
+use strata_snark_acct_types::{MessageEntry, ProofState, Seqno, SnarkAccountUpdate};
 use thiserror::Error;
 
 use crate::{OLChainStatus, OLEpochSummary};
@@ -45,6 +45,15 @@ pub struct OLBlockData {
     pub next_inbox_msg_idx: u64,
 }
 
+/// View of OL Account State used by EE.
+#[derive(Debug, Clone)]
+pub struct OLAccountStateView {
+    /// Next expected update sequence number.
+    pub seq_no: Seqno,
+    /// State stored in Account in OL.
+    pub proof_state: ProofState,
+}
+
 /// Client interface for sequencer-specific OL chain interactions.
 ///
 /// Extends the base OL client functionality with methods needed by the sequencer
@@ -66,6 +75,9 @@ pub trait SequencerOLClient {
         min_slot: u64,
         max_slot: u64,
     ) -> Result<Vec<OLBlockData>, OLClientError>;
+
+    /// Retrieves latest account state in the OL Chain for this account.
+    async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError>;
 
     /// Submits an account update with proof to the OL chain sequencer.
     async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError>;

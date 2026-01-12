@@ -11,7 +11,7 @@ use crate::{ExecBlockPayload, ExecBlockRecord};
 /// This expects blocks to be stored as "finalized" or "unfinalized".
 /// "finalized" blocks should only ever have a single canonical chain.
 /// "unfinalized" blocks may have forks, and all such blocks need to be persisted.
-pub trait ExecBlockStorage {
+pub trait ExecBlockStorage: Send + Sync {
     /// Save block data and payload for a given block hash.
     ///
     /// Blocks are uniquely identified by `ExecBlockRecord::blockhash()`. If a block with the same
@@ -257,15 +257,28 @@ macro_rules! exec_block_storage_tests {
             let storage = $setup_expr;
             $crate::exec_block_storage_test_fns::test_delete_nonexistent_block(&storage).await;
         }
+
+        #[tokio::test]
+        async fn test_messages_stored_with_order() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_messages_stored_with_order(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_empty_messages() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_empty_messages(&storage).await;
+        }
     };
 }
 
 #[cfg(feature = "test-utils")]
 pub mod exec_block_storage_test_fns {
-    use strata_acct_types::{BitcoinAmount, Hash};
+    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
     use strata_ee_acct_types::EeAccountState;
     use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage};
     use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
+    use strata_snark_acct_types::MessageEntry;
 
     use super::*;
     use crate::ExecBlockRecord;
@@ -294,12 +307,30 @@ pub mod exec_block_storage_test_fns {
         EeAccountState::new(blockhash, BitcoinAmount::ZERO, Vec::new(), Vec::new())
     }
 
+    /// Helper to create a test MessageEntry
+    pub fn create_message_entry(source_id: u8, epoch: u32, data: Vec<u8>) -> MessageEntry {
+        let source = AccountId::from([source_id; 32]);
+        let payload = MsgPayload::new(BitcoinAmount::ZERO, data);
+        MessageEntry::new(source, epoch, payload)
+    }
+
     /// Helper to create a test ExecBlockRecord with proper parent-child relationship
     pub fn create_exec_block(
         blocknum: u64,
         parent_hash: Hash,
         block_hash: Hash,
         ol_slot: u64,
+    ) -> ExecBlockRecord {
+        create_exec_block_with_messages(blocknum, parent_hash, block_hash, ol_slot, Vec::new())
+    }
+
+    /// Helper to create a test ExecBlockRecord with messages
+    pub fn create_exec_block_with_messages(
+        blocknum: u64,
+        parent_hash: Hash,
+        block_hash: Hash,
+        ol_slot: u64,
+        messages: Vec<MessageEntry>,
     ) -> ExecBlockRecord {
         let package = create_package(block_hash, block_hash);
         let account_state = create_account_state(block_hash);
@@ -314,6 +345,7 @@ pub mod exec_block_storage_test_fns {
             timestamp_ms,
             parent_hash,
             0,
+            messages,
         )
     }
 
@@ -1072,5 +1104,86 @@ pub mod exec_block_storage_test_fns {
             .await
             .unwrap()
             .is_none());
+    }
+
+    /// Test that messages are stored and retrieved correctly with order preserved
+    pub async fn test_messages_stored_with_order(storage: &impl ExecBlockStorage) {
+        let hash = hash_from_u8(1);
+        let parent_hash = hash_from_u8(0);
+
+        // Create multiple messages with distinct data to verify order
+        let messages = vec![
+            create_message_entry(1, 100, vec![1, 2, 3]),
+            create_message_entry(2, 101, vec![4, 5, 6]),
+            create_message_entry(3, 102, vec![7, 8, 9]),
+            create_message_entry(4, 103, vec![10, 11, 12]),
+        ];
+
+        let block = create_exec_block_with_messages(1, parent_hash, hash, 100, messages.clone());
+        let payload = ExecBlockPayload::from_bytes(vec![1, 2, 3, 4]);
+
+        // Save the block
+        storage
+            .save_exec_block(block.clone(), payload)
+            .await
+            .unwrap();
+
+        // Retrieve the block
+        let retrieved_block = storage.get_exec_block(hash).await.unwrap().unwrap();
+
+        // Verify message count
+        assert_eq!(
+            retrieved_block.messages().len(),
+            4,
+            "Expected 4 messages, got {}",
+            retrieved_block.messages().len()
+        );
+
+        // Verify messages are in correct order with matching data
+        for (i, (original, retrieved)) in
+            messages.iter().zip(retrieved_block.messages()).enumerate()
+        {
+            assert_eq!(
+                original.source(),
+                retrieved.source(),
+                "Message {} source mismatch",
+                i
+            );
+            assert_eq!(
+                original.incl_epoch(),
+                retrieved.incl_epoch(),
+                "Message {} epoch mismatch",
+                i
+            );
+            assert_eq!(
+                original.payload_buf(),
+                retrieved.payload_buf(),
+                "Message {} payload data mismatch",
+                i
+            );
+        }
+    }
+
+    /// Test that empty messages are handled correctly
+    pub async fn test_empty_messages(storage: &impl ExecBlockStorage) {
+        let hash = hash_from_u8(1);
+        let parent_hash = hash_from_u8(0);
+
+        // Create block with no messages (using original create_exec_block)
+        let block = create_exec_block(1, parent_hash, hash, 100);
+        let payload = ExecBlockPayload::from_bytes(vec![1, 2, 3, 4]);
+
+        // Save the block
+        storage.save_exec_block(block, payload).await.unwrap();
+
+        // Retrieve the block
+        let retrieved_block = storage.get_exec_block(hash).await.unwrap().unwrap();
+
+        // Verify no messages
+        assert!(
+            retrieved_block.messages().is_empty(),
+            "Expected empty messages, got {}",
+            retrieved_block.messages().len()
+        );
     }
 }

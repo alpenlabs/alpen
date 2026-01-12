@@ -35,7 +35,7 @@ impl From<u32> for OLBlockOrEpoch {
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 /// Persistence for EE Nodes
-pub trait Storage {
+pub trait Storage: Send + Sync {
     /// Get EE account internal state corresponding to a given OL slot.
     async fn ee_account_state(
         &self,

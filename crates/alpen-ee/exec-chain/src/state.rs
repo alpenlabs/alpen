@@ -56,12 +56,17 @@ impl ExecChainState {
 
     /// Returns the hash of the current best chain tip.
     pub fn tip_blockhash(&self) -> Hash {
-        self.unfinalized.best().hash
+        self.unfinalized.best().hash()
     }
 
     /// Returns the hash of the current finalized block.
     pub fn finalized_blockhash(&self) -> Hash {
-        self.unfinalized.finalized().hash
+        self.unfinalized.finalized().hash()
+    }
+
+    /// Returns the block number of the current finalized block.
+    pub fn finalized_blocknum(&self) -> u64 {
+        self.unfinalized.finalized().blocknum()
     }
 
     /// Appends a new block to the chain state.
@@ -101,7 +106,7 @@ impl ExecChainState {
             let blockhash = block.blockhash;
             match self.unfinalized.attach_block(block) {
                 AttachBlockRes::Ok(best) => {
-                    tip = best;
+                    tip = best.hash();
                     attachable_blocks.append(&mut self.orphans.take_children(&blockhash).into());
                 }
                 AttachBlockRes::ExistingBlock => {
@@ -119,7 +124,7 @@ impl ExecChainState {
     /// Returns the current best block record.
     pub(crate) fn get_best_block(&self) -> &ExecBlockRecord {
         self.blocks
-            .get(&self.unfinalized.best().hash)
+            .get(&self.unfinalized.best().hash())
             .expect("should exist")
     }
 
@@ -131,6 +136,13 @@ impl ExecChainState {
     /// Checks if a block exists in the orphan tracker.
     pub(crate) fn contains_orphan_block(&self, hash: &Hash) -> bool {
         self.orphans.has_block(hash)
+    }
+
+    /// Checks if a block is on the canonical chain.
+    ///
+    /// Returns `true` if the block is on the path from the finalized block to the best tip.
+    pub(crate) fn is_canonical(&self, hash: &Hash) -> bool {
+        self.unfinalized.is_canonical(hash)
     }
 
     /// Advances finalization to the given block and prunes stale blocks.
@@ -220,6 +232,7 @@ mod tests {
             0,
             parent_blockhash,
             0,
+            vec![],
         )
     }
 

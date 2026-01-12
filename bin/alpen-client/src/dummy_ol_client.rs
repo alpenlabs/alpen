@@ -3,12 +3,14 @@ use std::mem;
 // TODO: remove this "dummy" implementation once OL RPCs are ready and `RpcOLCLient`` can be
 // used instead.
 use alpen_ee_common::{
-    OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary, SequencerOLClient,
+    OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
+    SequencerOLClient,
 };
 use async_trait::async_trait;
+use strata_acct_types::Hash;
 use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
 use strata_primitives::EpochCommitment;
-use strata_snark_acct_types::SnarkAccountUpdate;
+use strata_snark_acct_types::{ProofState, Seqno, SnarkAccountUpdate};
 
 #[derive(Debug)]
 pub(crate) struct DummyOLClient {
@@ -66,6 +68,15 @@ impl SequencerOLClient for DummyOLClient {
             })
         }
         Ok(blocks)
+    }
+
+    async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError> {
+        let proof_state = ProofState::new(Hash::zero(), 0);
+        let seq_no = Seqno::zero();
+        Ok(OLAccountStateView {
+            seq_no,
+            proof_state,
+        })
     }
 
     async fn submit_update(&self, _update: SnarkAccountUpdate) -> Result<(), OLClientError> {
