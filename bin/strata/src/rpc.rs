@@ -17,7 +17,8 @@ use strata_ledger_types::{
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
 use strata_rpc_api_new::OLClientRpcServer;
 use strata_rpc_types_new::{
-    RpcAccountBlockSummary, RpcAccountEpochSummary, RpcOLChainStatus, RpcOLTransaction,
+    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcOLChainStatus,
+    RpcOLTransaction, RpcSnarkAccountState,
 };
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
@@ -328,6 +329,111 @@ impl OLClientRpcServer for OLRpcServer {
             .map_err(map_mempool_error_to_rpc)?;
 
         Ok(txid)
+    }
+
+    async fn get_snark_account_state(
+        &self,
+        account_id: AccountId,
+        block_or_tag: OLBlockOrTag,
+    ) -> RpcResult<Option<RpcSnarkAccountState>> {
+        // Resolve block_or_tag to a block commitment
+        let block_commitment = match block_or_tag {
+            OLBlockOrTag::Latest => {
+                let chain_sync_status = self
+                    .status_channel
+                    .get_chain_sync_status()
+                    .ok_or_else(|| internal_error("Chain sync status not available"))?;
+                chain_sync_status.tip
+            }
+            OLBlockOrTag::Confirmed => {
+                let chain_sync_status = self
+                    .status_channel
+                    .get_chain_sync_status()
+                    .ok_or_else(|| internal_error("Chain sync status not available"))?;
+                chain_sync_status.prev_epoch.to_block_commitment()
+            }
+            OLBlockOrTag::Finalized => {
+                let chain_sync_status = self
+                    .status_channel
+                    .get_chain_sync_status()
+                    .ok_or_else(|| internal_error("Chain sync status not available"))?;
+                chain_sync_status.finalized_epoch.to_block_commitment()
+            }
+            OLBlockOrTag::OLBlockId(block_id) => {
+                let block = self
+                    .storage
+                    .ol_block()
+                    .get_block_data_async(block_id)
+                    .await
+                    .map_err(|e| {
+                        error!(?e, %block_id, "Failed to get block data");
+                        db_error(e)
+                    })?
+                    .ok_or_else(|| not_found_error(format!("Block {block_id} not found")))?;
+                OLBlockCommitment::new(block.header().slot(), block_id)
+            }
+            OLBlockOrTag::Slot(slot) => {
+                let block_ids = self
+                    .storage
+                    .ol_block()
+                    .get_blocks_at_height_async(slot)
+                    .await
+                    .map_err(|e| {
+                        error!(?e, slot, "Failed to get blocks at slot");
+                        db_error(e)
+                    })?;
+                let block_id = block_ids
+                    .first()
+                    .copied()
+                    .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
+                OLBlockCommitment::new(slot, block_id)
+            }
+        };
+
+        // Get OL state at the resolved block
+        let ol_state = self
+            .storage
+            .ol_state()
+            .get_toplevel_ol_state_async(block_commitment)
+            .await
+            .map_err(|e| {
+                error!(?e, %block_commitment, "Failed to get OL state");
+                db_error(e)
+            })?
+            .ok_or_else(|| {
+                not_found_error(format!("No OL state found for block {block_commitment}"))
+            })?;
+
+        // Get account state
+        let account_state = match ol_state.get_account_state(account_id) {
+            Ok(Some(state)) => state,
+            Ok(None) => return Ok(None), // Account doesn't exist
+            Err(e) => {
+                error!(?e, %account_id, "Failed to get account state");
+                return Err(internal_error(format!("Account error: {e}")));
+            }
+        };
+
+        // Try to get snark account state; return None if not a snark account
+        match account_state.as_snark_account() {
+            Ok(snark_state) => {
+                // Manually construct RpcSnarkAccountState from the native state
+                // Note: update_vk is not available from NativeSnarkAccountState (it's stored
+                // as account metadata, not runtime state), so we return an empty vec for now
+                let seq_no: u64 = *snark_state.seqno().inner();
+                let inner_state = snark_state.inner_state_root().0.into();
+                let next_inbox_msg_idx = snark_state.get_next_inbox_msg_idx();
+                let update_vk = vec![].into(); // Not available from native state
+
+                Ok(Some(RpcSnarkAccountState::new(
+                    seq_no,
+                    inner_state,
+                    next_inbox_msg_idx,
+                    update_vk,
+                )))
+            }
+            Err(_) => Ok(None), // Not a snark account
+        }
     }
 }
 
