@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 alpen-reth-db.workspace = true
-alpen-reth-statediff.workspace = true
+alpen-reth-statediff = { workspace = true, features = ["serde"] }
 strata-proofimpl-evm-ee-stf.workspace = true
 strata-rpc-utils.workspace = true
 

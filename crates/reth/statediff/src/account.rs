@@ -2,14 +2,13 @@
 
 use alloy_primitives::U256;
 use revm_primitives::B256;
-use serde::{Deserialize, Serialize};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{BuilderError, ContextlessDaWrite, DaError, DaRegister, DaWrite};
 
 use crate::codec::{CodecB256, CodecU256};
 
 /// Represents the EE account state that DA diffs are applied to.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DaAccountState {
     pub balance: CodecU256,
     pub nonce: u64,
@@ -39,46 +38,6 @@ pub struct DaAccountDiff {
     pub nonce_incr: Option<u8>,
     /// Code hash change (only on contract creation).
     pub code_hash: DaRegister<CodecB256>,
-}
-
-/// Serde-friendly representation of DaAccountDiff for RPC.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct DaAccountDiffSerde {
-    /// New balance value (None = unchanged).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub balance: Option<U256>,
-    /// Nonce increment (None = unchanged).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nonce_incr: Option<u8>,
-    /// New code hash (None = unchanged).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_hash: Option<B256>,
-}
-
-impl From<&DaAccountDiff> for DaAccountDiffSerde {
-    fn from(diff: &DaAccountDiff) -> Self {
-        Self {
-            balance: diff.balance.new_value().map(|v| v.0),
-            nonce_incr: diff.nonce_incr,
-            code_hash: diff.code_hash.new_value().map(|v| v.0),
-        }
-    }
-}
-
-impl From<DaAccountDiffSerde> for DaAccountDiff {
-    fn from(serde: DaAccountDiffSerde) -> Self {
-        Self {
-            balance: serde
-                .balance
-                .map(|v| DaRegister::new_set(CodecU256(v)))
-                .unwrap_or_else(DaRegister::new_unset),
-            nonce_incr: serde.nonce_incr,
-            code_hash: serde
-                .code_hash
-                .map(|v| DaRegister::new_set(CodecB256(v)))
-                .unwrap_or_else(DaRegister::new_unset),
-        }
-    }
 }
 
 impl DaAccountDiff {
@@ -216,35 +175,6 @@ pub enum DaAccountChange {
     Updated(DaAccountDiff),
     /// Account was deleted (selfdestructed).
     Deleted,
-}
-
-/// Serde-friendly representation of DaAccountChange for RPC.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum DaAccountChangeSerde {
-    Created(DaAccountDiffSerde),
-    Updated(DaAccountDiffSerde),
-    Deleted,
-}
-
-impl From<&DaAccountChange> for DaAccountChangeSerde {
-    fn from(change: &DaAccountChange) -> Self {
-        match change {
-            DaAccountChange::Created(diff) => Self::Created(diff.into()),
-            DaAccountChange::Updated(diff) => Self::Updated(diff.into()),
-            DaAccountChange::Deleted => Self::Deleted,
-        }
-    }
-}
-
-impl From<DaAccountChangeSerde> for DaAccountChange {
-    fn from(serde: DaAccountChangeSerde) -> Self {
-        match serde {
-            DaAccountChangeSerde::Created(diff) => Self::Created(diff.into()),
-            DaAccountChangeSerde::Updated(diff) => Self::Updated(diff.into()),
-            DaAccountChangeSerde::Deleted => Self::Deleted,
-        }
-    }
 }
 
 impl DaAccountChange {

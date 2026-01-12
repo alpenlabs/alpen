@@ -3,13 +3,9 @@
 use std::collections::BTreeMap;
 
 use revm_primitives::{Address, B256};
-use serde::{Deserialize, Serialize};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
-use crate::{
-    account::{DaAccountChange, DaAccountChangeSerde},
-    storage::DaAccountStorageDiff,
-};
+use crate::{account::DaAccountChange, storage::DaAccountStorageDiff};
 
 /// Complete EE state diff for a batch, using DA framework types.
 #[derive(Clone, Debug, Default)]
@@ -21,51 +17,6 @@ pub struct DaEeStateDiff {
     /// Code hashes of deployed contracts (deduplicated).
     /// Full bytecode can be fetched from DB using these hashes.
     pub deployed_code_hashes: Vec<B256>,
-}
-
-/// Serde-friendly representation of DaEeStateDiff for RPC.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct DaEeStateDiffSerde {
-    /// Account changes, sorted by address.
-    pub accounts: BTreeMap<Address, DaAccountChangeSerde>,
-    /// Storage slot changes per account.
-    pub storage: BTreeMap<Address, DaAccountStorageDiff>,
-    /// Code hashes of deployed contracts.
-    pub deployed_code_hashes: Vec<B256>,
-}
-
-impl From<&DaEeStateDiff> for DaEeStateDiffSerde {
-    fn from(diff: &DaEeStateDiff) -> Self {
-        Self {
-            accounts: diff.accounts.iter().map(|(k, v)| (*k, v.into())).collect(),
-            storage: diff.storage.clone(),
-            deployed_code_hashes: diff.deployed_code_hashes.clone(),
-        }
-    }
-}
-
-impl From<DaEeStateDiff> for DaEeStateDiffSerde {
-    fn from(diff: DaEeStateDiff) -> Self {
-        Self {
-            accounts: diff.accounts.iter().map(|(k, v)| (*k, v.into())).collect(),
-            storage: diff.storage,
-            deployed_code_hashes: diff.deployed_code_hashes,
-        }
-    }
-}
-
-impl From<DaEeStateDiffSerde> for DaEeStateDiff {
-    fn from(serde: DaEeStateDiffSerde) -> Self {
-        Self {
-            accounts: serde
-                .accounts
-                .into_iter()
-                .map(|(k, v)| (k, v.into()))
-                .collect(),
-            storage: serde.storage,
-            deployed_code_hashes: serde.deployed_code_hashes,
-        }
-    }
 }
 
 impl DaEeStateDiff {

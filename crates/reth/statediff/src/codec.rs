@@ -2,11 +2,10 @@
 
 use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
-use serde::{Deserialize, Serialize};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 /// Wrapper for U256 that implements `Codec`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CodecU256(pub U256);
 
 impl Codec for CodecU256 {
@@ -34,7 +33,7 @@ impl From<CodecU256> for U256 {
 }
 
 /// Wrapper for B256 that implements `Codec`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CodecB256(pub B256);
 
 impl Codec for CodecB256 {
@@ -62,7 +61,7 @@ impl From<CodecB256> for B256 {
 }
 
 /// Wrapper for Address that implements `Codec`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CodecAddress(pub Address);
 
 impl Codec for CodecAddress {

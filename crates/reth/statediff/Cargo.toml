@@ -10,12 +10,17 @@ workspace = true
 alloy-primitives.workspace = true
 alpen-chainspec.workspace = true
 eyre.workspace = true
-revm = { workspace = true, features = ["serde"] }
+revm.workspace = true
 revm-primitives.workspace = true
-serde.workspace = true
+serde = { workspace = true, optional = true }
 strata-codec.workspace = true
 strata-da-framework.workspace = true
 strata-mpt.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]

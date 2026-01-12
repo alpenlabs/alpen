@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use alloy_primitives::U256;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
@@ -10,7 +11,8 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 ///
 /// Uses a sorted map for deterministic encoding.
 /// Each slot value is encoded as a register (full replacement).
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DaAccountStorageDiff {
     /// Changed storage slots: slot_key -> new_value (None = deleted/zeroed).
     slots: BTreeMap<U256, Option<U256>>,
