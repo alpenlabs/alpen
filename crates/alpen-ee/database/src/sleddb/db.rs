@@ -590,12 +590,12 @@ impl EeNodeDb for EeNodeDBSled {
     fn update_batch_status(&self, batch_id: BatchId, status: BatchStatus) -> DbResult<()> {
         let db_batch_id: DBBatchId = batch_id.into();
 
-        // Look up idx by id (outside transaction is fine - idx mapping is stable)
+        // Look up idx by id
         let Some(idx) = self.batch_id_to_idx_tree.get(&db_batch_id)? else {
             return Err(DbError::BatchNotFound(batch_id));
         };
 
-        // Use transaction for read-modify-write to prevent race conditions
+        // Use transaction for read-modify-write; verify batch_id inside to guard against reorgs
         (&self.batch_by_idx_tree,).transaction_with_retry(
             self.config.backoff.as_ref(),
             self.config.retry_count.into(),
@@ -607,6 +607,12 @@ impl EeNodeDb for EeNodeDBSled {
                 let parts_result: Result<(Batch, BatchStatus), _> = current.into_parts();
                 let (batch, _old_status) = parts_result
                     .map_err(|e| TSledError::abort(DbError::BatchDeserialize(e.to_string())))?;
+
+                // Verify we're updating the correct batch (guards against reorg race)
+                if batch.id() != batch_id {
+                    abort(DbError::BatchNotFound(batch_id))?
+                }
+
                 let updated = DBBatchWithStatus::new(batch, status.clone());
 
                 batch_tree.insert(&idx, &updated)?;
@@ -714,12 +720,12 @@ impl EeNodeDb for EeNodeDBSled {
     fn update_chunk_status(&self, chunk_id: ChunkId, status: ChunkStatus) -> DbResult<()> {
         let db_chunk_id: DBChunkId = chunk_id.into();
 
-        // Look up idx by id (outside transaction is fine - idx mapping is stable)
+        // Look up idx by id
         let Some(idx) = self.chunk_id_to_idx_tree.get(&db_chunk_id)? else {
             return Err(DbError::ChunkNotFound(chunk_id));
         };
 
-        // Use transaction for read-modify-write to prevent race conditions
+        // Use transaction for read-modify-write; verify chunk_id inside to guard against reorgs
         (&self.chunk_by_idx_tree,).transaction_with_retry(
             self.config.backoff.as_ref(),
             self.config.retry_count.into(),
@@ -729,6 +735,12 @@ impl EeNodeDb for EeNodeDBSled {
                 };
 
                 let (chunk, _old_status) = current.into_parts();
+
+                // Verify we're updating the correct chunk (guards against reorg race)
+                if chunk.id() != chunk_id {
+                    abort(DbError::ChunkNotFound(chunk_id))?
+                }
+
                 let updated = DBChunkWithStatus::new(chunk, status.clone());
 
                 chunk_tree.insert(&idx, &updated)?;
