@@ -19,6 +19,7 @@ strata-snark-acct-types.workspace = true
 strata-storage.workspace = true
 
 async-trait.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

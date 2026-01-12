@@ -14785,6 +14785,7 @@ name = "strata-ol-block-assembly"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "serde",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-db-store-sled",
