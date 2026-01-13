@@ -1,5 +1,7 @@
 //! OL genesis initialization for the new strata binary.
 
+// TODO: Move this to a "node" crate when it's ready.
+
 use anyhow::Result;
 use strata_asm_common::AsmManifest;
 use strata_db_types::traits::BlockStatus;
