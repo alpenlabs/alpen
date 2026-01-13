@@ -95,6 +95,10 @@ impl RollupParams {
             return Err(ParamsError::ZeroProperty("deposit_amount"));
         }
 
+        if self.recovery_delay == 0 {
+            return Err(ParamsError::ZeroProperty("recovery_delay"));
+        }
+
         if self.dispatch_assignment_dur == 0 {
             return Err(ParamsError::ZeroProperty("dispatch_assignment_dur"));
         }
