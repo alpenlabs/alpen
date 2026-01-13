@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 alpen-reth-statediff.workspace = true
-strata-codec.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true

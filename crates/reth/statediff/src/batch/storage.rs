@@ -13,12 +13,12 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder};
 /// Each slot value is encoded as a register (full replacement).
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct DaAccountStorageDiff {
+pub struct StorageDiff {
     /// Changed storage slots: slot_key -> new_value (None = deleted/zeroed).
     slots: BTreeMap<U256, Option<U256>>,
 }
 
-impl DaAccountStorageDiff {
+impl StorageDiff {
     pub fn new() -> Self {
         Self::default()
     }
@@ -53,7 +53,7 @@ impl DaAccountStorageDiff {
     }
 }
 
-impl Codec for DaAccountStorageDiff {
+impl Codec for StorageDiff {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode count as varint (u32 should be enough)
         (self.slots.len() as u32).encode(enc)?;
@@ -108,13 +108,13 @@ mod tests {
 
     #[test]
     fn test_storage_diff_roundtrip() {
-        let mut diff = DaAccountStorageDiff::new();
+        let mut diff = StorageDiff::new();
         diff.set_slot(U256::from(1), U256::from(100));
         diff.set_slot(U256::from(2), U256::from(200));
         diff.delete_slot(U256::from(3));
 
         let encoded = encode_to_vec(&diff).unwrap();
-        let decoded: DaAccountStorageDiff = decode_buf_exact(&encoded).unwrap();
+        let decoded: StorageDiff = decode_buf_exact(&encoded).unwrap();
 
         assert_eq!(decoded.len(), 3);
         assert_eq!(

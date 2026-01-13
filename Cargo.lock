@@ -1304,7 +1304,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sled",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-proofimpl-evm-ee-stf",
@@ -1452,6 +1451,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-chainspec",
+ "bincode",
  "eyre",
  "revm",
  "revm-primitives",

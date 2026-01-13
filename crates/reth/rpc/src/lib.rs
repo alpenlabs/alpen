@@ -4,7 +4,7 @@ pub mod eth;
 mod rpc;
 pub mod sequencer;
 
-use alpen_reth_statediff::DaEeStateDiffSerde;
+use alpen_reth_statediff::BatchStateDiffSerde;
 pub use eth::{AlpenEthApi, StrataNodeCore};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use revm_primitives::alloy_primitives::B256;
@@ -27,7 +27,7 @@ pub trait StrataRpcApi {
 
     /// Returns the state diff for the block in DA-optimized format.
     #[method(name = "getBlockStateDiff")]
-    fn get_block_state_diff(&self, block_hash: B256) -> RpcResult<Option<DaEeStateDiffSerde>>;
+    fn get_block_state_diff(&self, block_hash: B256) -> RpcResult<Option<BatchStateDiffSerde>>;
 
     /// Returns the state root for the block_number as reconstructured from the state diffs.
     #[method(name = "getStateRootByDiffs")]
@@ -39,7 +39,7 @@ pub trait StrataRpcApi {
         &self,
         from_block: u64,
         to_block: u64,
-    ) -> RpcResult<Option<DaEeStateDiffSerde>>;
+    ) -> RpcResult<Option<BatchStateDiffSerde>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

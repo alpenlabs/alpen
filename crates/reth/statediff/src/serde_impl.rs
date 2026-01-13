@@ -1,6 +1,6 @@
 //! Serde-friendly types for RPC serialization.
 //!
-//! These types provide clean JSON representations of the DA state diff types.
+//! These types provide clean JSON representations of the batch state diff types.
 
 use std::collections::BTreeMap;
 
@@ -10,15 +10,13 @@ use serde::{Deserialize, Serialize};
 use strata_da_framework::DaRegister;
 
 use crate::{
-    account::{DaAccountChange, DaAccountDiff},
+    batch::{AccountChange, AccountDiff, BatchStateDiff, StorageDiff},
     codec::{CodecB256, CodecU256},
-    diff::DaEeStateDiff,
-    storage::DaAccountStorageDiff,
 };
 
-/// Serde-friendly representation of DaAccountDiff for RPC.
+/// Serde-friendly representation of [`AccountDiff`] for RPC.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct DaAccountDiffSerde {
+pub struct AccountDiffSerde {
     /// New balance value (None = unchanged).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub balance: Option<U256>,
@@ -30,8 +28,8 @@ pub struct DaAccountDiffSerde {
     pub code_hash: Option<B256>,
 }
 
-impl From<&DaAccountDiff> for DaAccountDiffSerde {
-    fn from(diff: &DaAccountDiff) -> Self {
+impl From<&AccountDiff> for AccountDiffSerde {
+    fn from(diff: &AccountDiff) -> Self {
         Self {
             balance: diff.balance.new_value().map(|v| v.0),
             nonce_incr: diff.nonce_incr,
@@ -40,8 +38,8 @@ impl From<&DaAccountDiff> for DaAccountDiffSerde {
     }
 }
 
-impl From<DaAccountDiffSerde> for DaAccountDiff {
-    fn from(serde: DaAccountDiffSerde) -> Self {
+impl From<AccountDiffSerde> for AccountDiff {
+    fn from(serde: AccountDiffSerde) -> Self {
         Self {
             balance: serde
                 .balance
@@ -56,48 +54,48 @@ impl From<DaAccountDiffSerde> for DaAccountDiff {
     }
 }
 
-/// Serde-friendly representation of DaAccountChange for RPC.
+/// Serde-friendly representation of [`AccountChange`] for RPC.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum DaAccountChangeSerde {
-    Created(DaAccountDiffSerde),
-    Updated(DaAccountDiffSerde),
+pub enum AccountChangeSerde {
+    Created(AccountDiffSerde),
+    Updated(AccountDiffSerde),
     Deleted,
 }
 
-impl From<&DaAccountChange> for DaAccountChangeSerde {
-    fn from(change: &DaAccountChange) -> Self {
+impl From<&AccountChange> for AccountChangeSerde {
+    fn from(change: &AccountChange) -> Self {
         match change {
-            DaAccountChange::Created(diff) => Self::Created(diff.into()),
-            DaAccountChange::Updated(diff) => Self::Updated(diff.into()),
-            DaAccountChange::Deleted => Self::Deleted,
+            AccountChange::Created(diff) => Self::Created(diff.into()),
+            AccountChange::Updated(diff) => Self::Updated(diff.into()),
+            AccountChange::Deleted => Self::Deleted,
         }
     }
 }
 
-impl From<DaAccountChangeSerde> for DaAccountChange {
-    fn from(serde: DaAccountChangeSerde) -> Self {
+impl From<AccountChangeSerde> for AccountChange {
+    fn from(serde: AccountChangeSerde) -> Self {
         match serde {
-            DaAccountChangeSerde::Created(diff) => Self::Created(diff.into()),
-            DaAccountChangeSerde::Updated(diff) => Self::Updated(diff.into()),
-            DaAccountChangeSerde::Deleted => Self::Deleted,
+            AccountChangeSerde::Created(diff) => Self::Created(diff.into()),
+            AccountChangeSerde::Updated(diff) => Self::Updated(diff.into()),
+            AccountChangeSerde::Deleted => Self::Deleted,
         }
     }
 }
 
-/// Serde-friendly representation of DaEeStateDiff for RPC.
+/// Serde-friendly representation of [`BatchStateDiff`] for RPC.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct DaEeStateDiffSerde {
+pub struct BatchStateDiffSerde {
     /// Account changes, sorted by address.
-    pub accounts: BTreeMap<Address, DaAccountChangeSerde>,
+    pub accounts: BTreeMap<Address, AccountChangeSerde>,
     /// Storage slot changes per account.
-    pub storage: BTreeMap<Address, DaAccountStorageDiff>,
+    pub storage: BTreeMap<Address, StorageDiff>,
     /// Code hashes of deployed contracts.
     pub deployed_code_hashes: Vec<B256>,
 }
 
-impl From<&DaEeStateDiff> for DaEeStateDiffSerde {
-    fn from(diff: &DaEeStateDiff) -> Self {
+impl From<&BatchStateDiff> for BatchStateDiffSerde {
+    fn from(diff: &BatchStateDiff) -> Self {
         Self {
             accounts: diff.accounts.iter().map(|(k, v)| (*k, v.into())).collect(),
             storage: diff.storage.clone(),
@@ -106,8 +104,8 @@ impl From<&DaEeStateDiff> for DaEeStateDiffSerde {
     }
 }
 
-impl From<DaEeStateDiff> for DaEeStateDiffSerde {
-    fn from(diff: DaEeStateDiff) -> Self {
+impl From<BatchStateDiff> for BatchStateDiffSerde {
+    fn from(diff: BatchStateDiff) -> Self {
         Self {
             accounts: diff.accounts.iter().map(|(k, v)| (*k, v.into())).collect(),
             storage: diff.storage,
@@ -116,8 +114,8 @@ impl From<DaEeStateDiff> for DaEeStateDiffSerde {
     }
 }
 
-impl From<DaEeStateDiffSerde> for DaEeStateDiff {
-    fn from(serde: DaEeStateDiffSerde) -> Self {
+impl From<BatchStateDiffSerde> for BatchStateDiff {
+    fn from(serde: BatchStateDiffSerde) -> Self {
         Self {
             accounts: serde
                 .accounts
@@ -136,20 +134,19 @@ mod tests {
     use revm_primitives::{Address, B256};
 
     use super::*;
-    use crate::account::DaAccountDiff;
 
     #[test]
     fn test_account_diff_serde_roundtrip() {
-        let diff = DaAccountDiff::new_created(U256::from(1000), 5, B256::from([0x11u8; 32]));
+        let diff = AccountDiff::new_created(U256::from(1000), 5, B256::from([0x11u8; 32]));
 
         // Convert to serde type
-        let serde: DaAccountDiffSerde = (&diff).into();
+        let serde: AccountDiffSerde = (&diff).into();
         assert_eq!(serde.balance, Some(U256::from(1000)));
         assert_eq!(serde.nonce_incr, Some(5));
         assert_eq!(serde.code_hash, Some(B256::from([0x11u8; 32])));
 
         // Convert back
-        let roundtrip: DaAccountDiff = serde.into();
+        let roundtrip: AccountDiff = serde.into();
         assert_eq!(roundtrip.balance.new_value().unwrap().0, U256::from(1000));
         assert_eq!(roundtrip.nonce_incr, Some(5));
         assert_eq!(
@@ -161,38 +158,38 @@ mod tests {
     #[test]
     fn test_account_change_serde_created() {
         let change =
-            DaAccountChange::Created(DaAccountDiff::new_created(U256::from(500), 1, B256::ZERO));
+            AccountChange::Created(AccountDiff::new_created(U256::from(500), 1, B256::ZERO));
 
-        let serde: DaAccountChangeSerde = (&change).into();
+        let serde: AccountChangeSerde = (&change).into();
         let json = serde_json::to_string(&serde).unwrap();
         assert!(json.contains(r#""type":"created""#));
 
-        let roundtrip: DaAccountChange = serde.into();
-        matches!(roundtrip, DaAccountChange::Created(_));
+        let roundtrip: AccountChange = serde.into();
+        matches!(roundtrip, AccountChange::Created(_));
     }
 
     #[test]
     fn test_account_change_serde_deleted() {
-        let change = DaAccountChange::Deleted;
+        let change = AccountChange::Deleted;
 
-        let serde: DaAccountChangeSerde = (&change).into();
+        let serde: AccountChangeSerde = (&change).into();
         let json = serde_json::to_string(&serde).unwrap();
         assert!(json.contains(r#""type":"deleted""#));
 
-        let roundtrip: DaAccountChange = serde.into();
-        matches!(roundtrip, DaAccountChange::Deleted);
+        let roundtrip: AccountChange = serde.into();
+        matches!(roundtrip, AccountChange::Deleted);
     }
 
     #[test]
-    fn test_ee_state_diff_serde_json() {
-        let mut diff = DaEeStateDiff::new();
+    fn test_batch_state_diff_serde_json() {
+        let mut diff = BatchStateDiff::new();
         diff.accounts.insert(
             Address::from([0x11u8; 20]),
-            DaAccountChange::Created(DaAccountDiff::new_created(U256::from(1000), 1, B256::ZERO)),
+            AccountChange::Created(AccountDiff::new_created(U256::from(1000), 1, B256::ZERO)),
         );
         diff.deployed_code_hashes.push(B256::from([0x22u8; 32]));
 
-        let serde: DaEeStateDiffSerde = (&diff).into();
+        let serde: BatchStateDiffSerde = (&diff).into();
         let json = serde_json::to_string_pretty(&serde).unwrap();
 
         // Verify JSON structure
@@ -201,8 +198,8 @@ mod tests {
         assert!(json.contains("deployed_code_hashes"));
 
         // Deserialize back
-        let parsed: DaEeStateDiffSerde = serde_json::from_str(&json).unwrap();
-        let roundtrip: DaEeStateDiff = parsed.into();
+        let parsed: BatchStateDiffSerde = serde_json::from_str(&json).unwrap();
+        let roundtrip: BatchStateDiff = parsed.into();
 
         assert_eq!(roundtrip.accounts.len(), 1);
         assert_eq!(roundtrip.deployed_code_hashes.len(), 1);

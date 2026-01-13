@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use alpen_reth_statediff::DaEeStateDiff;
+use alpen_reth_statediff::BlockStateDiff;
 use revm_primitives::alloy_primitives::B256;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
-use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
 
@@ -74,18 +73,18 @@ impl WitnessStore for WitnessDB {
 }
 
 impl StateDiffProvider for WitnessDB {
-    fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<DaEeStateDiff>> {
+    fn get_state_diff_by_hash(&self, block_hash: B256) -> DbResult<Option<BlockStateDiff>> {
         let raw = self.state_diff_tree.get(&block_hash)?;
 
-        let parsed: Option<DaEeStateDiff> = raw
-            .map(|bytes| decode_buf_exact::<DaEeStateDiff>(&bytes))
+        let parsed: Option<BlockStateDiff> = raw
+            .map(|bytes| bincode::deserialize(&bytes))
             .transpose()
             .map_err(|err| DbError::CodecError(err.to_string()))?;
 
         Ok(parsed)
     }
 
-    fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<DaEeStateDiff>> {
+    fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<BlockStateDiff>> {
         let block_hash = self
             .block_hash_by_number_tree
             .get(&block_number)
@@ -104,12 +103,12 @@ impl StateDiffStore for WitnessDB {
         &self,
         block_hash: B256,
         block_number: u64,
-        state_diff: &DaEeStateDiff,
+        state_diff: &BlockStateDiff,
     ) -> DbResult<()> {
         (&self.block_hash_by_number_tree, &self.state_diff_tree)
             .transaction(|(bht, sdt)| -> ConflictableTransactionResult<(), Error> {
                 bht.insert(&block_number, &block_hash.to_vec())?;
-                let serialized = match encode_to_vec(state_diff) {
+                let serialized = match bincode::serialize(state_diff) {
                     Ok(data) => data,
                     Err(err) => {
                         return Err(ConflictableTransactionError::Abort(
@@ -135,9 +134,9 @@ mod tests {
     use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
 
     use alpen_reth_statediff::{
-        DaAccountChange, DaAccountDiff, DaAccountStorageDiff, DaEeStateDiff,
+        AccountSnapshot, BlockAccountChange, BlockStateDiff, BlockStorageDiff,
     };
-    use revm_primitives::{address, fixed_bytes, FixedBytes, U256};
+    use revm_primitives::{address, fixed_bytes, FixedBytes, KECCAK_EMPTY, U256};
     use serde::Deserialize;
     use strata_proofimpl_evm_ee_stf::primitives::{EvmBlockStfInput, EvmBlockStfOutput};
     use typed_sled::SledDb;
@@ -174,22 +173,31 @@ mod tests {
         WitnessDB::new(db).unwrap()
     }
 
-    fn test_state_diff() -> DaEeStateDiff {
+    fn test_state_diff() -> BlockStateDiff {
         let mut accounts = BTreeMap::new();
         accounts.insert(
             address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045"),
-            DaAccountChange::Created(DaAccountDiff::new_created(U256::from(1000), 1, B256::ZERO)),
+            BlockAccountChange {
+                original: None,
+                current: Some(AccountSnapshot {
+                    balance: U256::from(1000),
+                    nonce: 1,
+                    code_hash: KECCAK_EMPTY,
+                }),
+            },
         );
 
         let mut storage = BTreeMap::new();
-        let mut slots = DaAccountStorageDiff::new();
-        slots.set_slot(U256::from(1), U256::from(100));
+        let mut slots = BlockStorageDiff::new();
+        slots
+            .slots
+            .insert(U256::from(1), (U256::ZERO, U256::from(100)));
         storage.insert(
             address!("0xd8da6bf26964af9d7eed9e03e53415d37aa96045"),
             slots,
         );
 
-        DaEeStateDiff {
+        BlockStateDiff {
             accounts,
             storage,
             deployed_code_hashes: vec![],
@@ -294,7 +302,7 @@ mod tests {
         let received_state_diff = db.get_state_diff_by_hash(block_hash);
         assert!(matches!(
             received_state_diff,
-            Ok(Some(DaEeStateDiff { .. }))
+            Ok(Some(BlockStateDiff { .. }))
         ));
 
         // deleting existing block is ok

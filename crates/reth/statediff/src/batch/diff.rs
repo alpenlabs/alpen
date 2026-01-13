@@ -1,25 +1,28 @@
-//! Main EE state diff types for DA encoding.
+//! Main batch state diff type for DA encoding.
 
 use std::collections::BTreeMap;
 
 use revm_primitives::{Address, B256};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
-use crate::{account::DaAccountChange, storage::DaAccountStorageDiff};
+use super::{AccountChange, StorageDiff};
 
-/// Complete EE state diff for a batch, using DA framework types.
+/// Complete state diff for a batch, optimized for DA encoding.
+///
+/// This is the type that gets posted to the DA layer. It represents
+/// the net change over a range of blocks, with reverts already filtered out.
 #[derive(Clone, Debug, Default)]
-pub struct DaEeStateDiff {
+pub struct BatchStateDiff {
     /// Account changes, sorted by address for deterministic encoding.
-    pub accounts: BTreeMap<Address, DaAccountChange>,
+    pub accounts: BTreeMap<Address, AccountChange>,
     /// Storage slot changes per account, sorted by address.
-    pub storage: BTreeMap<Address, DaAccountStorageDiff>,
+    pub storage: BTreeMap<Address, StorageDiff>,
     /// Code hashes of deployed contracts (deduplicated).
     /// Full bytecode can be fetched from DB using these hashes.
     pub deployed_code_hashes: Vec<B256>,
 }
 
-impl DaEeStateDiff {
+impl BatchStateDiff {
     pub fn new() -> Self {
         Self::default()
     }
@@ -28,38 +31,9 @@ impl DaEeStateDiff {
     pub fn is_empty(&self) -> bool {
         self.accounts.is_empty() && self.storage.is_empty() && self.deployed_code_hashes.is_empty()
     }
-
-    /// Merges another diff into this one.
-    ///
-    /// Later changes override earlier ones. Used for batch aggregation.
-    pub fn merge(&mut self, other: &DaEeStateDiff) {
-        // Merge accounts - later changes override
-        for (addr, change) in &other.accounts {
-            self.accounts.insert(*addr, change.clone());
-        }
-
-        // Merge storage - later slot values override
-        for (addr, other_storage) in &other.storage {
-            let storage = self.storage.entry(*addr).or_default();
-            for (key, value) in other_storage.iter() {
-                if let Some(v) = value {
-                    storage.set_slot(*key, *v);
-                } else {
-                    storage.delete_slot(*key);
-                }
-            }
-        }
-
-        // Merge deployed code hashes (deduplicate)
-        for hash in &other.deployed_code_hashes {
-            if !self.deployed_code_hashes.contains(hash) {
-                self.deployed_code_hashes.push(*hash);
-            }
-        }
-    }
 }
 
-impl Codec for DaEeStateDiff {
+impl Codec for BatchStateDiff {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode accounts (sorted by BTreeMap)
         (self.accounts.len() as u32).encode(enc)?;
@@ -92,7 +66,7 @@ impl Codec for DaEeStateDiff {
             let mut addr_buf = [0u8; 20];
             dec.read_buf(&mut addr_buf)?;
             let addr = Address::from(addr_buf);
-            let change = DaAccountChange::decode(dec)?;
+            let change = AccountChange::decode(dec)?;
             accounts.insert(addr, change);
         }
 
@@ -103,7 +77,7 @@ impl Codec for DaEeStateDiff {
             let mut addr_buf = [0u8; 20];
             dec.read_buf(&mut addr_buf)?;
             let addr = Address::from(addr_buf);
-            let storage_diff = DaAccountStorageDiff::decode(dec)?;
+            let storage_diff = StorageDiff::decode(dec)?;
             storage.insert(addr, storage_diff);
         }
 
@@ -130,16 +104,16 @@ mod tests {
     use strata_codec::{decode_buf_exact, encode_to_vec};
 
     use super::*;
-    use crate::account::DaAccountDiff;
+    use crate::batch::AccountDiff;
 
     #[test]
-    fn test_ee_state_diff_roundtrip() {
-        let mut diff = DaEeStateDiff::new();
+    fn test_batch_state_diff_roundtrip() {
+        let mut diff = BatchStateDiff::new();
 
         // Add account change
         diff.accounts.insert(
             Address::from([0x11u8; 20]),
-            DaAccountChange::Created(DaAccountDiff::new_created(
+            AccountChange::Created(AccountDiff::new_created(
                 U256::from(1000),
                 1,
                 B256::from([0x22u8; 32]),
@@ -147,7 +121,7 @@ mod tests {
         );
 
         // Add storage change
-        let mut storage = DaAccountStorageDiff::new();
+        let mut storage = StorageDiff::new();
         storage.set_slot(U256::from(1), U256::from(100));
         diff.storage.insert(Address::from([0x11u8; 20]), storage);
 
@@ -155,7 +129,7 @@ mod tests {
         diff.deployed_code_hashes.push(B256::from([0x33u8; 32]));
 
         let encoded = encode_to_vec(&diff).unwrap();
-        let decoded: DaEeStateDiff = decode_buf_exact(&encoded).unwrap();
+        let decoded: BatchStateDiff = decode_buf_exact(&encoded).unwrap();
 
         assert_eq!(decoded.accounts.len(), 1);
         assert_eq!(decoded.storage.len(), 1);
@@ -165,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_empty_diff_size() {
-        let diff = DaEeStateDiff::new();
+        let diff = BatchStateDiff::new();
         let encoded = encode_to_vec(&diff).unwrap();
         // Should be minimal: 3 u32 counts (0, 0, 0) = 3 bytes minimum
         assert!(encoded.len() <= 12);

@@ -1,29 +1,14 @@
-//! Account state and diff types for DA encoding.
+//! Account diff types for DA encoding.
 
 use alloy_primitives::U256;
-use revm_primitives::B256;
+use revm_primitives::{Address, B256, KECCAK_EMPTY};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_da_framework::{BuilderError, ContextlessDaWrite, DaError, DaRegister, DaWrite};
+use strata_da_framework::{DaRegister, DaWrite};
 
-use crate::codec::{CodecB256, CodecU256};
-
-/// Represents the EE account state that DA diffs are applied to.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct DaAccountState {
-    pub balance: CodecU256,
-    pub nonce: u64,
-    pub code_hash: CodecB256,
-}
-
-impl DaAccountState {
-    pub fn new(balance: U256, nonce: u64, code_hash: B256) -> Self {
-        Self {
-            balance: CodecU256(balance),
-            nonce,
-            code_hash: CodecB256(code_hash),
-        }
-    }
-}
+use crate::{
+    block::AccountSnapshot,
+    codec::{CodecB256, CodecU256},
+};
 
 /// Diff for a single account using DA framework primitives.
 ///
@@ -31,7 +16,7 @@ impl DaAccountState {
 /// - `nonce`: Stored as `Option<u8>` (nonces typically increment by small amounts)
 /// - `code_hash`: Register (only changes on contract creation)
 #[derive(Clone, Debug, Default)]
-pub struct DaAccountDiff {
+pub struct AccountDiff {
     /// Balance change (full replacement if changed).
     pub balance: DaRegister<CodecU256>,
     /// Nonce increment (None = unchanged, Some(n) = increment by n).
@@ -40,7 +25,22 @@ pub struct DaAccountDiff {
     pub code_hash: DaRegister<CodecB256>,
 }
 
-impl DaAccountDiff {
+/// Converts a nonce delta to `Option<u8>`, panicking if it exceeds `u8::MAX`.
+///
+/// In practice, a single batch should never have more than 255 transactions
+/// from the same account.
+fn checked_nonce_incr(delta: u64, addr: Address) -> Option<u8> {
+    if delta == 0 {
+        return None;
+    }
+    assert!(
+        delta <= u8::MAX as u64,
+        "nonce delta {delta} exceeds u8::MAX for account {addr}",
+    );
+    Some(delta as u8)
+}
+
+impl AccountDiff {
     /// Creates a new account diff with all fields unchanged.
     pub fn new_unchanged() -> Self {
         Self::default()
@@ -55,30 +55,40 @@ impl DaAccountDiff {
         }
     }
 
-    /// Creates a diff by comparing original and new account states.
-    pub fn from_change(
-        original: &DaAccountState,
-        new: &DaAccountState,
-    ) -> Result<Self, BuilderError> {
-        let balance = DaRegister::compare(&original.balance, &new.balance);
+    /// Creates a diff from block-level account states.
+    ///
+    /// If `original` is None, all fields are treated as changed (account creation).
+    /// Returns None if no fields changed.
+    pub fn from_account_snapshot(
+        current: &AccountSnapshot,
+        original: Option<&AccountSnapshot>,
+        addr: Address,
+    ) -> Option<Self> {
+        let (orig_balance, orig_nonce, orig_code_hash) = original
+            .map(|o| (Some(o.balance), o.nonce, Some(o.code_hash)))
+            .unwrap_or((None, 0, None));
 
-        // For nonce, compute the increment
-        let nonce_diff = new.nonce.saturating_sub(original.nonce);
-        let nonce_incr = if nonce_diff == 0 {
-            None
-        } else if nonce_diff <= u8::MAX as u64 {
-            Some(nonce_diff as u8)
-        } else {
-            return Err(BuilderError::OutOfBoundsValue);
+        let balance = match orig_balance {
+            Some(ob) if ob == current.balance => DaRegister::new_unset(),
+            _ => DaRegister::new_set(CodecU256(current.balance)),
         };
 
-        let code_hash = DaRegister::compare(&original.code_hash, &new.code_hash);
+        let nonce_delta = current.nonce.saturating_sub(orig_nonce);
+        let nonce_incr = checked_nonce_incr(nonce_delta, addr);
 
-        Ok(Self {
+        let code_hash = match orig_code_hash {
+            Some(oc) if oc == current.code_hash => DaRegister::new_unset(),
+            _ if current.code_hash == KECCAK_EMPTY => DaRegister::new_unset(),
+            _ => DaRegister::new_set(CodecB256(current.code_hash)),
+        };
+
+        let diff = Self {
             balance,
             nonce_incr,
             code_hash,
-        })
+        };
+
+        (!diff.is_unchanged()).then_some(diff)
     }
 
     /// Returns true if no changes are recorded.
@@ -89,25 +99,7 @@ impl DaAccountDiff {
     }
 }
 
-impl DaWrite for DaAccountDiff {
-    type Target = DaAccountState;
-    type Context = ();
-
-    fn is_default(&self) -> bool {
-        self.is_unchanged()
-    }
-
-    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), DaError> {
-        ContextlessDaWrite::apply(&self.balance, &mut target.balance)?;
-        if let Some(incr) = self.nonce_incr {
-            target.nonce = target.nonce.wrapping_add(incr as u64);
-        }
-        ContextlessDaWrite::apply(&self.code_hash, &mut target.code_hash)?;
-        Ok(())
-    }
-}
-
-impl Codec for DaAccountDiff {
+impl Codec for AccountDiff {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Use a bitmap to track which fields are set (3 bits needed)
         let mut bitmap: u8 = 0;
@@ -168,16 +160,16 @@ impl Codec for DaAccountDiff {
 
 /// Represents the type of change to an account.
 #[derive(Clone, Debug)]
-pub enum DaAccountChange {
+pub enum AccountChange {
     /// Account was created (new account).
-    Created(DaAccountDiff),
+    Created(AccountDiff),
     /// Account was updated (existing account modified).
-    Updated(DaAccountDiff),
+    Updated(AccountDiff),
     /// Account was deleted (selfdestructed).
     Deleted,
 }
 
-impl DaAccountChange {
+impl AccountChange {
     /// Returns true if this is an empty/no-op change.
     pub fn is_empty(&self) -> bool {
         match self {
@@ -187,7 +179,7 @@ impl DaAccountChange {
     }
 }
 
-impl Codec for DaAccountChange {
+impl Codec for AccountChange {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         match self {
             Self::Created(diff) => {
@@ -208,10 +200,10 @@ impl Codec for DaAccountChange {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let tag = u8::decode(dec)?;
         match tag {
-            0 => Ok(Self::Created(DaAccountDiff::decode(dec)?)),
-            1 => Ok(Self::Updated(DaAccountDiff::decode(dec)?)),
+            0 => Ok(Self::Created(AccountDiff::decode(dec)?)),
+            1 => Ok(Self::Updated(AccountDiff::decode(dec)?)),
             2 => Ok(Self::Deleted),
-            _ => Err(CodecError::InvalidVariant("DaAccountChange")),
+            _ => Err(CodecError::InvalidVariant("AccountChange")),
         }
     }
 }
@@ -224,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_account_diff_unchanged() {
-        let diff = DaAccountDiff::new_unchanged();
+        let diff = AccountDiff::new_unchanged();
         assert!(diff.is_unchanged());
 
         let encoded = encode_to_vec(&diff).unwrap();
@@ -232,16 +224,16 @@ mod tests {
         assert_eq!(encoded.len(), 1);
         assert_eq!(encoded[0], 0);
 
-        let decoded: DaAccountDiff = decode_buf_exact(&encoded).unwrap();
+        let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
         assert!(decoded.is_unchanged());
     }
 
     #[test]
     fn test_account_diff_created() {
-        let diff = DaAccountDiff::new_created(U256::from(1000), 1, B256::from([0x11u8; 32]));
+        let diff = AccountDiff::new_created(U256::from(1000), 1, B256::from([0x11u8; 32]));
 
         let encoded = encode_to_vec(&diff).unwrap();
-        let decoded: DaAccountDiff = decode_buf_exact(&encoded).unwrap();
+        let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
 
         assert_eq!(decoded.balance.new_value().unwrap().0, U256::from(1000));
         assert_eq!(decoded.nonce_incr, Some(1u8));
@@ -252,64 +244,25 @@ mod tests {
     }
 
     #[test]
-    fn test_account_diff_from_change() {
-        let original = DaAccountState::new(U256::from(1000), 5, B256::from([0x11u8; 32]));
-        let new = DaAccountState::new(
-            U256::from(2000),
-            7,                        // +2 increment
-            B256::from([0x11u8; 32]), // unchanged
-        );
-
-        let diff = DaAccountDiff::from_change(&original, &new).unwrap();
-
-        // Balance changed
-        assert!(!DaWrite::is_default(&diff.balance));
-        assert_eq!(diff.balance.new_value().unwrap().0, U256::from(2000));
-
-        // Nonce incremented by 2
-        assert_eq!(diff.nonce_incr, Some(2u8));
-
-        // Code hash unchanged
-        assert!(DaWrite::is_default(&diff.code_hash));
-    }
-
-    #[test]
-    fn test_account_diff_apply() {
-        let mut state = DaAccountState::new(U256::from(1000), 5, B256::from([0x11u8; 32]));
-
-        let diff = DaAccountDiff {
-            balance: DaRegister::new_set(CodecU256(U256::from(2000))),
-            nonce_incr: Some(3),
-            code_hash: DaRegister::new_unset(),
-        };
-
-        ContextlessDaWrite::apply(&diff, &mut state).unwrap();
-
-        assert_eq!(state.balance.0, U256::from(2000));
-        assert_eq!(state.nonce, 8); // 5 + 3
-        assert_eq!(state.code_hash.0, B256::from([0x11u8; 32])); // unchanged
-    }
-
-    #[test]
     fn test_account_change_roundtrip() {
         let created =
-            DaAccountChange::Created(DaAccountDiff::new_created(U256::from(1000), 1, B256::ZERO));
-        let updated = DaAccountChange::Updated(DaAccountDiff {
+            AccountChange::Created(AccountDiff::new_created(U256::from(1000), 1, B256::ZERO));
+        let updated = AccountChange::Updated(AccountDiff {
             balance: DaRegister::new_set(CodecU256(U256::from(500))),
             nonce_incr: None,
             code_hash: DaRegister::new_unset(),
         });
-        let deleted = DaAccountChange::Deleted;
+        let deleted = AccountChange::Deleted;
 
         for change in [created, updated, deleted] {
             let encoded = encode_to_vec(&change).unwrap();
-            let decoded: DaAccountChange = decode_buf_exact(&encoded).unwrap();
+            let decoded: AccountChange = decode_buf_exact(&encoded).unwrap();
 
             // Verify tag matches
             match (&change, &decoded) {
-                (DaAccountChange::Created(_), DaAccountChange::Created(_)) => {}
-                (DaAccountChange::Updated(_), DaAccountChange::Updated(_)) => {}
-                (DaAccountChange::Deleted, DaAccountChange::Deleted) => {}
+                (AccountChange::Created(_), AccountChange::Created(_)) => {}
+                (AccountChange::Updated(_), AccountChange::Updated(_)) => {}
+                (AccountChange::Deleted, AccountChange::Deleted) => {}
                 _ => panic!("Tag mismatch"),
             }
         }
