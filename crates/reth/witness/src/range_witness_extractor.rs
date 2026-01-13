@@ -26,11 +26,6 @@ use strata_evm_ee::EvmPartialState;
 use tracing::debug;
 
 /// Witness data extracted for a block range.
-///
-/// The `raw_partial_pre_state` is serialized using `strata_codec` and can be
-/// deserialized in the guest using `strata_codec::decode_buf_exact::<EvmPartialState>`.
-///
-/// Note: Raw blocks should be fetched separately from `ExecBlockStorage` by the caller.
 #[derive(Debug)]
 pub struct RangeWitnessData {
     pub start_block_hash: B256,
@@ -38,7 +33,6 @@ pub struct RangeWitnessData {
     /// Serialized `EvmPartialState` (via `strata_codec`).
     pub raw_partial_pre_state: Vec<u8>,
     pub raw_prev_header: Vec<u8>,
-    pub accessed_accounts: HashSet<Address>,
 }
 
 /// Extracts witness data for block ranges.
@@ -101,8 +95,8 @@ where
             .provider_factory
             .history_by_block_number(end_block_num)?;
 
-        // 3. Generate multiproofs for all accessed accounts, track pre-existing ones
-        let (ethereum_state, accessed_accounts, bytecodes) = self.build_ethereum_state(
+        // 3. Generate multiproofs for all accessed accounts
+        let (ethereum_state, bytecodes) = self.build_ethereum_state(
             &pre_state_provider,
             &post_state_provider,
             start_state_root,
@@ -124,7 +118,6 @@ where
             end_block_hash,
             raw_partial_pre_state,
             raw_prev_header,
-            accessed_accounts,
         })
     }
 
@@ -166,7 +159,7 @@ where
         post_state: &P,
         start_state_root: B256,
         accessed: &AccumulatedState,
-    ) -> Result<(EthereumState, HashSet<Address>, Vec<Bytecode>)>
+    ) -> Result<(EthereumState, Vec<Bytecode>)>
     where
         P: StateProvider,
     {
@@ -221,7 +214,7 @@ where
         let state =
             EthereumState::from_transition_proofs(start_state_root, &pre_proofs, &post_proofs)?;
         let bytecodes: Vec<Bytecode> = accessed.bytecodes.iter().cloned().collect();
-        Ok((state, accessed_accounts, bytecodes))
+        Ok((state, bytecodes))
     }
 
     fn get_ancestor_headers(
