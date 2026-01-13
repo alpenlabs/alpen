@@ -10,6 +10,7 @@ strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
+strata-common.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
@@ -28,6 +29,7 @@ bincode.workspace = true
 borsh.workspace = true
 sled.workspace = true
 ssz_types.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

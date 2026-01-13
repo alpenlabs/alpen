@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod instrumentation;
 pub mod logging;
 pub mod retry;
 

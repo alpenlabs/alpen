@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use sled::transaction::ConflictableTransactionResult;
+use strata_common::instrumentation::components;
 use strata_db_types::DbResult;
+use tracing::instrument;
 use typed_sled::{
     error::Error,
     transaction::{Backoff, ConstantBackoff, SledTransactional},
@@ -48,6 +50,14 @@ impl SledDbConfig {
     }
 
     /// Execute a transaction with retry logic using this config's settings
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(
+            component = components::DB_SLED_TRANSACTION,
+            max_retries = self.retry_count,
+        )
+    )]
     pub fn with_retry<Trees, F, R>(&self, trees: Trees, f: F) -> DbResult<R>
     where
         Trees: SledTransactional,
