@@ -146,7 +146,8 @@ impl Settings {
         let params_json = read_to_string(&params_path).map_err(OneOf::new)?;
         let params: RollupParams = serde_json::from_str(&params_json).map_err(|e| {
             OneOf::new(config::ConfigError::Message(format!(
-                "Failed to parse rollup params: {}",
+                "Failed to parse rollup params {}: {}",
+                params_path.display(),
                 e
             )))
         })?;
