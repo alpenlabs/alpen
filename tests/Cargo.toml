@@ -7,13 +7,6 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-anyhow.workspace = true
-bitcoin.workspace = true
-bitcoind-async-client.workspace = true
-borsh.workspace = true
-corepc-node.workspace = true
-rand.workspace = true
-rand_chacha.workspace = true
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-proto-administration.workspace = true
@@ -32,6 +25,14 @@ strata-state.workspace = true
 strata-tasks.workspace = true
 strata-test-utils-btcio.workspace = true
 strata-test-utils-l2.workspace = true
+
+anyhow.workspace = true
+bitcoin.workspace = true
+bitcoind-async-client.workspace = true
+borsh.workspace = true
+corepc-node.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
