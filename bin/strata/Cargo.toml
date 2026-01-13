@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+strata-asm-common.workspace = true
 strata-asm-worker.workspace = true
 strata-chain-worker-new.workspace = true
 strata-common.workspace = true
@@ -15,7 +16,10 @@ strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
+strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
 strata-params.workspace = true
 strata-snark-acct-types.workspace = true
 strata-primitives.workspace = true

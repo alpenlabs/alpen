@@ -97,7 +97,7 @@ impl<'b> BlockContext<'b> {
     ///
     /// If there is no parent block but the epoch/slot is nonzero, as that can
     /// only be valid if we're the genesis block.
-    pub(crate) fn new(block_info: &'b BlockInfo, parent_header: Option<&'b OLBlockHeader>) -> Self {
+    pub fn new(block_info: &'b BlockInfo, parent_header: Option<&'b OLBlockHeader>) -> Self {
         // Sanity check genesis context.
         if parent_header.is_none() && (block_info.slot != 0 || block_info.epoch != 0) {
             panic!("stf/context: tried to verify non-genesis with genesis-like context");

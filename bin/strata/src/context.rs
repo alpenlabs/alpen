@@ -15,7 +15,7 @@ use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::runtime::{self, Runtime};
 use tracing::warn;
 
-use crate::{args::*, config::*, errors::*, init_db};
+use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
 /// Contains resources needed to run node services.
 pub(crate) struct NodeContext {
@@ -189,7 +189,11 @@ fn init_client_state(
 
     match recent_state {
         None => {
-            // Create and insert init state into db.
+            // Initialize OL genesis block and state
+            init_ol_genesis(params, storage)
+                .map_err(|e| InitError::StorageCreation(e.to_string()))?;
+
+            // Create and insert init client state into db.
             let init_state = ClientState::default();
             let l1blk = params.rollup().genesis_l1_view.blk;
             let update = ClientUpdateOutput::new_state(init_state.clone());
