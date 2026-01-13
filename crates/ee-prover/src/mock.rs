@@ -9,7 +9,7 @@
 
 use strata_acct_types::AccountId;
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState};
-use strata_proofimpl_eth_ee_acct::{DataProviderError, EthEeAcctDataProvider, Result, UpdateId};
+use strata_proofimpl_alpen_ee_acct::{DataProviderError, EthEeAcctDataProvider, Result, UpdateId};
 use strata_snark_acct_types::UpdateOperationData;
 
 /// Mock data provider that returns default values

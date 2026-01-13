@@ -14542,7 +14542,7 @@ dependencies = [
  "serde",
  "strata-paas",
  "strata-primitives",
- "strata-proofimpl-eth-ee-acct",
+ "strata-proofimpl-alpen-ee-acct",
  "strata-tasks",
  "strata-zkvm-hosts",
  "zkaleido-native-adapter",
@@ -15551,9 +15551,9 @@ name = "strata-zkvm-hosts"
 version = "0.3.0-alpha.1"
 dependencies = [
  "strata-primitives",
+ "strata-proofimpl-alpen-ee-acct",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-cl-stf",
- "strata-proofimpl-eth-ee-acct",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
  "zkaleido",

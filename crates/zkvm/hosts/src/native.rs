@@ -3,7 +3,7 @@ use std::sync::Arc;
 use strata_primitives::proof::ProofContext;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_proofimpl_cl_stf::program::ClStfProgram;
-use strata_proofimpl_eth_ee_acct::program::EthEeAcctProgram;
+use strata_proofimpl_alpen_ee_acct::program::EthEeAcctProgram;
 use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
 use zkaleido_native_adapter::NativeHost;
 

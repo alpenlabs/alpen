@@ -6,7 +6,7 @@ use typed_sled::SledDb;
 
 use crate::{SledBackend, SledDbConfig};
 
-// Opens sled database instance from datadir
+/// Opens sled database instance from datadir
 pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Result<Arc<SledDb>> {
     let mut database_dir = datadir.to_path_buf();
     database_dir.push("sled");

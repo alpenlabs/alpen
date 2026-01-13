@@ -40,9 +40,9 @@ define_host!(
     "guest-checkpoint.elf"
 );
 define_host!(
-    ETH_EE_ACCT_HOST,
-    GUEST_ETH_EE_ACCT_ELF,
-    "guest-eth-ee-acct.elf"
+    ALPEN_EE_ACCT_HOST,
+    GUEST_ALPEN_EE_ACCT_ELF,
+    "guest-alpen-ee-acct.elf"
 );
 
 /// Returns a cloned Arc to the appropriate `SP1Host` instance based on the given [`ProofContext`].
@@ -55,6 +55,6 @@ pub fn get_host(id: &ProofContext) -> Arc<SP1Host> {
         ProofContext::EvmEeStf(..) => Arc::clone(&EVM_EE_STF_HOST),
         ProofContext::ClStf(..) => Arc::clone(&CL_STF_HOST),
         ProofContext::Checkpoint(..) => Arc::clone(&CHECKPOINT_HOST),
-        ProofContext::EthEeAcct(..) => Arc::clone(&ETH_EE_ACCT_HOST),
+        ProofContext::EthEeAcct(..) => Arc::clone(&ALPEN_EE_ACCT_HOST),
     }
 }

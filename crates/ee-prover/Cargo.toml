@@ -7,7 +7,7 @@ edition = "2024"
 # Strata crates
 strata-paas.workspace = true
 strata-primitives.workspace = true
-strata-proofimpl-eth-ee-acct = { workspace = true, features = ["host"] }
+strata-proofimpl-alpen-ee-acct = { workspace = true, features = ["host"] }
 strata-zkvm-hosts.workspace = true
 strata-tasks.workspace = true
 

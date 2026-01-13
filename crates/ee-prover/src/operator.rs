@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use strata_paas::{InputFetcher, ProgramType};
 use strata_primitives::proof::ProofContext;
-use strata_proofimpl_eth_ee_acct::{
+use strata_proofimpl_alpen_ee_acct::{
     prepare_proof_input, EthEeAcctDataProvider, EthEeAcctInput, UpdateId,
 };
 
@@ -39,7 +39,7 @@ where
     P: ProgramType + std::ops::Deref<Target = ProofContext>,
 {
     type Input = EthEeAcctInput;
-    type Error = strata_proofimpl_eth_ee_acct::DataProviderError;
+    type Error = strata_proofimpl_alpen_ee_acct::DataProviderError;
 
     async fn fetch_input(&self, program: &P) -> Result<Self::Input, Self::Error> {
         let proof_context: &ProofContext = program;

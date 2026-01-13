@@ -32,7 +32,7 @@ mod operator;
 pub mod mock;
 
 // Re-export from proof-impl for convenience
-pub use strata_proofimpl_eth_ee_acct::data_provider::EthEeAcctDataProvider;
+pub use strata_proofimpl_alpen_ee_acct::data_provider::EthEeAcctDataProvider;
 
 // Use paas error types directly
 pub use strata_paas::{ProverServiceError, ProverServiceResult as Result};
@@ -45,7 +45,7 @@ use strata_paas::{
     ProverServiceConfig, RemoteProofHandler, RetryConfig, TaskStore, ZkVmBackend,
 };
 use strata_primitives::proof::ProofContext;
-use strata_proofimpl_eth_ee_acct::EthEeAcctProgram;
+use strata_proofimpl_alpen_ee_acct::EthEeAcctProgram;
 use strata_tasks::TaskExecutor;
 
 use crate::{
