@@ -1,0 +1,30 @@
+[package]
+edition = "2021"
+name = "alpen-reth-witness"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Internal
+alpen-reth-exex.workspace = true
+strata-codec.workspace = true
+strata-evm-ee.workspace = true
+
+# External
+alloy-consensus.workspace = true
+alloy-primitives.workspace = true
+alloy-rlp.workspace = true
+eyre.workspace = true
+reth-evm.workspace = true
+reth-primitives.workspace = true
+reth-primitives-traits.workspace = true
+reth-provider.workspace = true
+reth-revm.workspace = true
+reth-trie.workspace = true
+reth-trie-common = { workspace = true, features = ["eip1186"] }
+rsp-mpt.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]

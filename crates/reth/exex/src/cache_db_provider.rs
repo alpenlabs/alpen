@@ -12,7 +12,7 @@ use revm_primitives::alloy_primitives::{ruint::Uint, Address, B256, U256};
 /// In addition it holds accessed account info, storage values, and bytecodes during
 /// transaction execution, supporting state retrieval for storage proof construction
 /// in EL proof witness generation.
-pub(crate) struct CacheDBProvider {
+pub struct CacheDBProvider {
     provider: Box<dyn StateProvider>,
     accounts: RefCell<HashMap<Address, AccountInfo>>,
     storage: RefCell<HashMap<Address, HashMap<U256, U256>>>,
@@ -34,28 +34,32 @@ impl fmt::Debug for CacheDBProvider {
     }
 }
 #[derive(Debug)]
-pub(crate) struct AccessedState {
+pub struct AccessedState {
     accessed_accounts: HashMap<Address, Vec<Uint<256, 4>>>,
     accessed_contracts: Vec<Bytecode>,
     accessed_block_idxs: HashSet<u64>,
 }
 
 impl AccessedState {
-    pub(crate) fn accessed_block_idxs(&self) -> &HashSet<u64> {
+    /// Returns the set of block indices accessed (for BLOCKHASH opcode).
+    pub fn accessed_block_idxs(&self) -> &HashSet<u64> {
         &self.accessed_block_idxs
     }
 
-    pub(crate) fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
+    /// Returns accessed accounts with their storage keys.
+    pub fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
         &self.accessed_accounts
     }
 
-    pub(crate) fn accessed_contracts(&self) -> &Vec<Bytecode> {
+    /// Returns accessed contract bytecodes.
+    pub fn accessed_contracts(&self) -> &Vec<Bytecode> {
         &self.accessed_contracts
     }
 }
 
 impl CacheDBProvider {
-    pub(crate) fn new(provider: Box<dyn StateProvider>) -> Self {
+    /// Creates a new `CacheDBProvider` wrapping the given state provider.
+    pub fn new(provider: Box<dyn StateProvider>) -> Self {
         Self {
             provider,
             accounts: Default::default(),
@@ -65,7 +69,8 @@ impl CacheDBProvider {
         }
     }
 
-    pub(crate) fn get_accessed_state(&self) -> AccessedState {
+    /// Returns the accumulated accessed state after block execution.
+    pub fn get_accessed_state(&self) -> AccessedState {
         let accessed_accounts = self.get_accessed_accounts();
         let accessed_contracts = self.get_accessed_contracts();
 
