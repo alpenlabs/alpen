@@ -5,7 +5,7 @@ use std::collections::*;
 use strata_db_types::traits::BlockStatus;
 use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment, SyncBlockHeader};
 use strata_state::prelude::*;
-use strata_storage::L2BlockManager;
+use strata_storage::{L2BlockManager, OLBlockManager};
 use tracing::*;
 
 use crate::errors::ChainTipError;
@@ -333,6 +333,68 @@ impl UnfinalizedBlockTracker {
                 if let Some(block) = l2_block_manager.get_block_data_blocking(&blkid)? {
                     let header = block.header();
                     if let Err(e) = self.attach_block(blkid, header) {
+                        warn!(%blkid, err = %e, "failed to attach block, continuing");
+                    }
+                } else {
+                    error!(%blkid, "missing expected block from database!  wtf?");
+                }
+            }
+
+            height += 1;
+        }
+
+        Ok(())
+    }
+
+    /// Loads the unfinalized OL blocks into the tracker which are already in the DB
+    pub fn load_unfinalized_ol_blocks(
+        &mut self,
+        ol_block_manager: &OLBlockManager,
+    ) -> anyhow::Result<()> {
+        let mut height = self.finalized_epoch.last_slot() + 1;
+
+        loop {
+            let blkids = match ol_block_manager.get_blocks_at_height_blocking(height) {
+                Ok(ids) => ids,
+                Err(e) => {
+                    error!(%height, err = %e, "failed to get new blocks");
+                    return Err(e.into());
+                }
+            };
+
+            if blkids.is_empty() {
+                debug!(%height, "found no more blocks, assuming we're past tip");
+                break;
+            }
+
+            for blkid in blkids {
+                // Check the status so we can skip trying to attach blocks we
+                // don't care about.
+                //
+                // TODO if a block doesn't have a concrete status (either
+                // missing or explicit unchecked) should we put it into a queue
+                // to be processed?
+                match ol_block_manager.get_block_status_blocking(blkid) {
+                    Ok(Some(status)) => {
+                        if status != BlockStatus::Valid {
+                            debug!(%blkid, "skipping attaching block not known to be valid");
+                            continue;
+                        }
+                    }
+                    Ok(_) => {
+                        debug!(%blkid, "block status not available, will check later");
+                        continue;
+                    }
+                    Err(e) => {
+                        error!(%blkid, err = %e, "error loading block status, continuing");
+                        continue;
+                    }
+                }
+
+                // Once we've decided if we want to attach a block, we can
+                // continue now.
+                if let Some(block) = ol_block_manager.get_block_data_blocking(blkid)? {
+                    if let Err(e) = self.attach_block(blkid, block.signed_header()) {
                         warn!(%blkid, err = %e, "failed to attach block, continuing");
                     }
                 } else {

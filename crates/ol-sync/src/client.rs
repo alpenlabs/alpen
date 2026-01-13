@@ -69,7 +69,7 @@ impl<RPC: OLFullNodeRpcClient + Send + Sync> OLRpcSyncPeer<RPC> {
     ) -> Result<Vec<OLBlock>, ClientError> {
         let bytes = self
             .rpc_client
-            .get_raw_blocks(start_height, end_height)
+            .get_raw_blocks_range(start_height, end_height)
             .await
             .map_err(|e| ClientError::Network(e.to_string()))?;
         let blks = VariableList::<OLBlock, 1000>::from_ssz_bytes(&bytes.0)
