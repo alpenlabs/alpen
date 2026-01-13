@@ -1,9 +1,8 @@
 //! Error types for the auxiliary framework.
 
 use bitcoin::{Txid, consensus};
+use strata_asm_manifest_types::Hash32;
 use thiserror::Error;
-
-use crate::Hash32;
 
 /// Result type alias for auxiliary operations.
 pub type AuxResult<T> = Result<T, AuxError>;
@@ -52,10 +51,10 @@ pub enum AuxError {
         vout: u32,
     },
 
-    /// Manifest hash not found at the given MMR index.
-    #[error("manifest hash not found at index {index}")]
+    /// Manifest hash not found at the given L1 Block height.
+    #[error("manifest hash not found for height {height}")]
     ManifestHashNotFound {
         /// The requested MMR index
-        index: u64,
+        height: u64,
     },
 }

@@ -13824,7 +13824,6 @@ dependencies = [
  "strata-asm-common",
  "strata-identifiers",
  "strata-l1-txfmt",
- "strata-merkle 0.2.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
 ]
 
 [[package]]
@@ -13883,6 +13882,7 @@ dependencies = [
  "corepc-node",
  "serde",
  "strata-asm-common",
+ "strata-asm-manifest-types",
  "strata-asm-spec",
  "strata-asm-stf",
  "strata-asm-types",

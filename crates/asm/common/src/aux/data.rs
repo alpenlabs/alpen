@@ -5,9 +5,10 @@
 //! to subprotocols after verification.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_manifest_types::Hash32;
 use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
 
-use crate::{AsmMerkleProof, Hash32};
+use crate::AsmMerkleProof;
 
 /// Collection of auxiliary data requests from subprotocols.
 ///

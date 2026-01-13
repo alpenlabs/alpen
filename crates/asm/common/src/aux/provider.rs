@@ -5,11 +5,11 @@
 use std::collections::HashMap;
 
 use bitcoin::{OutPoint, Transaction, TxOut, Txid};
+use strata_asm_manifest_types::Hash32;
 use strata_btc_types::RawBitcoinTx;
-use strata_merkle::CompactMmr64;
 
 use crate::{
-    AsmHasher, AuxError, AuxResult, Hash32,
+    AsmManifestMmr, AuxError, AuxResult,
     aux::data::{AuxData, VerifiableManifestHash},
 };
 
@@ -19,7 +19,7 @@ use crate::{
 /// it in efficient lookup structures for O(1) access:
 ///
 /// - **Bitcoin transactions**: Decoded and indexed by txid in a hashmap
-/// - **Manifest hashes**: MMR proofs verified and indexed by MMR position
+/// - **Manifest hashes**: MMR proofs verified and indexed by block height
 ///
 /// All verification happens during construction via [`try_new`](Self::try_new), so
 /// subsequent getter method calls return already-verified data without additional
@@ -28,7 +28,7 @@ use crate::{
 pub struct VerifiedAuxData {
     /// Verified Bitcoin transactions indexed by txid
     txs: HashMap<Txid, Transaction>,
-    /// Verified manifest hashes indexed by MMR index
+    /// Verified manifest hashes indexed by block height
     manifest_hashes: HashMap<u64, Hash32>,
 }
 
@@ -41,7 +41,7 @@ impl VerifiedAuxData {
     /// # Arguments
     ///
     /// * `txs` - Pre-verified Bitcoin transactions indexed by txid
-    /// * `manifest_hashes` - Pre-verified manifest hashes indexed by MMR position
+    /// * `manifest_hashes` - Pre-verified manifest hashes indexed by block height
     fn new(txs: HashMap<Txid, Transaction>, manifest_hashes: HashMap<u64, Hash32>) -> Self {
         Self {
             txs,
@@ -57,16 +57,16 @@ impl VerifiedAuxData {
     /// # Arguments
     ///
     /// * `data` - Unverified auxiliary data containing Bitcoin transactions and manifest hashes
-    /// * `compact_mmr` - Compact MMR snapshot used to verify manifest hash proofs
+    /// * `manifest_mmr` - MMR used to verify manifest hash proofs
     ///
     /// # Errors
     ///
     /// Returns `AuxError::InvalidBitcoinTx` if any transaction fails to decode or is malformed.
     /// Returns `AuxError::InvalidMmrProof` if any manifest hash's MMR proof fails verification.
-    pub fn try_new(data: &AuxData, compact_mmr: &CompactMmr64<[u8; 32]>) -> AuxResult<Self> {
+    pub fn try_new(data: &AuxData, manfiest_mmr: &AsmManifestMmr) -> AuxResult<Self> {
         let txs = Self::verify_and_index_bitcoin_txs(data.bitcoin_txs())?;
         let manifest_hashes =
-            Self::verify_and_index_manifest_hashes(data.manifest_hashes(), compact_mmr)?;
+            Self::verify_and_index_manifest_hashes(data.manifest_hashes(), manfiest_mmr)?;
 
         Ok(Self::new(txs, manifest_hashes))
     }
@@ -97,25 +97,27 @@ impl VerifiedAuxData {
     /// Verifies and indexes manifest hashes using MMR proofs.
     ///
     /// Verifies each manifest hash's MMR proof against the provided compact MMR
-    /// and indexes verified hashes by their MMR position.
+    /// and indexes verified hashes by their block height (MMR index + genesis height).
     ///
     /// # Errors
     ///
     /// Returns `AuxError::InvalidMmrProof` if any proof fails verification.
     fn verify_and_index_manifest_hashes(
         hashes: &[VerifiableManifestHash],
-        compact_mmr: &CompactMmr64<[u8; 32]>,
+        manifest_mmr: &AsmManifestMmr,
     ) -> AuxResult<HashMap<u64, Hash32>> {
         let mut manifest_hashes = HashMap::with_capacity(hashes.len());
 
         for item in hashes {
-            if !compact_mmr.verify::<AsmHasher>(item.proof(), item.hash()) {
+            if !manifest_mmr.verify(item.proof(), item.hash()) {
                 return Err(AuxError::InvalidMmrProof {
                     index: item.proof().index(),
                     hash: *item.hash(),
                 });
             }
-            manifest_hashes.insert(item.proof().index(), *item.hash());
+            // Convert MMR index to block height using offset
+            let height = manifest_mmr.offset() + item.proof().index();
+            manifest_hashes.insert(height, *item.hash());
         }
 
         Ok(manifest_hashes)
@@ -149,23 +151,23 @@ impl VerifiedAuxData {
             })
     }
 
-    /// Gets a verified manifest hash by MMR index.
+    /// Gets a verified manifest hash by block height.
     ///
-    /// Returns the manifest hash if it exists at the given index.
+    /// Returns the manifest hash if it exists at the given block height.
     ///
     /// # Errors
     ///
-    /// Returns `AuxError::ManifestHashNotFound` if the hash is not found at the given index.
-    pub fn get_manifest_hash(&self, index: u64) -> AuxResult<Hash32> {
+    /// Returns `AuxError::ManifestHashNotFound` if the hash is not found at the given height.
+    pub fn get_manifest_hash(&self, height: u64) -> AuxResult<Hash32> {
         self.manifest_hashes
-            .get(&index)
+            .get(&height)
             .copied()
-            .ok_or(AuxError::ManifestHashNotFound { index })
+            .ok_or(AuxError::ManifestHashNotFound { height })
     }
 
-    /// Gets a range of verified manifest hashes by their MMR indices.
+    /// Gets a range of verified manifest hashes by their block heights.
     ///
-    /// Returns a vector of manifest hashes for the given index range (inclusive).
+    /// Returns a vector of manifest hashes for the given height range (inclusive).
     ///
     /// # Errors
     ///
@@ -185,11 +187,11 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{AsmMmr, AuxError};
+    use crate::{AsmManifestMmr, AuxError};
 
     #[test]
     fn test_verified_aux_data_empty() {
-        let mmr = AsmMmr::new(16);
+        let mmr = AsmManifestMmr::new(16);
         let aux_data = AuxData::default();
 
         let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
@@ -210,7 +212,7 @@ mod tests {
         let tx: Transaction = raw_tx.clone().try_into().unwrap();
         let txid = tx.compute_txid().as_raw_hash().to_byte_array();
 
-        let mmr = AsmMmr::new(16);
+        let mmr = AsmManifestMmr::new(16);
         let aux_data = AuxData::new(vec![], vec![raw_tx]);
 
         let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
@@ -223,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_verified_aux_data_bitcoin_tx_not_found() {
-        let mmr = AsmMmr::new(16);
+        let mmr = AsmManifestMmr::new(16);
         let aux_data = AuxData::default();
 
         let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();

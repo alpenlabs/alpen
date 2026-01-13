@@ -21,8 +21,9 @@
 use std::{fmt, sync::Arc};
 
 use strata_asm_common::{
-    AsmMerkleProof, AuxData, AuxRequests, Hash32, ManifestHashRange, VerifiableManifestHash,
+    AsmMerkleProof, AuxData, AuxRequests, ManifestHashRange, VerifiableManifestHash,
 };
+use strata_asm_manifest_types::Hash32;
 use strata_btc_types::BitcoinTxid;
 use strata_params::Params;
 use strata_primitives::prelude::*;
@@ -195,9 +196,11 @@ impl<'a> AuxDataResolver<'a> {
             }
 
             // Calculate MMR indices from L1 heights
-            // MMR index 0 = genesis height, index 1 = genesis + 1, etc.
-            let start_index = start_height.saturating_sub(genesis_height);
-            let end_index = end_height - genesis_height;
+            // MMR index 0 = genesis height + 1, index 1 = genesis + 2, etc.
+            // offset = genesis_height + 1 (height of first block with manifest)
+            let offset = genesis_height + 1;
+            let start_index = start_height.saturating_sub(offset);
+            let end_index = end_height - offset;
 
             debug!(
                 start_height,
@@ -227,7 +230,7 @@ impl<'a> AuxDataResolver<'a> {
 
                 trace!(
                     index = mmr_index,
-                    height = genesis_height + mmr_index,
+                    height = offset + mmr_index,
                     "Resolved manifest hash with proof"
                 );
             }
