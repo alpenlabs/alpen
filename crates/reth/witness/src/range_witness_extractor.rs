@@ -33,8 +33,8 @@ use tracing::debug;
 /// Note: Raw blocks should be fetched separately from `ExecBlockStorage` by the caller.
 #[derive(Debug)]
 pub struct RangeWitnessData {
-    pub start_block: u64,
-    pub end_block: u64,
+    pub start_block_hash: B256,
+    pub end_block_hash: B256,
     /// Serialized `EvmPartialState` (via `strata_codec`).
     pub raw_partial_pre_state: Vec<u8>,
     pub raw_prev_header: Vec<u8>,
@@ -60,29 +60,44 @@ where
         }
     }
 
-    /// Extracts witness for the block range `[start_block, end_block]` (inclusive).
+    /// Extracts witness for the block range `[start_block_hash, end_block_hash]` (inclusive).
     pub fn extract_range_witness(
         &self,
-        start_block: u64,
-        end_block: u64,
+        start_block_hash: B256,
+        end_block_hash: B256,
     ) -> Result<RangeWitnessData> {
-        debug!(start_block, end_block, "extracting range witness");
+        // Resolve hashes to blocks
+        let start_block = self
+            .provider_factory
+            .block_by_hash(start_block_hash)?
+            .ok_or_else(|| eyre!("start block not found for hash {}", start_block_hash))?;
+        let end_block = self
+            .provider_factory
+            .block_by_hash(end_block_hash)?
+            .ok_or_else(|| eyre!("end block not found for hash {}", end_block_hash))?;
 
-        let prev_block_num = start_block.saturating_sub(1);
+        let start_block_num = start_block.number;
+        let end_block_num = end_block.number;
+
+        debug!(start_block_num, end_block_num, %start_block_hash, %end_block_hash, "extracting range witness");
+
+        // Fetch previous block using parent hash
+        let prev_block_hash = start_block.header.parent_hash;
         let prev_block = self
             .provider_factory
-            .block_by_number(prev_block_num)?
-            .ok_or_else(|| eyre!("previous block {} not found", prev_block_num))?;
+            .block_by_hash(prev_block_hash)?
+            .ok_or_else(|| eyre!("previous block not found for hash {}", prev_block_hash))?;
+        let prev_block_num = prev_block.number;
         let start_state_root = prev_block.header.state_root;
 
         // 1. Execute all blocks to discover accessed state
-        let accessed = self.execute_blocks_for_accessed_state(start_block, end_block)?;
+        let accessed = self.execute_blocks_for_accessed_state(start_block_num, end_block_num)?;
 
         // 2. Get providers for pre-range and post-range states
         let pre_state_provider = self
             .provider_factory
             .history_by_block_number(prev_block_num)?;
-        let post_state_provider = self.provider_factory.history_by_block_number(end_block)?;
+        let post_state_provider = self.provider_factory.history_by_block_number(end_block_num)?;
 
         // 3. Generate multiproofs for all accessed accounts, track pre-existing ones
         let (ethereum_state, accessed_accounts, bytecodes) = self.build_ethereum_state(
@@ -93,7 +108,7 @@ where
         )?;
 
         // 4. Get ancestor headers for BLOCKHASH opcode
-        let ancestor_headers = self.get_ancestor_headers(start_block, &accessed.block_idxs)?;
+        let ancestor_headers = self.get_ancestor_headers(start_block_num, &accessed.block_idxs)?;
 
         // 5. Build and serialize EvmPartialState
         let partial_state = EvmPartialState::new(ethereum_state, bytecodes, ancestor_headers);
@@ -103,8 +118,8 @@ where
         let raw_prev_header = alloy_rlp::encode(&prev_block.header);
 
         Ok(RangeWitnessData {
-            start_block,
-            end_block,
+            start_block_hash,
+            end_block_hash,
             raw_partial_pre_state,
             raw_prev_header,
             accessed_accounts,
