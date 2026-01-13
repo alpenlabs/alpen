@@ -97,7 +97,9 @@ where
         let pre_state_provider = self
             .provider_factory
             .history_by_block_number(prev_block_num)?;
-        let post_state_provider = self.provider_factory.history_by_block_number(end_block_num)?;
+        let post_state_provider = self
+            .provider_factory
+            .history_by_block_number(end_block_num)?;
 
         // 3. Generate multiproofs for all accessed accounts, track pre-existing ones
         let (ethereum_state, accessed_accounts, bytecodes) = self.build_ethereum_state(
@@ -139,7 +141,7 @@ where
                 .block_by_number(blk_num)?
                 .ok_or_else(|| eyre!("block {} not found", blk_num))?;
 
-            let sealed = block.clone().seal_slow();
+            let sealed = block.seal_slow();
             let recovered = sealed.try_recover()?;
 
             // Get history at parent block for this execution
@@ -175,7 +177,7 @@ where
             .map(|(addr, slots)| {
                 let keys = slots
                     .iter()
-                    .map(|s| B256::from_slice(&s.to_be_bytes::<32>()))
+                    .map(|s| B256::from(s.to_be_bytes::<32>()))
                     .collect();
                 (*addr, keys)
             })
@@ -218,7 +220,8 @@ where
 
         let state =
             EthereumState::from_transition_proofs(start_state_root, &pre_proofs, &post_proofs)?;
-        Ok((state, accessed_accounts, accessed.bytecodes.clone()))
+        let bytecodes: Vec<Bytecode> = accessed.bytecodes.iter().cloned().collect();
+        Ok((state, accessed_accounts, bytecodes))
     }
 
     fn get_ancestor_headers(
@@ -226,16 +229,13 @@ where
         start_block: u64,
         accessed_idxs: &HashSet<u64>,
     ) -> Result<Vec<Header>> {
-        let mut needed = accessed_idxs.clone();
-        if start_block > 0 {
-            needed.insert(start_block - 1);
-        }
-
-        let oldest = needed
+        let prev_block = start_block.saturating_sub(1);
+        let oldest = accessed_idxs
             .iter()
             .min()
             .copied()
-            .unwrap_or(start_block.saturating_sub(1));
+            .unwrap_or(prev_block)
+            .min(prev_block);
 
         (oldest..start_block)
             .rev()
@@ -251,8 +251,8 @@ where
 
 #[derive(Debug, Default)]
 struct AccumulatedState {
-    accounts: HashMap<Address, Vec<U256>>,
-    bytecodes: Vec<Bytecode>,
+    accounts: HashMap<Address, HashSet<U256>>,
+    bytecodes: HashSet<Bytecode>,
     block_idxs: HashSet<u64>,
 }
 
@@ -262,7 +262,7 @@ impl AccumulatedState {
             self.accounts
                 .entry(*addr)
                 .or_default()
-                .extend(slots.iter().cloned());
+                .extend(slots.iter().copied());
         }
         self.bytecodes
             .extend(other.accessed_contracts().iter().cloned());
