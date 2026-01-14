@@ -24,7 +24,9 @@ from typing import Dict, List
 try:
     import requests
 except ImportError:
-    print("ERROR: requests library not found. Install with: pip install requests")
+    print("ERROR: requests library not found.")
+    print("Install dependencies with: uv sync")
+    print("Or run directly with: uv run python send-metrics.py")
     sys.exit(1)
 
 # GitHub API configuration

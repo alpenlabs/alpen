@@ -43,13 +43,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install requests
+      - name: Install uv
+        uses: astral-sh/setup-uv@72b7d1399b649c06e2350e2ba096ab92e69701ea # v5
 
       - name: Collect and send metrics
         env:
@@ -62,8 +57,9 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_REF: ${{ github.ref }}
           GITHUB_ACTOR: ${{ github.actor }}
+        working-directory: .github/scripts/grafana
         run: |
-          python .github/scripts/grafana/send-metrics.py
+          uv run --no-project python send-metrics.py
 
       - name: Summary
         if: success()

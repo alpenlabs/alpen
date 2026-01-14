@@ -15,7 +15,9 @@ import sys
 try:
     import requests
 except ImportError:
-    print("requests library not found. Install with: pip install requests")
+    print("requests library not found.")
+    print("Install dependencies with: uv sync")
+    print("Or run directly with: uv run python provision.py")
     sys.exit(1)
 
 GRAFANA_URL = os.getenv("GRAFANA_URL", "").rstrip("/")
