@@ -1,11 +1,10 @@
 //! Client data database operations interface..
 
-use strata_common::instrumentation::components;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types::traits::*;
 use strata_primitives::l1::L1BlockCommitment;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: ClientStateDatabase> => ClientStateOps, component = components::STORAGE_CLIENT_STATE) {

@@ -4,6 +4,7 @@
 //! that monitors ASM worker status updates and processes checkpoint logs emitted by the
 //! checkpoint-v0 subprotocol.
 
+mod constants;
 mod processor;
 mod service;
 mod state;

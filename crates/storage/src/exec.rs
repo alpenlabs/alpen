@@ -38,8 +38,7 @@ pub(crate) use strata_storage_common::inst_ops_generic;
 /// ### Parameters (all required)
 /// - **Database trait**: The trait bound for the database (e.g., `L1BroadcastDatabase`)
 /// - **Ops struct name**: The name of the generated operations struct (e.g., `BroadcastDbOps`)
-/// - **component**: The component name for tracing instrumentation (e.g., `"storage:l1"`). Use
-///   constants from `strata_common::instrumentation::components`.
+/// - **component**: The component name for tracing instrumentation (e.g., `"storage:l1"`).
 /// - **Methods**: Each operation is defined with its inputs and outputs
 ///
 /// ### Generated API

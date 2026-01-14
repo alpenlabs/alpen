@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use strata_common::instrumentation::services;
 use strata_csm_types::ClientState;
 use strata_identifiers::Epoch;
 use strata_params::Params;
@@ -10,6 +9,8 @@ use strata_primitives::prelude::*;
 use strata_service::ServiceState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
+
+use crate::constants;
 
 /// State for the CSM worker service.
 ///
@@ -70,6 +71,6 @@ impl CsmWorkerState {
 
 impl ServiceState for CsmWorkerState {
     fn name(&self) -> &str {
-        services::CSM_WORKER
+        constants::SERVICE_NAME
     }
 }

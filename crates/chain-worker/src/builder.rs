@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use strata_common::instrumentation::services;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
@@ -9,6 +8,7 @@ use strata_tasks::TaskExecutor;
 use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::{
+    constants,
     errors::{WorkerError, WorkerResult},
     handle::{ChainWorkerHandle, WorkerShared},
     service::{ChainWorkerService, ChainWorkerServiceState},
@@ -119,7 +119,7 @@ impl<W> ChainWorkerBuilder<W> {
 
         // Launch the service using the sync worker.
         let _service_monitor = service_builder
-            .launch_sync(services::CHAIN_WORKER, executor)
+            .launch_sync(constants::SERVICE_NAME, executor)
             .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 
         // Create and return the handle.

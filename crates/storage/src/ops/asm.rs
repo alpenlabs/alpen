@@ -1,11 +1,10 @@
 //! ASM data operation interface.
 
-use strata_common::instrumentation::components;
 use strata_db_types::traits::*;
 use strata_primitives::l1::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: AsmDatabase> => AsmDataOps, component = components::STORAGE_ASM) {

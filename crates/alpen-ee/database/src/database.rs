@@ -3,9 +3,9 @@ use alpen_ee_common::{
     ExecBlockRecord,
 };
 use strata_acct_types::Hash;
-use strata_common::instrumentation::components;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
+use strata_storage::instrumentation::components;
 use strata_storage_common::inst_ops_generic;
 
 use crate::{error::DbError, DbResult};

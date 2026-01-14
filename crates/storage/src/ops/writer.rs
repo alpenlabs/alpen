@@ -1,13 +1,12 @@
 //! Operations for reading/writing envelope related data from/to Database
 
-use strata_common::instrumentation::components;
 use strata_db_types::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry},
 };
 use strata_primitives::buf::Buf32;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: L1WriterDatabase> => EnvelopeDataOps, component = components::STORAGE_L1_WRITER) {

@@ -184,8 +184,7 @@ macro_rules! inst_ops {
 /// - **Ops struct name**: The name of the generated operations interface (e.g., `BroadcastDbOps`).
 /// - **Error type**: The custom error type to use (e.g., `CustomError`). This error type must
 ///   implement `From<OpsError>` to handle conversion of internal errors.
-/// - **component**: The component name for tracing instrumentation (e.g., `"storage:l1"`). This
-///   should use constants from `strata_common::instrumentation::components`.
+/// - **component**: The component name for tracing instrumentation (e.g., `"storage:l1"`).
 /// - **Methods**: Each operation is defined with its inputs and outputs, generating async and sync
 ///   variants automatically.
 ///

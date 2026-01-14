@@ -6,7 +6,6 @@ use serde::Serialize;
 use strata_chainexec::{BlockExecutionOutput, ChainExecutor};
 use strata_chaintsn::context::L2HeaderAndParent;
 use strata_checkpoint_types::EpochSummary;
-use strata_common::instrumentation::services;
 use strata_eectl::handle::ExecCtlHandle;
 use strata_ol_chain_types::{L2Block, L2Header};
 use strata_params::Params;
@@ -17,6 +16,7 @@ use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
 
 use crate::{
+    constants,
     context::WorkerExecCtxImpl,
     errors::{WorkerError, WorkerResult},
     handle::WorkerShared,
@@ -292,7 +292,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServiceState<W> {
     fn name(&self) -> &str {
-        services::CHAIN_WORKER
+        constants::SERVICE_NAME
     }
 }
 

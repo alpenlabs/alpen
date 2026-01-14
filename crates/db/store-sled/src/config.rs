@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use sled::transaction::ConflictableTransactionResult;
-use strata_common::instrumentation::components;
 use strata_db_types::DbResult;
 use tracing::instrument;
 use typed_sled::{
@@ -9,7 +8,7 @@ use typed_sled::{
     transaction::{Backoff, ConstantBackoff, SledTransactional},
 };
 
-use crate::utils::to_db_error;
+use crate::{instrumentation::components, utils::to_db_error};
 
 // Configuration constants
 pub(crate) const DEFAULT_RETRY_COUNT: u16 = 3;

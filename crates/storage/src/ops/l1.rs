@@ -1,11 +1,10 @@
 //! L1 data operation interface.
 
 use strata_asm_common::AsmManifest;
-use strata_common::instrumentation::components;
 use strata_db_types::traits::*;
 use strata_primitives::l1::L1BlockId;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: L1Database> => L1DataOps, component = components::STORAGE_L1) {

@@ -57,7 +57,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             target_height = height.to_consensus_u32(),
             target_block = %incoming_block.blkid()
         );
-        let _pivot_guard = pivot_span.enter();
+        let pivot_span_guard = pivot_span.enter();
 
         let mut skipped_blocks = vec![];
         let mut pivot_block = *incoming_block;
@@ -93,7 +93,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         );
 
         // Drop pivot span guard before next phase
-        drop(_pivot_guard);
+        drop(pivot_span_guard);
 
         // Special handling for genesis block - its anchor state was created during init
         // but its manifest wasn't (because Bitcoin block wasn't available yet).

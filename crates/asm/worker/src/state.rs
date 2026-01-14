@@ -5,14 +5,13 @@ use strata_asm_common::{ASM_MMR_CAP_LOG2, AnchorState, AsmMmr, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
-use strata_common::instrumentation::services;
 use strata_params::Params;
 use strata_primitives::{Buf32, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
 use tracing::field::Empty;
 
-use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResolver};
+use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResolver, constants};
 
 /// Service state for the ASM worker.
 ///
@@ -130,7 +129,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         };
 
         // Asm transition.
-        let stf_span = tracing::debug_span!("asm.stf.compute");
+        let stf_span = tracing::debug_span!("asm.stf.process");
         let _stf_guard = stf_span.enter();
 
         strata_asm_stf::compute_asm_transition(&self.asm_spec, cur_state.state(), stf_input)
@@ -147,7 +146,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> ServiceState for AsmWorkerServiceState<W> {
     fn name(&self) -> &str {
-        services::ASM_WORKER
+        constants::SERVICE_NAME
     }
 }
 

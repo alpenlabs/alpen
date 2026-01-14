@@ -5,6 +5,7 @@
 
 mod aux_resolver;
 mod builder;
+mod constants;
 mod errors;
 mod handle;
 mod message;

@@ -1,8 +1,7 @@
-use strata_common::instrumentation::components;
 use strata_db_types::traits::GlobalMmrDatabase;
 use strata_identifiers::{Hash, RawMmrId};
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: GlobalMmrDatabase> => GlobalMmrDataOps, component = components::STORAGE_GLOBAL_MMR) {

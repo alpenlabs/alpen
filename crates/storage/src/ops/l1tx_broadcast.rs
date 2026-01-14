@@ -1,8 +1,7 @@
-use strata_common::instrumentation::components;
 use strata_db_types::{traits::*, types::L1TxEntry};
 use strata_primitives::buf::Buf32;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: L1BroadcastDatabase> => BroadcastDbOps, component = components::STORAGE_L1_BROADCAST) {

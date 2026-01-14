@@ -1,11 +1,10 @@
 //! OL block data operation interface.
 
-use strata_common::instrumentation::components;
 use strata_db_types::traits::*;
 use strata_identifiers::{OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: OLBlockDatabase> => OLBlockOps, component = components::STORAGE_OL) {

@@ -10,12 +10,12 @@ workspace = true
 alpen-ee-common.workspace = true
 bitcoin.workspace = true
 strata-acct-types.workspace = true
-strata-common.workspace = true
 strata-db-store-sled.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
+strata-storage.workspace = true
 strata-storage-common.workspace = true
 
 async-trait.workspace = true

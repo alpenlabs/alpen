@@ -1,10 +1,9 @@
 //! L2 block data operation interface.
 
-use strata_common::instrumentation::components;
 use strata_db_types::traits::*;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: L2BlockDatabase> => L2DataOps, component = components::STORAGE_L2) {

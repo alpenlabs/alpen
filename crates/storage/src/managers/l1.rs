@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmManifest;
-use strata_common::instrumentation::components;
 use strata_db_types::{traits::L1Database, DbError, DbResult};
 use strata_primitives::l1::L1BlockId;
 use threadpool::ThreadPool;
 use tracing::{error, instrument};
 
-use crate::{cache::CacheTable, ops};
+use crate::{cache::CacheTable, instrumentation::components, ops};
 
 /// Caching manager of L1 block data
 #[expect(
@@ -38,7 +37,7 @@ impl L1BlockManager {
         skip(self, manifest),
         fields(
             component = components::STORAGE_L1,
-            block_id = %manifest.blkid(),
+            blkid = %manifest.blkid(),
             height = manifest.height(),
         )
     )]
@@ -53,7 +52,7 @@ impl L1BlockManager {
         skip(self, manifest),
         fields(
             component = components::STORAGE_L1,
-            block_id = %manifest.blkid(),
+            blkid = %manifest.blkid(),
             height = manifest.height(),
         )
     )]
@@ -70,8 +69,8 @@ impl L1BlockManager {
         skip(self),
         fields(
             component = components::STORAGE_L1,
-            block_id = %blockid,
-            height = height,
+            blkid = %blockid,
+            height,
         )
     )]
     pub fn extend_canonical_chain(&self, blockid: &L1BlockId, height: u64) -> DbResult<()> {
@@ -95,8 +94,8 @@ impl L1BlockManager {
         skip(self),
         fields(
             component = components::STORAGE_L1,
-            block_id = %blockid,
-            height = height,
+            blkid = %blockid,
+            height,
         )
     )]
     pub async fn extend_canonical_chain_async(

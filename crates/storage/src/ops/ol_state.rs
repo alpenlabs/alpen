@@ -1,9 +1,8 @@
-use strata_common::instrumentation::components;
 use strata_db_types::traits::OLStateDatabase;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
     (<D: OLStateDatabase> => OLStateOps, component = components::STORAGE_OL_STATE) {
