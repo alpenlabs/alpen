@@ -59,10 +59,10 @@ pub fn process_batch_proof(zkvm: &impl ZkVmEnv, chunk_vkey: &[u32; 8]) {
 
 /// Verifies that chunk states are continuous: chunk[i].new_state == chunk[i+1].prev_state
 fn verify_state_continuity(chunk_outputs: &[ChunkProofOutput]) {
-    for i in 0..chunk_outputs.len() - 1 {
+    for (i, window) in chunk_outputs.windows(2).enumerate() {
         assert_eq!(
-            chunk_outputs[i].new_state,
-            chunk_outputs[i + 1].prev_state,
+            window[0].new_state,
+            window[1].prev_state,
             "State discontinuity between chunk {} and {}",
             i,
             i + 1
