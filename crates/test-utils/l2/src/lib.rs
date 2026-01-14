@@ -140,6 +140,13 @@ fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> OperatorPubkeys {
     OperatorPubkeys::new(pk.into(), pk.into())
 }
 
+/// Gets the operator secret key for testing.
+/// This matches the key generation in `make_dummy_operator_pubkeys_with_seed(0)`.
+pub fn get_test_operator_secret_key() -> SecretKey {
+    let mut rng = StdRng::seed_from_u64(0);
+    SecretKey::new(&mut rng)
+}
+
 /// Gets the genesis [`Chainstate`] from consensus [`Params`] and test btc segment.
 pub fn get_genesis_chainstate(params: &Params) -> (L2BlockBundle, Chainstate) {
     make_l2_genesis(params)

@@ -11,5 +11,15 @@
 //! From the perspective of a test "crate", a function it does not use
 //! is `dead code` even though it is actually being used by another test "crate".
 //! Apparently, `clippy` isn't smart enough for that kind of analysis.
+//!
+//! # Module Structure
+//!
+//! - `harness`: Core test harness (Bitcoin regtest + ASM worker) - subprotocol-agnostic
+//! - `worker_context`: ASM worker context implementation for tests
+//! - `admin`: Admin subprotocol utilities (AdminExt trait, action builders)
+//! - `checkpoint`: Checkpoint subprotocol utilities (CheckpointExt trait)
 
-pub(crate) mod bitcoind;
+pub mod admin;
+pub mod checkpoint;
+pub mod test_harness;
+pub mod worker_context;

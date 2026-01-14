@@ -193,7 +193,6 @@ mod tests {
     use std::num::NonZero;
 
     use bitcoin::secp256k1::PublicKey;
-    use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
     use strata_crypto::{
         keys::compressed::CompressedPublicKey,
