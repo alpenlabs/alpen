@@ -1,5 +1,5 @@
 use strata_primitives::proof::{ProofKey, ProofZkVm};
-use zkaleido::{VerifyingKey, ZkVmVerifier};
+use zkaleido::{VerifyingKey, ZkVmVkProvider};
 
 pub mod native;
 #[cfg(feature = "risc0")]

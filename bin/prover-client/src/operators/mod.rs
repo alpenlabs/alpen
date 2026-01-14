@@ -177,9 +177,9 @@ pub trait ProvingOp {
             }
         }
 
-        let proof = proof_res.map_err(ProvingTaskError::ZkVmError)?;
+        let proof_with_meta = proof_res.map_err(ProvingTaskError::ZkVmError)?;
 
-        db.put_proof(*task_id, proof)
+        db.put_proof(*task_id, proof_with_meta.receipt().clone())
             .map_err(ProvingTaskError::DatabaseError)?;
 
         Ok(())

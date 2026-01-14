@@ -46,7 +46,7 @@ pub fn gen_proof(
 ) -> ProofReceipt {
     info!("Generating proof for CL STF");
     let input = prepare_input(evm_ee_proof_with_vk, btc_blockspace_proof_with_vk);
-    ClStfProgram::prove(&input, host).unwrap()
+    ClStfProgram::prove(&input, host).unwrap().receipt().clone()
 }
 
 pub fn proof_with_vk(

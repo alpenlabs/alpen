@@ -15,7 +15,7 @@ pub fn prepare_input() -> EvmEeProofInput {
 fn gen_proof(host: &impl ZkVmHost) -> ProofReceipt {
     info!("Generating proof for EVM EE STF");
     let input = prepare_input();
-    EvmEeProgram::prove(&input, host).unwrap()
+    EvmEeProgram::prove(&input, host).unwrap().receipt().clone()
 }
 
 pub fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {

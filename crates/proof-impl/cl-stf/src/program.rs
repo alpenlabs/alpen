@@ -7,8 +7,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::{buf::Buf32, params::RollupParams};
 use strata_state::{batch::TxFilterConfigTransition, block::L2Block, chain_state::Chainstate};
 use zkaleido::{
-    AggregationInput, ProofReceipt, PublicValues, VerifyingKey, ZkVmError, ZkVmInputResult,
-    ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
+    AggregationInput, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues,
+    VerifyingKey, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -56,7 +56,9 @@ impl ZkVmProgram for ClStfProgram {
         match input.btc_blockspace_proof_with_vk.clone() {
             Some((proof, vk)) => {
                 input_builder.write_serde(&true)?;
-                input_builder.write_proof(&AggregationInput::new(proof, vk))?;
+                let receipt_with_meta =
+                    ProofReceiptWithMetadata::new(proof, ProofMetadata::default());
+                input_builder.write_proof(&AggregationInput::new(receipt_with_meta, vk))?;
             }
             None => {
                 input_builder.write_serde(&false)?;
@@ -64,7 +66,8 @@ impl ZkVmProgram for ClStfProgram {
         };
 
         let (proof, vk) = input.evm_ee_proof_with_vk.clone();
-        input_builder.write_proof(&AggregationInput::new(proof, vk))?;
+        let receipt_with_meta = ProofReceiptWithMetadata::new(proof, ProofMetadata::default());
+        input_builder.write_proof(&AggregationInput::new(receipt_with_meta, vk))?;
 
         input_builder.build()
     }

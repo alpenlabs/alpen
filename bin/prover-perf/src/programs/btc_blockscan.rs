@@ -31,7 +31,7 @@ pub fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
 fn gen_proof(host: &impl ZkVmHost) -> ProofReceipt {
     info!("Generating proof for BTC Blockscan");
     let input = prepare_input();
-    BtcBlockspaceProgram::prove(&input, host).unwrap()
+    BtcBlockspaceProgram::prove(&input, host).unwrap().receipt().clone()
 }
 
 pub fn proof_with_vk(host: &impl ZkVmHost) -> (ProofReceipt, VerifyingKey) {

@@ -5,8 +5,8 @@ use std::{
 
 use strata_state::batch::BatchTransition;
 use zkaleido::{
-    AggregationInput, ProofReceipt, PublicValues, VerifyingKey, ZkVmError, ZkVmInputResult,
-    ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
+    AggregationInput, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues,
+    VerifyingKey, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmProgramPerf, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -40,8 +40,10 @@ impl ZkVmProgram for CheckpointProgram {
         input_builder.write_serde(&input.cl_stf_proofs.len())?;
 
         for cl_stf_proof in &input.cl_stf_proofs {
+            let receipt_with_meta =
+                ProofReceiptWithMetadata::new(cl_stf_proof.clone(), ProofMetadata::default());
             let cl_stf_proof_with_vk =
-                AggregationInput::new(cl_stf_proof.clone(), input.cl_stf_vk.clone());
+                AggregationInput::new(receipt_with_meta, input.cl_stf_vk.clone());
             input_builder.write_proof(&cl_stf_proof_with_vk)?;
         }
 

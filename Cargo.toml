@@ -116,10 +116,16 @@ strata-tasks = { path = "crates/tasks" }
 strata-test-utils = { path = "crates/test-utils" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
-zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
-zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc13" }
+zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
+zkaleido-risc0-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc16" }
+
+# risc0/sp1 dependencies for groth16 verification
+risc0-groth16 = "3.0.1"
+risc0-zkp = "3.0.1"
+risc0-circuit-recursion = "4.0.1"
+sp1-verifier = "5.2.1"
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
