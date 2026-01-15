@@ -6,7 +6,35 @@ use reth_revm::{
     state::{AccountInfo, Bytecode},
     DatabaseRef,
 };
-use revm_primitives::alloy_primitives::{ruint::Uint, Address, B256, U256};
+use revm_primitives::alloy_primitives::{Address, B256, U256};
+
+/// A single storage slot key.
+pub type StorageKey = U256;
+
+/// Accessed state captured during block execution for witness generation.
+#[derive(Debug)]
+pub struct AccessedState {
+    accessed_accounts: HashMap<Address, Vec<StorageKey>>,
+    accessed_contracts: Vec<Bytecode>,
+    accessed_block_idxs: HashSet<u64>,
+}
+
+impl AccessedState {
+    /// Returns the set of block indices accessed (for BLOCKHASH opcode).
+    pub fn accessed_block_idxs(&self) -> &HashSet<u64> {
+        &self.accessed_block_idxs
+    }
+
+    /// Returns accessed accounts with their storage keys.
+    pub fn accessed_accounts(&self) -> &HashMap<Address, Vec<StorageKey>> {
+        &self.accessed_accounts
+    }
+
+    /// Returns accessed contract bytecodes.
+    pub fn accessed_contracts(&self) -> &Vec<Bytecode> {
+        &self.accessed_contracts
+    }
+}
 
 /// `CacheDBProvider` implements a provider for the revm `CacheDB`.
 /// In addition it holds accessed account info, storage values, and bytecodes during
@@ -31,29 +59,6 @@ impl fmt::Debug for CacheDBProvider {
                 &self.accessed_blkd_ids.borrow().len(),
             )
             .finish_non_exhaustive()
-    }
-}
-#[derive(Debug)]
-pub struct AccessedState {
-    accessed_accounts: HashMap<Address, Vec<Uint<256, 4>>>,
-    accessed_contracts: Vec<Bytecode>,
-    accessed_block_idxs: HashSet<u64>,
-}
-
-impl AccessedState {
-    /// Returns the set of block indices accessed (for BLOCKHASH opcode).
-    pub fn accessed_block_idxs(&self) -> &HashSet<u64> {
-        &self.accessed_block_idxs
-    }
-
-    /// Returns accessed accounts with their storage keys.
-    pub fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
-        &self.accessed_accounts
-    }
-
-    /// Returns accessed contract bytecodes.
-    pub fn accessed_contracts(&self) -> &Vec<Bytecode> {
-        &self.accessed_contracts
     }
 }
 
