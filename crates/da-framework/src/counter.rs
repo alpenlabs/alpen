@@ -199,6 +199,7 @@ where
 macro_rules! inst_direct_ctr_schemes {
     ( $( $name:ident ($basety:ident, $incrty:ident); )* ) => {
         $(
+            #[derive(Copy, Clone, Debug, Default)]
             pub struct $name;
 
             impl $crate::CounterScheme for $name {
@@ -225,6 +226,7 @@ macro_rules! inst_direct_ctr_schemes {
 macro_rules! inst_via_ctr_schemes {
     ( $( $name:ident ($basety:ident, $incrty:ident; $viaty:ident); )* ) => {
         $(
+            #[derive(Copy, Clone, Debug, Default)]
             pub struct $name;
 
             impl $crate::CounterScheme for $name {
