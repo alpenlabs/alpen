@@ -2,6 +2,7 @@
 
 mod account_state;
 mod account_summary;
+mod block;
 mod blocktag;
 mod chain_status;
 mod snark_acct_update;
@@ -9,6 +10,7 @@ mod txn;
 
 pub use account_state::RpcSnarkAccountState;
 pub use account_summary::{RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry};
+pub use block::RpcBlockRangeEntry;
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::RpcOLChainStatus;
 pub use snark_acct_update::RpcSnarkAccountUpdate;

@@ -11,7 +11,6 @@ use jsonrpsee::{
     },
 };
 use ssz::Encode;
-use ssz_types::VariableList;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{
     IAccountState, ISnarkAccountState, ISnarkAccountStateExt, IStateAccessor,
@@ -21,8 +20,8 @@ use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
 use strata_primitives::HexBytes;
 use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_rpc_types_new::{
-    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcOLChainStatus,
-    RpcOLTransaction, RpcSnarkAccountState,
+    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
+    RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
 };
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
@@ -444,7 +443,7 @@ impl OLFullNodeRpcServer for OLRpcServer {
         &self,
         start_height: u64,
         end_height: u64,
-    ) -> RpcResult<HexBytes> {
+    ) -> RpcResult<Vec<RpcBlockRangeEntry>> {
         let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
 
         if start_height > end_height || block_count > MAX_RAW_BLOCKS_RANGE {
@@ -469,10 +468,10 @@ impl OLFullNodeRpcServer for OLRpcServer {
         }
         // Reverse back to get chronological sequence.
         blocks.reverse();
-        let blks: VariableList<_, MAX_RAW_BLOCKS_RANGE> = VariableList::new(blocks)
-            .map_err(|e| internal_error(format!("cannot collect OL blocks: {e}")))?;
 
-        Ok(HexBytes(blks.as_ssz_bytes()))
+        let entries: Vec<_> = blocks.iter().map(Into::into).collect();
+
+        Ok(entries)
     }
 
     async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes> {

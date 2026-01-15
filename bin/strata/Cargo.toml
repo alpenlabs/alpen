@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 ssz.workspace = true
-ssz_types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-worker.workspace = true
 strata-chain-worker-new.workspace = true
