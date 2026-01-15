@@ -87,6 +87,16 @@ async fn test_multiple_block_processing() {
     let harness = create_test_harness()
         .await
         .expect("Failed to create test harness");
+    let (l1, state) = harness.get_latest_asm_state().unwrap().unwrap();
+    assert_eq!(l1, state.state().chain_view.pow_state.last_verified_block);
+    assert_eq!(
+        l1.height().to_consensus_u32() as u64,
+        state
+            .state()
+            .chain_view
+            .history_accumulator
+            .last_inserted_height()
+    );
 
     let block_hashes = harness.mine_blocks(3).await.expect("Failed to mine blocks");
     assert_eq!(block_hashes.len(), 3);
@@ -96,4 +106,13 @@ async fn test_multiple_block_processing() {
         .await
         .expect("Failed to get chain tip");
     assert_eq!(tip_height, harness.genesis_height + 3);
+    assert_eq!(l1, state.state().chain_view.pow_state.last_verified_block);
+    assert_eq!(
+        l1.height().to_consensus_u32() as u64,
+        state
+            .state()
+            .chain_view
+            .history_accumulator
+            .last_inserted_height()
+    );
 }
