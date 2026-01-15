@@ -1,0 +1,31 @@
+[package]
+name = "strata-proofimpl-alpen-ee-acct"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ssz.workspace = true
+ssz_derive.workspace = true
+strata-codec.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-evm-ee = { path = "../../evm-ee" }
+strata-identifiers.workspace = true
+strata-snark-acct-types.workspace = true
+tree_hash.workspace = true
+zkaleido.workspace = true
+zkaleido-native-adapter.workspace = true
+
+# External dependencies
+reth-chainspec.workspace = true
+rsp-primitives.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[features]
+default = []
+host = []
+
+[lints]
+workspace = true
