@@ -160,7 +160,7 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     state.set_cur_slot(slot);
     // Create a fresh snark account, then update its sequence number
     let pred_key = PredicateKey::always_accept();
-    let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::from([0u8; 32]));
+    let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::zero());
     let new_acct =
         NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
     state.create_new_account(account_id, new_acct).unwrap();
@@ -169,7 +169,7 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     state
         .update_account(account_id, |account| {
             let snark_account = account.as_snark_account_mut().unwrap();
-            snark_account.set_proof_state_directly(Hash::from([0u8; 32]), 0, Seqno::from(seq_no));
+            snark_account.set_proof_state_directly(Hash::zero(), 0, Seqno::from(seq_no));
         })
         .unwrap();
 
@@ -328,7 +328,7 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
         let pred_key = PredicateKey::always_accept();
-        let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::from([0u8; 32]));
+        let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::zero());
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         // Ignore errors if account already exists
@@ -336,7 +336,7 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
             // Set initial seq_no to 0 for new Snark accounts
             let _ = state.update_account(account_id, |account| {
                 let snark_account = account.as_snark_account_mut().unwrap();
-                snark_account.set_proof_state_directly(Hash::from([0u8; 32]), 0, Seqno::from(0));
+                snark_account.set_proof_state_directly(Hash::zero(), 0, Seqno::from(0));
             });
         }
     }
@@ -384,13 +384,13 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
         let snark_state =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::from([0u8; 32]));
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::zero());
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         if state.create_new_account(account_id, new_acct).is_ok() {
             let _ = state.update_account(account_id, |account| {
                 let snark_account = account.as_snark_account_mut().unwrap();
-                snark_account.set_proof_state_directly(Hash::from([0u8; 32]), 0, Seqno::from(0));
+                snark_account.set_proof_state_directly(Hash::zero(), 0, Seqno::from(0));
             });
         }
     }

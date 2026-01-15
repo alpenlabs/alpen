@@ -11,40 +11,23 @@ use strata_snark_acct_types::{
 
 /// Verifies an account update is correct with respect to the current state of
 /// snark account, including checking account balances.
-pub fn verify_update_correctness<'a, S: IStateAccessor>(
+pub fn verify_update_correctness<S: IStateAccessor>(
     state_accessor: &S,
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    update: &'a SnarkAccountUpdateContainer,
+    update: &SnarkAccountUpdateContainer,
     cur_balance: BitcoinAmount,
-) -> AcctResult<VerifiedUpdate<'a>> {
+) -> AcctResult<()> {
     let operation = update.base_update().operation();
-    let outputs = operation.outputs();
 
     // 1. Check seq_no matches
-    let expected_seq = snark_state.seqno();
-    if operation.seq_no() != *expected_seq.inner() {
-        return Err(AcctError::InvalidUpdateSequence {
-            account_id: target,
-            expected: *expected_seq.inner(),
-            got: operation.seq_no(),
-        });
-    }
+    validate_seq_no(target, snark_state, operation)?;
 
     // 2. Check message counts / proof indices line up
-    let expected_idx =
-        snark_state.next_inbox_msg_idx() + operation.processed_messages().len() as u64;
-    let claimed_idx = operation.new_proof_state().next_inbox_msg_idx();
-
-    if expected_idx != claimed_idx {
-        return Err(AcctError::InvalidMsgIndex {
-            account_id: target,
-            expected: expected_idx,
-            got: claimed_idx,
-        });
-    }
+    validate_message_index(target, snark_state, operation)?;
 
     let accum_proofs = update.accumulator_proofs();
+
     // 3. Verify ledger references using the provided state accessor
     verify_ledger_refs(
         target,
@@ -56,12 +39,50 @@ pub fn verify_update_correctness<'a, S: IStateAccessor>(
     verify_input_mmr_proofs(target, snark_state, accum_proofs.inbox_proofs())?;
 
     // 5. Verify outputs can be applied safely
+    let outputs = operation.outputs();
     verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
     // 6. Verify the witness check
     verify_update_witness(target, snark_state, update.base_update())?;
 
-    Ok(VerifiedUpdate { operation })
+    Ok(())
+}
+
+/// Validates the update sequence number against the snark state.
+pub fn validate_seq_no(
+    target: AccountId,
+    snark_state: &impl ISnarkAccountState,
+    operation: &UpdateOperationData,
+) -> AcctResult<()> {
+    let expected_seq = snark_state.seqno();
+    if operation.seq_no() != *expected_seq.inner() {
+        return Err(AcctError::InvalidUpdateSequence {
+            account_id: target,
+            expected: *expected_seq.inner(),
+            got: operation.seq_no(),
+        });
+    }
+    Ok(())
+}
+
+/// Validates the update message index against the snark state.
+pub fn validate_message_index(
+    target: AccountId,
+    snark_state: &impl ISnarkAccountState,
+    operation: &UpdateOperationData,
+) -> AcctResult<()> {
+    let expected_idx =
+        snark_state.next_inbox_msg_idx() + operation.processed_messages().len() as u64;
+    let claimed_idx = operation.new_proof_state().next_inbox_msg_idx();
+
+    if expected_idx != claimed_idx {
+        return Err(AcctError::InvalidMsgIndex {
+            account_id: target,
+            expected: expected_idx,
+            got: claimed_idx,
+        });
+    }
+    Ok(())
 }
 
 /// Verifies the ledger ref proofs against the provided asm mmr for an account.
@@ -187,16 +208,4 @@ fn compute_update_claim(
         operation.extra_data().to_vec(),
     );
     pub_params.as_ssz_bytes()
-}
-
-/// Type safe update that indicates it has been verified.
-#[derive(Debug)]
-pub struct VerifiedUpdate<'a> {
-    operation: &'a UpdateOperationData,
-}
-
-impl<'a> VerifiedUpdate<'a> {
-    pub fn operation(&self) -> &'a UpdateOperationData {
-        self.operation
-    }
 }

@@ -133,10 +133,9 @@ fn process_update_tx<S: IStateAccessor>(
     let cur_balance = account_state.balance();
 
     // Step 2: Verify the update (needs state.asm_manifests_mmr())
-    let verified_update =
-        snark_sys::verify_update_correctness(state, target, snark_acct_state, update, cur_balance)?;
+    snark_sys::verify_update_correctness(state, target, snark_acct_state, update, cur_balance)?;
 
-    let operation = verified_update.operation();
+    let operation = update.operation();
 
     // Validate sequence number
     let current_seqno = *snark_acct_state.seqno().inner();
@@ -169,7 +168,7 @@ fn process_update_tx<S: IStateAccessor>(
 
         // Collect effects using snark-acct-sys
         let mut fx_buf = AcctInteractionBuffer::new_empty();
-        snark_sys::apply_update_outputs(&mut fx_buf, verified_update)?;
+        snark_sys::apply_update_outputs(&mut fx_buf, update)?;
 
         Ok(fx_buf)
     })??;

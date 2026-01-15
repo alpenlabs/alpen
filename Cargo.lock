@@ -14089,7 +14089,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-db-types",
  "strata-identifiers",
- "strata-merkle",
+ "strata-merkle 0.2.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-ol-chain-types-new",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
@@ -15304,7 +15304,7 @@ dependencies = [
  "ssz",
  "strata-acct-types",
  "strata-ledger-types",
- "strata-merkle",
+ "strata-merkle 0.2.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-snark-acct-types",
 ]
 

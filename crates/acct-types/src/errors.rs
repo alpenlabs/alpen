@@ -38,7 +38,7 @@ pub enum AcctError {
     UpdateNonexistentAccount(AccountId),
 
     #[error(
-        "Invalid update sequence for account {account_id:?}: expected seqno {expected}, got {got}"
+        "invalid update seqno for snark account {account_id:?} update (expected {expected}, got {got})"
     )]
     InvalidUpdateSequence {
         account_id: AccountId,
@@ -47,7 +47,7 @@ pub enum AcctError {
     },
 
     #[error(
-        "Invalid message index for account {account_id:?}: expected new index {expected}, got index {got}"
+        "invalid next msg index for snark account {account_id:?} update (expected {expected}, got {got})"
     )]
     InvalidMsgIndex {
         account_id: AccountId,
@@ -55,25 +55,25 @@ pub enum AcctError {
         got: u64,
     },
 
-    #[error("Insufficient balance in account. Requested {requested}, available {available} ")]
+    #[error("insufficient balance for operation (requested {requested}, available {available})")]
     InsufficientBalance {
         requested: BitcoinAmount,
         available: BitcoinAmount,
     },
 
-    #[error("Message proof invalid for account {account_id:?} at message index {msg_idx}")]
+    #[error("message proof invalid for account {account_id:?} at message index {msg_idx}")]
     InvalidMessageProof { account_id: AccountId, msg_idx: u64 },
 
-    #[error("Invalid ledger reference by account {account_id:?} at ref index {ref_idx}")]
+    #[error("invalid ledger reference by account {account_id:?} at ref index {ref_idx}")]
     InvalidLedgerReference { account_id: AccountId, ref_idx: u64 },
 
-    #[error("Invalid update proof for account {account_id:?}")]
+    #[error("invalid update proof for account {account_id:?}")]
     InvalidUpdateProof { account_id: AccountId },
 
-    #[error("Message index overflow for account {account_id:?}")]
+    #[error("message index overflow for account {account_id:?}")]
     MsgIndexOverflow { account_id: AccountId },
 
-    #[error("Bitcoin amount overflow")]
+    #[error("bitcoin amount overflow")]
     BitcoinAmountOverflow,
 
     #[error("operation not supported in this context")]

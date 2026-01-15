@@ -12,9 +12,7 @@ use jsonrpsee::{
 };
 use ssz::Encode;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ledger_types::{
-    IAccountState, ISnarkAccountState, ISnarkAccountStateExt, IStateAccessor,
-};
+use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
 use strata_primitives::HexBytes;
@@ -137,7 +135,7 @@ impl OLClientRpcServer for OLRpcServer {
             Ok(snark_state) => {
                 let seqno: u64 = *snark_state.seqno().inner();
                 let inner_state = snark_state.inner_state_root();
-                let next_inbox_idx = snark_state.get_next_inbox_msg_idx();
+                let next_inbox_idx = snark_state.next_inbox_msg_idx();
                 (seqno, ProofState::new(inner_state, next_inbox_idx))
             }
             Err(_) => (0, ProofState::new([0u8; 32].into(), 0)), // Non-snark account
@@ -293,7 +291,7 @@ impl OLClientRpcServer for OLRpcServer {
             let (next_seq_no, next_inbox_msg_idx) = match account_state.as_snark_account() {
                 Ok(snark_state) => {
                     let seqno: u64 = *snark_state.seqno().inner();
-                    let next_inbox_idx = snark_state.get_next_inbox_msg_idx();
+                    let next_inbox_idx = snark_state.next_inbox_msg_idx();
                     (seqno, next_inbox_idx)
                 }
                 Err(_) => (0, 0), // Non-snark account
@@ -420,7 +418,7 @@ impl OLClientRpcServer for OLRpcServer {
                 // as account metadata, not runtime state), so we return an empty vec for now
                 let seq_no: u64 = *snark_state.seqno().inner();
                 let inner_state = snark_state.inner_state_root().0.into();
-                let next_inbox_msg_idx = snark_state.get_next_inbox_msg_idx();
+                let next_inbox_msg_idx = snark_state.next_inbox_msg_idx();
                 let update_vk = vec![].into(); // Not available from native state
 
                 Ok(Some(RpcSnarkAccountState::new(

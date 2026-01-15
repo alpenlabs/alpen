@@ -1,6 +1,4 @@
-use strata_snark_acct_types::LedgerInterface;
-
-use crate::VerifiedUpdate;
+use strata_snark_acct_types::{LedgerInterface, SnarkAccountUpdateContainer};
 
 /// Applies verified snark account update outputs via the ledger interface.
 ///
@@ -9,11 +7,11 @@ use crate::VerifiedUpdate;
 /// of STF implementation details.
 ///
 /// This is called after verification succeeds and before updating the snark account's proof state.
-pub fn apply_update_outputs<'a, L: LedgerInterface>(
+pub fn apply_update_outputs<L: LedgerInterface>(
     ledger_impl: &mut L,
-    verified_update: VerifiedUpdate<'a>,
+    update: &SnarkAccountUpdateContainer,
 ) -> Result<(), L::Error> {
-    let outputs = verified_update.operation().outputs();
+    let outputs = update.operation().outputs();
     let transfers = outputs.transfers();
     let messages = outputs.messages();
 

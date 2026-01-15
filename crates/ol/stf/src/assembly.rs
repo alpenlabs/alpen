@@ -98,7 +98,6 @@ pub fn execute_block_inputs<S: IStateAccessor>(
         chain_processing::process_epoch_initial(state, &init_ctx)?;
     }
 
-    eprintln!("processing block start {:?}", block_context);
     // 2. Process the slot start for every block.
     chain_processing::process_block_start(state, &block_context)?;
 
