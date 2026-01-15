@@ -502,16 +502,15 @@ impl OLMempoolRejectReason {
     }
 }
 
-/// Reason for removing a transaction from the mempool.
+/// Reason a transaction is invalid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MempoolTxRemovalReason {
-    /// Transaction was included in a block.
-    Included,
+pub enum MempoolTxInvalidReason {
+    /// Transaction is permanently invalid (consensus rules, expired).
+    /// Will be removed from mempool.
+    Invalid,
 
-    /// Transaction was replaced by a newer version with the same sequence number.
-    Replaced,
-
-    /// Transaction validation failed (expired, invalid seqno, etc.).
+    /// Transaction failed (may succeed later or may be a transient infrastructure issue).
+    /// Will stay in mempool until revalidation.
     Failed,
 }
 

@@ -5,10 +5,10 @@ use strata_service::ServiceMonitor;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
-    MempoolCommand, OLMempoolError, OLMempoolResult,
+    MempoolCommand, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
     command::create_completion,
     service::MempoolServiceStatus,
-    types::{MempoolTxRemovalReason, OLMempoolStats, OLMempoolTransaction},
+    types::{OLMempoolStats, OLMempoolTransaction},
 };
 
 /// Handle for interacting with the mempool service.
@@ -78,20 +78,14 @@ impl MempoolHandle {
         self.send_command(command, rx).await?
     }
 
-    /// Remove transactions from the mempool.
-    ///
-    /// # Arguments
-    /// * `txs` - Vector of (transaction_id, removal_reason) pairs
-    ///
-    /// # Returns
-    /// Vector of transaction IDs that were successfully removed
-    pub async fn remove_transactions(
+    /// Report invalid transactions to the mempool.
+    pub async fn report_invalid_transactions(
         &self,
-        txs: Vec<(OLTxId, MempoolTxRemovalReason)>,
-    ) -> OLMempoolResult<Vec<OLTxId>> {
+        txs: Vec<(OLTxId, MempoolTxInvalidReason)>,
+    ) -> OLMempoolResult<()> {
         let (completion, rx) = create_completion();
-        let command = MempoolCommand::RemoveTransactions { txs, completion };
-        self.send_command(command, rx).await?
+        let command = MempoolCommand::ReportInvalidTransactions { txs, completion };
+        self.send_command(command, rx).await
     }
 
     /// Get mempool statistics.
@@ -126,7 +120,7 @@ mod tests {
             create_test_snark_tx_with_seq_no, create_test_snark_tx_with_seq_no_and_slots,
             setup_test_state_for_tip,
         },
-        types::{MempoolTxRemovalReason, OLMempoolConfig},
+        types::OLMempoolConfig,
     };
 
     /// Helper to set up mempool handle with storage for tests.
@@ -195,33 +189,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_transactions_and_remove() {
+    async fn test_get_transactions_and_report_invalid() {
         let (handle, storage, _status_channel) = setup_mempool().await;
 
-        // Use different accounts to ensure unique transaction IDs
-        let tx1 = create_test_generic_tx_for_account(1);
-        let tx2 = create_test_generic_tx_for_account(2);
-        let tx3 = create_test_generic_tx_for_account(3);
+        // Submit 3 txs from different accounts
+        let mut txids = Vec::new();
+        for account in 1..=3u8 {
+            let tx = create_test_generic_tx_for_account(account);
+            txids.push(handle.submit_transaction(tx).await.unwrap());
+        }
+        let [txid1, txid2, txid3]: [_; 3] = txids.try_into().unwrap();
 
-        let txid1 = handle.submit_transaction(tx1).await.unwrap();
-        let txid2 = handle.submit_transaction(tx2).await.unwrap();
-        let txid3 = handle.submit_transaction(tx3).await.unwrap();
+        assert_eq!(handle.get_transactions(10).await.unwrap().len(), 3);
 
-        // Get transactions
-        let txs = handle.get_transactions(10).await.unwrap();
-        assert_eq!(txs.len(), 3);
-
-        // Remove one transaction
-        let removed = handle
-            .remove_transactions(vec![(txid2, MempoolTxRemovalReason::Included)])
+        // Report tx2 as Invalid (should be removed)
+        // Report tx3 as Failed (should NOT be removed)
+        handle
+            .report_invalid_transactions(vec![
+                (txid2, MempoolTxInvalidReason::Invalid),
+                (txid3, MempoolTxInvalidReason::Failed),
+            ])
             .await
             .unwrap();
-        assert_eq!(removed.len(), 1);
 
-        // Verify tx2 removed, others remain
-        assert!(!tx_exists(&storage, txid2));
+        // Verify tx2 removed (Invalid), tx1 and tx3 remain
         assert!(tx_exists(&storage, txid1));
-        assert!(tx_exists(&storage, txid3));
+        assert!(!tx_exists(&storage, txid2), "Invalid should remove tx");
+        assert!(tx_exists(&storage, txid3), "Failed should NOT remove tx");
         assert_eq!(handle.stats().mempool_size(), 2);
     }
 
@@ -229,23 +223,20 @@ mod tests {
     async fn test_get_transactions_with_limit() {
         let (handle, storage, _status_channel) = setup_mempool().await;
 
-        // Use different accounts to ensure unique transaction IDs
-        let tx1 = create_test_generic_tx_for_account(1);
-        let tx2 = create_test_generic_tx_for_account(2);
-        let tx3 = create_test_generic_tx_for_account(3);
-
-        let txid1 = handle.submit_transaction(tx1).await.unwrap();
-        let txid2 = handle.submit_transaction(tx2).await.unwrap();
-        let txid3 = handle.submit_transaction(tx3).await.unwrap();
+        // Submit 3 txs from different accounts
+        let mut txids = Vec::new();
+        for account in 1..=3u8 {
+            let tx = create_test_generic_tx_for_account(account);
+            txids.push(handle.submit_transaction(tx).await.unwrap());
+        }
 
         // Get transactions with limit
-        let txs = handle.get_transactions(2).await.unwrap();
-        assert_eq!(txs.len(), 2);
+        assert_eq!(handle.get_transactions(2).await.unwrap().len(), 2);
 
         // Verify all transactions still exist in storage
-        assert!(tx_exists(&storage, txid1));
-        assert!(tx_exists(&storage, txid2));
-        assert!(tx_exists(&storage, txid3));
+        for txid in &txids {
+            assert!(tx_exists(&storage, *txid));
+        }
         assert_eq!(handle.stats().mempool_size(), 3);
     }
 

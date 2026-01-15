@@ -57,9 +57,9 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
                     completion.send(result).await;
                 }
 
-                MempoolCommand::RemoveTransactions { txs, completion } => {
-                    let result = state.handle_remove_transactions(txs.clone());
-                    completion.send(result).await;
+                MempoolCommand::ReportInvalidTransactions { txs, completion } => {
+                    state.handle_report_invalid_transactions(txs.clone());
+                    completion.send(()).await;
                 }
             },
 
@@ -84,7 +84,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        OLMempoolResult, OLMempoolTransaction,
+        MempoolTxInvalidReason, OLMempoolResult, OLMempoolTransaction,
         test_utils::{
             create_test_block_commitment, create_test_context, create_test_snark_tx_with_seq_no,
             create_test_state_provider,
@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_service_remove_transactions() {
+    async fn test_service_report_invalid_transactions() {
         let tip = create_test_block_commitment(100);
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(
@@ -185,19 +185,31 @@ mod tests {
             .await
             .unwrap();
 
-        // Add a transaction via handle_submit_transaction
-        let tx = create_test_snark_tx_with_seq_no(1, 0);
-        let txid = tx.compute_txid();
-        state
-            .handle_submit_transaction(Box::new(tx))
-            .await
-            .expect("Should add tx");
+        // Account 1: tx1 (seq 0), tx2 (seq 1) - tx2 cascades when tx1 removed
+        // Account 2: tx3 (seq 0) - independent
+        let txs: [(u8, u64); 3] = [(1, 0), (1, 1), (2, 0)];
+        let mut txids = Vec::new();
+        for (account, seq_no) in txs {
+            let tx = create_test_snark_tx_with_seq_no(account, seq_no);
+            txids.push(tx.compute_txid());
+            state.handle_submit_transaction(Box::new(tx)).await.unwrap();
+        }
+        let [txid1, txid2, txid3] = txids.try_into().unwrap();
 
+        for txid in [txid1, txid2, txid3] {
+            assert!(state.contains(&txid));
+        }
+
+        // Report tx1 as Invalid (should be removed)
+        // Report tx3 as Failed (should NOT be removed)
         let (tx_sender, rx) = oneshot::channel();
         let completion = CommandCompletionSender::new(tx_sender);
 
-        let command = MempoolCommand::RemoveTransactions {
-            txs: vec![(txid, crate::MempoolTxRemovalReason::Included)],
+        let command = MempoolCommand::ReportInvalidTransactions {
+            txs: vec![
+                (txid1, MempoolTxInvalidReason::Invalid),
+                (txid3, MempoolTxInvalidReason::Failed),
+            ],
             completion,
         };
 
@@ -205,14 +217,12 @@ mod tests {
             .await
             .expect("Should process command");
 
-        let result: OLMempoolResult<Vec<OLTxId>> = rx.await.expect("Should receive result");
-        assert!(result.is_ok());
-        let removed = result.unwrap();
-        assert_eq!(removed.len(), 1);
-        assert_eq!(removed[0], txid);
+        let _: () = rx.await.expect("Should receive result");
 
-        // Verify transaction is gone
-        assert!(!state.contains(&txid));
+        // Verify tx1 removed (Invalid), tx2 cascade removed, tx3 remains (Failed)
+        assert!(!state.contains(&txid1), "Invalid should remove tx1");
+        assert!(!state.contains(&txid2), "Invalid should cascade remove tx2");
+        assert!(state.contains(&txid3), "Failed should NOT remove tx3");
     }
 
     #[tokio::test]

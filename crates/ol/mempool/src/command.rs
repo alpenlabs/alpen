@@ -4,16 +4,13 @@ use strata_identifiers::OLTxId;
 use strata_service::CommandCompletionSender;
 use tokio::sync::oneshot;
 
-use crate::{MempoolTxRemovalReason, OLMempoolResult, types::OLMempoolTransaction};
+use crate::{MempoolTxInvalidReason, OLMempoolResult, types::OLMempoolTransaction};
 
 /// Type alias for transaction submission result.
 type SubmitTransactionResult = OLMempoolResult<OLTxId>;
 
 /// Type alias for get transactions result.
 type GetTransactionsResult = OLMempoolResult<Vec<(OLTxId, OLMempoolTransaction)>>;
-
-/// Type alias for transaction removal result (returns IDs of removed transactions).
-type RemoveTransactionsResult = OLMempoolResult<Vec<OLTxId>>;
 
 /// Commands that can be sent to the mempool service.
 #[derive(Debug)]
@@ -39,16 +36,12 @@ pub enum MempoolCommand {
         completion: CommandCompletionSender<GetTransactionsResult>,
     },
 
-    /// Remove transactions from the mempool.
-    ///
-    /// Each transaction specifies a removal reason that determines cascade behavior:
-    /// - `Included`: Transaction was included in block
-    /// - `Failed`: Transaction execution or validation failed
-    RemoveTransactions {
-        /// Transactions to remove with their removal reasons.
-        txs: Vec<(OLTxId, MempoolTxRemovalReason)>,
-        /// Completion sender for the result.
-        completion: CommandCompletionSender<RemoveTransactionsResult>,
+    /// Report invalid transactions to the mempool.
+    ReportInvalidTransactions {
+        /// Transactions IDs with reasons for being invalid.
+        txs: Vec<(OLTxId, MempoolTxInvalidReason)>,
+        /// Completion sender.
+        completion: CommandCompletionSender<()>,
     },
 }
 
