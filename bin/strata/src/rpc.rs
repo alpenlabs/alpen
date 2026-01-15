@@ -483,54 +483,6 @@ impl OLFullNodeRpcServer for OLRpcServer {
     }
 }
 
-const MAX_RAW_BLOCKS_RANGE: usize = 5000; // FIXME: make this configurable
-
-#[async_trait]
-impl OLFullNodeRpcServer for OLRpcServer {
-    async fn get_raw_blocks_range(
-        &self,
-        start_height: u64,
-        end_height: u64,
-    ) -> RpcResult<HexBytes> {
-        let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
-
-        if start_height > end_height || block_count > MAX_RAW_BLOCKS_RANGE {
-            return Err(invalid_params_error("Invalid block range"));
-        }
-
-        let last = self
-            .get_canonical_block_at_height(end_height)
-            .await?
-            .ok_or(not_found_error(format!(
-                "No blocks found at slot {end_height}"
-            )))?;
-
-        let mut cur_blk = last;
-        let mut blocks = Vec::with_capacity(block_count);
-
-        // Fetch blocks in backward order to ensure a valid chain.
-        for _ in (start_height..=end_height).rev() {
-            let blk = self.get_block(cur_blk).await?;
-            cur_blk = blk.header().parent_blkid;
-            blocks.push(blk);
-        }
-        // Reverse back to get chronological sequence.
-        blocks.reverse();
-        let blks: VariableList<_, MAX_RAW_BLOCKS_RANGE> = VariableList::new(blocks)
-            .map_err(|e| internal_error(format!("cannot collect OL blocks: {e}")))?;
-
-        Ok(HexBytes(blks.as_ssz_bytes()))
-    }
-
-    async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes> {
-        let raw_blk = self
-            .get_block(block_id)
-            .await
-            .map(|b| HexBytes(b.as_ssz_bytes()))?;
-        Ok(raw_blk)
-    }
-}
-
 // === RPC Error Helpers ===
 
 /// Custom error code for mempool capacity-related errors.

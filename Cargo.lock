@@ -14887,7 +14887,6 @@ dependencies = [
  "async-trait",
  "futures",
  "ssz",
- "ssz_types",
  "strata-common",
  "strata-consensus-logic",
  "strata-db-types",

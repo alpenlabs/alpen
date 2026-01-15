@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 ssz.workspace = true
-ssz_types.workspace = true
 strata-common = { workspace = true, optional = true }
 strata-consensus-logic.workspace = true
 strata-db-types.workspace = true

@@ -2,7 +2,6 @@ use std::cmp::min;
 
 use futures::stream::{self, Stream, StreamExt};
 use ssz::Decode;
-use ssz_types::VariableList;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types as _;
@@ -67,14 +66,18 @@ impl<RPC: OLFullNodeRpcClient + Send + Sync> OLRpcSyncPeer<RPC> {
         start_height: u64,
         end_height: u64,
     ) -> Result<Vec<OLBlock>, ClientError> {
-        let bytes = self
+        let entries = self
             .rpc_client
             .get_raw_blocks_range(start_height, end_height)
             .await
             .map_err(|e| ClientError::Network(e.to_string()))?;
-        let blks = VariableList::<OLBlock, 1000>::from_ssz_bytes(&bytes.0)
-            .map_err(|e| ClientError::Deserialization(e.to_string()))?;
-        Ok(blks.into())
+
+        let blocks: Result<Vec<_>, _> = entries
+            .iter()
+            .map(|entry| OLBlock::from_ssz_bytes(&entry.raw_block().0))
+            .collect();
+
+        blocks.map_err(|e| ClientError::Deserialization(e.to_string()))
     }
 }
 
