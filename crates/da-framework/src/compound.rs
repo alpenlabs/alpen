@@ -1,6 +1,6 @@
 //! Compound DA type infra.
 
-use crate::{Codec, CodecResult, DaRegister, DaWrite, Decoder, Encoder};
+use crate::{Codec, CodecResult, DaCounter, DaRegister, DaWrite, Decoder, Encoder};
 
 /// Describes a bitmap we can read/write to.
 pub trait Bitmap: Copy {
@@ -207,6 +207,10 @@ macro_rules! _mct_field_decode {
     // Register
     ($reader:ident $dec:ident; register $fty:ty) => {
         $reader.decode_next_member::<DaRegister<$fty>>($dec)?
+    };
+    // Counter
+    ($reader:ident $dec:ident; counter $fty:ty) => {
+        $reader.decode_next_member::<DaCounter<$fty>>($dec)?
     };
 }
 
