@@ -30,10 +30,8 @@
 
 use arbitrary::Arbitrary;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_identifiers::{AccountSerial, SUBJ_ID_LEN};
+use strata_identifiers::{AccountSerial, SUBJ_ID_LEN, SubjectIdBytes};
 use thiserror::Error;
-
-use super::SubjectIdBytes;
 
 /// Minimum descriptor length: control byte + 1 serial byte, with empty subject bytes.
 pub const MIN_DESCRIPTOR_LEN: usize = 1 + 1;

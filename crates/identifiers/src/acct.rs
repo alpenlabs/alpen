@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::{error, fmt, mem};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -6,7 +6,7 @@ use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 
-pub const ACCT_ID_LEN: usize = 32;
+const ACCT_ID_LEN: usize = 32;
 pub const SUBJ_ID_LEN: usize = 32;
 
 /// Total number of system reserved accounts, which is the space where we do special casing of
@@ -189,6 +189,99 @@ impl fmt::Display for SubjectId {
 
 crate::impl_ssz_transparent_byte_array_wrapper!(SubjectId, 32);
 
+/// Error type for [`SubjectBytes`] operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubjectIdBytesError {
+    /// Subject bytes exceed the maximum allowed length.
+    TooLong(usize, usize),
+}
+
+impl fmt::Display for SubjectIdBytesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooLong(actual, max) => {
+                write!(
+                    f,
+                    "subject bytes length {actual} exceeds maximum length {max}"
+                )
+            }
+        }
+    }
+}
+
+impl error::Error for SubjectIdBytesError {}
+
+/// Variable-length [`SubjectId`] bytes.
+///
+/// Subject IDs are canonically [`SUBJ_ID_LEN`] bytes per the account system specification, but in
+/// practice many subject IDs are shorter. This type stores the variable-length byte representation
+/// to optimize DA costs by avoiding unnecessary zero padding in the on-chain deposit descriptor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubjectIdBytes(Vec<u8>);
+
+impl SubjectIdBytes {
+    /// Creates a new `SubjectBytes` instance from a byte vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the length exceeds [`SUBJ_ID_LEN`].
+    pub fn try_new(bytes: Vec<u8>) -> Result<Self, SubjectIdBytesError> {
+        if bytes.len() > SUBJ_ID_LEN {
+            return Err(SubjectIdBytesError::TooLong(bytes.len(), SUBJ_ID_LEN));
+        }
+        Ok(Self(bytes))
+    }
+
+    /// Returns the raw, unpadded subject bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Converts to a canonical [`SUBJ_ID_LEN`]-byte [`SubjectId`].
+    ///
+    /// This method allocates a [`SUBJ_ID_LEN`]-byte buffer and zero-pads the stored subject bytes.
+    /// The original bytes are copied to the end of the buffer, with any remaining
+    /// bytes filled with zeros at the beginning.
+    ///
+    /// # Example
+    ///
+    /// If the stored bytes are shorter than [`SUBJ_ID_LEN`], such as `[0xAA, 0xBB, ..., 0xFF]`,
+    /// this method returns a [`SUBJ_ID_LEN`]-byte `SubjectId` with leading zeros and the bytes
+    /// at the end: `[0x00, 0x00, ..., 0x00, 0xAA, 0xBB, ..., 0xFF]`.
+    pub fn to_subject_id(&self) -> SubjectId {
+        let mut buf = [0u8; SUBJ_ID_LEN];
+        let start = SUBJ_ID_LEN - self.0.len();
+        buf[start..].copy_from_slice(&self.0);
+        SubjectId::new(buf)
+    }
+
+    /// Returns the length of the subject bytes.
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns true if the subject bytes are empty.
+    pub const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the inner bytes, consuming the `SubjectBytes`.
+    pub fn into_vec(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+impl<'a> Arbitrary<'a> for SubjectIdBytes {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate bytes with length between 0 and SUBJ_ID_LEN
+        let len = u.int_in_range(0..=SUBJ_ID_LEN)?;
+        let mut bytes = vec![0u8; len];
+        u.fill_buffer(&mut bytes)?;
+        // Safe to unwrap since we ensure len <= SUBJ_ID_LEN
+        Ok(Self::try_new(bytes).unwrap())
+    }
+}
+
 /// Raw primitive version of an account ID.  Defined here for convenience.
 pub type RawAccountTypeId = u16;
 
@@ -273,6 +366,53 @@ mod tests {
             let encoded = zero.as_ssz_bytes();
             let decoded = SubjectId::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(zero, decoded);
+        }
+    }
+
+    mod subject_id_bytes {
+        use super::*;
+
+        proptest! {
+            #[test]
+            fn prop_accepts_valid_length(bytes in prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)) {
+                let result = SubjectIdBytes::try_new(bytes.clone());
+                prop_assert!(result.is_ok());
+                let sb = result.unwrap();
+                prop_assert_eq!(sb.as_bytes(), &bytes[..]);
+                prop_assert_eq!(sb.len(), bytes.len());
+                prop_assert_eq!(sb.is_empty(), bytes.is_empty());
+            }
+
+            #[test]
+            fn prop_rejects_too_long(
+                bytes in prop::collection::vec(any::<u8>(), (SUBJ_ID_LEN + 1)..=(SUBJ_ID_LEN + 100))
+            ) {
+                let len = bytes.len();
+                let result = SubjectIdBytes::try_new(bytes);
+                prop_assert!(result.is_err());
+                prop_assert!(matches!(result, Err(SubjectIdBytesError::TooLong(actual, expected))
+                    if actual == len && expected == SUBJ_ID_LEN));
+            }
+
+            #[test]
+            fn prop_to_subject_id_preserves_and_pads(bytes in prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)) {
+                let sb = SubjectIdBytes::try_new(bytes.clone()).unwrap();
+                let subject_id = sb.to_subject_id();
+                let inner = subject_id.inner();
+
+                let start = SUBJ_ID_LEN - bytes.len();
+
+                // Original bytes should be preserved at the end
+                prop_assert_eq!(&inner[start..], &bytes[..]);
+
+                // Leading bytes should be zeros (padding)
+                for &byte in &inner[..start] {
+                    prop_assert_eq!(byte, 0);
+                }
+
+                // Total length should always be SUBJ_ID_LEN
+                prop_assert_eq!(inner.len(), SUBJ_ID_LEN);
+            }
         }
     }
 }

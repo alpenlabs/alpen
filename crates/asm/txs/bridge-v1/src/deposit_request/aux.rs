@@ -2,12 +2,12 @@
 
 use arbitrary::Arbitrary;
 use strata_codec::{Codec, encode_to_vec};
-use strata_identifiers::AccountSerial;
+use strata_identifiers::{AccountSerial, SubjectIdBytes};
 use strata_l1_txfmt::TagData;
 
 use crate::{
     constants::{BRIDGE_V1_SUBPROTOCOL_ID, BridgeTxType},
-    deposit_request::{DepositDescriptor, SubjectIdBytes},
+    deposit_request::DepositDescriptor,
 };
 
 /// Auxiliary data in the SPS-50 header for [`BridgeTxType::DepositRequest`].
