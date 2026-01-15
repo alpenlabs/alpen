@@ -185,6 +185,8 @@ mod test {
                 l1_follow_distance: 1,
                 client_checkpoint_interval: 2,
             },
+            sequencer: None,
+            epoch_sealing: None,
             logging: Default::default(),
         }
     }
