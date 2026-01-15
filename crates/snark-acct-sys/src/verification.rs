@@ -42,8 +42,8 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     let outputs = operation.outputs();
     verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
 
-    // 6. Verify the witness check
-    verify_update_witness(target, snark_state, update.base_update())?;
+    // 6. Verify the proof
+    verify_update_proof(target, snark_state, update.base_update())?;
 
     Ok(())
 }
@@ -171,7 +171,7 @@ fn verify_update_outputs_safe<S: IStateAccessor>(
 }
 
 /// Verifies the update witness(proof and pub params) against the VK of the snark account.
-pub(crate) fn verify_update_witness(
+pub(crate) fn verify_update_proof(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdate,
