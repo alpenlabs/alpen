@@ -68,7 +68,7 @@ impl<'c> ProcessStage<'c> {
     ) -> Self {
         // Create a single verified aux data for all subprotocols
         let verified_aux_data =
-            VerifiedAuxData::try_new(aux_data, &anchor_state.chain_view.manifest_mmr)
+            VerifiedAuxData::try_new(aux_data, &anchor_state.chain_view.history_accumulator)
                 .expect("asm: failed to create verified aux data");
 
         Self {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bitcoin::{Block, hashes::Hash};
-use strata_asm_common::{AnchorState, AsmManifestMmr, ChainViewState};
+use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
@@ -62,14 +62,15 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             None => {
                 // Create genesis anchor state.
                 let genesis_l1_view = &self.params.rollup().genesis_l1_view;
-                let empty_mmr = AsmManifestMmr::new(genesis_l1_view.height_u64());
+                let empty_accumulator =
+                    AsmHistoryAccumulatorState::new(genesis_l1_view.height_u64());
                 let state = AnchorState {
                     chain_view: ChainViewState {
                         pow_state: HeaderVerificationState::new(
                             self.context.get_network()?,
                             genesis_l1_view,
                         ),
-                        manifest_mmr: empty_mmr,
+                        history_accumulator: empty_accumulator,
                     },
                     sections: vec![],
                 };

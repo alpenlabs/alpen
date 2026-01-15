@@ -200,7 +200,7 @@ impl<'a> AuxDataResolver<'a> {
             // offset = genesis_height + 1 (height of first block with manifest)
             let offset = genesis_height + 1;
             let start_index = start_height.saturating_sub(offset);
-            let end_index = end_height - offset;
+            let end_index = end_height.saturating_sub(offset);
 
             debug!(
                 start_height,

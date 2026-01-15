@@ -9,7 +9,7 @@ use strata_asm_manifest_types::Hash32;
 use strata_btc_types::RawBitcoinTx;
 
 use crate::{
-    AsmManifestMmr, AuxError, AuxResult,
+    AsmHistoryAccumulatorState, AuxError, AuxResult,
     aux::data::{AuxData, VerifiableManifestHash},
 };
 
@@ -63,10 +63,13 @@ impl VerifiedAuxData {
     ///
     /// Returns `AuxError::InvalidBitcoinTx` if any transaction fails to decode or is malformed.
     /// Returns `AuxError::InvalidMmrProof` if any manifest hash's MMR proof fails verification.
-    pub fn try_new(data: &AuxData, manfiest_mmr: &AsmManifestMmr) -> AuxResult<Self> {
+    pub fn try_new(
+        data: &AuxData,
+        asm_accumulator_state: &AsmHistoryAccumulatorState,
+    ) -> AuxResult<Self> {
         let txs = Self::verify_and_index_bitcoin_txs(data.bitcoin_txs())?;
         let manifest_hashes =
-            Self::verify_and_index_manifest_hashes(data.manifest_hashes(), manfiest_mmr)?;
+            Self::verify_and_index_manifest_hashes(data.manifest_hashes(), asm_accumulator_state)?;
 
         Ok(Self::new(txs, manifest_hashes))
     }
@@ -104,12 +107,12 @@ impl VerifiedAuxData {
     /// Returns `AuxError::InvalidMmrProof` if any proof fails verification.
     fn verify_and_index_manifest_hashes(
         hashes: &[VerifiableManifestHash],
-        manifest_mmr: &AsmManifestMmr,
+        manifest_mmr: &AsmHistoryAccumulatorState,
     ) -> AuxResult<HashMap<u64, Hash32>> {
         let mut manifest_hashes = HashMap::with_capacity(hashes.len());
 
         for item in hashes {
-            if !manifest_mmr.verify(item.proof(), item.hash()) {
+            if !manifest_mmr.verify_manifest_leaf(item.proof(), item.hash()) {
                 return Err(AuxError::InvalidMmrProof {
                     index: item.proof().index(),
                     hash: *item.hash(),
@@ -187,14 +190,14 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::{AsmManifestMmr, AuxError};
+    use crate::{AsmHistoryAccumulatorState, AuxError};
 
     #[test]
     fn test_verified_aux_data_empty() {
-        let mmr = AsmManifestMmr::new(16);
+        let accumulator_state = AsmHistoryAccumulatorState::new(16);
         let aux_data = AuxData::default();
 
-        let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &accumulator_state).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0u8; 32].into();
@@ -212,10 +215,10 @@ mod tests {
         let tx: Transaction = raw_tx.clone().try_into().unwrap();
         let txid = tx.compute_txid().as_raw_hash().to_byte_array();
 
-        let mmr = AsmManifestMmr::new(16);
+        let accumulator_state = AsmHistoryAccumulatorState::new(16);
         let aux_data = AuxData::new(vec![], vec![raw_tx]);
 
-        let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &accumulator_state).unwrap();
 
         // Should successfully return the bitcoin tx
         let txid_buf: Buf32 = txid.into();
@@ -225,10 +228,10 @@ mod tests {
 
     #[test]
     fn test_verified_aux_data_bitcoin_tx_not_found() {
-        let mmr = AsmManifestMmr::new(16);
+        let accumulator_state = AsmHistoryAccumulatorState::new(16);
         let aux_data = AuxData::default();
 
-        let verified = VerifiedAuxData::try_new(&aux_data, &mmr).unwrap();
+        let verified = VerifiedAuxData::try_new(&aux_data, &accumulator_state).unwrap();
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0xFF; 32].into();

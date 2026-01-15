@@ -54,7 +54,7 @@ pub enum AuxError {
     /// Manifest hash not found at the given L1 Block height.
     #[error("manifest hash not found for height {height}")]
     ManifestHashNotFound {
-        /// The requested MMR index
+        /// The requested height
         height: u64,
     },
 }
