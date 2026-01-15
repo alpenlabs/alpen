@@ -512,9 +512,8 @@ impl SnarkUpdateBuilder {
     pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
         let payload = strata_acct_types::MsgPayload::new(BitcoinAmount::from_sat(amount), data);
         let message = OutputMessage::new(dest, payload);
-        let transfers = self.outputs.transfers().to_vec();
-        let messages = vec![message];
-        self.outputs = UpdateOutputs::new(transfers, messages);
+        let msgs = self.outputs.messages_mut();
+        msgs.push(message);
         self
     }
 

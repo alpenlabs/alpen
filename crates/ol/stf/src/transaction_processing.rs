@@ -93,12 +93,16 @@ impl AcctInteractionBuffer {
         self.messages.push(sent_msg);
     }
 
+    fn add_sent_transfer(&mut self, sent_xfer: SentTransfer) {
+        self.transfers.push(sent_xfer);
+    }
+
     fn send_message_to(&mut self, dest: AccountId, payload: MsgPayload) {
         self.add_sent_message(SentMessage::new(dest, payload));
     }
 
     fn send_transfer_to(&mut self, dest: AccountId, amount: BitcoinAmount) {
-        self.transfers.push(SentTransfer::new(dest, amount));
+        self.add_sent_transfer(SentTransfer::new(dest, amount));
     }
 }
 
