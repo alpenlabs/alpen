@@ -15291,6 +15291,7 @@ dependencies = [
 name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -15298,6 +15299,7 @@ dependencies = [
  "ssz_types",
  "strata-acct-types",
  "strata-identifiers",
+ "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.12.3",
  "tree_hash_derive 0.12.3",

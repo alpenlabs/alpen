@@ -21,6 +21,7 @@ mod ssz_generated {
 }
 
 pub use error::OutputsError;
-pub use proof_interface::UpdateProofPubParams;
-pub use ssz_generated::ssz::{accumulators::*, messages::*, outputs::*, state::*, update::*};
+pub use ssz_generated::ssz::{
+    accumulators::*, messages::*, outputs::*, proof_interface::*, state::*, update::*,
+};
 pub use state::Seqno;

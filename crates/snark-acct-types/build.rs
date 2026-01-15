@@ -12,6 +12,7 @@ fn main() {
         "accumulators.ssz",
         "messages.ssz",
         "update.ssz",
+        "proof_interface.ssz",
     ];
     let base_dir = "ssz";
     let crates = ["strata_acct_types"];
@@ -26,10 +27,4 @@ fn main() {
         ModuleGeneration::NestedModules,
     )
     .expect("failed to generate SSZ types");
-
-    println!("cargo:rerun-if-changed=ssz/accumulators.ssz");
-    println!("cargo:rerun-if-changed=ssz/messages.ssz");
-    println!("cargo:rerun-if-changed=ssz/outputs.ssz");
-    println!("cargo:rerun-if-changed=ssz/state.ssz");
-    println!("cargo:rerun-if-changed=ssz/update.ssz");
 }

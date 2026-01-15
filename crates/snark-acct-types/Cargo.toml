@@ -19,5 +19,9 @@ thiserror.workspace = true
 [build-dependencies]
 ssz_codegen.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+strata-test-utils-ssz.workspace = true
+
 [lints]
 workspace = true
