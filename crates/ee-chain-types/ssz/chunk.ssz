@@ -1,0 +1,15 @@
+import io
+
+### Description of the state transition and IO captured in a chunk.
+class ChunkTransition(Container):
+    ### Previous exec blkid being built on top of.
+    parent_exec_blkid: Bytes32
+
+    ### New tip exec blkid.
+    tip_exec_blkid: Bytes32
+
+    ### Inputs processed in the chunk.
+    inputs: io.ExecInputs
+
+    ### Outputs processed in the chunk.
+    outputs: io.ExecOutputs
