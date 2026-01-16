@@ -14,7 +14,7 @@ use strata_ledger_types::{
 };
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_ol_chain_types_new::{OLBlockHeader, SnarkAccountUpdateTxPayload, TransactionPayload};
-use strata_ol_state_types::{NativeSnarkAccountState, OLState};
+use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, MmrEntryProof,
@@ -415,7 +415,7 @@ pub fn setup_genesis_with_snark_account(
     // Create snark account with initial balance directly
     let vk = PredicateKey::always_accept();
     let initial_state_root = get_test_state_root(1);
-    let snark_state = NativeSnarkAccountState::new_fresh(vk, initial_state_root);
+    let snark_state = OLSnarkAccountState::new_fresh(vk, initial_state_root);
     let balance = BitcoinAmount::from_sat(initial_balance);
     let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
     state
@@ -466,7 +466,7 @@ pub struct SnarkUpdateBuilder {
 
 impl SnarkUpdateBuilder {
     /// Create builder from current account state (captures starting point)
-    pub fn from_snark_state(snark_state: NativeSnarkAccountState) -> Self {
+    pub fn from_snark_state(snark_state: OLSnarkAccountState) -> Self {
         Self {
             seq_no: *snark_state.seqno().inner(),
             old_msg_idx: snark_state.next_inbox_msg_idx(),
@@ -552,6 +552,15 @@ impl SnarkUpdateBuilder {
         msgs.push(message);
         self
     }
+}
+
+/// Helper to get snark account state from OLState, panicking if not found or not a snark account
+pub fn get_snark_state_expect(
+    state: &OLState,
+    snark_id: AccountId,
+) -> (&OLAccountState, &OLSnarkAccountState) {
+    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    (snark_account, snark_account.as_snark_account().unwrap())
 }
 
 /// Helper for creating invalid snark updates for error testing.

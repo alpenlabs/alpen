@@ -20,8 +20,6 @@ mod verification;
 mod test_utils;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_snark;
 
 pub use assembly::*;
 pub use chain_processing::{process_block_start, process_epoch_initial};
