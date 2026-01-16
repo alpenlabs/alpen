@@ -14,8 +14,8 @@ pub type StorageKey = U256;
 /// Accessed state captured during block execution for witness generation.
 #[derive(Debug)]
 pub struct AccessedState {
-    accessed_accounts: HashMap<Address, Vec<StorageKey>>,
-    accessed_contracts: Vec<Bytecode>,
+    accessed_accounts: HashMap<Address, HashSet<StorageKey>>,
+    accessed_contracts: HashMap<B256, Bytecode>,
     accessed_block_idxs: HashSet<u64>,
 }
 
@@ -26,12 +26,12 @@ impl AccessedState {
     }
 
     /// Returns accessed accounts with their storage keys.
-    pub fn accessed_accounts(&self) -> &HashMap<Address, Vec<StorageKey>> {
+    pub fn accessed_accounts(&self) -> &HashMap<Address, HashSet<StorageKey>> {
         &self.accessed_accounts
     }
 
-    /// Returns accessed contract bytecodes.
-    pub fn accessed_contracts(&self) -> &Vec<Bytecode> {
+    /// Returns accessed contract bytecodes indexed by code hash.
+    pub fn accessed_contracts(&self) -> &HashMap<B256, Bytecode> {
         &self.accessed_contracts
     }
 }
@@ -44,7 +44,7 @@ pub struct CacheDBProvider {
     provider: Box<dyn StateProvider>,
     accounts: RefCell<HashMap<Address, AccountInfo>>,
     storage: RefCell<HashMap<Address, HashMap<U256, U256>>>,
-    bytecodes: RefCell<HashSet<Bytecode>>,
+    bytecodes: RefCell<HashMap<B256, Bytecode>>,
     accessed_blkd_ids: RefCell<HashSet<u64>>,
 }
 
@@ -86,7 +86,7 @@ impl CacheDBProvider {
         }
     }
 
-    fn get_accessed_accounts(&self) -> HashMap<Address, Vec<U256>> {
+    fn get_accessed_accounts(&self) -> HashMap<Address, HashSet<U256>> {
         let accounts = self.accounts.borrow();
         let storage = self.storage.borrow();
 
@@ -99,14 +99,14 @@ impl CacheDBProvider {
             .map(|address| {
                 let storage_keys = storage
                     .get(&address)
-                    .map_or(Vec::new(), |map| map.keys().cloned().collect());
+                    .map_or(HashSet::default(), |map| map.keys().cloned().collect());
                 (address, storage_keys)
             })
             .collect()
     }
 
-    fn get_accessed_contracts(&self) -> Vec<Bytecode> {
-        self.bytecodes.borrow().iter().cloned().collect()
+    fn get_accessed_contracts(&self) -> HashMap<B256, Bytecode> {
+        self.bytecodes.borrow().clone()
     }
 }
 
@@ -141,8 +141,10 @@ impl DatabaseRef for CacheDBProvider {
                 )))
             })?;
 
-        // Record the storage value to the state
-        self.bytecodes.borrow_mut().insert(bytecode.clone());
+        // Record the bytecode with its hash as key
+        self.bytecodes
+            .borrow_mut()
+            .insert(code_hash, bytecode.clone());
 
         Ok(bytecode)
     }

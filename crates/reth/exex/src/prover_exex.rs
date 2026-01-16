@@ -138,7 +138,11 @@ where
         current_block,
         parent_state,
         ancestor_headers: accessed_ancestors,
-        bytecodes: accessed_info.accessed_contracts().clone(),
+        bytecodes: accessed_info
+            .accessed_contracts()
+            .values()
+            .cloned()
+            .collect(),
         custom_beneficiary: None,
         opcode_tracking: false,
     })

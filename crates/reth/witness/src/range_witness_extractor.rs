@@ -6,9 +6,9 @@ use alloy_consensus::Header;
 use alloy_primitives::{
     keccak256,
     map::{B256Set, DefaultHashBuilder, HashMap},
-    Address, B256, U256,
+    Address, B256,
 };
-use alpen_reth_exex::{AccessedState, CacheDBProvider};
+use alpen_reth_exex::{AccessedState, CacheDBProvider, StorageKey};
 use eyre::{eyre, Result};
 use reth_evm::{
     execute::{BasicBlockExecutor, Executor},
@@ -213,7 +213,7 @@ where
 
         let state =
             EthereumState::from_transition_proofs(start_state_root, &pre_proofs, &post_proofs)?;
-        let bytecodes: Vec<Bytecode> = accessed.bytecodes.iter().cloned().collect();
+        let bytecodes: Vec<Bytecode> = accessed.bytecodes.values().cloned().collect();
         Ok((state, bytecodes))
     }
 
@@ -244,8 +244,8 @@ where
 
 #[derive(Debug, Default)]
 struct AccumulatedState {
-    accounts: HashMap<Address, HashSet<U256>>,
-    bytecodes: HashSet<Bytecode>,
+    accounts: HashMap<Address, HashSet<StorageKey>>,
+    bytecodes: HashMap<B256, Bytecode>,
     block_idxs: HashSet<u64>,
 }
 
@@ -257,8 +257,12 @@ impl AccumulatedState {
                 .or_default()
                 .extend(slots.iter().copied());
         }
-        self.bytecodes
-            .extend(other.accessed_contracts().iter().cloned());
+        self.bytecodes.extend(
+            other
+                .accessed_contracts()
+                .iter()
+                .map(|(k, v)| (*k, v.clone())),
+        );
         self.block_idxs.extend(other.accessed_block_idxs());
     }
 }
