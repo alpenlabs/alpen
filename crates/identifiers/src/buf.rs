@@ -4,6 +4,7 @@ use std::str::FromStr;
 use bitcoin::secp256k1::{Error, SecretKey, XOnlyPublicKey, schnorr::Signature};
 use const_hex as hex;
 use ssz_derive::{Decode, Encode};
+use ssz_primitives::FixedBytes;
 use zeroize::Zeroize;
 
 use crate::macros::internal;
@@ -154,6 +155,32 @@ impl TryFrom<Buf32> for XOnlyPublicKey {
 impl From<XOnlyPublicKey> for Buf32 {
     fn from(value: XOnlyPublicKey) -> Self {
         Self::from(value.serialize())
+    }
+}
+
+impl From<FixedBytes<32>> for Buf32 {
+    fn from(value: FixedBytes<32>) -> Self {
+        Buf32(value.0)
+    }
+}
+
+impl From<&FixedBytes<32>> for &Buf32 {
+    fn from(value: &FixedBytes<32>) -> Self {
+        // SAFETY: FixedBytes<32> and Buf32 have the same layout
+        unsafe { &*(value as *const FixedBytes<32> as *const Buf32) }
+    }
+}
+
+impl From<Buf32> for FixedBytes<32> {
+    fn from(value: Buf32) -> Self {
+        FixedBytes(value.0)
+    }
+}
+
+impl From<&Buf32> for &FixedBytes<32> {
+    fn from(value: &Buf32) -> Self {
+        // SAFETY: Buf32 and FixedBytes<32> have the same layout
+        unsafe { &*(value as *const Buf32 as *const FixedBytes<32>) }
     }
 }
 

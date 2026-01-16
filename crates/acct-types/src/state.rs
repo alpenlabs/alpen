@@ -45,9 +45,7 @@ impl AcctStateSummary {
     }
 
     pub fn typed_state_root(&self) -> &Hash {
-        // typed_state_root is FixedBytes<32>, convert to &Buf32
-        // SAFETY: FixedBytes<32> has the same layout as Buf32
-        unsafe { &*(self.typed_state_root.as_ref().as_ptr() as *const Hash) }
+        (&self.typed_state_root).into()
     }
 }
 
