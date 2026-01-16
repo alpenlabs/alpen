@@ -1,0 +1,35 @@
+import strata_acct_types
+
+MAX_SUBJECT_DEPOSITS = 1 << 16
+MAX_OUTPUT_TRANSFERS = 1 << 16
+MAX_OUTPUT_MESSAGES = 1 << 16
+
+### Describes data for a simple deposit to a subject within an EE.
+class SubjectDepositData(Container):
+    ### Destination subject ID within the execution environment
+    dest: strata_acct_types.SubjectId
+
+    ### Native asset value deposited (satoshis)
+    value: strata_acct_types.BitcoinAmount
+
+### Inputs from the OL to the EE processed in an execution span.
+class ExecInputs(Container):
+    ### Subject deposits from L1 or cross-layer transfers
+    subject_deposits: List[SubjectDepositData, MAX_SUBJECT_DEPOSITS]
+
+### Describes a transfer output from an EE subject to an OL account.
+class OutputTransfer(Container):
+    ### Destination orchestration layer account ID
+    dest: strata_acct_types.AccountId
+
+    ### Native asset value transferred (satoshis)
+    value: strata_acct_types.BitcoinAmount
+
+### Outputs from an EE to the OL produced in an execution span.
+class ExecOutputs(Container):
+    ### Native asset transfers to OL accounts
+    output_transfers: List[OutputTransfer, MAX_OUTPUT_TRANSFERS]
+
+    ### Messages sent to OL accounts (with data payload)
+    #~# external_kind: container
+    output_messages: List[strata_acct_types.SentMessage, MAX_OUTPUT_MESSAGES]
