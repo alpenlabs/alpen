@@ -7,7 +7,10 @@ use std::collections::BTreeMap;
 use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
-use strata_da_framework::{counter_schemes::CtrU64ByU8, DaCounter, DaRegister};
+use strata_da_framework::{
+    counter_schemes::{CtrU64ByVarint, VarintIncr},
+    DaCounter, DaRegister,
+};
 
 use crate::{
     batch::{AccountChange, AccountDiff, BatchStateDiff, StorageDiff},
@@ -22,7 +25,7 @@ pub struct AccountDiffSerde {
     pub balance: Option<U256>,
     /// Nonce increment (None = unchanged).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nonce_incr: Option<u8>,
+    pub nonce_incr: Option<u32>,
     /// New code hash (None = unchanged).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_hash: Option<B256>,
@@ -32,7 +35,7 @@ impl From<&AccountDiff> for AccountDiffSerde {
     fn from(diff: &AccountDiff) -> Self {
         Self {
             balance: diff.balance.new_value().map(|v| v.0),
-            nonce_incr: diff.nonce.diff().copied(),
+            nonce_incr: diff.nonce.diff().map(|v| v.inner()),
             code_hash: diff.code_hash.new_value().map(|v| v.0),
         }
     }
@@ -47,7 +50,8 @@ impl From<AccountDiffSerde> for AccountDiff {
                 .unwrap_or_else(DaRegister::new_unset),
             nonce: serde
                 .nonce_incr
-                .map(DaCounter::<CtrU64ByU8>::new_changed)
+                .and_then(VarintIncr::new)
+                .map(DaCounter::<CtrU64ByVarint>::new_changed)
                 .unwrap_or_else(DaCounter::new_unchanged),
             code_hash: serde
                 .code_hash
@@ -151,7 +155,7 @@ mod tests {
         // Convert back
         let roundtrip: AccountDiff = serde.into();
         assert_eq!(roundtrip.balance.new_value().unwrap().0, U256::from(1000));
-        assert_eq!(roundtrip.nonce.diff(), Some(&5));
+        assert_eq!(roundtrip.nonce.diff().map(|v| v.inner()), Some(5));
         assert_eq!(
             roundtrip.code_hash.new_value().unwrap().0,
             B256::from([0x11u8; 32])
