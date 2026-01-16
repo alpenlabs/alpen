@@ -2,7 +2,7 @@
 
 use crate::{
     BuilderError, Codec, CodecError, CodecResult, CompoundMember, DaBuilder, DaWrite, Decoder,
-    Encoder,
+    Encoder, Varint,
 };
 
 /// Describes scheme for a counter value and the quantity that it can change by.
@@ -254,6 +254,9 @@ macro_rules! inst_via_ctr_schemes {
 
 /// Counter schemes.
 pub mod counter_schemes {
+    use super::Varint;
+    use crate::{Codec, CodecError, Decoder, Encoder};
+
     inst_direct_ctr_schemes! {
         CtrU64ByU8(u64, u8);
         CtrU64ByU16(u64, u16);
@@ -271,12 +274,83 @@ pub mod counter_schemes {
         CtrI32ByI8(i32, i8; i64);
         CtrI32ByI16(i32, i16; i64);
     }
+
+    /// Newtype wrapper around [`Varint`] that adds [`Default`] and [`Clone`].
+    ///
+    /// This allows `Varint` to be used as a counter increment type.
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    pub struct VarintIncr(Varint);
+
+    impl Default for VarintIncr {
+        fn default() -> Self {
+            // Safe: 0 is always in range for Varint
+            Self(Varint::new(0).unwrap())
+        }
+    }
+
+    impl VarintIncr {
+        /// Creates a new varint increment from a u32 value.
+        ///
+        /// Returns `None` if the value exceeds `VARINT_MAX`.
+        pub fn new(v: u32) -> Option<Self> {
+            Varint::new(v).map(Self)
+        }
+
+        /// Returns the inner u32 value.
+        pub fn inner(self) -> u32 {
+            self.0.inner()
+        }
+    }
+
+    impl Codec for VarintIncr {
+        fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+            self.0.encode(enc)
+        }
+
+        fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+            Ok(Self(Varint::decode(dec)?))
+        }
+    }
+
+    /// Counter scheme for u64 base with varint-encoded increment.
+    ///
+    /// This allows increments up to ~1 billion while using only 1-4 bytes:
+    /// - 0-127: 1 byte
+    /// - 128-16383: 2 bytes
+    /// - 16384+: 4 bytes
+    ///
+    /// Use this for counters where overflow must be avoided (e.g., nonce deltas
+    /// across large batches) but small values are common.
+    #[derive(Copy, Clone, Debug, Default)]
+    pub struct CtrU64ByVarint;
+
+    impl crate::CounterScheme for CtrU64ByVarint {
+        type Base = u64;
+        type Incr = VarintIncr;
+
+        fn is_zero(incr: &Self::Incr) -> bool {
+            incr.0.inner() == 0
+        }
+
+        fn update(base: &mut Self::Base, incr: &Self::Incr) {
+            *base += incr.0.inner() as u64;
+        }
+
+        fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
+            let diff = b.checked_sub(a)?;
+            let diff_u32 = u32::try_from(diff).ok()?;
+            VarintIncr::new(diff_u32)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DaCounter, counter_schemes::CtrU64ByI16};
-    use crate::ContextlessDaWrite;
+    use super::{
+        DaCounter,
+        counter_schemes::{CtrU64ByI16, CtrU64ByVarint, VarintIncr},
+    };
+    use crate::{ContextlessDaWrite, decode_buf_exact, encode_to_vec};
 
     #[test]
     fn test_counter_simple() {
@@ -294,5 +368,64 @@ mod tests {
 
         ctr3.apply(&mut v).unwrap();
         assert_eq!(v, 30);
+    }
+
+    #[test]
+    fn test_varint_incr_encoding_sizes() {
+        // Small values (0-127) should use 1 byte
+        let small = VarintIncr::new(42).unwrap();
+        let encoded_small = encode_to_vec(&small).unwrap();
+        assert_eq!(encoded_small.len(), 1);
+
+        // Values 128-16383 should use 2 bytes
+        let medium = VarintIncr::new(1000).unwrap();
+        let encoded_medium = encode_to_vec(&medium).unwrap();
+        assert_eq!(encoded_medium.len(), 2);
+
+        // Values > 16383 should use 4 bytes
+        let large = VarintIncr::new(100_000).unwrap();
+        let encoded_large = encode_to_vec(&large).unwrap();
+        assert_eq!(encoded_large.len(), 4);
+    }
+
+    #[test]
+    fn test_varint_incr_roundtrip() {
+        for val in [0, 1, 127, 128, 1000, 16383, 16384, 100_000, 1_000_000_000] {
+            let incr = VarintIncr::new(val).unwrap();
+            let encoded = encode_to_vec(&incr).unwrap();
+            let decoded: VarintIncr = decode_buf_exact(&encoded).unwrap();
+            assert_eq!(decoded.inner(), val);
+        }
+    }
+
+    #[test]
+    fn test_varint_counter_apply() {
+        let incr = VarintIncr::new(42).unwrap();
+        let ctr = DaCounter::<CtrU64ByVarint>::new_changed(incr);
+
+        let mut v = 100u64;
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 142);
+    }
+
+    #[test]
+    fn test_varint_counter_large_increment() {
+        // Test with a value that would overflow u8 (>255)
+        let incr = VarintIncr::new(1000).unwrap();
+        let ctr = DaCounter::<CtrU64ByVarint>::new_changed(incr);
+
+        let mut v = 5000u64;
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 6000);
+    }
+
+    #[test]
+    fn test_varint_counter_unchanged() {
+        let ctr = DaCounter::<CtrU64ByVarint>::new_unchanged();
+        assert!(!ctr.is_changed());
+
+        let mut v = 100u64;
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 100); // Unchanged
     }
 }

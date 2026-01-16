@@ -13,7 +13,7 @@ mod register;
 mod traits;
 
 pub use codec::{
-    Codec, CodecError, CodecResult, Decoder, Encoder, decode_buf_exact, encode_to_vec,
+    Codec, CodecError, CodecResult, Decoder, Encoder, Varint, decode_buf_exact, encode_to_vec,
 };
 pub use compound::CompoundMember;
 pub use counter::{CounterScheme, DaCounter, DaCounterBuilder, counter_schemes};
