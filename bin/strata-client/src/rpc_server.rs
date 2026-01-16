@@ -124,6 +124,7 @@ impl StrataRpcImpl {
 fn conv_blk_header_to_rpc(blk_header: &impl L2Header) -> RpcBlockHeader {
     RpcBlockHeader {
         block_idx: blk_header.slot(),
+        epoch: blk_header.epoch(),
         timestamp: blk_header.timestamp(),
         block_id: *blk_header.get_blockid().as_ref(),
         prev_block: *blk_header.parent().as_ref(),
