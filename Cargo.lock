@@ -13552,6 +13552,7 @@ dependencies = [
  "format_serde_error",
  "jsonrpsee",
  "serde_json",
+ "ssz",
  "strata-asm-common",
  "strata-asm-worker",
  "strata-chain-worker-new",
@@ -15101,6 +15102,7 @@ version = "0.1.0"
 dependencies = [
  "jsonrpsee",
  "strata-identifiers",
+ "strata-primitives",
  "strata-rpc-types-new",
 ]
 
