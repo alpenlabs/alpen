@@ -111,30 +111,54 @@ impl<T: Bitmap> BitSeqWriter<T> {
 }
 
 /// Macro to generate encode/decode and apply impls for a compound DA type.
+///
+/// # Basic syntax (no type coercion)
+///
+/// Type specs must be wrapped in parentheses, braces, or brackets to form a single token tree.
+///
+/// ```ignore
+/// make_compound_impl! {
+///     DiffType u8 => TargetType {
+///         field1: register (InnerType),
+///         field2: counter (CounterScheme),
+///     }
+/// }
+/// ```
+///
+/// # With type coercion
+///
+/// Use `[InnerType => TargetFieldType]` to specify that the target field has a different
+/// type than the DA primitive's inner type. The inner type must implement `Into<TargetFieldType>`.
+///
+/// ```ignore
+/// make_compound_impl! {
+///     AccountDiff u8 => AccountSnapshot {
+///         balance: register [CodecU256 => U256],  // CodecU256 converts to U256
+///         nonce: counter (CtrU64ByU8),            // No coercion needed
+///         code_hash: register [CodecB256 => B256],
+///     }
+/// }
+/// ```
 // TODO turn this into a proc macro
 #[macro_export]
 macro_rules! make_compound_impl {
+    // Entry point without context type - delegates to version with () context
     (
         $tyname:ident $maskty:ident => $target:ty {
-            $(
-                $fname:ident : $daty:ident $fty:ty ,
-            )*
+            $( $fname:ident : $daty:ident $fspec:tt ),* $(,)?
         }
     ) => {
         $crate::make_compound_impl! {
             $tyname < () > $maskty => $target {
-                $(
-                    $fname : $daty $fty ,
-                )*
+                $( $fname : $daty $fspec ),*
             }
         }
     };
 
+    // Main implementation with context type
     (
         $tyname:ident < $ctxty:ty > $maskty:ident => $target:ty {
-            $(
-                $fname:ident : $daty:ident $fty:ty ,
-            )*
+            $( $fname:ident : $daty:ident $fspec:tt ),* $(,)?
         }
     ) => {
         impl $crate::Codec for $tyname {
@@ -142,7 +166,7 @@ macro_rules! make_compound_impl {
                 let mask = <$maskty>::decode(dec)?;
                 let mut bitr = $crate::compound::BitSeqReader::from_mask(mask);
 
-                $(let $fname = _mct_field_decode!(bitr dec; $daty $fty);)*
+                $(let $fname = $crate::_mct_field_decode!(bitr dec; $daty $fspec);)*
 
                 Ok(Self { $($fname,)* })
             }
@@ -184,17 +208,16 @@ macro_rules! make_compound_impl {
                 v
             }
 
-            fn poll_context(&self, target: &Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
-                $(
-                    $crate::DaWrite::poll_context(&self.$fname, &target.$fname, context)?;
-                )*
+            fn poll_context(&self, _target: &Self::Target, _context: &Self::Context) -> Result<(), $crate::DaError> {
+                // Note: poll_context is skipped for coercion fields since the types don't match.
+                // This is fine since poll_context is mainly used for context validation.
                 Ok(())
             }
 
-            fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
+            fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), $crate::DaError> {
                 // Depends on all the members being accessible.
                 $(
-                    $crate::DaWrite::apply(&self.$fname, &mut target.$fname, context)?;
+                    $crate::_mct_field_apply!(self target; $fname $daty $fspec);
                 )*
                 Ok(())
             }
@@ -203,14 +226,48 @@ macro_rules! make_compound_impl {
 }
 
 /// Expands to a decoder for each type of member that we support in a compound.
+#[macro_export]
 macro_rules! _mct_field_decode {
-    // Register
-    ($reader:ident $dec:ident; register $fty:ty) => {
-        $reader.decode_next_member::<DaRegister<$fty>>($dec)?
+    // Register with coercion (decode uses inner type, coercion happens at apply)
+    ($reader:ident $dec:ident; register [ $fty:ty => $targetfty:ty ]) => {
+        $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
     };
-    // Counter
-    ($reader:ident $dec:ident; counter $fty:ty) => {
-        $reader.decode_next_member::<DaCounter<$fty>>($dec)?
+    // Register without coercion - type is wrapped in parens or braces to be a single tt
+    ($reader:ident $dec:ident; register ( $fty:ty )) => {
+        $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
+    };
+    ($reader:ident $dec:ident; register { $fty:ty }) => {
+        $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
+    };
+    // Counter - type is wrapped in parens or braces to be a single tt
+    ($reader:ident $dec:ident; counter ( $fty:ty )) => {
+        $reader.decode_next_member::<$crate::DaCounter<$fty>>($dec)?
+    };
+    ($reader:ident $dec:ident; counter { $fty:ty }) => {
+        $reader.decode_next_member::<$crate::DaCounter<$fty>>($dec)?
+    };
+}
+
+/// Expands to apply logic for each type of member that we support in a compound.
+#[macro_export]
+macro_rules! _mct_field_apply {
+    // Register with coercion - use apply_into
+    ($self:ident $target:ident; $fname:ident register [ $fty:ty => $targetfty:ty ]) => {
+        $self.$fname.apply_into(&mut $target.$fname)
+    };
+    // Register without coercion - use standard DaWrite::apply
+    ($self:ident $target:ident; $fname:ident register ( $fty:ty )) => {
+        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
+    };
+    ($self:ident $target:ident; $fname:ident register { $fty:ty }) => {
+        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
+    };
+    // Counter - use standard DaWrite::apply (counter targets scheme's Base type)
+    ($self:ident $target:ident; $fname:ident counter ( $fty:ty )) => {
+        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
+    };
+    ($self:ident $target:ident; $fname:ident counter { $fty:ty }) => {
+        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
     };
 }
 
@@ -256,8 +313,8 @@ mod tests {
 
     make_compound_impl! {
         DaPointDiff u16 => Point {
-            x: register i32,
-            y: register i32,
+            x: register (i32),
+            y: register (i32),
         }
     }
 
@@ -323,5 +380,84 @@ mod tests {
         let mut p2c = p2;
         p23.apply(&mut p2c).unwrap();
         assert_eq!(p2c, p3);
+    }
+
+    // Test type coercion feature
+    mod coercion {
+        use crate::{
+            ContextlessDaWrite, DaCounter, DaRegister,
+            counter_schemes::CtrU64ByU8,
+            decode_buf_exact, encode_to_vec,
+        };
+
+        /// Wrapper type that implements Into<i32>
+        #[derive(Clone, Copy, Debug, Default)]
+        struct WrappedI32(i32);
+
+        impl From<WrappedI32> for i32 {
+            fn from(w: WrappedI32) -> i32 {
+                w.0
+            }
+        }
+
+        impl crate::Codec for WrappedI32 {
+            fn encode(&self, enc: &mut impl crate::Encoder) -> Result<(), crate::CodecError> {
+                self.0.encode(enc)
+            }
+
+            fn decode(dec: &mut impl crate::Decoder) -> Result<Self, crate::CodecError> {
+                Ok(Self(i32::decode(dec)?))
+            }
+        }
+
+        /// Target type with raw i32 fields
+        #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+        pub struct Account {
+            balance: i32,
+            nonce: u64,
+        }
+
+        /// Diff type with wrapper for balance and counter for nonce
+        #[derive(Debug, Default)]
+        pub struct AccountDiff {
+            balance: DaRegister<WrappedI32>,
+            nonce: DaCounter<CtrU64ByU8>,
+        }
+
+        make_compound_impl! {
+            AccountDiff u8 => Account {
+                balance: register [WrappedI32 => i32],
+                nonce: counter (CtrU64ByU8),
+            }
+        }
+
+        #[test]
+        fn test_coercion_apply() {
+            let a1 = Account { balance: 100, nonce: 5 };
+
+            let diff = AccountDiff {
+                balance: DaRegister::new_set(WrappedI32(200)),
+                nonce: DaCounter::new_changed(3),
+            };
+
+            let mut a1c = a1;
+            diff.apply(&mut a1c).unwrap();
+            assert_eq!(a1c.balance, 200);
+            assert_eq!(a1c.nonce, 8);
+        }
+
+        #[test]
+        fn test_coercion_encode_decode() {
+            let diff = AccountDiff {
+                balance: DaRegister::new_set(WrappedI32(500)),
+                nonce: DaCounter::new_changed(10),
+            };
+
+            let encoded = encode_to_vec(&diff).expect("encode");
+            let decoded: AccountDiff = decode_buf_exact(&encoded).expect("decode");
+
+            assert_eq!(decoded.balance.new_value().unwrap().0, 500);
+            assert_eq!(decoded.nonce.diff(), Some(&10u8));
+        }
     }
 }

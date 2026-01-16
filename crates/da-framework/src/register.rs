@@ -74,6 +74,21 @@ impl<T> Default for DaRegister<T> {
     }
 }
 
+impl<T: Clone> DaRegister<T> {
+    /// Applies this register to a target of a different type via [`Into`] conversion.
+    ///
+    /// This is useful when the register stores a wrapper type (e.g., `CodecU256`)
+    /// but the target field is the unwrapped type (e.g., `U256`).
+    pub fn apply_into<U>(&self, target: &mut U)
+    where
+        T: Into<U>,
+    {
+        if let Some(v) = self.new_value.clone() {
+            *target = v.into();
+        }
+    }
+}
+
 impl<T: Clone> DaWrite for DaRegister<T> {
     type Target = T;
 
