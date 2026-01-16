@@ -161,6 +161,14 @@ macro_rules! make_compound_impl {
             $( $fname:ident : $daty:ident $fspec:tt ),* $(,)?
         }
     ) => {
+        // Compile-time check: ensure bitmap has enough bits for all fields.
+        // Equal to const_assert! from static_assertions, but doesn't bring the dependency.
+        const _: () = {
+            const FIELD_COUNT: usize = [$(stringify!($fname)),*].len();
+            const MASK_BITS: usize = <$maskty>::BITS as usize;
+            assert!(FIELD_COUNT <= MASK_BITS, "compound type has more fields than bitmap can hold");
+        };
+
         impl $crate::Codec for $tyname {
             fn decode(dec: &mut impl $crate::Decoder) -> Result<Self, $crate::CodecError> {
                 let mask = <$maskty>::decode(dec)?;
@@ -383,8 +391,7 @@ mod tests {
     // Test type coercion feature
     mod coercion {
         use crate::{
-            ContextlessDaWrite, DaCounter, DaRegister,
-            counter_schemes::CtrU64ByU8,
+            ContextlessDaWrite, DaCounter, DaRegister, counter_schemes::CtrU64ByU8,
             decode_buf_exact, encode_to_vec,
         };
 
@@ -431,7 +438,10 @@ mod tests {
 
         #[test]
         fn test_coercion_apply() {
-            let a1 = Account { balance: 100, nonce: 5 };
+            let a1 = Account {
+                balance: 100,
+                nonce: 5,
+            };
 
             let diff = AccountDiff {
                 balance: DaRegister::new_set(WrappedI32(200)),
