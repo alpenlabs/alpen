@@ -193,6 +193,8 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     };
 
     // Start profiling/metrics server on port 6060
+    // Note: If port is already in use (e.g., another node instance), the server will
+    // log a warning and exit gracefully without crashing the node
     executor.spawn_critical_async(
         "profiling-server",
         profiling::start_profiling_server("0.0.0.0", 6060),

@@ -22,7 +22,14 @@ pub async fn start_profiling_server(host: &str, port: u16) -> anyhow::Result<()>
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
-    let listener = TcpListener::bind(&addr).await?;
+    let listener = match TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            // Port may already be in use by another node instance - this is not fatal
+            warn!(%host, %port, "profiling server failed to bind (port may be in use): {}", e);
+            return Ok(());
+        }
+    };
 
     info!(%host, %port, "started profiling/metrics server");
 
