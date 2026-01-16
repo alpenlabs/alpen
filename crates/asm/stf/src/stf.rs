@@ -3,10 +3,7 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use strata_asm_common::{
-    AnchorState, AsmError, AsmHasher, AsmManifest, AsmResult, AsmSpec, ChainViewState,
-};
-use strata_merkle::Mmr;
+use strata_asm_common::{AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -50,7 +47,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
 ) -> AsmResult<AsmStfOutput> {
     // 1. Validate and update PoW header continuity for the new block.
     // This ensures the block header follows proper Bitcoin consensus rules and chain continuity.
-    let (mut pow_state, mut mmr) = pre_state.chain_view.clone().into_parts();
+    let (mut pow_state, mut history_accumulator) = pre_state.chain_view.clone().into_parts();
     pow_state
         .check_and_update(input.header)
         .map_err(AsmError::InvalidL1Header)?;
@@ -84,14 +81,13 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
         logs,
     );
 
-    // 6. Append the manifest root to the MMR
-    Mmr::<AsmHasher>::add_leaf(&mut mmr, manifest.compute_hash())?;
-    let manifest_mmr = mmr;
+    // 6. Append the manifest to the history accumulator
+    history_accumulator.add_manifest(&manifest)?;
 
     // 7. Construct the final `AnchorState` and output.
     let chain_view = ChainViewState {
         pow_state,
-        manifest_mmr,
+        history_accumulator,
     };
     let state = AnchorState {
         chain_view,

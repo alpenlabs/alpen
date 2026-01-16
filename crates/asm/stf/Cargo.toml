@@ -10,6 +10,5 @@ workspace = true
 strata-asm-common.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
-strata-merkle.workspace = true
 
 bitcoin.workspace = true
