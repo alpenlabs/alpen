@@ -4,7 +4,8 @@
 
 use ssz_primitives::FixedBytes;
 use strata_acct_types::{
-    AccountId, BitcoinAmount, Hash, Mmr64, RawMerkleProof, StrataHasher, tree_hash::TreeHash,
+    AccountId, BitcoinAmount, Hash, Mmr64, MsgPayload, RawMerkleProof, StrataHasher,
+    tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, WtxidsRoot};
@@ -301,6 +302,11 @@ pub fn get_test_state_root(variant: u8) -> Hash {
     Hash::from([variant; 32])
 }
 
+/// Get a test proof with a specific variant
+pub fn get_test_proof(variant: u8) -> Vec<u8> {
+    vec![variant; 100]
+}
+
 /// Helper to track inbox MMR proofs in parallel with the actual STF inbox MMR.
 /// This allows generating valid MMR proofs for testing by maintaining proofs as leaves are added.
 pub struct InboxMmrTracker {
@@ -448,7 +454,6 @@ pub fn execute_tx_in_block(
 /// ensuring correct sequence numbers and message indices.
 pub struct SnarkUpdateBuilder {
     // Captured from old state at construction
-    account_id: AccountId,
     seq_no: u64,
     old_msg_idx: u64,
 
@@ -457,29 +462,18 @@ pub struct SnarkUpdateBuilder {
     inbox_inbox_proofs: Vec<MessageEntryProof>,
     outputs: UpdateOutputs,
     ledger_refs: LedgerRefs,
-    proof: Vec<u8>,
 }
 
 impl SnarkUpdateBuilder {
     /// Create builder from current account state (captures starting point)
-    pub fn from_snark_state(state: &OLState, account_id: AccountId) -> Self {
-        let account = state
-            .get_account_state(account_id)
-            .expect("Account should exist")
-            .expect("Account should be found");
-        let snark_state = account
-            .as_snark_account()
-            .expect("Account should be a snark account");
-
+    pub fn from_snark_state(snark_state: NativeSnarkAccountState) -> Self {
         Self {
-            account_id,
             seq_no: *snark_state.seqno().inner(),
             old_msg_idx: snark_state.next_inbox_msg_idx(),
             processed_messages: vec![],
             inbox_inbox_proofs: vec![],
             outputs: UpdateOutputs::new(vec![], vec![]),
             ledger_refs: LedgerRefs::new_empty(),
-            proof: vec![0u8; 32], // Default dummy proof for tests
         }
     }
 
@@ -510,11 +504,8 @@ impl SnarkUpdateBuilder {
 
     /// Add a single message output
     pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
-        let payload = strata_acct_types::MsgPayload::new(BitcoinAmount::from_sat(amount), data);
-        let message = OutputMessage::new(dest, payload);
-        let msgs = self.outputs.messages_mut();
-        msgs.push(message);
-        self
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(amount), data);
+        self.with_message_payload(dest, payload)
     }
 
     /// Set ledger references
@@ -523,14 +514,13 @@ impl SnarkUpdateBuilder {
         self
     }
 
-    /// Set a custom proof (default is dummy proof)
-    pub fn with_proof(mut self, proof: Vec<u8>) -> Self {
-        self.proof = proof;
-        self
-    }
-
     /// Build the transaction with the resulting state root
-    pub fn build(self, new_state_root: Hash) -> TransactionPayload {
+    pub fn build(
+        self,
+        acct_id: AccountId,
+        new_state_root: Hash,
+        proof: Vec<u8>,
+    ) -> TransactionPayload {
         // Calculate new message index based on messages processed
         let new_msg_idx = self.old_msg_idx + self.processed_messages.len() as u64;
 
@@ -544,16 +534,23 @@ impl SnarkUpdateBuilder {
             vec![], // extra_data
         );
 
-        let base_update = SnarkAccountUpdate::new(operation_data, self.proof);
+        let base_update = SnarkAccountUpdate::new(operation_data, proof);
 
         let ledger_ref_proofs = LedgerRefProofs::new(vec![]);
         let accumulator_proofs =
             UpdateAccumulatorProofs::new(self.inbox_inbox_proofs, ledger_ref_proofs);
 
         let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-        let sau_tx_payload = SnarkAccountUpdateTxPayload::new(self.account_id, update_container);
+        let sau_tx_payload = SnarkAccountUpdateTxPayload::new(acct_id, update_container);
 
         TransactionPayload::SnarkAccountUpdate(sau_tx_payload)
+    }
+
+    fn with_message_payload(mut self, dest: AccountId, payload: MsgPayload) -> SnarkUpdateBuilder {
+        let message = OutputMessage::new(dest, payload);
+        let msgs = self.outputs.messages_mut();
+        msgs.push(message);
+        self
     }
 }
 

@@ -134,12 +134,25 @@ fn create_update_tx(
     (snark_account, snark_account.as_snark_account().unwrap())
 }
 
+fn create_update_builder(state: &OLState, account_id: AccountId) -> SnarkUpdateBuilder {
+    let account = state
+        .get_account_state(account_id)
+        .expect("Account should exist")
+        .expect("Account should be found");
+    let snark_state = account
+        .as_snark_account()
+        .expect("Account should be a snark account")
+        .clone();
+    SnarkUpdateBuilder::from_snark_state(snark_state)
+}
+
 // === Test Modules ===
 
 /// Tests for basic validation errors like sequence numbers, balance checks, and recipient
 /// validation
 mod validation {
     use super::*;
+    use crate::test_utils::get_test_proof;
 
     #[test]
     fn test_snark_update_invalid_sequence_number() {
@@ -192,9 +205,9 @@ mod validation {
         create_empty_account(&mut state, recipient_id);
 
         // Try to send 100M sats (more than balance)
-        let invalid_tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let invalid_tx = create_update_builder(&state, snark_id)
             .with_transfer(recipient_id, 100_000_000)
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result =
@@ -226,9 +239,9 @@ mod validation {
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
         // Try to send to non-existent account
-        let invalid_tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let invalid_tx = create_update_builder(&state, snark_id)
             .with_transfer(nonexistent_id, 10_000_000)
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result =
@@ -660,6 +673,7 @@ mod inbox {
 /// Tests for successful update operations
 mod updates {
     use super::*;
+    use crate::test_utils::get_test_proof;
 
     #[test]
     fn test_snark_update_success_with_transfer() {
@@ -675,9 +689,9 @@ mod updates {
 
         // Create valid update with transfer
         let transfer_amount = 30_000_000u64;
-        let tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx = create_update_builder(&state, snark_id)
             .with_transfer(recipient_id, transfer_amount)
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -924,6 +938,7 @@ mod deposit_withdrawal {
 /// Tests for multiple operations in a single update
 mod multi_operations {
     use super::*;
+    use crate::test_utils::get_test_proof;
 
     #[test]
     fn test_snark_update_multiple_transfers() {
@@ -942,11 +957,11 @@ mod multi_operations {
         create_empty_account(&mut state, recipient3_id);
 
         // Create update with multiple transfers (30M + 20M + 10M = 60M total)
-        let tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx = create_update_builder(&state, snark_id)
             .with_transfer(recipient1_id, 30_000_000)
             .with_transfer(recipient2_id, 20_000_000)
             .with_transfer(recipient3_id, 10_000_000)
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -1122,10 +1137,10 @@ mod multi_operations {
         create_empty_account(&mut state, recipient2_id);
 
         // Try to send 60M + 50M = 110M (exceeds balance of 100M)
-        let tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx = create_update_builder(&state, snark_id)
             .with_transfer(recipient1_id, 60_000_000)
             .with_transfer(recipient2_id, 50_000_000)
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -1169,6 +1184,7 @@ mod multi_operations {
 /// Tests for edge cases in value transfers
 mod edge_cases {
     use super::*;
+    use crate::test_utils::get_test_proof;
 
     #[test]
     fn test_snark_update_zero_value_transfer() {
@@ -1183,9 +1199,9 @@ mod edge_cases {
         create_empty_account(&mut state, recipient_id);
 
         // Create update with zero value transfer
-        let tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx = create_update_builder(&state, snark_id)
             .with_transfer(recipient_id, 0) // Zero value
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -1231,9 +1247,9 @@ mod edge_cases {
         create_empty_account(&mut state, recipient_id);
 
         // Test case 1: Try to transfer non-zero amount from zero balance account
-        let tx_nonzero = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx_nonzero = create_update_builder(&state, snark_id)
             .with_transfer(recipient_id, 1) // Even 1 satoshi should fail
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result =
@@ -1262,9 +1278,9 @@ mod edge_cases {
         );
 
         // Test case 2: Zero value transfer from zero balance account should succeed
-        let tx_zero = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx_zero = create_update_builder(&state, snark_id)
             .with_transfer(recipient_id, 0) // Zero value transfer
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let result2 = execute_tx_in_block(&mut state, genesis_block.header(), tx_zero, slot, epoch);
 
@@ -1298,11 +1314,11 @@ mod edge_cases {
         );
 
         // Test case 3: Try multiple transfers from zero balance account
-        let tx_multiple = SnarkUpdateBuilder::from_snark_state(&state, snark_id) // seq_no = 1 now (automatically captured)
+        let tx_multiple = create_update_builder(&state, snark_id) // seq_no = 1 now (automatically captured)
             .with_transfer(recipient_id, 0) // Zero transfer
             .with_transfer(snark_id, 0) // Self zero transfer
             .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 0, vec![]) // Zero value message
-            .build(get_test_state_root(3));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let result3 = execute_tx_in_block(&mut state, blk2.header(), tx_multiple, slot + 1, epoch);
 
@@ -1331,9 +1347,9 @@ mod edge_cases {
         let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
         // Create update transferring to self
-        let tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx = create_update_builder(&state, snark_id)
             .with_transfer(snark_id, 30_000_000) // Transfer to self
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -1371,9 +1387,9 @@ mod edge_cases {
         create_empty_account(&mut state, recipient_id);
 
         // Transfer exactly the entire balance
-        let tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx = create_update_builder(&state, snark_id)
             .with_transfer(recipient_id, 100_000_000) // Entire balance
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -1484,10 +1500,9 @@ mod edge_cases {
         // Try to transfer more than 21M BTC in a single transfer
         let more_than_max_bitcoin = 2_100_000_000_000_001u64; // 21M BTC + 1 satoshi
 
-        // Use SnarkUpdateBuilder to create the update
-        let tx = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx = create_update_builder(&state, snark_id)
             .with_transfer(recipient_id, more_than_max_bitcoin)
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -1537,10 +1552,10 @@ mod edge_cases {
         create_empty_account(&mut state, recipient2_id);
 
         // Test case 1: Try transfers that sum to more than available balance
-        let tx1 = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx1 = create_update_builder(&state, snark_id)
             .with_transfer(recipient1_id, u64::MAX - 100) // Max we can afford
             .with_transfer(recipient2_id, 101) // This exceeds balance
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let (slot, epoch) = (1, 0);
         let result1 = execute_tx_in_block(&mut state, genesis_block.header(), tx1, slot, epoch);
@@ -1569,10 +1584,10 @@ mod edge_cases {
 
         // Test case 2: Try transfers where one is u64::MAX and another is 1
         // This tests overflow handling when summing transfers
-        let tx2 = SnarkUpdateBuilder::from_snark_state(&state, snark_id)
+        let tx2 = create_update_builder(&state, snark_id)
             .with_transfer(recipient1_id, u64::MAX) // Maximum u64 value
             .with_transfer(recipient2_id, 1) // Even 1 more would overflow
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let result2 = execute_tx_in_block(&mut state, genesis_block.header(), tx2, slot, epoch);
 
@@ -1605,9 +1620,9 @@ mod edge_cases {
         let genesis_block3 = setup_genesis_with_snark_account(&mut state3, snark_id, u64::MAX);
         create_empty_account(&mut state3, recipient1_id);
 
-        let tx3 = SnarkUpdateBuilder::from_snark_state(&state3, snark_id)
+        let tx3 = create_update_builder(&state3, snark_id)
             .with_transfer(recipient1_id, u64::MAX) // Transfer entire u64::MAX
-            .build(get_test_state_root(2));
+            .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
         let result3 = execute_tx_in_block(&mut state3, genesis_block3.header(), tx3, slot, epoch);
 
