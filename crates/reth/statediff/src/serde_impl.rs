@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
-use strata_da_framework::DaRegister;
+use strata_da_framework::{counter_schemes::CtrU64ByU8, DaCounter, DaRegister};
 
 use crate::{
     batch::{AccountChange, AccountDiff, BatchStateDiff, StorageDiff},
@@ -32,7 +32,7 @@ impl From<&AccountDiff> for AccountDiffSerde {
     fn from(diff: &AccountDiff) -> Self {
         Self {
             balance: diff.balance.new_value().map(|v| v.0),
-            nonce_incr: diff.nonce_incr,
+            nonce_incr: diff.nonce.diff().copied(),
             code_hash: diff.code_hash.new_value().map(|v| v.0),
         }
     }
@@ -45,7 +45,10 @@ impl From<AccountDiffSerde> for AccountDiff {
                 .balance
                 .map(|v| DaRegister::new_set(CodecU256(v)))
                 .unwrap_or_else(DaRegister::new_unset),
-            nonce_incr: serde.nonce_incr,
+            nonce: serde
+                .nonce_incr
+                .map(DaCounter::<CtrU64ByU8>::new_changed)
+                .unwrap_or_else(DaCounter::new_unchanged),
             code_hash: serde
                 .code_hash
                 .map(|v| DaRegister::new_set(CodecB256(v)))
@@ -148,7 +151,7 @@ mod tests {
         // Convert back
         let roundtrip: AccountDiff = serde.into();
         assert_eq!(roundtrip.balance.new_value().unwrap().0, U256::from(1000));
-        assert_eq!(roundtrip.nonce_incr, Some(5));
+        assert_eq!(roundtrip.nonce.diff(), Some(&5));
         assert_eq!(
             roundtrip.code_hash.new_value().unwrap().0,
             B256::from([0x11u8; 32])

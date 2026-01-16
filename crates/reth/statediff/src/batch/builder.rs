@@ -295,7 +295,7 @@ mod tests {
         // Total nonce delta should be 5 (from original 0 to final 5)
         let change = diff.accounts.get(&addr).unwrap();
         if let AccountChange::Updated(account_diff) = change {
-            assert_eq!(account_diff.nonce_incr, Some(5));
+            assert_eq!(account_diff.nonce.diff(), Some(&5));
         } else {
             panic!("Expected Updated");
         }

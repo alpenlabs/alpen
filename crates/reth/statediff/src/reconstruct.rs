@@ -92,7 +92,8 @@ impl StateReconstructor {
                         .new_value()
                         .map(|v| v.0)
                         .unwrap_or(current_balance);
-                    let new_nonce = current_nonce + account_diff.nonce_incr.unwrap_or(0) as u64;
+                    let new_nonce =
+                        current_nonce + account_diff.nonce.diff().copied().unwrap_or(0) as u64;
                     let new_code_hash = account_diff
                         .code_hash
                         .new_value()
