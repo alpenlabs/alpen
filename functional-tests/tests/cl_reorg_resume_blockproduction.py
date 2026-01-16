@@ -4,19 +4,7 @@ from web3 import Web3
 from envs import net_settings, testenv
 from mixins.dbtool_mixin import SequencerDbtoolMixin
 from utils import *
-
-
-def send_tx(web3: Web3) -> None:
-    dest = web3.to_checksum_address("deedf001900dca3ebeefdeadf001900dca3ebeef")
-    txid = web3.eth.send_transaction(
-        {
-            "to": dest,
-            "value": hex(1),
-            "gas": hex(100000),
-            "from": web3.address,
-        }
-    )
-    web3.eth.wait_for_transaction_receipt(txid, timeout=5)
+from utils.dbtool import send_tx
 
 
 @flexitest.register
@@ -37,6 +25,7 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
         seq_signer = ctx.get_service("sequencer_signer")
         reth = ctx.get_service("reth")
         web3: Web3 = reth.create_web3()
+        prover = ctx.get_service("prover_client")
 
         seqrpc = seq.create_rpc()
         rethrpc = reth.create_rpc()
@@ -52,17 +41,20 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
 
         seq_waiter.wait_until_epoch_finalized(1, timeout=30)
 
+        # stop prover -- additional safety to make sure we don't produce checkpoints too quickly
+        prover.stop()
+
         orig_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
 
         # ensure there are some blocks more than our tip height
         wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > orig_blocknumber + 1,
+            lambda: int(rethrpc.eth_blockNumber(), base=16) > orig_blocknumber + 5,
             error_with="not building blocks",
-            timeout=5,
+            timeout=15,
         )
 
-        # stop sequencer
-        self.info("stop sequencer")
+        # stop sequencer signer
+        self.info("stop sequencer signer")
         seq_signer.stop()
         final_blocknumber = seqrpc.strata_syncStatus()["tip_height"]
 
@@ -71,14 +63,13 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
         sync_info = seqrpc.strata_syncStatus()
         revert_target_blkid = sync_info.get("prev_epoch").get("last_blkid")
 
-        self.info(f"stop reth @{final_blocknumber}")
-
         original_el_blockhash = rethrpc.eth_getBlockByNumber(hex(final_blocknumber), False)["hash"]
 
+        self.info(f"stop sequencer, stopping reth @{final_blocknumber}")
         seq.stop()
-        # revert chainstate to target blkid
+        # revert chainstate to target blkid -- allow reverting non-finalized checkpoint in this test
         self.info(f"Reverting chainstate to {revert_target_blkid}")
-        return_code, stdout, stderr = self.revert_chainstate(revert_target_blkid, "-f", "-d")
+        return_code, stdout, stderr = self.revert_chainstate(revert_target_blkid, "-f", "-d", "-c")
 
         if return_code != 0:
             self.error(f"revert-chainstate failed with return code {return_code}")
@@ -90,7 +81,7 @@ class CLReorgResumeBlockProductionTest(SequencerDbtoolMixin):
 
         self.info("start sequencer")
         seq.start()
-        # wait for reth to start
+        # wait for sequencer to start
         wait_until(
             lambda: seqrpc.strata_syncStatus()["tip_height"] > 0,
             error_with="reth did not start in time",

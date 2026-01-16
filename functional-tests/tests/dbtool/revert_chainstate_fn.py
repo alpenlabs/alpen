@@ -1,3 +1,5 @@
+import time
+
 import flexitest
 
 from envs import net_settings, testenv
@@ -10,6 +12,7 @@ from utils.dbtool import (
     verify_checkpoint_preserved,
     verify_revert_success,
 )
+from utils.utils import wait_until
 
 
 @flexitest.register
@@ -27,6 +30,18 @@ class RevertChainstateFnTest(FullnodeDbtoolMixin):
     def main(self, ctx: flexitest.RunContext):
         # Setup: generate blocks and finalize epoch
         setup_revert_chainstate_test(self, web3_attr="web3")
+
+        cur_block = int(self.rethrpc.eth_blockNumber(), base=16)
+
+        # ensure there are some blocks more than our tip height
+        wait_until(
+            lambda: int(self.rethrpc.eth_blockNumber(), base=16) > cur_block + 3,
+            error_with="not building blocks",
+            timeout=10,
+        )
+
+        # Stop signer early to ensure no more blocks
+        self.seq_signer.stop()
 
         # Capture state before revert
         old_seq_ol_block_number = self.seqrpc.strata_syncStatus()["tip_height"]
@@ -55,8 +70,10 @@ class RevertChainstateFnTest(FullnodeDbtoolMixin):
                 f"EL={old_fn_el_block_number}"
             )
 
+        # extra buffer time to let latest checkpoint get final
+        time.sleep(2)
+
         # Stop services to use dbtool
-        self.seq_signer.stop()
         self.seq.stop()
         self.reth.stop()
         self.follower_1_node.stop()
@@ -68,14 +85,6 @@ class RevertChainstateFnTest(FullnodeDbtoolMixin):
             return False
 
         target_block_id, target_slot = target_end_of_epoch(checkpt["l2_range"])
-
-        # Ensure we have blocks outside checkpointed range
-        sync_info = self.get_syncinfo()
-        tip_slot = sync_info.get("l2_tip_height")
-
-        if tip_slot and tip_slot <= target_slot:
-            self.info("No blocks outside checkpointed range - test cannot proceed")
-            return True
 
         self.info(f"Target slot: {target_slot}, target block ID: {target_block_id}")
 
