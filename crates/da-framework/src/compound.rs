@@ -172,8 +172,6 @@ macro_rules! make_compound_impl {
             }
 
             fn encode(&self, enc: &mut impl $crate::Encoder) -> Result<(), $crate::CodecError> {
-                use $crate::CompoundMember;
-
                 let mut bitw = $crate::compound::BitSeqWriter::<$maskty>::new();
 
                 $(bitw.prepare_member(&self.$fname);)*
@@ -183,8 +181,8 @@ macro_rules! make_compound_impl {
                 // This goes through them in the same order as the above, which
                 // is why this is safe.
                 $(
-                    if !self.$fname.is_default() {
-                        self.$fname.encode_set(enc)?;
+                    if !$crate::CompoundMember::is_default(&self.$fname) {
+                        $crate::CompoundMember::encode_set(&self.$fname, enc)?;
                     }
                 )*
 

@@ -4,7 +4,7 @@
 )]
 
 mod codec;
-mod compound;
+pub mod compound;
 mod counter;
 mod errors;
 mod linear_acc;
