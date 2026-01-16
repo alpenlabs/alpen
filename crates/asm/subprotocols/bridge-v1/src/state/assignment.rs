@@ -12,6 +12,7 @@ use rand_chacha::{
     ChaChaRng,
     rand_core::{RngCore, SeedableRng},
 };
+use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::{
     L1BlockCommitment,
@@ -92,7 +93,9 @@ fn filter_eligible_operators(
 ///
 /// Each assignment represents a task, assigned to a specific operator to process
 /// a withdrawal of from a particular deposit UTXO.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Arbitrary)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+)]
 pub struct AssignmentEntry {
     /// Deposit entry that has been assigned
     deposit_entry: DepositEntry,
