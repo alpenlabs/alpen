@@ -13819,18 +13819,23 @@ dependencies = [
 name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
+ "bitcoin-bosd",
  "borsh",
  "k256",
  "rand 0.8.5",
  "ssz",
  "ssz_primitives",
+ "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types-ssz",
+ "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-crypto",
  "strata-identifiers",
  "strata-merkle 0.2.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
+ "strata-ol-chain-types-new",
+ "strata-ol-stf",
  "strata-predicate",
  "strata-test-utils",
  "thiserror 2.0.17",

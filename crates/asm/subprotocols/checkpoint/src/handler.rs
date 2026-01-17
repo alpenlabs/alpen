@@ -1,13 +1,18 @@
+use bitcoin_bosd::Descriptor;
 use ssz::Encode;
 use ssz_primitives::FixedBytes;
-use strata_asm_common::{MsgRelayer, TxInputRef, VerifiedAuxData};
+use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
+use strata_asm_common::{MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_proto_checkpoint_txs::parser::extract_signed_checkpoint_from_envelope;
 use strata_checkpoint_types_ssz::{
     CheckpointClaim, CheckpointPayload, CheckpointScope, CheckpointTip, L1BlockHeightRange,
-    L2BlockRange,
+    L2BlockRange, OLLog,
 };
+use strata_codec::decode_buf_exact;
 use strata_crypto::hash;
 use strata_identifiers::Epoch;
+use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
 use crate::{
     errors::{CheckpointError, CheckpointResult},
@@ -61,7 +66,39 @@ pub(crate) fn handle_checkpoint_tx(
 
     state.update_verified_tip(checkpoint_payload.new_tip);
 
+    forward_withdrawal_intents(relayer, checkpoint_payload.sidecar().ol_logs());
+
     Ok(())
+}
+
+/// Forward withdrawal intents to the bridge subprotocol.
+///
+/// Parses the OL logs from the checkpoint sidecar, filters for withdrawal intents
+/// from the bridge gateway account, and forwards them to the bridge subprotocol.
+fn forward_withdrawal_intents(relayer: &mut impl MsgRelayer, logs: &[OLLog]) {
+    for log in logs
+        .iter()
+        .filter(|l| l.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
+    {
+        // Decode withdrawal intent log data
+        // Skip malformed logs with a warning
+        let Ok(withdrawal_data) = decode_buf_exact::<SimpleWithdrawalIntentLogData>(log.payload())
+        else {
+            logging::warn!("Failed to decode withdrawal intent log payload");
+            continue;
+        };
+
+        // Parse destination descriptor
+        // Skip malformed descriptors with a warning
+        let Ok(destination) = Descriptor::from_bytes(withdrawal_data.dest()) else {
+            logging::warn!("Failed to parse withdrawal destination descriptor");
+            continue;
+        };
+
+        let withdraw_output = WithdrawOutput::new(destination, withdrawal_data.amt().into());
+        let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
+        relayer.relay_msg(&bridge_msg);
+    }
 }
 
 /// Constructs a complete checkpoint claim for verification.
