@@ -14,7 +14,6 @@ ssz_types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
-strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-new.workspace = true
 

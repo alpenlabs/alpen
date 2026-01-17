@@ -63,7 +63,9 @@ pub use ssz_generated::ssz::payload::{
     CheckpointTip, CheckpointTipRef, SignedCheckpointPayload, SignedCheckpointPayloadRef,
 };
 // Re-export constants from payload.ssz
-pub use ssz_generated::ssz::payload::{MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE};
+pub use ssz_generated::ssz::payload::{
+    MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE,
+};
 // Re-export OLLog for consumers parsing checkpoint sidecar logs
 pub use strata_ol_chain_types_new::OLLog;
 

@@ -1,10 +1,11 @@
 import strata_identifiers
+import strata_ol_chain_types_new
 
 ### State diff blob max size (256 KiB) (from SPS-62)
 OL_DA_DIFF_MAX_SIZE = 1 << 18
 
-### Output messages blob max size (16 KiB) (from SPS-62)
-OUTPUT_MSG_MAX_SIZE = 1 << 14
+### Maximum number of OLLog that can be part of the checkpoint payload
+MAX_OL_LOGS_PER_CHECKPOINT = 1 << 14
 
 ### ZK proof max size (4 KiB)
 ###
@@ -57,13 +58,10 @@ class CheckpointSidecar(Container):
     ### Output messages produced during this checkpoint epoch (withdrawals,
     ### etc.).
     ###
-    ### SSZ-encoded `Vec<OLLog>` from ol-chain-types-new.
-    ###
-    # TODO: (@prajwolrg) Figure out if we should instead define this as
-    # List[ol_chain_types_new.OLLog, MAX_OL_LOGS]. The OLLog currently also
-    # includes account_serial, which might not be necessary to be part of the
-    # checkpoint payload.
-    ol_logs: List[uint8, OUTPUT_MSG_MAX_SIZE]
+    # REVIEW: (@PG) The OLLog currently also includes account_serial, which
+    # might not be necessary to be part of the checkpoint payload.
+    #~# external_kind: container
+    ol_logs: List[strata_ol_chain_types_new.OLLog, MAX_OL_LOGS_PER_CHECKPOINT]
 
 ### Signed checkpoint payload for L1 posting.
 ### The signature is over the hash of the inner payload.

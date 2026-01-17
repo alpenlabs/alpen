@@ -14092,7 +14092,6 @@ dependencies = [
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
- "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "thiserror 2.0.17",
