@@ -3,7 +3,11 @@ name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-
 [lints]
 workspace = true
+
+[dependencies]
+borsh.workspace = true
+strata-checkpoint-types-ssz.workspace = true
+strata-identifiers.workspace = true
+strata-predicate.workspace = true
