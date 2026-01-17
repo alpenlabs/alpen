@@ -12,7 +12,7 @@ use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
 
 use crate::{
-    WriteBatch,
+    IStateBatchApplicable, WriteBatch,
     ssz_generated::ssz::state::{
         EpochalState, GlobalState, OLAccountState, OLAccountTypeState, OLState,
         TsnlLedgerAccountsTable,
@@ -255,6 +255,13 @@ impl IStateAccessor for OLState {
         let encoded = self.as_ssz_bytes();
         let hash = raw(&encoded);
         Ok(hash)
+    }
+}
+
+impl IStateBatchApplicable for OLState {
+    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
+        // Delegate to the inherent method
+        OLState::apply_write_batch(self, batch)
     }
 }
 

@@ -11,7 +11,7 @@ use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
     IAccountStateConstructible, IAccountStateMut, IStateAccessor, NewAccountData,
 };
-use strata_ol_state_types::WriteBatch;
+use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
 
 /// A write-tracking state accessor that wraps a base state.
 ///
@@ -195,6 +195,17 @@ where
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
         // TODO implement with new SSZ state summary type
+        Err(AcctError::Unsupported)
+    }
+}
+
+impl<'base, S: IStateAccessor> IStateBatchApplicable for WriteTrackingState<'base, S>
+where
+    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
+{
+    fn apply_write_batch(&mut self, _batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
+        // WriteTrackingState cannot apply batches - it only tracks writes.
+        // To get a final state with batch applied, clone the base state and apply there.
         Err(AcctError::Unsupported)
     }
 }
