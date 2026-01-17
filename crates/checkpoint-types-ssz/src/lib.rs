@@ -54,8 +54,8 @@ mod ssz_generated {
 
 // Re-export types from claim.ssz
 pub use ssz_generated::ssz::claim::{
-    CheckpointClaim, CheckpointClaimRef, CheckpointScope, CheckpointScopeRef, L1BlockRange,
-    L1BlockRangeRef, L2BlockRange, L2BlockRangeRef,
+    CheckpointClaim, CheckpointClaimRef, CheckpointScope, CheckpointScopeRef, L1BlockHeightRange,
+    L1BlockHeightRangeRef, L2BlockRange, L2BlockRangeRef,
 };
 // Re-export types from payload.ssz
 pub use ssz_generated::ssz::payload::{
@@ -69,7 +69,7 @@ pub use strata_ol_chain_types_new::OLLog;
 
 // Borsh SSZ adapters for state persistence
 // Fixed-size types (no length prefix needed)
-impl_borsh_via_ssz_fixed!(L1BlockRange);
+impl_borsh_via_ssz_fixed!(L1BlockHeightRange);
 impl_borsh_via_ssz_fixed!(L2BlockRange);
 impl_borsh_via_ssz_fixed!(CheckpointScope);
 impl_borsh_via_ssz_fixed!(CheckpointTip);

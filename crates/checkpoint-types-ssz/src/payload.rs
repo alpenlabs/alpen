@@ -3,60 +3,18 @@
 use ssz::{Decode, Encode};
 use ssz_types::VariableList;
 use strata_crypto::hash::raw;
-use strata_identifiers::{Buf32, Buf64, Epoch, L1BlockCommitment, OLBlockCommitment};
+use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockCommitment};
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
-    CheckpointPayloadError, CheckpointScope, CheckpointTip, L1BlockRange, L2BlockRange,
-    MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE,
+    CheckpointPayloadError, CheckpointTip, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, OUTPUT_MSG_MAX_SIZE,
     ssz_generated::ssz::payload::{CheckpointPayload, CheckpointSidecar, SignedCheckpointPayload},
 };
 
-impl L1BlockRange {
-    pub fn new(start: L1BlockCommitment, end: L1BlockCommitment) -> Self {
-        Self { start, end }
-    }
-
-    pub fn start(&self) -> &L1BlockCommitment {
-        &self.start
-    }
-
-    pub fn end(&self) -> &L1BlockCommitment {
-        &self.end
-    }
-}
-
-impl L2BlockRange {
-    pub fn new(start: OLBlockCommitment, end: OLBlockCommitment) -> Self {
-        Self { start, end }
-    }
-
-    pub fn start(&self) -> &OLBlockCommitment {
-        &self.start
-    }
-
-    pub fn end(&self) -> &OLBlockCommitment {
-        &self.end
-    }
-}
-
-impl CheckpointScope {
-    pub fn new(l1_range: L1BlockRange, l2_range: L2BlockRange) -> Self {
-        Self { l1_range, l2_range }
-    }
-
-    pub fn l1_range(&self) -> &L1BlockRange {
-        &self.l1_range
-    }
-
-    pub fn l2_range(&self) -> &L2BlockRange {
-        &self.l2_range
-    }
-}
-
 impl CheckpointTip {
-    pub fn new(l1_height: u32, l2_commitment: OLBlockCommitment) -> Self {
+    pub fn new(epoch: Epoch, l1_height: u32, l2_commitment: OLBlockCommitment) -> Self {
         Self {
+            epoch,
             l1_height,
             l2_commitment,
         }
@@ -116,7 +74,6 @@ impl CheckpointSidecar {
 
 impl CheckpointPayload {
     pub fn new(
-        epoch: Epoch,
         new_tip: CheckpointTip,
         sidecar: CheckpointSidecar,
         proof: Vec<u8>,
@@ -128,15 +85,10 @@ impl CheckpointPayload {
                 max: MAX_PROOF_LEN,
             })?;
         Ok(Self {
-            epoch,
             new_tip,
             sidecar,
             proof,
         })
-    }
-
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
     }
 
     pub fn new_tip(&self) -> &CheckpointTip {
