@@ -13816,6 +13816,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-proto-checkpoint"
+version = "0.1.0"
+
+[[package]]
 name = "strata-asm-proto-checkpoint-txs"
 version = "0.1.0"
 dependencies = [
