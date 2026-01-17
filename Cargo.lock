@@ -13831,9 +13831,11 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "ssz",
  "strata-asm-common",
  "strata-bridge-types",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-l1-envelope-fmt",
  "strata-ol-chainstate-types",
  "thiserror 2.0.18",

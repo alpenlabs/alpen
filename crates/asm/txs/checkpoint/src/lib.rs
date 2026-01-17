@@ -2,6 +2,7 @@
 
 pub mod constants;
 pub mod errors;
+pub mod parser;
 pub mod parser_v0;
 
 pub use constants::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
