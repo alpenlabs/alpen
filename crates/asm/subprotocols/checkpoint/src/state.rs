@@ -21,15 +21,15 @@ pub struct CheckpointConfig {
 pub struct CheckpointState {
     /// Predicate for sequencer signature verification.
     /// Updated via `UpdateSequencerKey` message from admin subprotocol.
-    sequencer_predicate: PredicateKey,
+    pub sequencer_predicate: PredicateKey,
 
     /// Predicate for checkpoint ZK proof verification.
     /// Updated via `UpdateCheckpointPredicate` message from admin subprotocol.
-    checkpoint_predicate: PredicateKey,
+    pub checkpoint_predicate: PredicateKey,
 
     /// Last verified checkpoint tip position.
     /// Tracks the OL state that has been proven and verified by ASM.
-    verified_tip: CheckpointTip,
+    pub verified_tip: CheckpointTip,
 }
 
 impl CheckpointState {

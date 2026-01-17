@@ -13820,6 +13820,8 @@ name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "k256",
+ "rand 0.8.5",
  "ssz",
  "ssz_primitives",
  "strata-asm-checkpoint-msgs",
@@ -13828,7 +13830,9 @@ dependencies = [
  "strata-checkpoint-types-ssz",
  "strata-crypto",
  "strata-identifiers",
+ "strata-merkle 0.2.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-predicate",
+ "strata-test-utils",
  "thiserror 2.0.17",
 ]
 
