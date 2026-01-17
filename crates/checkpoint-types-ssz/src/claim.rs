@@ -2,25 +2,9 @@
 
 use ssz::Encode;
 use ssz_types::FixedBytes;
-use strata_identifiers::{Epoch, L1Height, OLBlockCommitment};
+use strata_identifiers::{Epoch, OLBlockCommitment};
 
-use crate::{
-    CheckpointScope, L1BlockHeightRange, L2BlockRange, ssz_generated::ssz::claim::CheckpointClaim,
-};
-
-impl L1BlockHeightRange {
-    pub fn new(start: L1Height, end: L1Height) -> Self {
-        Self { start, end }
-    }
-
-    pub fn start(&self) -> &L1Height {
-        &self.start
-    }
-
-    pub fn end(&self) -> &L1Height {
-        &self.end
-    }
-}
+use crate::{L2BlockRange, ssz_generated::ssz::claim::CheckpointClaim};
 
 impl L2BlockRange {
     pub fn new(start: OLBlockCommitment, end: OLBlockCommitment) -> Self {
@@ -36,33 +20,19 @@ impl L2BlockRange {
     }
 }
 
-impl CheckpointScope {
-    pub fn new(l1_range: L1BlockHeightRange, l2_range: L2BlockRange) -> Self {
-        Self { l1_range, l2_range }
-    }
-
-    pub fn l1_range(&self) -> &L1BlockHeightRange {
-        &self.l1_range
-    }
-
-    pub fn l2_range(&self) -> &L2BlockRange {
-        &self.l2_range
-    }
-}
-
 impl CheckpointClaim {
     pub fn new(
         epoch: Epoch,
-        scope: CheckpointScope,
+        l2_range: L2BlockRange,
+        asm_manifests_hash: FixedBytes<32>,
         state_diff_hash: FixedBytes<32>,
-        input_msgs_commitment: FixedBytes<32>,
         ol_logs_hash: FixedBytes<32>,
     ) -> Self {
         Self {
             epoch,
-            scope,
+            l2_range,
+            asm_manifests_hash,
             state_diff_hash,
-            input_msgs_commitment,
             ol_logs_hash,
         }
     }
@@ -71,16 +41,16 @@ impl CheckpointClaim {
         self.epoch
     }
 
-    pub fn scope(&self) -> &CheckpointScope {
-        &self.scope
+    pub fn l2_range(&self) -> &L2BlockRange {
+        &self.l2_range
+    }
+
+    pub fn asm_manifests_hash(&self) -> &FixedBytes<32> {
+        &self.asm_manifests_hash
     }
 
     pub fn state_diff_hash(&self) -> &FixedBytes<32> {
         &self.state_diff_hash
-    }
-
-    pub fn input_msgs_commitment(&self) -> &FixedBytes<32> {
-        &self.input_msgs_commitment
     }
 
     pub fn ol_logs_hash(&self) -> &FixedBytes<32> {
