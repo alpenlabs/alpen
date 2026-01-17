@@ -69,14 +69,20 @@ impl Subprotocol for CheckpointSubprotocol {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        _anchor_pre: &AnchorState,
+        anchor_pre: &AnchorState,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {
-                match handle_checkpoint_tx(state, tx, verified_aux_data, relayer) {
+                match handle_checkpoint_tx(
+                    state,
+                    tx,
+                    &anchor_pre.chain_view,
+                    verified_aux_data,
+                    relayer,
+                ) {
                     Ok(()) => {
                         logging::info!(
                             txid = %tx.tx().compute_txid(),
