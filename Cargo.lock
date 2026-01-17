@@ -13820,9 +13820,15 @@ name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ssz",
+ "ssz_primitives",
+ "strata-asm-common",
+ "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types-ssz",
+ "strata-crypto",
  "strata-identifiers",
  "strata-predicate",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
