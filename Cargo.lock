@@ -13822,6 +13822,7 @@ dependencies = [
  "borsh",
  "ssz",
  "ssz_primitives",
+ "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types-ssz",

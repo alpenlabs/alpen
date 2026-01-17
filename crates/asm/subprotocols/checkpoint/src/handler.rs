@@ -93,8 +93,8 @@ fn construct_full_claim(
         epoch,
         scope,
         state_diff_hash,
-        ol_logs_hash,
         input_msgs_commitment,
+        ol_logs_hash,
     ))
 }
 
