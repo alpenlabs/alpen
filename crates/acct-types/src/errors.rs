@@ -79,7 +79,7 @@ pub enum AcctError {
     #[error(
         "processed message is not the same as proven message for account {account_id:?} at index {msg_index}"
     )]
-    InvalidAccumuulatorProofMessageRef {
+    InvalidAccumulatorProofMessageRef {
         account_id: AccountId,
         msg_index: usize,
     },

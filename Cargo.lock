@@ -14897,6 +14897,7 @@ dependencies = [
  "strata-ol-stf",
  "strata-predicate",
  "strata-service",
+ "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "strata-status",
  "strata-storage",
