@@ -1,30 +1,33 @@
 use strata_asm_common::AuxError;
-use strata_asm_proto_checkpoint_txs::CheckpointTxError;
 use strata_identifiers::Epoch;
 use strata_predicate::PredicateError;
 use thiserror::Error;
 
 /// Result type for checkpoint subprotocol operations.
-pub(crate) type CheckpointResult<T> = Result<T, CheckpointError>;
+pub(crate) type CheckpointValidationResult<T> = Result<T, CheckpointValidationError>;
 
-/// Errors that can occur during checkpoint processing.
 #[derive(Debug, Error)]
-pub enum CheckpointError {
-    /// Failed to parse checkpoint transaction.
-    #[error("checkpoint parsing error: {0}")]
-    Parsing(#[from] CheckpointTxError),
-
-    /// Checkpoint signature verification failed.
-    #[error("invalid checkpoint signature")]
-    InvalidSignature,
+pub enum CheckpointValidationError {
+    #[error("invalid checkpoint payload: {0}")]
+    InvalidPayload(#[from] InvalidCheckpointPayload),
 
     /// Failed to retrieve manifest hashes from auxiliary data.
     #[error("auxiliary data error: {0}")]
-    AuxData(#[from] AuxError),
+    InvalidAux(#[from] AuxError),
+}
 
-    /// Checkpoint proof verification failed.
-    #[error("proof verification failed: {0}")]
-    ProofVerification(#[from] PredicateError),
+/// CheckpointPayload is invalid
+#[derive(Debug, Error)]
+pub enum InvalidCheckpointPayload {
+    /// Predicate verification failed.
+    #[error("predicate verification failed: {0}")]
+    PredicateVerification(#[from] PredicateError),
+
+    /// Checkpoint epoch does not match expected progression.
+    ///
+    /// Each checkpoint must advance the epoch by exactly 1.
+    #[error("invalid epoch: expected {expected}, got {actual}")]
+    InvalidEpoch { expected: Epoch, actual: Epoch },
 
     /// Checkpoint goes backwards in L1 height.
     ///
@@ -35,12 +38,6 @@ pub enum CheckpointError {
         "checkpoint goes backwards in L1 height: new checkpoint covers up to L1 height {new_height}, but previous checkpoint covered up to L1 height {prev_height}"
     )]
     L1HeightGoesBackwards { prev_height: u32, new_height: u32 },
-
-    /// Checkpoint epoch does not match expected progression.
-    ///
-    /// Each checkpoint must advance the epoch by exactly 1.
-    #[error("invalid epoch: expected {expected}, got {actual}")]
-    InvalidEpoch { expected: Epoch, actual: Epoch },
 
     /// Checkpoint claims L1 blocks that don't exist yet.
     ///

@@ -76,27 +76,13 @@ impl Subprotocol for CheckpointSubprotocol {
     ) {
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {
-                match handle_checkpoint_tx(
+                handle_checkpoint_tx(
                     state,
                     tx,
                     &anchor_pre.chain_view,
                     verified_aux_data,
                     relayer,
-                ) {
-                    Ok(()) => {
-                        logging::info!(
-                            txid = %tx.tx().compute_txid(),
-                            "Successfully processed checkpoint transaction"
-                        );
-                    }
-                    Err(e) => {
-                        logging::error!(
-                            txid = %tx.tx().compute_txid(),
-                            error = %e,
-                            "Failed to process checkpoint transaction"
-                        );
-                    }
-                }
+                )
             }
         }
     }

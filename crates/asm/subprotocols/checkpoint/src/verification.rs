@@ -10,41 +10,41 @@ use strata_crypto::hash;
 use strata_identifiers::Epoch;
 
 use crate::{
-    errors::{CheckpointError, CheckpointResult},
+    errors::{CheckpointValidationResult, InvalidCheckpointPayload},
     state::CheckpointState,
 };
 
-/// Validates a checkpoint payload.
+/// Validates a checkpoint payload by verifying the sequencer signature, epoch progression,
+/// and checkpoint proof.
 ///
-/// Performs three critical validation steps:
-/// 1. Verifies the sequencer signature using the sequencer predicate
-/// 2. Validates that the checkpoint advances to the next expected epoch
-/// 3. Constructs the full checkpoint claim and verifies its proof
+/// The full [`CheckpointClaim`] is reconstructed from the current subprotocol state and payload
+/// for the full proof verification.
 pub fn validate_checkpoint_payload(
     state: &CheckpointState,
     current_l1_height: u32,
     payload: &SignedCheckpointPayload,
     verified_aux_data: &VerifiedAuxData,
-) -> CheckpointResult<()> {
-    // Verify sequencer signature over payload
+) -> CheckpointValidationResult<()> {
+    // 1. Verify sequencer signature over payload
     // BIP-340 Schnorr verification hashes the message internally using tagged hashing,
     // so we pass raw SSZ-encoded bytes (not pre-hashed)
     let payload_bytes = payload.inner.as_ssz_bytes();
     state
         .sequencer_predicate()
         .verify_claim_witness(&payload_bytes, payload.signature.as_ref())
-        .map_err(|_| CheckpointError::InvalidSignature)?;
+        .map_err(InvalidCheckpointPayload::from)?;
 
-    // Validate epoch progression
+    // 2. Validate epoch progression
     let expected_epoch = state.verified_tip().epoch + 1;
     if payload.inner().new_tip().epoch != expected_epoch {
-        return Err(CheckpointError::InvalidEpoch {
+        return Err(InvalidCheckpointPayload::InvalidEpoch {
             expected: expected_epoch,
             actual: payload.inner().new_tip().epoch,
-        });
+        }
+        .into());
     }
 
-    // Construct full checkpoint claim and verify its proof
+    // 3a.Construct full checkpoint claim and verify its proof
     let claim = construct_full_claim(
         expected_epoch,
         current_l1_height,
@@ -52,61 +52,36 @@ pub fn validate_checkpoint_payload(
         payload.inner(),
         verified_aux_data,
     )?;
+
+    // 3b. Verify the proof
     state
         .checkpoint_predicate()
-        .verify_claim_witness(&claim.as_ssz_bytes(), payload.inner.proof())?;
+        .verify_claim_witness(&claim.as_ssz_bytes(), payload.inner.proof())
+        .map_err(InvalidCheckpointPayload::from)?;
 
     Ok(())
 }
 
-/// Constructs a complete checkpoint claim for verification.
+/// Constructs a complete checkpoint claim for verification by combining the verified tip state
+/// with the new checkpoint payload.
 fn construct_full_claim(
     epoch: Epoch,
     current_l1_height: u32,
     verified_tip: &CheckpointTip,
     payload: &CheckpointPayload,
     verified_aux_data: &VerifiedAuxData,
-) -> CheckpointResult<CheckpointClaim> {
+) -> CheckpointValidationResult<CheckpointClaim> {
     let l2_range = L2BlockRange::new(
         *verified_tip.l2_commitment(),
         payload.new_tip().l2_commitment,
     );
 
-    let l1_height_covered_in_last_checkpoint = verified_tip.l1_height();
-    let l1_height_covered_in_new_checkpoint = payload.new_tip().l1_height();
-
-    if l1_height_covered_in_new_checkpoint >= current_l1_height {
-        return Err(CheckpointError::CheckpointBeyondL1Tip {
-            checkpoint_height: l1_height_covered_in_new_checkpoint,
-            current_height: current_l1_height,
-        });
-    }
-
-    // Compute ASM manifests hash based on L1 height progression
-    let asm_manifests_hash =
-        match l1_height_covered_in_last_checkpoint.cmp(&l1_height_covered_in_new_checkpoint) {
-            // Invalid: checkpoint goes backwards in L1 height
-            Ordering::Greater => {
-                return Err(CheckpointError::L1HeightGoesBackwards {
-                    prev_height: l1_height_covered_in_last_checkpoint,
-                    new_height: l1_height_covered_in_new_checkpoint,
-                });
-            }
-            // Valid: checkpoint advances L2 state without consuming new L1 blocks
-            Ordering::Equal => FixedBytes::<32>::from([0u8; 32]),
-
-            // Valid: checkpoint processes new L1 blocks
-            // Start from (prev_checkpoint_l1_height + 1) since prev_checkpoint_l1_height
-            // was already processed in the previous checkpoint
-            Ordering::Less => {
-                let manifest_hashes = verified_aux_data.get_manifest_hashes(
-                    (l1_height_covered_in_last_checkpoint + 1) as u64,
-                    l1_height_covered_in_last_checkpoint as u64,
-                )?;
-
-                compute_asm_manifests_hash(manifest_hashes)
-            }
-        };
+    let asm_manifests_hash = compute_asm_manifests_hash_for_checkpoint(
+        verified_tip,
+        payload.new_tip(),
+        current_l1_height,
+        verified_aux_data,
+    )?;
 
     let state_diff_hash = hash::raw(payload.sidecar().ol_state_diff()).into();
 
@@ -121,6 +96,55 @@ fn construct_full_claim(
         state_diff_hash,
         ol_logs_hash,
     ))
+}
+
+/// Computes the ASM manifests hash for a checkpoint transition.
+///
+/// Validates L1 height progression between the previous and new checkpoint tips:
+/// - Returns an error if the new checkpoint goes backwards in L1 height
+/// - Returns an error if the new checkpoint exceeds the current L1 tip
+/// - Returns a zero hash if no new L1 blocks were processed (L1 height unchanged)
+/// - Otherwise computes and returns the hash of all ASM manifests from the L1 block range
+fn compute_asm_manifests_hash_for_checkpoint(
+    verified_tip: &CheckpointTip,
+    new_tip: &CheckpointTip,
+    current_l1_height: u32,
+    verified_aux_data: &VerifiedAuxData,
+) -> CheckpointValidationResult<FixedBytes<32>> {
+    let l1_height_covered_in_last_checkpoint = verified_tip.l1_height();
+    let l1_height_covered_in_new_checkpoint = new_tip.l1_height();
+
+    if l1_height_covered_in_new_checkpoint >= current_l1_height {
+        return Err(InvalidCheckpointPayload::CheckpointBeyondL1Tip {
+            checkpoint_height: l1_height_covered_in_new_checkpoint,
+            current_height: current_l1_height,
+        }
+        .into());
+    }
+
+    match l1_height_covered_in_last_checkpoint.cmp(&l1_height_covered_in_new_checkpoint) {
+        // Invalid: checkpoint goes backwards in L1 height
+        Ordering::Greater => Err(InvalidCheckpointPayload::L1HeightGoesBackwards {
+            prev_height: l1_height_covered_in_last_checkpoint,
+            new_height: l1_height_covered_in_new_checkpoint,
+        }
+        .into()),
+
+        // Valid: checkpoint advances L2 state without consuming new L1 blocks
+        Ordering::Equal => Ok(FixedBytes::<32>::from([0u8; 32])),
+
+        // Valid: checkpoint processes new L1 blocks
+        // Start from (prev_checkpoint_l1_height + 1) since prev_checkpoint_l1_height
+        // was already processed in the previous checkpoint
+        Ordering::Less => {
+            let manifest_hashes = verified_aux_data.get_manifest_hashes(
+                (l1_height_covered_in_last_checkpoint + 1) as u64,
+                l1_height_covered_in_last_checkpoint as u64,
+            )?;
+
+            Ok(compute_asm_manifests_hash(manifest_hashes))
+        }
+    }
 }
 
 /// Computes a hash commitment over all ASM manifests in an L1 block range.
