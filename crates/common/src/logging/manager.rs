@@ -26,7 +26,13 @@ pub fn init(config: LoggerConfig) {
     // Set the global trace context propagator for distributed tracing
     set_text_map_propagator(TraceContextPropagator::new());
 
-    let filt = tracing_subscriber::EnvFilter::from_default_env();
+    // Default filter suppresses verbose SP1 executor logs below WARN (so TRACE, INFO and DEBUG
+    // are filtered out).
+    // It still allows further override via RUST_LOG.
+    let filt = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(tracing::Level::INFO.into())
+        .from_env_lossy()
+        .add_directive("sp1_core_executor=warn".parse().unwrap());
 
     // Configure stdout logging with JSON or compact format
     let stdout_sub = if config.stdout_config.json_format {
