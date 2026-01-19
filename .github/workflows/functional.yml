@@ -124,7 +124,7 @@ jobs:
 
       - name: Install bitcoind
         env:
-          BITCOIND_VERSION: "29.2"
+          BITCOIND_VERSION: "30.2"
           BITCOIND_ARCH: "x86_64-linux-gnu"
         run: |
           curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
@@ -201,7 +201,7 @@ jobs:
 
       - name: Install bitcoind
         env:
-          BITCOIND_VERSION: "29.2"
+          BITCOIND_VERSION: "30.2"
           BITCOIND_ARCH: "x86_64-linux-gnu"
         run: |
           curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
