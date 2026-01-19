@@ -25,17 +25,24 @@ pub trait StrataRpcApi {
         json: Option<bool>,
     ) -> RpcResult<Option<BlockWitness>>;
 
-    /// Returns the state diff for the block in DA-optimized format.
-    #[method(name = "getBlockStateDiff")]
-    fn get_block_state_diff(&self, block_hash: B256) -> RpcResult<Option<BatchStateDiffSerde>>;
+    /// Returns the state diff for a single block.
+    ///
+    /// N.B. Implemented for testing primarily, should not be used in production API.
+    #[method(name = "getStateDiffForBlock")]
+    fn get_state_diff_for_block(&self, block_hash: B256) -> RpcResult<Option<BatchStateDiffSerde>>;
 
     /// Returns the state root for the block_number as reconstructured from the state diffs.
+    ///
+    /// N.B. Implemented for testing primarily, should not be used in production API.
+    /// The genesis state is hardcoded to be taken from dev config.
     #[method(name = "getStateRootByDiffs")]
     fn get_state_root_via_diffs(&self, block_number: u64) -> RpcResult<Option<B256>>;
 
-    /// Returns the aggregated state diff for a range of blocks in DA-optimized format.
-    #[method(name = "getBatchStateDiff")]
-    fn get_batch_state_diff(
+    /// Returns the aggregated state diff for a range of blocks.
+    ///
+    /// N.B. Implemented for testing primarily, should not be used in production API.
+    #[method(name = "getStateDiffForRange")]
+    fn get_state_diff_for_range(
         &self,
         from_block: u64,
         to_block: u64,

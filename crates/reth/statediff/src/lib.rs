@@ -16,8 +16,9 @@
 //! # Modules
 //!
 //! - [`block`]: Per-block diff types stored in DB (preserves original values)
-//! - [`batch`]: DA-optimized batch diff types (compact, no originals)
-//! - `reconstruct`: State reconstruction from diffs (see [`StateReconstructor`])
+//! - [`batch`]: DA-optimized batch diff types (compact, no originals), actually posted on-chain
+//! - `reconstruct`: State reconstruction from diffs (see [`StateReconstructor`]), currently
+//!   experimental and used only in tests - will be adjusted later (for syncing from diffs).
 //!
 //! # Key Types
 //!

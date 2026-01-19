@@ -44,7 +44,7 @@ where
         res.map_err(to_jsonrpsee_error("Failed fetching witness"))
     }
 
-    fn get_block_state_diff(&self, block_hash: B256) -> RpcResult<Option<BatchStateDiffSerde>> {
+    fn get_state_diff_for_block(&self, block_hash: B256) -> RpcResult<Option<BatchStateDiffSerde>> {
         let block_diff = self
             .db
             .get_state_diff_by_hash(block_hash)
@@ -86,7 +86,7 @@ where
         RpcResult::Ok(Some(state.state_root()))
     }
 
-    fn get_batch_state_diff(
+    fn get_state_diff_for_range(
         &self,
         from_block: u64,
         to_block: u64,
