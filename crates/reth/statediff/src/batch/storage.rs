@@ -7,6 +7,8 @@ use alloy_primitives::U256;
 use serde::{Deserialize, Serialize};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
+use crate::codec::TrimmedStorageValue;
+
 /// Diff for storage slots of an account.
 ///
 /// Uses a sorted map for deterministic encoding.
@@ -59,17 +61,21 @@ impl Codec for StorageDiff {
         (self.slots.len() as u32).encode(enc)?;
 
         // Encode each slot (already sorted due to BTreeMap)
+        //
+        // Keys are encoded as fixed 32 bytes (big-endian) because:
+        // - Most storage keys are keccak256 hashes (mapping slots) which are uniformly distributed
+        //   and won't benefit from leading-zero trimming
+        // - Trimming would add 1-byte overhead for hash-based keys (33 vs 32 bytes)
+        // - Simple slot indices (0, 1, 2...) are relatively rare in practice
+        //
+        // Values use trimmed encoding because they vary widely:
+        // - Booleans, counters, timestamps: 1-5 bytes (huge savings)
+        // - Addresses: 20 bytes (34% savings)
+        // - Balances: 8-16 bytes (50-75% savings)
+        // - Only full hashes have 1-byte overhead, which is rare for values
         for (key, value) in &self.slots {
-            enc.write_buf(&key.to_le_bytes::<32>())?;
-            match value {
-                Some(v) => {
-                    true.encode(enc)?;
-                    enc.write_buf(&v.to_le_bytes::<32>())?;
-                }
-                None => {
-                    false.encode(enc)?;
-                }
-            }
+            enc.write_buf(&key.to_be_bytes::<32>())?;
+            TrimmedStorageValue(*value).encode(enc)?;
         }
 
         Ok(())
@@ -82,17 +88,8 @@ impl Codec for StorageDiff {
         for _ in 0..count {
             let mut key_buf = [0u8; 32];
             dec.read_buf(&mut key_buf)?;
-            let key = U256::from_le_bytes(key_buf);
-
-            let has_value = bool::decode(dec)?;
-            let value = if has_value {
-                let mut value_buf = [0u8; 32];
-                dec.read_buf(&mut value_buf)?;
-                Some(U256::from_le_bytes(value_buf))
-            } else {
-                None
-            };
-
+            let key = U256::from_be_bytes(key_buf);
+            let value = TrimmedStorageValue::decode(dec)?.0;
             slots.insert(key, value);
         }
 
