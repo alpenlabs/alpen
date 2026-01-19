@@ -38,6 +38,7 @@ pub mod serde_hex_bytes {
     use strata_identifiers::L2BlockId;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(transparent)]
     pub struct HexBytes(#[serde(with = "hex::serde")] pub Vec<u8>);
 
     impl HexBytes {
