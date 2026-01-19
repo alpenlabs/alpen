@@ -141,10 +141,6 @@ fn process_update_tx<S: IStateAccessor>(
 
     let operation = update.operation();
 
-    // Validate sequence number
-    let current_seqno = *snark_acct_state.seqno().inner();
-    check_snark_account_seq_no(target, operation.seq_no(), current_seqno)?;
-
     // Step 3: Mutate and collect effects (inside closure)
     let fx_buf = state.update_account(target, |astate| -> ExecResult<_> {
         // Deduct balance for all outputs first

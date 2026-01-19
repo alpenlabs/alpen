@@ -35,8 +35,8 @@ pub fn verify_update_correctness<S: IStateAccessor>(
         accum_proofs.ledger_ref_proofs(),
     )?;
 
-    // 4. Verify input mmr proofs
-    verify_input_mmr_proofs(target, snark_state, accum_proofs.inbox_proofs())?;
+    // 4. Verify inbox mmr proofs
+    verify_inbox_mmr_proofs(target, snark_state, accum_proofs.inbox_proofs())?;
 
     // 5. Verify outputs can be applied safely
     let outputs = operation.outputs();
@@ -108,7 +108,7 @@ fn verify_ledger_refs(
 
 /// Verifies the processed messages proofs against the provided account state's inbox
 /// mmr.
-pub(crate) fn verify_input_mmr_proofs(
+pub(crate) fn verify_inbox_mmr_proofs(
     account_id: AccountId,
     state: &impl ISnarkAccountState,
     msg_proofs: &[MessageEntryProof],
