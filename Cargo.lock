@@ -13569,6 +13569,7 @@ dependencies = [
  "strata-ol-mempool",
  "strata-ol-state-types",
  "strata-ol-stf",
+ "strata-ol-sync",
  "strata-params",
  "strata-primitives",
  "strata-rpc-api-new",

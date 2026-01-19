@@ -5,12 +5,19 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
-use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
+use strata_common::ws_client::{ManagedWsClient, WsClientConfig};
+use strata_consensus_logic::{
+    message::ForkChoiceMessage,
+    sync_manager::{spawn_asm_worker, spawn_csm_listener},
+};
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_ol_sync::{OLRpcSyncPeer, OLSyncContext};
 use strata_rpc_api_new::OLClientRpcServer;
+use tokio::sync::mpsc::{self, Sender};
+use tracing::info;
 
-use crate::{context::NodeContext, rpc::OLRpcServer, run_context::RunContext};
+use crate::{context::NodeContext, errors::InitError, rpc::OLRpcServer, run_context::RunContext};
 
 /// Dependencies needed by the RPC server.
 /// Grouped to reduce parameter count when spawning the RPC task.
@@ -57,10 +64,17 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         .with_status_channel((*nodectx.status_channel).clone())
         .with_runtime(nodectx.executor.handle().clone())
         .launch(&nodectx.executor)?;
+    let chain_worker_handle = Arc::new(chain_worker_handle);
 
-    // TODO: Start other tasks like l1writer, broadcaster, fcm, btcio reader, etc. all as
-    // service, returning the monitors.
+    // FIXME: This is a placeholder fcm handler till we have properly migrated fcm for new chain
+    // worker
+    let (fcm_tx, _) = mpsc::channel(100);
 
+    if nodectx.config.client.is_sequencer {
+        start_sequencer_services(&nodectx)?;
+    } else {
+        start_fullnode_services(&nodectx, fcm_tx)?;
+    }
     Ok(RunContext {
         runtime: nodectx.runtime,
         config: nodectx.config,
@@ -74,6 +88,36 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         storage: nodectx.storage,
         status_channel: nodectx.status_channel,
     })
+}
+
+fn start_fullnode_services(nodectx: &NodeContext, fcm_tx: Sender<ForkChoiceMessage>) -> Result<()> {
+    let endpoint = nodectx.config.client.sync_endpoint.clone();
+    let sync_endpoint = endpoint.ok_or(InitError::MissingSyncEndpoint)?;
+    info!(?sync_endpoint, "initing fullnode task");
+
+    let rpc_client = ManagedWsClient::new_with_default_pool(WsClientConfig { url: sync_endpoint });
+    let sync_peer = OLRpcSyncPeer::new(rpc_client, 10);
+    let ol_sync_context = OLSyncContext::new(
+        sync_peer,
+        nodectx.storage.clone(),
+        nodectx.status_channel.clone(),
+        fcm_tx,
+    );
+
+    // TODO: sync_worker as a service?
+    nodectx
+        .executor
+        .spawn_critical_async("l2-sync-manager", async move {
+            strata_ol_sync::sync_worker(&ol_sync_context)
+                .await
+                .map_err(Into::into)
+        });
+    Ok(())
+}
+
+fn start_sequencer_services(_nodectx: &NodeContext) -> Result<()> {
+    // TODO: Start other tasks like l1writer, broadcaster
+    Ok(())
 }
 
 /// Starts the mempool service.

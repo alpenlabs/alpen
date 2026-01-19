@@ -16,7 +16,10 @@ use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;
 use strata_storage::{MmrId, NodeStorage};
 use strata_tasks::TaskExecutor;
-use tokio::{runtime::Handle, sync::mpsc};
+use tokio::{
+    runtime::Handle,
+    sync::mpsc::{self, Sender},
+};
 
 use crate::{
     asm_worker_context::AsmWorkerCtx,
@@ -75,9 +78,6 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     params: Arc<Params>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<SyncManager> {
-    // Create channels.
-    let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
-
     // Exec worker.
     let ex_storage = storage.clone();
     let ex_st_ch = status_channel.clone();
@@ -119,24 +119,13 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         csm_asm_monitor,
     )?;
 
-    // Start the fork choice manager thread.  If we haven't done genesis yet
-    // this will just wait until the CSM says we have.
-    let fcm_storage = storage.clone();
-    let fcm_params = params.clone();
-    let fcm_handle = executor.handle().clone();
-    let st_ch = status_channel.clone();
-    executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
-        // TODO this should be simplified into a builder or something
-        fork_choice_manager::tracker_task(
-            shutdown,
-            fcm_handle,
-            fcm_storage,
-            fcm_rx,
-            cw_handle,
-            fcm_params,
-            st_ch,
-        )
-    });
+    let fcm_tx = spawn_fcm_task(
+        storage,
+        executor,
+        &status_channel,
+        cw_handle,
+        params.clone(),
+    )?;
 
     Ok(SyncManager {
         params,
@@ -144,6 +133,31 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         asm_controller,
         status_channel,
     })
+}
+
+// TODO: make this use service and return a service handle
+pub fn spawn_fcm_task(
+    storage: &Arc<NodeStorage>,
+    executor: &TaskExecutor,
+    status_channel: &StatusChannel,
+    cw_handle: Arc<ChainWorkerHandle>,
+    params: Arc<Params>,
+) -> anyhow::Result<Sender<ForkChoiceMessage>> {
+    // Create channels.
+    let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
+
+    // Start the fork choice manager thread.  If we haven't done genesis yet
+    // this will just wait until the CSM says we have.
+    let handle = executor.handle().clone();
+    let storage = storage.clone();
+    let st_ch = status_channel.clone();
+    executor.spawn_critical("fork_choice_manager::tracker_task", move |shutdown| {
+        // TODO this should be simplified into a builder or something
+        fork_choice_manager::tracker_task(
+            shutdown, handle, storage, fcm_rx, cw_handle, params, st_ch,
+        )
+    });
+    Ok(fcm_tx)
 }
 
 pub fn spawn_csm_listener(

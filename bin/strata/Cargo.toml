@@ -21,6 +21,7 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
+strata-ol-sync.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-rpc-api-new.workspace = true

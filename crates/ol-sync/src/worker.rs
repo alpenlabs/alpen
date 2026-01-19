@@ -5,12 +5,15 @@ use std::sync::Arc;
 use futures::StreamExt;
 #[cfg(feature = "debug-utils")]
 use strata_common::{check_and_pause_debug_async, WorkerType};
-use strata_consensus_logic::{message::ForkChoiceMessage, sync_manager::SyncManager};
+use strata_consensus_logic::message::ForkChoiceMessage;
 use strata_identifiers::EpochCommitment;
 use strata_ol_chain_types_new::OLBlock;
-use strata_status::ChainSyncStatusUpdate;
+use strata_status::{ChainSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
-use tokio::{sync::watch, time};
+use tokio::{
+    sync::{mpsc::Sender, watch},
+    time,
+};
 use tracing::*;
 
 use crate::{
@@ -25,15 +28,22 @@ use crate::{
 pub struct OLSyncContext<T: SyncClient> {
     client: T,
     storage: Arc<NodeStorage>,
-    sync_manager: Arc<SyncManager>,
+    status_channel: Arc<StatusChannel>,
+    fcm_tx: Sender<ForkChoiceMessage>,
 }
 
 impl<T: SyncClient> OLSyncContext<T> {
-    pub fn new(client: T, storage: Arc<NodeStorage>, sync_manager: Arc<SyncManager>) -> Self {
+    pub fn new(
+        client: T,
+        storage: Arc<NodeStorage>,
+        status_channel: Arc<StatusChannel>,
+        fcm_tx: Sender<ForkChoiceMessage>,
+    ) -> Self {
         Self {
             client,
             storage,
-            sync_manager,
+            status_channel,
+            fcm_tx,
         }
     }
 }
@@ -42,7 +52,7 @@ impl<T: SyncClient> OLSyncContext<T> {
 async fn wait_until_ready_and_init_sync_state<T: SyncClient>(
     context: &OLSyncContext<T>,
 ) -> Result<OLSyncState, OLSyncError> {
-    let mut chainsync_rx = context.sync_manager.status_channel().subscribe_chain_sync();
+    let mut chainsync_rx = context.status_channel.subscribe_chain_sync();
     let finalized_epoch = wait_for_finalized_epoch(&mut chainsync_rx).await?;
 
     state::initialize_from_db(finalized_epoch, context.storage.as_ref()).await
@@ -89,7 +99,7 @@ async fn wait_for_finalized_epoch_changed(
 pub async fn sync_worker<T: SyncClient>(context: &OLSyncContext<T>) -> Result<(), OLSyncError> {
     let mut state = wait_until_ready_and_init_sync_state(context).await?;
 
-    let mut chainsync_rx = context.sync_manager.status_channel().subscribe_chain_sync();
+    let mut chainsync_rx = context.status_channel.subscribe_chain_sync();
     let mut interval = time::interval(time::Duration::from_secs(1));
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
@@ -239,10 +249,16 @@ async fn handle_new_block<T: SyncClient>(
             .await?;
         let block_idx = block.header().slot();
         debug!(%block_idx, "ol sync: sending chain tip msg");
-        context
-            .sync_manager
-            .submit_chain_tip_msg_async(ForkChoiceMessage::NewBlock(block.header().compute_blkid()))
-            .await;
+
+        let send_ok = context
+            .fcm_tx
+            .send(ForkChoiceMessage::NewBlock(block.header().compute_blkid()))
+            .await
+            .is_ok();
+        if !send_ok {
+            return Err(OLSyncError::ChannelClosed);
+        }
+
         debug!(%block_idx, "ol sync: sending chain tip sent");
     }
     Ok(())
