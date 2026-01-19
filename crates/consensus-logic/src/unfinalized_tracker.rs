@@ -3,7 +3,9 @@
 use std::collections::*;
 
 use strata_db_types::traits::BlockStatus;
-use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment, SyncBlockHeader};
+use strata_primitives::{
+    buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment, SyncBlockHeader,
+};
 use strata_state::prelude::*;
 use strata_storage::{L2BlockManager, OLBlockManager};
 use tracing::*;
@@ -120,11 +122,7 @@ impl UnfinalizedBlockTracker {
     /// Returns if this new block forks off and creates a new unfinalized tip
     /// block.
     // TODO do a `SealedL2BlockHeader` thing that includes the blkid
-    pub fn attach_block<H>(
-        &mut self,
-        blkid: L2BlockId,
-        header: &H,
-    ) -> Result<bool, ChainTipError>
+    pub fn attach_block<H>(&mut self, blkid: L2BlockId, header: &H) -> Result<bool, ChainTipError>
     where
         H: SyncBlockHeader<BlockId = L2BlockId>,
     {

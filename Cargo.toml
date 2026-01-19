@@ -227,6 +227,7 @@ strata-ol-msg-types = { path = "crates/ol/msg-types" }
 strata-ol-state-support-types = { path = "crates/ol/state-support-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-stf = { path = "crates/ol/stf" }
+strata-ol-sync = { path = "crates/ol-sync" }
 strata-paas = { path = "crates/paas" }
 strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
@@ -247,7 +248,6 @@ strata-status = { path = "crates/status" }
 strata-storage = { path = "crates/storage" }
 strata-storage-common = { path = "crates/storage-common" }
 strata-sync = { path = "crates/sync" }
-strata-ol-sync = { path = "crates/ol-sync" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
 strata-test-utils-btc = { path = "crates/test-utils/btc" }
 strata-test-utils-btcio = { path = "crates/test-utils/btcio" }

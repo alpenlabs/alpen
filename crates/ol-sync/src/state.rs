@@ -1,5 +1,5 @@
 use strata_consensus_logic::unfinalized_tracker::UnfinalizedBlockTracker;
-use strata_identifiers::{L2BlockId, L2BlockCommitment, EpochCommitment};
+use strata_identifiers::{EpochCommitment, L2BlockCommitment, L2BlockId};
 use strata_ol_chain_types_new::SignedOLBlockHeader;
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
