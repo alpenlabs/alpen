@@ -1,6 +1,6 @@
 //! Compound DA type infra.
 
-use crate::{Codec, CodecResult, DaCounter, DaRegister, DaWrite, Decoder, Encoder};
+use crate::{CodecResult, Decoder, Encoder};
 
 /// Describes a bitmap we can read/write to.
 pub trait Bitmap: Copy {
@@ -59,6 +59,7 @@ impl<T: Bitmap> BitSeqReader<T> {
     }
 
     /// Returns the next bit, if possible.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> bool {
         if self.off >= T::BITS {
             panic!("bitqueue: out of bits");
@@ -107,6 +108,12 @@ impl<T: Bitmap> BitSeqWriter<T> {
 
     pub fn mask(&self) -> T {
         self.mask
+    }
+}
+
+impl<T: Bitmap> Default for BitSeqWriter<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -172,7 +179,7 @@ macro_rules! make_compound_impl {
         impl $crate::Codec for $tyname {
             fn decode(dec: &mut impl $crate::Decoder) -> Result<Self, $crate::CodecError> {
                 let mask = <$maskty>::decode(dec)?;
-                let mut bitr = $crate::compound::BitSeqReader::from_mask(mask);
+                let mut bitr = $crate::BitSeqReader::from_mask(mask);
 
                 $(let $fname = $crate::_mct_field_decode!(bitr dec; $daty $fspec);)*
 
@@ -180,7 +187,7 @@ macro_rules! make_compound_impl {
             }
 
             fn encode(&self, enc: &mut impl $crate::Encoder) -> Result<(), $crate::CodecError> {
-                let mut bitw = $crate::compound::BitSeqWriter::<$maskty>::new();
+                let mut bitw = $crate::BitSeqWriter::<$maskty>::new();
 
                 $(bitw.prepare_member(&self.$fname);)*
 

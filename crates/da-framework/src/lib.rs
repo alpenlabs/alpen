@@ -1,10 +1,5 @@
-#![expect(
-    unused,
-    reason = "will be used shortly, clippy is confused because of macros"
-)]
-
 mod codec;
-pub mod compound;
+mod compound;
 mod counter;
 mod errors;
 mod linear_acc;
@@ -15,7 +10,7 @@ mod traits;
 pub use codec::{
     Codec, CodecError, CodecResult, Decoder, Encoder, Varint, decode_buf_exact, encode_to_vec,
 };
-pub use compound::CompoundMember;
+pub use compound::{BitSeqReader, BitSeqWriter, Bitmap, CompoundMember};
 pub use counter::{CounterScheme, DaCounter, DaCounterBuilder, counter_schemes};
 pub use errors::{BuilderError, DaError};
 pub use linear_acc::{DaLinacc, LinearAccumulator};

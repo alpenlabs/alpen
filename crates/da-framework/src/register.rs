@@ -1,9 +1,6 @@
 //! Register DA type.
 
-use crate::{
-    BuilderError, Codec, CodecError, CodecResult, CompoundMember, DaBuilder, DaWrite, Decoder,
-    Encoder,
-};
+use crate::{Codec, CodecError, CodecResult, CompoundMember, DaWrite, Decoder, Encoder};
 
 /// A register value.
 ///
@@ -152,42 +149,5 @@ impl<T: Codec + Clone> CompoundMember for DaRegister<T> {
             v.encode(enc)?;
         }
         Ok(())
-    }
-}
-
-/// Builder for [`DaRegister`].
-pub struct DaRegisterBuilder<T> {
-    original: T,
-    new: T,
-}
-
-impl<T> DaRegisterBuilder<T> {
-    /// Gets the current value.
-    pub fn value(&self) -> &T {
-        &self.new
-    }
-
-    /// Sets the value.
-    pub fn set(&mut self, t: T) {
-        self.new = t;
-    }
-}
-
-impl<T: Clone + Eq> DaBuilder<T> for DaRegisterBuilder<T> {
-    type Write = DaRegister<T>;
-
-    fn from_source(t: T) -> Self {
-        Self {
-            original: t.clone(),
-            new: t,
-        }
-    }
-
-    fn into_write(self) -> Result<Self::Write, BuilderError> {
-        if self.new == self.original {
-            Ok(DaRegister::new_unset())
-        } else {
-            Ok(DaRegister::new_set(self.new))
-        }
     }
 }
