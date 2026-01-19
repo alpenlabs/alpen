@@ -33,7 +33,7 @@ pub fn validate_checkpoint_payload(
     state
         .sequencer_predicate()
         .verify_claim_witness(&payload_bytes, payload.signature.as_ref())
-        .map_err(InvalidCheckpointPayload::from)?;
+        .map_err(InvalidCheckpointPayload::SequencerPredicateVerification)?;
 
     // 2. Validate epoch progression
     let expected_epoch = state.verified_tip().epoch + 1;
@@ -58,7 +58,7 @@ pub fn validate_checkpoint_payload(
     state
         .checkpoint_predicate()
         .verify_claim_witness(&claim.as_ssz_bytes(), payload.inner.proof())
-        .map_err(InvalidCheckpointPayload::from)?;
+        .map_err(InvalidCheckpointPayload::CheckpointPredicateVerification)?;
 
     Ok(())
 }
@@ -150,9 +150,17 @@ fn compute_asm_manifests_hash_for_checkpoint(
 
 #[cfg(test)]
 mod tests {
+    use ssz_primitives::FixedBytes;
+    use strata_asm_common::{AsmHistoryAccumulatorState, AuxData, VerifiedAuxData};
+    use strata_identifiers::{AccountSerial, Buf64};
+    use strata_ol_chain_types_new::OLLog;
     use strata_test_utils_l2::CheckpointTestHarness;
 
-    use crate::{state::CheckpointState, verification::validate_checkpoint_payload};
+    use crate::{
+        errors::{CheckpointValidationError, InvalidCheckpointPayload},
+        state::CheckpointState,
+        verification::{compute_asm_manifests_hash_for_checkpoint, validate_checkpoint_payload},
+    };
 
     fn test_setup() -> (CheckpointState, CheckpointTestHarness) {
         let harness = CheckpointTestHarness::new_random();
@@ -182,5 +190,203 @@ mod tests {
             verified_aux_data,
         );
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_signature() {
+        let (state, harness) = test_setup();
+        let payload = harness.build_payload();
+        let current_l1_height = payload.new_tip().l1_height;
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let mut signed_payload = harness.sign_payload(payload);
+
+        signed_payload.signature = Buf64::zero();
+
+        let err = validate_checkpoint_payload(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::SequencerPredicateVerification(_)
+            )
+        ));
+    }
+
+    #[test]
+    fn test_asm_manifests_hash_computation_payload_beyond_l1_tip() {
+        let (state, harness) = test_setup();
+        let payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+
+        let current_l1_height = payload.new_tip().l1_height - 1;
+
+        let err = compute_asm_manifests_hash_for_checkpoint(
+            &state.verified_tip,
+            payload.new_tip(),
+            current_l1_height,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::CheckpointBeyondL1Tip { .. }
+            )
+        ))
+    }
+
+    #[test]
+    fn test_asm_manifests_hash_computation_l1_no_progress() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(&payload.new_tip);
+
+        payload.new_tip.l1_height = state.verified_tip().l1_height;
+
+        let current_l1_height = state.verified_tip().l1_height + 1;
+
+        let res = compute_asm_manifests_hash_for_checkpoint(
+            &state.verified_tip,
+            payload.new_tip(),
+            current_l1_height,
+            &verified_aux_data,
+        )
+        .unwrap();
+        assert_eq!(res, FixedBytes::zero())
+    }
+
+    #[test]
+    fn test_asm_manifests_hash_computation_l1_backwards() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        payload.new_tip.l1_height = state.verified_tip().l1_height - 1;
+
+        let current_l1_height = state.verified_tip().l1_height + 1;
+
+        let err = compute_asm_manifests_hash_for_checkpoint(
+            &state.verified_tip,
+            payload.new_tip(),
+            current_l1_height,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::L1HeightGoesBackwards { .. }
+            )
+        ))
+    }
+
+    #[test]
+    fn test_asm_manifests_hash_computation_invalid_aux() {
+        let (state, harness) = test_setup();
+        let payload = harness.build_payload();
+
+        let aux_data = AuxData::new(vec![], vec![]);
+        let asm_accumulator_state =
+            AsmHistoryAccumulatorState::new(harness.genesis_l1_height() as u64);
+        let verified_aux_data =
+            VerifiedAuxData::try_new(&aux_data, &asm_accumulator_state).unwrap();
+
+        let current_l1_height = payload.new_tip().l1_height + 1;
+
+        let err = compute_asm_manifests_hash_for_checkpoint(
+            &state.verified_tip,
+            payload.new_tip(),
+            current_l1_height,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(err, CheckpointValidationError::InvalidAux(_)));
+    }
+
+    #[test]
+    fn test_invalid_state_diff() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let current_l1_height = payload.new_tip().l1_height + 1;
+
+        // Modify the payload to include invalid state diff after proof generation.
+        payload.sidecar.ol_state_diff = vec![99u8; 88].into();
+        let signed_payload = harness.sign_payload(payload);
+
+        let err = validate_checkpoint_payload(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::CheckpointPredicateVerification(_)
+            )
+        ));
+    }
+
+    #[test]
+    fn test_invalid_ol_logs() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let current_l1_height = payload.new_tip().l1_height + 1;
+
+        // Modify the payload to include OL Logs that wasn't covered by the proof.
+        let dummy_log = OLLog::new(AccountSerial::zero(), Vec::new());
+        payload.sidecar.ol_logs = vec![dummy_log].into();
+
+        let signed_payload = harness.sign_payload(payload);
+
+        let err = validate_checkpoint_payload(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::CheckpointPredicateVerification(_)
+            )
+        ));
+    }
+
+    #[test]
+    fn test_invalid_ol_l1_progression() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+
+        let current_l1_height = payload.new_tip().l1_height + 100;
+
+        // Modify the payload to include more L1 blocks after proof generation.
+        payload.new_tip.l1_height += 10;
+
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+
+        let signed_payload = harness.sign_payload(payload);
+
+        let err = validate_checkpoint_payload(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::CheckpointPredicateVerification(_)
+            )
+        ));
     }
 }

@@ -20,8 +20,12 @@ pub enum CheckpointValidationError {
 #[derive(Debug, Error)]
 pub enum InvalidCheckpointPayload {
     /// Predicate verification failed.
-    #[error("predicate verification failed: {0}")]
-    PredicateVerification(#[from] PredicateError),
+    #[error("sequencer predicate verification failed: {0}")]
+    SequencerPredicateVerification(PredicateError),
+
+    /// Predicate verification failed.
+    #[error("checkpoint predicate verification failed: {0}")]
+    CheckpointPredicateVerification(PredicateError),
 
     /// Checkpoint epoch does not match expected progression.
     ///
