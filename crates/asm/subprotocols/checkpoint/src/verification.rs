@@ -5,6 +5,7 @@ use ssz_primitives::FixedBytes;
 use strata_asm_common::VerifiedAuxData;
 use strata_checkpoint_types_ssz::{
     CheckpointClaim, CheckpointPayload, CheckpointTip, L2BlockRange, SignedCheckpointPayload,
+    compute_asm_manifests_hash,
 };
 use strata_crypto::hash;
 use strata_identifiers::Epoch;
@@ -139,7 +140,7 @@ fn compute_asm_manifests_hash_for_checkpoint(
         Ordering::Less => {
             let manifest_hashes = verified_aux_data.get_manifest_hashes(
                 (l1_height_covered_in_last_checkpoint + 1) as u64,
-                l1_height_covered_in_last_checkpoint as u64,
+                l1_height_covered_in_new_checkpoint as u64,
             )?;
 
             Ok(compute_asm_manifests_hash(manifest_hashes))
@@ -147,15 +148,39 @@ fn compute_asm_manifests_hash_for_checkpoint(
     }
 }
 
-/// Computes a hash commitment over all ASM manifests in an L1 block range.
-///
-/// Concatenates the manifest hashes for all L1 blocks in the range
-/// and returns a single hash commitment over them.
-fn compute_asm_manifests_hash(manifest_hashes: Vec<[u8; 32]>) -> FixedBytes<32> {
-    let mut data = Vec::with_capacity(manifest_hashes.len() * 32);
-    for h in manifest_hashes {
-        data.extend_from_slice(h.as_ref());
+#[cfg(test)]
+mod tests {
+    use strata_test_utils_l2::CheckpointTestHarness;
+
+    use crate::{state::CheckpointState, verification::validate_checkpoint_payload};
+
+    fn test_setup() -> (CheckpointState, CheckpointTestHarness) {
+        let harness = CheckpointTestHarness::new_random();
+        let state = CheckpointState::new(
+            harness.sequencer_predicate(),
+            harness.checkpoint_predicate(),
+            *harness.verified_tip(),
+        );
+        (state, harness)
     }
-    let hash = hash::raw(&data);
-    hash.into()
+
+    #[test]
+    fn test_validate_checkpoint_success() {
+        let (state, harness) = test_setup();
+        let payload = harness.build_payload();
+        let new_tip = *payload.new_tip();
+
+        let signed_payload = harness.sign_payload(payload);
+        let verified_aux_data = &harness.gen_verified_aux(&new_tip);
+
+        let current_l1_height = new_tip.l1_height + 1;
+
+        let res = validate_checkpoint_payload(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            verified_aux_data,
+        );
+        assert!(res.is_ok());
+    }
 }

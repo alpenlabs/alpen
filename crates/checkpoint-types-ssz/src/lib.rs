@@ -35,6 +35,8 @@ mod error;
 mod payload;
 
 pub use error::CheckpointPayloadError;
+use ssz_types::FixedBytes;
+use strata_crypto::hash;
 use strata_identifiers::{impl_borsh_via_ssz, impl_borsh_via_ssz_fixed};
 
 /// SSZ-generated types for serialization and merkleization.
@@ -75,3 +77,16 @@ impl_borsh_via_ssz!(CheckpointSidecar);
 impl_borsh_via_ssz!(CheckpointPayload);
 impl_borsh_via_ssz!(SignedCheckpointPayload);
 impl_borsh_via_ssz!(CheckpointClaim);
+
+/// Computes a hash commitment over all ASM manifests in an L1 block range.
+///
+/// Concatenates the manifest hashes for all L1 blocks in the range
+/// and returns a single hash commitment over them.
+pub fn compute_asm_manifests_hash(manifest_hashes: Vec<[u8; 32]>) -> FixedBytes<32> {
+    let mut data = Vec::with_capacity(manifest_hashes.len() * 32);
+    for h in manifest_hashes {
+        data.extend_from_slice(h.as_ref());
+    }
+    let hash = hash::raw(&data);
+    hash.into()
+}

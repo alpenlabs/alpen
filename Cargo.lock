@@ -13821,8 +13821,6 @@ version = "0.1.0"
 dependencies = [
  "bitcoin-bosd",
  "borsh",
- "k256",
- "rand 0.8.5",
  "ssz",
  "ssz_primitives",
  "strata-asm-bridge-msgs",
@@ -13830,15 +13828,14 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types-ssz",
- "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
+ "strata-codec",
  "strata-crypto",
  "strata-identifiers",
- "strata-merkle 0.2.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc2)",
  "strata-ol-chain-types-new",
  "strata-ol-stf",
  "strata-predicate",
- "strata-test-utils",
- "thiserror 2.0.17",
+ "strata-test-utils-l2",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -14191,11 +14188,12 @@ dependencies = [
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
+ "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types-new",
- "thiserror 2.0.17",
- "tree_hash 0.12.1",
- "tree_hash_derive 0.12.1",
+ "thiserror 2.0.18",
+ "tree_hash 0.12.3",
+ "tree_hash_derive 0.12.3",
 ]
 
 [[package]]
@@ -15012,7 +15010,9 @@ dependencies = [
  "arbitrary",
  "borsh",
  "hex",
+ "k256",
  "serde",
+ "signature",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -15021,6 +15021,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash 0.12.3",
  "tree_hash_derive 0.12.3",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -15544,10 +15545,16 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "borsh",
+ "k256",
  "rand 0.8.5",
+ "ssz",
+ "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-consensus-logic",
  "strata-crypto",
+ "strata-identifiers",
+ "strata-merkle",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
