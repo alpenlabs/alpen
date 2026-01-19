@@ -35,6 +35,10 @@ pub struct BridgeV1State {
 
     /// Amount the operator can take as fees for processing withdrawal.
     operator_fee: BitcoinAmount,
+
+    /// Number of blocks after Deposit Request Transaction that the depositor can reclaim
+    /// funds if operators fail to process the deposit.
+    recovery_delay: u32,
 }
 
 impl BridgeV1State {
@@ -60,6 +64,7 @@ impl BridgeV1State {
             assignments: AssignmentTable::new(config.assignment_duration),
             denomination: config.denomination,
             operator_fee: config.operator_fee,
+            recovery_delay: config.recovery_delay,
         }
     }
 
@@ -81,6 +86,11 @@ impl BridgeV1State {
     /// Returns the deposit denomination.
     pub fn denomination(&self) -> &BitcoinAmount {
         &self.denomination
+    }
+
+    /// Returns the recovery delay to reclaim funds.
+    pub fn recovery_delay(&self) -> u32 {
+        self.recovery_delay
     }
 
     /// Processes a deposit transaction by validating and adding it to the deposits table.

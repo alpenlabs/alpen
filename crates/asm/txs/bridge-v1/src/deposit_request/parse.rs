@@ -68,9 +68,11 @@ mod tests {
         let drt_aux: DrtHeaderAux = arb.generate();
         let dt_aux: DepositTxHeaderAux = arb.generate();
         let amount = BitcoinAmount::from_sat(100_000);
+        let recovery_delay = 1008;
         let (sks, _) = create_test_operators(3);
 
-        let (drt, _dt) = create_connected_drt_and_dt(&drt_aux, dt_aux, amount.into(), &sks);
+        let (drt, _dt) =
+            create_connected_drt_and_dt(&drt_aux, dt_aux, amount.into(), recovery_delay, &sks);
         let info = DepositRequestInfo::new(drt_aux, drt.output[DRT_OUTPUT_INDEX].clone().into());
 
         (info, drt)

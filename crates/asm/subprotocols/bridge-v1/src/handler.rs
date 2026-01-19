@@ -125,8 +125,12 @@ mod tests {
         // 1. Setup deposit test scenario
         let (mut state, operators) = create_test_state();
         let drt_aux: DrtHeaderAux = ArbitraryGenerator::new().generate();
-        let (verified_aux_data, info) =
-            setup_deposit_test(&drt_aux, *state.denomination(), &operators);
+        let (verified_aux_data, info) = setup_deposit_test(
+            &drt_aux,
+            *state.denomination(),
+            state.recovery_delay(),
+            &operators,
+        );
 
         // 2. Prepare ParsedTx
         let parsed_tx = ParsedTx::Deposit(info.clone());

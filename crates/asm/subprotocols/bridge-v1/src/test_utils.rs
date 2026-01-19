@@ -58,6 +58,7 @@ pub(crate) fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
         operators,
         assignment_duration: 144, // ~24 hours
         operator_fee: BitcoinAmount::from_sat(100_000),
+        recovery_delay: 1008,
     };
     let bridge_state = BridgeV1State::new(&config);
     (bridge_state, privkeys)
@@ -163,12 +164,19 @@ pub(crate) fn create_verified_aux_data(txs: Vec<RawBitcoinTx>) -> VerifiedAuxDat
 pub(crate) fn setup_deposit_test(
     drt_aux: &DrtHeaderAux,
     denomination: BitcoinAmount,
+    recovery_delay: u32,
     operators: &[EvenSecretKey],
 ) -> (VerifiedAuxData, DepositInfo) {
     // 1. Prepare DRT & DT
     let dt_aux = ArbitraryGenerator::new().generate();
 
-    let (drt, dt) = create_connected_drt_and_dt(drt_aux, dt_aux, denomination.into(), operators);
+    let (drt, dt) = create_connected_drt_and_dt(
+        drt_aux,
+        dt_aux,
+        denomination.into(),
+        recovery_delay,
+        operators,
+    );
 
     // 2. Extract DepositInfo
     let dt_input = parse_sps50_tx(&dt);

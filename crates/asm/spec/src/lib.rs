@@ -90,6 +90,7 @@ impl StrataAsmSpec {
             assignment_duration: params.dispatch_assignment_dur as u64,
             // TODO(QQ): adjust
             operator_fee: BitcoinAmount::ZERO,
+            recovery_delay: params.recovery_delay,
         };
 
         // For now, use the same operator config for admin roles

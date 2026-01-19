@@ -54,6 +54,9 @@ const DEFAULT_L1_GENESIS_HEIGHT: u64 = 100;
 /// The default evm chainspec to use in params.
 const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;
 
+/// The default recovery delay to use in params.
+const DEFAULT_RECOVERY_DELAY: u32 = 1_008;
+
 /// Resolves a [`Network`] from a string.
 ///
 /// Priority:
@@ -490,6 +493,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         checkpoint_predicate: config.checkpoint_predicate,
         // TODO make configurable
         dispatch_assignment_dur: 64,
+        recovery_delay: DEFAULT_RECOVERY_DELAY,
         proof_publish_mode: config
             .proof_timeout
             .map(|t| ProofPublishMode::Timeout(t as u64))

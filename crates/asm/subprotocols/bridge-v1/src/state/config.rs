@@ -19,4 +19,7 @@ pub struct BridgeV1Config {
     pub assignment_duration: u64,
     /// Amount the operator can take as fees for processing withdrawal.
     pub operator_fee: BitcoinAmount,
+    /// Number of blocks after Deposit Request Transaction that the depositor can reclaim funds if
+    /// operators fail to process the deposit.
+    pub recovery_delay: u32,
 }

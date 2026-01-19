@@ -123,19 +123,20 @@ class AlpenCliBuilder:
     def __init__(self):
         self.service_resolver = EnvControlBuilder()
         self.pubkey = None
-        self.magic_bytes = None
         self.datadir = None
+        self.rollup_params = None
 
     def with_pubkey(self, pubkey: str):
         self.pubkey = pubkey
         return self
 
-    def with_magic_bytes(self, magic_bytes: str):
-        self.magic_bytes = magic_bytes
-        return self
-
     def with_datadir(self, datadir: str):
         self.datadir = datadir
+        return self
+
+    def with_rollup_params(self, rollup_params: str):
+        """Set rollup params JSON string"""
+        self.rollup_params = rollup_params
         return self
 
     def requires_service(self, service_name: str, transform_lambda):
@@ -145,8 +146,8 @@ class AlpenCliBuilder:
 
     def build(self, ctx) -> AlpenCli | None:
         """Build AlpenCli instance with resolved service configs"""
-        if not self.pubkey or not self.magic_bytes or not self.datadir:
-            raise ValueError("pubkey, magic_bytes, and datadir must be set before building")
+        if not self.pubkey or not self.datadir or not self.rollup_params:
+            raise ValueError("pubkey, datadir and rollup params must be set before building")
 
         # Get resolved configs using service resolver
         try:
@@ -164,6 +165,12 @@ class AlpenCliBuilder:
         if not os.path.exists(path):
             os.makedirs(path)
         config_file = os.path.join(self.datadir, "alpen-cli.toml")
+
+        # Write rollup params to file for CLI config
+        rollup_params_file = os.path.join(self.datadir, "rollup_params.json")
+        with open(rollup_params_file, "w") as f:
+            f.write(self.rollup_params)
+
         config_content = f"""# Alpen-cli Configuration for functional test
 # Generated automatically by functional test factory
 alpen_endpoint = "{reth_endpoint}"
@@ -172,9 +179,8 @@ bitcoind_rpc_user = "{bitcoin_config.rpc_user}"
 bitcoind_rpc_pw = "{bitcoin_config.rpc_password}"
 faucet_endpoint = "{bitcoin_config.rpc_url}"
 bridge_pubkey = "{self.pubkey}"
-magic_bytes = "{self.magic_bytes}"
-network = "regtest"
 seed = "838d8ba290a3066abb35b663858fa839"
+rollup_params_path = "{rollup_params_file}"
 """
         with open(config_file, "w") as f:
             f.write(config_content)

@@ -1,6 +1,6 @@
 use std::{
     env::var,
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, read_to_string, File},
     io,
     path::PathBuf,
     str::FromStr,
@@ -9,21 +9,18 @@ use std::{
 
 use alloy::primitives::Address as AlpenAddress;
 use bdk_bitcoind_rpc::bitcoincore_rpc::{Auth, Client};
-use bdk_wallet::bitcoin::{Amount, Network, XOnlyPublicKey};
+use bdk_wallet::bitcoin::{Amount, XOnlyPublicKey};
 use config::Config;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use shrex::Hex;
-use strata_primitives::constants::RECOVER_DELAY as DEFAULT_RECOVER_DELAY;
+use strata_params::RollupParams;
 use terrors::OneOf;
 
 #[cfg(feature = "test-mode")]
 use crate::{constants::SEED_LEN, seed::Seed};
 use crate::{
-    constants::{
-        DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_IN_AMOUNT, DEFAULT_BRIDGE_OUT_AMOUNT,
-        DEFAULT_FINALITY_DEPTH, DEFAULT_NETWORK, MAGIC_BYTES_LEN,
-    },
+    constants::{DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_FEE, DEFAULT_FINALITY_DEPTH},
     signet::{backend::SignetBackend, EsploraClient},
 };
 
@@ -50,20 +47,14 @@ pub struct SettingsFromFile {
     pub blockscout_endpoint: Option<String>,
     /// The aggregated Musig2 public key for the bridge.
     pub bridge_pubkey: Hex<[u8; 32]>,
-    /// Magic bytes to identify deposit transactions (=4 bytes).
-    pub magic_bytes: String,
-    /// The Bitcoin network to use (signet, regtest, mainnet, etc).
-    pub network: Option<Network>,
-    /// Delay in blocks for descriptor recovery.
-    pub recover_delay: Option<u32>,
-    /// The amount for bridge-in transactions in satoshis.
-    pub bridge_in_amount_sats: Option<u64>,
-    /// The amount for bridge-out transactions in satoshis.
-    pub bridge_out_amount_sats: Option<u64>,
     /// The address of the bridge precompile in alpen evm in hex.
     pub bridge_alpen_address: Option<String>,
+    /// Fee to cover mining costs for the bridge to process deposits, in satoshis.
+    pub bridge_fee_sats: Option<u64>,
     /// The number of confirmations to consider a Bitcoin transaction final.
     pub finality_depth: Option<u32>,
+    /// Path to the rollup params JSON file.
+    pub rollup_params_path: Option<PathBuf>,
     /// Seed that can be passed directly for functional test.
     #[cfg(feature = "test-mode")]
     pub seed: Hex<[u8; SEED_LEN]>,
@@ -82,15 +73,12 @@ pub struct Settings {
     pub mempool_space_endpoint: Option<String>,
     pub blockscout_endpoint: Option<String>,
     pub bridge_alpen_address: AlpenAddress,
-    pub magic_bytes: String,
     pub linux_seed_file: PathBuf,
-    pub network: Network,
     pub config_file: PathBuf,
     pub signet_backend: Arc<dyn SignetBackend>,
-    pub recover_delay: u32,
-    pub bridge_in_amount: Amount,
-    pub bridge_out_amount: Amount,
+    pub bridge_fee: Amount,
     pub finality_depth: u32,
+    pub params: RollupParams,
     #[cfg(feature = "test-mode")]
     pub seed: Seed,
 }
@@ -104,6 +92,12 @@ pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| match var("CLI_CONF
     Some(path) => PathBuf::from_str(&path).expect("valid config path"),
     None => PROJ_DIRS.config_dir().to_owned().join("config.toml"),
 });
+
+pub static ROLLUP_PARAMS_FILE: LazyLock<PathBuf> =
+    LazyLock::new(|| match var("STRATA_NETWORK_PARAMS").ok() {
+        Some(path) => PathBuf::from_str(&path).expect("valid rollup params path"),
+        None => PROJ_DIRS.config_dir().to_owned().join("rollup_params.json"),
+    });
 
 impl Settings {
     pub fn load() -> Result<Self, OneOf<(io::Error, config::ConfigError)>> {
@@ -144,13 +138,19 @@ impl Settings {
             _ => panic!("invalid config for signet - configure for esplora or bitcoind"),
         };
 
-        // magic_bytes must be 4 bytes
-        if from_file.magic_bytes.len() != MAGIC_BYTES_LEN {
-            return Err(OneOf::new(config::ConfigError::Message(format!(
-                "The length of magic bytes '{}' is not {MAGIC_BYTES_LEN}. Check configuration",
-                from_file.magic_bytes
-            ))));
-        }
+        // Load rollup params from config, environment variable, or default location
+        let params_path = from_file
+            .rollup_params_path
+            .unwrap_or_else(|| ROLLUP_PARAMS_FILE.clone());
+
+        let params_json = read_to_string(&params_path).map_err(OneOf::new)?;
+        let params: RollupParams = serde_json::from_str(&params_json).map_err(|e| {
+            OneOf::new(config::ConfigError::Message(format!(
+                "Failed to parse rollup params {}: {}",
+                params_path.display(),
+                e
+            )))
+        })?;
 
         Ok(Settings {
             esplora: from_file.esplora,
@@ -162,7 +162,6 @@ impl Settings {
             descriptor_db: descriptor_file,
             mempool_space_endpoint: from_file.mempool_endpoint,
             blockscout_endpoint: from_file.blockscout_endpoint,
-            magic_bytes: from_file.magic_bytes,
             bridge_alpen_address: AlpenAddress::from_str(
                 from_file
                     .bridge_alpen_address
@@ -171,19 +170,14 @@ impl Settings {
             )
             .expect("valid Alpen address"),
             linux_seed_file,
-            network: from_file.network.unwrap_or(DEFAULT_NETWORK),
             config_file: CONFIG_FILE.clone(),
             signet_backend: sync_backend,
-            recover_delay: from_file.recover_delay.unwrap_or(DEFAULT_RECOVER_DELAY),
-            bridge_in_amount: from_file
-                .bridge_in_amount_sats
+            bridge_fee: from_file
+                .bridge_fee_sats
                 .map(Amount::from_sat)
-                .unwrap_or(DEFAULT_BRIDGE_IN_AMOUNT),
-            bridge_out_amount: from_file
-                .bridge_out_amount_sats
-                .map(Amount::from_sat)
-                .unwrap_or(DEFAULT_BRIDGE_OUT_AMOUNT),
+                .unwrap_or(DEFAULT_BRIDGE_FEE),
             finality_depth: from_file.finality_depth.unwrap_or(DEFAULT_FINALITY_DEPTH),
+            params,
             #[cfg(feature = "test-mode")]
             seed: Seed::from_file(from_file.seed),
         })
@@ -195,28 +189,6 @@ mod tests {
     use toml;
 
     use super::*;
-    use crate::constants::MAGIC_BYTES_LEN;
-
-    #[test]
-    fn test_magic_bytes_length() {
-        let config = r#"
-            esplora = "https://esplora.testnet.alpenlabs.io"
-            bitcoind_rpc_user = "user"
-            bitcoind_rpc_pw = "pass"
-            bitcoind_rpc_endpoint = "http://127.0.0.1:38332"
-            alpen_endpoint = "https://rpc.testnet.alpenlabs.io"
-            faucet_endpoint = "https://faucet-api.testnet.alpenlabs.io"
-            mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
-            blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
-            bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
-            magic_bytes = "alpn"
-            network = "signet"
-        "#;
-
-        let parsed: SettingsFromFile =
-            toml::from_str(config).expect("failed to parse SettingsFromFile from TOML");
-        assert!(parsed.magic_bytes.len() == MAGIC_BYTES_LEN);
-    }
 
     #[test]
     fn test_settings_from_file_serde_roundtrip() {
@@ -230,8 +202,6 @@ mod tests {
             mempool_endpoint = "https://bitcoin.testnet.alpenlabs.io"
             blockscout_endpoint = "https://explorer.testnet.alpenlabs.io"
             bridge_pubkey = "1d3e9c0417ba7d3551df5a1cc1dbe227aa4ce89161762454d92bfc2b1d5886f7"
-            magic_bytes = "alpn"
-            network = "signet"
         "#;
 
         // Deserialize from TOML string
@@ -250,8 +220,6 @@ mod tests {
         assert_eq!(parsed.esplora, reparsed.esplora);
         assert_eq!(parsed.alpen_endpoint, reparsed.alpen_endpoint);
         assert_eq!(parsed.faucet_endpoint, reparsed.faucet_endpoint);
-        assert_eq!(parsed.magic_bytes, reparsed.magic_bytes);
-        assert_eq!(parsed.network, reparsed.network);
         assert_eq!(parsed.bridge_pubkey.0, reparsed.bridge_pubkey.0);
     }
 }

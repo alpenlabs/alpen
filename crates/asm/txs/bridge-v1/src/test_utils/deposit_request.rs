@@ -1,6 +1,5 @@
 use bitcoin::{Amount, Transaction, XOnlyPublicKey};
 use strata_l1_txfmt::ParseConfig;
-use strata_primitives::constants::RECOVER_DELAY;
 
 use crate::{
     deposit_request::{DrtHeaderAux, create_deposit_request_locking_script},
@@ -12,6 +11,7 @@ pub fn create_test_deposit_request_tx(
     header_aux: &DrtHeaderAux,
     internal_key: XOnlyPublicKey,
     deposit_amount: Amount,
+    recovery_delay: u32,
 ) -> Transaction {
     // Create a tx with one input and two outputs.
     let mut tx = create_dummy_tx(1, 2);
@@ -28,7 +28,7 @@ pub fn create_test_deposit_request_tx(
     tx.output[1].script_pubkey = create_deposit_request_locking_script(
         header_aux.recovery_pk(),
         internal_key,
-        RECOVER_DELAY,
+        recovery_delay,
     );
     tx.output[1].value = deposit_amount;
 

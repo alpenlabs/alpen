@@ -32,8 +32,12 @@ pub async fn recover(
     seed: Seed,
     settings: Settings,
 ) -> Result<(), DisplayedError> {
-    let mut l1w = SignetWallet::new(&seed, settings.network, settings.signet_backend.clone())
-        .internal_error("Failed to load signet wallet")?;
+    let mut l1w = SignetWallet::new(
+        &seed,
+        settings.params.network,
+        settings.signet_backend.clone(),
+    )
+    .internal_error("Failed to load signet wallet")?;
     l1w.sync()
         .await
         .internal_error("Failed to sync signet wallet")?;
@@ -65,11 +69,11 @@ pub async fn recover(
     for (key, desc) in descs {
         let desc = desc
             .clone()
-            .into_wallet_descriptor(l1w.secp_ctx(), settings.network)
+            .into_wallet_descriptor(l1w.secp_ctx(), settings.params.network)
             .internal_error("Failed to convert to wallet descriptor")?;
 
         let mut recovery_wallet = Wallet::create_single(desc)
-            .network(settings.network)
+            .network(settings.params.network)
             .create_wallet_no_persist()
             .internal_error("Failed to create recovery wallet")?;
 

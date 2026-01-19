@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use bitcoin::{Address, Amount, OutPoint, Transaction, hashes::Hash};
 use strata_crypto::{EvenSecretKey, test_utils::schnorr::Musig2Tweak};
 use strata_l1_txfmt::ParseConfig;
-use strata_primitives::constants::RECOVER_DELAY;
 use strata_test_utils_btcio::{BtcioTestHarness, address::derive_musig2_p2tr_address};
 
 use crate::{
@@ -23,6 +22,7 @@ pub fn create_connected_drt_and_dt(
     drt_header_aux: &DrtHeaderAux,
     dt_header_aux: DepositTxHeaderAux,
     deposit_amount: Amount,
+    recovery_delay: u32,
     operator_keys: &[EvenSecretKey],
 ) -> (Transaction, Transaction) {
     let harness =
@@ -30,7 +30,12 @@ pub fn create_connected_drt_and_dt(
 
     let (nn_address, internal_key) =
         derive_musig2_p2tr_address(operator_keys).expect("operator keys must aggregate");
-    let mut drt = create_test_deposit_request_tx(drt_header_aux, internal_key, deposit_amount);
+    let mut drt = create_test_deposit_request_tx(
+        drt_header_aux,
+        internal_key,
+        deposit_amount,
+        recovery_delay,
+    );
 
     let drt_txid = harness
         .submit_transaction_with_keys_blocking(operator_keys, &mut drt, None)
@@ -47,8 +52,11 @@ pub fn create_connected_drt_and_dt(
 
     // Keep the Musig2 tweaks we need to sign the deposit transaction after the DRT confirms.
     let mut input_tweaks = HashMap::new();
-    let spend_info =
-        build_deposit_request_spend_info(drt_header_aux.recovery_pk(), internal_key, RECOVER_DELAY);
+    let spend_info = build_deposit_request_spend_info(
+        drt_header_aux.recovery_pk(),
+        internal_key,
+        recovery_delay,
+    );
     if let Some(root) = spend_info.merkle_root() {
         input_tweaks.insert(
             drt_inpoint,
