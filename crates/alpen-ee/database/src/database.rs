@@ -5,10 +5,9 @@ use alpen_ee_common::{
 use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
-use strata_storage::instrumentation::components;
 use strata_storage_common::inst_ops_generic;
 
-use crate::{error::DbError, DbResult};
+use crate::{error::DbError, instrumentation::components, DbResult};
 
 /// Database interface for EE node account state management.
 pub(crate) trait EeNodeDb: Send + Sync + 'static {

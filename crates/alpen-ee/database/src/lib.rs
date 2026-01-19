@@ -3,6 +3,7 @@
 pub mod database;
 pub mod error;
 mod init;
+mod instrumentation;
 mod serialization_types;
 mod sleddb;
 mod storage;
