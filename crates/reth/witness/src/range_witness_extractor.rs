@@ -73,6 +73,14 @@ where
         let start_block_num = start_block.number;
         let end_block_num = end_block.number;
 
+        if start_block_num > end_block_num {
+            return Err(eyre!(
+                "invalid block range: start {} > end {}",
+                start_block_num,
+                end_block_num
+            ));
+        }
+
         debug!(start_block_num, end_block_num, %start_block_hash, %end_block_hash, "extracting range witness");
 
         // Fetch previous block using parent hash
@@ -194,21 +202,15 @@ where
             targets,
         )?;
 
-        // Extract account proofs, track pre-existing accounts
+        // Extract account proofs
         let mut pre_proofs =
             HashMap::with_capacity_and_hasher(touched.len(), DefaultHashBuilder::default());
         let mut post_proofs =
             HashMap::with_capacity_and_hasher(touched.len(), DefaultHashBuilder::default());
-        let mut accessed_accounts = HashSet::new();
 
         for (addr, keys) in &touched {
             pre_proofs.insert(*addr, proof_pre.account_proof(*addr, keys)?);
             post_proofs.insert(*addr, proof_post.account_proof(*addr, keys)?);
-
-            // Only accounts existing at (start_block - 1) are "pre-existing"
-            if pre_state.basic_account(addr)?.is_some() {
-                accessed_accounts.insert(*addr);
-            }
         }
 
         let state =
