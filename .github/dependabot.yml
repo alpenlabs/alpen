@@ -243,3 +243,25 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+
+  # (New) Python dependencies using uv
+  - package-ecosystem: "uv"
+    directory: "/functional-tests-new/"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 14
+    # Group all updates into a single PR
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
