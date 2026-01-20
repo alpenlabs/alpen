@@ -12,7 +12,7 @@ use strata_ol_chain_types_new::{
     TransactionPayload,
 };
 use strata_snark_acct_sys as snark_sys;
-use strata_snark_acct_types::{LedgerInterface, SnarkAccountUpdateContainer};
+use strata_snark_acct_types::{LedgerInterface, Seqno, SnarkAccountUpdateContainer};
 
 use crate::{
     account_processing,
@@ -158,7 +158,10 @@ fn process_update_tx<S: IStateAccessor>(
             .as_snark_account_mut()
             .map_err(|_| ExecError::IncorrectTxTargetType)?;
 
-        let new_seqno = operation.seq_no().saturating_add(1);
+        let new_seqno = operation
+            .seq_no()
+            .checked_add(1)
+            .ok_or(ExecError::MaxSeqNumberReached { account_id: target })?;
         snrk_acct_state.update_inner_state(
             operation.new_proof_state().inner_state(),
             operation.new_proof_state().next_inbox_msg_idx(),

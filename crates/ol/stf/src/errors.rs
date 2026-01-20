@@ -81,6 +81,9 @@ pub enum ExecError {
     #[error("invalid sequence number for account {0} (expected {1}, actual {2})")]
     InvalidSequenceNumber(AccountId, u64, u64),
 
+    #[error("max sequence number reached for account {account_id}")]
+    MaxSeqNumberReached { account_id: AccountId },
+
     /// Various account errors.
     #[error("acct: {0}")]
     Acct(#[from] AcctError),
