@@ -111,6 +111,9 @@ jobs:
           RUSTFLAGS: "-Cinstrument-coverage"
         run: cargo build --locked -F debug-utils -F test-mode
 
+      - name: Build alpen-client
+        run: cargo build --locked --release --bin alpen-client
+
       - name: Run functional tests
         id: funcTestsRun
         continue-on-error: true
@@ -120,9 +123,9 @@ jobs:
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
         run: |
-          NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
-          export PATH="$NEWPATH:$PATH"
+          export PATH="${{ github.workspace }}/target/release:${{ github.workspace }}/target/llvm-cov-target/debug:$PATH"
           which strata-client
+          which alpen-client
           cd functional-tests-new && uv run python entry.py
 
       - name: Generate combined coverage lcov

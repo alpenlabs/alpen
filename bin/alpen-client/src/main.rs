@@ -75,8 +75,6 @@ fn main() {
 
     // use provided alpen chain spec
     command.chain = command.ext.custom_chain.clone();
-    // disable peer discovery
-    command.network.discovery.disable_discovery = true;
     // enable engine api v4
     command.engine.accept_execution_requests_hash = true;
     // allow chain fork blocks to be created
