@@ -186,6 +186,7 @@ mod test {
                 client_checkpoint_interval: 2,
             },
             logging: Default::default(),
+            epoch_sealing: None,
         }
     }
 

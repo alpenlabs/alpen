@@ -17,6 +17,9 @@ const DEFAULT_DATADIR: &str = "strata-data";
 /// Default DB retry delay in ms.
 const DEFAULT_DB_RETRY_DELAY: u64 = 200;
 
+/// Default slots per epoch for fixed slot sealing.
+const DEFAULT_SLOTS_PER_EPOCH: u64 = 64;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -100,6 +103,32 @@ pub struct ExecConfig {
     pub reth: RethELConfig,
 }
 
+/// Epoch sealing policy configuration.
+///
+/// Determines when epochs are sealed (terminal blocks created).
+/// Config is pure data; policy construction happens in service builder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "policy")]
+pub enum EpochSealingConfig {
+    /// Seal every N slots.
+    FixedSlot {
+        #[serde(default = "default_slots_per_epoch")]
+        slots_per_epoch: u64,
+    },
+}
+
+impl Default for EpochSealingConfig {
+    fn default() -> Self {
+        Self::FixedSlot {
+            slots_per_epoch: DEFAULT_SLOTS_PER_EPOCH,
+        }
+    }
+}
+
+fn default_slots_per_epoch() -> u64 {
+    DEFAULT_SLOTS_PER_EPOCH
+}
+
 /// Logging configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LoggingConfig {
@@ -135,6 +164,10 @@ pub struct Config {
     /// Logging configuration (optional section in TOML).
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// Epoch sealing policy configuration (sequencer only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epoch_sealing: Option<EpochSealingConfig>,
 }
 
 #[cfg(test)]
@@ -183,11 +216,13 @@ mod test {
             poll_interval_ms = 1000
         "#;
 
-        let config = toml::from_str::<Config>(config_string_sequencer);
+        let config = toml::from_str::<Config>(config_string_sequencer)
+            .expect("should be able to load sequencer TOML config");
+
+        // Verify epoch_sealing is None when not specified
         assert!(
-            config.is_ok(),
-            "should be able to load sequencer TOML config but got: {:?}",
-            config.err()
+            config.epoch_sealing.is_none(),
+            "epoch_sealing should be None when not specified"
         );
 
         let config_string_fullnode = r#"
