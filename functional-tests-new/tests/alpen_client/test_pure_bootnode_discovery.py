@@ -32,7 +32,7 @@ class TestPureBootnodeDiscovery(AlpenClientTest):
     """
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client_pure_discovery")
+        ctx.set_env("alpen_client_discovery")
 
     def main(self, ctx):
         sequencer = self.get_service("sequencer")

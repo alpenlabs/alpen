@@ -236,10 +236,9 @@ def main(argv: list[str]) -> int:
     # Define global environments
     global_envs: dict[str, flexitest.EnvConfig] = {
         "basic": StrataEnvConfig(pre_generate_blocks=110),
-        # Alpen-client environments (nodes connected via admin_addPeer)
-        "alpen_client": AlpenClientEnv(),
-        "alpen_client_discovery": AlpenClientEnv(enable_discovery=True),
-        "alpen_client_pure_discovery": AlpenClientEnv(enable_discovery=True, pure_discovery=True),
+        # Alpen-client environments
+        "alpen_client": AlpenClientEnv(),  # admin_addPeer, no discovery
+        "alpen_client_discovery": AlpenClientEnv(enable_discovery=True, pure_discovery=True),
         "alpen_client_multi": AlpenClientEnv(fullnode_count=3),
         "alpen_client_relay": AlpenClientRelayEnv(),
     }
