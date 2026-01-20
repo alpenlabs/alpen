@@ -8,6 +8,7 @@ use strata_db_types::{
 };
 use strata_identifiers::{OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
+use strata_primitives::OLBlockCommitment;
 use threadpool::ThreadPool;
 
 use crate::{cache, ops};
@@ -120,6 +121,17 @@ impl OLBlockManager {
     /// Sets the block's verification status. Returns true if the status was updated. Blocking.
     pub fn set_block_status_blocking(&self, id: OLBlockId, status: BlockStatus) -> DbResult<bool> {
         self.ops.set_block_status_blocking(id, status)
+    }
+
+    /// Gets the canonical tip block id.
+    pub fn get_canonical_tip_blocking(&self) -> DbResult<Option<OLBlockCommitment>> {
+        let tip = self.get_tip_slot_blocking()?;
+        let blocks = self.get_blocks_at_height_blocking(tip)?;
+        // TODO: determine how to get the canonical block. for not it is just the first one
+        Ok(blocks
+            .first()
+            .cloned()
+            .map(|id| OLBlockCommitment::new(tip, id)))
     }
 }
 
