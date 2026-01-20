@@ -4,12 +4,11 @@
 //! belong to any specific type.
 
 use alloy_consensus::Block as AlloyBlock;
+use alpen_reth_evm::subject_to_address;
 use reth_evm::execute::BlockExecutionOutput;
 use reth_primitives::{Receipt as EthereumReceipt, RecoveredBlock, TransactionSigned};
 use reth_primitives_traits::Block;
 use reth_trie::{HashedPostState, KeccakKeyHasher};
-use revm_primitives::Address;
-use strata_acct_types::SubjectId;
 use strata_ee_acct_types::{EnvError, EnvResult, ExecPayload};
 use strata_ee_chain_types::BlockInputs;
 
@@ -40,15 +39,6 @@ pub(crate) fn compute_hashed_post_state(
     _block_number: u64,
 ) -> HashedPostState {
     HashedPostState::from_bundle_state::<KeccakKeyHasher>(&execution_output.state.state)
-}
-
-/// Converts a SubjectId (32 bytes) to an EVM address (20 bytes).
-fn subject_id_to_address(subject_id: SubjectId) -> Address {
-    let subject_bytes: [u8; 32] = subject_id.into();
-    // Take the last 20 bytes to form an address
-    let mut address_bytes = [0u8; 20];
-    address_bytes.copy_from_slice(&subject_bytes[12..32]);
-    Address::from(address_bytes)
 }
 
 /// Converts satoshis to gwei for EVM compatibility.
@@ -103,8 +93,9 @@ pub(crate) fn validate_deposits_against_block(
 
     // Validate each deposit matches the corresponding withdrawal
     for (withdrawal, deposit) in block_withdrawals.iter().zip(subject_deposits.iter()) {
-        // Convert SubjectId to Address (last 20 bytes)
-        let expected_address = subject_id_to_address(deposit.dest());
+        // Convert SubjectId to Address - returns None if first 12 bytes aren't zero
+        let expected_address = subject_to_address(&deposit.dest())
+            .ok_or_else(|| EnvError::InvalidDepositAddress(deposit.dest()))?;
 
         // Convert satoshis to gwei (1 sat = 10 gwei, per 1 BTC = 10^8 sats = 10^9 gwei)
         let expected_amount =
@@ -127,6 +118,7 @@ mod tests {
     use alloy_consensus::{BlockBody, Header};
     use alloy_eips::eip4895::Withdrawal;
     use reth_primitives::RecoveredBlock;
+    use revm_primitives::Address;
     use strata_acct_types::{BitcoinAmount, SubjectId};
     use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
 
@@ -134,11 +126,11 @@ mod tests {
 
     #[test]
     fn test_validate_deposits_valid_match() {
-        // Create subject ID where last 20 bytes form an address
+        // Create valid subject ID: [0x00..0x00 (12 bytes), address (20 bytes)]
         let mut subject_bytes = [0u8; 32];
-        subject_bytes[31] = 0x42; // Last byte
+        subject_bytes[31] = 0x42; // Last byte of address
         let subject_id = SubjectId::new(subject_bytes);
-        let expected_address = subject_id_to_address(subject_id);
+        let expected_address = subject_to_address(&subject_id).expect("valid subject ID");
 
         // Create a block with matching withdrawal
         let header = Header::default();
@@ -171,7 +163,10 @@ mod tests {
 
     #[test]
     fn test_validate_deposits_address_mismatch() {
-        let subject_id = SubjectId::new([1u8; 32]);
+        // Valid subject ID but different address
+        let mut subject_bytes = [0u8; 32];
+        subject_bytes[31] = 0xff; // Different address
+        let subject_id = SubjectId::new(subject_bytes);
 
         // Create a block with different address
         let header = Header::default();
@@ -203,11 +198,45 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_deposits_invalid_subject_id() {
+        // Invalid subject ID with non-zero padding in first 12 bytes
+        let subject_id = SubjectId::new([0xff; 32]);
+
+        // Create a block
+        let header = Header::default();
+        let body = BlockBody {
+            transactions: vec![],
+            ommers: vec![],
+            withdrawals: Some(
+                vec![Withdrawal {
+                    index: 0,
+                    validator_index: 0,
+                    address: Address::from([0xff; 20]),
+                    amount: 100,
+                }]
+                .into(),
+            ),
+        };
+        let block = AlloyBlock { header, body };
+        let recovered_block: RecoveredBlock<AlloyBlock<TransactionSigned>> =
+            block.try_into_recovered().unwrap();
+
+        // Create deposit with invalid subject ID
+        let mut inputs = BlockInputs::new_empty();
+        let deposit = SubjectDepositData::new(subject_id, BitcoinAmount::from_sat(10));
+        inputs.add_subject_deposit(deposit);
+
+        // Should fail - invalid subject ID
+        let result = validate_deposits_against_block(&recovered_block, &inputs);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_validate_deposits_amount_mismatch() {
         let mut subject_bytes = [0u8; 32];
         subject_bytes[31] = 0x42;
         let subject_id = SubjectId::new(subject_bytes);
-        let expected_address = subject_id_to_address(subject_id);
+        let expected_address = subject_to_address(&subject_id).expect("valid subject ID");
 
         // Create a block with wrong amount
         let header = Header::default();

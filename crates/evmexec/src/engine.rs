@@ -219,19 +219,17 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         let withdrawals: Vec<Withdrawal> = payload
             .ops()
             .iter()
-            .filter_map(|op| match op {
-                Op::Deposit(deposit_data) => {
-                    let address = subject_to_address(deposit_data.dest_addr())?;
-                    let amount = sats_to_gwei(deposit_data.amt())?;
-                    Some(Withdrawal {
-                        index: deposit_data.intent_idx(),
-                        address,
-                        amount,
-                        validator_index: 0,
-                    })
-                }
+            .map(|op| match op {
+                Op::Deposit(deposit_data) => Ok(Withdrawal {
+                    index: deposit_data.intent_idx(),
+                    address: subject_to_address(deposit_data.dest_addr())
+                        .ok_or_else(|| EngineError::InvalidAddress(*deposit_data.dest_addr()))?,
+                    amount: sats_to_gwei(deposit_data.amt())
+                        .ok_or(EngineError::AmountConversion(deposit_data.amt()))?,
+                    validator_index: 0,
+                }),
             })
-            .collect();
+            .collect::<Result<_, EngineError>>()?;
 
         let payload_inner = ExecutionPayloadV2 {
             payload_inner: el_payload.into(),

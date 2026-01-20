@@ -197,7 +197,6 @@ pub struct ELDepositData {
     amt: u64,
 
     /// Destination subject identifier within the execution environment.
-    /// For EVM, the first 20 bytes hold the address and the remaining bytes must be zero.
     dest_addr: SubjectId,
 }
 
