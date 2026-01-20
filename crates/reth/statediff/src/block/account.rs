@@ -1,8 +1,9 @@
 //! Per-block account types.
 
 use alloy_primitives::U256;
-use revm_primitives::B256;
+use revm_primitives::{B256, KECCAK_EMPTY};
 use serde::{Deserialize, Serialize};
+use strata_mpt::StateAccount;
 
 /// Point-in-time snapshot of account state.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -10,6 +11,26 @@ pub struct AccountSnapshot {
     pub balance: U256,
     pub nonce: u64,
     pub code_hash: B256,
+}
+
+impl Default for AccountSnapshot {
+    fn default() -> Self {
+        Self {
+            balance: U256::ZERO,
+            nonce: 0,
+            code_hash: KECCAK_EMPTY,
+        }
+    }
+}
+
+impl From<&StateAccount> for AccountSnapshot {
+    fn from(acc: &StateAccount) -> Self {
+        Self {
+            balance: acc.balance,
+            nonce: acc.nonce,
+            code_hash: acc.code_hash,
+        }
+    }
 }
 
 /// Account change with original state for tracking across blocks.

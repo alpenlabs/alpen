@@ -4,16 +4,22 @@ use std::collections::HashMap;
 
 use alpen_chainspec::chain_value_parser;
 use revm_primitives::{alloy_primitives::Address, B256, U256};
+use strata_da_framework::ContextlessDaWrite;
 use strata_mpt::{keccak, MptNode, StateAccount, EMPTY_ROOT, KECCAK_EMPTY};
 use thiserror::Error as ThisError;
 
-use crate::batch::{AccountChange, BatchStateDiff};
+use crate::{
+    batch::{AccountChange, BatchStateDiff},
+    block::AccountSnapshot,
+};
 
 /// Error that may occur during state reconstruction.
 #[derive(Debug, ThisError)]
 pub enum ReconstructError {
     #[error("MPT error: {0}")]
     Mpt(#[from] strata_mpt::Error),
+    #[error("DA apply error: {0}")]
+    Da(#[from] strata_da_framework::DaError),
 }
 
 /// Reconstructs EVM state by applying [`BatchStateDiff`]s sequentially.
@@ -82,33 +88,19 @@ impl StateReconstructor {
                         .get_rlp(&acc_info_trie_path)
                         .unwrap_or_default();
 
-                    let (current_balance, current_nonce, current_code_hash) = current
-                        .map(|acc| (acc.balance, acc.nonce, acc.code_hash))
-                        .unwrap_or((U256::ZERO, 0, KECCAK_EMPTY));
+                    // Build snapshot from current state and apply diff
+                    let mut snapshot = current
+                        .as_ref()
+                        .map(AccountSnapshot::from)
+                        .unwrap_or_default();
 
-                    // Apply diff
-                    let new_balance = account_diff
-                        .balance
-                        .new_value()
-                        .map(|v| v.0)
-                        .unwrap_or(current_balance);
-                    let nonce_delta = account_diff
-                        .nonce
-                        .diff()
-                        .map(|v| v.inner() as u64)
-                        .unwrap_or(0);
-                    let new_nonce = current_nonce + nonce_delta;
-                    let new_code_hash = account_diff
-                        .code_hash
-                        .new_value()
-                        .map(|v| v.0)
-                        .unwrap_or(current_code_hash);
+                    account_diff.apply(&mut snapshot)?;
 
                     let mut state_account = StateAccount {
-                        nonce: new_nonce,
-                        balance: new_balance,
+                        nonce: snapshot.nonce,
+                        balance: snapshot.balance,
                         storage_root: Default::default(),
-                        code_hash: new_code_hash,
+                        code_hash: snapshot.code_hash,
                     };
 
                     // Skip empty accounts
