@@ -5,7 +5,7 @@ use strata_acct_types::{
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_merkle::MerkleProof;
 use strata_snark_acct_types::{
-    LedgerRefProofs, MessageEntry, MessageEntryProof, ProofState, SnarkAccountUpdate,
+    LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, ProofState, SnarkAccountUpdate,
     SnarkAccountUpdateContainer, UpdateOperationData, UpdateOutputs, UpdateProofPubParams,
 };
 
@@ -33,6 +33,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
         target,
         state_accessor.asm_manifests_mmr(),
         accum_proofs.ledger_ref_proofs(),
+        update.operation().ledger_refs(),
     )?;
 
     // 4. Verify inbox mmr proofs
@@ -126,18 +127,40 @@ pub fn verify_msgs_and_msgs_in_proofs(
 
 /// Verifies the ledger ref proofs against the provided asm mmr for an account.
 fn verify_ledger_refs(
-    account: AccountId,
+    target: AccountId,
     mmr: &Mmr64,
     ledger_ref_proofs: &LedgerRefProofs,
+    ledger_refs: &LedgerRefs,
 ) -> AcctResult<()> {
     let generic_mmr = mmr.to_generic();
+
+    // Check if the refs and refs in proofs are the same
+    if ledger_refs.l1_header_refs().len() != ledger_ref_proofs.l1_headers_proofs().len() {
+        return Err(AcctError::InvalidMsgProofsCount { account_id: target });
+    }
+    ledger_ref_proofs
+        .l1_headers_proofs()
+        .iter()
+        .zip(ledger_refs.l1_header_refs())
+        .enumerate()
+        .try_for_each(|(i, (proof_ref, ledger_ref))| {
+            if proof_ref.entry_hash() != ledger_ref.entry_hash() {
+                Err(AcctError::InvalidAccumuulatorProofMessageRef {
+                    account_id: target,
+                    msg_index: i,
+                })
+            } else {
+                Ok(())
+            }
+        })?;
+
     for proof in ledger_ref_proofs.l1_headers_proofs() {
         let hash = proof.entry_hash();
         let cohashes = proof.proof().cohashes();
         let generic_proof = MerkleProof::from_cohashes(cohashes, proof.entry_idx());
         if !generic_mmr.verify::<StrataHasher>(&generic_proof, hash.as_ref()) {
             return Err(AcctError::InvalidLedgerReference {
-                account_id: account,
+                account_id: target,
                 ref_idx: proof.entry_idx(),
             });
         }
