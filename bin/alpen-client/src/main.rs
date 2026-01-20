@@ -1,6 +1,5 @@
 //! Reth node for the Alpen codebase.
 
-mod dummy_ol_client;
 mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
@@ -31,7 +30,6 @@ use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
 use clap::Parser;
-use dummy_ol_client::DummyOLClient;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
@@ -52,6 +50,7 @@ use crate::payload_builder::AlpenRethPayloadEngine;
 use crate::{
     genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
+    rpc_client::RpcOLClient,
 };
 
 fn main() {
@@ -102,7 +101,7 @@ fn main() {
             let config = Arc::new(AlpenEeConfig::new(
                 params,
                 CredRule::Unchecked,
-                ext.ol_client_http,
+                ext.ol_client_url,
                 ext.sequencer_http,
                 ext.db_retry_count,
             ));
@@ -147,10 +146,10 @@ fn main() {
                 .context("failed to load alpen database")?
                 .into();
 
-            // TODO: real ol client
-            let ol_client = Arc::new(DummyOLClient {
-                genesis_epoch: config.params().genesis_ol_epoch_commitment(),
-            });
+            let ol_client = Arc::new(
+                RpcOLClient::try_new(config.params().account_id(), config.ol_client_http())
+                    .map_err(|e| eyre::eyre!("failed to create OL client: {e}"))?,
+            );
 
             ensure_genesis(config.as_ref(), storage.as_ref())
                 .await
