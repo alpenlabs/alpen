@@ -2,6 +2,8 @@
 Alpen-client service wrapper with P2P and Ethereum RPC capabilities.
 """
 
+import atexit
+import contextlib
 import subprocess
 from typing import TypedDict
 
@@ -10,16 +12,12 @@ from common.services.base import RpcService
 from common.wait import wait_until
 
 
-# Register process for cleanup on exit
 def _register_kill(proc):
     """Register process for cleanup on exit."""
-    import atexit
 
     def kill():
-        try:
+        with contextlib.suppress(Exception):
             proc.kill()
-        except Exception:
-            pass
 
     atexit.register(kill)
 
@@ -63,8 +61,8 @@ class AlpenClientService(RpcService):
         kwargs = {}
         if self.stdout is not None:
             if isinstance(self.stdout, str):
-                f = open(self.stdout, "a")
-                f.write("(process started as: %s)\n" % self.cmd)
+                f = open(self.stdout, "a")  # noqa: SIM115
+                f.write(f"(process started as: {self.cmd})\n")
                 kwargs["stdout"] = f
                 kwargs["stderr"] = f
             else:

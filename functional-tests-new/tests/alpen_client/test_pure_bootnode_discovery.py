@@ -56,7 +56,7 @@ class TestPureBootnodeDiscovery(AlpenClientTest):
             # Log peer info for debugging
             seq_peers = sequencer.get_peer_count()
             fn_peers = fullnode.get_peer_count()
-            logger.error(f"Discovery failed! Sequencer peers: {seq_peers}, Fullnode peers: {fn_peers}")
+            logger.error(f"Discovery failed! Seq peers: {seq_peers}, FN peers: {fn_peers}")
             logger.error("Nodes failed to discover each other via discv5 bootnode protocol.")
             raise AssertionError(
                 "Pure bootnode discovery failed. Nodes could not find each other via discv5."
@@ -65,7 +65,7 @@ class TestPureBootnodeDiscovery(AlpenClientTest):
         # Verify connection
         seq_peers = sequencer.get_peer_count()
         fn_peers = fullnode.get_peer_count()
-        logger.info(f"Discovery successful! Sequencer peers: {seq_peers}, Fullnode peers: {fn_peers}")
+        logger.info(f"Discovery successful! Seq peers: {seq_peers}, FN peers: {fn_peers}")
 
         # Now verify block propagation works
         seq_block = sequencer.get_block_number()

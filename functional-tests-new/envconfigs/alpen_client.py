@@ -14,20 +14,24 @@ class AlpenClientEnv(flexitest.EnvConfig):
     """
     Configurable alpen-client environment: 1 sequencer + N fullnodes.
 
-    Nodes are connected via admin_addPeer after startup.
-
     Parameters:
         fullnode_count: Number of fullnodes (default 1)
         enable_discovery: Enable discv5 discovery (default False)
+        pure_discovery: If True, rely only on bootnode discovery (no admin_addPeer).
+                        Requires enable_discovery=True. (default False)
     """
 
     def __init__(
         self,
         fullnode_count: int = 1,
         enable_discovery: bool = False,
+        pure_discovery: bool = False,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
+        self.pure_discovery = pure_discovery
+        if pure_discovery and not enable_discovery:
+            raise ValueError("pure_discovery requires enable_discovery=True")
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
@@ -60,11 +64,12 @@ class AlpenClientEnv(flexitest.EnvConfig):
             key = "fullnode" if self.fullnode_count == 1 else f"fullnode_{i}"
             services[key] = fullnode
 
-        # Connect fullnodes to sequencer via admin_addPeer
-        seq_rpc = sequencer.create_rpc()
-        for fn in fullnodes:
-            fn_enode = fn.get_enode()
-            seq_rpc.admin_addPeer(fn_enode)
+        # Connect fullnodes to sequencer via admin_addPeer (unless pure_discovery mode)
+        if not self.pure_discovery:
+            seq_rpc = sequencer.create_rpc()
+            for fn in fullnodes:
+                fn_enode = fn.get_enode()
+                seq_rpc.admin_addPeer(fn_enode)
 
         return flexitest.LiveEnv(services)
 

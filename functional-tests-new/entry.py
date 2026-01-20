@@ -239,6 +239,7 @@ def main(argv: list[str]) -> int:
         # Alpen-client environments (nodes connected via admin_addPeer)
         "alpen_client": AlpenClientEnv(),
         "alpen_client_discovery": AlpenClientEnv(enable_discovery=True),
+        "alpen_client_pure_discovery": AlpenClientEnv(enable_discovery=True, pure_discovery=True),
         "alpen_client_multi": AlpenClientEnv(fullnode_count=3),
         "alpen_client_relay": AlpenClientRelayEnv(),
     }
