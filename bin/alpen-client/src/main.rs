@@ -347,9 +347,9 @@ pub struct AdditionalConfig {
     #[arg(long, required = false)]
     pub sequencer_http: Option<String>,
 
-    /// Rpc of OL node.
+    /// URL of OL node RPC (can be either `http[s]://` or `ws[s]://`).
     #[arg(long, required = true)]
-    pub ol_client_http: String,
+    pub ol_client_url: String,
 
     #[arg(long, required = false)]
     pub db_retry_count: Option<u16>,
