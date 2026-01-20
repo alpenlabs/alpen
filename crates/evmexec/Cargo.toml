@@ -12,7 +12,6 @@ alpen-reth-node.workspace = true
 strata-bridge-types.workspace = true
 strata-db-types.workspace = true
 strata-eectl.workspace = true
-strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-params.workspace = true

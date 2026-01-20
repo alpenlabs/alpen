@@ -8,9 +8,9 @@ use alloy_rpc_types::{
     },
     Withdrawal,
 };
-use alpen_reth_evm::constants::COINBASE_ADDRESS;
+use alpen_reth_evm::{address_to_subject, constants::COINBASE_ADDRESS, subject_to_address};
 use alpen_reth_node::AlpenPayloadAttributes;
-use revm_primitives::{Address, B256};
+use revm_primitives::B256;
 use strata_bridge_types::WithdrawalIntent;
 use strata_db_types::DbError;
 use strata_eectl::{
@@ -18,7 +18,6 @@ use strata_eectl::{
     errors::{EngineError, EngineResult},
     messages::{ExecPayloadData, PayloadEnv},
 };
-use strata_identifiers::{SubjectId, SUBJ_ID_LEN};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l1::BitcoinAmount;
 use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput};
@@ -31,24 +30,6 @@ use crate::{
     el_payload::{make_update_input_from_payload_and_ops, ElPayload},
     http_client::EngineRpc,
 };
-
-const EVM_ADDR_LEN: usize = 20;
-
-fn subject_to_address(subject: &SubjectId) -> Option<Address> {
-    let bytes = subject.inner();
-    if bytes[EVM_ADDR_LEN..].iter().any(|&byte| byte != 0) {
-        return None;
-    }
-    let mut address_bytes = [0u8; EVM_ADDR_LEN];
-    address_bytes.copy_from_slice(&bytes[..EVM_ADDR_LEN]);
-    Some(Address::from(address_bytes))
-}
-
-fn address_to_subject(address: Address) -> SubjectId {
-    let mut buf = [0u8; SUBJ_ID_LEN];
-    buf[0..EVM_ADDR_LEN].copy_from_slice(address.as_slice());
-    SubjectId::new(buf)
-}
 
 fn sats_to_gwei(sats: u64) -> Option<u64> {
     // 1 BTC = 10^8 sats = 10^9 gwei
@@ -456,7 +437,7 @@ mod tests {
     };
     use alpen_reth_node::AlpenExecutionPayloadEnvelopeV4;
     use rand::{rngs::OsRng, Rng};
-    use revm_primitives::{alloy_primitives::Bloom, Bytes, FixedBytes, U256};
+    use revm_primitives::{alloy_primitives::Bloom, Address, Bytes, FixedBytes, U256};
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
     use strata_ol_chain_types::{L2Block, L2BlockAccessory};
     use strata_primitives::buf::Buf32;
@@ -689,14 +670,5 @@ mod tests {
         let result = rpc_exec_engine_inner.submit_new_payload(payload_data).await;
 
         assert!(matches!(result, EngineResult::Ok(BlockStatus::Valid)));
-    }
-
-    #[test]
-    fn test_address_to_subject_to_address_roundtrip() {
-        let original_address = Address::random();
-        let subject = address_to_subject(original_address);
-        let recovered_address =
-            subject_to_address(&subject).expect("subject should be EVM address-compatible");
-        assert_eq!(original_address, recovered_address);
     }
 }

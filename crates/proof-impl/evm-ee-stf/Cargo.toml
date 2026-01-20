@@ -10,7 +10,6 @@ workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
 strata-bridge-types.workspace = true
-strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true

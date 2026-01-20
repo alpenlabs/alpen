@@ -1,8 +1,11 @@
+use std::mem::size_of;
+
 use alloy_consensus::TxReceipt;
 use alloy_sol_types::SolEvent;
 use alpen_reth_primitives::{WithdrawalIntent, WithdrawalIntentEvent};
 use reth_primitives::{Receipt, TransactionSigned};
-use revm_primitives::{alloy_primitives::Bloom, U256};
+use revm_primitives::{alloy_primitives::Bloom, Address, U256};
+use strata_identifiers::{SubjectId, SubjectIdBytes, SUBJ_ID_LEN};
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
 use crate::constants::BRIDGEOUT_PRECOMPILE_ADDRESS;
@@ -75,4 +78,78 @@ pub fn accumulate_logs_bloom(receipts: &[Receipt]) -> Bloom {
         logs_bloom.accrue_bloom(&r.bloom());
     });
     logs_bloom
+}
+
+const EVM_ADDR_LEN: usize = size_of::<Address>();
+
+/// Converts a [`SubjectId`] to an EVM [`Address`].
+///
+/// EVM addresses occupy the last 20 bytes of the 32-byte [`SubjectId`].
+/// The first 12 bytes must be zero for a valid EVM address.
+///
+/// Returns [`None`] if the first 12 bytes contain any non-zero values.
+pub fn subject_to_address(subject: &SubjectId) -> Option<Address> {
+    let bytes = subject.inner();
+    // Check that the first 12 bytes are zero (valid EVM address padding)
+    if bytes[..SUBJ_ID_LEN - EVM_ADDR_LEN]
+        .iter()
+        .any(|&byte| byte != 0)
+    {
+        return None;
+    }
+    // Extract the last 20 bytes as the address
+    let mut address_bytes = [0u8; EVM_ADDR_LEN];
+    address_bytes.copy_from_slice(&bytes[SUBJ_ID_LEN - EVM_ADDR_LEN..]);
+    Some(Address::from(address_bytes))
+}
+
+/// Converts an EVM [`Address`] to a [`SubjectId`].
+///
+/// The resulting [`SubjectId`] will have the address in the last 20 bytes,
+/// with the first 12 bytes zero-padded.
+pub fn address_to_subject(address: Address) -> SubjectId {
+    let bytes = SubjectIdBytes::try_new(address.to_vec())
+        .expect("Address is 20 bytes, which always fits in 32-byte SubjectId");
+    bytes.to_subject_id()
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn test_address_subject_roundtrip(addr_bytes in prop::array::uniform20(any::<u8>())) {
+            let address = Address::from(addr_bytes);
+            let subject = address_to_subject(address);
+            let recovered_address = subject_to_address(&subject).expect("should convert back to address");
+            prop_assert_eq!(address, recovered_address);
+        }
+
+        #[test]
+        fn test_subject_to_address_rejects_non_zero_padding(
+            addr_bytes in prop::array::uniform20(any::<u8>()),
+            padding in prop::collection::vec(1u8..=255u8, 1..=12)
+        ) {
+            // Create a SubjectId with non-zero padding
+            let mut subject_bytes = addr_bytes.to_vec();
+            subject_bytes.extend_from_slice(&padding);
+
+            if let Ok(subject_id_bytes) = SubjectIdBytes::try_new(subject_bytes) {
+                let subject = subject_id_bytes.to_subject_id();
+                let result = subject_to_address(&subject);
+                prop_assert!(result.is_none(), "should reject subject with non-zero padding");
+            }
+        }
+    }
+
+    #[test]
+    fn test_zero_address_conversion() {
+        let address = Address::ZERO;
+        let subject = address_to_subject(address);
+        let recovered = subject_to_address(&subject).expect("should convert");
+        assert_eq!(address, recovered);
+    }
 }
