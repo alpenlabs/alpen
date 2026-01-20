@@ -21,10 +21,10 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     let operation = update.base_update().operation();
 
     // 1. Check seq_no matches
-    validate_seq_no(target, snark_state, operation)?;
+    verify_seq_no(target, snark_state, operation)?;
 
-    // 2. Check message counts / proof indices line up
-    validate_message_index(target, snark_state, operation)?;
+    // 2. Check message / proof entries and indices line up
+    verify_msgs_and_msgs_in_proofs(target, snark_state, update)?;
 
     let accum_proofs = update.accumulator_proofs();
 
@@ -49,7 +49,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
 }
 
 /// Validates the update sequence number against the snark state.
-pub fn validate_seq_no(
+pub fn verify_seq_no(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
     operation: &UpdateOperationData,
@@ -66,7 +66,7 @@ pub fn validate_seq_no(
 }
 
 /// Validates the update message index against the snark state.
-pub fn validate_message_index(
+pub fn verify_message_index(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
     operation: &UpdateOperationData,
@@ -82,6 +82,45 @@ pub fn validate_message_index(
             got: claimed_idx,
         });
     }
+    Ok(())
+}
+
+/// Verifies that the processed messages count align with the state and that the processed messages
+/// are the ones actually present in the message proofs.
+pub fn verify_msgs_and_msgs_in_proofs(
+    target: AccountId,
+    snark_state: &impl ISnarkAccountState,
+    update: &SnarkAccountUpdateContainer,
+) -> AcctResult<()> {
+    let operation = update.operation();
+
+    // First verify message index.
+    verify_message_index(target, snark_state, operation)?;
+
+    // Verify that the messages and proofs are what are claimed to be.
+    let inbox_proofs = update.accumulator_proofs().inbox_proofs();
+
+    if inbox_proofs.len() != operation.processed_messages().len() {
+        return Err(AcctError::InvalidMsgProofsCount { account_id: target });
+    }
+
+    // Check if the referenced msg in proof is actually the processed message.
+    inbox_proofs
+        .iter()
+        .map(|proof| proof.entry())
+        .zip(operation.processed_messages())
+        .enumerate()
+        .try_for_each(|(i, (proof_msg, proc_msg))| {
+            if proof_msg == proc_msg {
+                Ok(())
+            } else {
+                Err(AcctError::InvalidAccumuulatorProofMessageRef {
+                    account_id: target,
+                    msg_index: i,
+                })
+            }
+        })?;
+
     Ok(())
 }
 

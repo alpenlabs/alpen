@@ -20,8 +20,8 @@ use crate::{
     assembly::BlockComponents,
     context::BlockInfo,
     test_utils::{
-        execute_block_with_outputs, get_test_snark_account_id, get_test_state_root,
-        test_l1_block_id,
+        InboxMmrTracker, execute_block_with_outputs, get_test_snark_account_id,
+        get_test_state_root, test_l1_block_id,
     },
 };
 
@@ -89,15 +89,41 @@ fn test_snark_account_deposit_and_withdrawal() {
     // Check inbox state after genesis
     let snark_state_after_genesis = account_after_deposit.as_snark_account().unwrap();
     let nxt_inbox_idx_after_gen = snark_state_after_genesis.next_inbox_msg_idx();
+    // The deposit should have added a message to the inbox, but it hasn't been processed yet
     assert_eq!(
         nxt_inbox_idx_after_gen, 0,
-        "Next inbox idx should still be zero"
+        "Next inbox idx should still be zero (no messages processed yet)"
     );
-    debug!("Inbox MMR has {nxt_inbox_idx_after_gen} messages",);
+    // Check how many messages are in the inbox
+    let num_inbox_messages = snark_state_after_genesis.inbox_mmr().num_entries();
+    assert_eq!(
+        num_inbox_messages, 1,
+        "Should have 1 deposit message in inbox after genesis"
+    );
+    debug!(
+        "Inbox MMR has {num_inbox_messages} messages, next to process: {nxt_inbox_idx_after_gen}"
+    );
 
     // Check the proof state (next message to PROCESS)
     let new_inner_st_root = snark_state_after_genesis.inner_state_root();
     debug!("New inner_state_root: {new_inner_st_root:?}");
+
+    // Create parallel MMR tracker to generate proofs for the deposit message
+    let mut inbox_tracker = InboxMmrTracker::new();
+
+    // Track the deposit message that was added to the inbox during genesis processing
+    // This message was added when the deposit intent log was processed
+    let mut deposit_msg_data = Vec::new();
+    let subject_bytes: [u8; 32] = dest_subject.into();
+    deposit_msg_data.extend_from_slice(&subject_bytes);
+    let deposit_msg_in_inbox = MessageEntry::new(
+        BRIDGE_GATEWAY_ACCT_ID,
+        0, // genesis epoch
+        MsgPayload::new(BitcoinAmount::from_sat(deposit_amount), deposit_msg_data),
+    );
+
+    // Add the message to the tracker to get a proof
+    let deposit_msg_proof = inbox_tracker.add_message(&deposit_msg_in_inbox);
 
     // Now create a snark account update transaction that produces a withdrawal
     let withdrawal_amount = 100_000_000u64; // Withdraw exactly 1 BTC (required denomination)
@@ -136,12 +162,8 @@ fn test_snark_account_deposit_and_withdrawal() {
     let account_after_genesis = state.get_account_state(snark_account_id).unwrap().unwrap();
     let snark_state_after_genesis = account_after_genesis.as_snark_account().unwrap();
 
-    // Create a processed deposit message
-    let deposit_msg = MessageEntry::new(
-        BRIDGE_GATEWAY_ACCT_ID,
-        1, // genesis epoch
-        MsgPayload::new(BitcoinAmount::from_sat(deposit_amount), vec![]),
-    );
+    // The processed message must match the one we tracked above
+    let processed_deposit_msg = deposit_msg_in_inbox.clone();
 
     // After processing 1 message, next_msg_read_idx advances by 1
     let new_proof_state = ProofState::new(new_state_root, nxt_inbox_idx_after_gen + 1);
@@ -149,8 +171,8 @@ fn test_snark_account_deposit_and_withdrawal() {
     let operation_data = UpdateOperationData::new(
         seq_no,
         new_proof_state.clone(),
-        vec![deposit_msg],       // Processed deposit message
-        LedgerRefs::new_empty(), // No ledger references
+        vec![processed_deposit_msg], // Processed deposit message
+        LedgerRefs::new_empty(),     // No ledger references
         update_outputs,
         vec![], // No extra data
     );
@@ -161,9 +183,9 @@ fn test_snark_account_deposit_and_withdrawal() {
         vec![0u8; 32], // Dummy proof for testing
     );
 
-    // Create accumulator proofs (empty for testing)
+    // Create accumulator proofs with the deposit message proof
     let accumulator_proofs = UpdateAccumulatorProofs::new(
-        vec![],                       // No inbox proofs
+        vec![deposit_msg_proof], // Include the inbox proof for the deposit message
         LedgerRefProofs::new(vec![]), // No ledger ref proofs
     );
 

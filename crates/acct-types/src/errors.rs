@@ -70,6 +70,17 @@ pub enum AcctError {
     #[error("invalid update proof for account {account_id:?}")]
     InvalidUpdateProof { account_id: AccountId },
 
+    #[error("invalid message proofs count for account {account_id:?}")]
+    InvalidMsgProofsCount { account_id: AccountId },
+
+    #[error(
+        "processed message is not the same as proven message for account {account_id:?} at index {msg_index}"
+    )]
+    InvalidAccumuulatorProofMessageRef {
+        account_id: AccountId,
+        msg_index: usize,
+    },
+
     #[error("message index overflow for account {account_id:?}")]
     MsgIndexOverflow { account_id: AccountId },
 
