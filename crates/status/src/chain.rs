@@ -1,9 +1,10 @@
 //! Container for chain status.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use strata_identifiers::Epoch;
 use strata_ol_chainstate_types::Chainstate;
+use strata_ol_state_types::OLState;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, prelude::*};
 
 /// Describes FCM state.
@@ -57,14 +58,16 @@ impl ChainSyncStatus {
 }
 
 /// Published to the FCM status including chainstate.
+///
+/// Generic over the state type `S` to support different state representations.
 #[derive(Debug, Clone)]
-pub struct ChainSyncStatusUpdate {
+pub struct ChainSyncStatusUpdate<S: Clone + Debug + Send + Sync> {
     new_status: ChainSyncStatus,
-    new_tl_chainstate: Arc<Chainstate>,
+    new_tl_chainstate: Arc<S>,
 }
 
-impl ChainSyncStatusUpdate {
-    pub fn new(new_status: ChainSyncStatus, new_tl_chainstate: Arc<Chainstate>) -> Self {
+impl<S: Clone + Debug + Send + Sync> ChainSyncStatusUpdate<S> {
+    pub fn new(new_status: ChainSyncStatus, new_tl_chainstate: Arc<S>) -> Self {
         Self {
             new_status,
             new_tl_chainstate,
@@ -75,7 +78,7 @@ impl ChainSyncStatusUpdate {
         self.new_status
     }
 
-    pub fn new_tl_chainstate(&self) -> &Arc<Chainstate> {
+    pub fn new_tl_chainstate(&self) -> &Arc<S> {
         &self.new_tl_chainstate
     }
 
@@ -83,4 +86,19 @@ impl ChainSyncStatusUpdate {
     pub fn cur_epoch(&self) -> Epoch {
         self.new_status().cur_epoch()
     }
+
+    /// Returns the current tip commitment.
+    pub fn tip(&self) -> L2BlockCommitment {
+        self.new_status.tip
+    }
 }
+
+/// L2 chain sync update - carries the full Chainstate.
+///
+/// Used by L2/legacy consumers that need the complete chainstate.
+pub type L2ChainSyncUpdate = ChainSyncStatusUpdate<Chainstate>;
+
+/// OL chain sync update - carries the OLState.
+///
+/// Used by OL-specific consumers like the mempool and block assembly.
+pub type OLChainSyncUpdate = ChainSyncStatusUpdate<OLState>;

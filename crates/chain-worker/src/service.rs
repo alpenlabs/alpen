@@ -1,6 +1,6 @@
 //! Service framework integration for chain worker.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 use strata_chainexec::{BlockExecutionOutput, ChainExecutor};
@@ -24,10 +24,10 @@ use crate::{
 };
 
 /// Chain worker service implementation using the service framework.
+///
+/// Generic over the worker context type `W`.
 #[derive(Debug)]
-pub struct ChainWorkerService<W> {
-    _phantom: PhantomData<W>,
-}
+pub struct ChainWorkerService<W>(PhantomData<W>);
 
 impl<W: WorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W> {
     type State = ChainWorkerServiceState<W>;
@@ -73,6 +73,8 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
 }
 
 /// Service state for the chain worker.
+///
+/// Generic over the worker context type `W`.
 #[derive(Debug)]
 pub struct ChainWorkerServiceState<W> {
     #[expect(unused, reason = "will be used later")]

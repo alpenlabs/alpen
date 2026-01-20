@@ -1,9 +1,10 @@
 //! Service framework integration for chain worker.
 
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
 use serde::Serialize;
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_state_types::OLState;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{Response, Service, SyncService};
 
@@ -12,13 +13,20 @@ use crate::{
 };
 
 /// Chain worker service implementation using the service framework.
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `OLState`.
 #[derive(Debug)]
-pub struct ChainWorkerService<W: ChainWorkerContext + Send + Sync + 'static> {
-    _phantom: PhantomData<W>,
+pub struct ChainWorkerService<
+    W: ChainWorkerContext + Send + Sync + 'static,
+    State: Clone + Debug + Send + Sync + 'static = OLState,
+> {
+    _phantom: PhantomData<(W, State)>,
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W> {
-    type State = ChainWorkerServiceState<W>;
+impl<W: ChainWorkerContext + Send + Sync + 'static, State: Clone + Debug + Send + Sync + 'static>
+    Service for ChainWorkerService<W, State>
+{
+    type State = ChainWorkerServiceState<W, State>;
     type Msg = ChainWorkerMessage;
     type Status = ChainWorkerStatus;
 
@@ -31,7 +39,9 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> Service for ChainWorkerServi
     }
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> SyncService for ChainWorkerService<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static, State: Clone + Debug + Send + Sync + 'static>
+    SyncService for ChainWorkerService<W, State>
+{
     fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
         let cur_tip = state.wait_for_genesis_and_resolve_tip()?;
         state.initialize_with_tip(cur_tip)?;

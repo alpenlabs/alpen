@@ -7,8 +7,9 @@ use std::{
 };
 
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_state_types::OLState;
 use strata_service::{AsyncServiceInput, ServiceBuilder, ServiceInput};
-use strata_status::{ChainSyncStatusUpdate, StatusChannel};
+use strata_status::{OLChainSyncUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 use tokio::sync::{mpsc, watch};
@@ -26,7 +27,7 @@ use crate::{
 pub struct MempoolBuilder {
     config: OLMempoolConfig,
     storage: Arc<NodeStorage>,
-    status_channel: StatusChannel,
+    status_channel: StatusChannel<OLState>,
     current_tip: OLBlockCommitment,
 }
 
@@ -45,7 +46,7 @@ impl MempoolBuilder {
     pub fn new(
         config: OLMempoolConfig,
         storage: Arc<NodeStorage>,
-        status_channel: StatusChannel,
+        status_channel: StatusChannel<OLState>,
         current_tip: OLBlockCommitment,
     ) -> Self {
         Self {
@@ -99,21 +100,21 @@ impl MempoolBuilder {
 pub(crate) enum MempoolInputMessage {
     /// Command from RPC or handle
     Command(MempoolCommand),
-    /// Chain tip update from fork-choice manager
-    ChainUpdate(ChainSyncStatusUpdate),
+    /// OL chain tip update from fork-choice manager
+    ChainUpdate(OLChainSyncUpdate),
 }
 
-/// Mempool input that fans-in commands and chain sync updates.
+/// Mempool input that fans-in commands and OL chain sync updates.
 struct MempoolInput {
     command_rx: mpsc::Receiver<MempoolCommand>,
-    chain_sync_rx: watch::Receiver<Option<ChainSyncStatusUpdate>>,
+    chain_sync_rx: watch::Receiver<Option<OLChainSyncUpdate>>,
     closed: bool,
 }
 
 impl MempoolInput {
     fn new(
         command_rx: mpsc::Receiver<MempoolCommand>,
-        chain_sync_rx: watch::Receiver<Option<ChainSyncStatusUpdate>>,
+        chain_sync_rx: watch::Receiver<Option<OLChainSyncUpdate>>,
     ) -> Self {
         Self {
             command_rx,
@@ -149,7 +150,6 @@ impl AsyncServiceInput for MempoolInput {
                     result = self.chain_sync_rx.changed() => {
                         match result {
                             Ok(()) => {
-                                // Clone the update to avoid holding the borrow
                                 let update = self.chain_sync_rx.borrow_and_update().clone();
                                 if let Some(chain_update) = update {
                                     return Ok(Some(MempoolInputMessage::ChainUpdate(chain_update)));

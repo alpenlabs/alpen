@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use strata_status::StatusChannel;
 use strata_tasks::TaskExecutor;
@@ -16,6 +16,8 @@ use crate::{
 /// This encapsulates all the initialization logic and dependencies needed
 /// to spawn an exec worker, preventing implementation details from leaking
 /// into the caller. The builder launches the task and returns a result.
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `Chainstate`.
 #[derive(Debug)]
 pub struct ExecWorkerBuilder<E, W> {
     context: Option<W>,

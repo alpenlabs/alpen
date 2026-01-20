@@ -1,7 +1,8 @@
 //! Builder pattern for launching the chain worker service.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
+use strata_ol_state_types::OLState;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
 use strata_status::StatusChannel;
@@ -23,6 +24,8 @@ use crate::{
 /// from leaking into the caller. The builder launches the service and returns
 /// a handle to it.
 ///
+/// Generic over the state type for `StatusChannel`, defaulting to `OLState`.
+///
 /// # Example
 ///
 /// ```ignore
@@ -34,14 +37,19 @@ use crate::{
 ///     .launch(&executor)?;
 /// ```
 #[derive(Debug)]
-pub struct ChainWorkerBuilder<W: ChainWorkerContext + Send + Sync + 'static> {
+pub struct ChainWorkerBuilder<
+    W: ChainWorkerContext + Send + Sync + 'static,
+    State: Clone + Debug + Send + Sync + 'static = OLState,
+> {
     context: Option<W>,
     params: Option<Arc<Params>>,
-    status_channel: Option<StatusChannel>,
+    status_channel: Option<StatusChannel<State>>,
     runtime_handle: Option<Handle>,
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static, State: Clone + Debug + Send + Sync + 'static>
+    ChainWorkerBuilder<W, State>
+{
     /// Create a new builder instance.
     pub fn new() -> Self {
         Self {
@@ -65,7 +73,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
     }
 
     /// Set the status channel for genesis waiting.
-    pub fn with_status_channel(mut self, channel: StatusChannel) -> Self {
+    pub fn with_status_channel(mut self, channel: StatusChannel<State>) -> Self {
         self.status_channel = Some(channel);
         self
     }
@@ -104,7 +112,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerBuilder<W> {
 
         // Create the service builder and get command handle.
         let mut service_builder =
-            ServiceBuilder::<ChainWorkerService<W>, _>::new().with_state(service_state);
+            ServiceBuilder::<ChainWorkerService<W, State>, _>::new().with_state(service_state);
 
         // Create the command handle before launching.
         let command_handle = service_builder.create_command_handle(64);

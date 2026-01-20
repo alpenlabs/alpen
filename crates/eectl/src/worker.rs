@@ -1,6 +1,6 @@
 //! Generic exec worker task.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
@@ -276,11 +276,14 @@ pub fn worker_task_inner<E: ExecEngineCtl>(
     Ok(())
 }
 
-pub(crate) fn worker_task<E: ExecEngineCtl + Sync + Send + 'static>(
+pub(crate) fn worker_task<
+    E: ExecEngineCtl + Sync + Send + 'static,
+    State: Clone + Debug + Send + Sync + 'static,
+>(
     shutdown: ShutdownGuard,
     handle: Handle,
     context: &impl ExecWorkerContext,
-    _status_channel: StatusChannel,
+    _status_channel: StatusChannel<State>,
     engine: Arc<E>,
     exec_rx: ExecCtlInput,
 ) -> anyhow::Result<()> {

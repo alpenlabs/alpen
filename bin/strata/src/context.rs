@@ -7,6 +7,7 @@ use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
+use strata_ol_state_types::OLState;
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
@@ -26,7 +27,7 @@ pub(crate) struct NodeContext {
     pub executor: TaskExecutor,
     pub storage: Arc<NodeStorage>,
     pub bitcoin_client: Arc<Client>,
-    pub status_channel: Arc<StatusChannel>,
+    pub status_channel: Arc<StatusChannel<OLState>>,
 }
 
 /// Load config early for logging initialization
@@ -164,7 +165,7 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, Ini
 }
 
 /// Status channel initialization
-fn init_status_channel(storage: &NodeStorage) -> Result<Arc<StatusChannel>, InitError> {
+fn init_status_channel(storage: &NodeStorage) -> Result<Arc<StatusChannel<OLState>>, InitError> {
     let csman = storage.client_state();
     let (cur_block, cur_state) = csman
         .fetch_most_recent_state()

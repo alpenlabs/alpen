@@ -8,7 +8,7 @@ use strata_common::{check_and_pause_debug_async, WorkerType};
 use strata_consensus_logic::{message::ForkChoiceMessage, sync_manager::SyncManager};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_primitives::epoch::EpochCommitment;
-use strata_status::ChainSyncStatusUpdate;
+use strata_status::L2ChainSyncUpdate;
 use strata_storage::NodeStorage;
 use tokio::{sync::watch, time};
 use tracing::*;
@@ -49,8 +49,8 @@ async fn wait_until_ready_and_init_sync_state<T: SyncClient>(
 }
 
 async fn wait_for_chainstate_finalized_epoch_inner(
-    chainstatus_rx: &mut watch::Receiver<Option<ChainSyncStatusUpdate>>,
-    wait_for_fn: impl FnMut(&Option<ChainSyncStatusUpdate>) -> bool,
+    chainstatus_rx: &mut watch::Receiver<Option<L2ChainSyncUpdate>>,
+    wait_for_fn: impl FnMut(&Option<L2ChainSyncUpdate>) -> bool,
 ) -> Result<EpochCommitment, L2SyncError> {
     let finalized_epoch = chainstatus_rx
         .wait_for(wait_for_fn)
@@ -65,13 +65,13 @@ async fn wait_for_chainstate_finalized_epoch_inner(
 }
 
 async fn wait_for_finalized_epoch(
-    chainstatus_rx: &mut watch::Receiver<Option<ChainSyncStatusUpdate>>,
+    chainstatus_rx: &mut watch::Receiver<Option<L2ChainSyncUpdate>>,
 ) -> Result<EpochCommitment, L2SyncError> {
     wait_for_chainstate_finalized_epoch_inner(chainstatus_rx, Option::is_some).await
 }
 
 async fn wait_for_finalized_epoch_changed(
-    chainstatus_rx: &mut watch::Receiver<Option<ChainSyncStatusUpdate>>,
+    chainstatus_rx: &mut watch::Receiver<Option<L2ChainSyncUpdate>>,
     last_finalized: EpochCommitment,
 ) -> Result<EpochCommitment, L2SyncError> {
     wait_for_chainstate_finalized_epoch_inner(chainstatus_rx, |update| {

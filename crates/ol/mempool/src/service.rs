@@ -3,7 +3,6 @@
 use std::marker::PhantomData;
 
 use serde::Serialize;
-use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::StateProvider;
 use strata_service::{AsyncService, Response, Service};
 
@@ -64,9 +63,7 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
             },
 
             MempoolInputMessage::ChainUpdate(update) => {
-                let new_tip = update.new_status().tip;
-                let ol_tip = OLBlockCommitment::new(new_tip.slot(), *new_tip.blkid());
-                state.handle_chain_update(ol_tip).await?;
+                state.handle_chain_update(update.tip()).await?;
             }
         }
 

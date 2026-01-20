@@ -2,7 +2,7 @@
 //! status.  Exposes handles to interact with fork choice manager and CSM
 //! executor and other core sync pipeline tasks.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use bitcoin::absolute::Height;
 use bitcoind_async_client::Client;
@@ -10,6 +10,7 @@ use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
+use strata_ol_chainstate_types::Chainstate;
 use strata_params::Params;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
@@ -27,18 +28,20 @@ use crate::{
 };
 
 /// Handle to the core pipeline tasks.
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `Chainstate`.
 #[expect(
     missing_debug_implementations,
     reason = "Some inner types don't have Debug impls"
 )]
-pub struct SyncManager {
+pub struct SyncManager<State: Clone + Debug + Send + Sync + 'static = Chainstate> {
     params: Arc<Params>,
     fc_manager_tx: mpsc::Sender<ForkChoiceMessage>,
     asm_controller: Arc<AsmWorkerHandle>,
-    status_channel: StatusChannel,
+    status_channel: StatusChannel<State>,
 }
 
-impl SyncManager {
+impl<State: Clone + Debug + Send + Sync + 'static> SyncManager<State> {
     pub fn params(&self) -> &Params {
         &self.params
     }
@@ -51,7 +54,7 @@ impl SyncManager {
         self.asm_controller.clone()
     }
 
-    pub fn status_channel(&self) -> &StatusChannel {
+    pub fn status_channel(&self) -> &StatusChannel<State> {
         &self.status_channel
     }
 
@@ -67,14 +70,20 @@ impl SyncManager {
 }
 
 /// Starts the sync tasks using provided settings.
-pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
+///
+/// Note: This function uses `StatusChannel<Chainstate>` because the fork choice manager
+/// is tied to `Chainstate`. The `strata` binary uses a different service setup.
+pub fn start_sync_tasks<E>(
     executor: &TaskExecutor,
     storage: &Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
     engine: Arc<E>,
     params: Arc<Params>,
     status_channel: StatusChannel,
-) -> anyhow::Result<SyncManager> {
+) -> anyhow::Result<SyncManager>
+where
+    E: ExecEngineCtl + Sync + Send + 'static,
+{
     // Create channels.
     let (fcm_tx, fcm_rx) = mpsc::channel::<ForkChoiceMessage>(64);
 
@@ -146,13 +155,16 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     })
 }
 
-pub fn spawn_csm_listener(
+pub fn spawn_csm_listener<State>(
     executor: &TaskExecutor,
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
-    status_channel: StatusChannel,
+    status_channel: StatusChannel<State>,
     asm_monitor: &strata_service::ServiceMonitor<AsmWorkerStatus>,
-) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
+) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>>
+where
+    State: Clone + Debug + Send + Sync + 'static,
+{
     // Create CSM worker state.
     let csm_state = CsmWorkerState::new(params, storage.clone(), status_channel.clone())?;
 
@@ -194,7 +206,7 @@ pub fn spawn_csm_listener(
     let csm_input = SyncAsyncInput::new(async_input, executor.handle().clone());
 
     // Launch the CSM worker service (which acts as a listener to ASM worker).
-    let csm_monitor = ServiceBuilder::<CsmWorkerService, _>::new()
+    let csm_monitor = ServiceBuilder::<CsmWorkerService<State>, _>::new()
         .with_state(csm_state)
         .with_input(csm_input)
         .launch_sync("csm_worker", executor)?;

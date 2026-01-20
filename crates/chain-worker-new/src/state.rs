@@ -9,7 +9,7 @@
 //! even though both must live in [`ChainWorkerServiceState`] due to the current
 //! service framework design.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
@@ -35,7 +35,9 @@ use crate::{
 /// These are initialized once and don't change during the worker's lifetime.
 /// Ideally these would live in the Service struct, but the current framework
 /// requires all dependencies to be passed through State.
-struct ChainWorkerDeps<W> {
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `OLState`.
+struct ChainWorkerDeps<W, State: Clone + Debug + Send + Sync + 'static = OLState> {
     /// Parameters for the chain.
     #[expect(unused, reason = "params will be used for chain configuration")]
     params: Arc<Params>,
@@ -44,7 +46,7 @@ struct ChainWorkerDeps<W> {
     context: W,
 
     /// Status channel for the worker.
-    status_channel: StatusChannel,
+    status_channel: StatusChannel<State>,
 
     /// Runtime handle for the worker.
     runtime_handle: Handle,
@@ -86,24 +88,28 @@ impl Default for ChainWorkerMutableState {
 /// struct rather than State, with only `ChainWorkerMutableState` here. However,
 /// the current service framework doesn't support this pattern. This should be
 /// refactored when the framework is updated.
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `OLState`.
 #[expect(
     missing_debug_implementations,
     reason = "Some inner types don't have Debug impl"
 )]
-pub struct ChainWorkerServiceState<W> {
+pub struct ChainWorkerServiceState<W, State: Clone + Debug + Send + Sync + 'static = OLState> {
     /// Static dependencies.
-    deps: ChainWorkerDeps<W>,
+    deps: ChainWorkerDeps<W, State>,
 
     /// Mutable state.
     state: ChainWorkerMutableState,
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static, State: Clone + Debug + Send + Sync + 'static>
+    ChainWorkerServiceState<W, State>
+{
     /// Creates a new chain worker service state.
     pub fn new(
         context: W,
         params: Arc<Params>,
-        status_channel: StatusChannel,
+        status_channel: StatusChannel<State>,
         runtime_handle: Handle,
     ) -> Self {
         Self {
@@ -380,7 +386,9 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     }
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServiceState<W> {
+impl<W: ChainWorkerContext + Send + Sync + 'static, State: Clone + Debug + Send + Sync + 'static>
+    ServiceState for ChainWorkerServiceState<W, State>
+{
     fn name(&self) -> &str {
         "chain_worker_new"
     }

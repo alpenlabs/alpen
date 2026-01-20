@@ -1,6 +1,9 @@
 //! CSM worker service implementation.
 
+use std::{fmt::Debug, marker::PhantomData};
+
 use strata_asm_worker::AsmWorkerStatus;
+use strata_ol_state_types::OLState;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
@@ -14,11 +17,23 @@ use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStat
 ///
 /// The service follows the listener pattern - it passively observes ASM status updates
 /// via the service framework's `StatusMonitorInput` without ASM being aware of it.
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `OLState`.
 #[derive(Debug)]
-pub struct CsmWorkerService;
+pub struct CsmWorkerService<State: Clone + Debug + Send + Sync + 'static = OLState> {
+    _phantom: PhantomData<State>,
+}
 
-impl Service for CsmWorkerService {
-    type State = CsmWorkerState;
+impl<State: Clone + Debug + Send + Sync + 'static> Default for CsmWorkerService<State> {
+    fn default() -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<State: Clone + Debug + Send + Sync + 'static> Service for CsmWorkerService<State> {
+    type State = CsmWorkerState<State>;
     type Msg = AsmWorkerStatus;
     type Status = CsmWorkerStatus;
 
@@ -30,7 +45,7 @@ impl Service for CsmWorkerService {
     }
 }
 
-impl SyncService for CsmWorkerService {
+impl<State: Clone + Debug + Send + Sync + 'static> SyncService for CsmWorkerService<State> {
     fn process_input(state: &mut Self::State, asm_status: &Self::Msg) -> anyhow::Result<Response> {
         strata_common::check_bail_trigger("csm_event");
 

@@ -8,7 +8,9 @@ use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
 use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_ol_state_types::OLState;
 use strata_rpc_api_new::OLClientRpcServer;
+use strata_status::StatusChannel;
 
 use crate::{context::NodeContext, rpc::OLRpcServer, run_context::RunContext};
 
@@ -18,7 +20,7 @@ struct RpcDeps {
     rpc_host: String,
     rpc_port: u16,
     storage: Arc<strata_storage::NodeStorage>,
-    status_channel: Arc<strata_status::StatusChannel>,
+    status_channel: Arc<StatusChannel<OLState>>,
     mempool_handle: MempoolHandle,
 }
 

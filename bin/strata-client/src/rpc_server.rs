@@ -94,7 +94,7 @@ impl StrataRpcImpl {
             return Ok((cs, None));
         }
 
-        let chs = self.status_channel.get_cur_tip_chainstate().clone();
+        let chs = self.status_channel.get_cur_tip_state().clone();
 
         Ok((cs, chs))
     }
@@ -839,7 +839,7 @@ impl StrataSequencerApiServer for SequencerServerImpl {
     async fn get_sequencer_duties(&self) -> RpcResult<Vec<Duty>> {
         let (_, tip_blockid) = self
             .status
-            .get_cur_tip_chainstate_with_block()
+            .get_cur_tip_state_with_block()
             .ok_or(Error::BeforeGenesis)?;
         let client_state = self.status.get_cur_client_state();
 

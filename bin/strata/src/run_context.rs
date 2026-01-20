@@ -7,6 +7,7 @@ use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_ol_mempool::MempoolHandle;
+use strata_ol_state_types::OLState;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
@@ -30,5 +31,5 @@ pub(crate) struct RunContext {
     pub chain_worker_handle: ChainWorkerHandle,
     // Shared infrastructure
     pub storage: Arc<NodeStorage>,
-    pub status_channel: Arc<StatusChannel>,
+    pub status_channel: Arc<StatusChannel<OLState>>,
 }

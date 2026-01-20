@@ -15,6 +15,7 @@ strata-common = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-ol-state-types.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true

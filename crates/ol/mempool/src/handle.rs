@@ -112,6 +112,7 @@ mod tests {
     use strata_csm_types::{ClientState, L1Status};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{L1BlockCommitment, L1BlockId};
+    use strata_ol_state_types::OLState;
     use strata_status::StatusChannel;
     use strata_storage::{NodeStorage, create_node_storage};
     use strata_tasks::TaskManager;
@@ -131,7 +132,7 @@ mod tests {
 
     /// Helper to set up mempool handle with storage for tests.
     /// Returns (handle, storage, status_channel) for triggering chain updates.
-    async fn setup_mempool() -> (MempoolHandle, Arc<NodeStorage>, StatusChannel) {
+    async fn setup_mempool() -> (MempoolHandle, Arc<NodeStorage>, StatusChannel<OLState>) {
         let pool = ThreadPool::new(1);
         let test_db = get_test_sled_backend();
         let storage = Arc::new(

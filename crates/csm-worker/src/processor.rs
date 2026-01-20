@@ -1,6 +1,6 @@
 //! Checkpoint log processing logic.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
@@ -14,8 +14,8 @@ use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
 
-pub(crate) fn process_log(
-    state: &mut CsmWorkerState,
+pub(crate) fn process_log<State: Clone + Debug + Send + Sync + 'static>(
+    state: &mut CsmWorkerState<State>,
     log: &AsmLogEntry,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
@@ -38,8 +38,8 @@ pub(crate) fn process_log(
 }
 
 /// Process a single ASM log entry, extracting and handling checkpoint updates.
-fn process_checkpoint_log(
-    state: &mut CsmWorkerState,
+fn process_checkpoint_log<State: Clone + Debug + Send + Sync + 'static>(
+    state: &mut CsmWorkerState<State>,
     checkpoint_update: &CheckpointUpdate,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
@@ -88,8 +88,8 @@ fn process_checkpoint_log(
 }
 
 /// Update client state with a new checkpoint.
-fn update_client_state_with_checkpoint(
-    state: &mut CsmWorkerState,
+fn update_client_state_with_checkpoint<State: Clone + Debug + Send + Sync + 'static>(
+    state: &mut CsmWorkerState<State>,
     new_checkpoint: L1Checkpoint,
     epoch: Epoch,
 ) -> anyhow::Result<()> {

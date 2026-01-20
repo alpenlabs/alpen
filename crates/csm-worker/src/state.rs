@@ -1,9 +1,10 @@
 //! CSM worker service state.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use strata_csm_types::ClientState;
 use strata_identifiers::Epoch;
+use strata_ol_state_types::OLState;
 use strata_params::Params;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
@@ -14,11 +15,13 @@ use strata_storage::NodeStorage;
 ///
 /// This state is used by the CSM worker which acts as a listener to ASM worker
 /// status updates, processing checkpoint logs from the checkpoint-v0 subprotocol.
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `OLState`.
 #[expect(
     missing_debug_implementations,
     reason = "NodeStorage doesn't implement Debug"
 )]
-pub struct CsmWorkerState {
+pub struct CsmWorkerState<State: Clone + Debug + Send + Sync + 'static = OLState> {
     /// Consensus parameters.
     pub(crate) _params: Arc<Params>,
 
@@ -35,15 +38,15 @@ pub struct CsmWorkerState {
     pub(crate) last_processed_epoch: Option<Epoch>,
 
     /// Status channel for publishing state updates.
-    pub(crate) status_channel: StatusChannel,
+    pub(crate) status_channel: StatusChannel<State>,
 }
 
-impl CsmWorkerState {
+impl<State: Clone + Debug + Send + Sync + 'static> CsmWorkerState<State> {
     /// Create a new CSM worker state.
     pub fn new(
         params: Arc<Params>,
         storage: Arc<NodeStorage>,
-        status_channel: StatusChannel,
+        status_channel: StatusChannel<State>,
     ) -> anyhow::Result<Self> {
         // Load the most recent client state from storage
         let (cur_block, cur_state) = storage
@@ -67,7 +70,7 @@ impl CsmWorkerState {
     }
 }
 
-impl ServiceState for CsmWorkerState {
+impl<State: Clone + Debug + Send + Sync + 'static> ServiceState for CsmWorkerState<State> {
     fn name(&self) -> &str {
         "csm_worker"
     }

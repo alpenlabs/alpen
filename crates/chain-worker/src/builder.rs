@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use strata_eectl::handle::ExecCtlHandle;
 use strata_params::Params;
@@ -20,6 +20,8 @@ use crate::{
 /// launch a chain worker using the service framework, preventing impl details
 /// from leaking into the caller.  The builder launches the service and returns
 /// a handle to it.
+///
+/// Generic over the worker context type `W`.
 #[derive(Debug)]
 pub struct ChainWorkerBuilder<W> {
     context: Option<W>,

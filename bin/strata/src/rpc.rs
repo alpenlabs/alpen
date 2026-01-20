@@ -1,6 +1,9 @@
 //! OL RPC server implementation.
 
-use std::{fmt::Display, sync::Arc};
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use jsonrpsee::{
@@ -17,6 +20,7 @@ use strata_ledger_types::{
 };
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
+use strata_ol_state_types::OLState;
 use strata_primitives::HexBytes;
 use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_rpc_types_new::{
@@ -29,22 +33,24 @@ use strata_storage::NodeStorage;
 use tracing::error;
 
 /// OL RPC server implementation.
-pub(crate) struct OLRpcServer {
+///
+/// Generic over the state type for `StatusChannel`, defaulting to `OLState`.
+pub(crate) struct OLRpcServer<State: Clone + Debug + Send + Sync + 'static = OLState> {
     /// Storage backend.
     storage: Arc<NodeStorage>,
 
     /// Status channel.
-    status_channel: Arc<StatusChannel>,
+    status_channel: Arc<StatusChannel<State>>,
 
     /// Mempool handle for transaction submission.
     mempool_handle: MempoolHandle,
 }
 
-impl OLRpcServer {
+impl<State: Clone + Debug + Send + Sync + 'static> OLRpcServer<State> {
     /// Creates a new [`OLRpcServer`].
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
+        status_channel: Arc<StatusChannel<State>>,
         mempool_handle: MempoolHandle,
     ) -> Self {
         Self {
@@ -79,7 +85,7 @@ impl OLRpcServer {
 }
 
 #[async_trait]
-impl OLClientRpcServer for OLRpcServer {
+impl<State: Clone + Debug + Send + Sync + 'static> OLClientRpcServer for OLRpcServer<State> {
     async fn get_acct_epoch_summary(
         &self,
         account_id: AccountId,
