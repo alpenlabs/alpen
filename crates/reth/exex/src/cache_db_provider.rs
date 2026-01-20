@@ -6,17 +6,45 @@ use reth_revm::{
     state::{AccountInfo, Bytecode},
     DatabaseRef,
 };
-use revm_primitives::alloy_primitives::{ruint::Uint, Address, B256, U256};
+use revm_primitives::alloy_primitives::{Address, B256, U256};
+
+/// A single storage slot key.
+pub type StorageKey = U256;
+
+/// Accessed state captured during block execution for witness generation.
+#[derive(Debug)]
+pub struct AccessedState {
+    accessed_accounts: HashMap<Address, HashSet<StorageKey>>,
+    accessed_contracts: HashMap<B256, Bytecode>,
+    accessed_block_idxs: HashSet<u64>,
+}
+
+impl AccessedState {
+    /// Returns the set of block indices accessed (for BLOCKHASH opcode).
+    pub fn accessed_block_idxs(&self) -> &HashSet<u64> {
+        &self.accessed_block_idxs
+    }
+
+    /// Returns accessed accounts with their storage keys.
+    pub fn accessed_accounts(&self) -> &HashMap<Address, HashSet<StorageKey>> {
+        &self.accessed_accounts
+    }
+
+    /// Returns accessed contract bytecodes indexed by code hash.
+    pub fn accessed_contracts(&self) -> &HashMap<B256, Bytecode> {
+        &self.accessed_contracts
+    }
+}
 
 /// `CacheDBProvider` implements a provider for the revm `CacheDB`.
 /// In addition it holds accessed account info, storage values, and bytecodes during
 /// transaction execution, supporting state retrieval for storage proof construction
 /// in EL proof witness generation.
-pub(crate) struct CacheDBProvider {
+pub struct CacheDBProvider {
     provider: Box<dyn StateProvider>,
     accounts: RefCell<HashMap<Address, AccountInfo>>,
     storage: RefCell<HashMap<Address, HashMap<U256, U256>>>,
-    bytecodes: RefCell<HashSet<Bytecode>>,
+    bytecodes: RefCell<HashMap<B256, Bytecode>>,
     accessed_blkd_ids: RefCell<HashSet<u64>>,
 }
 
@@ -33,29 +61,10 @@ impl fmt::Debug for CacheDBProvider {
             .finish_non_exhaustive()
     }
 }
-#[derive(Debug)]
-pub(crate) struct AccessedState {
-    accessed_accounts: HashMap<Address, Vec<Uint<256, 4>>>,
-    accessed_contracts: Vec<Bytecode>,
-    accessed_block_idxs: HashSet<u64>,
-}
-
-impl AccessedState {
-    pub(crate) fn accessed_block_idxs(&self) -> &HashSet<u64> {
-        &self.accessed_block_idxs
-    }
-
-    pub(crate) fn accessed_accounts(&self) -> &HashMap<Address, Vec<Uint<256, 4>>> {
-        &self.accessed_accounts
-    }
-
-    pub(crate) fn accessed_contracts(&self) -> &Vec<Bytecode> {
-        &self.accessed_contracts
-    }
-}
 
 impl CacheDBProvider {
-    pub(crate) fn new(provider: Box<dyn StateProvider>) -> Self {
+    /// Creates a new `CacheDBProvider` wrapping the given state provider.
+    pub fn new(provider: Box<dyn StateProvider>) -> Self {
         Self {
             provider,
             accounts: Default::default(),
@@ -65,7 +74,8 @@ impl CacheDBProvider {
         }
     }
 
-    pub(crate) fn get_accessed_state(&self) -> AccessedState {
+    /// Returns the accumulated accessed state after block execution.
+    pub fn get_accessed_state(&self) -> AccessedState {
         let accessed_accounts = self.get_accessed_accounts();
         let accessed_contracts = self.get_accessed_contracts();
 
@@ -76,7 +86,7 @@ impl CacheDBProvider {
         }
     }
 
-    fn get_accessed_accounts(&self) -> HashMap<Address, Vec<U256>> {
+    fn get_accessed_accounts(&self) -> HashMap<Address, HashSet<U256>> {
         let accounts = self.accounts.borrow();
         let storage = self.storage.borrow();
 
@@ -89,14 +99,14 @@ impl CacheDBProvider {
             .map(|address| {
                 let storage_keys = storage
                     .get(&address)
-                    .map_or(Vec::new(), |map| map.keys().cloned().collect());
+                    .map_or(HashSet::default(), |map| map.keys().cloned().collect());
                 (address, storage_keys)
             })
             .collect()
     }
 
-    fn get_accessed_contracts(&self) -> Vec<Bytecode> {
-        self.bytecodes.borrow().iter().cloned().collect()
+    fn get_accessed_contracts(&self) -> HashMap<B256, Bytecode> {
+        self.bytecodes.borrow().clone()
     }
 }
 
@@ -131,8 +141,10 @@ impl DatabaseRef for CacheDBProvider {
                 )))
             })?;
 
-        // Record the storage value to the state
-        self.bytecodes.borrow_mut().insert(bytecode.clone());
+        // Record the bytecode with its hash as key
+        self.bytecodes
+            .borrow_mut()
+            .insert(code_hash, bytecode.clone());
 
         Ok(bytecode)
     }
