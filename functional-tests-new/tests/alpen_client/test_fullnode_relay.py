@@ -6,10 +6,8 @@ sequencer and other fullnodes.
 
 Topology:
     fullnode_0 (bootnode)
-        ↑
-        ├── sequencer (connects to fullnode_0)
-        │
-        └── fullnode_1 (connects to fullnode_0)
+        > sequencer (connects to fullnode_0)
+        > fullnode_1 (connects to fullnode_0)
 
 Sequencer has no direct connection to fullnode_1.
 Blocks must relay: sequencer → fullnode_0 → fullnode_1
@@ -106,7 +104,7 @@ class TestFullnodeRelay(AlpenClientTest):
 
         logger.info(
             f"SUCCESS: Block {target_block} relayed through fullnode_0!\n"
-            f"  sequencer → fullnode_0 → fullnode_1\n"
+            f"  sequencer -> fullnode_0 -> fullnode_1\n"
             f"  All hashes match: {seq_block_hash}"
         )
         return True

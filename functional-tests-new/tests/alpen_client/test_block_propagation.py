@@ -38,7 +38,7 @@ class TestBlockPropagation(AlpenClientTest):
         logger.info(f"Sequencer at block {seq_block}")
 
         # Wait for sequencer to produce a few blocks
-        target_block = seq_block + 3
+        target_block = seq_block + 6
         logger.info(f"Waiting for sequencer to reach block {target_block}...")
         sequencer.wait_for_block(target_block, timeout=60)
 
