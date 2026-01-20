@@ -20,10 +20,8 @@ class TestBootnodeDiscovery(AlpenClientTest):
 
     This test uses the discovery environment where:
     - Sequencer has discovery enabled (acts as bootnode)
-    - Fullnode connects via --bootnodes (no --trusted-peers)
-
-    NOTE: This test will FAIL if discovery is disabled in alpen-client.
-    The failure indicates we need to fix main.rs:71 (disable_discovery = true).
+    - Fullnode uses --bootnodes to discover sequencer via discv5
+    - Connection is established via admin_addPeer after discovery
     """
 
     def __init__(self, ctx: flexitest.InitContext):
@@ -44,7 +42,7 @@ class TestBootnodeDiscovery(AlpenClientTest):
         logger.info(f"Fullnode enode: {fn_info.get('enode', 'N/A')}")
 
         # Wait for peer discovery to work
-        # This is the key test - without trusted-peers, nodes should discover via bootnode
+        # Nodes discover each other via discv5 bootnode protocol
         logger.info("Waiting for peers to discover each other via discv5...")
 
         try:
@@ -52,11 +50,9 @@ class TestBootnodeDiscovery(AlpenClientTest):
             fullnode.wait_for_peers(1, timeout=60)
         except AssertionError as e:
             logger.error("Discovery failed! Nodes did not connect.")
-            logger.error("This likely means discovery is disabled in alpen-client.")
-            logger.error("Check bin/alpen-client/src/main.rs:71")
+            logger.error("Check that discv5 discovery is enabled in alpen-client.")
             raise AssertionError(
-                "Bootnode discovery failed. Discovery may be disabled in alpen-client. "
-                "See main.rs:71 - disable_discovery = true"
+                "Bootnode discovery failed. Check discv5 discovery configuration."
             ) from e
 
         # Verify connection

@@ -21,7 +21,7 @@ class TestMultiFullnodeBlockPropagation(AlpenClientTest):
     Test block propagation from sequencer to multiple fullnodes.
 
     Environment: 1 sequencer + 3 fullnodes (star topology)
-    All fullnodes connect directly to sequencer via trusted-peers.
+    All fullnodes connect to sequencer via admin_addPeer.
     """
 
     def __init__(self, ctx: flexitest.InitContext):
