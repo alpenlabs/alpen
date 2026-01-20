@@ -6,6 +6,7 @@ use strata_asm_logs::{
     CheckpointUpdate, DepositLog,
 };
 use strata_bridge_types::DepositIntent;
+use strata_identifiers::DepositDescriptor;
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
@@ -166,8 +167,10 @@ fn process_l1_deposit<'s, S: StateAccessor>(
     deposit: DepositLog,
 ) -> Result<(), OpError> {
     let amt = BitcoinAmount::from_sat(deposit.amount);
-    let dest_ident = deposit.addr;
+    let descriptor = DepositDescriptor::decode_from_slice(&deposit.destination)?;
+    let ee_id = descriptor.dest_acct_serial();
+    let dest_ident = descriptor.dest_subject().to_subject_id();
     let intent = DepositIntent::new(amt, dest_ident);
-    state.insert_deposit_intent(deposit.ee_id, intent);
+    state.insert_deposit_intent(*ee_id, intent);
     Ok(())
 }

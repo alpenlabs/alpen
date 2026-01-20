@@ -14,7 +14,6 @@ thiserror.workspace = true
 strata-asm-common.workspace = true
 strata-bridge-types.workspace = true
 strata-codec.workspace = true
-strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 

@@ -1,6 +1,5 @@
 use strata_asm_common::AsmLog;
-use strata_codec::Codec;
-use strata_identifiers::{AccountSerial, SubjectId};
+use strata_codec::{Codec, VarVec};
 use strata_msg_fmt::TypeId;
 
 use crate::constants::DEPOSIT_LOG_TYPE_ID;
@@ -8,21 +7,18 @@ use crate::constants::DEPOSIT_LOG_TYPE_ID;
 /// Details for a deposit operation.
 #[derive(Debug, Clone, Codec)]
 pub struct DepositLog {
-    /// Identifier of the target execution environment.
-    pub ee_id: AccountSerial,
+    /// Destination
+    pub destination: VarVec<u8>,
     /// Amount in satoshis.
     pub amount: u64,
-    /// Destination subject identifier for the operation.
-    pub addr: SubjectId,
 }
 
 impl DepositLog {
     /// Create a new DepositLog instance.
-    pub fn new(ee_id: AccountSerial, amount: u64, addr: SubjectId) -> Self {
+    pub fn new(destination: VarVec<u8>, amount: u64) -> Self {
         Self {
-            ee_id,
+            destination,
             amount,
-            addr,
         }
     }
 }

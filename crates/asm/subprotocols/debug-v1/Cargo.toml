@@ -20,4 +20,4 @@ strata-primitives.workspace = true
 strata-asm-bridge-msgs.workspace = true
 
 [dev-dependencies]
-strata-identifiers.workspace = true
+strata-codec.workspace = true

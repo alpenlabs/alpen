@@ -1,10 +1,11 @@
-use std::{error, fmt, mem};
+use std::{fmt, mem};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+use thiserror::Error;
 
 const ACCT_ID_LEN: usize = 32;
 pub const SUBJ_ID_LEN: usize = 32;
@@ -190,26 +191,12 @@ impl fmt::Display for SubjectId {
 crate::impl_ssz_transparent_byte_array_wrapper!(SubjectId, 32);
 
 /// Error type for [`SubjectBytes`] operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum SubjectIdBytesError {
     /// Subject bytes exceed the maximum allowed length.
-    TooLong(usize, usize),
+    #[error("subject bytes length {0} exceeds maximum length {SUBJ_ID_LEN}")]
+    TooLong(usize),
 }
-
-impl fmt::Display for SubjectIdBytesError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::TooLong(actual, max) => {
-                write!(
-                    f,
-                    "subject bytes length {actual} exceeds maximum length {max}"
-                )
-            }
-        }
-    }
-}
-
-impl error::Error for SubjectIdBytesError {}
 
 /// Variable-length [`SubjectId`] bytes.
 ///
@@ -227,7 +214,7 @@ impl SubjectIdBytes {
     /// Returns an error if the length exceeds [`SUBJ_ID_LEN`].
     pub fn try_new(bytes: Vec<u8>) -> Result<Self, SubjectIdBytesError> {
         if bytes.len() > SUBJ_ID_LEN {
-            return Err(SubjectIdBytesError::TooLong(bytes.len(), SUBJ_ID_LEN));
+            return Err(SubjectIdBytesError::TooLong(bytes.len()));
         }
         Ok(Self(bytes))
     }
@@ -390,8 +377,8 @@ mod tests {
                 let len = bytes.len();
                 let result = SubjectIdBytes::try_new(bytes);
                 prop_assert!(result.is_err());
-                prop_assert!(matches!(result, Err(SubjectIdBytesError::TooLong(actual, expected))
-                    if actual == len && expected == SUBJ_ID_LEN));
+                prop_assert!(matches!(result, Err(SubjectIdBytesError::TooLong(actual))
+                    if actual == len));
             }
 
             #[test]
