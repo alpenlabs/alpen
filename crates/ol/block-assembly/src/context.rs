@@ -1,7 +1,7 @@
 //! Block assembly context trait.
 
 use strata_asm_common::AsmLogEntry;
-use strata_identifiers::OLTxId;
+use strata_identifiers::{OLTxId, Slot};
 use strata_ol_chain_types_new::OLTransaction;
 use strata_primitives::l1::L1BlockCommitment;
 
@@ -12,12 +12,14 @@ use crate::error::BlockAssemblyError;
 /// Provides access to external resources needed for OL block assembly:
 /// - ASM logs for L1 updates (checkpoints, deposits)
 /// - Mempool for pending transactions
+/// - Epoch sealing policy for terminal block decisions
 ///
 /// # Design Notes
 ///
 /// This trait provides access to external data sources needed during block assembly:
 /// - **ASM logs**: Read-only access to validated L1 data (checkpoints, deposits)
 /// - **Mempool**: Read and write access to pending transactions
+/// - **Sealing policy**: Determines when to create terminal blocks
 ///
 /// The context provides access to external resources
 /// without owning or mutating them directly.
@@ -73,4 +75,10 @@ pub trait BlockAssemblyContext {
         &self,
         txids: &[OLTxId],
     ) -> Result<Vec<OLTxId>, BlockAssemblyError>;
+
+    /// Determines whether an epoch should be sealed at the given slot.
+    ///
+    /// Returns `true` if a terminal block should be created at this slot,
+    /// `false` for a common block.
+    fn should_seal_epoch(&self, slot: Slot) -> bool;
 }
