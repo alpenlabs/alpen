@@ -60,6 +60,8 @@ mod handle;
 mod reorg;
 mod state;
 mod task;
+#[cfg(test)]
+pub(crate) mod test_utils;
 
 pub use handle::{create_batch_lifecycle_task, BatchLifecycleHandle};
 pub use state::{init_lifecycle_state, BatchLifecycleState};

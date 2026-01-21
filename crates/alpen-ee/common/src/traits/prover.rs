@@ -16,6 +16,7 @@ pub enum ProofGenerationStatus {
 
 /// Interface between Prover and Batch assembly
 #[async_trait]
+#[cfg_attr(feature = "test-utils", mockall::automock)]
 pub trait BatchProver: Sized {
     /// Request proof generation for batch_id.
     /// Ok(()) -> proof generation has been queued

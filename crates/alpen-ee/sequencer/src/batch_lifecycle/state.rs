@@ -105,6 +105,25 @@ impl BatchLifecycleState {
     pub(crate) fn can_advance_proof_frontier(&self, latest_batch_idx: u64) -> bool {
         self.pending_proof.is_none() && self.proof_frontier_idx <= latest_batch_idx
     }
+
+    /// Create a new state for testing purposes.
+    ///
+    /// This constructor allows tests to create specific state configurations
+    /// without going through storage initialization.
+    #[cfg(test)]
+    pub(crate) fn new_for_testing(
+        da_frontier_idx: u64,
+        proof_frontier_idx: u64,
+        pending_da: Option<PendingOperation>,
+        pending_proof: Option<PendingOperation>,
+    ) -> Self {
+        Self {
+            da_frontier_idx,
+            proof_frontier_idx,
+            pending_da,
+            pending_proof,
+        }
+    }
 }
 
 /// Initialize batch lifecycle state from storage.

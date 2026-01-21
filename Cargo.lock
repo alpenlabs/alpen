@@ -1252,6 +1252,7 @@ dependencies = [
  "alpen-ee-common",
  "alpen-ee-exec-chain",
  "async-trait",
+ "bitcoin",
  "eyre",
  "futures",
  "mockall",
