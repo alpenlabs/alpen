@@ -1,6 +1,6 @@
 //! Types relating to EE block related structures with SSZ support.
 
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, SentMessage, SubjectId};
+use strata_acct_types::Hash;
 
 use crate::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
 

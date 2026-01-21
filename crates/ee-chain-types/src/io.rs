@@ -1,6 +1,6 @@
 use strata_acct_types::{AccountId, BitcoinAmount, SentMessage, SubjectId};
 
-use crate::{ExecBlockCommitment, ExecInputs, ExecOutputs, OutputTransfer, SubjectDepositData};
+use crate::{ExecInputs, ExecOutputs, OutputTransfer, SubjectDepositData};
 
 impl ExecInputs {
     fn new(subject_deposits: Vec<SubjectDepositData>) -> Self {
