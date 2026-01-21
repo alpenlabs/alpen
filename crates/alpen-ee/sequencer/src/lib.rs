@@ -1,6 +1,7 @@
 //! Sequencer specific workers and utils.
 
 mod batch_builder;
+mod batch_lifecycle;
 mod block_builder;
 mod ol_chain_tracker;
 #[cfg(test)]
@@ -11,6 +12,9 @@ pub use batch_builder::{
     create_batch_builder, init_batch_builder_state, Accumulator, BatchBuilderHandle,
     BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockCountData, BlockCountPolicy,
     BlockCountValue, BlockDataProvider, FixedBlockCountSealing,
+};
+pub use batch_lifecycle::{
+    create_batch_lifecycle_task, init_lifecycle_state, BatchLifecycleHandle, BatchLifecycleState,
 };
 pub use block_builder::{block_builder_task, BlockBuilderConfig};
 pub use ol_chain_tracker::{
