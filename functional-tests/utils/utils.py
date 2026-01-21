@@ -344,25 +344,6 @@ def generate_seqpubkey_from_seed(path: str) -> str:
     return res
 
 
-def generate_opxpub_from_seed(path: str) -> str:
-    """Generates operator Musig2 pubkey from xprv at file path."""
-    # fmt: off
-    cmd = [
-        "strata-datatool",
-        "-b", "regtest",  # Global option: must come before subcommand
-        "genopxpub",
-        "-f", path,
-        "-w"
-    ]
-    # fmt: on
-
-    res = subprocess.run(cmd, stdout=subprocess.PIPE)
-    res.check_returncode()
-    res = str(res.stdout, "utf8").strip()
-    assert len(res) > 0, "no output generated"
-    return res
-
-
 def generate_params(
     settings: RollupParamsSettings,
     seqpubkey: str,
@@ -485,7 +466,7 @@ def get_bridge_pubkey_from_cfg(cfg_params) -> str:
     from factory.test_cli import convert_to_xonly_pk, musig_aggregate_pks
 
     # Slight hack to convert to appropriate operator pubkey from cfg values.
-    op_pks = ["02" + pk for pk in cfg_params.operator_config.get_operators_pubkeys()]
+    op_pks = ["02" + pk for pk in cfg_params.operators]
     op_x_only_pks = [convert_to_xonly_pk(pk) for pk in op_pks]
     agg_pubkey = musig_aggregate_pks(op_x_only_pks)
     return agg_pubkey

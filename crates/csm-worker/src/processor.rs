@@ -230,18 +230,12 @@ mod tests {
                     1760287557, 1760287557, 1760287557, 1760287558, 1760287558, 1760287558
                 ]
             },
-            "operator_config": {
-                "static": [
-                    {
-                        "signing_pk": "6e31167a21a20186c270091f3705ba9ba0f9649af9281a4331962a2f02f0b382",
-                        "wallet_pk": "59df7b48d6adbb11fb9f8e4d4a296df83b3edcff6573e80b6c77cdcc4a729ecc"
-                    },
-                    {
-                        "signing_pk": "9ac5088dcf5dea3593e6095250875c89a0138b3e027f615d782be2080a5e4bac",
-                        "wallet_pk": "f86435262dde652b3aef97a4a8cc9ae19aa5da13159e778da0fbceb3a3adb923"
-                    }
-                ]
-            },
+            "operators": [
+                    "6e31167a21a20186c270091f3705ba9ba0f9649af9281a4331962a2f02f0b382",
+                    "59df7b48d6adbb11fb9f8e4d4a296df83b3edcff6573e80b6c77cdcc4a729ecc",
+                    "9ac5088dcf5dea3593e6095250875c89a0138b3e027f615d782be2080a5e4bac",
+                    "f86435262dde652b3aef97a4a8cc9ae19aa5da13159e778da0fbceb3a3adb923"
+                ],
             "evm_genesis_block_hash": "46c0dc60fb131be4ccc55306a345fcc20e44233324950f978ba5f185aa2af4dc",
             "evm_genesis_block_state_root": "351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
             "l1_reorg_safe_depth": 4,

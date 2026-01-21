@@ -15,30 +15,24 @@ use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
     secp256k1::SECP256K1,
-    Amount, Network,
+    Amount, Network, XOnlyPublicKey,
 };
 use rand_core::CryptoRngCore;
 use reth_chainspec::ChainSpec;
-use shrex::Hex;
-use strata_bridge_types::OperatorPubkeys;
 use strata_crypto::keys::zeroizable::ZeroizableXpriv;
-use strata_key_derivation::{error::KeyError, operator::OperatorKeys, sequencer::SequencerKeys};
+use strata_key_derivation::{error::KeyError, sequencer::SequencerKeys};
 use strata_l1_txfmt::MagicBytes;
-use strata_params::{OperatorConfig, ProofPublishMode, RollupParams};
+use strata_params::{ProofPublishMode, RollupParams};
 use strata_predicate::PredicateKey;
-use strata_primitives::{block_credential, buf::Buf32, crypto::EvenSecretKey, l1::GenesisL1View};
+use strata_primitives::{block_credential, buf::Buf32, l1::GenesisL1View};
 use zeroize::Zeroize;
 
 use crate::args::{
-    CmdContext, SubcGenL1View, SubcOpXpub, SubcParams, SubcSeqPrivkey, SubcSeqPubkey, SubcXpriv,
-    Subcommand,
+    CmdContext, SubcGenL1View, SubcParams, SubcSeqPrivkey, SubcSeqPubkey, SubcXpriv, Subcommand,
 };
 
 /// Sequencer key environment variable.
 const SEQKEY_ENVVAR: &str = "STRATA_SEQ_KEY";
-
-/// Operator key environment variable.
-const OPKEY_ENVVAR: &str = "STRATA_OP_KEY";
 
 /// Bitcoin network environment variable.
 const BITCOIN_NETWORK_ENVVAR: &str = "BITCOIN_NETWORK";
@@ -93,7 +87,6 @@ pub(super) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
         Subcommand::Xpriv(subc) => exec_genxpriv(subc, ctx),
         Subcommand::SeqPubkey(subc) => exec_genseqpubkey(subc, ctx),
         Subcommand::SeqPrivkey(subc) => exec_genseqprivkey(subc, ctx),
-        Subcommand::OpXpub(subc) => exec_genopxpub(subc, ctx),
         Subcommand::Params(subc) => exec_genparams(subc, ctx),
         #[cfg(feature = "btc-client")]
         Subcommand::GenL1View(subc) => exec_genl1view(subc, ctx),
@@ -197,30 +190,6 @@ fn exec_genseqprivkey(cmd: SubcSeqPrivkey, _ctx: &mut CmdContext) -> anyhow::Res
     let seq_keys = SequencerKeys::new(&xpriv)?;
     let seq_xpriv = seq_keys.derived_xpriv();
     println!("{seq_xpriv}");
-
-    Ok(())
-}
-
-/// Executes the `genopxpub` subcommand.
-///
-/// Generates the root xpub for an operator.
-fn exec_genopxpub(cmd: SubcOpXpub, _ctx: &mut CmdContext) -> anyhow::Result<()> {
-    let Some(xpriv) = resolve_xpriv(&cmd.key_file, cmd.key_from_env, OPKEY_ENVVAR)? else {
-        anyhow::bail!("privkey unset");
-    };
-
-    let op_keys = OperatorKeys::new(&xpriv)?;
-    if cmd.p2p {
-        let p2p_pk = op_keys.message_verifying_key().to_bytes();
-        println!("{:?}", Hex(p2p_pk));
-    }
-
-    if cmd.wallet {
-        let wallet_pk = EvenSecretKey::from(op_keys.wallet_xpriv().private_key)
-            .x_only_public_key(SECP256K1)
-            .0;
-        println!("{:?}", Hex(wallet_pk.serialize()));
-    }
 
     Ok(())
 }
@@ -460,22 +429,11 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         .map(block_credential::CredRule::SchnorrKey)
         .unwrap_or(block_credential::CredRule::Unchecked);
 
-    let opkeys = config
+    let opkeys: Vec<XOnlyPublicKey> = config
         .opkeys
         .iter()
-        .map(OperatorKeys::new)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let pub_opkeys = opkeys.iter().map(|keys| {
-        OperatorPubkeys::new(
-            keys.message_verifying_key().to_bytes().into(),
-            EvenSecretKey::from(keys.wallet_xpriv().private_key)
-                .x_only_public_key(SECP256K1)
-                .0
-                .serialize()
-                .into(),
-        )
-    });
+        .map(|o| o.to_keypair(SECP256K1).x_only_public_key().0)
+        .collect();
 
     Ok(RollupParams {
         magic_bytes: config.magic,
@@ -483,7 +441,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         cred_rule: cr,
         // TODO do we want to remove this?
         genesis_l1_view: config.genesis_l1_view,
-        operator_config: OperatorConfig::Static(pub_opkeys.collect()),
+        operators: opkeys,
         evm_genesis_block_hash: config.evm_genesis_info.blockhash.0.into(),
         evm_genesis_block_state_root: config.evm_genesis_info.stateroot.0.into(),
         // TODO make configurable

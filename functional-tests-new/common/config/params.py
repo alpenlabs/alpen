@@ -50,17 +50,6 @@ def gen_random_keypair() -> tuple[str, Key]:
 
 
 @dataclass
-class OperatorPubkeys:
-    wallet_pk: str = field(default_factory=lambda: gen_random_keypair()[0])
-    signing_pk: str = field(default_factory=lambda: gen_random_keypair()[0])
-
-
-@dataclass
-class OperatorConfig:
-    static: list[OperatorPubkeys] = field(default_factory=lambda: [OperatorPubkeys()])
-
-
-@dataclass
 class ProofPublishModeTimeout:
     timeout: int = field(default=30)
 
@@ -82,7 +71,7 @@ class RollupParams:
     block_time: int = field(default=5000)  # millisecs
     cred_rule: CredRule = field(default="unchecked")
     genesis_l1_view: GenesisL1View = field(default_factory=GenesisL1View)
-    operator_config: OperatorConfig = field(default_factory=OperatorConfig)
+    operators: list[str] = field(default_factory=lambda: [gen_random_keypair()[0]])
     evm_genesis_block_hash: str = field(default_factory=lambda: hex_bytes_repeated(0))
     evm_genesis_block_state_root: str = field(default_factory=lambda: hex_bytes_repeated(0))
     l1_reorg_safe_depth: int = field(default=6)
