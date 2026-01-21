@@ -13,6 +13,7 @@ use super::state::{recover_from_storage, BatchLifecycleState};
 ///
 /// Indicates whether a reorg has been detected and what kind.
 #[derive(Debug)]
+#[allow(dead_code, clippy::allow_attributes, reason = "used in logging")]
 pub(crate) enum ReorgDetected {
     /// No reorg detected.
     None,

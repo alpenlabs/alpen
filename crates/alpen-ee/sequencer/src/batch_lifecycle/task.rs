@@ -270,8 +270,10 @@ pub(crate) async fn batch_lifecycle_task<D, P, S>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use alpen_ee_common::{MockBatchDaProvider, MockBatchProver, MockBatchStorage};
-    use mockall::predicate::eq;
+    use mockall::predicate::{always, eq};
     use tokio::sync::watch;
 
     use super::*;
@@ -287,9 +289,9 @@ mod tests {
         let (proof_ready_tx, _proof_ready_rx) = watch::channel(make_batch_id(0, 0));
 
         BatchLifecycleCtx {
-            batch_storage: std::sync::Arc::new(storage),
-            da_provider: std::sync::Arc::new(da_provider),
-            prover: std::sync::Arc::new(prover),
+            batch_storage: Arc::new(storage),
+            da_provider: Arc::new(da_provider),
+            prover: Arc::new(prover),
             sealed_batch_rx,
             proof_ready_tx,
         }
@@ -312,7 +314,7 @@ mod tests {
             .returning(|_| Ok(Some((make_batch(3, 2, 3), BatchStatus::Sealed))));
         storage
             .expect_update_batch_status()
-            .with(eq(make_batch_id(2, 3)), mockall::predicate::always())
+            .with(eq(make_batch_id(2, 3)), always())
             .times(1)
             .returning(|_, _| Ok(()));
 
