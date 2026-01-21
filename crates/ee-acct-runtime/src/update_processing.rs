@@ -16,7 +16,7 @@ use strata_ee_acct_types::{
     DecodedEeMessageData, EeAccountState, EnvError, EnvResult, ExecutionEnvironment,
     MessageDecodeResult, PendingInputEntry, UpdateExtraData,
 };
-use strata_ee_chain_types::SubjectDepositData;
+use strata_ee_chain_types::{SequenceTracker, SubjectDepositData};
 use strata_snark_acct_types::{
     LedgerRefs, MessageEntry, UpdateInputData, UpdateOperationData, UpdateOutputs,
 };
@@ -24,7 +24,7 @@ use strata_snark_acct_types::{
 use crate::{
     exec_processing::process_segments,
     private_input::SharedPrivateInput,
-    verification_state::{InputTracker, PendingCommit, UpdateVerificationState},
+    verification_state::{PendingCommit, UpdateVerificationState},
 };
 
 /// Common data from various sources passed around together.
@@ -219,7 +219,7 @@ fn verify_accumulated_state(
     }
 
     // 2. Verify segments against the accumulated state.
-    let mut input_tracker = InputTracker::new(astate.pending_inputs());
+    let mut input_tracker = SequenceTracker::new(astate.pending_inputs());
     process_segments(
         uvstate,
         &mut input_tracker,

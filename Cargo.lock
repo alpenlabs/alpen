@@ -14492,8 +14492,19 @@ dependencies = [
  "ssz_types",
  "strata-acct-types",
  "strata-test-utils-ssz",
+ "thiserror 2.0.17",
  "tree_hash 0.12.1",
  "tree_hash_derive 0.12.1",
+]
+
+[[package]]
+name = "strata-ee-chunk-runtime"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-snark-acct-types",
 ]
 
 [[package]]
