@@ -61,10 +61,12 @@ impl ControlByte {
     }
 
     fn set_serial_len(&mut self, len: u8) {
+        debug_assert!(len < 3, "len must be 0, 1, or 2 (got {})", len);
         self.0 |= len << 4
     }
 
     fn set_serial_msb(&mut self, msb: u8) {
+        debug_assert!(msb <= 0xF, "msb must be a nibble 0-15 (got {:#04x})", msb);
         self.0 |= msb
     }
 }
@@ -102,15 +104,16 @@ struct EncodedSerial {
     /// Control byte containing length encoding and MSB nibble.
     control: ControlByte,
 
-    /// Additional 1-3 bytes containing the remaining serial bits.
-    additional_bytes: Vec<u8>,
+    /// Additional bytes containing the remaining serial bits.
+    /// The actual length (1-3 bytes) is determined by `control.serial_len()`.
+    additional_bytes: [u8; 3],
 }
 
 impl EncodedSerial {
     /// Encodes an account serial into variable-length wire format.
     ///
     /// Returns [`DepositDescriptorError::SerialTooLarge`] if the serial exceeds
-    /// the maximum 28-bit value (268,435,455).
+    /// the maximum 28-bit value [`MAX_SERIAL_VALUE`].
     fn from_account_serial(serial: AccountSerial) -> Result<Self, DepositDescriptorError> {
         let value = *serial.inner();
         let mut control = ControlByte::default();
@@ -118,26 +121,28 @@ impl EncodedSerial {
         // Big-endian bytes: [msb, _, _, lsb]
         let [byte_0, byte_1, byte_2, byte_3] = value.to_be_bytes();
 
-        let additional_bytes = if value <= MAX_SERIAL_12_BITS {
+        let mut additional_bytes = [0u8; 3];
+        if value <= MAX_SERIAL_12_BITS {
             control.set_serial_len(0);
             control.set_serial_msb(byte_2);
-            vec![byte_3]
+            additional_bytes[0] = byte_3;
         } else if value <= MAX_SERIAL_20_BITS {
             control.set_serial_len(1);
             control.set_serial_msb(byte_1);
-            vec![byte_2, byte_3]
+            additional_bytes[0] = byte_2;
+            additional_bytes[1] = byte_3;
         } else if value <= MAX_SERIAL_28_BITS {
             control.set_serial_len(2);
             control.set_serial_msb(byte_0);
-            vec![byte_1, byte_2, byte_3]
+            additional_bytes[0] = byte_1;
+            additional_bytes[1] = byte_2;
+            additional_bytes[2] = byte_3;
         } else {
             return Err(DepositDescriptorError::SerialTooLarge(
                 value,
                 MAX_SERIAL_VALUE,
             ));
         };
-
-        debug_assert_eq!(control.serial_len(), additional_bytes.len());
 
         Ok(Self {
             control,
@@ -148,13 +153,13 @@ impl EncodedSerial {
     /// Reconstructs the original account serial from the encoded representation.
     fn to_account_serial(&self) -> AccountSerial {
         let msb_nibble = self.control.serial_msb();
-        let additional_len = self.additional_bytes.len();
+        let additional_len = self.control.serial_len();
 
         // Reconstruct the 4-byte big-endian representation
         let mut u32_bytes = [0u8; 4];
 
         // Copy the additional bytes to the end
-        u32_bytes[(4 - additional_len)..].copy_from_slice(&self.additional_bytes);
+        u32_bytes[(4 - additional_len)..].copy_from_slice(&self.additional_bytes[..additional_len]);
 
         // OR in the MSB nibble at the appropriate position
         let msb_index = 4 - additional_len - 1;
@@ -168,9 +173,10 @@ impl EncodedSerial {
         self.control
     }
 
-    /// Returns the additional bytes.
+    /// Returns the additional bytes slice based on the encoded length.
     fn additional_bytes(&self) -> &[u8] {
-        &self.additional_bytes
+        let len = self.control.serial_len();
+        &self.additional_bytes[..len]
     }
 }
 
@@ -292,10 +298,11 @@ impl DepositDescriptor {
         }
 
         // Reconstruct the account serial from control byte + additional bytes
-        let serial_bytes = bytes[1..(1 + serial_len)].to_vec();
+        let mut additional_bytes = [0u8; 3];
+        additional_bytes[..serial_len].copy_from_slice(&bytes[1..(1 + serial_len)]);
         let encoded = EncodedSerial {
             control,
-            additional_bytes: serial_bytes,
+            additional_bytes,
         };
         let dest_acct_serial = encoded.to_account_serial();
 
