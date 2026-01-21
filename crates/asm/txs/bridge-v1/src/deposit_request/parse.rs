@@ -64,10 +64,7 @@ mod tests {
         test_utils::{create_connected_drt_and_dt, create_test_operators, mutate_aux_data},
     };
 
-    const MIN_DESCRIPTOR_LEN: usize = 2;
-
-    /// Minimum encoded auxiliary data length in bytes.
-    const MIN_AUX_LEN: usize = 32 + MIN_DESCRIPTOR_LEN;
+    const MIN_AUX_LEN: usize = 32;
 
     fn create_drt_tx_with_info() -> (DepositRequestInfo, Transaction) {
         let mut arb = ArbitraryGenerator::new();
@@ -121,5 +118,9 @@ mod tests {
             err.kind(),
             TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
+
+        // REVIEW: Since we don't parse the deposit destination and treat it as a `Vec<u8>`, any
+        // SPS-50 auxiliary data with length ≥ [`MIN_AUX_LEN`] is considered valid at the
+        // ASM level, including empty destinations (32 bytes of just recovery_pk).
     }
 }
