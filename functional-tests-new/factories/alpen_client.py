@@ -79,7 +79,6 @@ class AlpenClientFactory(flexitest.Factory):
         http_port = self.next_port()
         p2p_port = self.next_port()
         authrpc_port = self.next_port()
-        discovery_port = self.next_port()
         logfile = datadir / "service.log"
 
         # Generate P2P secret key if not provided
@@ -91,9 +90,6 @@ class AlpenClientFactory(flexitest.Factory):
         # Remove 0x prefix if present
         key_hex = p2p_secret_key.removeprefix("0x")
         p2p_secret_key_file.write_text(key_hex)
-
-        # Allocate discv5 port if discovery is enabled
-        discv5_port = self.next_port() if enable_discovery else None
 
         # fmt: off
         cmd = [
@@ -109,23 +105,28 @@ class AlpenClientFactory(flexitest.Factory):
             "--http.port", str(http_port),
             "--http.api", "eth,net,admin,debug",
             "--authrpc.port", str(authrpc_port),
-            "--discovery.addr", "127.0.0.1",  # Force IPv4 for discovery
-            "--discovery.port", str(discovery_port),
             "--p2p-secret-key", str(p2p_secret_key_file),
             "--custom-chain", custom_chain,
             "-vvvv",
         ]
         # fmt: on
 
-        # Enable discovery if requested (for bootnode mode)
+        # Discovery mode configuration:
+        # - enable_discovery=True: Use discv5 only (disable discv4)
+        # - enable_discovery=False: Disable all discovery (rely on admin_addPeer/trusted-peers)
         if enable_discovery:
+            discv5_port = self.next_port()
             # fmt: off
             cmd.extend([
+                "--disable-discv4-discovery",  # Don't use legacy discv4
                 "--enable-discv5-discovery",
                 "--discovery.v5.addr", "127.0.0.1",
                 "--discovery.v5.port", str(discv5_port),
             ])
             # fmt: on
+        else:
+            # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
+            cmd.append("-d")
 
         http_url = f"http://127.0.0.1:{http_port}"
 
@@ -195,7 +196,6 @@ class AlpenClientFactory(flexitest.Factory):
         http_port = self.next_port()
         p2p_port = self.next_port()
         authrpc_port = self.next_port()
-        discovery_port = self.next_port()
         logfile = datadir / "service.log"
 
         # Generate P2P secret key if not provided
@@ -207,9 +207,6 @@ class AlpenClientFactory(flexitest.Factory):
         # Remove 0x prefix if present
         key_hex = p2p_secret_key.removeprefix("0x")
         p2p_secret_key_file.write_text(key_hex)
-
-        # Allocate discv5 port if discovery is enabled
-        discv5_port = self.next_port() if enable_discovery else None
 
         # fmt: off
         cmd = [
@@ -224,8 +221,6 @@ class AlpenClientFactory(flexitest.Factory):
             "--http.port", str(http_port),
             "--http.api", "eth,net,admin,debug",
             "--authrpc.port", str(authrpc_port),
-            "--discovery.addr", "127.0.0.1",  # Force IPv4 for discovery
-            "--discovery.port", str(discovery_port),
             "--p2p-secret-key", str(p2p_secret_key_file),
             "--custom-chain", custom_chain,
             "-vvvv",
@@ -236,19 +231,26 @@ class AlpenClientFactory(flexitest.Factory):
         if trusted_peers:
             cmd.extend(["--trusted-peers", ",".join(trusted_peers)])
 
-        # Add bootnodes if provided
+        # Add bootnodes if provided (requires discovery to be enabled)
         if bootnodes:
             cmd.extend(["--bootnodes", ",".join(bootnodes)])
 
-        # Enable discovery if requested
+        # Discovery mode configuration:
+        # - enable_discovery=True: Use discv5 only (disable discv4)
+        # - enable_discovery=False: Disable all discovery (rely on admin_addPeer/trusted-peers)
         if enable_discovery:
+            discv5_port = self.next_port()
             # fmt: off
             cmd.extend([
+                "--disable-discv4-discovery",  # Don't use legacy discv4
                 "--enable-discv5-discovery",
                 "--discovery.v5.addr", "127.0.0.1",
                 "--discovery.v5.port", str(discv5_port),
             ])
             # fmt: on
+        else:
+            # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
+            cmd.append("-d")
 
         http_url = f"http://127.0.0.1:{http_port}"
 
