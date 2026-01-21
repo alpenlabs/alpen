@@ -14,7 +14,7 @@ permissions: {}
 jobs:
   extract-rust-version:
     name: Extract Rust toolchain version
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
@@ -29,7 +29,7 @@ jobs:
 
   clippy:
     name: Run clippy on crates
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -53,7 +53,7 @@ jobs:
 
   miri:
     name: Check for memory safety issues with Miri (${{ matrix.crate }})
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -86,7 +86,7 @@ jobs:
 
   crate-checks:
     name: Check that crates compile on their own
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: extract-rust-version
     timeout-minutes: 90 # cold run takes a lot of time as each crate is compiled separately
     steps:
@@ -127,7 +127,7 @@ jobs:
 
   fmt:
     name: Check code formatting
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: extract-rust-version
     timeout-minutes: 30
     steps:
@@ -143,7 +143,7 @@ jobs:
 
   codespell:
     name: Check code spellings
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -153,7 +153,7 @@ jobs:
 
   taplo:
     name: Lint and check formatting of TOML files
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -175,7 +175,7 @@ jobs:
 
   extra-style:
     name: Extra style checks
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 2
     steps:
       - name: Checkout repository
@@ -192,7 +192,7 @@ jobs:
 
   lint-success:
     name: Check that lints passed
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: always()
     needs:
       - clippy

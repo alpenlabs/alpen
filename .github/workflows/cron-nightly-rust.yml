@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   format:
     name: Update nightly Rustc
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: write # Needed to create commits
       pull-requests: write # Needed to create a PR

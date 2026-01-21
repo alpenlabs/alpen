@@ -7,7 +7,7 @@ permissions: {}
 jobs:
   extract-rust-version:
     name: Extract Rust toolchain version
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
@@ -26,7 +26,7 @@ jobs:
       contents: write
       # Needed to post the performance report comments.
       pull-requests: write
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: extract-rust-version
 
     steps:

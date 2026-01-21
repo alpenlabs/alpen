@@ -14,7 +14,7 @@ permissions: {}
 jobs:
   supply-chain:
     name: Run `cargo-audit`
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
       - name: Checkout repository
