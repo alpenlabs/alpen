@@ -18,8 +18,10 @@ thiserror.workspace = true
 ssz_codegen.workspace = true
 
 [dev-dependencies]
-proptest.workspace = true
+strata-identifiers.workspace = true
 strata-test-utils-ssz.workspace = true
+
+proptest.workspace = true
 
 [lints]
 workspace = true
