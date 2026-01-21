@@ -12,6 +12,8 @@ strata-acct-types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
+thiserror.workspace = true
+
 [build-dependencies]
 ssz_codegen.workspace = true
 

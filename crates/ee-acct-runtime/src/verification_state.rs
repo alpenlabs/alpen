@@ -1,8 +1,8 @@
 //! Verification state accumulator.
 
 use strata_acct_types::{BitcoinAmount, Hash};
-use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult};
-use strata_ee_chain_types::BlockOutputs;
+use strata_ee_acct_types::{EeAccountState, EnvResult};
+use strata_ee_chain_types::ExecOutputs;
 use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
@@ -14,7 +14,9 @@ pub(crate) struct UpdateVerificationState {
     // balance bookkeeping as additional checks to avoid overdraw
     #[expect(dead_code, reason = "for future use")]
     orig_tracked_balance: BitcoinAmount,
+
     total_val_sent: BitcoinAmount,
+
     #[expect(dead_code, reason = "for future use")]
     total_val_recv: BitcoinAmount,
 
@@ -77,7 +79,7 @@ impl UpdateVerificationState {
     /// Appends a package block's outputs into the pending outputs being
     /// built internally.  This way we can compare it against the update op data
     /// later.
-    pub(crate) fn merge_block_outputs(&mut self, outputs: &BlockOutputs) {
+    pub(crate) fn merge_block_outputs(&mut self, outputs: &ExecOutputs) {
         // Just merge the entries into the buffer.  This is a little more
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic

@@ -8,13 +8,13 @@ use strata_ee_acct_types::{
     CommitBlockData, CommitChainSegment, EnvError, EnvResult, ExecBlock, ExecBlockOutput,
     ExecHeader, ExecPartialState, ExecPayload, ExecutionEnvironment, PendingInputEntry,
 };
-use strata_ee_chain_types::{BlockInputs, SequenceTracker};
+use strata_ee_chain_types::{ExecInputs, SequenceTracker};
 
-use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationState};
+use crate::verification_state::{PendingCommit, UpdateVerificationState};
 
 /// Validates that block inputs match pending inputs in the tracker.
 ///
-/// This function checks that the provided `BlockInputs` (separated by type)
+/// This function checks that the provided `ExecInputs` (separated by type)
 /// match the heterogeneous list of pending inputs. It maintains counters for
 /// each input type by using nested `InputTracker` instances, and validates that
 /// each pending input matches the corresponding entry in the type-specific vectors.
@@ -23,7 +23,7 @@ use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationS
 /// Does not modify the tracker's state unless all checks succeed.
 pub(crate) fn validate_block_inputs(
     tracker: &mut SequenceTracker<'_, PendingInputEntry>,
-    block_inputs: &BlockInputs,
+    block_inputs: &ExecInputs,
 ) -> EnvResult<()> {
     let expected_count = block_inputs.total_inputs();
     let remaining = tracker.remaining();
@@ -39,7 +39,9 @@ pub(crate) fn validate_block_inputs(
     for pending_input in &remaining[..expected_count] {
         match pending_input {
             PendingInputEntry::Deposit(expected_deposit) => {
-                deposit_tracker.consume_input(expected_deposit)?;
+                deposit_tracker
+                    .consume_input(&expected_deposit)
+                    .map_err(|_| EnvError::InvalidBlock)?;
             }
         }
     }
@@ -117,7 +119,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
         &self,
         header_intrinsics: &<<E::Block as ExecBlock>::Header as ExecHeader>::Intrinsics,
         body: &<E::Block as ExecBlock>::Body,
-        inputs: &BlockInputs,
+        inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<E>> {
         let exec_payload = ExecPayload::new(header_intrinsics, body);
         self.ee
@@ -128,7 +130,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
     ///
     /// This checks that the block inputs match the expected pending inputs,
     /// advances the tracker, and updates the consumed inputs count.
-    fn consume_pending_inputs_from_block(&mut self, block_inputs: &BlockInputs) -> EnvResult<()> {
+    fn consume_pending_inputs_from_block(&mut self, block_inputs: &ExecInputs) -> EnvResult<()> {
         validate_block_inputs(self.input_tracker, block_inputs)?;
         let input_count = block_inputs.total_inputs();
         self.uvstate.inc_consumed_inputs(input_count);
