@@ -57,9 +57,6 @@ impl ExecBlockCommitment {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-    use strata_test_utils_ssz::ssz_proptest;
-
     use super::*;
 
     mod exec_block_package {
