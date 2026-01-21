@@ -5,6 +5,7 @@ mod types;
 mod utils;
 
 pub use traits::{
+    da::BatchDaProvider,
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
@@ -18,6 +19,7 @@ pub use traits::{
 };
 #[cfg(feature = "test-utils")]
 pub use traits::{
+    da::MockBatchDaProvider,
     ol_client::{MockOLClient, MockSequencerOLClient},
     storage::{
         batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
