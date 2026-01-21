@@ -22,6 +22,7 @@ mod ssz_generated {
 }
 
 pub use error::OutputsError;
+pub use ledger::LedgerInterface;
 pub use ssz_generated::ssz::{
     accumulators::*, messages::*, outputs::*, proof_interface::*, state::*, update::*,
 };

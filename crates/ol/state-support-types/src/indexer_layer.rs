@@ -82,8 +82,8 @@ impl<S: ISnarkAccountStateMut + Clone> Clone for IndexerSnarkAccountStateMut<S> 
 }
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMut<S> {
-    fn verification_key(&self) -> &PredicateKey {
-        self.inner.verification_key()
+    fn verifying_key(&self) -> &PredicateKey {
+        self.inner.verifying_key()
     }
 
     fn seqno(&self) -> Seqno {

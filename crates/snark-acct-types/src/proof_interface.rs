@@ -17,10 +17,10 @@ impl UpdateProofPubParams {
         Self {
             cur_state,
             new_state,
-            message_inputs,
+            message_inputs: message_inputs.into(),
             ledger_refs,
             outputs,
-            extra_data,
+            extra_data: extra_data.into(),
         }
     }
 

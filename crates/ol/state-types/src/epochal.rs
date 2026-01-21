@@ -16,14 +16,14 @@ impl EpochalState {
         cur_epoch: u32,
         last_l1_block: L1BlockCommitment,
         checkpointed_epoch: EpochCommitment,
-        manifest_mmr: Mmr64,
+        manifests_mmr: Mmr64,
     ) -> Self {
         Self {
             total_ledger_funds,
             cur_epoch,
             last_l1_block,
             checkpointed_epoch,
-            manifest_mmr,
+            manifests_mmr,
         }
     }
 
@@ -53,7 +53,7 @@ impl EpochalState {
     pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
         let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
 
-        Mmr::<StrataHasher>::add_leaf(self.manifest_mmr.inner_mut(), manifest_hash.into_inner())
+        Mmr::<StrataHasher>::add_leaf(&mut self.manifests_mmr, manifest_hash.into_inner())
             .expect("MMR capacity exceeded");
         // FIXME make this conversion less weird
         self.last_l1_block = L1BlockCommitment::from_height_u64(height as u64, *mf.blkid())
@@ -88,7 +88,7 @@ impl EpochalState {
 
     /// Gets the ASM manifests MMR.
     pub fn asm_manifests_mmr(&self) -> &Mmr64 {
-        &self.manifest_mmr
+        &self.manifests_mmr
     }
 }
 

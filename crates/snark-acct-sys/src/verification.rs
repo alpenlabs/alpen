@@ -199,7 +199,7 @@ pub(crate) fn verify_update_proof(
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdate,
 ) -> AcctResult<()> {
-    let vk = snark_state.verification_key();
+    let vk = snark_state.verifying_key();
     let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
     let is_valid = vk
         .verify_claim_witness(&claim, update.update_proof())

@@ -1,7 +1,6 @@
-use ssz_derive::{Decode, Encode};
 use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher, tree_hash::TreeHash};
 use strata_ledger_types::*;
-use strata_merkle::{CompactMmr64, Mmr};
+use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
@@ -10,22 +9,21 @@ use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};
 impl OLSnarkAccountState {
     /// Creates an account instance with specific values.
     pub(crate) fn new(
-        vk: PredicateKey,
+        verifying_key: PredicateKey,
         seqno: Seqno,
         proof_state: ProofState,
         inbox_mmr: Mmr64,
     ) -> Self {
         Self {
-            verification_key: CodecSsz::new(vk),
-            seqno: CodecSsz::new(seqno),
-            proof_state: CodecSsz::new(proof_state),
-            inbox_mmr: CodecSsz::new(inbox_mmr),
+            verifying_key,
+            seqno,
+            proof_state,
+            inbox_mmr,
         }
     }
 
     /// Creates a new fresh instance with a particular initial state, but other
     /// bookkeeping set to 0.
-
     pub fn new_fresh(verification_key: PredicateKey, initial_state_root: Hash) -> Self {
         let ps = ProofState::new(initial_state_root, 0);
         let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
@@ -34,13 +32,13 @@ impl OLSnarkAccountState {
     }
 }
 
-impl ISnarkAccountState for NativeSnarkAccountState {
-    fn verification_key(&self) -> &PredicateKey {
-        self.verification_key.inner()
+impl ISnarkAccountState for OLSnarkAccountState {
+    fn verifying_key(&self) -> &PredicateKey {
+        &self.verifying_key
     }
 
     fn seqno(&self) -> Seqno {
-        *self.seqno.inner()
+        self.seqno
     }
 
     fn inner_state_root(&self) -> Hash {
@@ -48,19 +46,18 @@ impl ISnarkAccountState for NativeSnarkAccountState {
     }
 
     fn next_inbox_msg_idx(&self) -> u64 {
-        self.proof_state.inner().next_msg_read_idx
+        self.proof_state.next_msg_read_idx
     }
 
-    fn inbox_mmr(&self) -> &Mmr64 {
-        self.inbox_mmr.inner()
+    fn inbox_mmr(&self) -> &Mmr64B32 {
+        &self.inbox_mmr
     }
 }
 
 impl ISnarkAccountStateMut for OLSnarkAccountState {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
-        let ps = ProofState::new(state, next_read_idx);
-        self.proof_state = CodecSsz::new(ps);
-        self.seqno = CodecSsz::new(seqno);
+        self.proof_state = ProofState::new(state, next_read_idx);
+        self.seqno = seqno;
     }
 
     fn update_inner_state(
@@ -77,7 +74,7 @@ impl ISnarkAccountStateMut for OLSnarkAccountState {
 
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
         let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
-        Mmr::<StrataHasher>::add_leaf(self.inbox_mmr.inner_mut(), hash.into_inner())
+        Mmr::<StrataHasher>::add_leaf(&mut self.inbox_mmr, hash.into_inner())
             .expect("ol/state: mmr add_leaf");
         Ok(())
     }

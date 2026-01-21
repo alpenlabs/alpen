@@ -1,6 +1,7 @@
 //! Toplevel state.
 
 use bitcoin::absolute;
+use ssz::Encode;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_crypto::hash::raw;

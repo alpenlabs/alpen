@@ -6,6 +6,8 @@ use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_identifiers::{
     AccountSerial, Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
 };
+use strata_merkle::Mmr64B32;
+use strata_predicate::PredicateKey;
 
 use crate::ssz_generated::ssz::state::{
     EpochalState, GlobalState, OLAccountState, OLAccountTypeState, OLSnarkAccountState, OLState,
@@ -50,6 +52,10 @@ pub(crate) fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
                     cp_slot,
                     OLBlockId::from(cp_blkid),
                 ),
+                manifests_mmr: Mmr64B32 {
+                    entries: 0,
+                    roots: Default::default(),
+                },
             },
         )
 }
@@ -67,7 +73,7 @@ pub(crate) fn proof_state_strategy() -> impl Strategy<Value = ProofState> {
 pub(crate) fn ol_snark_account_state_strategy() -> impl Strategy<Value = OLSnarkAccountState> {
     buf32_strategy().prop_map(|inner_state| {
         // Use new_fresh to create a valid snark account state
-        OLSnarkAccountState::new_fresh(inner_state)
+        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), inner_state)
     })
 }
 

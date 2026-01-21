@@ -125,7 +125,7 @@ pub trait ISnarkAccountState: Sized {
     // Proof state accessors
 
     /// Gets the verification key for this snark account.
-    fn verification_key(&self) -> &PredicateKey;
+    fn verifying_key(&self) -> &PredicateKey;
 
     /// Gets the update seqno.
     fn seqno(&self) -> Seqno;
