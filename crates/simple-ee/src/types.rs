@@ -9,7 +9,7 @@ use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState,
 };
-use strata_ee_chain_types::BlockOutputs;
+use strata_ee_chain_types::ExecOutputs;
 
 /// Write batch containing the updated account state.
 #[derive(Clone, Debug)]
@@ -303,7 +303,7 @@ impl SimpleTransaction {
     pub fn apply(
         &self,
         accounts: &mut BTreeMap<SubjectId, u64>,
-        outputs: &mut BlockOutputs,
+        outputs: &mut ExecOutputs,
     ) -> EnvResult<()> {
         match self {
             SimpleTransaction::Transfer { from, to, value } => {

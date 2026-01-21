@@ -7,7 +7,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChainSegmentBuilder, UpdateBuilder};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState, ExecHeader, PendingInputEntry};
-use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
+use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
 use strata_simple_ee::{
     SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader, SimpleHeaderIntrinsics,
@@ -108,7 +108,7 @@ pub(crate) fn build_chain_segment_with_deposits(
 
     // Create a single block that consumes all deposits
     let body = SimpleBlockBody::new(vec![]);
-    let mut inputs = BlockInputs::new_empty();
+    let mut inputs = ExecInputs::new_empty();
     for deposit in deposits {
         inputs.add_subject_deposit(deposit);
     }

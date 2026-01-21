@@ -14625,6 +14625,7 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-acct-types",
+ "strata-identifiers",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.12.3",

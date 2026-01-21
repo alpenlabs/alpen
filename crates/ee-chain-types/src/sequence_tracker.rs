@@ -5,7 +5,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum SeqError {
     #[error("inconsistent entry at index {0}")]
-    InconsistentEntry(usize),
+    Mismatch(usize),
 
     #[error("consumed all entries but checked another")]
     Overrun,
@@ -59,7 +59,7 @@ impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {
         };
 
         if input != exp_next {
-            return Err(SeqError::InconsistentEntry(self.consumed));
+            return Err(SeqError::Mismatch(self.consumed));
         }
 
         self.consumed += 1;
@@ -139,7 +139,7 @@ mod tests {
 
         let result = tracker.consume_input(&99);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SeqError::MalformedCoinput));
+        assert!(matches!(result.unwrap_err(), SeqError::Mismatch(1)));
         assert_eq!(tracker.consumed(), 1); // consumed count unchanged on error
     }
 
@@ -154,7 +154,7 @@ mod tests {
 
         let result = tracker.consume_input(&2);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SeqError::MalformedCoinput));
+        assert!(matches!(result.unwrap_err(), SeqError::Overrun));
         assert_eq!(tracker.consumed(), 1);
     }
 
@@ -165,7 +165,7 @@ mod tests {
 
         let result = tracker.consume_input(&2);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SeqError::MalformedCoinput));
+        assert!(matches!(result.unwrap_err(), SeqError::Mismatch(0)));
         assert_eq!(tracker.consumed(), 0);
     }
 

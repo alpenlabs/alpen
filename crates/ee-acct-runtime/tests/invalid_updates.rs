@@ -14,7 +14,7 @@ use common::{
 use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
 use strata_ee_acct_runtime::ChainSegmentBuilder;
 use strata_ee_acct_types::{EnvError, ExecHeader, PendingInputEntry};
-use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
+use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
 use strata_simple_ee::{SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeaderIntrinsics};
 
 #[test]
@@ -149,7 +149,7 @@ fn test_insufficient_pending_inputs() {
         ChainSegmentBuilder::new(ee, exec_state.clone(), header.clone(), pending_inputs);
 
     let body = SimpleBlockBody::new(vec![]);
-    let mut inputs = BlockInputs::new_empty();
+    let mut inputs = ExecInputs::new_empty();
     inputs.add_subject_deposit(deposit);
 
     let intrinsics = SimpleHeaderIntrinsics {
@@ -183,7 +183,7 @@ fn test_wrong_deposit_value_in_block() {
         ChainSegmentBuilder::new(ee, exec_state.clone(), header.clone(), pending_inputs);
 
     let body = SimpleBlockBody::new(vec![]);
-    let mut inputs = BlockInputs::new_empty();
+    let mut inputs = ExecInputs::new_empty();
     inputs.add_subject_deposit(wrong_deposit); // Wrong value!
 
     let intrinsics = SimpleHeaderIntrinsics {
