@@ -344,25 +344,6 @@ def generate_seqpubkey_from_seed(path: str) -> str:
     return res
 
 
-def generate_opxpub_from_seed(path: str) -> str:
-    """Generates operator Musig2 pubkey from xprv at file path."""
-    # fmt: off
-    cmd = [
-        "strata-datatool",
-        "-b", "regtest",  # Global option: must come before subcommand
-        "genopxpub",
-        "-f", path,
-        "-w"
-    ]
-    # fmt: on
-
-    res = subprocess.run(cmd, stdout=subprocess.PIPE)
-    res.check_returncode()
-    res = str(res.stdout, "utf8").strip()
-    assert len(res) > 0, "no output generated"
-    return res
-
-
 def generate_params(
     settings: RollupParamsSettings,
     seqpubkey: str,
