@@ -8,7 +8,7 @@ use strata_ee_acct_types::{
     CommitBlockData, CommitChainSegment, EnvError, EnvResult, ExecBlock, ExecBlockOutput,
     ExecHeader, ExecPartialState, ExecPayload, ExecutionEnvironment, PendingInputEntry,
 };
-use strata_ee_chain_types::BlockInputs;
+use strata_ee_chain_types::{BlockInputs, SequenceTracker};
 
 use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationState};
 
@@ -22,7 +22,7 @@ use crate::verification_state::{InputTracker, PendingCommit, UpdateVerificationS
 /// Returns `Ok(())` if all inputs match, or an error if there's a mismatch.
 /// Does not modify the tracker's state unless all checks succeed.
 pub(crate) fn validate_block_inputs(
-    tracker: &mut InputTracker<'_, PendingInputEntry>,
+    tracker: &mut SequenceTracker<'_, PendingInputEntry>,
     block_inputs: &BlockInputs,
 ) -> EnvResult<()> {
     let expected_count = block_inputs.total_inputs();
@@ -33,7 +33,7 @@ pub(crate) fn validate_block_inputs(
     }
 
     // Create a tracker for deposits to validate against
-    let mut deposit_tracker = InputTracker::new(block_inputs.subject_deposits());
+    let mut deposit_tracker = SequenceTracker::new(block_inputs.subject_deposits());
 
     // Validate each pending input against the corresponding typed input
     for pending_input in &remaining[..expected_count] {
@@ -57,7 +57,7 @@ pub(crate) fn validate_block_inputs(
 
 struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
     uvstate: &'v mut UpdateVerificationState,
-    input_tracker: &'v mut InputTracker<'a, PendingInputEntry>,
+    input_tracker: &'v mut SequenceTracker<'a, PendingInputEntry>,
 
     ee: &'v E,
 
@@ -71,7 +71,7 @@ struct ChainVerificationState<'v, 'a, E: ExecutionEnvironment> {
 impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
     fn new(
         uvstate: &'v mut UpdateVerificationState,
-        input_tracker: &'v mut InputTracker<'a, PendingInputEntry>,
+        input_tracker: &'v mut SequenceTracker<'a, PendingInputEntry>,
         ee: &'v E,
         exec_state: E::PartialState,
         last_exec_header: <E::Block as ExecBlock>::Header,
@@ -182,7 +182,7 @@ impl<'v, 'a, E: ExecutionEnvironment> ChainVerificationState<'v, 'a, E> {
 /// verifying the blocks and managing inputs/outputs/etc.
 pub(crate) fn process_segments<E: ExecutionEnvironment>(
     uvstate: &mut UpdateVerificationState,
-    input_tracker: &mut InputTracker<'_, PendingInputEntry>,
+    input_tracker: &mut SequenceTracker<'_, PendingInputEntry>,
     segments: &[CommitChainSegment],
     pre_state: &[u8],
     cur_tip_header: &[u8],
