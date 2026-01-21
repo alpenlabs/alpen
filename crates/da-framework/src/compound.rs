@@ -59,8 +59,7 @@ impl<T: Bitmap> BitSeqReader<T> {
     }
 
     /// Returns the next bit, if possible.
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> bool {
+    pub fn next_bit(&mut self) -> bool {
         if self.off >= T::BITS {
             panic!("bitqueue: out of bits");
         }
@@ -76,7 +75,7 @@ impl<T: Bitmap> BitSeqReader<T> {
         &mut self,
         dec: &mut impl Decoder,
     ) -> CodecResult<C> {
-        let set = self.next();
+        let set = self.next_bit();
         if set {
             C::decode_set(dec)
         } else {
@@ -146,10 +145,28 @@ impl<T: Bitmap> Default for BitSeqWriter<T> {
 ///     }
 /// }
 /// ```
+///
+/// # Limitations
+///
+/// - **Type coercion is only supported for registers**, not counters. Counter target types are
+///   determined by the [`CounterScheme::Base`](crate::CounterScheme::Base) type.
+///
+/// - **Context is ignored for primitive fields.** While the macro accepts a context type parameter
+///   (`DiffType<ContextType> ...`), primitive fields (`DaRegister`, `DaCounter`) have `Context =
+///   ()` and the macro passes `&()` to their `apply` and `poll_context` methods. The compound's
+///   context parameter is currently unused.
+///
+/// # Context-aware resolution
+///
+/// For cases where field resolution requires context (e.g., resolving compact serials
+/// to full IDs using a lookup table), implement [`DaWrite`](crate::DaWrite) manually instead of
+/// using the macro. This gives full control over how context is used during apply.
+///
+/// See the `context` test module for an example of manual `DaWrite` implementation.
 // TODO turn this into a proc macro
 #[macro_export]
 macro_rules! make_compound_impl {
-    // Entry point without context type - delegates to version with () context
+    // Entry point without context type - uses () context
     (
         $tyname:ident $maskty:ident => $target:ty {
             $( $fname:ident : $daty:ident $fspec:tt ),* $(,)?
@@ -169,7 +186,6 @@ macro_rules! make_compound_impl {
         }
     ) => {
         // Compile-time check: ensure bitmap has enough bits for all fields.
-        // Equal to const_assert! from static_assertions, but doesn't bring the dependency.
         const _: () = {
             const FIELD_COUNT: usize = [$(stringify!($fname)),*].len();
             const MASK_BITS: usize = <$maskty>::BITS as usize;
@@ -193,8 +209,6 @@ macro_rules! make_compound_impl {
 
                 bitw.mask().encode(enc)?;
 
-                // This goes through them in the same order as the above, which
-                // is why this is safe.
                 $(
                     if !$crate::CompoundMember::is_default(&self.$fname) {
                         $crate::CompoundMember::encode_set(&self.$fname, enc)?;
@@ -207,30 +221,30 @@ macro_rules! make_compound_impl {
 
         impl $crate::DaWrite for $tyname {
             type Target = $target;
-
             type Context = $ctxty;
 
             fn is_default(&self) -> bool {
                 let mut v = true;
-
-                // Kinda weird way to && all these different values.
                 $(
                     v &= $crate::DaWrite::is_default(&self.$fname);
                 )*
-
                 v
             }
 
-            fn poll_context(&self, _target: &Self::Target, _context: &Self::Context) -> Result<(), $crate::DaError> {
-                // Note: poll_context is skipped for coercion fields since the types don't match.
-                // This is fine since poll_context is mainly used for context validation.
+            fn poll_context(&self, target: &Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
+                // Suppress unused variable warning when no fields use context resolver
+                let _ = context;
+                $(
+                    $crate::_mct_field_poll_context!(self target context; $fname $daty $fspec);
+                )*
                 Ok(())
             }
 
-            fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), $crate::DaError> {
-                // Depends on all the members being accessible.
+            fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
+                // Suppress unused variable warning when no fields use context resolver
+                let _ = context;
                 $(
-                    $crate::_mct_field_apply!(self target; $fname $daty $fspec);
+                    $crate::_mct_field_apply!(self target context; $fname $daty $fspec);
                 )*
                 Ok(())
             }
@@ -261,26 +275,55 @@ macro_rules! _mct_field_decode {
     };
 }
 
+/// Expands to poll_context logic for each type of member.
+///
+/// Note: Primitives (DaRegister, DaCounter) have `Context = ()`, so we pass `&()`
+/// to their poll_context. Coercion fields skip poll_context since types don't match.
+#[macro_export]
+macro_rules! _mct_field_poll_context {
+    // Coercion - skip poll_context (types don't match)
+    ($self:ident $target:ident $context:ident; $fname:ident register [ $fty:ty => $targetfty:ty ]) => {
+        // Skip: coercion field types don't match, poll_context not applicable
+    };
+    // Normal register - primitives have Context = (), pass &()
+    ($self:ident $target:ident $context:ident; $fname:ident register ( $fty:ty )) => {
+        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
+    };
+    ($self:ident $target:ident $context:ident; $fname:ident register { $fty:ty }) => {
+        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
+    };
+    // Counter - primitives have Context = (), pass &()
+    ($self:ident $target:ident $context:ident; $fname:ident counter ( $fty:ty )) => {
+        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
+    };
+    ($self:ident $target:ident $context:ident; $fname:ident counter { $fty:ty }) => {
+        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
+    };
+}
+
 /// Expands to apply logic for each type of member that we support in a compound.
+///
+/// Note: Primitives (DaRegister, DaCounter) have `Context = ()`, so we pass `&()`
+/// to their apply. Coercion fields use `apply_into` which performs `Into` conversion.
 #[macro_export]
 macro_rules! _mct_field_apply {
-    // Register with coercion - use apply_into
-    ($self:ident $target:ident; $fname:ident register [ $fty:ty => $targetfty:ty ]) => {
+    // Register with coercion - use apply_into for Into conversion
+    ($self:ident $target:ident $context:ident; $fname:ident register [ $fty:ty => $targetfty:ty ]) => {
         $self.$fname.apply_into(&mut $target.$fname)
     };
-    // Register without coercion - use standard DaWrite::apply
-    ($self:ident $target:ident; $fname:ident register ( $fty:ty )) => {
-        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
+    // Normal register - primitives have Context = (), pass &()
+    ($self:ident $target:ident $context:ident; $fname:ident register ( $fty:ty )) => {
+        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
-    ($self:ident $target:ident; $fname:ident register { $fty:ty }) => {
-        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
+    ($self:ident $target:ident $context:ident; $fname:ident register { $fty:ty }) => {
+        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
-    // Counter - use standard DaWrite::apply (counter targets scheme's Base type)
-    ($self:ident $target:ident; $fname:ident counter ( $fty:ty )) => {
-        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
+    // Counter - primitives have Context = (), pass &()
+    ($self:ident $target:ident $context:ident; $fname:ident counter ( $fty:ty )) => {
+        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
-    ($self:ident $target:ident; $fname:ident counter { $fty:ty }) => {
-        $crate::ContextlessDaWrite::apply(&$self.$fname, &mut $target.$fname)?
+    ($self:ident $target:ident $context:ident; $fname:ident counter { $fty:ty }) => {
+        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
 }
 
@@ -473,6 +516,167 @@ mod tests {
 
             assert_eq!(decoded.balance.new_value().unwrap().0, 500);
             assert_eq!(decoded.nonce.diff(), Some(&10u8));
+        }
+    }
+
+    // Test context-aware resolution using manual DaWrite impl.
+    // Use case: encode compact serials, resolve to full IDs using context at apply time.
+    //
+    // When context is needed for field resolution, implement DaWrite manually instead
+    // of using the macro. This gives full control over context handling.
+    mod context {
+        use std::collections::HashMap;
+
+        use crate::{
+            BitSeqReader, BitSeqWriter, Codec, CodecError, CompoundMember, DaError, DaRegister,
+            DaWrite, Decoder, Encoder, decode_buf_exact, encode_to_vec,
+        };
+
+        /// Compact serial number used in encoding (small, efficient)
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        struct AccountSerial(u16);
+
+        impl Codec for AccountSerial {
+            fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+                self.0.encode(enc)
+            }
+            fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+                Ok(Self(u16::decode(dec)?))
+            }
+        }
+
+        /// Full account ID (what we actually store in state)
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        struct AccountId([u8; 20]);
+
+        /// Context that resolves serials to full IDs
+        struct SerialResolver {
+            mapping: HashMap<u16, AccountId>,
+        }
+
+        impl SerialResolver {
+            fn resolve(&self, serial: AccountSerial) -> Result<AccountId, DaError> {
+                self.mapping
+                    .get(&serial.0)
+                    .copied()
+                    .ok_or(DaError::InsufficientContext)
+            }
+        }
+
+        /// Target state type
+        #[derive(Clone, Debug, Default, PartialEq, Eq)]
+        struct Transfer {
+            from: AccountId,
+            to: AccountId,
+            amount: u64,
+        }
+
+        /// Diff type - stores compact serials for accounts
+        #[derive(Debug, Default)]
+        struct TransferDiff {
+            from: DaRegister<AccountSerial>,
+            to: DaRegister<AccountSerial>,
+            amount: DaRegister<u64>,
+        }
+
+        // Manual Codec impl (similar to what macro generates)
+        impl Codec for TransferDiff {
+            fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+                let mask = u8::decode(dec)?;
+                let mut bitr = BitSeqReader::from_mask(mask);
+                let from = bitr.decode_next_member::<DaRegister<AccountSerial>>(dec)?;
+                let to = bitr.decode_next_member::<DaRegister<AccountSerial>>(dec)?;
+                let amount = bitr.decode_next_member::<DaRegister<u64>>(dec)?;
+                Ok(Self { from, to, amount })
+            }
+
+            fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+                let mut bitw = BitSeqWriter::<u8>::new();
+                bitw.prepare_member(&self.from);
+                bitw.prepare_member(&self.to);
+                bitw.prepare_member(&self.amount);
+                bitw.mask().encode(enc)?;
+                if !CompoundMember::is_default(&self.from) {
+                    CompoundMember::encode_set(&self.from, enc)?;
+                }
+                if !CompoundMember::is_default(&self.to) {
+                    CompoundMember::encode_set(&self.to, enc)?;
+                }
+                if !CompoundMember::is_default(&self.amount) {
+                    CompoundMember::encode_set(&self.amount, enc)?;
+                }
+                Ok(())
+            }
+        }
+
+        // Manual DaWrite impl with context-aware resolution
+        impl DaWrite for TransferDiff {
+            type Target = Transfer;
+            type Context = SerialResolver;
+
+            fn is_default(&self) -> bool {
+                DaWrite::is_default(&self.from)
+                    && DaWrite::is_default(&self.to)
+                    && DaWrite::is_default(&self.amount)
+            }
+
+            fn poll_context(
+                &self,
+                _target: &Self::Target,
+                _context: &Self::Context,
+            ) -> Result<(), DaError> {
+                // Could validate that serials exist in resolver here
+                Ok(())
+            }
+
+            fn apply(
+                &self,
+                target: &mut Self::Target,
+                context: &Self::Context,
+            ) -> Result<(), DaError> {
+                // Use context to resolve serials to full IDs
+                if let Some(serial) = self.from.new_value() {
+                    target.from = context.resolve(*serial)?;
+                }
+                if let Some(serial) = self.to.new_value() {
+                    target.to = context.resolve(*serial)?;
+                }
+                // Amount doesn't need context, apply directly
+                DaWrite::apply(&self.amount, &mut target.amount, &())?;
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn test_context_resolution() {
+            // Setup: create a resolver with some mappings
+            let mut mapping = HashMap::new();
+            let alice_id = AccountId([0xAA; 20]);
+            let bob_id = AccountId([0xBB; 20]);
+            mapping.insert(1, alice_id);
+            mapping.insert(2, bob_id);
+            let resolver = SerialResolver { mapping };
+
+            // Create a diff using compact serials
+            let diff = TransferDiff {
+                from: DaRegister::new_set(AccountSerial(1)), // Alice
+                to: DaRegister::new_set(AccountSerial(2)),   // Bob
+                amount: DaRegister::new_set(1000),
+            };
+
+            // Encode/decode round-trip (serials are preserved)
+            let encoded = encode_to_vec(&diff).expect("encode");
+            let decoded: TransferDiff = decode_buf_exact(&encoded).expect("decode");
+            assert_eq!(decoded.from.new_value(), Some(&AccountSerial(1)));
+            assert_eq!(decoded.to.new_value(), Some(&AccountSerial(2)));
+
+            // Apply with context - serials get resolved to full IDs
+            let mut transfer = Transfer::default();
+            decoded.apply(&mut transfer, &resolver).expect("apply");
+
+            assert_eq!(transfer.from, alice_id);
+            assert_eq!(transfer.to, bob_id);
+            assert_eq!(transfer.amount, 1000);
         }
     }
 }

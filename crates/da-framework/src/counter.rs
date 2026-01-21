@@ -329,11 +329,11 @@ pub mod counter_schemes {
         type Incr = VarintIncr;
 
         fn is_zero(incr: &Self::Incr) -> bool {
-            incr.0.inner() == 0
+            incr.inner() == 0
         }
 
         fn update(base: &mut Self::Base, incr: &Self::Incr) {
-            *base += incr.0.inner() as u64;
+            *base = base.saturating_add(incr.inner() as u64);
         }
 
         fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
