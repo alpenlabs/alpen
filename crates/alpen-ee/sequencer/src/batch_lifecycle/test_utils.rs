@@ -25,7 +25,7 @@ pub(crate) fn make_batch(idx: u64, prev_n: u8, last_n: u8) -> Batch {
         test_hash(prev_n),
         test_hash(last_n),
         last_n as u64,
-        vec![test_hash(last_n)],
+        vec![],
     )
     .expect("valid batch")
 }

@@ -21,6 +21,7 @@ pub use traits::{
 pub use traits::{
     da::MockBatchDaProvider,
     ol_client::{MockOLClient, MockSequencerOLClient},
+    prover::MockBatchProver,
     storage::{
         batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
         MockBatchStorage, MockExecBlockStorage, MockStorage,

@@ -267,3 +267,651 @@ pub(crate) async fn batch_lifecycle_task<D, P, S>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::{MockBatchDaProvider, MockBatchProver, MockBatchStorage};
+    use mockall::predicate::eq;
+    use tokio::sync::watch;
+
+    use super::*;
+    use crate::batch_lifecycle::test_utils::*;
+
+    /// Helper to create a test context
+    fn make_test_ctx(
+        storage: MockBatchStorage,
+        da_provider: MockBatchDaProvider,
+        prover: MockBatchProver,
+    ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, MockBatchStorage> {
+        let (_sealed_batch_tx, sealed_batch_rx) = watch::channel(make_batch_id(0, 0));
+        let (proof_ready_tx, _proof_ready_rx) = watch::channel(make_batch_id(0, 0));
+
+        BatchLifecycleCtx {
+            batch_storage: std::sync::Arc::new(storage),
+            da_provider: std::sync::Arc::new(da_provider),
+            prover: std::sync::Arc::new(prover),
+            sealed_batch_rx,
+            proof_ready_tx,
+        }
+    }
+
+    // ========================================================================
+    // A. DA Frontier: Sealed → DaPending
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_da_frontier_posts_da_for_sealed() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| Ok(Some((make_batch(3, 2, 3), BatchStatus::Sealed))));
+        storage
+            .expect_update_batch_status()
+            .with(eq(make_batch_id(2, 3)), mockall::predicate::always())
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        let mut da_provider = MockBatchDaProvider::new();
+        da_provider
+            .expect_post_batch_da()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| Ok(make_da_txns(3)));
+
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_da_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // Verify state changes
+        assert_eq!(state.da_frontier_idx(), 4);
+        assert!(state.pending_da().is_some());
+        assert_eq!(state.pending_da().unwrap().idx, 3);
+        assert_eq!(state.pending_da().unwrap().batch_id, make_batch_id(2, 3));
+    }
+
+    #[tokio::test]
+    async fn test_da_frontier_sealed_da_post_fails() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| Ok(Some((make_batch(3, 2, 3), BatchStatus::Sealed))));
+
+        let mut da_provider = MockBatchDaProvider::new();
+        da_provider
+            .expect_post_batch_da()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| Err(eyre::eyre!("DA post failed")));
+
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        let result = try_advance_da_frontier(&mut state, &latest_batch, &ctx).await;
+
+        // Should propagate error
+        assert!(result.is_err());
+
+        // Frontier NOT advanced
+        assert_eq!(state.da_frontier_idx(), 3);
+        assert!(state.pending_da().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_da_frontier_sealed_batch_not_exist() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| Ok(None)); // Batch doesn't exist
+
+        let da_provider = MockBatchDaProvider::new();
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_da_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // No action taken, frontier NOT advanced
+        assert_eq!(state.da_frontier_idx(), 3);
+        assert!(state.pending_da().is_none());
+    }
+
+    // ========================================================================
+    // B. DA Frontier: DaPending → ProofPending
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_da_frontier_da_confirmed() {
+        // Frontier at 3, no pending (will process batch 3 which is DaPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::DaPending {
+                        txns: make_da_txns(3),
+                    },
+                )))
+            });
+        storage
+            .expect_update_batch_status()
+            .times(2) // DaComplete, then ProofPending
+            .returning(|_, _| Ok(()));
+
+        let mut da_provider = MockBatchDaProvider::new();
+        da_provider
+            .expect_check_da_status()
+            .with(eq(make_da_txns(3)))
+            .times(1)
+            .returning(|_| Ok(Some(vec![make_da_ref(1, 3)])));
+
+        let mut prover = MockBatchProver::new();
+        prover
+            .expect_request_proof_generation()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_da_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // Verify state changes
+        assert_eq!(state.da_frontier_idx(), 4);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_some());
+        assert_eq!(state.pending_proof().unwrap().idx, 3);
+        assert_eq!(state.pending_proof().unwrap().batch_id, make_batch_id(2, 3));
+    }
+
+    #[tokio::test]
+    async fn test_da_frontier_da_not_confirmed() {
+        // Frontier at 3, no pending (will process batch 3 which is DaPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::DaPending {
+                        txns: make_da_txns(3),
+                    },
+                )))
+            });
+
+        let mut da_provider = MockBatchDaProvider::new();
+        da_provider
+            .expect_check_da_status()
+            .with(eq(make_da_txns(3)))
+            .times(1)
+            .returning(|_| Ok(None)); // Not confirmed yet
+
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_da_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // No state changes - DA not confirmed yet, so still in DaPending
+        // But it DID set pending_da when first posting
+        assert_eq!(state.da_frontier_idx(), 3); // Not advanced
+        assert!(state.pending_da().is_none()); // No pending set since DA didn't start from Sealed
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_da_frontier_da_check_fails() {
+        // Frontier at 3, no pending (will process batch 3 which is DaPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::DaPending {
+                        txns: make_da_txns(3),
+                    },
+                )))
+            });
+
+        let mut da_provider = MockBatchDaProvider::new();
+        da_provider
+            .expect_check_da_status()
+            .with(eq(make_da_txns(3)))
+            .times(1)
+            .returning(|_| Err(eyre::eyre!("DA check failed")));
+
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        let result = try_advance_da_frontier(&mut state, &latest_batch, &ctx).await;
+
+        // Should propagate error
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_da_frontier_proof_request_fails() {
+        // Frontier at 3, no pending (will process batch 3 which is DaPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::DaPending {
+                        txns: make_da_txns(3),
+                    },
+                )))
+            });
+        storage
+            .expect_update_batch_status()
+            .times(1) // Only DaComplete update succeeds
+            .returning(|_, _| Ok(()));
+
+        let mut da_provider = MockBatchDaProvider::new();
+        da_provider
+            .expect_check_da_status()
+            .with(eq(make_da_txns(3)))
+            .times(1)
+            .returning(|_| Ok(Some(vec![make_da_ref(1, 3)])));
+
+        let mut prover = MockBatchProver::new();
+        prover
+            .expect_request_proof_generation()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| Box::pin(async { Err(eyre::eyre!("Proof request failed")) }));
+
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        let result = try_advance_da_frontier(&mut state, &latest_batch, &ctx).await;
+
+        // Should propagate error
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // C. DA Frontier: Skip Already-Complete
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_da_frontier_skip_da_complete() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::DaComplete {
+                        da: vec![make_da_ref(1, 3)],
+                    },
+                )))
+            });
+
+        let da_provider = MockBatchDaProvider::new();
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_da_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // Should advance past DaComplete
+        assert_eq!(state.da_frontier_idx(), 4);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_da_frontier_skip_proof_ready() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, 3)],
+                        proof: test_proof_id(3),
+                    },
+                )))
+            });
+
+        let da_provider = MockBatchDaProvider::new();
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_da_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // Should advance past ProofReady
+        assert_eq!(state.da_frontier_idx(), 4);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_none());
+    }
+
+    // ========================================================================
+    // D. Proof Frontier: ProofPending → ProofReady
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_proof_frontier_proof_ready() {
+        // Frontier at 3, no pending (will process batch 3 which is ProofPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::ProofPending {
+                        da: vec![make_da_ref(1, 3)],
+                    },
+                )))
+            });
+        storage
+            .expect_update_batch_status()
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        let mut prover = MockBatchProver::new();
+        prover
+            .expect_check_proof_status()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| {
+                Box::pin(async {
+                    Ok(ProofGenerationStatus::Ready {
+                        proof_id: test_proof_id(3),
+                    })
+                })
+            });
+
+        let da_provider = MockBatchDaProvider::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_proof_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // Verify state changes
+        assert_eq!(state.proof_frontier_idx(), 4);
+        assert!(state.pending_proof().is_none());
+        // DA frontier shouldn't change
+        assert_eq!(state.da_frontier_idx(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_proof_frontier_proof_pending() {
+        // Frontier at 3, no pending (will process batch 3 which is ProofPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::ProofPending {
+                        da: vec![make_da_ref(1, 3)],
+                    },
+                )))
+            });
+
+        let mut prover = MockBatchProver::new();
+        prover
+            .expect_check_proof_status()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(ProofGenerationStatus::Pending) }));
+
+        let da_provider = MockBatchDaProvider::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_proof_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // No state changes - proof still pending
+        assert_eq!(state.proof_frontier_idx(), 3); // Not advanced
+        assert!(state.pending_proof().is_none()); // Not set because wasn't transitioned from
+                                                  // earlier state
+    }
+
+    #[tokio::test]
+    async fn test_proof_frontier_proof_failed() {
+        // Frontier at 3, no pending (will process batch 3 which is ProofPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::ProofPending {
+                        da: vec![make_da_ref(1, 3)],
+                    },
+                )))
+            });
+
+        let mut prover = MockBatchProver::new();
+        prover
+            .expect_check_proof_status()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| {
+                Box::pin(async {
+                    Ok(ProofGenerationStatus::Failed {
+                        reason: "Test failure".to_string(),
+                    })
+                })
+            });
+
+        let da_provider = MockBatchDaProvider::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_proof_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // Doesn't advance, keeps state unchanged
+        assert_eq!(state.proof_frontier_idx(), 3);
+        assert!(state.pending_proof().is_none()); // Not set because proof failed (see
+                                                  // implementation)
+    }
+
+    #[tokio::test]
+    async fn test_proof_frontier_proof_check_fails() {
+        // Frontier at 3, no pending (will process batch 3 which is ProofPending)
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::ProofPending {
+                        da: vec![make_da_ref(1, 3)],
+                    },
+                )))
+            });
+
+        let mut prover = MockBatchProver::new();
+        prover
+            .expect_check_proof_status()
+            .with(eq(make_batch_id(2, 3)))
+            .times(1)
+            .returning(|_| Box::pin(async { Err(eyre::eyre!("Proof check failed")) }));
+
+        let da_provider = MockBatchDaProvider::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        let result = try_advance_proof_frontier(&mut state, &latest_batch, &ctx).await;
+
+        // Should propagate error
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // E. Proof Frontier: Not Ready / Skip
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_proof_frontier_batch_sealed() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| Ok(Some((make_batch(3, 2, 3), BatchStatus::Sealed))));
+
+        let da_provider = MockBatchDaProvider::new();
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_proof_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // No action, frontier NOT advanced
+        assert_eq!(state.proof_frontier_idx(), 3);
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_proof_frontier_batch_da_pending() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::DaPending {
+                        txns: make_da_txns(3),
+                    },
+                )))
+            });
+
+        let da_provider = MockBatchDaProvider::new();
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_proof_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // No action, frontier NOT advanced
+        assert_eq!(state.proof_frontier_idx(), 3);
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_proof_frontier_skip_proof_ready() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        let latest_batch = make_batch(5, 4, 5);
+
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_batch_by_idx()
+            .with(eq(3))
+            .times(1)
+            .returning(|_| {
+                Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, 3)],
+                        proof: test_proof_id(3),
+                    },
+                )))
+            });
+
+        let da_provider = MockBatchDaProvider::new();
+        let prover = MockBatchProver::new();
+        let ctx = make_test_ctx(storage, da_provider, prover);
+
+        try_advance_proof_frontier(&mut state, &latest_batch, &ctx)
+            .await
+            .unwrap();
+
+        // Should advance past ProofReady
+        assert_eq!(state.proof_frontier_idx(), 4);
+        assert!(state.pending_proof().is_none());
+    }
+}
