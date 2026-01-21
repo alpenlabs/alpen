@@ -24,7 +24,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     verify_seq_no(target, snark_state, operation)?;
 
     // 2. Check message / proof entries and indices line up
-    verify_msgs_and_msgs_in_proofs(target, snark_state, update)?;
+    verify_message_index(target, snark_state, operation)?;
 
     let accum_proofs = update.accumulator_proofs();
 
@@ -37,7 +37,12 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     )?;
 
     // 4. Verify inbox mmr proofs
-    verify_inbox_mmr_proofs(target, snark_state, accum_proofs.inbox_proofs())?;
+    verify_inbox_mmr_proofs(
+        target,
+        snark_state,
+        accum_proofs.inbox_proofs(),
+        update.operation().processed_messages(),
+    )?;
 
     // 5. Verify outputs can be applied safely
     let outputs = operation.outputs();
@@ -86,45 +91,6 @@ pub fn verify_message_index(
     Ok(())
 }
 
-/// Verifies that the processed messages count align with the state and that the processed messages
-/// are the ones actually present in the message proofs.
-pub fn verify_msgs_and_msgs_in_proofs(
-    target: AccountId,
-    snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdateContainer,
-) -> AcctResult<()> {
-    let operation = update.operation();
-
-    // First verify message index.
-    verify_message_index(target, snark_state, operation)?;
-
-    // Verify that the messages and proofs are what are claimed to be.
-    let inbox_proofs = update.accumulator_proofs().inbox_proofs();
-
-    if inbox_proofs.len() != operation.processed_messages().len() {
-        return Err(AcctError::InvalidMsgProofsCount { account_id: target });
-    }
-
-    // Check if the referenced msg in proof is actually the processed message.
-    inbox_proofs
-        .iter()
-        .map(|proof| proof.entry())
-        .zip(operation.processed_messages())
-        .enumerate()
-        .try_for_each(|(i, (proof_msg, proc_msg))| {
-            if proof_msg == proc_msg {
-                Ok(())
-            } else {
-                Err(AcctError::InvalidAccumuulatorProofMessageRef {
-                    account_id: target,
-                    msg_index: i,
-                })
-            }
-        })?;
-
-    Ok(())
-}
-
 /// Verifies the ledger ref proofs against the provided asm mmr for an account.
 fn verify_ledger_refs(
     target: AccountId,
@@ -138,26 +104,15 @@ fn verify_ledger_refs(
     if ledger_refs.l1_header_refs().len() != ledger_ref_proofs.l1_headers_proofs().len() {
         return Err(AcctError::InvalidMsgProofsCount { account_id: target });
     }
-    ledger_ref_proofs
-        .l1_headers_proofs()
-        .iter()
-        .zip(ledger_refs.l1_header_refs())
-        .enumerate()
-        .try_for_each(|(i, (proof_ref, ledger_ref))| {
-            if proof_ref.entry_hash() != ledger_ref.entry_hash() {
-                Err(AcctError::InvalidAccumuulatorProofMessageRef {
-                    account_id: target,
-                    msg_index: i,
-                })
-            } else {
-                Ok(())
-            }
-        })?;
 
-    for proof in ledger_ref_proofs.l1_headers_proofs() {
-        let hash = proof.entry_hash();
+    for (lref, proof) in ledger_refs
+        .l1_header_refs()
+        .iter()
+        .zip(ledger_ref_proofs.l1_headers_proofs())
+    {
+        let hash = lref.entry_hash();
         let cohashes = proof.proof().cohashes();
-        let generic_proof = MerkleProof::from_cohashes(cohashes, proof.entry_idx());
+        let generic_proof = MerkleProof::from_cohashes(cohashes, lref.idx());
         if !generic_mmr.verify::<StrataHasher>(&generic_proof, hash.as_ref()) {
             return Err(AcctError::InvalidLedgerReference {
                 account_id: target,
@@ -171,21 +126,27 @@ fn verify_ledger_refs(
 /// Verifies the processed messages proofs against the provided account state's inbox
 /// mmr.
 pub(crate) fn verify_inbox_mmr_proofs(
-    account_id: AccountId,
+    target: AccountId,
     state: &impl ISnarkAccountState,
     msg_proofs: &[MessageEntryProof],
+    processed_msgs: &[MessageEntry],
 ) -> AcctResult<()> {
     let generic_mmr = state.inbox_mmr().to_generic();
     let mut cur_index = state.next_inbox_msg_idx();
-    for msg_proof in msg_proofs {
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(msg_proof.entry());
+
+    if msg_proofs.len() != processed_msgs.len() {
+        return Err(AcctError::InvalidMsgProofsCount { account_id: target });
+    }
+
+    for (msg, msg_proof) in processed_msgs.iter().zip(msg_proofs) {
+        let hash = <MessageEntry as TreeHash>::tree_hash_root(msg);
 
         let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes();
         let proof = MerkleProof::from_cohashes(cohashes, cur_index);
 
         if !generic_mmr.verify::<StrataHasher>(&proof, &hash.into_inner()) {
             return Err(AcctError::InvalidMessageProof {
-                account_id,
+                account_id: target,
                 msg_idx: cur_index,
             });
         }
