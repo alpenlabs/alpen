@@ -28,7 +28,7 @@
 //! let state = init_lifecycle_state(&batch_storage).await?;
 //!
 //! // Create the task
-//! let (handle, task) = create_batch_lifecycle(
+//! let (handle, task) = create_batch_lifecycle_task(
 //!     initial_batch_id,
 //!     state,
 //!     sealed_batch_rx,
