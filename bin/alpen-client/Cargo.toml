@@ -47,6 +47,7 @@ alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
 clap.workspace = true
 eyre.workspace = true
+jsonrpsee = { workspace = true, features = ["http-client"] }
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true
 reth-cli-runner.workspace = true
