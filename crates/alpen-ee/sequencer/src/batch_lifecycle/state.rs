@@ -200,3 +200,345 @@ pub(crate) async fn recover_from_storage(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::MockBatchStorage;
+
+    use super::*;
+    use crate::batch_lifecycle::test_utils::*;
+
+    // ========================================================================
+    // A. State Initialization
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_init_lifecycle_state_only_genesis() {
+        let mut storage = MockBatchStorage::new();
+        // Genesis batch at idx 0
+        storage.expect_get_latest_batch().times(1).returning(|| {
+            Ok(Some((
+                make_genesis_batch(0),
+                BatchStatus::ProofReady {
+                    da: vec![],
+                    proof: test_proof_id(0),
+                },
+            )))
+        });
+
+        storage.expect_get_batch_by_idx().returning(|_| Ok(None)); // No batches beyond genesis
+
+        let state = init_lifecycle_state(&storage).await.unwrap();
+
+        // Should start at idx 1 (after genesis)
+        assert_eq!(state.da_frontier_idx(), 1);
+        assert_eq!(state.proof_frontier_idx(), 1);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_init_lifecycle_state_some_sealed() {
+        let mut storage = MockBatchStorage::new();
+        storage
+            .expect_get_latest_batch()
+            .times(1)
+            .returning(|| Ok(Some((make_batch(3, 2, 3), BatchStatus::Sealed))));
+
+        storage
+            .expect_get_batch_by_idx()
+            .returning(|idx| match idx {
+                1..=2 => Ok(Some((
+                    make_batch(idx, (idx - 1) as u8, idx as u8),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, idx as u8)],
+                        proof: test_proof_id(idx as u8),
+                    },
+                ))),
+                3 => Ok(Some((make_batch(3, 2, 3), BatchStatus::Sealed))),
+                _ => Ok(None),
+            });
+
+        let state = init_lifecycle_state(&storage).await.unwrap();
+
+        // Should stop at first Sealed batch
+        assert_eq!(state.da_frontier_idx(), 3);
+        assert_eq!(state.proof_frontier_idx(), 3);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_init_lifecycle_state_mixed_states() {
+        let mut storage = MockBatchStorage::new();
+        storage.expect_get_latest_batch().times(1).returning(|| {
+            Ok(Some((
+                make_batch(5, 4, 5),
+                BatchStatus::ProofReady {
+                    da: vec![make_da_ref(1, 5)],
+                    proof: test_proof_id(5),
+                },
+            )))
+        });
+
+        storage
+            .expect_get_batch_by_idx()
+            .returning(|idx| match idx {
+                1..=3 => Ok(Some((
+                    make_batch(idx, (idx - 1) as u8, idx as u8),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, idx as u8)],
+                        proof: test_proof_id(idx as u8),
+                    },
+                ))),
+                4 => Ok(Some((
+                    make_batch(4, 3, 4),
+                    BatchStatus::DaPending {
+                        txns: make_da_txns(4),
+                    },
+                ))),
+                5 => Ok(Some((
+                    make_batch(5, 4, 5),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, 5)],
+                        proof: test_proof_id(5),
+                    },
+                ))),
+                _ => Ok(None),
+            });
+
+        let state = init_lifecycle_state(&storage).await.unwrap();
+
+        // Should stop at first incomplete batch (DaPending at idx 4)
+        assert_eq!(state.da_frontier_idx(), 5);
+        assert_eq!(state.proof_frontier_idx(), 4);
+        assert!(state.pending_da().is_some());
+        assert_eq!(state.pending_da().unwrap().idx, 4);
+        assert!(state.pending_proof().is_none());
+    }
+
+    // ========================================================================
+    // B. Recovery from Storage
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_recover_finds_sealed_batch() {
+        let mut state = BatchLifecycleState::new_for_testing(1, 1, None, None);
+        let mut storage = MockBatchStorage::new();
+
+        storage
+            .expect_get_batch_by_idx()
+            .returning(|idx| match idx {
+                1..=2 => Ok(Some((
+                    make_batch(idx, (idx - 1) as u8, idx as u8),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, idx as u8)],
+                        proof: test_proof_id(idx as u8),
+                    },
+                ))),
+                3 => Ok(Some((make_batch(3, 2, 3), BatchStatus::Sealed))),
+                _ => Ok(None),
+            });
+
+        recover_from_storage(&mut state, &storage, 5).await.unwrap();
+
+        assert_eq!(state.da_frontier_idx(), 3);
+        assert_eq!(state.proof_frontier_idx(), 3);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_recover_finds_da_pending() {
+        let mut state = BatchLifecycleState::new_for_testing(1, 1, None, None);
+        let mut storage = MockBatchStorage::new();
+
+        storage
+            .expect_get_batch_by_idx()
+            .returning(|idx| match idx {
+                1..=2 => Ok(Some((
+                    make_batch(idx, (idx - 1) as u8, idx as u8),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, idx as u8)],
+                        proof: test_proof_id(idx as u8),
+                    },
+                ))),
+                3 => Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::DaPending {
+                        txns: make_da_txns(3),
+                    },
+                ))),
+                _ => Ok(None),
+            });
+
+        recover_from_storage(&mut state, &storage, 5).await.unwrap();
+
+        assert_eq!(state.da_frontier_idx(), 4);
+        assert_eq!(state.proof_frontier_idx(), 3);
+        assert!(state.pending_da().is_some());
+        assert_eq!(state.pending_da().unwrap().idx, 3);
+        assert_eq!(state.pending_da().unwrap().batch_id, make_batch_id(2, 3));
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_recover_finds_proof_pending() {
+        let mut state = BatchLifecycleState::new_for_testing(1, 1, None, None);
+        let mut storage = MockBatchStorage::new();
+
+        storage
+            .expect_get_batch_by_idx()
+            .returning(|idx| match idx {
+                1..=2 => Ok(Some((
+                    make_batch(idx, (idx - 1) as u8, idx as u8),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, idx as u8)],
+                        proof: test_proof_id(idx as u8),
+                    },
+                ))),
+                3 => Ok(Some((
+                    make_batch(3, 2, 3),
+                    BatchStatus::ProofPending {
+                        da: vec![make_da_ref(1, 3)],
+                    },
+                ))),
+                _ => Ok(None),
+            });
+
+        recover_from_storage(&mut state, &storage, 5).await.unwrap();
+
+        assert_eq!(state.da_frontier_idx(), 4);
+        assert_eq!(state.proof_frontier_idx(), 4);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_some());
+        assert_eq!(state.pending_proof().unwrap().idx, 3);
+        assert_eq!(state.pending_proof().unwrap().batch_id, make_batch_id(2, 3));
+    }
+
+    #[tokio::test]
+    async fn test_recover_skips_proof_ready() {
+        let mut state = BatchLifecycleState::new_for_testing(1, 1, None, None);
+        let mut storage = MockBatchStorage::new();
+
+        storage.expect_get_batch_by_idx().returning(|idx| {
+            if idx <= 5 {
+                Ok(Some((
+                    make_batch(idx, (idx - 1) as u8, idx as u8),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, idx as u8)],
+                        proof: test_proof_id(idx as u8),
+                    },
+                )))
+            } else {
+                Ok(None)
+            }
+        });
+
+        recover_from_storage(&mut state, &storage, 5).await.unwrap();
+
+        // Should advance past all ProofReady batches
+        assert_eq!(state.da_frontier_idx(), 6);
+        assert_eq!(state.proof_frontier_idx(), 6);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_recover_handles_all_proof_ready() {
+        let mut state = BatchLifecycleState::new_for_testing(1, 1, None, None);
+        let mut storage = MockBatchStorage::new();
+
+        storage.expect_get_batch_by_idx().returning(|idx| {
+            if idx <= 10 {
+                Ok(Some((
+                    make_batch(idx, (idx - 1) as u8, idx as u8),
+                    BatchStatus::ProofReady {
+                        da: vec![make_da_ref(1, idx as u8)],
+                        proof: test_proof_id(idx as u8),
+                    },
+                )))
+            } else {
+                Ok(None)
+            }
+        });
+
+        recover_from_storage(&mut state, &storage, 10)
+            .await
+            .unwrap();
+
+        // All batches complete, frontiers at end
+        assert_eq!(state.da_frontier_idx(), 11);
+        assert_eq!(state.proof_frontier_idx(), 11);
+        assert!(state.pending_da().is_none());
+        assert!(state.pending_proof().is_none());
+    }
+
+    // ========================================================================
+    // C. Frontier Advancement
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_can_start_da_conditions() {
+        // True: no pending_da && da_frontier_idx <= latest_batch_idx
+        let state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        assert!(state.can_start_da(5));
+        assert!(state.can_start_da(3));
+
+        // False: has pending_da
+        let pending = PendingOperation {
+            idx: 3,
+            batch_id: make_batch_id(2, 3),
+        };
+        let state = BatchLifecycleState::new_for_testing(4, 3, Some(pending), None);
+        assert!(!state.can_start_da(5));
+
+        // False: da_frontier_idx > latest_batch_idx
+        let state = BatchLifecycleState::new_for_testing(6, 3, None, None);
+        assert!(!state.can_start_da(5));
+    }
+
+    #[tokio::test]
+    async fn test_can_advance_proof_frontier_conditions() {
+        // True: no pending_proof && proof_frontier_idx <= latest_batch_idx
+        let state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        assert!(state.can_advance_proof_frontier(5));
+        assert!(state.can_advance_proof_frontier(3));
+
+        // False: has pending_proof
+        let pending = PendingOperation {
+            idx: 3,
+            batch_id: make_batch_id(2, 3),
+        };
+        let state = BatchLifecycleState::new_for_testing(3, 4, None, Some(pending));
+        assert!(!state.can_advance_proof_frontier(5));
+
+        // False: proof_frontier_idx > latest_batch_idx
+        let state = BatchLifecycleState::new_for_testing(3, 6, None, None);
+        assert!(!state.can_advance_proof_frontier(5));
+    }
+
+    #[tokio::test]
+    async fn test_advance_da_frontier_increments() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        assert_eq!(state.da_frontier_idx(), 3);
+
+        state.advance_da_frontier();
+        assert_eq!(state.da_frontier_idx(), 4);
+
+        state.advance_da_frontier();
+        assert_eq!(state.da_frontier_idx(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_advance_proof_frontier_increments() {
+        let mut state = BatchLifecycleState::new_for_testing(3, 3, None, None);
+        assert_eq!(state.proof_frontier_idx(), 3);
+
+        state.advance_proof_frontier();
+        assert_eq!(state.proof_frontier_idx(), 4);
+
+        state.advance_proof_frontier();
+        assert_eq!(state.proof_frontier_idx(), 5);
+    }
+}
