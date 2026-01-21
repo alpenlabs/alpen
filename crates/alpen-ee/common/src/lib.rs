@@ -11,7 +11,10 @@ pub use traits::{
         OLClient, OLClientError, SequencerOLClient,
     },
     prover::{BatchProver, ProofGenerationStatus},
-    storage::{BatchStorage, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError},
+    storage::{
+        require_best_ee_account_state, require_best_finalized_block, require_latest_batch,
+        BatchStorage, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
+    },
 };
 #[cfg(feature = "test-utils")]
 pub use traits::{

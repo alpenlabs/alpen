@@ -27,6 +27,13 @@ pub enum StorageError {
     #[error("cannot delete finalized block: {0}")]
     CannotDeleteFinalizedBlock(String),
 
+    /// Storage invariant violated.
+    ///
+    /// Indicates a critical system invariant has been violated, such as missing required
+    /// genesis state after initialization or corrupted storage state.
+    #[error("storage invariant violated: {0}")]
+    InvariantViolated(String),
+
     /// Other unspecified error.
     #[error(transparent)]
     Other(#[from] eyre::Error),
@@ -46,5 +53,10 @@ impl StorageError {
     /// Creates a deserialization error.
     pub fn deserialization(msg: impl Into<String>) -> Self {
         Self::Deserialization(msg.into())
+    }
+
+    /// Creates an invariant violation error.
+    pub fn invariant_violated(msg: impl Into<String>) -> Self {
+        Self::InvariantViolated(msg.into())
     }
 }
