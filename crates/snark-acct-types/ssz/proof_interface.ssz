@@ -1,0 +1,29 @@
+import outputs
+import state
+import messages
+import update
+
+MAX_MESSAGE_ENTRIES = 2 << 10
+
+### Public params that we provide as the claim the proof must prove the relate
+### to each other correctly.
+class UpdateProofPubParams(Container):
+    ### Current state we're extending.
+    cur_state: state.ProofState
+
+    ### New state we're trying to prove.
+    new_state: state.ProofState
+
+    ### Messages from the inbox we're accepting.
+    message_inputs: List[messages.MessageEntry, update.MAX_PROCESSED_MESSAGES]
+
+    ### Checked claims for other accumulators/state on the ledger.
+    ledger_refs: update.LedgerRefs
+
+    ### Outputs from the account which will be applied, modifying the state of
+    ### the ledger.
+    outputs: outputs.UpdateOutputs
+
+    ### The extra data field from the update operation which will be persisted
+    ### in DA.
+    extra_data: List[uint8, update.MAX_EXTRA_DATA_BYTES]

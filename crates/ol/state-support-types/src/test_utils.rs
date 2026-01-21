@@ -3,7 +3,7 @@
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{AccountTypeState, IStateAccessor, NewAccountData};
-use strata_ol_state_types::{NativeSnarkAccountState, OLState};
+use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_snark_acct_types::MessageEntry;
 
 /// Create a test AccountId from a seed byte.
@@ -19,8 +19,8 @@ pub(crate) fn test_hash(seed: u8) -> Hash {
 }
 
 /// Create a fresh snark account state for testing.
-pub(crate) fn test_snark_account_state(state_root_seed: u8) -> NativeSnarkAccountState {
-    NativeSnarkAccountState::new_fresh(test_hash(state_root_seed))
+pub(crate) fn test_snark_account_state(state_root_seed: u8) -> OLSnarkAccountState {
+    OLSnarkAccountState::new_fresh(test_hash(state_root_seed))
 }
 
 /// Create a test message entry for inbox testing.

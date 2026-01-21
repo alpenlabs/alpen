@@ -12,7 +12,7 @@ use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot};
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
-use strata_ol_state_types::{NativeAccountState, OLState, WriteBatch};
+use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::{
     prelude::*,
     proof::{ProofContext, ProofKey},
@@ -435,14 +435,14 @@ pub trait OLStateDatabase: Send + Sync + 'static {
     fn put_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<NativeAccountState>,
+        wb: WriteBatch<OLAccountState>,
     ) -> DbResult<()>;
 
     /// Retrieves an OL write batch for a given block commitment.
     fn get_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<NativeAccountState>>>;
+    ) -> DbResult<Option<WriteBatch<OLAccountState>>>;
 
     /// Deletes an OL write batch for a given block commitment.
     fn del_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<()>;

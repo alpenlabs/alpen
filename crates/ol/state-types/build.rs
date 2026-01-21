@@ -6,16 +6,14 @@ fn main() {
     let out_dir = var("OUT_DIR").expect("OUT_DIR not set by cargo");
     let output_path = Path::new(&out_dir).join("generated.rs");
 
-    let entry_points = [
-        "outputs.ssz",
-        "state.ssz",
-        "accumulators.ssz",
-        "messages.ssz",
-        "update.ssz",
-        "proof_interface.ssz",
-    ];
+    let entry_points = ["state.ssz"];
     let base_dir = "ssz";
-    let crates = ["strata_acct_types"];
+    let crates = [
+        "strata_acct_types",
+        "strata_identifiers",
+        "strata_asm_manifest_types",
+        "strata_snark_acct_types",
+    ];
 
     build_ssz_files(
         &entry_points,

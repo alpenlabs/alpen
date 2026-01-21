@@ -1,0 +1,94 @@
+import strata_acct_types
+import strata_identifiers
+import strata_asm_manifest_types
+import strata_snark_acct_types
+
+MAX_LEDGER_ACCOUNTS = 1 << 24
+MAX_ACCOUNT_SERIALS = 1 << 24
+
+### Top-level OL state
+class OLState(Container):
+    ### Epochal state
+    epoch: EpochalState
+
+    ### Global state
+    global: GlobalState
+
+    ### Ledger accounts table
+    ledger: TsnlLedgerAccountsTable
+
+### Ledger accounts table
+class TsnlLedgerAccountsTable(Container):
+    ### Sorted list of account entries
+    accounts: List[TsnlAccountEntry, MAX_LEDGER_ACCOUNTS]
+
+    ### Serial to account ID mapping
+    serials: List[strata_acct_types.AccountId, MAX_ACCOUNT_SERIALS]
+
+### Ledger account entry
+class TsnlAccountEntry(Container):
+    ### Account ID
+    id: strata_acct_types.AccountId
+
+    ### Account state
+    state: OLAccountState
+
+### Account state
+class OLAccountState(Container):
+    ### Account serial number
+    serial: strata_identifiers.AccountSerial
+
+    ### Account balance
+    balance: strata_acct_types.BitcoinAmount
+
+    ### Account type-specific state
+    state: OLAccountTypeState
+
+### Account type state as union
+class OLAccountTypeState(Union):
+    ### Empty account
+    Empty
+
+    ### Snark account
+    Snark: OLSnarkAccountState
+
+### Snark account state
+class OLSnarkAccountState(Container):
+    ### Sequence number
+    seqno: strata_snark_acct_types.Seqno
+
+    ### Proof state
+    proof_state: ProofState
+
+    ### Inbox MMR
+    #~# external_kind: container
+    inbox_mmr: strata_acct_types.Mmr64
+
+### Proof state for snark accounts
+class ProofState(Container):
+    ### Inner state root commitment
+    inner_state_root: Bytes32
+
+    ### Next message read index
+    next_msg_read_idx: uint64
+
+### Epoch-level state
+class EpochalState(Container):
+    ### Total funds in the ledger
+    total_ledger_funds: strata_acct_types.BitcoinAmount
+
+    ### Current epoch number
+    cur_epoch: strata_identifiers.Epoch
+
+    ### Last L1 block commitment
+    #~# external_kind: container
+    last_l1_block: strata_identifiers.L1BlockCommitment
+
+    ### Checkpointed epoch commitment
+    #~# external_kind: container
+    checkpointed_epoch: strata_identifiers.EpochCommitment
+
+### Global state tracking current slot
+class GlobalState(Container):
+    ### Current slot number
+    cur_slot: strata_identifiers.Slot

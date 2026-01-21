@@ -2,12 +2,17 @@
 
 use std::collections::BTreeMap;
 
+use ssz::{Decode, Encode};
 use strata_acct_types::{AccountId, AccountSerial};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec_utils::CodecSsz;
 use strata_identifiers::L1BlockCommitment;
 use strata_ledger_types::{IAccountStateConstructible, IStateAccessor, NewAccountData};
 
-use crate::{EpochalState, GlobalState, SerialMap};
+use crate::{
+    SerialMap,
+    ssz_generated::ssz::state::{EpochalState, GlobalState},
+};
 
 /// A batch of writes to the OL state.
 ///
@@ -85,26 +90,6 @@ impl<A> WriteBatch<A> {
     /// Consumes the batch and returns its component parts.
     pub fn into_parts(self) -> (GlobalState, EpochalState, LedgerWriteBatch<A>) {
         (self.global, self.epochal, self.ledger)
-    }
-}
-
-impl<A: Codec> Codec for WriteBatch<A> {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.global.encode(enc)?;
-        self.epochal.encode(enc)?;
-        self.ledger.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let global = GlobalState::decode(dec)?;
-        let epochal = EpochalState::decode(dec)?;
-        let ledger = LedgerWriteBatch::decode(dec)?;
-        Ok(Self {
-            global,
-            epochal,
-            ledger,
-        })
     }
 }
 
@@ -223,15 +208,40 @@ impl<A> Default for LedgerWriteBatch<A> {
     }
 }
 
-impl<A: Codec> Codec for LedgerWriteBatch<A> {
+// Codec implementation for WriteBatch - needed for database serialization
+// Uses CodecSsz shim for SSZ types (GlobalState, EpochalState)
+// and Codec for non-SSZ types (LedgerWriteBatch)
+impl<A: Encode + Decode + Clone> Codec for WriteBatch<A> {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        CodecSsz::new(self.global.clone()).encode(enc)?;
+        CodecSsz::new(self.epochal.clone()).encode(enc)?;
+        self.ledger.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let global = CodecSsz::<GlobalState>::decode(dec)?.into_inner();
+        let epochal = CodecSsz::<EpochalState>::decode(dec)?.into_inner();
+        let ledger = LedgerWriteBatch::decode(dec)?;
+        Ok(Self {
+            global,
+            epochal,
+            ledger,
+        })
+    }
+}
+
+// Codec implementation for LedgerWriteBatch
+// Uses CodecSsz shim for SSZ types (AccountId, A)
+// and Codec for non-SSZ types (SerialMap)
+impl<A: Encode + Decode + Clone> Codec for LedgerWriteBatch<A> {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode account_writes as a map: length, then (key, value) pairs
         (self.account_writes.len() as u64).encode(enc)?;
         for (id, state) in &self.account_writes {
-            id.encode(enc)?;
-            state.encode(enc)?;
+            CodecSsz::new(*id).encode(enc)?;
+            CodecSsz::new(state.clone()).encode(enc)?;
         }
-        // Encode serial_to_id using its Codec implementation
         self.serial_to_id.encode(enc)?;
         Ok(())
     }
@@ -240,11 +250,10 @@ impl<A: Codec> Codec for LedgerWriteBatch<A> {
         let len = u64::decode(dec)? as usize;
         let mut account_writes = BTreeMap::new();
         for _ in 0..len {
-            let id = AccountId::decode(dec)?;
-            let state = A::decode(dec)?;
+            let id = CodecSsz::<AccountId>::decode(dec)?.into_inner();
+            let state = CodecSsz::<A>::decode(dec)?.into_inner();
             account_writes.insert(id, state);
         }
-        // Decode serial_to_id using its Codec implementation
         let serial_to_id = SerialMap::decode(dec)?;
         Ok(Self {
             account_writes,

@@ -3,18 +3,8 @@
 //! This uses the "transitional" types described in the OL STF spec.
 
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, SYSTEM_RESERVED_ACCTS};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
-use crate::account::NativeAccountState;
-
-/// Enshrined ledger accounts table.
-///
-/// This is part of a transitional design.
-#[derive(Clone, Debug)]
-pub struct TsnlLedgerAccountsTable {
-    accounts: Vec<TsnlAccountEntry>,
-    serials: Vec<AccountId>,
-}
+use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
 
 impl TsnlLedgerAccountsTable {
     /// Creates a new empty table.
@@ -22,8 +12,8 @@ impl TsnlLedgerAccountsTable {
     /// This reserves serials for system accounts with 0 values.
     pub fn new_empty() -> Self {
         Self {
-            accounts: Vec::new(),
-            serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize],
+            accounts: Vec::new().into(),
+            serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize].into(),
         }
     }
 
@@ -37,22 +27,19 @@ impl TsnlLedgerAccountsTable {
 
     fn get_acct_entry(&self, id: &AccountId) -> Option<&TsnlAccountEntry> {
         let idx = self.get_acct_entry_idx(id)?;
-        Some(&self.accounts[idx])
+        self.accounts.get(idx)
     }
 
     fn get_acct_entry_mut(&mut self, id: &AccountId) -> Option<&mut TsnlAccountEntry> {
         let idx = self.get_acct_entry_idx(id)?;
-        Some(&mut self.accounts[idx])
+        self.accounts.get_mut(idx)
     }
 
-    pub(crate) fn get_account_state(&self, id: &AccountId) -> Option<&NativeAccountState> {
+    pub(crate) fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountState> {
         self.get_acct_entry(id).map(|e| &e.state)
     }
 
-    pub(crate) fn get_account_state_mut(
-        &mut self,
-        id: &AccountId,
-    ) -> Option<&mut NativeAccountState> {
+    pub(crate) fn get_account_state_mut(&mut self, id: &AccountId) -> Option<&mut OLAccountState> {
         self.get_acct_entry_mut(id).map(|e| &mut e.state)
     }
 
@@ -65,7 +52,7 @@ impl TsnlLedgerAccountsTable {
     pub(crate) fn create_account(
         &mut self,
         id: AccountId,
-        acct_state: NativeAccountState,
+        acct_state: OLAccountState,
     ) -> AcctResult<AccountSerial> {
         // Sanity check, this should get optimized out.
         let next_serial = self.next_avail_serial();
@@ -82,9 +69,15 @@ impl TsnlLedgerAccountsTable {
         };
 
         // Actually insert the entry.
+        // VariableList doesn't have insert, but it has push.
+        // Since we need to maintain sorted order, we collect to Vec, insert, and convert back.
         let entry = TsnlAccountEntry::new(id, acct_state);
-        self.accounts.insert(insert_idx, entry);
-        self.serials.push(id);
+        let mut accounts_vec: Vec<_> = self.accounts.iter().cloned().collect();
+        accounts_vec.insert(insert_idx, entry);
+        self.accounts = accounts_vec.into();
+
+        // Push new serial mapping
+        self.serials.push(id).expect("serials list not full");
 
         // Sanity check.
         assert!(
@@ -101,69 +94,28 @@ impl TsnlLedgerAccountsTable {
     }
 }
 
-#[derive(Clone, Debug, Codec)]
-struct TsnlAccountEntry {
-    id: AccountId,
-    state: NativeAccountState,
-}
-
 impl TsnlAccountEntry {
-    fn new(id: AccountId, state: NativeAccountState) -> Self {
+    fn new(id: AccountId, state: OLAccountState) -> Self {
         Self { id, state }
-    }
-}
-
-// Codec implementation for TsnlLedgerAccountsTable
-impl Codec for TsnlLedgerAccountsTable {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Encode the accounts vector - length first, then each element
-        (self.accounts.len() as u64).encode(enc)?;
-        for account in &self.accounts {
-            account.encode(enc)?;
-        }
-
-        // Encode the serials vector - length first, then each element
-        (self.serials.len() as u64).encode(enc)?;
-        for serial in &self.serials {
-            serial.encode(enc)?;
-        }
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        // Decode the accounts vector
-        let accounts_len = u64::decode(dec)? as usize;
-        let mut accounts = Vec::with_capacity(accounts_len);
-        for _ in 0..accounts_len {
-            accounts.push(TsnlAccountEntry::decode(dec)?);
-        }
-
-        // Decode the serials vector
-        let serials_len = u64::decode(dec)? as usize;
-        let mut serials = Vec::with_capacity(serials_len);
-        for _ in 0..serials_len {
-            serials.push(AccountId::decode(dec)?);
-        }
-
-        Ok(Self { accounts, serials })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use ssz::{Decode, Encode};
     use strata_acct_types::BitcoinAmount;
-    use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_ledger_types::IAccountState;
+    use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
-    use crate::account::NativeAccountTypeState;
+    use crate::{
+        ssz_generated::ssz::state::OLAccountTypeState,
+        test_utils::{tsnl_account_entry_strategy, tsnl_ledger_accounts_table_strategy},
+    };
 
     // Helper function to create an Empty account state
-    fn create_empty_account_state(
-        serial: AccountSerial,
-        balance: BitcoinAmount,
-    ) -> NativeAccountState {
-        NativeAccountState::new(serial, balance, NativeAccountTypeState::Empty)
+    fn create_empty_account_state(serial: AccountSerial, balance: BitcoinAmount) -> OLAccountState {
+        OLAccountState::new(serial, balance, OLAccountTypeState::Empty)
     }
 
     // Helper function to create test account IDs
@@ -379,15 +331,15 @@ mod tests {
     }
 
     #[test]
-    fn test_codec_roundtrip_empty_table() {
+    fn test_ssz_roundtrip_empty_table() {
         let table = TsnlLedgerAccountsTable::new_empty();
 
-        // Encode
-        let encoded = encode_to_vec(&table).expect("Failed to encode table");
+        // Encode using SSZ
+        let encoded = table.as_ssz_bytes();
 
-        // Decode
-        let decoded: TsnlLedgerAccountsTable =
-            decode_buf_exact(&encoded).expect("Failed to decode table");
+        // Decode using SSZ
+        let decoded =
+            TsnlLedgerAccountsTable::from_ssz_bytes(&encoded).expect("Failed to decode table");
 
         // Verify they match
         assert_eq!(decoded.accounts.len(), table.accounts.len());
@@ -399,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn test_codec_roundtrip_with_accounts() {
+    fn test_ssz_roundtrip_with_accounts() {
         let mut table = TsnlLedgerAccountsTable::new_empty();
 
         // Add several accounts
@@ -412,12 +364,12 @@ mod tests {
             table.create_account(account_id, account_state).unwrap();
         }
 
-        // Encode
-        let encoded = encode_to_vec(&table).expect("Failed to encode table");
+        // Encode using SSZ
+        let encoded = table.as_ssz_bytes();
 
-        // Decode
-        let decoded: TsnlLedgerAccountsTable =
-            decode_buf_exact(&encoded).expect("Failed to decode table");
+        // Decode using SSZ
+        let decoded =
+            TsnlLedgerAccountsTable::from_ssz_bytes(&encoded).expect("Failed to decode table");
 
         // Verify accounts match
         assert_eq!(decoded.accounts.len(), table.accounts.len());
@@ -509,5 +461,20 @@ mod tests {
             let state = table.get_account_state(&account_id);
             assert!(state.is_none());
         }
+    }
+
+    mod tsnl_account_entry {
+        use super::*;
+
+        ssz_proptest!(TsnlAccountEntry, tsnl_account_entry_strategy());
+    }
+
+    mod tsnl_ledger_accounts_table {
+        use super::*;
+
+        ssz_proptest!(
+            TsnlLedgerAccountsTable,
+            tsnl_ledger_accounts_table_strategy()
+        );
     }
 }

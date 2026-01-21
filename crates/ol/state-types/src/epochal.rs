@@ -4,16 +4,9 @@
 
 use strata_acct_types::BitcoinAmount;
 use strata_asm_manifest_types::AsmManifest;
-use strata_codec::Codec;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
-#[derive(Clone, Debug, Codec)]
-pub struct EpochalState {
-    total_ledger_funds: BitcoinAmount,
-    cur_epoch: u32,
-    last_l1_block: L1BlockCommitment,
-    checkpointed_epoch: EpochCommitment,
-}
+use crate::ssz_generated::ssz::state::EpochalState;
 
 impl EpochalState {
     /// Create a new epochal state for testing.
@@ -86,4 +79,14 @@ impl EpochalState {
     pub fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.total_ledger_funds = amt;
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use super::*;
+    use crate::test_utils::epochal_state_strategy;
+
+    ssz_proptest!(EpochalState, epochal_state_strategy());
 }
