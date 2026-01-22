@@ -16,9 +16,11 @@ use strata_ledger_types::{
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    InboxAccumulator, LedgerDiff, NewAccountEntry, OlDaBlobV1, PendingWithdrawQueue,
-    SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList, WithdrawalIntents,
+    InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OlDaBlobV1,
+    PendingWithdrawQueue, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
+    WithdrawalIntents,
 };
+use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use thiserror::Error;
 #[cfg(feature = "tracing")]
 use tracing::error;
@@ -50,6 +52,18 @@ pub enum DaAccumulationError {
     /// New account serials are not contiguous.
     #[error("da accumulator serial gap expected {0} got {1}")]
     NewAccountSerialGap(AccountSerial, AccountSerial),
+
+    /// VK size exceeds maximum allowed.
+    #[error("da accumulator vk too large: {provided} bytes (max {max})")]
+    VkTooLarge { provided: usize, max: usize },
+
+    /// Withdrawal intent destination exceeds maximum allowed.
+    #[error("da accumulator withdrawal dest too large: {provided} bytes (max {max})")]
+    WithdrawalIntentTooLarge { provided: usize, max: usize },
+
+    /// Message payload exceeds maximum allowed.
+    #[error("da accumulator message payload too large: {provided} bytes (max {max})")]
+    MessagePayloadTooLarge { provided: usize, max: usize },
 
     /// Encoded DA blob exceeds the maximum size limit.
     #[error("da accumulator payload too large: {provided} bytes (max {max})")]
@@ -184,6 +198,14 @@ impl EpochDaAccumulator {
     /// Records the inbox messages and snark state updates from an indexer write.
     fn record_writes(&mut self, writes: IndexerWrites) {
         for msg in writes.inbox_messages() {
+            let payload_len = msg.entry.payload().data().len();
+            if payload_len > MAX_MSG_PAYLOAD_BYTES {
+                self.last_error = Some(DaAccumulationError::MessagePayloadTooLarge {
+                    provided: payload_len,
+                    max: MAX_MSG_PAYLOAD_BYTES,
+                });
+                continue;
+            }
             let entry = DaMessageEntry::from(msg.entry.clone());
             self.inbox_messages
                 .entry(msg.account_id)
@@ -206,8 +228,23 @@ impl EpochDaAccumulator {
 
     /// Records a new account.
     fn record_new_account(&mut self, serial: AccountSerial, entry: NewAccountEntry) {
-        if self.first_new_serial.is_none() {
+        if let Some(first_serial) = self.first_new_serial {
+            let expected =
+                AccountSerial::new(*first_serial.inner() + self.new_accounts.len() as u32);
+            if serial != expected && self.last_error.is_none() {
+                self.last_error = Some(DaAccumulationError::NewAccountSerialGap(expected, serial));
+            }
+        } else {
             self.first_new_serial = Some(serial);
+        }
+        if let AccountTypeInit::Snark(init) = &entry.init.type_state {
+            let vk_len = init.update_vk.as_slice().len();
+            if vk_len > MAX_VK_BYTES {
+                self.last_error = Some(DaAccumulationError::VkTooLarge {
+                    provided: vk_len,
+                    max: MAX_VK_BYTES,
+                });
+            }
         }
         self.new_account_ids.insert(entry.account_id);
         self.new_accounts.push(entry);
@@ -220,6 +257,9 @@ impl EpochDaAccumulator {
 
     /// Finalizes the epoch by building the DA blob.
     fn finalize<S: IStateAccessor>(&mut self, state: &S) -> Result<Vec<u8>, DaAccumulationError> {
+        if let Some(err) = self.last_error.take() {
+            return Err(err);
+        }
         let global_diff = self.build_global_diff()?;
         let ledger_diff = self.build_ledger_diff(state)?;
         let state_diff = StateDiff::new(global_diff, ledger_diff);
@@ -577,14 +617,25 @@ where
 
     fn record_withdrawal_intent(&mut self, amt: u64, dest: Vec<u8>) {
         self.inner.record_withdrawal_intent(amt, dest.clone());
+
         if !self.da_tracking_enabled {
             return;
         }
+
+        let dest_len = dest.len();
         let Some(intent) = SimpleWithdrawalIntentLogData::new(amt, dest) else {
             #[cfg(feature = "tracing")]
             tracing::warn!("failed to record withdrawal intent (dest too large)");
             return;
         };
+
+        if dest_len > MAX_WITHDRAWAL_DESC_LEN {
+            self.epoch_acc.last_error = Some(DaAccumulationError::WithdrawalIntentTooLarge {
+                provided: dest_len,
+                max: MAX_WITHDRAWAL_DESC_LEN,
+            });
+        }
+
         self.epoch_acc.record_withdrawal_intent(intent);
     }
 
