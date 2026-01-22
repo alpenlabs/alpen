@@ -171,9 +171,7 @@ impl AlpenGossipPackage {
         let msg_id = buf.get_u8();
         ensure!(
             msg_id == GOSSIP_PACKAGE_MSG_ID,
-            "unexpected gossip message type: expected {}, got {}",
-            GOSSIP_PACKAGE_MSG_ID,
-            msg_id
+            "unexpected gossip message type: expected {GOSSIP_PACKAGE_MSG_ID}, got {msg_id}"
         );
 
         let message = AlpenGossipMessage::try_decode(buf)?;

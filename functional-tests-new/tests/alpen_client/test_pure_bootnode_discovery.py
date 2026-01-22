@@ -23,8 +23,8 @@ class TestPureBootnodeDiscovery(AlpenClientTest):
         fullnode = self.get_service("fullnode")
 
         logger.info("Waiting for discv5 peer discovery...")
-        sequencer.wait_for_peers(1, timeout=90)
-        fullnode.wait_for_peers(1, timeout=90)
+        sequencer.wait_for_peers(1, timeout=60)
+        fullnode.wait_for_peers(1, timeout=60)
         logger.info("Peers discovered")
 
         # Verify block propagation

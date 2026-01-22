@@ -4,12 +4,15 @@ Alpen-client service wrapper with P2P and Ethereum RPC capabilities.
 
 import atexit
 import contextlib
+import logging
 import subprocess
 from typing import TypedDict
 
 from common.rpc import JsonRpcClient
 from common.services.base import RpcService
 from common.wait import wait_until
+
+logger = logging.getLogger(__name__)
 
 
 def _register_kill(proc):
@@ -114,7 +117,8 @@ class AlpenClientService(RpcService):
         rpc = self.create_rpc()
         try:
             return rpc.admin_peers()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"get_peers failed: {e}")
             return []
 
     def get_peer_count(self) -> int:
@@ -123,7 +127,8 @@ class AlpenClientService(RpcService):
         try:
             result = rpc.net_peerCount()
             return int(result, 16)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"get_peer_count failed: {e}")
             return 0
 
     def get_node_info(self) -> dict:
