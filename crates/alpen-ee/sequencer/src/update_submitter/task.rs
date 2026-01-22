@@ -1,6 +1,6 @@
 //! Update submitter task implementation.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use alpen_ee_common::{
     BatchId, BatchProver, BatchStatus, BatchStorage, ExecBlockStorage, OLFinalizedStatus,
@@ -8,13 +8,15 @@ use alpen_ee_common::{
 };
 use eyre::{eyre, Result};
 use strata_snark_acct_types::SnarkAccountUpdate;
-use tokio::sync::watch;
+use tokio::{sync::watch, time};
 use tracing::{debug, error, warn};
 
 use crate::update_submitter::update_builder::build_update_from_batch;
 
 /// Maximum number of entries in the update cache.
-const UPDATE_CACHE_MAX_SIZE: usize = 64;
+const DEFAULT_UPDATE_CACHE_MAX_SIZE: usize = 64;
+/// Polling interval to process batches regardless of events.
+const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Cache for built updates, keyed by BatchId.
 /// Stores (batch_idx, update) to allow eviction based on sequence number.
@@ -37,7 +39,7 @@ impl UpdateCache {
     /// Insert an update into the cache if there is room.
     /// If the cache is at max capacity, the entry is not inserted.
     fn insert(&mut self, batch_id: BatchId, batch_idx: u64, update: SnarkAccountUpdate) {
-        if self.entries.len() < UPDATE_CACHE_MAX_SIZE {
+        if self.entries.len() < DEFAULT_UPDATE_CACHE_MAX_SIZE {
             self.entries.insert(batch_id, (batch_idx, update));
         }
     }
@@ -72,15 +74,29 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
 {
     let mut update_cache = UpdateCache::new();
 
+    // run a first pass on start without waiting for any events
+    if let Err(e) = process_ready_batches(
+        ol_client.as_ref(),
+        batch_storage.as_ref(),
+        exec_storage.as_ref(),
+        prover.as_ref(),
+        &mut update_cache,
+    )
+    .await
+    {
+        error!(error = %e, "Update submitter error");
+    }
+
+    // afterwards, process ready batches at fixed intervals, and after ol or batch changes
+    let mut poll_interval = time::interval(DEFAULT_POLL_INTERVAL);
     loop {
-        let result = tokio::select! {
+        tokio::select! {
             // Branch 1: New batch ready notification
             changed = batch_ready_rx.changed() => {
                 if changed.is_err() {
                     warn!("batch_ready_rx closed; exiting");
                     return;
                 }
-                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref(), &mut update_cache).await
             }
             // Branch 2: OL chain status update
             changed = ol_status_rx.changed() => {
@@ -88,11 +104,20 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
                     warn!("ol_status_rx closed; exiting");
                     return;
                 }
-                process_ready_batches(ol_client.as_ref(), batch_storage.as_ref(), exec_storage.as_ref(), prover.as_ref(), &mut update_cache).await
             }
+            // Branch 3: Poll interval tick
+            _ = poll_interval.tick() => { }
         };
 
-        if let Err(e) = result {
+        if let Err(e) = process_ready_batches(
+            ol_client.as_ref(),
+            batch_storage.as_ref(),
+            exec_storage.as_ref(),
+            prover.as_ref(),
+            &mut update_cache,
+        )
+        .await
+        {
             error!(error = %e, "Update submitter error");
         }
     }
