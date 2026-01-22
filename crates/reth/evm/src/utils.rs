@@ -88,6 +88,8 @@ const EVM_ADDR_LEN: usize = size_of::<Address>();
 /// The first 12 bytes must be zero for a valid EVM address.
 ///
 /// Returns [`None`] if the first 12 bytes contain any non-zero values.
+///
+/// See also [`subject_to_address_unchecked`] for a version without validation.
 pub fn subject_to_address(subject: &SubjectId) -> Option<Address> {
     let bytes = subject.inner();
     // Check that the first 12 bytes are zero (valid EVM address padding)
@@ -97,10 +99,24 @@ pub fn subject_to_address(subject: &SubjectId) -> Option<Address> {
     {
         return None;
     }
+    Some(subject_to_address_unchecked(subject))
+}
+
+/// Converts a [`SubjectId`] to an EVM [`Address`] without validation.
+///
+/// Extracts the last 20 bytes of the 32-byte [`SubjectId`] as an EVM address,
+/// without checking if the first 12 bytes are zero.
+///
+/// Use this only when you are certain the [`SubjectId`] represents a valid EVM address,
+/// or when you explicitly want to ignore non-zero padding bytes.
+///
+/// See also [`subject_to_address`] for a validating version.
+pub fn subject_to_address_unchecked(subject: &SubjectId) -> Address {
+    let bytes = subject.inner();
     // Extract the last 20 bytes as the address
     let mut address_bytes = [0u8; EVM_ADDR_LEN];
     address_bytes.copy_from_slice(&bytes[SUBJ_ID_LEN - EVM_ADDR_LEN..]);
-    Some(Address::from(address_bytes))
+    Address::from(address_bytes)
 }
 
 /// Converts an EVM [`Address`] to a [`SubjectId`].
