@@ -12,7 +12,7 @@ use tracing::{debug, error, warn};
 
 use super::{
     ctx::BatchLifecycleCtx,
-    reorg::{detect_reorg, handle_reorg, ReorgDetected},
+    reorg::{detect_reorg, handle_reorg, ReorgResult},
     state::BatchLifecycleState,
 };
 
@@ -20,7 +20,7 @@ use super::{
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Try to post DA for the next batch (Sealed → DaPending).
-async fn try_post_da<D, P, S>(
+async fn try_advance_da_pending<D, P, S>(
     state: &mut BatchLifecycleState,
     latest_batch: &Batch,
     ctx: &BatchLifecycleCtx<D, P, S>,
@@ -30,21 +30,22 @@ where
     P: BatchProver,
     S: BatchStorage,
 {
-    let idx = state.da_post_frontier();
+    // Next batch to process is current frontier + 1
+    let target_idx = state.da_pending().idx() + 1;
 
     // If we're past the latest batch, nothing to do
-    if idx > latest_batch.idx() {
+    if target_idx > latest_batch.idx() {
         return Ok(());
     }
 
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(idx).await? else {
+    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
         return Ok(()); // Batch doesn't exist yet
     };
 
     match status {
         BatchStatus::Sealed => {
             // Start DA posting. If this fails, we retry in the next cycle.
-            debug!(batch_idx = idx, batch_id = ?batch.id(), "Posting DA");
+            debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Posting DA");
 
             ctx.da_provider.post_batch_da(batch.id()).await?;
 
@@ -52,15 +53,15 @@ where
                 .update_batch_status(batch.id(), BatchStatus::DaPending)
                 .await?;
 
-            state.advance_da_post_frontier();
+            state.advance_da_pending(target_idx, batch.id());
         }
         BatchStatus::DaPending
         | BatchStatus::DaComplete { .. }
         | BatchStatus::ProofPending { .. }
         | BatchStatus::ProofReady { .. }
         | BatchStatus::Genesis => {
-            // Already past this stage, advance
-            state.advance_da_post_frontier();
+            // Already past this stage, advance frontier
+            state.advance_da_pending(target_idx, batch.id());
         }
     }
 
@@ -68,7 +69,7 @@ where
 }
 
 /// Try to confirm DA for the next batch (DaPending → DaComplete).
-async fn try_confirm_da<D, P, S>(
+async fn try_advance_da_complete<D, P, S>(
     state: &mut BatchLifecycleState,
     latest_batch: &Batch,
     ctx: &BatchLifecycleCtx<D, P, S>,
@@ -78,14 +79,15 @@ where
     P: BatchProver,
     S: BatchStorage,
 {
-    let idx = state.da_confirm_frontier();
+    // Next batch to process is current frontier + 1
+    let target_idx = state.da_complete().idx() + 1;
 
     // If we're past the latest batch, nothing to do
-    if idx > latest_batch.idx() {
+    if target_idx > latest_batch.idx() {
         return Ok(());
     }
 
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(idx).await? else {
+    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
         return Ok(()); // Batch doesn't exist yet
     };
 
@@ -100,19 +102,19 @@ where
                     // Not ready, no action
                 }
                 DaStatus::Ready(da_refs) => {
-                    debug!(batch_idx = idx, batch_id = ?batch.id(), "DA confirmed");
+                    debug!(batch_idx = target_idx, batch_id = ?batch.id(), "DA confirmed");
 
                     ctx.batch_storage
                         .update_batch_status(batch.id(), BatchStatus::DaComplete { da: da_refs })
                         .await?;
 
-                    state.advance_da_confirm_frontier();
+                    state.advance_da_complete(target_idx, batch.id());
                 }
                 DaStatus::NotRequested => {
                     // We've marked the batch as da pending, but da provider says da has not been
                     // requested. Try to re-request and hope for the best.
                     warn!(
-                        batch_idx = idx,
+                        batch_idx = target_idx,
                         batch_id = ?batch.id(),
                         "Expected da operation to have been started. Retrying"
                     );
@@ -122,7 +124,7 @@ where
                 DaStatus::Failed { reason } => {
                     // CRITICAL: Manual intervention required
                     error!(
-                        batch_idx = idx,
+                        batch_idx = target_idx,
                         batch_id = ?batch.id(),
                         reason = %reason,
                         "CRITICAL: DA posting failed - manual intervention required. \
@@ -136,8 +138,8 @@ where
         | BatchStatus::ProofPending { .. }
         | BatchStatus::ProofReady { .. }
         | BatchStatus::Genesis => {
-            // Already past this stage, advance
-            state.advance_da_confirm_frontier();
+            // Already past this stage, advance frontier
+            state.advance_da_complete(target_idx, batch.id());
         }
     }
 
@@ -145,7 +147,7 @@ where
 }
 
 /// Try to request proof for the next batch (DaComplete → ProofPending).
-async fn try_request_proof<D, P, S>(
+async fn try_advance_proof_pending<D, P, S>(
     state: &mut BatchLifecycleState,
     latest_batch: &Batch,
     ctx: &BatchLifecycleCtx<D, P, S>,
@@ -155,14 +157,15 @@ where
     P: BatchProver,
     S: BatchStorage,
 {
-    let idx = state.proof_request_frontier();
+    // Next batch to process is current frontier + 1
+    let target_idx = state.proof_pending().idx() + 1;
 
     // If we're past the latest batch, nothing to do
-    if idx > latest_batch.idx() {
+    if target_idx > latest_batch.idx() {
         return Ok(());
     }
 
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(idx).await? else {
+    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
         return Ok(()); // Batch doesn't exist yet
     };
 
@@ -172,7 +175,7 @@ where
         }
         BatchStatus::DaComplete { da } => {
             // Request proof generation. If this fails, we retry in the next cycle.
-            debug!(batch_idx = idx, batch_id = ?batch.id(), "Requesting proof");
+            debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Requesting proof");
 
             ctx.prover.request_proof_generation(batch.id()).await?;
 
@@ -180,13 +183,13 @@ where
                 .update_batch_status(batch.id(), BatchStatus::ProofPending { da })
                 .await?;
 
-            state.advance_proof_request_frontier();
+            state.advance_proof_pending(target_idx, batch.id());
         }
         BatchStatus::ProofPending { .. }
         | BatchStatus::ProofReady { .. }
         | BatchStatus::Genesis => {
-            // Already past this stage, advance
-            state.advance_proof_request_frontier();
+            // Already past this stage, advance frontier
+            state.advance_proof_pending(target_idx, batch.id());
         }
     }
 
@@ -194,7 +197,7 @@ where
 }
 
 /// Try to complete proof for the next batch (ProofPending → ProofReady).
-async fn try_complete_proof<D, P, S>(
+async fn try_advance_proof_ready<D, P, S>(
     state: &mut BatchLifecycleState,
     latest_batch: &Batch,
     ctx: &BatchLifecycleCtx<D, P, S>,
@@ -204,14 +207,15 @@ where
     P: BatchProver,
     S: BatchStorage,
 {
-    let idx = state.proof_complete_frontier();
+    // Next batch to process is current frontier + 1
+    let target_idx = state.proof_ready().idx() + 1;
 
     // If we're past the latest batch, nothing to do
-    if idx > latest_batch.idx() {
+    if target_idx > latest_batch.idx() {
         return Ok(());
     }
 
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(idx).await? else {
+    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
         return Ok(()); // Batch doesn't exist yet
     };
 
@@ -223,7 +227,7 @@ where
             // Check proof status
             match ctx.prover.check_proof_status(batch.id()).await? {
                 ProofGenerationStatus::Ready { proof_id } => {
-                    debug!(batch_idx = idx, batch_id = ?batch.id(), "Proof ready");
+                    debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Proof ready");
 
                     ctx.batch_storage
                         .update_batch_status(
@@ -238,13 +242,13 @@ where
                     // Notify watchers
                     let _ = ctx.proof_ready_tx.send(Some(batch.id()));
 
-                    state.advance_proof_complete_frontier();
+                    state.advance_proof_ready(target_idx, batch.id());
                 }
 
                 ProofGenerationStatus::Failed { reason } => {
                     // CRITICAL: Manual intervention required
                     error!(
-                        batch_idx = idx,
+                        batch_idx = target_idx,
                         batch_id = ?batch.id(),
                         reason = %reason,
                         "CRITICAL: Proof generation failed - manual intervention required. \
@@ -259,10 +263,9 @@ where
 
                 ProofGenerationStatus::NotStarted => {
                     // We've marked the batch as proof pending, but prover says proof generation has
-                    // not started. Try to re-request proof generation and hope
-                    // for the best.
+                    // not started. Try to re-request proof generation and hope for the best.
                     warn!(
-                        batch_idx = idx,
+                        batch_idx = target_idx,
                         batch_id = ?batch.id(),
                         "Expected proof generation to have been started. Retrying proof generation"
                     );
@@ -272,8 +275,8 @@ where
             }
         }
         BatchStatus::ProofReady { .. } | BatchStatus::Genesis => {
-            // Already complete, advance
-            state.advance_proof_complete_frontier();
+            // Already complete, advance frontier
+            state.advance_proof_ready(target_idx, batch.id());
         }
     }
 
@@ -297,16 +300,16 @@ where
     let (latest_batch, _) = require_latest_batch(ctx.batch_storage.as_ref()).await?;
 
     // Detect and handle reorg
-    let reorg = detect_reorg(state, &latest_batch, ctx.batch_storage.as_ref()).await?;
-    if !matches!(reorg, ReorgDetected::None) {
+    let reorg = detect_reorg(state, ctx.batch_storage.as_ref()).await?;
+    if !matches!(reorg, ReorgResult::None) {
         handle_reorg(state, &latest_batch, ctx.batch_storage.as_ref(), reorg).await?;
     }
 
     // Try to advance each frontier (order doesn't matter, they're independent)
-    try_post_da(state, &latest_batch, ctx).await?;
-    try_confirm_da(state, &latest_batch, ctx).await?;
-    try_request_proof(state, &latest_batch, ctx).await?;
-    try_complete_proof(state, &latest_batch, ctx).await?;
+    try_advance_da_pending(state, &latest_batch, ctx).await?;
+    try_advance_da_complete(state, &latest_batch, ctx).await?;
+    try_advance_proof_pending(state, &latest_batch, ctx).await?;
+    try_advance_proof_ready(state, &latest_batch, ctx).await?;
 
     Ok(())
 }
@@ -387,6 +390,7 @@ mod tests {
 
         // Setup genesis
         let genesis = make_genesis_batch(0);
+        let genesis_id = genesis.id();
         storage.save_genesis_batch(genesis.clone()).await.unwrap();
 
         // Add batch 1 as Sealed
@@ -394,12 +398,13 @@ mod tests {
         let batch1_id = batch1.id();
         storage.save_next_batch(batch1.clone()).await.unwrap();
 
-        // Initialize state - all frontiers start at 1 (first batch after genesis)
+        // Initialize state - all frontiers start at genesis (idx 0)
         let mut state = init_lifecycle_state(&*storage).await.unwrap();
-        assert_eq!(state.da_post_frontier(), 1);
-        assert_eq!(state.da_confirm_frontier(), 1);
-        assert_eq!(state.proof_request_frontier(), 1);
-        assert_eq!(state.proof_complete_frontier(), 1);
+        assert_eq!(state.da_pending().idx(), 0);
+        assert_eq!(state.da_pending().id(), genesis_id);
+        assert_eq!(state.da_complete().idx(), 0);
+        assert_eq!(state.proof_pending().idx(), 0);
+        assert_eq!(state.proof_ready().idx(), 0);
 
         // Setup mocks
         let mut da_provider = MockBatchDaProvider::new();
@@ -435,12 +440,16 @@ mod tests {
 
         process_cycle(&mut state, &ctx).await.unwrap();
 
-        // All steps are tried in order, and all requests succed, so batch should complete whole
-        // lifecycle in a single call.
-        assert_eq!(state.da_post_frontier(), 2);
-        assert_eq!(state.da_confirm_frontier(), 2);
-        assert_eq!(state.proof_request_frontier(), 2);
-        assert_eq!(state.proof_complete_frontier(), 2);
+        // All steps are tried in order, and all requests succeed, so batch should complete whole
+        // lifecycle in a single call. Frontiers now point to batch 1.
+        assert_eq!(state.da_pending().idx(), 1);
+        assert_eq!(state.da_pending().id(), batch1_id);
+        assert_eq!(state.da_complete().idx(), 1);
+        assert_eq!(state.da_complete().id(), batch1_id);
+        assert_eq!(state.proof_pending().idx(), 1);
+        assert_eq!(state.proof_pending().id(), batch1_id);
+        assert_eq!(state.proof_ready().idx(), 1);
+        assert_eq!(state.proof_ready().id(), batch1_id);
 
         let (_, status) = storage.get_batch_by_idx(1).await.unwrap().unwrap();
         assert!(matches!(status, BatchStatus::ProofReady { .. }));

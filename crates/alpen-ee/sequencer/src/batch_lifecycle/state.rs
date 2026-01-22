@@ -1,127 +1,182 @@
 //! Batch lifecycle state management.
 
-use alpen_ee_common::{require_latest_batch, BatchStatus, BatchStorage, StorageError};
+use alpen_ee_common::{require_genesis_batch, BatchId, BatchStatus, BatchStorage, StorageError};
+
+/// A frontier tracks the latest batch that has reached a particular status.
+///
+/// Each frontier stores both the batch index and its BatchId, allowing us to detect
+/// reorgs by comparing the stored id against what's actually in storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Frontier {
+    /// Batch index of the latest batch at this status.
+    idx: u64,
+    /// BatchId of the batch at this index.
+    id: BatchId,
+}
+
+impl Frontier {
+    /// Create a new frontier.
+    pub(crate) fn new(idx: u64, id: BatchId) -> Self {
+        Self { idx, id }
+    }
+
+    /// Create a genesis frontier (idx 0 with the given genesis batch id).
+    pub(crate) fn genesis(genesis_id: BatchId) -> Self {
+        Self {
+            idx: 0,
+            id: genesis_id,
+        }
+    }
+
+    /// Get the batch index.
+    pub(crate) fn idx(&self) -> u64 {
+        self.idx
+    }
+
+    /// Get the batch id.
+    pub(crate) fn id(&self) -> BatchId {
+        self.id
+    }
+}
 
 /// State for tracking batch lifecycle progress.
 ///
 /// The lifecycle manager processes batches sequentially through their lifecycle states.
-/// This struct tracks four independent frontiers, one for each state transition.
-/// Each frontier points to the **next batch to process** for that transition.
+/// Each frontier tracks the latest batch that has reached that status (by both idx and id).
 ///
 /// Batch Lifecycle States:
-/// Sealed → DaPending → DaComplete → ProofPending → ProofReady
+/// Genesis → Sealed → DaPending → DaComplete → ProofPending → ProofReady
 ///
-/// 4 Frontiers (each points to the next batch to process):
-/// 1. da_post_frontier        - next batch to post DA for (Sealed → DaPending)
-/// 2. da_confirm_frontier     - next batch to confirm DA for (DaPending → DaComplete)
-/// 3. proof_request_frontier  - next batch to request proof for (DaComplete → ProofPending)
-/// 4. proof_complete_frontier - next batch to complete proof for (ProofPending → ProofReady)
+/// 4 Frontiers (each tracks the latest batch at that status or beyond):
+/// 1. da_pending     - latest batch with DA posted (status >= DaPending)
+/// 2. da_complete    - latest batch with DA confirmed (status >= DaComplete)
+/// 3. proof_pending  - latest batch with proof requested (status >= ProofPending)
+/// 4. proof_ready    - latest batch with proof complete (status == ProofReady)
 ///
-/// Invariant: `proof_complete <= proof_request <= da_confirm <= da_post`
+/// To process the next batch for a transition, use `frontier.idx + 1`.
+///
+/// Invariant: `proof_ready.idx <= proof_pending.idx <= da_complete.idx <= da_pending.idx`
 ///
 /// Initialize using [`init_lifecycle_state`].
 #[derive(Debug)]
 pub struct BatchLifecycleState {
-    /// Next batch to post DA for (Sealed → DaPending).
-    da_post_frontier: u64,
+    /// Latest batch with DA posted (status >= DaPending).
+    da_pending: Frontier,
 
-    /// Next batch to confirm DA for (DaPending → DaComplete).
-    da_confirm_frontier: u64,
+    /// Latest batch with DA confirmed (status >= DaComplete).
+    da_complete: Frontier,
 
-    /// Next batch to request proof for (DaComplete → ProofPending).
-    proof_request_frontier: u64,
+    /// Latest batch with proof requested (status >= ProofPending).
+    proof_pending: Frontier,
 
-    /// Next batch to complete proof for (ProofPending → ProofReady).
-    proof_complete_frontier: u64,
+    /// Latest batch with proof complete (status == ProofReady).
+    proof_ready: Frontier,
 }
 
 impl BatchLifecycleState {
-    /// Get the DA post frontier index.
-    pub(crate) fn da_post_frontier(&self) -> u64 {
-        self.da_post_frontier
-    }
-
-    /// Get the DA confirm frontier index.
-    pub(crate) fn da_confirm_frontier(&self) -> u64 {
-        self.da_confirm_frontier
-    }
-
-    /// Get the proof request frontier index.
-    pub(crate) fn proof_request_frontier(&self) -> u64 {
-        self.proof_request_frontier
-    }
-
-    /// Get the proof complete frontier index.
-    pub(crate) fn proof_complete_frontier(&self) -> u64 {
-        self.proof_complete_frontier
-    }
-
-    /// Advance DA post frontier.
-    pub(crate) fn advance_da_post_frontier(&mut self) {
-        self.da_post_frontier += 1;
-    }
-
-    /// Advance DA confirm frontier.
-    pub(crate) fn advance_da_confirm_frontier(&mut self) {
-        self.da_confirm_frontier += 1;
-    }
-
-    /// Advance proof request frontier.
-    pub(crate) fn advance_proof_request_frontier(&mut self) {
-        self.proof_request_frontier += 1;
-    }
-
-    /// Advance proof complete frontier.
-    pub(crate) fn advance_proof_complete_frontier(&mut self) {
-        self.proof_complete_frontier += 1;
-    }
-
-    /// Reset all frontiers to start fresh from genesis.
-    pub(crate) fn reset_frontiers(&mut self) {
-        self.da_post_frontier = 1; // Start at batch 1 (after genesis)
-        self.da_confirm_frontier = 1;
-        self.proof_request_frontier = 1;
-        self.proof_complete_frontier = 1;
-    }
-
-    /// Create a new state for testing purposes.
-    ///
-    /// This constructor allows tests to create specific state configurations
-    /// without going through storage initialization.
-    #[cfg(test)]
-    pub(crate) fn new_for_testing(
-        da_post_frontier: u64,
-        da_confirm_frontier: u64,
-        proof_request_frontier: u64,
-        proof_complete_frontier: u64,
-    ) -> Self {
+    /// Create a new state with all frontiers at genesis.
+    fn new_at_genesis(genesis_id: BatchId) -> Self {
+        let genesis = Frontier::genesis(genesis_id);
         Self {
-            da_post_frontier,
-            da_confirm_frontier,
-            proof_request_frontier,
-            proof_complete_frontier,
+            da_pending: genesis,
+            da_complete: genesis,
+            proof_pending: genesis,
+            proof_ready: genesis,
         }
+    }
+
+    /// Get the DA pending frontier.
+    pub(crate) fn da_pending(&self) -> &Frontier {
+        &self.da_pending
+    }
+
+    /// Get the DA complete frontier.
+    pub(crate) fn da_complete(&self) -> &Frontier {
+        &self.da_complete
+    }
+
+    /// Get the proof pending frontier.
+    pub(crate) fn proof_pending(&self) -> &Frontier {
+        &self.proof_pending
+    }
+
+    /// Get the proof ready frontier.
+    pub(crate) fn proof_ready(&self) -> &Frontier {
+        &self.proof_ready
+    }
+
+    /// Advance DA pending frontier to a new batch.
+    pub(crate) fn advance_da_pending(&mut self, idx: u64, id: BatchId) {
+        self.da_pending = Frontier::new(idx, id);
+    }
+
+    /// Advance DA complete frontier to a new batch.
+    pub(crate) fn advance_da_complete(&mut self, idx: u64, id: BatchId) {
+        self.da_complete = Frontier::new(idx, id);
+    }
+
+    /// Advance proof pending frontier to a new batch.
+    pub(crate) fn advance_proof_pending(&mut self, idx: u64, id: BatchId) {
+        self.proof_pending = Frontier::new(idx, id);
+    }
+
+    /// Advance proof ready frontier to a new batch.
+    pub(crate) fn advance_proof_ready(&mut self, idx: u64, id: BatchId) {
+        self.proof_ready = Frontier::new(idx, id);
+    }
+
+    /// Reset all frontiers to genesis state.
+    pub(crate) fn reset_to_genesis(&mut self, genesis_id: BatchId) {
+        let genesis = Frontier::genesis(genesis_id);
+        self.da_pending = genesis;
+        self.da_complete = genesis;
+        self.proof_pending = genesis;
+        self.proof_ready = genesis;
+    }
+
+    /// Reset da_pending to match da_complete.
+    pub(crate) fn reset_to_da_complete(&mut self) {
+        self.da_pending = self.da_complete;
+    }
+
+    /// Reset da_pending and da_complete to match proof_pending.
+    pub(crate) fn reset_to_proof_pending(&mut self) {
+        self.da_pending = self.proof_pending;
+        self.da_complete = self.proof_pending;
+    }
+
+    /// Reset all higher frontiers to match proof_ready.
+    pub(crate) fn reset_to_proof_ready(&mut self) {
+        self.da_pending = self.proof_ready;
+        self.da_complete = self.proof_ready;
+        self.proof_pending = self.proof_ready;
     }
 }
 
 /// Initialize batch lifecycle state from storage.
 ///
-/// This scans storage to find batches in intermediate states and determines
-/// where to resume processing.
+/// This scans storage from latest to earliest to find batches at each status level
+/// and determines where to resume processing.
 pub async fn init_lifecycle_state(
     storage: &impl BatchStorage,
 ) -> Result<BatchLifecycleState, StorageError> {
-    let (latest_batch, _latest_status) = require_latest_batch(storage).await?;
+    let (genesis_batch, _) = require_genesis_batch(storage).await?;
+    let genesis_id = genesis_batch.id();
+
+    // Start with all frontiers at genesis
+    let mut state = BatchLifecycleState::new_at_genesis(genesis_id);
+
+    // Get the latest batch to know the scan range
+    let Some((latest_batch, _)) = storage.get_latest_batch().await? else {
+        // Only genesis exists, return genesis state
+        return Ok(state);
+    };
 
     let latest_idx = latest_batch.idx();
-
-    // Find the frontier positions by scanning from batch 1
-    let mut state = BatchLifecycleState {
-        da_post_frontier: 1, // Start at batch 1 (after genesis)
-        da_confirm_frontier: 1,
-        proof_request_frontier: 1,
-        proof_complete_frontier: 1,
-    };
+    if latest_idx == 0 {
+        // Only genesis exists
+        return Ok(state);
+    }
 
     // Scan batches to find where we are in the pipeline
     recover_from_storage(&mut state, storage, latest_idx).await?;
@@ -129,233 +184,72 @@ pub async fn init_lifecycle_state(
     Ok(state)
 }
 
-/// Recover state by scanning storage for batches in intermediate states.
+/// Recover state by scanning storage from latest to earliest.
 ///
-/// Frontiers point to the **next batch to process**. We scan to find the first
-/// incomplete batch and set frontiers accordingly.
+/// Frontiers track the latest batch at each status level. We scan from latest
+/// to earliest to find the highest batch at each status.
 pub(crate) async fn recover_from_storage(
     state: &mut BatchLifecycleState,
     storage: &impl BatchStorage,
     latest_idx: u64,
 ) -> Result<(), StorageError> {
-    // Scan from idx 1 (skip genesis) to latest
-    for idx in 1..=latest_idx {
-        let Some((_batch, status)) = storage.get_batch_by_idx(idx).await? else {
-            break;
+    // Track which frontiers we've found (we want the highest idx for each)
+    let mut found_da_pending = false;
+    let mut found_da_complete = false;
+    let mut found_proof_pending = false;
+    let mut found_proof_ready = false;
+
+    // Scan from latest to earliest (skip genesis at idx 0)
+    for idx in (1..=latest_idx).rev() {
+        let Some((batch, status)) = storage.get_batch_by_idx(idx).await? else {
+            continue;
         };
 
-        match status {
-            BatchStatus::Sealed => {
-                // This batch needs DA posting - all frontiers point here
-                state.da_post_frontier = idx;
-                state.da_confirm_frontier = idx;
-                state.proof_request_frontier = idx;
-                state.proof_complete_frontier = idx;
-                break;
-            }
-            BatchStatus::DaPending => {
-                // DA posted, need confirmation
-                state.da_post_frontier = idx + 1; // Move past this batch
-                state.da_confirm_frontier = idx; // Confirming this batch
-                state.proof_request_frontier = idx;
-                state.proof_complete_frontier = idx;
-                break;
-            }
-            BatchStatus::DaComplete { .. } => {
-                // DA confirmed, need proof request
-                state.da_post_frontier = idx + 1;
-                state.da_confirm_frontier = idx + 1; // Move past
-                state.proof_request_frontier = idx; // Request proof for this batch
-                state.proof_complete_frontier = idx;
-                break;
-            }
-            BatchStatus::ProofPending { .. } => {
-                // Proof requested, need completion
-                state.da_post_frontier = idx + 1;
-                state.da_confirm_frontier = idx + 1;
-                state.proof_request_frontier = idx + 1; // Move past
-                state.proof_complete_frontier = idx; // Complete proof for this batch
-                break;
-            }
-            BatchStatus::ProofReady { .. } => {
-                // This batch is complete, advance all frontiers past it
-                state.da_post_frontier = idx + 1;
-                state.da_confirm_frontier = idx + 1;
-                state.proof_request_frontier = idx + 1;
-                state.proof_complete_frontier = idx + 1;
-                // Continue scanning
-            }
-            BatchStatus::Genesis => unreachable!(),
+        let frontier = Frontier::new(idx, batch.id());
+
+        // Check what status level this batch has reached
+        let at_least_da_pending = matches!(
+            status,
+            BatchStatus::DaPending
+                | BatchStatus::DaComplete { .. }
+                | BatchStatus::ProofPending { .. }
+                | BatchStatus::ProofReady { .. }
+        );
+        let at_least_da_complete = matches!(
+            status,
+            BatchStatus::DaComplete { .. }
+                | BatchStatus::ProofPending { .. }
+                | BatchStatus::ProofReady { .. }
+        );
+        let at_least_proof_pending = matches!(
+            status,
+            BatchStatus::ProofPending { .. } | BatchStatus::ProofReady { .. }
+        );
+        let at_least_proof_ready = matches!(status, BatchStatus::ProofReady { .. });
+
+        // Update frontiers (only if not already found - we want the highest idx)
+        if at_least_da_pending && !found_da_pending {
+            state.da_pending = frontier;
+            found_da_pending = true;
+        }
+        if at_least_da_complete && !found_da_complete {
+            state.da_complete = frontier;
+            found_da_complete = true;
+        }
+        if at_least_proof_pending && !found_proof_pending {
+            state.proof_pending = frontier;
+            found_proof_pending = true;
+        }
+        if at_least_proof_ready && !found_proof_ready {
+            state.proof_ready = frontier;
+            found_proof_ready = true;
+        }
+
+        // Early exit if all frontiers found
+        if found_da_pending && found_da_complete && found_proof_pending && found_proof_ready {
+            break;
         }
     }
 
     Ok(())
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use alpen_ee_common::InMemoryStorage;
-
-//     use super::*;
-//     use crate::batch_lifecycle::test_utils::*;
-
-//     // ========================================================================
-//     // A. State Initialization
-//     // ========================================================================
-
-//     #[tokio::test]
-//     async fn test_init_lifecycle_state_only_genesis() {
-//         let storage = InMemoryStorage::new();
-
-//         // Genesis batch at idx 0
-//         let genesis = make_genesis_batch(0);
-//         storage.save_genesis_batch(genesis.clone()).await.unwrap();
-
-//         // Update genesis to ProofReady status
-//         storage
-//             .update_batch_status(
-//                 genesis.id(),
-//                 BatchStatus::ProofReady {
-//                     da: vec![],
-//                     proof: test_proof_id(0),
-//                 },
-//             )
-//             .await
-//             .unwrap();
-
-//         let state = init_lifecycle_state(&storage).await.unwrap();
-
-//         // Should start at batch 1 (after genesis)
-//         assert_eq!(state.da_post_frontier(), 1);
-//         assert_eq!(state.da_confirm_frontier(), 1);
-//         assert_eq!(state.proof_request_frontier(), 1);
-//         assert_eq!(state.proof_complete_frontier(), 1);
-//     }
-
-//     #[tokio::test]
-//     async fn test_recover_finds_sealed_batch() {
-//         let mut state = BatchLifecycleState::new_for_testing(1, 1, 1, 1);
-//         let storage = InMemoryStorage::new();
-
-//         // Store genesis
-//         let genesis = make_genesis_batch(0);
-//         storage.save_genesis_batch(genesis).await.unwrap();
-
-//         // Store batches 1 and 2 as ProofReady
-//         for idx in 1..=2 {
-//             let batch = make_batch(idx, (idx - 1) as u8, idx as u8);
-//             storage.save_next_batch(batch.clone()).await.unwrap();
-//             storage
-//                 .update_batch_status(
-//                     batch.id(),
-//                     BatchStatus::ProofReady {
-//                         da: vec![make_da_ref(1, idx as u8)],
-//                         proof: test_proof_id(idx as u8),
-//                     },
-//                 )
-//                 .await
-//                 .unwrap();
-//         }
-
-//         // Store batch 3 as Sealed
-//         let batch3 = make_batch(3, 2, 3);
-//         storage.save_next_batch(batch3).await.unwrap();
-
-//         recover_from_storage(&mut state, &storage, 5).await.unwrap();
-
-//         // All frontiers should stop at Sealed batch
-//         assert_eq!(state.da_post_frontier(), 3);
-//         assert_eq!(state.da_confirm_frontier(), 3);
-//         assert_eq!(state.proof_request_frontier(), 3);
-//         assert_eq!(state.proof_complete_frontier(), 3);
-//     }
-
-//     #[tokio::test]
-//     async fn test_recover_finds_da_pending() {
-//         let mut state = BatchLifecycleState::new_for_testing(1, 1, 1, 1);
-//         let storage = InMemoryStorage::new();
-
-//         // Store genesis
-//         let genesis = make_genesis_batch(0);
-//         storage.save_genesis_batch(genesis).await.unwrap();
-
-//         // Store batches 1 and 2 as ProofReady
-//         for idx in 1..=2 {
-//             let batch = make_batch(idx, (idx - 1) as u8, idx as u8);
-//             storage.save_next_batch(batch.clone()).await.unwrap();
-//             storage
-//                 .update_batch_status(
-//                     batch.id(),
-//                     BatchStatus::ProofReady {
-//                         da: vec![make_da_ref(1, idx as u8)],
-//                         proof: test_proof_id(idx as u8),
-//                     },
-//                 )
-//                 .await
-//                 .unwrap();
-//         }
-
-//         // Store batch 3 as DaPending
-//         let batch3 = make_batch(3, 2, 3);
-//         storage.save_next_batch(batch3.clone()).await.unwrap();
-//         storage
-//             .update_batch_status(batch3.id(), BatchStatus::DaPending)
-//             .await
-//             .unwrap();
-
-//         recover_from_storage(&mut state, &storage, 5).await.unwrap();
-
-//         // DA posted but not confirmed
-//         assert_eq!(state.da_post_frontier(), 4); // Advance past
-//         assert_eq!(state.da_confirm_frontier(), 3); // Waiting for confirmation
-//         assert_eq!(state.proof_request_frontier(), 3);
-//         assert_eq!(state.proof_complete_frontier(), 3);
-//     }
-
-//     #[tokio::test]
-//     async fn test_recover_finds_proof_pending() {
-//         let mut state = BatchLifecycleState::new_for_testing(1, 1, 1, 1);
-//         let storage = InMemoryStorage::new();
-
-//         // Store genesis
-//         let genesis = make_genesis_batch(0);
-//         storage.save_genesis_batch(genesis).await.unwrap();
-
-//         // Store batches 1 and 2 as ProofReady
-//         for idx in 1..=2 {
-//             let batch = make_batch(idx, (idx - 1) as u8, idx as u8);
-//             storage.save_next_batch(batch.clone()).await.unwrap();
-//             storage
-//                 .update_batch_status(
-//                     batch.id(),
-//                     BatchStatus::ProofReady {
-//                         da: vec![make_da_ref(1, idx as u8)],
-//                         proof: test_proof_id(idx as u8),
-//                     },
-//                 )
-//                 .await
-//                 .unwrap();
-//         }
-
-//         // Store batch 3 as ProofPending
-//         let batch3 = make_batch(3, 2, 3);
-//         storage.save_next_batch(batch3.clone()).await.unwrap();
-//         storage
-//             .update_batch_status(
-//                 batch3.id(),
-//                 BatchStatus::ProofPending {
-//                     da: vec![make_da_ref(1, 3)],
-//                 },
-//             )
-//             .await
-//             .unwrap();
-
-//         recover_from_storage(&mut state, &storage, 5).await.unwrap();
-
-//         // Proof requested but not complete
-//         assert_eq!(state.da_post_frontier(), 4);
-//         assert_eq!(state.da_confirm_frontier(), 4);
-//         assert_eq!(state.proof_request_frontier(), 4); // Advance past
-//         assert_eq!(state.proof_complete_frontier(), 3); // Waiting for proof
-//     }
-// }
