@@ -121,7 +121,9 @@ pub fn execute_block_inputs<S: IStateAccessor>(
     let post_state_roots = if let Some(manifest_container) = block_exec_input.manifest_container() {
         // Terminal block, with manifests.
         let term_ctx = tx_ctx.basic_context();
+        state.set_da_tracking_enabled(false);
         manifest_processing::process_block_manifests(state, manifest_container, term_ctx)?;
+        state.set_da_tracking_enabled(true);
 
         // Then finally extract the stuff.
         let final_state_root = state.compute_state_root()?;
