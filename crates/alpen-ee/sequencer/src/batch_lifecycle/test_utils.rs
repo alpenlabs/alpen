@@ -1,6 +1,8 @@
 //! Shared test utilities for batch_lifecycle tests.
 
-use alpen_ee_common::{Batch, BatchId, BatchStatus, BatchStorage, L1DaBlockRef, ProofId};
+use alpen_ee_common::{
+    Batch, BatchId, BatchStatus, BatchStorage, InMemoryStorage, L1DaBlockRef, ProofId,
+};
 use bitcoin::{absolute, hashes::Hash as _, BlockHash, Txid, Wtxid};
 use strata_acct_types::Hash;
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
@@ -66,7 +68,7 @@ pub(crate) fn test_proof_id(n: u8) -> ProofId {
 }
 
 /// Simplified batch status for test helper (auto-generates dummy DA/proof data).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code, clippy::allow_attributes, reason = "test helper")]
 pub(crate) enum TestBatchStatus {
     Sealed,
@@ -127,4 +129,22 @@ pub(crate) async fn fill_storage(
     }
 
     batches
+}
+
+pub(crate) fn read_batch_statuses(storage: impl AsRef<InMemoryStorage>) -> Vec<TestBatchStatus> {
+    storage
+        .as_ref()
+        .batches
+        .read()
+        .unwrap()
+        .iter()
+        .filter_map(|(_, (_, batch_status))| match batch_status {
+            BatchStatus::Genesis => None,
+            BatchStatus::Sealed => Some(TestBatchStatus::Sealed),
+            BatchStatus::DaPending => Some(TestBatchStatus::DaPending),
+            BatchStatus::DaComplete { .. } => Some(TestBatchStatus::DaComplete),
+            BatchStatus::ProofPending { .. } => Some(TestBatchStatus::ProofPending),
+            BatchStatus::ProofReady { .. } => Some(TestBatchStatus::ProofReady),
+        })
+        .collect()
 }

@@ -12,11 +12,11 @@ use crate::{Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkId, ChunkStat
 /// In-memory storage for batches and chunks.
 #[derive(Debug, Default)]
 pub struct InMemoryStorage {
-    batches: RwLock<BTreeMap<u64, (Batch, BatchStatus)>>,
-    batch_id_to_idx: RwLock<HashMap<BatchId, u64>>,
-    chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
-    chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
-    batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
+    pub batches: RwLock<BTreeMap<u64, (Batch, BatchStatus)>>,
+    pub batch_id_to_idx: RwLock<HashMap<BatchId, u64>>,
+    pub chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
+    pub chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
+    pub batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
 }
 
 impl InMemoryStorage {

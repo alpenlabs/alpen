@@ -80,10 +80,18 @@ where
     }
 
     // Try to advance each frontier (order doesn't matter, they're independent)
-    try_advance_da_pending(state, &latest_batch, ctx).await?;
-    try_advance_da_complete(state, &latest_batch, ctx).await?;
-    try_advance_proof_pending(state, &latest_batch, ctx).await?;
-    try_advance_proof_ready(state, &latest_batch, ctx).await?;
+    if let Err(e) = try_advance_da_pending(state, &latest_batch, ctx).await {
+        error!(error = %e, "failed to advance da pending frontier");
+    }
+    if let Err(e) = try_advance_da_complete(state, &latest_batch, ctx).await {
+        error!(error = %e, "failed to advance da complete frontier");
+    }
+    if let Err(e) = try_advance_proof_pending(state, &latest_batch, ctx).await {
+        error!(error = %e, "failed to advance proof pending frontier");
+    }
+    if let Err(e) = try_advance_proof_ready(state, &latest_batch, ctx).await {
+        error!(error = %e, "failed to advance proof ready frontier");
+    }
 
     Ok(())
 }
@@ -93,29 +101,74 @@ mod tests {
     use std::sync::Arc;
 
     use alpen_ee_common::{
-        BatchStatus, DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver,
-        ProofGenerationStatus,
+        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, ProofGenerationStatus,
     };
+    use eyre::eyre;
     use tokio::sync::watch;
 
     use super::*;
     use crate::batch_lifecycle::{state::init_lifecycle_state, test_utils::*};
 
-    /// Helper to create a test context
-    fn _make_test_ctx<S: BatchStorage>(
-        storage: Arc<S>,
+    struct MockedCtxBuilder {
         da_provider: MockBatchDaProvider,
         prover: MockBatchProver,
-    ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, S> {
-        let (_sealed_batch_tx, sealed_batch_rx) = watch::channel(make_batch_id(0, 0));
-        let (proof_ready_tx, _proof_ready_rx) = watch::channel(None);
+    }
 
-        BatchLifecycleCtx {
-            batch_storage: storage,
-            da_provider: Arc::new(da_provider),
-            prover: Arc::new(prover),
-            sealed_batch_rx,
-            proof_ready_tx,
+    impl MockedCtxBuilder {
+        fn build<S: BatchStorage>(
+            self,
+            batch_storage: Arc<S>,
+        ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, S> {
+            let da_provider = Arc::new(self.da_provider);
+            let prover = Arc::new(self.prover);
+            let (_sealed_batch_tx, sealed_batch_rx) = watch::channel(make_batch_id(0, 0));
+            let (proof_ready_tx, _proof_ready_rx) = watch::channel(None);
+
+            BatchLifecycleCtx {
+                batch_storage,
+                da_provider,
+                prover,
+                sealed_batch_rx,
+                proof_ready_tx,
+            }
+        }
+
+        fn new() -> Self {
+            Self {
+                da_provider: MockBatchDaProvider::new(),
+                prover: MockBatchProver::new(),
+            }
+        }
+
+        fn with_happy_mocks(mut self) -> Self {
+            // All requests succeed immediately
+            self.da_provider
+                .expect_post_batch_da()
+                .returning(|_| Ok(()));
+
+            self.da_provider
+                .expect_check_da_status()
+                .returning(|_| Ok(DaStatus::Ready(vec![make_da_ref(1, 1)])));
+
+            self.prover
+                .expect_request_proof_generation()
+                .returning(|_| Ok(()));
+
+            self.prover.expect_check_proof_status().returning(|_| {
+                Ok(ProofGenerationStatus::Ready {
+                    proof_id: test_proof_id(1),
+                })
+            });
+
+            self
+        }
+
+        fn with<F>(mut self, f: F) -> Self
+        where
+            F: FnOnce(&mut MockedCtxBuilder),
+        {
+            f(&mut self);
+            self
         }
     }
 
@@ -131,39 +184,20 @@ mod tests {
         let batch1_id = batches[1].id();
         let batch2_id = batches[2].id();
 
-        // Initialize state - all frontiers start at genesis (idx 0)
-        let mut state = init_lifecycle_state(&*storage).await.unwrap();
+        let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
         assert_eq!(state.da_pending().idx(), 1);
         assert_eq!(state.da_pending().id(), batch1_id);
         assert_eq!(state.da_complete().idx(), 1);
         assert_eq!(state.proof_pending().idx(), 1);
         assert_eq!(state.proof_ready().idx(), 1);
 
-        let (_, status) = storage.get_batch_by_idx(2).await.unwrap().unwrap();
-        assert!(matches!(status, BatchStatus::Sealed));
+        // check that batches in storage are as expected initially
+        assert_eq!(read_batch_statuses(&storage), [ProofReady, Sealed]);
 
         // Setup mocks
-        let mut da_provider = MockBatchDaProvider::new();
-        let mut prover = MockBatchProver::new();
-
-        // All requests succeed immediately
-        da_provider.expect_post_batch_da().returning(|_| Ok(()));
-
-        da_provider
-            .expect_check_da_status()
-            .returning(|_| Ok(DaStatus::Ready(vec![make_da_ref(1, 1)])));
-
-        prover
-            .expect_request_proof_generation()
-            .returning(|_| Ok(()));
-
-        prover.expect_check_proof_status().returning(|_| {
-            Ok(ProofGenerationStatus::Ready {
-                proof_id: test_proof_id(1),
-            })
-        });
-
-        let ctx = _make_test_ctx(storage.clone(), da_provider, prover);
+        let ctx = MockedCtxBuilder::new()
+            .with_happy_mocks()
+            .build(storage.clone());
 
         process_cycle(&mut state, &ctx).await.unwrap();
 
@@ -178,7 +212,163 @@ mod tests {
         assert_eq!(state.proof_ready().idx(), 2);
         assert_eq!(state.proof_ready().id(), batch2_id);
 
-        let (_, status) = storage.get_batch_by_idx(2).await.unwrap().unwrap();
-        assert!(matches!(status, BatchStatus::ProofReady { .. }));
+        // check that batch has been set to proof ready
+        assert_eq!(read_batch_statuses(&storage), [ProofReady, ProofReady]);
+    }
+
+    #[tokio::test]
+    async fn test_multi_batch_lifecycle_happy() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+
+        use TestBatchStatus::*;
+        fill_storage(
+            storage.as_ref(),
+            &[
+                ProofReady,
+                ProofReady,
+                ProofPending,
+                ProofPending,
+                DaComplete,
+                DaComplete,
+                DaPending,
+                DaPending,
+                Sealed,
+                Sealed,
+            ],
+        )
+        .await;
+
+        // ensure that batches are as expected
+        assert_eq!(
+            read_batch_statuses(&storage),
+            [
+                ProofReady,
+                ProofReady,
+                ProofPending,
+                ProofPending,
+                DaComplete,
+                DaComplete,
+                DaPending,
+                DaPending,
+                Sealed,
+                Sealed,
+            ]
+        );
+
+        let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
+
+        // Setup mocks
+        let ctx = MockedCtxBuilder::new()
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        for _ in 0..10 {
+            process_cycle(&mut state, &ctx).await.unwrap();
+        }
+
+        // check that all batches have been processed
+        assert!(read_batch_statuses(&storage)
+            .iter()
+            .all(|s| s == &ProofReady),);
+    }
+
+    #[tokio::test]
+    async fn test_batch_lifecycle_happy_sequence() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+
+        use TestBatchStatus::*;
+        fill_storage(storage.as_ref(), &[Sealed]).await;
+
+        assert_eq!(read_batch_statuses(&storage), [Sealed]);
+
+        let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
+
+        // cycle 1
+        let ctx = MockedCtxBuilder::new()
+            // check da status is pending
+            .with(|b| {
+                b.da_provider
+                    .expect_post_batch_da()
+                    .returning(|_| Err(eyre!("cannot post da right now")));
+            })
+            // everything else immediately succeeds
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        // state remains Sealed
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [Sealed]);
+
+        // cycle 2
+        let ctx = MockedCtxBuilder::new()
+            // check da status is pending
+            .with(|b| {
+                b.da_provider
+                    .expect_check_da_status()
+                    .returning(|_| Ok(DaStatus::Pending));
+            })
+            // everything else immediately succeeds
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        // state transitions from Sealed -> DaPending; cannot transition to DaComplete
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [DaPending]);
+
+        // state remains in DaPending
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [DaPending]);
+
+        // cycle 3
+        let ctx = MockedCtxBuilder::new()
+            // request proof generation fails
+            .with(|b| {
+                b.prover
+                    .expect_request_proof_generation()
+                    .returning(|_| Err(eyre!("cannot generate proof right now")));
+            })
+            // everything else immediately succeeds
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        // state transitions from DaPending -> DaComplete; cannot transition to ProofPending
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [DaComplete]);
+
+        // state remains in DaComplete
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [DaComplete]);
+
+        let ctx = MockedCtxBuilder::new()
+            // check proof status is pending
+            .with(|b| {
+                b.prover
+                    .expect_check_proof_status()
+                    .returning(|_| Ok(ProofGenerationStatus::Pending));
+            })
+            // everything else immediately succeeds
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        // state transitions from DaComplete -> ProofPending; cannot transition to ProofReady
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [ProofPending]);
+
+        // state remains in ProofPending
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [ProofPending]);
+
+        let ctx = MockedCtxBuilder::new()
+            // everything immediately succeeds
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        // state transitions to ProofReady
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [ProofReady]);
+
+        // state remains in ProofReady
+        process_cycle(&mut state, &ctx).await.unwrap();
+        assert_eq!(read_batch_statuses(&storage), [ProofReady]);
     }
 }
