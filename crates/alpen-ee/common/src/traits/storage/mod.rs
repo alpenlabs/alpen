@@ -15,5 +15,6 @@ pub use exec_block::ExecBlockStorage;
 #[cfg(feature = "test-utils")]
 pub use exec_block::{exec_block_storage_test_fns, MockExecBlockStorage};
 pub use utils::{
-    require_best_ee_account_state, require_best_finalized_block, require_latest_batch,
+    require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
+    require_latest_batch,
 };

@@ -29,6 +29,37 @@ pub async fn require_latest_batch(
     })
 }
 
+/// Gets the genesis batch (at index 0) from storage, returning an error if it does not exist.
+///
+/// This function enforces the system invariant that the genesis batch must always exist
+/// in storage after initialization via `ensure_batch_genesis`.
+///
+/// # Usage
+///
+/// This function should only be called after `ensure_batch_genesis` has completed successfully
+/// at application startup. Calling it before initialization will result in an invariant violation
+/// error.
+///
+/// # Errors
+///
+/// Returns [`StorageError::InvariantViolated`] if the genesis batch does not exist in storage,
+/// indicating either:
+/// - The function was called before `ensure_batch_genesis` completed
+/// - Critical storage corruption or initialization failure
+///
+/// Returns other [`StorageError`] variants for underlying storage failures.
+///
+/// `ensure_batch_genesis`: alpen_ee_genesis::batch::ensure_batch_genesis
+pub async fn require_genesis_batch(
+    storage: &impl BatchStorage,
+) -> Result<(Batch, BatchStatus), StorageError> {
+    storage.get_batch_by_idx(0).await?.ok_or_else(|| {
+        StorageError::invariant_violated(
+            "genesis batch does not exist in storage after genesis initialization",
+        )
+    })
+}
+
 /// Gets the best EE account state from storage, returning an error if none exists.
 ///
 /// This function enforces the system invariant that at least one EE account state
