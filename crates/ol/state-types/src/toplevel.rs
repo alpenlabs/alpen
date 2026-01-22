@@ -32,6 +32,7 @@ impl OLState {
                 ),
                 EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
                 Mmr64::from_generic(&CompactMmr64::new(64)),
+                EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
             ),
             global: GlobalState::new(0),
             ledger: TsnlLedgerAccountsTable::new_empty(),
@@ -50,6 +51,7 @@ impl OLState {
                 ),
                 EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
                 Mmr64::from_generic(&CompactMmr64::new(64)),
+                EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
             ),
             global: GlobalState::new(slot),
             ledger: TsnlLedgerAccountsTable::new_empty(),
@@ -195,6 +197,14 @@ impl IStateAccessor for OLState {
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
         self.epoch.set_asm_recorded_epoch(epoch);
+    }
+
+    fn previous_epoch(&self) -> &EpochCommitment {
+        self.epoch.previous_epoch()
+    }
+
+    fn set_previous_epoch(&mut self, epoch: EpochCommitment) {
+        self.epoch.set_previous_epoch(epoch)
     }
 
     fn total_ledger_balance(&self) -> BitcoinAmount {

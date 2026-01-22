@@ -111,6 +111,14 @@ where
         self.batch.epochal_mut().set_asm_recorded_epoch(epoch);
     }
 
+    fn previous_epoch(&self) -> &EpochCommitment {
+        self.batch.epochal().previous_epoch()
+    }
+
+    fn set_previous_epoch(&mut self, epoch: EpochCommitment) {
+        self.batch.epochal_mut().set_previous_epoch(epoch);
+    }
+
     fn total_ledger_balance(&self) -> BitcoinAmount {
         self.batch.epochal().total_ledger_balance()
     }

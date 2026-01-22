@@ -55,6 +55,12 @@ pub trait IStateAccessor {
     /// manifest we've accepted.
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment);
 
+    /// Previous epoch commitment.
+    fn previous_epoch(&self) -> &EpochCommitment;
+
+    /// Sets the previous epoch commitment.
+    fn set_previous_epoch(&mut self, epoch: EpochCommitment);
+
     /// Gets the total OL ledger balance.
     fn total_ledger_balance(&self) -> BitcoinAmount;
 

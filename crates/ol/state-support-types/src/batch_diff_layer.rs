@@ -130,6 +130,18 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .unwrap_or_else(|| self.base.total_ledger_balance())
     }
 
+    fn previous_epoch(&self) -> &EpochCommitment {
+        self.batches
+            .last()
+            .map(|b| b.epochal().previous_epoch())
+            .unwrap_or_else(|| self.base.previous_epoch())
+    }
+
+    fn set_previous_epoch(&mut self, epoch: EpochCommitment) {
+        #[cfg(feature = "tracing")]
+        tracing::error!("BatchDiffState::set_previous_epoch called on read-only state");
+    }
+
     fn set_total_ledger_balance(&mut self, _amt: BitcoinAmount) {
         #[cfg(feature = "tracing")]
         tracing::error!("BatchDiffState::set_total_ledger_balance called on read-only state");
