@@ -1,9 +1,22 @@
 //! Data availability provider trait for batch lifecycle management.
 
 use async_trait::async_trait;
-use bitcoin::{Txid, Wtxid};
 
 use crate::{BatchId, L1DaBlockRef};
+
+#[derive(Debug)]
+pub enum DaStatus {
+    /// DA requested and operation is pending.
+    /// Temporary failures are retried internally while status remains `Pending`.
+    Pending,
+    /// DA is included in blocks with sufficient depth.
+    Ready(Vec<L1DaBlockRef>),
+    /// DA has not been requested for this [`BatchId`].
+    NotRequested,
+    /// Permanent failure that cannot be handled automatically.
+    /// Needs manual intervention to resolve.
+    Failed { reason: String },
+}
 
 /// Interface for posting and checking batch data availability.
 ///
@@ -16,14 +29,11 @@ pub trait BatchDaProvider: Send + Sync {
     ///
     /// Returns the transaction IDs that were broadcast. These are used to track
     /// confirmation status.
-    async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<Vec<(Txid, Wtxid)>>;
+    async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<()>;
 
     /// Check DA status for pending transactions.
     ///
     /// Returns `None` if transactions are still pending confirmation.
     /// Returns `Some(refs)` when all transactions are confirmed in L1 blocks.
-    async fn check_da_status(
-        &self,
-        txns: &[(Txid, Wtxid)],
-    ) -> eyre::Result<Option<Vec<L1DaBlockRef>>>;
+    async fn check_da_status(&self, batch_id: BatchId) -> eyre::Result<DaStatus>;
 }

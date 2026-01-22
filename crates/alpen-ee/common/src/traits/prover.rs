@@ -5,12 +5,14 @@ use crate::{BatchId, Proof, ProofId};
 #[derive(Debug)]
 pub enum ProofGenerationStatus {
     /// Proof generation requested and proof is getting generated.
+    /// Temporary failure are retried internally while status remains pending.
     Pending,
     /// Proof is ready and can be fetched using proof_id.
     Ready { proof_id: ProofId },
     /// Proof generation has not been requested for provided batch_id.
     NotStarted,
-    /// Cannot generate proof for some reason. All retries exhausted, etc.
+    /// Permanent failure that indicates the given batch can never be proven.
+    /// Needs manual intervention to resolve.
     Failed { reason: String },
 }
 

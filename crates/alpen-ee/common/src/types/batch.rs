@@ -59,7 +59,7 @@ pub enum BatchStatus {
     /// Newly sealed batch.
     Sealed,
     /// DA txn(s) posted, waiting for inclusion in block.
-    DaPending { txns: Vec<(Txid, Wtxid)> },
+    DaPending,
     /// DA txn(s) included in block(s).
     DaComplete { da: Vec<L1DaBlockRef> },
     /// Proving started, waiting for proof generation.
