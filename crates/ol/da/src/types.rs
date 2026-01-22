@@ -622,6 +622,9 @@ impl Codec for SnarkAccountInit {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let initial_state_root = Hash::decode(dec)?;
         let update_vk = U16LenBytes::decode(dec)?;
+        if update_vk.as_slice().len() > MAX_VK_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
         Ok(Self {
             initial_state_root,
             update_vk,
@@ -992,6 +995,9 @@ impl Codec for DaMessageEntry {
         let source = AccountId::decode(dec)?;
         let incl_epoch = u32::decode(dec)?;
         let payload = MsgPayload::decode(dec)?;
+        if payload.data().len() > MAX_MSG_PAYLOAD_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
         Ok(Self {
             source,
             incl_epoch,
