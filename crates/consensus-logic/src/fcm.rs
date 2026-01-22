@@ -1,4 +1,4 @@
-//! Fork choice manager. Used to pick the new fork choice.
+//! New Fork choice manager. Used to pick the new fork choice.
 
 use std::{collections::VecDeque, sync::Arc};
 
@@ -158,9 +158,11 @@ impl ForkChoiceManager {
     }
 
     fn attach_block(&mut self, blkid: &OLBlockId, bundle: &OLBlock) -> anyhow::Result<bool> {
-        let new_tip = self
-            .chain_tracker
-            .attach_block(*blkid, bundle.signed_header())?;
+        let new_tip = self.chain_tracker.attach_block(
+            bundle.header().slot(),
+            *blkid,
+            *bundle.header().parent_blkid(),
+        )?;
 
         // maybe more logic here?
 

@@ -14312,6 +14312,7 @@ dependencies = [
  "strata-db-types",
  "strata-eectl",
  "strata-identifiers",
+ "strata-ledger-types",
  "strata-merkle",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",

@@ -3,7 +3,8 @@
 use std::collections::*;
 
 use strata_db_types::traits::BlockStatus;
-use strata_ol_chain_types::{L2Header, SignedL2BlockHeader};
+use strata_identifiers::Slot;
+use strata_ol_chain_types::L2Header;
 use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_state::prelude::*;
 use strata_storage::L2BlockManager;
@@ -123,39 +124,35 @@ impl UnfinalizedBlockTracker {
     // TODO do a `SealedL2BlockHeader` thing that includes the blkid
     pub fn attach_block(
         &mut self,
+        slot: Slot,
         blkid: L2BlockId,
-        header: &SignedL2BlockHeader,
+        parent_blkid: L2BlockId,
     ) -> Result<bool, ChainTipError> {
         if self.pending_table.contains_key(&blkid) {
             warn!(?blkid, "block already attached");
             return Ok(false);
         }
 
-        let parent_blkid = header.parent();
-
-        if let Some(parent_ent) = self.pending_table.get_mut(parent_blkid) {
-            if header.slot() <= parent_ent.slot {
-                return Err(ChainTipError::ChildBeforeParent(
-                    header.slot(),
-                    parent_ent.slot,
-                ));
+        if let Some(parent_ent) = self.pending_table.get_mut(&parent_blkid) {
+            if slot <= parent_ent.slot {
+                return Err(ChainTipError::ChildBeforeParent(slot, parent_ent.slot));
             }
 
             parent_ent.children.insert(blkid);
         } else {
-            return Err(ChainTipError::AttachMissingParent(blkid, *header.parent()));
+            return Err(ChainTipError::AttachMissingParent(blkid, parent_blkid));
         }
 
         let ent = BlockEntry {
-            slot: header.slot(),
-            parent: *header.parent(),
+            slot,
+            parent: parent_blkid,
             children: HashSet::new(),
         };
 
         self.pending_table.insert(blkid, ent);
 
         // Also update the tips table, removing the parent if it's there.
-        let did_replace = self.unfinalized_tips.remove(parent_blkid);
+        let did_replace = self.unfinalized_tips.remove(&parent_blkid);
         self.unfinalized_tips.insert(blkid);
 
         Ok(!did_replace)
@@ -330,7 +327,7 @@ impl UnfinalizedBlockTracker {
                 // continue now.
                 if let Some(block) = l2_block_manager.get_block_data_blocking(&blkid)? {
                     let header = block.header();
-                    if let Err(e) = self.attach_block(blkid, header) {
+                    if let Err(e) = self.attach_block(header.slot(), blkid, *header.parent()) {
                         warn!(%blkid, err = %e, "failed to attach block, continuing");
                     }
                 } else {

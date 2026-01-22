@@ -154,7 +154,11 @@ impl ForkChoiceManager {
     }
 
     fn attach_block(&mut self, blkid: &L2BlockId, bundle: &L2BlockBundle) -> anyhow::Result<bool> {
-        let new_tip = self.chain_tracker.attach_block(*blkid, bundle.header())?;
+        let new_tip = self.chain_tracker.attach_block(
+            bundle.header().slot(),
+            *blkid,
+            *bundle.header().parent(),
+        )?;
 
         // maybe more logic here?
 
