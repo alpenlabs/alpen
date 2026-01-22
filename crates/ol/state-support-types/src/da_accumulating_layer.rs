@@ -349,11 +349,11 @@ impl EpochDaAccumulator {
         &self,
         state: &S,
     ) -> Result<LedgerDiff, DaAccumulationError> {
-        let mut new_accounts = self.new_accounts.clone();
-        new_accounts.sort_by_key(|entry| entry.serial);
+        let mut new_records = self.new_accounts.clone();
+        new_records.sort_by_key(|entry| entry.serial);
 
         if let Some(mut expected) = self.first_new_serial {
-            for entry in &new_accounts {
+            for entry in &new_records {
                 if entry.serial != expected {
                     return Err(DaAccumulationError::NewAccountSerialGap(
                         expected,
@@ -362,6 +362,16 @@ impl EpochDaAccumulator {
                 }
                 expected = expected.incr();
             }
+        }
+
+        let mut new_accounts = Vec::with_capacity(new_records.len());
+        for entry in &new_records {
+            let post = state
+                .get_account_state(entry.account_id)
+                .map_err(|_| DaAccumulationError::MissingAccount(entry.account_id))?
+                .ok_or(DaAccumulationError::MissingAccount(entry.account_id))?;
+            let init = account_init_from_state(post)?;
+            new_accounts.push(NewAccountEntry::new(entry.serial, entry.account_id, init));
         }
 
         let mut account_diffs = Vec::new();
@@ -720,6 +730,27 @@ fn account_init_from_data<T: IAccountState>(data: &NewAccountData<T>) -> Account
                 snark_state.update_vk().to_vec(),
             );
             AccountInit::new(balance, AccountTypeInit::Snark(init))
+        }
+    }
+}
+
+/// Converts post-state into DA init data for encoding new accounts.
+fn account_init_from_state<T: IAccountState>(
+    state: &T,
+) -> Result<AccountInit, DaAccumulationError> {
+    let balance = state.balance();
+    match state.type_state() {
+        AccountTypeStateRef::Empty => Ok(AccountInit::new(balance, AccountTypeInit::Empty)),
+        AccountTypeStateRef::Snark(snark_state) => {
+            let vk = snark_state.update_vk();
+            if vk.len() > MAX_VK_BYTES {
+                return Err(DaAccumulationError::VkTooLarge {
+                    provided: vk.len(),
+                    max: MAX_VK_BYTES,
+                });
+            }
+            let init = SnarkAccountInit::new(snark_state.inner_state_root(), vk.to_vec());
+            Ok(AccountInit::new(balance, AccountTypeInit::Snark(init)))
         }
     }
 }
