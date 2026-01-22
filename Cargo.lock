@@ -14165,9 +14165,9 @@ dependencies = [
  "ssz_types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
- "thiserror 2.0.17",
- "tree_hash 0.12.1",
- "tree_hash_derive 0.12.1",
+ "thiserror 2.0.18",
+ "tree_hash 0.12.3",
+ "tree_hash_derive 0.12.3",
 ]
 
 [[package]]
