@@ -3,6 +3,10 @@
 mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
+mod noop_da_provider;
+#[cfg(feature = "sequencer")]
+mod noop_prover;
+#[cfg(feature = "sequencer")]
 mod payload_builder;
 mod rpc_client;
 

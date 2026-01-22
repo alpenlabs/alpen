@@ -1067,6 +1067,7 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-node",
  "async-trait",
+ "bitcoin",
  "clap",
  "eyre",
  "jsonrpsee",

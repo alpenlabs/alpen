@@ -47,6 +47,12 @@ pub struct L1DaBlockRef {
     // inclusion merkle proof ?
 }
 
+impl L1DaBlockRef {
+    pub fn new(block: L1BlockCommitment, txns: Vec<(Txid, Wtxid)>) -> Self {
+        Self { block, txns }
+    }
+}
+
 /// Batch lifecycle states
 #[derive(Debug, Clone)]
 pub enum BatchStatus {

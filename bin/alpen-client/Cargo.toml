@@ -14,6 +14,7 @@ sequencer = [
   "dep:alpen-reth-evm",
   "dep:alloy-eips",
   "dep:alloy-rpc-types-engine",
+  "dep:bitcoin",
   "dep:reth-payload-builder",
 ]
 
@@ -45,6 +46,7 @@ alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
+bitcoin = { workspace = true, optional = true }
 clap.workspace = true
 eyre.workspace = true
 jsonrpsee = { workspace = true, features = ["http-client"] }
