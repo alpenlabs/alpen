@@ -18,7 +18,7 @@ use strata_ledger_types::{
 use strata_merkle::CompactMmr64;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_da::{
-    AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OlDaBlobV1, PendingWithdrawQueue,
+    AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaBlobV1, PendingWithdrawQueue,
 };
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use strata_ol_state_types::{OLState, WriteBatch};
@@ -808,7 +808,7 @@ fn test_account_diffs_ordered_by_serial() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     let diffs = blob.state_diff.ledger.account_diffs.entries();
     assert!(
@@ -844,7 +844,7 @@ fn test_new_account_post_state_encoded() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     let new_accounts = blob.state_diff.ledger.new_accounts.entries();
     assert_eq!(new_accounts.len(), 1);
@@ -885,7 +885,7 @@ fn test_tracking_disabled_excludes_changes() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
 }
@@ -900,7 +900,7 @@ fn test_withdrawal_intents_consistency() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     let intents = blob.withdrawal_intents.entries();
     assert_eq!(intents.len(), 2);
@@ -930,7 +930,7 @@ fn test_pending_withdraw_queue_front_incr() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     let intents = blob.withdrawal_intents.entries();
     assert_eq!(intents.len(), 1);

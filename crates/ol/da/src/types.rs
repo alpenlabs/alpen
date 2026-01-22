@@ -121,7 +121,7 @@ impl<T: Codec> Codec for U16LenList<T> {
 
 /// Versioned OL DA payload containing state diff and withdrawal intents.
 #[derive(Debug)]
-pub struct OlDaBlobV1 {
+pub struct OLDaBlobV1 {
     /// State diff for the epoch.
     pub state_diff: StateDiff,
 
@@ -132,7 +132,7 @@ pub struct OlDaBlobV1 {
     pub output_logs: OutputLogs,
 }
 
-impl OlDaBlobV1 {
+impl OLDaBlobV1 {
     /// Creates a new [`OlDaBlobV1`] from a state diff, withdrawal intents, and output logs.
     pub fn new(
         state_diff: StateDiff,
@@ -147,7 +147,7 @@ impl OlDaBlobV1 {
     }
 }
 
-impl Codec for OlDaBlobV1 {
+impl Codec for OLDaBlobV1 {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.state_diff.encode(enc)?;
         self.withdrawal_intents.encode(enc)?;
