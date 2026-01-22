@@ -15013,6 +15013,7 @@ dependencies = [
  "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-merkle",
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-msg-types",

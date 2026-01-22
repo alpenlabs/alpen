@@ -19,6 +19,9 @@ strata-snark-acct-types.workspace = true
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 
+[dev-dependencies]
+strata-merkle.workspace = true
+
 [features]
 tracing = ["dep:tracing"]
 

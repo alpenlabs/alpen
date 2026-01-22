@@ -3,16 +3,28 @@
 //! These tests verify that multiple wrapper layers can be composed together
 //! and work correctly.
 
-use strata_acct_types::BitcoinAmount;
-use strata_asm_manifest_types::AsmManifest;
-use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
-use strata_ledger_types::{
-    AccountTypeState, Coin, IAccountState, IAccountStateMut, ISnarkAccountState,
-    ISnarkAccountStateMut, IStateAccessor, NewAccountData,
-};
-use strata_ol_state_types::{OLState, WriteBatch};
+use std::collections::{BTreeMap, VecDeque};
 
-use crate::{BatchDiffState, IndexerState, WriteTrackingState, test_utils::*};
+use strata_acct_types::{
+    AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload,
+};
+use strata_asm_manifest_types::AsmManifest;
+use strata_da_framework::{ContextlessDaWrite, decode_buf_exact};
+use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, WtxidsRoot};
+use strata_ledger_types::{
+    AccountTypeState, AccountTypeStateRef, Coin, IAccountState, IAccountStateMut,
+    ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
+};
+use strata_merkle::CompactMmr64;
+use strata_ol_da::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OlDaBlobV1, PendingWithdrawQueue};
+use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
+use strata_ol_state_types::{OLState, WriteBatch};
+use strata_snark_acct_types::{MessageEntry, Seqno};
+
+use crate::{
+    BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,
+    test_utils::*,
+};
 
 // =============================================================================
 // IndexerState over WriteTrackingState tests
@@ -442,179 +454,517 @@ fn test_write_tracking_over_batch_diff_inbox_message() {
 // DaAccumulatingState tests
 // =============================================================================
 
-mod da_accumulating {
-    use strata_acct_types::BitcoinAmount;
-    use strata_da_framework::{ContextlessDaWrite, decode_buf_exact};
-    use strata_ledger_types::{
-        AccountTypeState, Coin, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor,
-        NewAccountData,
-    };
-    use strata_ol_da::{OlDaBlobV1, PendingWithdrawQueue};
-    use strata_ol_state_types::OLState;
+fn build_simple_blob() -> Vec<u8> {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let mut da_state = DaAccumulatingState::new(state);
 
-    use crate::{DaAccumulatingState, DaAccumulationError, test_utils::*};
+    da_state.set_cur_slot(10);
 
-    fn build_simple_blob() -> Vec<u8> {
-        let account_id = test_account_id(1);
-        let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-        let mut da_state = DaAccumulatingState::new(state);
+    let msg = test_message_entry(7, 0, 2000);
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            acct.add_balance(coin);
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg.clone())
+        })
+        .unwrap()
+        .unwrap();
 
-        da_state.set_cur_slot(10);
+    da_state.record_withdrawal_intent(1_000, vec![1, 2, 3]);
+    da_state.record_withdrawal_intent(2_000, vec![4, 5, 6]);
 
-        let msg = test_message_entry(7, 0, 2000);
-        da_state
-            .update_account(account_id, |acct| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
-                acct.add_balance(coin);
-                acct.as_snark_account_mut()
-                    .unwrap()
-                    .insert_inbox_message(msg.clone())
-            })
-            .unwrap()
-            .unwrap();
+    da_state.set_da_tracking_enabled(false);
+    da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob")
+}
 
-        da_state.record_withdrawal_intent(1_000, vec![1, 2, 3]);
-        da_state.record_withdrawal_intent(2_000, vec![4, 5, 6]);
+#[derive(Clone, Debug)]
+struct TestSnarkState {
+    update_vk: Vec<u8>,
+    inner_state_root: Hash,
+    seqno: Seqno,
+    inbox_mmr: Mmr64,
+}
 
-        da_state.set_da_tracking_enabled(false);
-        da_state
-            .take_completed_epoch_da_blob()
-            .expect("expected DA blob")
+impl TestSnarkState {
+    fn new(update_vk: Vec<u8>) -> Self {
+        let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
+        let inbox_mmr = Mmr64::from_generic(&generic_mmr);
+        Self {
+            update_vk,
+            inner_state_root: Hash::from([0u8; 32]),
+            seqno: Seqno::zero(),
+            inbox_mmr,
+        }
+    }
+}
+
+impl ISnarkAccountState for TestSnarkState {
+    fn seqno(&self) -> Seqno {
+        self.seqno
     }
 
-    #[test]
-    fn test_da_blob_deterministic() {
-        let blob1 = build_simple_blob();
-        let blob2 = build_simple_blob();
-        assert_eq!(blob1, blob2);
+    fn inner_state_root(&self) -> Hash {
+        self.inner_state_root
     }
 
-    #[test]
-    fn test_account_diffs_ordered_by_serial() {
-        let mut state = OLState::new_genesis();
-        let account_id_1 = test_account_id(1);
-        let account_id_2 = test_account_id(2);
-
-        let snark_state_1 = test_snark_account_state(1);
-        let snark_state_2 = test_snark_account_state(2);
-        state
-            .create_new_account(
-                account_id_1,
-                NewAccountData::new(
-                    BitcoinAmount::from_sat(1000),
-                    AccountTypeState::Snark(snark_state_1),
-                ),
-            )
-            .unwrap();
-        state
-            .create_new_account(
-                account_id_2,
-                NewAccountData::new(
-                    BitcoinAmount::from_sat(2000),
-                    AccountTypeState::Snark(snark_state_2),
-                ),
-            )
-            .unwrap();
-
-        let mut da_state = DaAccumulatingState::new(state);
-
-        // Update higher serial first, then lower serial.
-        da_state
-            .update_account(account_id_2, |acct| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
-                acct.add_balance(coin);
-            })
-            .unwrap();
-        da_state
-            .update_account(account_id_1, |acct| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(75));
-                acct.add_balance(coin);
-            })
-            .unwrap();
-
-        da_state.set_da_tracking_enabled(false);
-        let blob_bytes = da_state
-            .take_completed_epoch_da_blob()
-            .expect("expected DA blob");
-        let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
-
-        let diffs = blob.state_diff.ledger.account_diffs.entries();
-        assert!(
-            diffs
-                .windows(2)
-                .all(|w| w[0].account_serial <= w[1].account_serial)
-        );
+    fn update_vk(&self) -> &[u8] {
+        &self.update_vk
     }
 
-    #[test]
-    fn test_tracking_disabled_excludes_changes() {
-        let account_id = test_account_id(1);
-        let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-        let mut da_state = DaAccumulatingState::new(state);
+    fn inbox_mmr(&self) -> &Mmr64 {
+        &self.inbox_mmr
+    }
+}
 
-        // Finalize an empty epoch and drop the blob.
-        da_state.set_da_tracking_enabled(false);
-        da_state.take_completed_epoch_da_blob();
-
-        // Make changes while tracking is disabled.
-        da_state
-            .update_account(account_id, |acct| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(123));
-                acct.add_balance(coin);
-            })
-            .unwrap();
-
-        // Re-enable and finalize again.
-        da_state.set_da_tracking_enabled(true);
-        da_state.set_da_tracking_enabled(false);
-        let blob_bytes = da_state
-            .take_completed_epoch_da_blob()
-            .expect("expected DA blob");
-        let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
-
-        assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
+impl ISnarkAccountStateMut for TestSnarkState {
+    fn set_proof_state_directly(&mut self, state: Hash, _next_read_idx: u64, seqno: Seqno) {
+        self.inner_state_root = state;
+        self.seqno = seqno;
     }
 
-    #[test]
-    fn test_withdrawal_intents_consistency() {
-        let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
-        da_state.record_withdrawal_intent(10, vec![1, 2]);
-        da_state.record_withdrawal_intent(20, vec![3, 4, 5]);
-
-        da_state.set_da_tracking_enabled(false);
-        let blob_bytes = da_state
-            .take_completed_epoch_da_blob()
-            .expect("expected DA blob");
-        let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
-
-        let intents = blob.withdrawal_intents.entries();
-        assert_eq!(intents.len(), 2);
-
-        let mut queue = PendingWithdrawQueue::default();
-        blob.state_diff
-            .global
-            .pending_withdraws
-            .apply(&mut queue)
-            .expect("apply queue diff");
-        assert_eq!(queue.entries(), intents);
+    fn update_inner_state(
+        &mut self,
+        inner_state: Hash,
+        next_read_idx: u64,
+        seqno: Seqno,
+        _extra_data: &[u8],
+    ) -> strata_acct_types::AcctResult<()> {
+        self.set_proof_state_directly(inner_state, next_read_idx, seqno);
+        Ok(())
     }
 
-    #[test]
-    fn test_da_blob_size_limit() {
-        let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
-        let big_dest = vec![0u8; 1024];
-        for _ in 0..300 {
-            da_state.record_withdrawal_intent(1, big_dest.clone());
+    fn insert_inbox_message(&mut self, _entry: MessageEntry) -> strata_acct_types::AcctResult<()> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct TestAccountState {
+    serial: AccountSerial,
+    balance: BitcoinAmount,
+    ty: AccountTypeId,
+    snark: Option<TestSnarkState>,
+}
+
+impl IAccountState for TestAccountState {
+    type SnarkAccountState = TestSnarkState;
+
+    fn serial(&self) -> AccountSerial {
+        self.serial
+    }
+
+    fn balance(&self) -> BitcoinAmount {
+        self.balance
+    }
+
+    fn ty(&self) -> AccountTypeId {
+        self.ty
+    }
+
+    fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
+        match self.snark.as_ref() {
+            Some(snark) => AccountTypeStateRef::Snark(snark),
+            None => AccountTypeStateRef::Empty,
+        }
+    }
+
+    fn as_snark_account(&self) -> strata_acct_types::AcctResult<&Self::SnarkAccountState> {
+        self.snark
+            .as_ref()
+            .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
+    }
+}
+
+impl IAccountStateMut for TestAccountState {
+    type SnarkAccountStateMut = TestSnarkState;
+
+    fn add_balance(&mut self, coin: Coin) {
+        let new_balance = self.balance.to_sat() + coin.amt().to_sat();
+        self.balance = BitcoinAmount::from_sat(new_balance);
+        coin.safely_consume_unchecked();
+    }
+
+    fn take_balance(&mut self, _amt: BitcoinAmount) -> strata_acct_types::AcctResult<Coin> {
+        Err(AcctError::Unsupported)
+    }
+
+    fn as_snark_account_mut(
+        &mut self,
+    ) -> strata_acct_types::AcctResult<&mut Self::SnarkAccountStateMut> {
+        self.snark
+            .as_mut()
+            .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
+    }
+}
+
+#[derive(Debug)]
+struct TestState {
+    accounts: BTreeMap<AccountId, TestAccountState>,
+    next_serial: AccountSerial,
+    serial_overrides: VecDeque<AccountSerial>,
+    cur_slot: u64,
+    cur_epoch: u32,
+    last_l1_blkid: L1BlockId,
+    last_l1_height: L1Height,
+    asm_recorded_epoch: EpochCommitment,
+    total_ledger_balance: BitcoinAmount,
+}
+
+impl TestState {
+    fn new_with_serials(serials: Vec<AccountSerial>) -> Self {
+        Self {
+            accounts: BTreeMap::new(),
+            next_serial: AccountSerial::one(),
+            serial_overrides: VecDeque::from(serials),
+            cur_slot: 0,
+            cur_epoch: 0,
+            last_l1_blkid: L1BlockId::from(Buf32::zero()),
+            last_l1_height: L1Height::from(0u32),
+            asm_recorded_epoch: EpochCommitment::null(),
+            total_ledger_balance: BitcoinAmount::ZERO,
+        }
+    }
+}
+
+impl IStateAccessor for TestState {
+    type AccountState = TestAccountState;
+    type AccountStateMut = TestAccountState;
+
+    fn cur_slot(&self) -> u64 {
+        self.cur_slot
+    }
+
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.cur_slot = slot;
+    }
+
+    fn cur_epoch(&self) -> u32 {
+        self.cur_epoch
+    }
+
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.cur_epoch = epoch;
+    }
+
+    fn last_l1_blkid(&self) -> &L1BlockId {
+        &self.last_l1_blkid
+    }
+
+    fn last_l1_height(&self) -> L1Height {
+        self.last_l1_height
+    }
+
+    fn append_manifest(&mut self, _height: L1Height, _mf: strata_asm_manifest_types::AsmManifest) {}
+
+    fn asm_recorded_epoch(&self) -> &EpochCommitment {
+        &self.asm_recorded_epoch
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.asm_recorded_epoch = epoch;
+    }
+
+    fn total_ledger_balance(&self) -> BitcoinAmount {
+        self.total_ledger_balance
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.total_ledger_balance = amt;
+    }
+
+    fn check_account_exists(&self, id: AccountId) -> strata_acct_types::AcctResult<bool> {
+        Ok(self.accounts.contains_key(&id))
+    }
+
+    fn get_account_state(
+        &self,
+        id: AccountId,
+    ) -> strata_acct_types::AcctResult<Option<&Self::AccountState>> {
+        Ok(self.accounts.get(&id))
+    }
+
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> strata_acct_types::AcctResult<R>
+    where
+        F: FnOnce(&mut Self::AccountStateMut) -> R,
+    {
+        let acct = self
+            .accounts
+            .get_mut(&id)
+            .ok_or(AcctError::UpdateNonexistentAccount(id))?;
+        Ok(f(acct))
+    }
+
+    fn create_new_account(
+        &mut self,
+        id: AccountId,
+        new_acct_data: NewAccountData<Self::AccountState>,
+    ) -> strata_acct_types::AcctResult<AccountSerial> {
+        if self.accounts.contains_key(&id) {
+            return Err(AcctError::CreateExistingAccount(id));
         }
 
-        da_state.set_da_tracking_enabled(false);
-        assert!(matches!(
-            da_state.last_error(),
-            Some(DaAccumulationError::PayloadTooLarge { .. })
-        ));
+        let serial = if let Some(serial) = self.serial_overrides.pop_front() {
+            serial
+        } else {
+            let serial = self.next_serial;
+            self.next_serial = self.next_serial.incr();
+            serial
+        };
+
+        let balance = new_acct_data.initial_balance();
+        let (ty, snark) = match new_acct_data.into_type_state() {
+            AccountTypeState::Empty => (AccountTypeId::Empty, None),
+            AccountTypeState::Snark(snark_state) => (AccountTypeId::Snark, Some(snark_state)),
+        };
+
+        let acct = TestAccountState {
+            serial,
+            balance,
+            ty,
+            snark,
+        };
+        self.accounts.insert(id, acct);
+        Ok(serial)
     }
+
+    fn find_account_id_by_serial(
+        &self,
+        serial: AccountSerial,
+    ) -> strata_acct_types::AcctResult<Option<AccountId>> {
+        Ok(self
+            .accounts
+            .iter()
+            .find_map(|(id, acct)| (acct.serial == serial).then_some(*id)))
+    }
+
+    fn next_account_serial(&self) -> AccountSerial {
+        self.next_serial
+    }
+
+    fn compute_state_root(&self) -> strata_acct_types::AcctResult<Buf32> {
+        Ok(Buf32::zero())
+    }
+}
+
+#[test]
+fn test_da_blob_deterministic() {
+    let blob1 = build_simple_blob();
+    let blob2 = build_simple_blob();
+    assert_eq!(blob1, blob2);
+}
+
+#[test]
+fn test_account_diffs_ordered_by_serial() {
+    let mut state = OLState::new_genesis();
+    let account_id_1 = test_account_id(1);
+    let account_id_2 = test_account_id(2);
+
+    let snark_state_1 = test_snark_account_state(1);
+    let snark_state_2 = test_snark_account_state(2);
+    state
+        .create_new_account(
+            account_id_1,
+            NewAccountData::new(
+                BitcoinAmount::from_sat(1000),
+                AccountTypeState::Snark(snark_state_1),
+            ),
+        )
+        .unwrap();
+    state
+        .create_new_account(
+            account_id_2,
+            NewAccountData::new(
+                BitcoinAmount::from_sat(2000),
+                AccountTypeState::Snark(snark_state_2),
+            ),
+        )
+        .unwrap();
+
+    let mut da_state = DaAccumulatingState::new(state);
+
+    // Update higher serial first, then lower serial.
+    da_state
+        .update_account(account_id_2, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+    da_state
+        .update_account(account_id_1, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(75));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+
+    da_state.set_da_tracking_enabled(false);
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
+    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let diffs = blob.state_diff.ledger.account_diffs.entries();
+    assert!(
+        diffs
+            .windows(2)
+            .all(|w| w[0].account_serial <= w[1].account_serial)
+    );
+}
+
+#[test]
+fn test_tracking_disabled_excludes_changes() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    // Finalize an empty epoch and drop the blob.
+    da_state.set_da_tracking_enabled(false);
+    da_state.take_completed_epoch_da_blob();
+
+    // Make changes while tracking is disabled.
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(123));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+
+    // Re-enable and finalize again.
+    da_state.set_da_tracking_enabled(true);
+    da_state.set_da_tracking_enabled(false);
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
+    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
+}
+
+#[test]
+fn test_withdrawal_intents_consistency() {
+    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    da_state.record_withdrawal_intent(10, vec![1, 2]);
+    da_state.record_withdrawal_intent(20, vec![3, 4, 5]);
+
+    da_state.set_da_tracking_enabled(false);
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
+    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let intents = blob.withdrawal_intents.entries();
+    assert_eq!(intents.len(), 2);
+
+    let mut queue = PendingWithdrawQueue::default();
+    blob.state_diff
+        .global
+        .pending_withdraws
+        .apply(&mut queue)
+        .expect("apply queue diff");
+    assert_eq!(queue.entries(), intents);
+}
+
+#[test]
+#[test]
+fn test_withdrawal_intent_too_large_sets_error() {
+    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    let oversize_dest = vec![0u8; MAX_WITHDRAWAL_DESC_LEN + 1];
+    da_state.record_withdrawal_intent(1, oversize_dest);
+
+    da_state.set_da_tracking_enabled(false);
+    assert!(matches!(
+        da_state.last_error(),
+        Some(DaAccumulationError::WithdrawalIntentTooLarge { .. })
+    ));
+}
+
+#[test]
+fn test_da_blob_size_limit() {
+    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    let big_dest = vec![0u8; MAX_WITHDRAWAL_DESC_LEN];
+    for _ in 0..2000 {
+        da_state.record_withdrawal_intent(1, big_dest.clone());
+    }
+
+    da_state.set_da_tracking_enabled(false);
+    assert!(matches!(
+        da_state.last_error(),
+        Some(DaAccumulationError::PayloadTooLarge { .. })
+    ));
+}
+
+#[test]
+fn test_vk_size_limit_exceeded() {
+    let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
+    let account_id = test_account_id(1);
+    let snark_state = TestSnarkState::new(vec![0u8; MAX_VK_BYTES + 1]);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(0),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
+
+    da_state.set_da_tracking_enabled(false);
+    assert!(matches!(
+        da_state.last_error(),
+        Some(DaAccumulationError::VkTooLarge { .. })
+    ));
+}
+
+#[test]
+fn test_message_payload_size_limit() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    let payload = MsgPayload::new(
+        BitcoinAmount::from_sat(0),
+        vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
+    );
+    let msg = MessageEntry::new(test_account_id(2), 0, payload);
+    da_state
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg)
+        })
+        .unwrap()
+        .unwrap();
+
+    da_state.set_da_tracking_enabled(false);
+    assert!(matches!(
+        da_state.last_error(),
+        Some(DaAccumulationError::MessagePayloadTooLarge { .. })
+    ));
+}
+
+#[test]
+fn test_early_serial_gap_detection() {
+    let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![
+        AccountSerial::new(1),
+        AccountSerial::new(3),
+    ]));
+    let account_id_1 = test_account_id(1);
+    let account_id_2 = test_account_id(2);
+    let snark_state = TestSnarkState::new(vec![]);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(0),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state
+        .create_new_account(account_id_1, new_acct.clone())
+        .unwrap();
+    da_state.create_new_account(account_id_2, new_acct).unwrap();
+
+    da_state.set_da_tracking_enabled(false);
+    assert!(matches!(
+        da_state.last_error(),
+        Some(DaAccumulationError::NewAccountSerialGap(_, _))
+    ));
 }
 
 /// Test reading account from pending batch through WriteTrackingState over BatchDiffState.
