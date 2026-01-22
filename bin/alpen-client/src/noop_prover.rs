@@ -3,7 +3,6 @@ use async_trait::async_trait;
 
 /// Simple implementation of [`BatchProver`] that accepts everything as Ok to allow batch lifecycle
 /// to proceed with empty proofs. To be replaced once EE Prover implementation is completed.
-#[expect(unused, reason = "wip")]
 pub(crate) struct NoopProver;
 
 #[async_trait]

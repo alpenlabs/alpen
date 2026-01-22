@@ -6,7 +6,6 @@ use strata_primitives::{Buf32, L1BlockId};
 
 /// Simple implementation of [`BatchDaProvider`] that accepts everything as Ok to allow batch
 /// lifecycle to proceed. To be replaced once EE DA implementation is completed.
-#[expect(unused, reason = "wip")]
 pub(crate) struct NoopDaProvider;
 
 #[async_trait]

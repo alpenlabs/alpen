@@ -28,5 +28,5 @@ where
     pub batch_storage: Arc<S>,
 
     /// Sender to notify about batches reaching ProofReady state.
-    pub proof_ready_tx: watch::Sender<BatchId>,
+    pub proof_ready_tx: watch::Sender<Option<BatchId>>,
 }

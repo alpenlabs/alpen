@@ -164,7 +164,7 @@ where
                         .await?;
 
                     // Notify watchers
-                    let _ = ctx.proof_ready_tx.send(batch.id());
+                    let _ = ctx.proof_ready_tx.send(Some(batch.id()));
 
                     // Clear pending and advance
                     state.take_pending_proof();
@@ -286,7 +286,7 @@ mod tests {
         prover: MockBatchProver,
     ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, MockBatchStorage> {
         let (_sealed_batch_tx, sealed_batch_rx) = watch::channel(make_batch_id(0, 0));
-        let (proof_ready_tx, _proof_ready_rx) = watch::channel(make_batch_id(0, 0));
+        let (proof_ready_tx, _proof_ready_rx) = watch::channel(None);
 
         BatchLifecycleCtx {
             batch_storage: Arc::new(storage),

@@ -49,7 +49,7 @@ pub fn create_batch_builder<P, D, S, BS, ES>(
     sealing_policy: S,
     block_storage: Arc<ES>,
     batch_storage: Arc<BS>,
-    exec_chain: Arc<ExecChainHandle>,
+    exec_chain: ExecChainHandle,
 ) -> (BatchBuilderHandle, impl Future<Output = ()>)
 where
     P: BatchPolicy,

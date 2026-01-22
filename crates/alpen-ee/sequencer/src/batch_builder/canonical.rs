@@ -21,12 +21,12 @@ pub(crate) trait CanonicalChainReader: Send + Sync {
 
 /// Implementation of [`CanonicalChainReader`] using [`ExecChainHandle`] and [`ExecBlockStorage`].
 pub(crate) struct ExecChainCanonicalReader<S> {
-    exec_chain: Arc<ExecChainHandle>,
+    exec_chain: ExecChainHandle,
     block_storage: Arc<S>,
 }
 
 impl<S> ExecChainCanonicalReader<S> {
-    pub(crate) fn new(exec_chain: Arc<ExecChainHandle>, block_storage: Arc<S>) -> Self {
+    pub(crate) fn new(exec_chain: ExecChainHandle, block_storage: Arc<S>) -> Self {
         Self {
             exec_chain,
             block_storage,
