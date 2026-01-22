@@ -144,6 +144,12 @@ struct EpochDaAccumulator {
     /// Withdrawal intents collected during the epoch.
     withdrawal_intents: Vec<SimpleWithdrawalIntentLogData>,
 
+    /// Pending withdrawals queue snapshot at the start of the epoch.
+    pending_withdraw_source: PendingWithdrawQueue,
+
+    /// Pending withdrawals queue front increments recorded during the epoch.
+    pending_withdraw_front_incr: u16,
+
     /// Completed DA blobs waiting to be consumed.
     completed_blobs: VecDeque<Vec<u8>>,
 
@@ -164,6 +170,8 @@ impl EpochDaAccumulator {
         self.inbox_messages.clear();
         self.snark_updates.clear();
         self.withdrawal_intents.clear();
+        self.pending_withdraw_source = PendingWithdrawQueue::default();
+        self.pending_withdraw_front_incr = 0;
         self.last_error = None;
     }
 
@@ -226,6 +234,27 @@ impl EpochDaAccumulator {
         self.withdrawal_intents.push(intent);
     }
 
+    /// Records a pending withdrawal queue snapshot.
+    fn record_pending_withdraw_queue(&mut self, pending: PendingWithdrawQueue) {
+        self.pending_withdraw_source = pending;
+    }
+
+    /// Records a pending withdrawals front increment.
+    fn record_pending_withdraw_front_incr(&mut self, incr: u16) {
+        if incr == 0 {
+            return;
+        }
+        let Some(new_total) = self.pending_withdraw_front_incr.checked_add(incr) else {
+            if self.last_error.is_none() {
+                self.last_error = Some(DaAccumulationError::Builder(
+                    strata_da_framework::BuilderError::OutOfBoundsValue,
+                ));
+            }
+            return;
+        };
+        self.pending_withdraw_front_incr = new_total;
+    }
+
     /// Records a new account.
     fn record_new_account(&mut self, serial: AccountSerial, entry: NewAccountEntry) {
         if let Some(first_serial) = self.first_new_serial {
@@ -263,7 +292,7 @@ impl EpochDaAccumulator {
         let global_diff = self.build_global_diff()?;
         let ledger_diff = self.build_ledger_diff(state)?;
         let state_diff = StateDiff::new(global_diff, ledger_diff);
-        let withdrawal_intents = WithdrawalIntents::new(self.withdrawal_intents.clone());
+        let withdrawal_intents = WithdrawalIntents::new(self.effective_withdrawal_intents());
         let blob = OlDaBlobV1::new(state_diff, withdrawal_intents);
 
         let encoded = encode_to_vec(&blob).map_err(|_| {
@@ -292,14 +321,20 @@ impl EpochDaAccumulator {
             strata_da_framework::DaCounter::new_unchanged()
         };
 
-        let mut queue_builder =
-            DaQueueBuilder::<PendingWithdrawQueue>::from_source(PendingWithdrawQueue::default());
+        let mut queue_builder = DaQueueBuilder::<PendingWithdrawQueue>::from_source(
+            self.pending_withdraw_source.clone(),
+        );
         for intent in &self.withdrawal_intents {
             if !queue_builder.append_entry(intent.clone()) {
                 return Err(DaAccumulationError::Builder(
                     strata_da_framework::BuilderError::OutOfBoundsValue,
                 ));
             }
+        }
+        if !queue_builder.add_front_incr(self.pending_withdraw_front_incr) {
+            return Err(DaAccumulationError::Builder(
+                strata_da_framework::BuilderError::OutOfBoundsValue,
+            ));
         }
         let pending_withdraws = queue_builder.into_write()?;
 
@@ -416,6 +451,17 @@ impl EpochDaAccumulator {
 
         Ok(SnarkAccountDiff::new(seq_no, proof_state, inbox))
     }
+
+    /// Returns the withdrawal intents that remain in the queue tail.
+    fn effective_withdrawal_intents(&self) -> Vec<SimpleWithdrawalIntentLogData> {
+        let base_len = self.pending_withdraw_source.entries().len();
+        let consumed_new = (self.pending_withdraw_front_incr as usize).saturating_sub(base_len);
+        self.withdrawal_intents
+            .iter()
+            .skip(consumed_new)
+            .cloned()
+            .collect()
+    }
 }
 
 /// State accessor that accumulates DA-covered writes across an epoch.
@@ -459,6 +505,20 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     /// Returns the last DA accumulation error, if any.
     pub fn last_error(&self) -> Option<&DaAccumulationError> {
         self.epoch_acc.last_error.as_ref()
+    }
+
+    /// Records the pending withdrawal queue snapshot for the epoch.
+    pub fn record_pending_withdraw_queue(&mut self, queue: PendingWithdrawQueue) {
+        if self.da_tracking_enabled {
+            self.epoch_acc.record_pending_withdraw_queue(queue);
+        }
+    }
+
+    /// Records a front increment for the pending withdrawal queue.
+    pub fn record_pending_withdraw_front_incr(&mut self, incr: u16) {
+        if self.da_tracking_enabled {
+            self.epoch_acc.record_pending_withdraw_front_incr(incr);
+        }
     }
 
     /// Finalizes the epoch by building the DA blob.
@@ -623,6 +683,7 @@ where
         }
 
         let dest_len = dest.len();
+
         let Some(intent) = SimpleWithdrawalIntentLogData::new(amt, dest) else {
             #[cfg(feature = "tracing")]
             tracing::warn!("failed to record withdrawal intent (dest too large)");
