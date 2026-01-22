@@ -1,31 +1,35 @@
 use std::cmp::Ordering;
 
+use bitcoin_bosd::Descriptor;
 use ssz::Encode;
 use ssz_primitives::FixedBytes;
-use strata_asm_common::VerifiedAuxData;
+use strata_asm_bridge_msgs::WithdrawOutput;
+use strata_asm_common::{VerifiedAuxData, logging};
 use strata_checkpoint_types_ssz::{
-    CheckpointClaim, CheckpointPayload, CheckpointTip, L2BlockRange, SignedCheckpointPayload,
-    compute_asm_manifests_hash,
+    CheckpointClaim, CheckpointPayload, CheckpointTip, L2BlockRange, OLLog,
+    SignedCheckpointPayload, compute_asm_manifests_hash,
 };
+use strata_codec::decode_buf_exact;
 use strata_crypto::hash;
 use strata_identifiers::Epoch;
+use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
 use crate::{
     errors::{CheckpointValidationResult, InvalidCheckpointPayload},
     state::CheckpointState,
 };
 
-/// Validates a checkpoint payload by verifying the sequencer signature, epoch progression,
-/// and checkpoint proof.
+/// Validates a checkpoint payload and extracts withdrawal intents.
 ///
-/// The full [`CheckpointClaim`] is reconstructed from the current subprotocol state and payload
-/// for the full proof verification.
-pub fn validate_checkpoint_payload(
+/// This is the single validation function for checkpoint payloads. Once validation succeeds,
+/// the payload can be safely acted upon. Returns extracted withdrawal intents on success.
+pub fn validate_checkpoint_and_extract_withdrawal_intents(
     state: &CheckpointState,
     current_l1_height: u32,
     payload: &SignedCheckpointPayload,
     verified_aux_data: &VerifiedAuxData,
-) -> CheckpointValidationResult<()> {
+) -> CheckpointValidationResult<Vec<WithdrawOutput>> {
     // 1. Verify sequencer signature over payload
     // BIP-340 Schnorr verification hashes the message internally using tagged hashing,
     // so we pass raw SSZ-encoded bytes (not pre-hashed)
@@ -71,7 +75,11 @@ pub fn validate_checkpoint_payload(
         .verify_claim_witness(&claim.as_ssz_bytes(), payload.inner.proof())
         .map_err(InvalidCheckpointPayload::CheckpointPredicateVerification)?;
 
-    Ok(())
+    // 5. Extract and validate withdrawal intent logs
+    let withdrawal_intents =
+        extract_and_validate_withdrawal_intents(payload.inner().sidecar().ol_logs())?;
+
+    Ok(withdrawal_intents)
 }
 
 /// Constructs a complete checkpoint claim for verification by combining the verified tip state
@@ -108,6 +116,43 @@ fn construct_full_claim(
         state_diff_hash,
         ol_logs_hash,
     ))
+}
+
+/// Extracts and validates withdrawal intent logs from OL logs.
+///
+/// Filters OL logs from the bridge gateway account, validates that withdrawal intent
+/// destination descriptors can be parsed, and returns the extracted withdrawal outputs.
+fn extract_and_validate_withdrawal_intents(
+    logs: &[OLLog],
+) -> CheckpointValidationResult<Vec<WithdrawOutput>> {
+    let mut withdrawal_intents = Vec::new();
+
+    for log in logs
+        .iter()
+        .filter(|l| l.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
+    {
+        // Attempt to decode as withdrawal intent log data
+        // Logs from this account may have other formats, so skip if decoding fails
+        let Ok(withdrawal_data) = decode_buf_exact::<SimpleWithdrawalIntentLogData>(log.payload())
+        else {
+            logging::debug!("Skipping log that is not a withdrawal intent");
+            continue;
+        };
+
+        // Parse destination descriptor; return error on malformed descriptors
+        let Ok(destination) = Descriptor::from_bytes(withdrawal_data.dest()) else {
+            // CRITICAL: User funds are destroyed on L2 but cannot be withdrawn on L1.
+            // Since the extraction is done after the proof verification, this should have been a
+            // proper descriptor.
+            logging::error!("Failed to parse withdrawal destination descriptor");
+            return Err(InvalidCheckpointPayload::InvalidLog.into());
+        };
+
+        let withdraw_output = WithdrawOutput::new(destination, withdrawal_data.amt().into());
+        withdrawal_intents.push(withdraw_output);
+    }
+
+    Ok(withdrawal_intents)
 }
 
 /// Computes the ASM manifests hash for a checkpoint transition.
@@ -170,7 +215,10 @@ mod tests {
     use crate::{
         errors::{CheckpointValidationError, InvalidCheckpointPayload},
         state::CheckpointState,
-        verification::{compute_asm_manifests_hash_for_checkpoint, validate_checkpoint_payload},
+        verification::{
+            compute_asm_manifests_hash_for_checkpoint,
+            validate_checkpoint_and_extract_withdrawal_intents,
+        },
     };
 
     fn test_setup() -> (CheckpointState, CheckpointTestHarness) {
@@ -194,7 +242,7 @@ mod tests {
 
         let current_l1_height = new_tip.l1_height + 1;
 
-        let res = validate_checkpoint_payload(
+        let res = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
             &signed_payload,
@@ -213,7 +261,7 @@ mod tests {
 
         signed_payload.signature = Buf64::zero();
 
-        let err = validate_checkpoint_payload(
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
             &signed_payload,
@@ -329,7 +377,7 @@ mod tests {
         payload.sidecar.ol_state_diff = vec![99u8; 88].into();
         let signed_payload = harness.sign_payload(payload);
 
-        let err = validate_checkpoint_payload(
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
             &signed_payload,
@@ -357,7 +405,7 @@ mod tests {
 
         let signed_payload = harness.sign_payload(payload);
 
-        let err = validate_checkpoint_payload(
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
             &signed_payload,
@@ -386,7 +434,7 @@ mod tests {
 
         let signed_payload = harness.sign_payload(payload);
 
-        let err = validate_checkpoint_payload(
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
             &signed_payload,
@@ -413,7 +461,7 @@ mod tests {
         let current_l1_height = payload.new_tip().l1_height + 1;
         let signed_payload = harness.sign_payload(payload);
 
-        let err = validate_checkpoint_payload(
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
             &signed_payload,

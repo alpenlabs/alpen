@@ -62,4 +62,12 @@ pub enum InvalidCheckpointPayload {
         "L2 slot must advance: new slot {new_slot} is not greater than previous slot {prev_slot}"
     )]
     L2SlotDoesNotAdvance { prev_slot: u64, new_slot: u64 },
+
+    /// Invalid log data.
+    ///
+    /// This error occurs when a withdrawal intent log contains a malformed
+    /// destination descriptor. Since user funds have been destroyed on L2,
+    /// this prevents the funds from being withdrawn on L1.
+    #[error("invalid log: malformed withdrawal destination descriptor")]
+    InvalidLog,
 }
