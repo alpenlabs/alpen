@@ -111,6 +111,10 @@ pub fn execute_block_inputs<S: IStateAccessor>(
         &tx_ctx,
     )?;
 
+    // Record output logs for the DA payload before any epoch-sealing updates.
+    let log_snapshot = output.snapshot_logs();
+    state.record_output_logs(&log_snapshot);
+
     // 4. Compute the state root and remember it.
     let pre_manifest_state_root = state.compute_state_root()?;
 

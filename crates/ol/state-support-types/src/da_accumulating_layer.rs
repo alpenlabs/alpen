@@ -13,11 +13,11 @@ use strata_ledger_types::{
     AccountTypeState, AccountTypeStateRef, IAccountState, IAccountStateMut, ISnarkAccountState,
     IStateAccessor, NewAccountData,
 };
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
     InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OLDaBlobV1,
-    PendingWithdrawQueue, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
+    OutputLogs, PendingWithdrawQueue, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
     WithdrawalIntents,
 };
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
@@ -150,6 +150,9 @@ struct EpochDaAccumulator {
     /// Pending withdrawals queue front increments recorded during the epoch.
     pending_withdraw_front_incr: u16,
 
+    /// Output logs emitted during the epoch.
+    output_logs: Vec<OLLog>,
+
     /// Completed DA blobs waiting to be consumed.
     completed_blobs: VecDeque<Vec<u8>>,
 
@@ -172,6 +175,7 @@ impl EpochDaAccumulator {
         self.withdrawal_intents.clear();
         self.pending_withdraw_source = PendingWithdrawQueue::default();
         self.pending_withdraw_front_incr = 0;
+        self.output_logs.clear();
         self.last_error = None;
     }
 
@@ -255,6 +259,11 @@ impl EpochDaAccumulator {
         self.pending_withdraw_front_incr = new_total;
     }
 
+    /// Records output logs.
+    fn record_output_logs(&mut self, logs: &[OLLog]) {
+        self.output_logs.extend(logs.iter().cloned());
+    }
+
     /// Records a new account.
     fn record_new_account(&mut self, serial: AccountSerial, entry: NewAccountEntry) {
         if let Some(first_serial) = self.first_new_serial {
@@ -293,7 +302,8 @@ impl EpochDaAccumulator {
         let ledger_diff = self.build_ledger_diff(state)?;
         let state_diff = StateDiff::new(global_diff, ledger_diff);
         let withdrawal_intents = WithdrawalIntents::new(self.effective_withdrawal_intents());
-        let blob = OLDaBlobV1::new(state_diff, withdrawal_intents, todo!("output logs"));
+        let output_logs = OutputLogs::new(self.output_logs.clone());
+        let blob = OLDaBlobV1::new(state_diff, withdrawal_intents, output_logs);
 
         let encoded = encode_to_vec(&blob).map_err(|_| {
             // encode_to_vec only returns CodecError; map to builder error for now
@@ -708,6 +718,14 @@ where
         }
 
         self.epoch_acc.record_withdrawal_intent(intent);
+    }
+
+    fn record_output_logs(&mut self, logs: &[OLLog]) {
+        self.inner.record_output_logs(logs);
+
+        if self.da_tracking_enabled {
+            self.epoch_acc.record_output_logs(logs);
+        }
     }
 
     fn set_da_tracking_enabled(&mut self, enabled: bool) {
