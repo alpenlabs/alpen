@@ -20,9 +20,7 @@
 //! # Usage
 //!
 //! ```ignore
-//! use alpen_ee_sequencer::{
-//!     create_batch_lifecycle_task, init_lifecycle_state,
-//! };
+//! use alpen_ee_sequencer::{create_batch_lifecycle_task, init_lifecycle_state};
 //!
 //! // Initialize state from storage
 //! let state = init_lifecycle_state(&batch_storage).await?;
@@ -38,7 +36,7 @@
 //! );
 //!
 //! // Use handle to watch for proof-ready batches
-//! let watcher = handle.proof_ready_watcher();
+//! let watcher = handle.latest_proof_ready_watcher();
 //!
 //! // Run the task
 //! task.await;
