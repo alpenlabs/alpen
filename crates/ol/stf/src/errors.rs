@@ -66,6 +66,9 @@ pub enum ExecError {
     #[error("incorrect epoch sequencing (parent {0}, parent terminal {2}, self {1})")]
     IncorrectEpoch(Epoch, Epoch, bool),
 
+    #[error("incorrect slot (expected {expected}, got {got})")]
+    IncorrectSlot { expected: u64, got: u64 },
+
     #[error("body inconsistent with header terminal flag")]
     InconsistentBodyTerminality,
 
@@ -77,6 +80,9 @@ pub enum ExecError {
 
     #[error("invalid sequence number for account {0} (expected {1}, actual {2})")]
     InvalidSequenceNumber(AccountId, u64, u64),
+
+    #[error("max sequence number reached for account {account_id}")]
+    MaxSeqNumberReached { account_id: AccountId },
 
     /// Various account errors.
     #[error("acct: {0}")]

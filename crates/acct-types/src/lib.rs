@@ -35,7 +35,9 @@ pub use mmr::{
 };
 pub use ssz_generated::ssz::{
     self as ssz,
-    messages::{MsgPayload, MsgPayloadRef, ReceivedMessage, SentMessage, SentMessageRef},
+    messages::{
+        MsgPayload, MsgPayloadRef, ReceivedMessage, SentMessage, SentMessageRef, SentTransfer,
+    },
     state::{AccountIntrinsicState, AcctStateSummary, EncodedAccountInnerState},
 };
 pub use state::AccountTypeState;

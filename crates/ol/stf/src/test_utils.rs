@@ -2,12 +2,25 @@
 
 #![allow(unreachable_pub, reason = "test util module")]
 
-use strata_acct_types::AccountId;
+use ssz_primitives::FixedBytes;
+use strata_acct_types::{
+    AccountId, BitcoinAmount, Hash, Mmr64, MsgPayload, RawMerkleProof, StrataHasher,
+    tree_hash::TreeHash,
+};
 use strata_asm_common::AsmManifest;
-use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::OLBlockHeader;
-use strata_ol_state_types::OLState;
+use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, WtxidsRoot};
+use strata_ledger_types::{
+    AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData,
+};
+use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
+use strata_ol_chain_types_new::{OLBlockHeader, SnarkAccountUpdateTxPayload, TransactionPayload};
+use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
+use strata_predicate::PredicateKey;
+use strata_snark_acct_types::{
+    AccumulatorClaim, LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, MmrEntryProof,
+    OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer,
+    UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
+};
 
 use crate::{
     ExecResult,
@@ -265,4 +278,317 @@ pub fn tamper_epoch(header: &OLBlockHeader, new_epoch: u32) -> OLBlockHeader {
         *header.state_root(),
         *header.logs_root(),
     )
+}
+
+// ===== SNARK Account Test Utilities =====
+
+/// Common test account IDs for consistent testing
+pub const TEST_SNARK_ACCOUNT_ID: u32 = 100;
+pub const TEST_RECIPIENT_ID: u32 = 200;
+pub const TEST_NONEXISTENT_ID: u32 = 999;
+
+/// Get the standard test snark account ID
+pub fn get_test_snark_account_id() -> AccountId {
+    test_account_id(TEST_SNARK_ACCOUNT_ID)
+}
+
+/// Get the standard test recipient account ID
+pub fn get_test_recipient_account_id() -> AccountId {
+    test_account_id(TEST_RECIPIENT_ID)
+}
+
+/// Get a test state root with a specific variant
+pub fn get_test_state_root(variant: u8) -> Hash {
+    Hash::from([variant; 32])
+}
+
+/// Get a test proof with a specific variant
+pub fn get_test_proof(variant: u8) -> Vec<u8> {
+    vec![variant; 100]
+}
+
+/// Helper to track inbox MMR proofs in parallel with the actual STF inbox MMR.
+/// This allows generating valid MMR proofs for testing by maintaining proofs as leaves are added.
+pub struct InboxMmrTracker {
+    mmr: Mmr64,
+    proofs: Vec<MerkleProof<[u8; 32]>>,
+}
+
+impl InboxMmrTracker {
+    pub fn new() -> Self {
+        Self {
+            mmr: Mmr64::from_generic(&CompactMmr64::new(64)),
+            proofs: Vec::new(),
+        }
+    }
+
+    /// Adds a message entry to the tracker and returns a proof for it.
+    /// Uses TreeHash for consistent hashing with insertion and verification.
+    pub fn add_message(&mut self, entry: &MessageEntry) -> MessageEntryProof {
+        // Compute hash using TreeHash, matching both insertion and verification
+        let hash = <MessageEntry as TreeHash>::tree_hash_root(entry);
+
+        // Add to MMR with proof tracking
+        let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
+            &mut self.mmr,
+            hash.into_inner(),
+            &mut self.proofs,
+        )
+        .expect("mmr: can't add leaf");
+
+        self.proofs.push(proof.clone());
+
+        // Convert MerkleProof to RawMerkleProof (strip the index)
+        let raw_proof = RawMerkleProof {
+            cohashes: proof
+                .cohashes()
+                .iter()
+                .map(|h| FixedBytes::from(*h))
+                .collect::<Vec<_>>()
+                .into(),
+        };
+
+        MessageEntryProof::new(entry.clone(), raw_proof)
+    }
+
+    /// Returns the number of entries in the tracked MMR
+    pub fn num_entries(&self) -> u64 {
+        self.mmr.num_entries()
+    }
+}
+
+/// Tracks ASM manifests in a parallel MMR to generate proofs for ledger references.
+pub struct ManifestMmrTracker {
+    mmr: Mmr64,
+    proofs: Vec<MerkleProof<[u8; 32]>>,
+}
+
+impl ManifestMmrTracker {
+    pub fn new() -> Self {
+        Self {
+            mmr: Mmr64::from_generic(&CompactMmr64::new(64)),
+            proofs: Vec::new(),
+        }
+    }
+
+    /// Adds a manifest to the tracker and returns a proof for it.
+    /// Uses TreeHash for consistent hashing with the actual state MMR.
+    pub fn add_manifest(&mut self, manifest: &AsmManifest) -> (u64, MmrEntryProof) {
+        // Compute hash using TreeHash, matching the actual append_manifest implementation
+        let hash = <AsmManifest as TreeHash>::tree_hash_root(manifest);
+
+        // Get the current index (before adding)
+        let index = self.mmr.num_entries();
+
+        // Add to MMR with proof tracking
+        let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
+            &mut self.mmr,
+            hash.into_inner(),
+            &mut self.proofs,
+        )
+        .expect("mmr: can't add leaf");
+
+        self.proofs.push(proof.clone());
+
+        // Create MmrEntryProof for ledger references
+        let mmr_entry_proof = MmrEntryProof::new(
+            hash.into_inner(),
+            strata_acct_types::MerkleProof::from_cohashes(proof.cohashes().to_vec(), index),
+        );
+
+        (index, mmr_entry_proof)
+    }
+
+    /// Returns the number of manifests in the tracked MMR
+    pub fn num_entries(&self) -> u64 {
+        self.mmr.num_entries()
+    }
+}
+
+/// Creates a SNARK account with initial balance and executes an empty genesis block.
+/// Returns the completed genesis block.
+pub fn setup_genesis_with_snark_account(
+    state: &mut OLState,
+    snark_id: AccountId,
+    initial_balance: u64,
+) -> CompletedBlock {
+    // Create snark account with initial balance directly
+    let vk = PredicateKey::always_accept();
+    let initial_state_root = get_test_state_root(1);
+    let snark_state = OLSnarkAccountState::new_fresh(vk, initial_state_root);
+    let balance = BitcoinAmount::from_sat(initial_balance);
+    let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
+    state
+        .create_new_account(snark_id, new_acct_data)
+        .expect("Should create snark account");
+
+    let genesis_info = BlockInfo::new_genesis(1_000_000);
+    let genesis_components = BlockComponents::new_empty();
+    execute_block(state, &genesis_info, None, genesis_components).expect("Genesis should execute")
+}
+
+/// Helper to create additional empty accounts (for testing transfers/messages)
+pub fn create_empty_account(state: &mut OLState, account_id: AccountId) -> AccountSerial {
+    let empty_state = AccountTypeState::Empty;
+    let new_acct_data = NewAccountData::new_empty(empty_state);
+    state
+        .create_new_account(account_id, new_acct_data)
+        .expect("Should create empty account")
+}
+
+/// Helper to execute a transaction in a non-genesis block
+pub fn execute_tx_in_block(
+    state: &mut OLState,
+    parent_header: &OLBlockHeader,
+    tx: TransactionPayload,
+    slot: Slot,
+    epoch: Epoch,
+) -> ExecResult<CompletedBlock> {
+    let block_info = BlockInfo::new(1_001_000, slot, epoch);
+    let components = BlockComponents::new_txs(vec![tx]);
+    execute_block(state, &block_info, Some(parent_header), components)
+}
+
+/// Builder pattern for creating SnarkAccountUpdate transactions.
+/// Captures the starting state and builds toward the resulting state,
+/// ensuring correct sequence numbers and message indices.
+pub struct SnarkUpdateBuilder {
+    // Captured from old state at construction
+    seq_no: u64,
+    old_msg_idx: u64,
+
+    // Built up via with_* methods
+    processed_messages: Vec<MessageEntry>,
+    inbox_inbox_proofs: Vec<MessageEntryProof>,
+    outputs: UpdateOutputs,
+    ledger_refs: LedgerRefs,
+}
+
+impl SnarkUpdateBuilder {
+    /// Create builder from current account state (captures starting point)
+    pub fn from_snark_state(snark_state: OLSnarkAccountState) -> Self {
+        Self {
+            seq_no: *snark_state.seqno().inner(),
+            old_msg_idx: snark_state.next_inbox_msg_idx(),
+            processed_messages: vec![],
+            inbox_inbox_proofs: vec![],
+            outputs: UpdateOutputs::new(vec![], vec![]),
+            ledger_refs: LedgerRefs::new_empty(),
+        }
+    }
+
+    /// Add processed messages
+    pub fn with_processed_msgs(mut self, messages: Vec<MessageEntry>) -> Self {
+        self.processed_messages = messages;
+        self
+    }
+
+    /// Add inbox proofs for the processed messages
+    pub fn with_inbox_proofs(mut self, proofs: Vec<MessageEntryProof>) -> Self {
+        self.inbox_inbox_proofs = proofs;
+        self
+    }
+
+    /// Set the outputs (transfers and messages)
+    pub fn with_outputs(mut self, outputs: UpdateOutputs) -> Self {
+        self.outputs = outputs;
+        self
+    }
+
+    /// Add a single transfer output
+    pub fn with_transfer(mut self, dest: AccountId, amount: u64) -> Self {
+        let transfer = OutputTransfer::new(dest, BitcoinAmount::from_sat(amount));
+        self.outputs.transfers_mut().push(transfer);
+        self
+    }
+
+    /// Add a single message output
+    pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(amount), data);
+        self.with_message_payload(dest, payload)
+    }
+
+    /// Set ledger references
+    pub fn with_ledger_refs(mut self, refs: LedgerRefs) -> Self {
+        self.ledger_refs = refs;
+        self
+    }
+
+    /// Build the transaction with the resulting state root
+    pub fn build(
+        self,
+        acct_id: AccountId,
+        new_state_root: Hash,
+        proof: Vec<u8>,
+    ) -> TransactionPayload {
+        // Calculate new message index based on messages processed
+        let new_msg_idx = self.old_msg_idx + self.processed_messages.len() as u64;
+
+        let new_proof_state = ProofState::new(new_state_root, new_msg_idx);
+        let operation_data = UpdateOperationData::new(
+            self.seq_no,
+            new_proof_state,
+            self.processed_messages,
+            self.ledger_refs,
+            self.outputs,
+            vec![], // extra_data
+        );
+
+        let base_update = SnarkAccountUpdate::new(operation_data, proof);
+
+        let ledger_ref_proofs = LedgerRefProofs::new(vec![]);
+        let accumulator_proofs =
+            UpdateAccumulatorProofs::new(self.inbox_inbox_proofs, ledger_ref_proofs);
+
+        let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
+        let sau_tx_payload = SnarkAccountUpdateTxPayload::new(acct_id, update_container);
+
+        TransactionPayload::SnarkAccountUpdate(sau_tx_payload)
+    }
+
+    fn with_message_payload(mut self, dest: AccountId, payload: MsgPayload) -> SnarkUpdateBuilder {
+        let message = OutputMessage::new(dest, payload);
+        let msgs = self.outputs.messages_mut();
+        msgs.push(message);
+        self
+    }
+}
+
+/// Helper to get snark account state from OLState, panicking if not found or not a snark account
+pub fn get_snark_state_expect(
+    state: &OLState,
+    snark_id: AccountId,
+) -> (&OLAccountState, &OLSnarkAccountState) {
+    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    (snark_account, snark_account.as_snark_account().unwrap())
+}
+
+/// Helper for creating invalid snark updates for error testing.
+/// This bypasses the builder's correctness guarantees.
+pub fn create_unchecked_snark_update(
+    target: AccountId,
+    wrong_seq_no: u64,
+    new_state_root: Hash,
+    new_msg_idx: u64,
+    outputs: UpdateOutputs,
+) -> TransactionPayload {
+    let new_proof_state = ProofState::new(new_state_root, new_msg_idx);
+    let operation_data = UpdateOperationData::new(
+        wrong_seq_no,
+        new_proof_state,
+        vec![], // processed_messages
+        LedgerRefs::new_empty(),
+        outputs,
+        vec![], // extra_data
+    );
+
+    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]); // dummy proof
+
+    let ledger_ref_proofs = LedgerRefProofs::new(vec![]);
+    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], ledger_ref_proofs);
+
+    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
+    let sau_tx_payload = SnarkAccountUpdateTxPayload::new(target, update_container);
+
+    TransactionPayload::SnarkAccountUpdate(sau_tx_payload)
 }

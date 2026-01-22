@@ -53,6 +53,7 @@ impl<A> WriteBatch<A> {
             )
             .expect("state: invalid L1 height"),
             *state.asm_recorded_epoch(),
+            state.asm_manifests_mmr().clone(),
         );
         WriteBatch::new(global, epochal)
     }

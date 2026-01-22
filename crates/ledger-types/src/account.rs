@@ -1,4 +1,5 @@
 use strata_acct_types::{AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::coin::Coin;
@@ -123,11 +124,17 @@ pub enum AccountTypeStateMut<'a, T: IAccountState> {
 pub trait ISnarkAccountState: Sized {
     // Proof state accessors
 
+    /// Gets the verification key for this snark account.
+    fn verifying_key(&self) -> &PredicateKey;
+
     /// Gets the update seqno.
     fn seqno(&self) -> Seqno;
 
     /// Gets the inner state root hash.
     fn inner_state_root(&self) -> Hash;
+
+    /// Gets the index of the next message to be read/processed by this account.
+    fn next_inbox_msg_idx(&self) -> u64;
 
     // Inbox accessors
 
@@ -157,18 +164,6 @@ pub trait ISnarkAccountStateMut: ISnarkAccountState {
     ///
     /// This is exposed like this so that we can expose the message entry in DA.
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()>;
-}
-
-/// Extension trait for abstract snark account state.
-pub trait ISnarkAccountStateExt: ISnarkAccountState {
-    /// Get the index of the next message that would be inserted into the MMR.
-    fn get_next_inbox_msg_idx(&self) -> u64;
-}
-
-impl<A: ISnarkAccountState> ISnarkAccountStateExt for A {
-    fn get_next_inbox_msg_idx(&self) -> u64 {
-        self.inbox_mmr().num_entries()
-    }
 }
 
 /// Trait for constructing account states with a serial.

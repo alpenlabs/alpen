@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount};
+use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
@@ -60,6 +60,9 @@ pub trait IStateAccessor {
 
     /// Sets the total OL ledger balance.
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount);
+
+    /// Gets the ASM manifests MMR for ledger reference verification.
+    fn asm_manifests_mmr(&self) -> &Mmr64;
 
     // ===== Account methods =====
 

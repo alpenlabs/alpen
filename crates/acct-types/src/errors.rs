@@ -1,7 +1,7 @@
 use strata_identifiers::{AccountId, AccountSerial};
 use thiserror::Error;
 
-use crate::AccountTypeId;
+use crate::{AccountTypeId, BitcoinAmount};
 
 pub type AcctResult<T> = Result<T, AcctError>;
 
@@ -36,6 +36,59 @@ pub enum AcctError {
 
     #[error("tried to non-create update non-existent account with ID {0}")]
     UpdateNonexistentAccount(AccountId),
+
+    #[error(
+        "invalid update seqno for snark account {account_id:?} update (expected {expected}, got {got})"
+    )]
+    InvalidUpdateSequence {
+        account_id: AccountId,
+        expected: u64,
+        got: u64,
+    },
+
+    #[error(
+        "invalid next msg index for snark account {account_id:?} update (expected {expected}, got {got})"
+    )]
+    InvalidMsgIndex {
+        account_id: AccountId,
+        expected: u64,
+        got: u64,
+    },
+
+    #[error("insufficient balance for operation (requested {requested}, available {available})")]
+    InsufficientBalance {
+        requested: BitcoinAmount,
+        available: BitcoinAmount,
+    },
+
+    #[error("message proof invalid for account {account_id:?} at message index {msg_idx}")]
+    InvalidMessageProof { account_id: AccountId, msg_idx: u64 },
+
+    #[error("invalid ledger reference by account {account_id:?} at ref index {ref_idx}")]
+    InvalidLedgerReference { account_id: AccountId, ref_idx: u64 },
+
+    #[error("invalid update proof for account {account_id:?}")]
+    InvalidUpdateProof { account_id: AccountId },
+
+    #[error("invalid message proofs count for account {account_id:?}")]
+    InvalidMsgProofsCount { account_id: AccountId },
+
+    #[error("invalid ledger ref proofs count for account {account_id:?}")]
+    InvalidLedgerRefProofsCount { account_id: AccountId },
+
+    #[error(
+        "processed message is not the same as proven message for account {account_id:?} at index {msg_index}"
+    )]
+    InvalidAccumuulatorProofMessageRef {
+        account_id: AccountId,
+        msg_index: usize,
+    },
+
+    #[error("message index overflow for account {account_id:?}")]
+    MsgIndexOverflow { account_id: AccountId },
+
+    #[error("bitcoin amount overflow")]
+    BitcoinAmountOverflow,
 
     #[error("operation not supported in this context")]
     Unsupported,

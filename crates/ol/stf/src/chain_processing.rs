@@ -56,6 +56,13 @@ pub fn process_block_start<S: IStateAccessor>(
                 ph.is_terminal(),
             ));
         }
+        let exp_slot = ph.slot() + 1;
+        if context.slot() != exp_slot {
+            return Err(ExecError::IncorrectSlot {
+                expected: exp_slot,
+                got: context.slot(),
+            });
+        }
     } else if context.slot() != 0 || context.epoch() != 0 {
         return Err(ExecError::GenesisCoordsNonzero);
     }

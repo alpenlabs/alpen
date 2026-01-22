@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
+use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
@@ -117,6 +117,10 @@ where
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.batch.epochal_mut().set_total_ledger_balance(amt);
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        self.batch.epochal().asm_manifests_mmr()
     }
 
     // ===== Account methods =====

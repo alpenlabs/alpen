@@ -6,6 +6,24 @@ use crate::{
 };
 
 impl UpdateProofPubParams {
+    pub fn new(
+        cur_state: ProofState,
+        new_state: ProofState,
+        message_inputs: Vec<MessageEntry>,
+        ledger_refs: LedgerRefs,
+        outputs: UpdateOutputs,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            cur_state,
+            new_state,
+            message_inputs: message_inputs.into(),
+            ledger_refs,
+            outputs,
+            extra_data: extra_data.into(),
+        }
+    }
+
     pub fn cur_state(&self) -> ProofState {
         self.cur_state.clone()
     }
