@@ -73,6 +73,9 @@ pub enum AcctError {
     #[error("invalid message proofs count for account {account_id:?}")]
     InvalidMsgProofsCount { account_id: AccountId },
 
+    #[error("invalid ledger ref proofs count for account {account_id:?}")]
+    InvalidLedgerRefProofsCount { account_id: AccountId },
+
     #[error(
         "processed message is not the same as proven message for account {account_id:?} at index {msg_index}"
     )]

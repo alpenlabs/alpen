@@ -77,8 +77,10 @@ pub fn verify_message_index(
     snark_state: &impl ISnarkAccountState,
     operation: &UpdateOperationData,
 ) -> AcctResult<()> {
-    let expected_idx =
-        snark_state.next_inbox_msg_idx() + operation.processed_messages().len() as u64;
+    let expected_idx = snark_state
+        .next_inbox_msg_idx()
+        .checked_add(operation.processed_messages().len() as u64)
+        .ok_or(AcctError::MsgIndexOverflow { account_id: target })?;
     let claimed_idx = operation.new_proof_state().next_inbox_msg_idx();
 
     if expected_idx != claimed_idx {
@@ -102,7 +104,7 @@ fn verify_ledger_refs(
 
     // Check if the refs and refs in proofs are the same
     if ledger_refs.l1_header_refs().len() != ledger_ref_proofs.l1_headers_proofs().len() {
-        return Err(AcctError::InvalidMsgProofsCount { account_id: target });
+        return Err(AcctError::InvalidLedgerRefProofsCount { account_id: target });
     }
 
     for (lref, proof) in ledger_refs
@@ -151,7 +153,9 @@ pub(crate) fn verify_inbox_mmr_proofs(
             });
         }
 
-        cur_index += 1;
+        cur_index = cur_index
+            .checked_add(1)
+            .ok_or(AcctError::MsgIndexOverflow { account_id: target })?;
     }
     Ok(())
 }
