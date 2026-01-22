@@ -139,6 +139,7 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
 /// Database representation of BatchStatus.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) enum DBBatchStatus {
+    Genesis,
     Sealed,
     DaPending,
     DaComplete {
@@ -156,6 +157,7 @@ pub(crate) enum DBBatchStatus {
 impl From<BatchStatus> for DBBatchStatus {
     fn from(value: BatchStatus) -> Self {
         match value {
+            BatchStatus::Genesis => Self::Genesis,
             BatchStatus::Sealed => Self::Sealed,
             BatchStatus::DaPending => Self::DaPending,
             BatchStatus::DaComplete { da } => Self::DaComplete {
@@ -175,6 +177,7 @@ impl From<BatchStatus> for DBBatchStatus {
 impl From<DBBatchStatus> for BatchStatus {
     fn from(value: DBBatchStatus) -> Self {
         match value {
+            DBBatchStatus::Genesis => Self::Genesis,
             DBBatchStatus::Sealed => Self::Sealed,
             DBBatchStatus::DaPending => Self::DaPending,
             DBBatchStatus::DaComplete { da } => Self::DaComplete {

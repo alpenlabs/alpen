@@ -56,6 +56,8 @@ impl L1DaBlockRef {
 /// Batch lifecycle states
 #[derive(Debug, Clone)]
 pub enum BatchStatus {
+    /// Genesis batch.
+    Genesis,
     /// Newly sealed batch.
     Sealed,
     /// DA txn(s) posted, waiting for inclusion in block.

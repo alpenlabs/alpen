@@ -523,7 +523,7 @@ impl EeNodeDb for EeNodeDBSled {
 
         let idx = batch.idx();
         let batch_id: DBBatchId = batch.id().into();
-        let db_batch = DBBatchWithStatus::new(batch, BatchStatus::Sealed);
+        let db_batch = DBBatchWithStatus::new(batch, BatchStatus::Genesis);
 
         (&self.batch_by_idx_tree, &self.batch_id_to_idx_tree).transaction_with_retry(
             self.config.backoff.as_ref(),
