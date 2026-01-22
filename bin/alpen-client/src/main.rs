@@ -352,7 +352,7 @@ fn main() {
                     storage.clone(),
                     storage.clone(),
                     batch_prover,
-                    batch_lifecycle_handle.proof_ready_watcher(),
+                    batch_lifecycle_handle.latest_proof_ready_watcher(),
                     ol_tracker.ol_status_watcher(),
                 );
 
