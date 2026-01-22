@@ -32,7 +32,7 @@ impl InMemoryStorage {
         let mut id_to_idx = storage.batch_id_to_idx.write().unwrap();
 
         id_to_idx.insert(genesis_batch.id(), genesis_batch.idx());
-        batches.insert(genesis_batch.idx(), (genesis_batch, BatchStatus::Sealed));
+        batches.insert(genesis_batch.idx(), (genesis_batch, BatchStatus::Genesis));
 
         drop(batches);
         drop(id_to_idx);
