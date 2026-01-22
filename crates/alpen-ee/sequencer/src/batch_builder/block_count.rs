@@ -1,6 +1,9 @@
 //! Block-count based batching policy implementation.
 
-use super::{Accumulator, BatchPolicy, BatchSealingPolicy};
+use async_trait::async_trait;
+use strata_acct_types::Hash;
+
+use super::{Accumulator, BatchPolicy, BatchSealingPolicy, BlockDataProvider};
 
 /// Block-count based batching policy.
 #[derive(Debug)]
@@ -61,6 +64,20 @@ impl BatchSealingPolicy<BlockCountPolicy> for FixedBlockCountSealing {
     ) -> bool {
         // Seal if we've already reached max_blocks
         accumulator.block_count() >= self.max_blocks
+    }
+}
+
+/// Data provider for [`BlockCountPolicy`].
+///
+/// Doesn't need any data, so its just a stub to satisfy the trait.
+#[derive(Debug)]
+pub struct BlockCountDataProvider;
+
+#[async_trait]
+impl BlockDataProvider<BlockCountPolicy> for BlockCountDataProvider {
+    async fn get_block_data(&self, _hash: Hash) -> eyre::Result<Option<BlockCountData>> {
+        // No additional data needed for BlockCountPolicy
+        Ok(Some(BlockCountData))
     }
 }
 
