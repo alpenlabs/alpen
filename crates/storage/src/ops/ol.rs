@@ -4,10 +4,10 @@ use strata_db_types::traits::*;
 use strata_identifiers::{OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
-    (<D: OLBlockDatabase> => OLBlockOps) {
+    (<D: OLBlockDatabase> => OLBlockOps, component = components::STORAGE_OL) {
         get_block_data(id: OLBlockId) => Option<OLBlock>;
         put_block_data(block: OLBlock) => ();
         del_block_data(id: OLBlockId) => bool;

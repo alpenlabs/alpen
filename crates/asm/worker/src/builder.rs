@@ -5,7 +5,7 @@ use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 
 use crate::{
-    errors::WorkerError, handle::AsmWorkerHandle, service::AsmWorkerService,
+    constants, errors::WorkerError, handle::AsmWorkerHandle, service::AsmWorkerService,
     state::AsmWorkerServiceState, traits::WorkerContext,
 };
 
@@ -69,7 +69,7 @@ impl<W> AsmWorkerBuilder<W> {
         let command_handle = service_builder.create_command_handle(64);
 
         // Launch the service using the sync worker.
-        let service_monitor = service_builder.launch_sync("asm_worker", executor)?;
+        let service_monitor = service_builder.launch_sync(constants::SERVICE_NAME, executor)?;
 
         // Create and return the handle.
         let handle = AsmWorkerHandle::new(command_handle, service_monitor);

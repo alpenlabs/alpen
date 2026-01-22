@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use sled::transaction::ConflictableTransactionResult;
 use strata_db_types::DbResult;
+use tracing::instrument;
 use typed_sled::{
     error::Error,
     transaction::{Backoff, ConstantBackoff, SledTransactional},
 };
 
-use crate::utils::to_db_error;
+use crate::{instrumentation::components, utils::to_db_error};
 
 // Configuration constants
 pub(crate) const DEFAULT_RETRY_COUNT: u16 = 3;
@@ -48,6 +49,14 @@ impl SledDbConfig {
     }
 
     /// Execute a transaction with retry logic using this config's settings
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(
+            component = components::DB_SLED_TRANSACTION,
+            max_retries = self.retry_count,
+        )
+    )]
     pub fn with_retry<Trees, F, R>(&self, trees: Trees, f: F) -> DbResult<R>
     where
         Trees: SledTransactional,

@@ -16,6 +16,7 @@ use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
 
 use crate::{
+    constants,
     context::WorkerExecCtxImpl,
     errors::{WorkerError, WorkerResult},
     handle::WorkerShared,
@@ -291,7 +292,7 @@ impl<W: WorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServiceState<W> {
     fn name(&self) -> &str {
-        "chain_worker"
+        constants::SERVICE_NAME
     }
 }
 

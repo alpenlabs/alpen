@@ -8,6 +8,7 @@ pub mod client_state;
 mod config;
 pub mod global_mmr;
 mod init;
+mod instrumentation;
 pub mod l1;
 pub mod l2;
 pub mod macros;

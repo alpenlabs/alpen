@@ -10,6 +10,8 @@ use strata_service::ServiceState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
+use crate::constants;
+
 /// State for the CSM worker service.
 ///
 /// This state is used by the CSM worker which acts as a listener to ASM worker
@@ -69,6 +71,6 @@ impl CsmWorkerState {
 
 impl ServiceState for CsmWorkerState {
     fn name(&self) -> &str {
-        "csm_worker"
+        constants::SERVICE_NAME
     }
 }

@@ -6,10 +6,10 @@ use strata_db_types::{
 };
 use strata_primitives::buf::Buf32;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
-    (<D: L1WriterDatabase> => EnvelopeDataOps) {
+    (<D: L1WriterDatabase> => EnvelopeDataOps, component = components::STORAGE_L1_WRITER) {
         put_payload_entry(idx: u64, payloadentry: BundledPayloadEntry) => ();
         get_payload_entry_by_idx(idx: u64) => Option<BundledPayloadEntry>;
         get_next_payload_idx() => u64;

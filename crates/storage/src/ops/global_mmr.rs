@@ -1,10 +1,10 @@
 use strata_db_types::traits::GlobalMmrDatabase;
 use strata_identifiers::{Hash, RawMmrId};
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
-    (<D: GlobalMmrDatabase> => GlobalMmrDataOps) {
+    (<D: GlobalMmrDatabase> => GlobalMmrDataOps, component = components::STORAGE_GLOBAL_MMR) {
         append_leaf(mmr_id: RawMmrId, hash: Hash) => u64;
         append_leaf_with_preimage(mmr_id: RawMmrId, hash: Hash, preimage: Vec<u8>) => u64;
         get_preimage(mmr_id: RawMmrId, index: u64) => Option<Vec<u8>>;

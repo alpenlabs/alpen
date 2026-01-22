@@ -53,6 +53,12 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         // Traverse back the chain of l1 blocks until we find an l1 block which has AnchorState.
         // Remember all the blocks along the way and pass it (in the reverse order) to process.
+        let pivot_span = info_span!("asm.pivot_lookup",
+            target_height = height.to_consensus_u32(),
+            target_block = %incoming_block.blkid()
+        );
+        let pivot_span_guard = pivot_span.enter();
+
         let mut skipped_blocks = vec![];
         let mut pivot_block = *incoming_block;
         let mut pivot_anchor = ctx.get_anchor_state(&pivot_block);
@@ -81,13 +87,24 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         }
 
         // Found pivot anchor state - our starting point.
-        info!(%pivot_block, "ASM found pivot anchor state");
+        info!(%pivot_block,
+            skipped_blocks = skipped_blocks.len(),
+            "ASM found pivot anchor state"
+        );
+
+        // Drop pivot span guard before next phase
+        drop(pivot_span_guard);
 
         // Special handling for genesis block - its anchor state was created during init
         // but its manifest wasn't (because Bitcoin block wasn't available yet).
         // This must happen BEFORE processing skipped_blocks so genesis gets index 0.
         // Only create it if it doesn't exist yet (idempotency check via MMR leaf index 0).
         if pivot_block.height() == genesis_height && ctx.get_manifest_hash(0)?.is_none() {
+            let genesis_span = info_span!("asm.genesis_manifest",
+                pivot_height = pivot_block.height().to_consensus_u32(),
+                pivot_block = %pivot_block.blkid()
+            );
+            let _genesis_guard = genesis_span.enter();
             // Fetch the genesis block (should work now since L1 reader processed it)
             let genesis_block = ctx.get_l1_block(pivot_block.blkid())?;
 
@@ -116,16 +133,25 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             let leaf_index = ctx.append_manifest_to_mmr(manifest_hash.into())?;
 
             info!(%pivot_block, leaf_index, "Created genesis manifest");
-        }
+        } // genesis_span drops here
 
         state.update_anchor_state(pivot_anchor.unwrap(), pivot_block);
 
         // Process the whole chain of unprocessed blocks, starting from older blocks till
         // incoming_block.
         for (block, block_id) in skipped_blocks.iter().rev() {
+            let transition_span = info_span!("asm.block_transition",
+                height = block_id.height().to_consensus_u32(),
+                block_id = %block_id.blkid()
+            );
+            let _transition_guard = transition_span.enter();
+
             info!(%block_id, "ASM transition attempt");
             match state.transition(block) {
                 Ok(asm_stf_out) => {
+                    let storage_span = debug_span!("asm.manifest_storage");
+                    let _storage_guard = storage_span.enter();
+
                     // Extract manifest and compute its hash
                     let manifest = asm_stf_out.manifest.clone();
                     let manifest_hash = manifest.compute_hash();
@@ -149,7 +175,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                 }
             }
             info!(%block_id, "ASM transition success");
-        }
+        } // transition_span drops here
 
         Ok(Response::Continue)
     }

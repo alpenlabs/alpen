@@ -2,6 +2,7 @@
 
 mod cache;
 mod exec;
+mod instrumentation;
 mod managers;
 pub mod ops;
 

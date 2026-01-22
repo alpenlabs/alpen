@@ -4,10 +4,10 @@ use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{traits::*, types::CheckpointEntry};
 use strata_primitives::epoch::EpochCommitment;
 
-use crate::exec::*;
+use crate::{exec::*, instrumentation::components};
 
 inst_ops_simple! {
-    (<D: CheckpointDatabase> => CheckpointDataOps) {
+    (<D: CheckpointDatabase> => CheckpointDataOps, component = components::STORAGE_CHECKPOINT) {
         insert_epoch_summary(epoch: EpochSummary) => ();
         get_epoch_summary(epoch: EpochCommitment) => Option<EpochSummary>;
         get_epoch_commitments_at(epoch: u64) => Vec<EpochCommitment>;

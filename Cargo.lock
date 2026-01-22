@@ -14445,6 +14445,7 @@ dependencies = [
  "strata-paas",
  "strata-primitives",
  "strata-state",
+ "tracing",
  "typed-sled",
  "zkaleido",
 ]

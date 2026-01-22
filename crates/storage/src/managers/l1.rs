@@ -4,9 +4,9 @@ use strata_asm_common::AsmManifest;
 use strata_db_types::{traits::L1Database, DbError, DbResult};
 use strata_primitives::l1::L1BlockId;
 use threadpool::ThreadPool;
-use tracing::error;
+use tracing::{error, instrument};
 
-use crate::{cache::CacheTable, ops};
+use crate::{cache::CacheTable, instrumentation::components, ops};
 
 /// Caching manager of L1 block data
 #[expect(
@@ -33,6 +33,14 @@ impl L1BlockManager {
     }
 
     /// Save an [`AsmManifest`] to database. Does not add block to tracked canonical chain.
+    #[instrument(
+        skip(self, manifest),
+        fields(
+            component = components::STORAGE_L1,
+            blkid = %manifest.blkid(),
+            height = manifest.height(),
+        )
+    )]
     pub fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()> {
         let blockid = manifest.blkid();
         self.manifest_cache.purge_blocking(blockid);
@@ -40,6 +48,14 @@ impl L1BlockManager {
     }
 
     /// Save an [`AsmManifest`] to database. Does not add block to tracked canonical chain.
+    #[instrument(
+        skip(self, manifest),
+        fields(
+            component = components::STORAGE_L1,
+            blkid = %manifest.blkid(),
+            height = manifest.height(),
+        )
+    )]
     pub async fn put_block_data_async(&self, manifest: AsmManifest) -> DbResult<()> {
         let blockid = manifest.blkid();
         self.manifest_cache.purge_async(blockid).await;
@@ -49,6 +65,14 @@ impl L1BlockManager {
     /// Append [`L1BlockId`] to tracked canonical chain at the specified height.
     // Note: In the new architecture, btcio stores chain tracking data first,
     // then the ASM worker stores manifests asynchronously.
+    #[instrument(
+        skip(self),
+        fields(
+            component = components::STORAGE_L1,
+            blkid = %blockid,
+            height,
+        )
+    )]
     pub fn extend_canonical_chain(&self, blockid: &L1BlockId, height: u64) -> DbResult<()> {
         if let Some((tip_height, _tip_blockid)) = self.get_canonical_chain_tip()? {
             if height != tip_height + 1 {
@@ -66,6 +90,14 @@ impl L1BlockManager {
     /// Append [`L1BlockId`] to tracked canonical chain at the specified height.
     // Note: In the new architecture, btcio stores chain tracking data first,
     // then the ASM worker stores manifests asynchronously.
+    #[instrument(
+        skip(self),
+        fields(
+            component = components::STORAGE_L1,
+            blkid = %blockid,
+            height,
+        )
+    )]
     pub async fn extend_canonical_chain_async(
         &self,
         blockid: &L1BlockId,
@@ -87,6 +119,13 @@ impl L1BlockManager {
 
     /// Reverts tracked canonical chain to `height`.
     /// `height` must be less than tracked canonical chain height.
+    #[instrument(
+        skip(self),
+        fields(
+            component = components::STORAGE_L1,
+            revert_to_height = height,
+        )
+    )]
     pub fn revert_canonical_chain(&self, height: u64) -> DbResult<()> {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_blocking()? else {
             // no chain to revert
@@ -109,6 +148,13 @@ impl L1BlockManager {
 
     /// Reverts tracked canonical chain to `height`.
     /// `height` must be less than tracked canonical chain height.
+    #[instrument(
+        skip(self),
+        fields(
+            component = components::STORAGE_L1,
+            revert_to_height = height,
+        )
+    )]
     pub async fn revert_canonical_chain_async(&self, height: u64) -> DbResult<()> {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_async().await? else {
             // no chain to revert

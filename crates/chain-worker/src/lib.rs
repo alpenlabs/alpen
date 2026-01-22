@@ -1,11 +1,12 @@
 //! # strata-chain-worker
 //!
 //! The `strata-chain-worker` crate provides a dedicated asynchronous worker
-//! for managing Strata’s chainstate database. It encapsulates the logic for
+//! for managing Strata's chainstate database. It encapsulates the logic for
 //! fetching, executing, and finalizing L2 blocks and epochs, while handling
 //! errors, workload dispatch, and state access in a concurrent environment.
 
 mod builder;
+mod constants;
 mod context;
 mod errors;
 mod handle;

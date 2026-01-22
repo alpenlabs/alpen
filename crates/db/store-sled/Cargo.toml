@@ -28,6 +28,7 @@ bincode.workspace = true
 borsh.workspace = true
 sled.workspace = true
 ssz_types.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
