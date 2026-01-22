@@ -21,7 +21,7 @@
 //!
 //! ```ignore
 //! use alpen_ee_sequencer::{
-//!     create_batch_lifecycle, init_lifecycle_state,
+//!     create_batch_lifecycle_task, init_lifecycle_state,
 //! };
 //!
 //! // Initialize state from storage
