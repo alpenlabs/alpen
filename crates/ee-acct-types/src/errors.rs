@@ -77,6 +77,9 @@ pub enum EnvError {
     /// There was a tx that was invalid in a block, for some reason.
     #[error("invalid tx in a block")]
     InvalidBlockTx,
+
+    #[error("blocks in a chunk did not match the chunk's attested io")]
+    InconsistentChunkIo,
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;
