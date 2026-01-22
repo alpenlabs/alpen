@@ -16,12 +16,12 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
 use strata_ol_da::{
     AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaBlobV1, PendingWithdrawQueue,
 };
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
-use strata_ol_state_types::{OLState, WriteBatch};
+use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::{
@@ -862,6 +862,34 @@ fn test_new_account_post_state_encoded() {
 }
 
 #[test]
+fn test_new_account_vk_persisted_from_ol_state() {
+    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    let account_id = test_account_id(10);
+    let update_vk = vec![9u8; 8];
+    let snark_state = OLSnarkAccountState::new_fresh(test_hash(4), update_vk.clone());
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(100),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
+
+    da_state.set_da_tracking_enabled(false);
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
+    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let new_accounts = blob.state_diff.ledger.new_accounts.entries();
+    assert_eq!(new_accounts.len(), 1);
+    match &new_accounts[0].init.type_state {
+        AccountTypeInit::Snark(init) => {
+            assert_eq!(init.update_vk.as_slice(), update_vk.as_slice());
+        }
+        _ => panic!("expected snark account init"),
+    }
+}
+
+#[test]
 fn test_tracking_disabled_excludes_changes() {
     let account_id = test_account_id(1);
     let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
@@ -888,6 +916,25 @@ fn test_tracking_disabled_excludes_changes() {
     let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
+}
+
+#[test]
+fn test_output_logs_recorded_in_blob() {
+    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    let log1 = OLLog::new(AccountSerial::from(1), vec![1, 2, 3]);
+    let log2 = OLLog::new(AccountSerial::from(2), vec![4, 5]);
+    da_state.record_output_logs(&[log1.clone(), log2.clone()]);
+
+    da_state.set_da_tracking_enabled(false);
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
+    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let logs = blob.output_logs.entries();
+    assert_eq!(logs.len(), 2);
+    assert_eq!(logs[0], log1);
+    assert_eq!(logs[1], log2);
 }
 
 #[test]
