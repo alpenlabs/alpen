@@ -15083,6 +15083,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-ol-stf"
+version = "0.1.0"
+
+[[package]]
 name = "strata-prover-client"
 version = "0.3.0-alpha.1"
 dependencies = [
