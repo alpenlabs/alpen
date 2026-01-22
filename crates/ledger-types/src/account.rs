@@ -136,6 +136,9 @@ pub trait ISnarkAccountState: Sized {
     /// Gets the index of the next message to be read/processed by this account.
     fn next_inbox_msg_idx(&self) -> u64;
 
+    /// Gets the update verification key bytes.
+    fn update_vk(&self) -> &[u8];
+
     // Inbox accessors
 
     /// Gets current the inbox MMR state, which we can use to check proofs

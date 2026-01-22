@@ -603,7 +603,10 @@ fn account_init_from_data<T: IAccountState>(data: &NewAccountData<T>) -> Account
     match data.type_state() {
         AccountTypeState::Empty => AccountInit::new(balance, AccountTypeInit::Empty),
         AccountTypeState::Snark(snark_state) => {
-            let init = SnarkAccountInit::new(snark_state.inner_state_root(), Vec::new());
+            let init = SnarkAccountInit::new(
+                snark_state.inner_state_root(),
+                snark_state.update_vk().to_vec(),
+            );
             AccountInit::new(balance, AccountTypeInit::Snark(init))
         }
     }
