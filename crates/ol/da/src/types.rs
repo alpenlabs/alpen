@@ -1028,3 +1028,28 @@ impl LinearAccumulator for InboxAccumulator {
         self.entries.push(entry.clone());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+
+    use super::*;
+
+    #[test]
+    fn test_da_message_entry_decode_rejects_oversize_payload() {
+        let payload = MsgPayload::new(
+            BitcoinAmount::from_sat(0),
+            vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
+        );
+        let entry = DaMessageEntry {
+            source: AccountId::zero(),
+            incl_epoch: 0,
+            payload,
+        };
+
+        let encoded = encode_to_vec(&entry).expect("encode da message entry");
+        let decoded: Result<DaMessageEntry, _> = decode_buf_exact(&encoded);
+        assert!(decoded.is_err());
+    }
+}
