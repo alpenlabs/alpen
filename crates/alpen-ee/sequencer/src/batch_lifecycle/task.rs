@@ -199,6 +199,35 @@ where
     }
 }
 
+/// Process one cycle of the batch lifecycle.
+///
+/// Returns an error if a critical operation fails. The caller (task loop) decides
+/// whether to continue or abort based on the error.
+pub(crate) async fn process_cycle<D, P, S>(
+    state: &mut BatchLifecycleState,
+    ctx: &BatchLifecycleCtx<D, P, S>,
+) -> Result<()>
+where
+    D: BatchDaProvider,
+    P: BatchProver,
+    S: BatchStorage,
+{
+    // Get latest batch
+    let (latest_batch, _) = require_latest_batch(ctx.batch_storage.as_ref()).await?;
+
+    // Detect and handle reorg
+    let reorg = detect_reorg(state, &latest_batch, ctx.batch_storage.as_ref()).await?;
+    if !matches!(reorg, ReorgDetected::None) {
+        handle_reorg(state, &latest_batch, ctx.batch_storage.as_ref(), reorg).await?;
+    }
+
+    // Try to advance each frontier
+    try_advance_da_frontier(state, &latest_batch, ctx).await?;
+    try_advance_proof_frontier(state, &latest_batch, ctx).await?;
+
+    Ok(())
+}
+
 /// Main batch lifecycle task.
 ///
 /// This task monitors sealed batches and manages their progression through
@@ -230,40 +259,8 @@ pub(crate) async fn batch_lifecycle_task<D, P, S>(
             _ = poll_interval.tick() => { }
         }
 
-        // Get latest batch
-        let latest_batch = match require_latest_batch(ctx.batch_storage.as_ref()).await {
-            Ok((batch, _)) => batch,
-            Err(e) => {
-                error!(error = %e, "Failed to get latest batch");
-                continue;
-            }
-        };
-
-        // Detect and handle reorg
-        let reorg = detect_reorg(&state, &latest_batch, ctx.batch_storage.as_ref()).await;
-        match reorg {
-            Ok(reorg) if !matches!(reorg, ReorgDetected::None) => {
-                if let Err(e) =
-                    handle_reorg(&mut state, &latest_batch, ctx.batch_storage.as_ref(), reorg).await
-                {
-                    error!(error = %e, "Failed to handle reorg");
-                    continue;
-                }
-            }
-            Err(e) => {
-                error!(error = %e, "Failed to detect reorg");
-                continue;
-            }
-            _ => {}
-        }
-
-        // Try to advance each frontier
-        if let Err(e) = try_advance_da_frontier(&mut state, &latest_batch, &ctx).await {
-            error!(error = %e, "Failed to advance DA frontier");
-        }
-
-        if let Err(e) = try_advance_proof_frontier(&mut state, &latest_batch, &ctx).await {
-            error!(error = %e, "Failed to advance proof frontier");
+        if let Err(e) = process_cycle(&mut state, &ctx).await {
+            error!(error = %e, "batch lifecycle processing failed");
         }
     }
 }
