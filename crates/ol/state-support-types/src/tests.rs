@@ -438,6 +438,185 @@ fn test_write_tracking_over_batch_diff_inbox_message() {
     );
 }
 
+// =============================================================================
+// DaAccumulatingState tests
+// =============================================================================
+
+mod da_accumulating {
+    use strata_acct_types::BitcoinAmount;
+    use strata_da_framework::{ContextlessDaWrite, decode_buf_exact};
+    use strata_ledger_types::{
+        AccountTypeState, Coin, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor,
+        NewAccountData,
+    };
+    use strata_ol_da::{OlDaBlobV1, PendingWithdrawQueue};
+    use strata_ol_state_types::OLState;
+
+    use crate::{DaAccumulatingState, DaAccumulationError, test_utils::*};
+
+    fn build_simple_blob() -> Vec<u8> {
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut da_state = DaAccumulatingState::new(state);
+
+        da_state.set_cur_slot(10);
+
+        let msg = test_message_entry(7, 0, 2000);
+        da_state
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                acct.add_balance(coin);
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .insert_inbox_message(msg.clone())
+            })
+            .unwrap()
+            .unwrap();
+
+        da_state.record_withdrawal_intent(1_000, vec![1, 2, 3]);
+        da_state.record_withdrawal_intent(2_000, vec![4, 5, 6]);
+
+        da_state.set_da_tracking_enabled(false);
+        da_state
+            .take_completed_epoch_da_blob()
+            .expect("expected DA blob")
+    }
+
+    #[test]
+    fn test_da_blob_deterministic() {
+        let blob1 = build_simple_blob();
+        let blob2 = build_simple_blob();
+        assert_eq!(blob1, blob2);
+    }
+
+    #[test]
+    fn test_account_diffs_ordered_by_serial() {
+        let mut state = OLState::new_genesis();
+        let account_id_1 = test_account_id(1);
+        let account_id_2 = test_account_id(2);
+
+        let snark_state_1 = test_snark_account_state(1);
+        let snark_state_2 = test_snark_account_state(2);
+        state
+            .create_new_account(
+                account_id_1,
+                NewAccountData::new(
+                    BitcoinAmount::from_sat(1000),
+                    AccountTypeState::Snark(snark_state_1),
+                ),
+            )
+            .unwrap();
+        state
+            .create_new_account(
+                account_id_2,
+                NewAccountData::new(
+                    BitcoinAmount::from_sat(2000),
+                    AccountTypeState::Snark(snark_state_2),
+                ),
+            )
+            .unwrap();
+
+        let mut da_state = DaAccumulatingState::new(state);
+
+        // Update higher serial first, then lower serial.
+        da_state
+            .update_account(account_id_2, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+        da_state
+            .update_account(account_id_1, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(75));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        da_state.set_da_tracking_enabled(false);
+        let blob_bytes = da_state
+            .take_completed_epoch_da_blob()
+            .expect("expected DA blob");
+        let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+        let diffs = blob.state_diff.ledger.account_diffs.entries();
+        assert!(
+            diffs
+                .windows(2)
+                .all(|w| w[0].account_serial <= w[1].account_serial)
+        );
+    }
+
+    #[test]
+    fn test_tracking_disabled_excludes_changes() {
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut da_state = DaAccumulatingState::new(state);
+
+        // Finalize an empty epoch and drop the blob.
+        da_state.set_da_tracking_enabled(false);
+        da_state.take_completed_epoch_da_blob();
+
+        // Make changes while tracking is disabled.
+        da_state
+            .update_account(account_id, |acct| {
+                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(123));
+                acct.add_balance(coin);
+            })
+            .unwrap();
+
+        // Re-enable and finalize again.
+        da_state.set_da_tracking_enabled(true);
+        da_state.set_da_tracking_enabled(false);
+        let blob_bytes = da_state
+            .take_completed_epoch_da_blob()
+            .expect("expected DA blob");
+        let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+        assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
+    }
+
+    #[test]
+    fn test_withdrawal_intents_consistency() {
+        let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+        da_state.record_withdrawal_intent(10, vec![1, 2]);
+        da_state.record_withdrawal_intent(20, vec![3, 4, 5]);
+
+        da_state.set_da_tracking_enabled(false);
+        let blob_bytes = da_state
+            .take_completed_epoch_da_blob()
+            .expect("expected DA blob");
+        let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+        let intents = blob.withdrawal_intents.entries();
+        assert_eq!(intents.len(), 2);
+
+        let mut queue = PendingWithdrawQueue::default();
+        blob.state_diff
+            .global
+            .pending_withdraws
+            .apply(&mut queue)
+            .expect("apply queue diff");
+        assert_eq!(queue.entries(), intents);
+    }
+
+    #[test]
+    fn test_da_blob_size_limit() {
+        let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+        let big_dest = vec![0u8; 1024];
+        for _ in 0..300 {
+            da_state.record_withdrawal_intent(1, big_dest.clone());
+        }
+
+        da_state.set_da_tracking_enabled(false);
+        assert!(matches!(
+            da_state.last_error(),
+            Some(DaAccumulationError::PayloadTooLarge { .. })
+        ));
+    }
+}
+
 /// Test reading account from pending batch through WriteTrackingState over BatchDiffState.
 #[test]
 fn test_write_tracking_over_batch_diff_reads_from_pending_batch() {
