@@ -6,4 +6,4 @@
 mod task;
 mod update_builder;
 
-pub use task::update_submitter_task;
+pub use task::create_update_submitter_task;

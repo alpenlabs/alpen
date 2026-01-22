@@ -21,4 +21,4 @@ pub use ol_chain_tracker::{
     build_ol_chain_tracker, init_ol_chain_tracker_state, InboxMessages, OLChainTrackerHandle,
     OLChainTrackerState,
 };
-pub use update_submitter::update_submitter_task;
+pub use update_submitter::create_update_submitter_task;

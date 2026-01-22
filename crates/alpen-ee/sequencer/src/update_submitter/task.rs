@@ -57,7 +57,7 @@ impl UpdateCache {
 /// On either trigger, it queries the OL client for the current account state, finds all batches in
 /// `ProofReady` state starting from the next expected sequence number, and submits them in order.
 /// Depends on OL to dedupe transactions already in mempool.
-pub async fn update_submitter_task<C, S, ES, P>(
+pub async fn create_update_submitter_task<C, S, ES, P>(
     ol_client: Arc<C>,
     batch_storage: Arc<S>,
     exec_storage: Arc<ES>,
