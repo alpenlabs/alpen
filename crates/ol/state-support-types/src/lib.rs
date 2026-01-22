@@ -8,6 +8,7 @@ pub use strata_ol_state_types::{LedgerWriteBatch, SerialMap, WriteBatch};
 pub use write_tracking_layer::WriteTrackingState;
 
 mod batch_diff_layer;
+mod da_accumulating_layer;
 mod index_types;
 mod indexer_layer;
 mod write_tracking_layer;
@@ -19,5 +20,6 @@ mod test_utils;
 mod tests;
 
 pub use batch_diff_layer::*;
+pub use da_accumulating_layer::*;
 pub use index_types::*;
 pub use indexer_layer::*;
