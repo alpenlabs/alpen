@@ -34,7 +34,12 @@ pub(crate) fn handle_checkpoint_tx(
 
     logging::debug!(epoch, "processing checkpoint transaction");
 
-    match validate_checkpoint_and_extract_withdrawal_intents(state, current_l1_height, &payload, verified_aux_data) {
+    match validate_checkpoint_and_extract_withdrawal_intents(
+        state,
+        current_l1_height,
+        &payload,
+        verified_aux_data,
+    ) {
         Ok(withdrawal_intents) => {
             logging::info!(epoch, "checkpoint validated successfully");
 
