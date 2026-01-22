@@ -220,7 +220,7 @@ async fn build_next_block(
     if last_local_block.blockhash() != expected_block_target.parent {
         warn!(
             expected = %expected_block_target.parent,
-            actual = %last_local_block.parent_blockhash(),
+            actual = %last_local_block.blockhash(),
             "build_next_block: unexpected latest blockhash"
         )
     }
