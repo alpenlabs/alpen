@@ -1,0 +1,36 @@
+import strata_identifiers
+
+### Range of L2 (OL) blocks.
+#~# derive: Copy, Serialize, Deserialize
+class L2BlockRange(Container):
+    #~# external_kind: container
+    start: strata_identifiers.OLBlockCommitment
+    #~# external_kind: container
+    end: strata_identifiers.OLBlockCommitment
+
+### Complete checkpoint claim used as public input for ZK proof.
+###
+### Claims correct execution of OL blocks that consumed L1 messages,
+### transitioned state, and produced output messages.
+class CheckpointClaim(Container):
+    ### Checkpoint epoch number.
+    epoch: strata_identifiers.Epoch
+
+    ### OL block range: `start` is the last verified block (parent), `end` is
+    ### the final block after execution.
+    ###
+    ### The actual executed blocks are children of `start` up to and including
+    ### `end`.
+    l2_range: L2BlockRange
+
+    ### Hash of all ASM manifests consumed in order. Used to validate that all
+    ### ASM logs were processed sequentially.
+    asm_manifests_hash: Bytes32
+
+    ### Hash of the state diff (in CheckpointSidecar) between
+    ### l2_range.start (last verified state) and l2_range.end
+    ### (new state).
+    state_diff_hash: Bytes32
+
+    ### Hash of output messages produced during execution.
+    ol_logs_hash: Bytes32

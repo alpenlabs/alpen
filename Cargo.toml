@@ -24,9 +24,9 @@ members = [
   "crates/asm/subprotocols/bridge-v1",
   "crates/asm/subprotocols/debug-v1",
   "crates/asm/subprotocols/admin",
-  "crates/asm/subprotocols/checkpoint-v0",
   "crates/asm/txs/admin",
   "crates/asm/txs/checkpoint",
+  "crates/asm/subprotocols/checkpoint-v0",
   "crates/asm/txs/bridge-v1",
   "crates/asm-types",
   "crates/asm/worker",
@@ -38,6 +38,7 @@ members = [
   "crates/chain-worker",
   "crates/chain-worker-new",
   "crates/checkpoint-types",
+  "crates/checkpoint-types-ssz",
   "crates/cli-common",
   "crates/codec-utils",
   "crates/common",
@@ -178,6 +179,7 @@ strata-asm-manifest-types = { path = "crates/asm/manifest-types" }
 strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
 strata-asm-proto-administration = { path = "crates/asm/subprotocols/admin" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
+strata-asm-proto-checkpoint = { path = "crates/asm/subprotocols/checkpoint" }
 strata-asm-proto-checkpoint-txs = { path = "crates/asm/txs/checkpoint" }
 strata-asm-proto-checkpoint-v0 = { path = "crates/asm/subprotocols/checkpoint-v0" }
 strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
@@ -197,6 +199,7 @@ strata-chain-worker-new = { path = "crates/chain-worker-new" }
 strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
+strata-checkpoint-types-ssz = { path = "crates/checkpoint-types-ssz" }
 strata-cli-common = { path = "crates/cli-common" }
 strata-codec-utils = { path = "crates/codec-utils" }
 strata-common = { path = "crates/common" }
@@ -427,6 +430,7 @@ itertools = "0.14"
 jsonrpsee = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
 jsonrpsee-types = { version = "0.26.0" }
+k256 = { version = "0.13.4", features = ["schnorr"] }
 lru = "0.12"
 mockall = "0.11"
 musig2 = { version = "0.1.0", features = ["serde"] }
