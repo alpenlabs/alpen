@@ -151,7 +151,7 @@ mod tests {
         let l1_block = L1BlockCommitment::from_height_u64(0, L1BlockId::default())
             .expect("Failed to create L1BlockCommitment");
         let l1_status = L1Status::default();
-        let status_channel = StatusChannel::new(client_state, l1_block, l1_status, None);
+        let status_channel = StatusChannel::new(client_state, l1_block, l1_status, None, None);
 
         let task_manager = TaskManager::new(Handle::current());
         let texec = task_manager.create_executor();

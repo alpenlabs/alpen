@@ -289,6 +289,7 @@ mod tests {
             arbgen.generate(),
             arbgen.generate(),
             None,
+            None,
         );
 
         let state =

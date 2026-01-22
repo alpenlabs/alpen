@@ -545,6 +545,7 @@ pub(crate) mod test_context {
             ArbitraryGenerator::new().generate(),
             ArbitraryGenerator::new().generate(),
             None,
+            None,
         );
         let params = Arc::new(gen_params());
         let ctx = WriterContext::new(params, cfg, addr, client, status_channel);
