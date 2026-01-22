@@ -36,7 +36,7 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Create a OLSnarkAccountState with always-accept predicate key for testing
     let vk = PredicateKey::always_accept();
-    let snark_state = OLSnarkAccountState::new_fresh(vk, initial_state_root);
+    let snark_state = OLSnarkAccountState::new_fresh(vk, initial_state_root, Vec::new());
 
     let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
     let snark_serial = state
