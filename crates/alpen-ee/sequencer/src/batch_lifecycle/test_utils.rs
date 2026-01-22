@@ -49,11 +49,6 @@ pub(crate) fn test_wtxid(n: u8) -> Wtxid {
     Wtxid::from_byte_array(buf)
 }
 
-/// Helper to create test DA transaction IDs.
-pub(crate) fn make_da_txns(n: u8) -> Vec<(Txid, Wtxid)> {
-    vec![(test_txid(n), test_wtxid(n))]
-}
-
 /// Helper to create test L1DaBlockRef.
 pub(crate) fn make_da_ref(block_n: u8, txn_n: u8) -> L1DaBlockRef {
     let block_hash = BlockHash::from_byte_array([block_n; 32]);
