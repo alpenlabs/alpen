@@ -16,7 +16,7 @@ use strata_ledger_types::{
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OlDaBlobV1,
+    InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OLDaBlobV1,
     PendingWithdrawQueue, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
     WithdrawalIntents,
 };
@@ -293,7 +293,7 @@ impl EpochDaAccumulator {
         let ledger_diff = self.build_ledger_diff(state)?;
         let state_diff = StateDiff::new(global_diff, ledger_diff);
         let withdrawal_intents = WithdrawalIntents::new(self.effective_withdrawal_intents());
-        let blob = OlDaBlobV1::new(state_diff, withdrawal_intents);
+        let blob = OLDaBlobV1::new(state_diff, withdrawal_intents, todo!("output logs"));
 
         let encoded = encode_to_vec(&blob).map_err(|_| {
             // encode_to_vec only returns CodecError; map to builder error for now
