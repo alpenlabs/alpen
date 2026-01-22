@@ -25,15 +25,15 @@ pub enum DaStatus {
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 pub trait BatchDaProvider: Send + Sync {
-    /// Post DA data for a batch.
+    /// Posts DA data for a batch.
     ///
-    /// Returns the transaction IDs that were broadcast. These are used to track
-    /// confirmation status.
+    /// Initiates the data availability posting process for the given batch.
+    /// The implementation handles broadcasting and internal tracking.
     async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<()>;
 
-    /// Check DA status for pending transactions.
+    /// Checks DA status for a batch.
     ///
-    /// Returns `None` if transactions are still pending confirmation.
-    /// Returns `Some(refs)` when all transactions are confirmed in L1 blocks.
+    /// Returns a [`DaStatus`] indicating whether DA is pending, ready with L1
+    /// block references, not yet requested, or has permanently failed.
     async fn check_da_status(&self, batch_id: BatchId) -> eyre::Result<DaStatus>;
 }
