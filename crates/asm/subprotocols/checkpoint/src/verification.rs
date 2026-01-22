@@ -45,7 +45,18 @@ pub fn validate_checkpoint_payload(
         .into());
     }
 
-    // 3a.Construct full checkpoint claim and verify its proof
+    // 3. Validate L2 progression
+    let prev_slot = state.verified_tip().l2_commitment().slot();
+    let new_slot = payload.inner().new_tip().l2_commitment().slot();
+    if new_slot <= prev_slot {
+        return Err(InvalidCheckpointPayload::L2SlotDoesNotAdvance {
+            prev_slot,
+            new_slot,
+        }
+        .into());
+    }
+
+    // 4a. Construct full checkpoint claim
     let claim = construct_full_claim(
         expected_epoch,
         current_l1_height,
@@ -54,7 +65,7 @@ pub fn validate_checkpoint_payload(
         verified_aux_data,
     )?;
 
-    // 3b. Verify the proof
+    // 4b. Verify the proof
     state
         .checkpoint_predicate()
         .verify_claim_witness(&claim.as_ssz_bytes(), payload.inner.proof())
@@ -386,6 +397,33 @@ mod tests {
             err,
             CheckpointValidationError::InvalidPayload(
                 InvalidCheckpointPayload::CheckpointPredicateVerification(_)
+            )
+        ));
+    }
+
+    #[test]
+    fn test_l2_slot_does_not_advance() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+
+        // Set new L2 slot to be equal to the previous slot (no progression)
+        payload.new_tip.l2_commitment = *state.verified_tip().l2_commitment();
+
+        let current_l1_height = payload.new_tip().l1_height + 1;
+        let signed_payload = harness.sign_payload(payload);
+
+        let err = validate_checkpoint_payload(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::L2SlotDoesNotAdvance { .. }
             )
         ));
     }

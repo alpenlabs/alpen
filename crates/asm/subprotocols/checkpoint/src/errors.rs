@@ -56,4 +56,10 @@ pub enum InvalidCheckpointPayload {
         checkpoint_height: u32,
         current_height: u32,
     },
+
+    /// L2 slot does not advance.
+    #[error(
+        "L2 slot must advance: new slot {new_slot} is not greater than previous slot {prev_slot}"
+    )]
+    L2SlotDoesNotAdvance { prev_slot: u64, new_slot: u64 },
 }
