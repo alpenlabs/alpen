@@ -16,7 +16,10 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_da::{MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OlDaBlobV1, PendingWithdrawQueue};
+use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_da::{
+    AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OlDaBlobV1, PendingWithdrawQueue,
+};
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use strata_ol_state_types::{OLState, WriteBatch};
 use strata_snark_acct_types::{MessageEntry, Seqno};
@@ -816,6 +819,49 @@ fn test_account_diffs_ordered_by_serial() {
 }
 
 #[test]
+fn test_new_account_post_state_encoded() {
+    let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
+    let account_id = test_account_id(9);
+    let update_vk = vec![7u8; 4];
+    let snark_state = TestSnarkState::new(update_vk.clone());
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(100),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
+
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+            acct.add_balance(coin);
+            acct.as_snark_account_mut()
+                .unwrap()
+                .set_proof_state_directly(test_hash(9), 0, Seqno::new(1));
+        })
+        .unwrap();
+
+    da_state.set_da_tracking_enabled(false);
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
+    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let new_accounts = blob.state_diff.ledger.new_accounts.entries();
+    assert_eq!(new_accounts.len(), 1);
+    let entry = &new_accounts[0];
+    assert_eq!(entry.account_id, account_id);
+    assert_eq!(entry.init.balance, BitcoinAmount::from_sat(150));
+    match &entry.init.type_state {
+        AccountTypeInit::Snark(init) => {
+            assert_eq!(init.initial_state_root, test_hash(9));
+            assert_eq!(init.update_vk.as_slice(), update_vk.as_slice());
+        }
+        _ => panic!("expected snark account init"),
+    }
+    assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
+}
+
+#[test]
 fn test_tracking_disabled_excludes_changes() {
     let account_id = test_account_id(1);
     let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
@@ -869,6 +915,38 @@ fn test_withdrawal_intents_consistency() {
 }
 
 #[test]
+fn test_pending_withdraw_queue_front_incr() {
+    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    let base_entries = vec![
+        SimpleWithdrawalIntentLogData::new(10, vec![1]).unwrap(),
+        SimpleWithdrawalIntentLogData::new(20, vec![2]).unwrap(),
+    ];
+    let base_queue = PendingWithdrawQueue::new(5, base_entries.clone());
+    da_state.record_pending_withdraw_queue(base_queue.clone());
+    da_state.record_pending_withdraw_front_incr(1);
+    da_state.record_withdrawal_intent(30, vec![3]);
+
+    da_state.set_da_tracking_enabled(false);
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
+    let blob: OlDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let intents = blob.withdrawal_intents.entries();
+    assert_eq!(intents.len(), 1);
+    assert_eq!(intents[0].amt(), 30);
+
+    let mut queue = base_queue;
+    blob.state_diff
+        .global
+        .pending_withdraws
+        .apply(&mut queue)
+        .expect("apply queue diff");
+    assert_eq!(queue.entries().len(), 2);
+    assert_eq!(queue.entries()[0].amt(), base_entries[1].amt());
+    assert_eq!(queue.entries()[1].amt(), intents[0].amt());
+}
+
 #[test]
 fn test_withdrawal_intent_too_large_sets_error() {
     let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
@@ -918,7 +996,7 @@ fn test_vk_size_limit_exceeded() {
 #[test]
 fn test_message_payload_size_limit() {
     let account_id = test_account_id(1);
-    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
     let mut da_state = DaAccumulatingState::new(state);
 
     let payload = MsgPayload::new(
