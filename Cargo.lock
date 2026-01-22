@@ -15086,9 +15086,15 @@ dependencies = [
 name = "strata-proofimpl-ol-stf"
 version = "0.1.0"
 dependencies = [
+ "ssz",
+ "ssz_primitives",
  "strata-checkpoint-types-ssz",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-state-types",
+ "strata-ol-stf",
  "zkaleido",
  "zkaleido-native-adapter",
 ]

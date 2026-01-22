@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use ssz::Encode;
 use strata_checkpoint_types_ssz::CheckpointClaim;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::OLState;
@@ -32,11 +33,13 @@ impl ZkVmProgram for CheckpointProgram {
         zkaleido::ProofType::Groth16
     }
 
-    fn prepare_input<'a, B>(_input: &'a Self::Input) -> ZkVmInputResult<B::Input>
+    fn prepare_input<'a, B>(input: &'a Self::Input) -> ZkVmInputResult<B::Input>
     where
         B: zkaleido::ZkVmInputBuilder<'a>,
     {
         let mut input_builder = B::new();
+        input_builder.write_buf(&input.start_state.as_ssz_bytes())?;
+        input_builder.write_buf(&input.blocks.as_ssz_bytes())?;
         input_builder.build()
     }
 
