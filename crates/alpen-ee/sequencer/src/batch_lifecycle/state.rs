@@ -256,9 +256,12 @@ pub(crate) async fn recover_from_storage(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::batch_lifecycle::test_utils::{fill_storage, make_genesis_batch, TestBatchStatus::*};
     use alpen_ee_common::InMemoryStorage;
+
+    use super::*;
+    use crate::batch_lifecycle::test_utils::{
+        fill_storage, make_genesis_batch, TestBatchStatus::*,
+    };
 
     fn genesis_state() -> BatchLifecycleState {
         let genesis = make_genesis_batch(0);
@@ -285,7 +288,14 @@ mod tests {
         let storage = InMemoryStorage::new_empty();
         fill_storage(
             &storage,
-            &[ProofReady, ProofReady, ProofPending, DaComplete, DaPending, Sealed],
+            &[
+                ProofReady,
+                ProofReady,
+                ProofPending,
+                DaComplete,
+                DaPending,
+                Sealed,
+            ],
         )
         .await;
 
