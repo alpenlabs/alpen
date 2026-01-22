@@ -93,7 +93,7 @@ mod tests {
     use std::sync::Arc;
 
     use alpen_ee_common::{
-        BatchId, BatchStatus, DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver,
+        BatchStatus, DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver,
         ProofGenerationStatus,
     };
     use tokio::sync::watch;
@@ -123,55 +123,45 @@ mod tests {
     /// stages.
     #[tokio::test]
     async fn test_batch_lifecycle_happy() {
-        let storage = Arc::new(InMemoryStorage::new());
+        let storage = Arc::new(InMemoryStorage::new_empty());
 
-        // Setup genesis
-        let genesis = make_genesis_batch(0);
-        let genesis_id = genesis.id();
-        storage.save_genesis_batch(genesis.clone()).await.unwrap();
+        use TestBatchStatus::*;
+        let batches = fill_storage(storage.as_ref(), &[ProofReady, Sealed]).await;
 
-        // Add batch 1 as Sealed
-        let batch1 = make_batch(1, 0, 1);
-        let batch1_id = batch1.id();
-        storage.save_next_batch(batch1.clone()).await.unwrap();
+        let batch1_id = batches[1].id();
+        let batch2_id = batches[2].id();
 
         // Initialize state - all frontiers start at genesis (idx 0)
         let mut state = init_lifecycle_state(&*storage).await.unwrap();
-        assert_eq!(state.da_pending().idx(), 0);
-        assert_eq!(state.da_pending().id(), genesis_id);
-        assert_eq!(state.da_complete().idx(), 0);
-        assert_eq!(state.proof_pending().idx(), 0);
-        assert_eq!(state.proof_ready().idx(), 0);
+        assert_eq!(state.da_pending().idx(), 1);
+        assert_eq!(state.da_pending().id(), batch1_id);
+        assert_eq!(state.da_complete().idx(), 1);
+        assert_eq!(state.proof_pending().idx(), 1);
+        assert_eq!(state.proof_ready().idx(), 1);
+
+        let (_, status) = storage.get_batch_by_idx(2).await.unwrap().unwrap();
+        assert!(matches!(status, BatchStatus::Sealed));
 
         // Setup mocks
         let mut da_provider = MockBatchDaProvider::new();
         let mut prover = MockBatchProver::new();
 
         // All requests succeed immediately
-        da_provider
-            .expect_post_batch_da()
-            .times(1)
-            .withf(move |id: &BatchId| *id == batch1_id)
-            .returning(|_| Ok(()));
+        da_provider.expect_post_batch_da().returning(|_| Ok(()));
 
         da_provider
             .expect_check_da_status()
-            .withf(move |id: &BatchId| *id == batch1_id)
             .returning(|_| Ok(DaStatus::Ready(vec![make_da_ref(1, 1)])));
 
         prover
             .expect_request_proof_generation()
-            .withf(move |id: &BatchId| *id == batch1_id)
             .returning(|_| Ok(()));
 
-        prover
-            .expect_check_proof_status()
-            .withf(move |id: &BatchId| *id == batch1_id)
-            .returning(|_| {
-                Ok(ProofGenerationStatus::Ready {
-                    proof_id: test_proof_id(1),
-                })
-            });
+        prover.expect_check_proof_status().returning(|_| {
+            Ok(ProofGenerationStatus::Ready {
+                proof_id: test_proof_id(1),
+            })
+        });
 
         let ctx = _make_test_ctx(storage.clone(), da_provider, prover);
 
@@ -179,16 +169,16 @@ mod tests {
 
         // All steps are tried in order, and all requests succeed, so batch should complete whole
         // lifecycle in a single call. Frontiers now point to batch 1.
-        assert_eq!(state.da_pending().idx(), 1);
-        assert_eq!(state.da_pending().id(), batch1_id);
-        assert_eq!(state.da_complete().idx(), 1);
-        assert_eq!(state.da_complete().id(), batch1_id);
-        assert_eq!(state.proof_pending().idx(), 1);
-        assert_eq!(state.proof_pending().id(), batch1_id);
-        assert_eq!(state.proof_ready().idx(), 1);
-        assert_eq!(state.proof_ready().id(), batch1_id);
+        assert_eq!(state.da_pending().idx(), 2);
+        assert_eq!(state.da_pending().id(), batch2_id);
+        assert_eq!(state.da_complete().idx(), 2);
+        assert_eq!(state.da_complete().id(), batch2_id);
+        assert_eq!(state.proof_pending().idx(), 2);
+        assert_eq!(state.proof_pending().id(), batch2_id);
+        assert_eq!(state.proof_ready().idx(), 2);
+        assert_eq!(state.proof_ready().id(), batch2_id);
 
-        let (_, status) = storage.get_batch_by_idx(1).await.unwrap().unwrap();
+        let (_, status) = storage.get_batch_by_idx(2).await.unwrap().unwrap();
         assert!(matches!(status, BatchStatus::ProofReady { .. }));
     }
 }

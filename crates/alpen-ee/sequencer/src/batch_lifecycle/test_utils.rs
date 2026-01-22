@@ -1,6 +1,6 @@
 //! Shared test utilities for batch_lifecycle tests.
 
-use alpen_ee_common::{Batch, BatchId, L1DaBlockRef, ProofId};
+use alpen_ee_common::{Batch, BatchId, BatchStatus, BatchStorage, L1DaBlockRef, ProofId};
 use bitcoin::{absolute, hashes::Hash as _, BlockHash, Txid, Wtxid};
 use strata_acct_types::Hash;
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
@@ -63,4 +63,68 @@ pub(crate) fn make_da_ref(block_n: u8, txn_n: u8) -> L1DaBlockRef {
 /// Helper to create a ProofId for testing.
 pub(crate) fn test_proof_id(n: u8) -> ProofId {
     ProofId::new(test_hash(n).into())
+}
+
+/// Simplified batch status for test helper (auto-generates dummy DA/proof data).
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code, clippy::allow_attributes, reason = "test helper")]
+pub(crate) enum TestBatchStatus {
+    Sealed,
+    DaPending,
+    DaComplete,
+    ProofPending,
+    ProofReady,
+}
+
+/// Fill storage with a genesis batch followed by batches with the specified statuses.
+///
+/// - Genesis batch (idx=0, status=Genesis) is always created first
+/// - First status in list -> batch idx=1, second -> idx=2, etc.
+/// - Batches are linked: each batch's prev_block = previous batch's last_block
+/// - DA/proof data is auto-generated using batch index
+pub(crate) async fn fill_storage(
+    storage: &impl BatchStorage,
+    statuses: &[TestBatchStatus],
+) -> Vec<Batch> {
+    // Save genesis batch (idx=0, last_block=test_hash(0))
+    let genesis = make_genesis_batch(0);
+    storage.save_genesis_batch(genesis.clone()).await.unwrap();
+    let mut batches = vec![genesis];
+
+    for (i, test_status) in statuses.iter().enumerate() {
+        let idx = (i + 1) as u64;
+        let prev_n = i as u8; // links to previous batch's last_block
+        let last_n = (i + 1) as u8; // unique last_block for this batch
+
+        let batch = make_batch(idx, prev_n, last_n);
+        storage.save_next_batch(batch.clone()).await.unwrap();
+
+        // Convert TestBatchStatus to BatchStatus with dummy data
+        let status = match test_status {
+            TestBatchStatus::Sealed => BatchStatus::Sealed,
+            TestBatchStatus::DaPending => BatchStatus::DaPending,
+            TestBatchStatus::DaComplete => BatchStatus::DaComplete {
+                da: vec![make_da_ref(last_n, last_n)],
+            },
+            TestBatchStatus::ProofPending => BatchStatus::ProofPending {
+                da: vec![make_da_ref(last_n, last_n)],
+            },
+            TestBatchStatus::ProofReady => BatchStatus::ProofReady {
+                da: vec![make_da_ref(last_n, last_n)],
+                proof: test_proof_id(last_n),
+            },
+        };
+
+        // Update status if not Sealed (save_next_batch creates with Sealed)
+        if !matches!(status, BatchStatus::Sealed) {
+            storage
+                .update_batch_status(batch.id(), status)
+                .await
+                .unwrap();
+        }
+
+        batches.push(batch);
+    }
+
+    batches
 }

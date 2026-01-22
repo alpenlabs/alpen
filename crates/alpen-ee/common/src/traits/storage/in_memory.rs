@@ -21,13 +21,13 @@ pub struct InMemoryStorage {
 
 impl InMemoryStorage {
     /// Create a new empty in-memory storage.
-    pub fn new() -> Self {
+    pub fn new_empty() -> Self {
         Self::default()
     }
 
     /// Create storage pre-populated with a genesis batch.
     pub fn with_genesis(genesis_batch: Batch) -> Self {
-        let storage = Self::new();
+        let storage = Self::new_empty();
         let mut batches = storage.batches.write().unwrap();
         let mut id_to_idx = storage.batch_id_to_idx.write().unwrap();
 
@@ -242,5 +242,5 @@ mod in_memory_tests {
     use super::InMemoryStorage;
     use crate::batch_storage_tests;
 
-    batch_storage_tests!(InMemoryStorage::new());
+    batch_storage_tests!(InMemoryStorage::new_empty());
 }
