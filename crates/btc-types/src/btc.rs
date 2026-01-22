@@ -261,6 +261,12 @@ impl Display for BitcoinAmount {
     }
 }
 
+impl Default for BitcoinAmount {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 impl From<Amount> for BitcoinAmount {
     fn from(value: Amount) -> Self {
         Self::from_sat(value.to_sat())
