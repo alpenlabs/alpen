@@ -371,4 +371,64 @@ mod tests {
         process_cycle(&mut state, &ctx).await.unwrap();
         assert_eq!(read_batch_statuses(&storage), [ProofReady]);
     }
+
+    #[tokio::test]
+    async fn test_batch_lifecycle_stops_on_da_failed() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+
+        use TestBatchStatus::*;
+        fill_storage(storage.as_ref(), &[Sealed]).await;
+
+        let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
+
+        // DA check returns Failed
+        let ctx = MockedCtxBuilder::new()
+            .with(|b| {
+                b.da_provider.expect_check_da_status().returning(|_| {
+                    Ok(DaStatus::Failed {
+                        reason: "permanent failure".into(),
+                    })
+                });
+            })
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        // Process multiple cycles
+        for _ in 0..10 {
+            process_cycle(&mut state, &ctx).await.unwrap();
+        }
+
+        // Batch remains stuck in DaPending
+        assert_eq!(read_batch_statuses(&storage), [DaPending]);
+    }
+
+    #[tokio::test]
+    async fn test_batch_lifecycle_stops_on_proof_failed() {
+        let storage = Arc::new(InMemoryStorage::new_empty());
+
+        use TestBatchStatus::*;
+        fill_storage(storage.as_ref(), &[Sealed]).await;
+
+        let mut state = init_lifecycle_state(storage.as_ref()).await.unwrap();
+
+        // Proof check returns Failed
+        let ctx = MockedCtxBuilder::new()
+            .with(|b| {
+                b.prover.expect_check_proof_status().returning(|_| {
+                    Ok(ProofGenerationStatus::Failed {
+                        reason: "permanent failure".into(),
+                    })
+                });
+            })
+            .with_happy_mocks()
+            .build(storage.clone());
+
+        // Process multiple cycles
+        for _ in 0..10 {
+            process_cycle(&mut state, &ctx).await.unwrap();
+        }
+
+        // Batch remains stuck in ProofPending
+        assert_eq!(read_batch_statuses(&storage), [ProofPending]);
+    }
 }
