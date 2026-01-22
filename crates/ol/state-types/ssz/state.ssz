@@ -6,6 +6,7 @@ import strata_snark_acct_types
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
+MAX_VK_BYTES = 1 << 16
 
 ### Top-level OL state
 class OLState(Container):
@@ -68,6 +69,10 @@ class OLSnarkAccountState(Container):
     ### Inbox MMR
     #~# external_kind: container
     inbox_mmr: strata_acct_types.Mmr64
+
+    ### Vk used to verify updates
+    update_vk: List[uint8, MAX_VK_BYTES]
+
 
 ### Proof state for snark accounts
 class ProofState(Container):
