@@ -70,7 +70,7 @@ pub(crate) fn proof_state_strategy() -> impl Strategy<Value = ProofState> {
 pub(crate) fn ol_snark_account_state_strategy() -> impl Strategy<Value = OLSnarkAccountState> {
     buf32_strategy().prop_map(|inner_state| {
         // Use new_fresh to create a valid snark account state
-        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), inner_state)
+        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), inner_state, Vec::new())
     })
 }
 

@@ -1,3 +1,4 @@
+use ssz_types::VariableList;
 use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher, tree_hash::TreeHash};
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
@@ -13,22 +14,29 @@ impl OLSnarkAccountState {
         seqno: Seqno,
         proof_state: ProofState,
         inbox_mmr: Mmr64,
+        update_vk: Vec<u8>,
     ) -> Self {
+        let update_vk = VariableList::new(update_vk).expect("ol/state: update vk exceeds limit");
         Self {
             verifying_key,
             seqno,
             proof_state,
             inbox_mmr,
+            update_vk,
         }
     }
 
     /// Creates a new fresh instance with a particular initial state, but other
     /// bookkeeping set to 0.
-    pub fn new_fresh(verification_key: PredicateKey, initial_state_root: Hash) -> Self {
+    pub fn new_fresh(
+        verification_key: PredicateKey,
+        initial_state_root: Hash,
+        update_vk: Vec<u8>,
+    ) -> Self {
         let ps = ProofState::new(initial_state_root, 0);
         let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
         let mmr64 = Mmr64::from_generic(&generic_mmr);
-        Self::new(verification_key, Seqno::zero(), ps, mmr64)
+        Self::new(verification_key, Seqno::zero(), ps, mmr64, update_vk)
     }
 }
 
@@ -50,8 +58,7 @@ impl ISnarkAccountState for OLSnarkAccountState {
     }
 
     fn update_vk(&self) -> &[u8] {
-        // OL state does not persist update VK bytes.
-        &[]
+        self.update_vk.as_ref()
     }
 
     fn inbox_mmr(&self) -> &Mmr64B32 {
