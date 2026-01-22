@@ -110,4 +110,11 @@ pub trait IStateAccessor {
         // Default implementation does nothing - only implementations that manage
         // the legacy chainstate need to implement this
     }
+
+    /// Enables or disables DA tracking on a state accessor.
+    ///
+    /// Default implementation is a no-op for accessors that do not track DA writes.
+    fn set_da_tracking_enabled(&mut self, _enabled: bool) {
+        // Default implementation does nothing.
+    }
 }
