@@ -2,13 +2,14 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec_utils::CodecSsz;
 use strata_da_framework::{
     CompoundMember, DaCounter, DaError, DaLinacc, DaQueue, DaQueueTarget, DaRegister, DaWrite,
     LinearAccumulator,
     counter_schemes::{self, CtrU64ByU16},
 };
 use strata_identifiers::{AccountSerial, AccountTypeId};
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
 use strata_snark_acct_types::MessageEntry;
 
 /// Maximum size for snark account update VK (64 KiB per SPS-ol-chain-structures and
@@ -126,14 +127,22 @@ pub struct OlDaBlobV1 {
 
     /// Withdrawal intents encoded into the blob.
     pub withdrawal_intents: WithdrawalIntents,
+
+    /// Ordered output logs emitted during execution.
+    pub output_logs: OutputLogs,
 }
 
 impl OlDaBlobV1 {
-    /// Creates a new [`OlDaBlobV1`] from a state diff and withdrawal intents.
-    pub fn new(state_diff: StateDiff, withdrawal_intents: WithdrawalIntents) -> Self {
+    /// Creates a new [`OlDaBlobV1`] from a state diff, withdrawal intents, and output logs.
+    pub fn new(
+        state_diff: StateDiff,
+        withdrawal_intents: WithdrawalIntents,
+        output_logs: OutputLogs,
+    ) -> Self {
         Self {
             state_diff,
             withdrawal_intents,
+            output_logs,
         }
     }
 }
@@ -142,15 +151,18 @@ impl Codec for OlDaBlobV1 {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.state_diff.encode(enc)?;
         self.withdrawal_intents.encode(enc)?;
+        self.output_logs.encode(enc)?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let state_diff = StateDiff::decode(dec)?;
         let withdrawal_intents = WithdrawalIntents::decode(dec)?;
+        let output_logs = OutputLogs::decode(dec)?;
         Ok(Self {
             state_diff,
             withdrawal_intents,
+            output_logs,
         })
     }
 }
@@ -160,6 +172,46 @@ impl Codec for OlDaBlobV1 {
 pub struct WithdrawalIntents {
     /// Collected intents for the epoch.
     entries: Vec<SimpleWithdrawalIntentLogData>,
+}
+
+/// Output logs included in the DA payload.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OutputLogs {
+    /// Ordered log entries for the epoch.
+    entries: Vec<OLLog>,
+}
+
+impl OutputLogs {
+    /// Creates a new [`OutputLogs`] from a vector of logs.
+    pub fn new(entries: Vec<OLLog>) -> Self {
+        Self { entries }
+    }
+
+    /// Returns a slice of the entries.
+    pub fn entries(&self) -> &[OLLog] {
+        &self.entries
+    }
+}
+
+impl Codec for OutputLogs {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        let len = u16::try_from(self.entries.len()).map_err(|_| CodecError::OverflowContainer)?;
+        U16Be(len).encode(enc)?;
+        for entry in &self.entries {
+            CodecSsz::new(entry.clone()).encode(enc)?;
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let len = U16Be::decode(dec)?.0 as usize;
+        let mut entries = Vec::with_capacity(len);
+        for _ in 0..len {
+            let entry = CodecSsz::<OLLog>::decode(dec)?.into_inner();
+            entries.push(entry);
+        }
+        Ok(Self { entries })
+    }
 }
 
 impl WithdrawalIntents {
