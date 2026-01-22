@@ -27,7 +27,7 @@ pub trait LinearAccumulator {
 }
 
 /// Describes a write to a linear accumulator.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DaLinacc<A: LinearAccumulator> {
     new_entries: Vec<A::EntryData>,
 }
