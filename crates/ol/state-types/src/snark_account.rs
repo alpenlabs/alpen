@@ -49,6 +49,11 @@ impl ISnarkAccountState for OLSnarkAccountState {
         self.proof_state.next_msg_read_idx
     }
 
+    fn update_vk(&self) -> &[u8] {
+        // OL state does not persist update VK bytes.
+        &[]
+    }
+
     fn inbox_mmr(&self) -> &Mmr64B32 {
         &self.inbox_mmr
     }
