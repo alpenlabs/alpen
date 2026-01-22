@@ -15085,6 +15085,13 @@ dependencies = [
 [[package]]
 name = "strata-proofimpl-ol-stf"
 version = "0.1.0"
+dependencies = [
+ "strata-checkpoint-types-ssz",
+ "strata-ol-chain-types-new",
+ "strata-ol-state-types",
+ "zkaleido",
+ "zkaleido-native-adapter",
+]
 
 [[package]]
 name = "strata-prover-client"

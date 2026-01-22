@@ -3,7 +3,14 @@ name = "strata-proofimpl-ol-stf"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-
 [lints]
 workspace = true
+
+[dependencies]
+strata-checkpoint-types-ssz.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-state-types.workspace = true
+zkaleido.workspace = true
+
+[target.'cfg(not(target_os = "zkvm"))'.dependencies]
+zkaleido-native-adapter.workspace = true
