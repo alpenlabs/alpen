@@ -22,7 +22,7 @@ pub(crate) fn extract_deposits(
         .filter_map(|entry| match entry {
             PendingInputEntry::Deposit(data) => {
                 match subject_to_address(&data.dest()) {
-                    Some(address) => Some(DepositInfo::new(0, address, data.value())),
+                    Some(address) => Some(DepositInfo::new(address, data.value())),
                     None => {
                         // FIXME: https://alpenlabs.atlassian.net/browse/STR-2125
                         error!(
