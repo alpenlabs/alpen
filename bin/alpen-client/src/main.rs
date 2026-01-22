@@ -9,7 +9,7 @@ mod rpc_client;
 use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
-use alpen_ee_common::{chain_status_checked, ExecBlockStorage, Storage};
+use alpen_ee_common::{chain_status_checked, BlockNumHash, ExecBlockStorage, Storage};
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
@@ -174,18 +174,24 @@ fn main() {
                 .await
                 .context("exec chain state initialization should not fail")?;
 
-            let best_ee_blockhash = {
+            let initial_preconf_head = {
                 #[cfg(feature = "sequencer")]
                 {
                     if ext.sequencer {
-                        exec_chain_state.tip_blockhash()
+                        exec_chain_state.tip_blocknumhash()
                     } else {
-                        ol_tracker_state.best_ee_state().last_exec_blkid()
+                        // In non-sequencer mode, we only have the hash from OL tracker.
+                        // Use block number 0 as initial value; it will be updated by gossip.
+                        let hash = ol_tracker_state.best_ee_state().last_exec_blkid();
+                        BlockNumHash::new(hash, 0)
                     }
                 }
                 #[cfg(not(feature = "sequencer"))]
                 {
-                    ol_tracker_state.best_ee_state().last_exec_blkid()
+                    // In non-sequencer mode, we only have the hash from OL tracker.
+                    // Use block number 0 as initial value; it will be updated by gossip.
+                    let hash = ol_tracker_state.best_ee_state().last_exec_blkid();
+                    BlockNumHash::new(hash, 0)
                 }
             };
 
@@ -195,8 +201,9 @@ fn main() {
             let (gossip_tx, gossip_rx) = mpsc::unbounded_channel();
 
             // Create preconf channel for p2p head block gossip -> engine control integration
-            // This channel sends block hashes received from peers to the engine control task
-            let (preconf_tx, preconf_rx) = watch::channel(best_ee_blockhash);
+            // This channel sends block hash and number received from peers to the engine control
+            // task
+            let (preconf_tx, preconf_rx) = watch::channel(initial_preconf_head);
 
             let (ol_tracker, ol_tracker_task) = OLTrackerBuilder::new(
                 ol_tracker_state,

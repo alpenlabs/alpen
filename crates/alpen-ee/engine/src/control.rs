@@ -2,13 +2,12 @@ use std::future::Future;
 
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::ForkchoiceState;
-use alpen_ee_common::{ConsensusHeads, ExecutionEngine};
+use alpen_ee_common::{BlockNumHash, ConsensusHeads, ExecutionEngine};
 use reth_node_builder::NodeTypesWithDB;
 use reth_provider::{
     providers::{BlockchainProvider, ProviderNodeTypes},
     BlockHashReader, BlockNumReader, ProviderResult,
 };
-use strata_acct_types::Hash;
 use tokio::{select, sync::watch};
 use tracing::{error, warn};
 
@@ -54,7 +53,7 @@ fn forkchoice_state_from_consensus<N: NodeTypesWithDB + ProviderNodeTypes>(
 
 /// Takes chain updates from OL and sequencer/p2p and updates the chain in engine (reth).
 async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: ExecutionEngine>(
-    mut preconf_rx: watch::Receiver<Hash>,
+    mut preconf_rx: watch::Receiver<BlockNumHash>,
     mut consensus_rx: watch::Receiver<ConsensusHeads>,
     provider: BlockchainProvider<N>,
     engine: E,
@@ -94,8 +93,8 @@ async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: Ex
                     return;
                 }
                 // got head block from sequencer / p2p
-                let hash = *preconf_rx.borrow_and_update();
-                let next_head_block_hash = B256::from_slice(hash.as_slice());
+                let blocknumhash = *preconf_rx.borrow_and_update();
+                let next_head_block_hash = B256::from_slice(blocknumhash.hash().as_slice());
 
                 let update = ForkchoiceState {
                     head_block_hash: next_head_block_hash,
@@ -114,7 +113,7 @@ async fn engine_control_task_inner<N: NodeTypesWithDB + ProviderNodeTypes, E: Ex
 
 /// Creates an engine control task that processes chain updates from OL and sequencer.
 pub fn create_engine_control_task<N: NodeTypesWithDB + ProviderNodeTypes, E: ExecutionEngine>(
-    preconf_rx: watch::Receiver<Hash>,
+    preconf_rx: watch::Receiver<BlockNumHash>,
     consensus_rx: watch::Receiver<ConsensusHeads>,
     provider: BlockchainProvider<N>,
     engine_control: E,

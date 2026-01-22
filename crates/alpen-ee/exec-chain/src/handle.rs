@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{ConsensusHeads, ExecBlockRecord, ExecBlockStorage};
+use alpen_ee_common::{BlockNumHash, ConsensusHeads, ExecBlockRecord, ExecBlockStorage};
 use strata_acct_types::Hash;
 use tokio::sync::{oneshot, watch};
 use tracing::warn;
@@ -77,7 +77,7 @@ impl ExecChainHandle {
 /// Creates the execution chain tracker task and handle for interacting with it.
 pub fn build_exec_chain_task<TStorage: ExecBlockStorage>(
     state: ExecChainState,
-    preconf_head_tx: watch::Sender<Hash>,
+    preconf_head_tx: watch::Sender<BlockNumHash>,
     storage: Arc<TStorage>,
 ) -> (ExecChainHandle, impl Future<Output = ()>) {
     let (senders, channels) = create_task_channels(64);

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use alpen_ee_common::{ExecBlockRecord, ExecBlockStorage, StorageError};
+use alpen_ee_common::{BlockNumHash, ExecBlockRecord, ExecBlockStorage, StorageError};
 use strata_acct_types::Hash;
 use thiserror::Error;
 use tracing::warn;
@@ -57,6 +57,11 @@ impl ExecChainState {
     /// Returns the hash of the current best chain tip.
     pub fn tip_blockhash(&self) -> Hash {
         self.unfinalized.best().hash()
+    }
+
+    /// Returns the block number and hash of the current best chain tip.
+    pub fn tip_blocknumhash(&self) -> BlockNumHash {
+        self.get_best_block().blocknumhash()
     }
 
     /// Returns the hash of the current finalized block.

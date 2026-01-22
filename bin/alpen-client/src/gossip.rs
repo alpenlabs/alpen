@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use alpen_ee_common::BlockNumHash;
 #[cfg(feature = "sequencer")]
 use alpen_reth_node::AlpenGossipMessage;
 use alpen_reth_node::{AlpenGossipCommand, AlpenGossipEvent, AlpenGossipPackage};
@@ -35,7 +36,7 @@ fn handle_gossip_event(
     event: AlpenGossipEvent,
     connections: &mut HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
     highest_seq_no: &mut u64,
-    preconf_tx: &watch::Sender<Hash>,
+    preconf_tx: &watch::Sender<BlockNumHash>,
     config: &GossipConfig,
 ) -> bool {
     match event {
@@ -79,7 +80,7 @@ fn handle_gossip_package(
     package: AlpenGossipPackage,
     connections: &HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>>,
     highest_seq_no: &mut u64,
-    preconf_tx: &watch::Sender<Hash>,
+    preconf_tx: &watch::Sender<BlockNumHash>,
     config: &GossipConfig,
 ) -> bool {
     // Validate signature before processing
@@ -132,9 +133,11 @@ fn handle_gossip_package(
         "Received gossip package"
     );
 
-    // Forward the block hash to engine control task for fork choice update
+    // Forward the block hash and number to engine control task for fork choice update
     let hash = Hash::from(block_hash.0);
-    if preconf_tx.send(hash).is_err() {
+    let block_number = package.message().header().number;
+    let blocknumhash = BlockNumHash::new(hash, block_number);
+    if preconf_tx.send(blocknumhash).is_err() {
         warn!(
             target: "alpen-gossip",
             "Failed to forward block hash to engine control (no receivers)"
@@ -255,7 +258,7 @@ fn broadcast_new_block(
 pub(crate) async fn create_gossip_task(
     mut gossip_rx: mpsc::UnboundedReceiver<AlpenGossipEvent>,
     mut state_events: broadcast::Receiver<CanonStateNotification>,
-    preconf_tx: watch::Sender<Hash>,
+    preconf_tx: watch::Sender<BlockNumHash>,
     config: GossipConfig,
 ) {
     let mut connections: HashMap<PeerId, mpsc::UnboundedSender<AlpenGossipCommand>> =
