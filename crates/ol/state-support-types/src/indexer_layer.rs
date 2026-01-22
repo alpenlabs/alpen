@@ -101,6 +101,10 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
     fn next_inbox_msg_idx(&self) -> u64 {
         self.inner.next_inbox_msg_idx()
     }
+
+    fn update_vk(&self) -> &[u8] {
+        self.inner.update_vk()
+    }
 }
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStateMut<S> {

@@ -11,6 +11,13 @@ use strata_identifiers::{AccountSerial, AccountTypeId};
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_snark_acct_types::MessageEntry;
 
+/// Maximum size for snark account update VK (64 KiB per SPS-ol-chain-structures and
+/// SPS-ol-da-structure).
+pub const MAX_VK_BYTES: usize = 64 * 1024;
+
+/// Maximum size for a single message payload (4 KiB per SPS-ol-da-structure).
+pub const MAX_MSG_PAYLOAD_BYTES: usize = 4 * 1024;
+
 /// Big-endian u16 wrapper for length encoding.
 // NOTE: This greatly decreases the chances of accidentally encoding a u16 as little-endian.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
