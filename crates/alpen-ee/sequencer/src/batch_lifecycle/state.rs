@@ -253,3 +253,92 @@ pub(crate) async fn recover_from_storage(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::batch_lifecycle::test_utils::{fill_storage, make_genesis_batch, TestBatchStatus::*};
+    use alpen_ee_common::InMemoryStorage;
+
+    fn genesis_state() -> BatchLifecycleState {
+        let genesis = make_genesis_batch(0);
+        BatchLifecycleState::new_at_genesis(genesis.id())
+    }
+
+    #[tokio::test]
+    async fn test_recover_all_sealed() {
+        let storage = InMemoryStorage::new_empty();
+        fill_storage(&storage, &[Sealed, Sealed, Sealed]).await;
+
+        let mut state = genesis_state();
+        recover_from_storage(&mut state, &storage, 3).await.unwrap();
+
+        // All frontiers remain at genesis
+        assert_eq!(state.da_pending().idx(), 0);
+        assert_eq!(state.da_complete().idx(), 0);
+        assert_eq!(state.proof_pending().idx(), 0);
+        assert_eq!(state.proof_ready().idx(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_recover_typical_pipeline() {
+        let storage = InMemoryStorage::new_empty();
+        fill_storage(
+            &storage,
+            &[ProofReady, ProofReady, ProofPending, DaComplete, DaPending, Sealed],
+        )
+        .await;
+
+        let mut state = genesis_state();
+        recover_from_storage(&mut state, &storage, 6).await.unwrap();
+
+        assert_eq!(state.proof_ready().idx(), 2);
+        assert_eq!(state.proof_pending().idx(), 3);
+        assert_eq!(state.da_complete().idx(), 4);
+        assert_eq!(state.da_pending().idx(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_recover_all_proof_ready() {
+        let storage = InMemoryStorage::new_empty();
+        fill_storage(&storage, &[ProofReady, ProofReady, ProofReady]).await;
+
+        let mut state = genesis_state();
+        recover_from_storage(&mut state, &storage, 3).await.unwrap();
+
+        // All frontiers at idx=3 (highest batch)
+        assert_eq!(state.da_pending().idx(), 3);
+        assert_eq!(state.da_complete().idx(), 3);
+        assert_eq!(state.proof_pending().idx(), 3);
+        assert_eq!(state.proof_ready().idx(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_recover_partial_progress() {
+        let storage = InMemoryStorage::new_empty();
+        fill_storage(&storage, &[DaComplete, DaPending, Sealed]).await;
+
+        let mut state = genesis_state();
+        recover_from_storage(&mut state, &storage, 3).await.unwrap();
+
+        assert_eq!(state.da_pending().idx(), 2);
+        assert_eq!(state.da_complete().idx(), 1);
+        assert_eq!(state.proof_pending().idx(), 0); // genesis
+        assert_eq!(state.proof_ready().idx(), 0); // genesis
+    }
+
+    #[tokio::test]
+    async fn test_recover_single_batch_proof_ready() {
+        let storage = InMemoryStorage::new_empty();
+        fill_storage(&storage, &[ProofReady]).await;
+
+        let mut state = genesis_state();
+        recover_from_storage(&mut state, &storage, 1).await.unwrap();
+
+        // Single ProofReady batch satisfies all frontiers
+        assert_eq!(state.da_pending().idx(), 1);
+        assert_eq!(state.da_complete().idx(), 1);
+        assert_eq!(state.proof_pending().idx(), 1);
+        assert_eq!(state.proof_ready().idx(), 1);
+    }
+}
