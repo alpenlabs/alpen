@@ -197,6 +197,14 @@ impl StatusChannel {
         }
     }
 
+    /// Sends the updated `OLSyncStatusUpdate` to the chain state receiver. Logs a warning if the
+    /// receiver is dropped.
+    pub fn update_ol_sync_status(&self, update: OLSyncStatusUpdate) {
+        if self.sender.ols.send(Some(update)).is_err() {
+            warn!("chain state receiver dropped");
+        }
+    }
+
     /// Sends the updated `ClientState` to the client state receiver. Logs a warning if the receiver
     /// is dropped.
     pub fn update_client_state(&self, post_state: ClientState, post_block: L1BlockCommitment) {
