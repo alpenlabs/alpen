@@ -23,7 +23,7 @@ use crate::{BatchDiffState, IndexerState, WriteTrackingState, test_utils::*};
 fn test_indexer_over_write_tracking_basic() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     // Create the layer stack: IndexerState<WriteTrackingState<&OLState>>
     let batch = WriteBatch::new_from_state(&base_state);
@@ -32,7 +32,7 @@ fn test_indexer_over_write_tracking_basic() {
 
     // Verify we can read through both layers
     let account = indexer.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(1_000));
 }
 
 /// Test inbox message tracking through both layers.
@@ -40,14 +40,14 @@ fn test_indexer_over_write_tracking_basic() {
 fn test_combined_inbox_message_tracking() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
 
     // Insert an inbox message through the combined stack
-    let msg = test_message_entry(50, 0, 2000);
+    let msg = test_message_entry(50, 0, 2_000);
     indexer
         .update_account(account_id, |acct| {
             acct.as_snark_account_mut()
@@ -108,7 +108,7 @@ fn test_combined_manifest_tracking() {
 fn test_combined_balance_modification() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
@@ -128,11 +128,11 @@ fn test_combined_balance_modification() {
 
     // Verify the account is in the batch with updated balance
     let batch_account = batch.ledger().get_account(&account_id).unwrap();
-    assert_eq!(batch_account.balance(), BitcoinAmount::from_sat(1500));
+    assert_eq!(batch_account.balance(), BitcoinAmount::from_sat(1_500));
 
     // Verify base state is unchanged
     let base_account = base_state.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(base_account.balance(), BitcoinAmount::from_sat(1000));
+    assert_eq!(base_account.balance(), BitcoinAmount::from_sat(1_000));
 }
 
 /// Test account creation through combined layers.
@@ -147,7 +147,7 @@ fn test_combined_account_creation() {
     let account_id = test_account_id(1);
     let snark_state = test_snark_account_state(1);
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(5000),
+        BitcoinAmount::from_sat(5_000),
         AccountTypeState::Snark(snark_state),
     );
 
@@ -157,7 +157,7 @@ fn test_combined_account_creation() {
     assert!(indexer.check_account_exists(account_id).unwrap());
     let account = indexer.get_account_state(account_id).unwrap().unwrap();
     assert_eq!(account.serial(), serial);
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(5_000));
 
     // Extract and verify it's in the batch
     let (tracking, _) = indexer.into_parts();
@@ -197,7 +197,7 @@ fn test_combined_multiple_operations() {
 
     // Setup base state with one account
     let (base_state, _) =
-        setup_state_with_snark_account(account_id_1, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id_1, 1, BitcoinAmount::from_sat(1_000));
 
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
@@ -206,13 +206,13 @@ fn test_combined_multiple_operations() {
     // Create a new account
     let snark_state_2 = test_snark_account_state(2);
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(2000),
+        BitcoinAmount::from_sat(2_000),
         AccountTypeState::Snark(snark_state_2),
     );
     indexer.create_new_account(account_id_2, new_acct).unwrap();
 
     // Insert messages to both accounts
-    let msg1 = test_message_entry(10, 0, 1000);
+    let msg1 = test_message_entry(10, 0, 1_000);
     indexer
         .update_account(account_id_1, |acct| {
             acct.as_snark_account_mut()
@@ -222,7 +222,7 @@ fn test_combined_multiple_operations() {
         .unwrap()
         .unwrap();
 
-    let msg2 = test_message_entry(20, 0, 2000);
+    let msg2 = test_message_entry(20, 0, 2_000);
     indexer
         .update_account(account_id_2, |acct| {
             acct.as_snark_account_mut()
@@ -394,7 +394,7 @@ fn test_write_tracking_over_batch_diff_global_epochal_setters() {
 fn test_write_tracking_over_batch_diff_inbox_message() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     // Create BatchDiffState with empty batches
     let pending_batches: Vec<WriteBatch<_>> = vec![];
