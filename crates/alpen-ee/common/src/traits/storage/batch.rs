@@ -211,15 +211,16 @@ pub mod tests {
         let (retrieved, status) = storage.get_batch_by_idx(0).await.unwrap().unwrap();
         assert_eq!(retrieved.idx(), genesis_batch.idx());
         assert_eq!(retrieved.last_block(), genesis_batch.last_block());
-        assert!(matches!(status, BatchStatus::Sealed));
+        assert!(matches!(status, BatchStatus::Genesis));
 
         // Retrieve by id
-        let (retrieved, _) = storage
+        let (retrieved, status) = storage
             .get_batch_by_id(genesis_batch.id())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(retrieved.idx(), genesis_batch.idx());
+        assert!(matches!(status, BatchStatus::Genesis));
     }
 
     /// Test that save_genesis_batch is idempotent.
@@ -268,7 +269,7 @@ pub mod tests {
             .unwrap();
 
         // Update status
-        let new_status = BatchStatus::DaPending { txns: Vec::new() };
+        let new_status = BatchStatus::DaPending;
         storage
             .update_batch_status(genesis_batch.id(), new_status)
             .await
@@ -276,7 +277,7 @@ pub mod tests {
 
         // Verify status was updated
         let (_, status) = storage.get_batch_by_idx(0).await.unwrap().unwrap();
-        assert!(matches!(status, BatchStatus::DaPending { .. }));
+        assert!(matches!(status, BatchStatus::DaPending));
     }
 
     /// Test reverting batches.

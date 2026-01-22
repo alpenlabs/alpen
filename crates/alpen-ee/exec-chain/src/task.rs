@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use alpen_ee_common::{ConsensusHeads, ExecBlockRecord, ExecBlockStorage, StorageError};
+use alpen_ee_common::{
+    BlockNumHash, ConsensusHeads, ExecBlockRecord, ExecBlockStorage, StorageError,
+};
 use strata_acct_types::Hash;
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -79,7 +81,7 @@ pub(crate) fn create_task_channels(buffer: usize) -> (TaskSenders, TaskChannels)
 pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
     channels: TaskChannels,
     mut state: ExecChainState,
-    preconf_head_tx: watch::Sender<Hash>,
+    preconf_head_tx: watch::Sender<BlockNumHash>,
     storage: Arc<TStorage>,
 ) {
     let TaskChannels {
@@ -147,7 +149,7 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     hash: Hash,
     storage: &TStorage,
-    preconf_tx: &watch::Sender<Hash>,
+    preconf_tx: &watch::Sender<BlockNumHash>,
 ) -> Result<(), ChainTrackerError> {
     // Get block from storage
     let record = storage
@@ -155,12 +157,12 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
         .await?
         .ok_or(ChainTrackerError::MissingBlock(hash))?;
 
-    // Append to tracker state and emit best hash if changed
+    // Append to tracker state and emit best blocknumhash if changed
     let prev_best = state.tip_blockhash();
     let new_best = state.append_block(record)?;
     if new_best != prev_best {
         preconf_tx
-            .send(new_best)
+            .send(state.tip_blocknumhash())
             .map_err(|_| ChainTrackerError::PreconfChannelClosed)?;
     }
 
@@ -174,7 +176,7 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     status: ConsensusHeads,
     storage: &TStorage,
-    preconf_tx: &watch::Sender<Hash>,
+    preconf_tx: &watch::Sender<BlockNumHash>,
 ) -> Result<(), ChainTrackerError> {
     // we only care about reorgs on the finalized state
     let finalized = *status.finalized();
@@ -199,7 +201,7 @@ async fn handle_ol_update<TStorage: ExecBlockStorage>(
         if prev_best != new_best {
             // finalization has triggered a reorg of the tip
             preconf_tx
-                .send(new_best)
+                .send(state.tip_blocknumhash())
                 .map_err(|_| ChainTrackerError::PreconfChannelClosed)?;
         }
 

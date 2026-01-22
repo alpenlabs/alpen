@@ -77,7 +77,10 @@ mod task;
 mod traits;
 
 pub use accumulator::Accumulator;
-pub use block_count::{BlockCountData, BlockCountPolicy, BlockCountValue, FixedBlockCountSealing};
+pub use block_count::{
+    BlockCountData, BlockCountDataProvider, BlockCountPolicy, BlockCountValue,
+    FixedBlockCountSealing,
+};
 pub use handle::{create_batch_builder, BatchBuilderHandle};
 pub use state::{init_batch_builder_state, BatchBuilderState};
 pub use traits::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};

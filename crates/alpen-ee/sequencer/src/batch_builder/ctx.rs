@@ -34,7 +34,7 @@ where
     /// Storage for batches.
     pub batch_storage: Arc<BS>,
     /// Handle to query canonical chain status.
-    pub exec_chain: Arc<ExecChainHandle>,
+    pub exec_chain: ExecChainHandle,
     /// Sender to notify about latest batch updates (new batch sealed or reorg).
     pub latest_batch_tx: watch::Sender<BatchId>,
     /// Marker for the policy type.

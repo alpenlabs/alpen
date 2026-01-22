@@ -3,13 +3,19 @@
 mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
+mod noop_da_provider;
+#[cfg(feature = "sequencer")]
+mod noop_prover;
+#[cfg(feature = "sequencer")]
 mod payload_builder;
 mod rpc_client;
 
 use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
-use alpen_ee_common::{chain_status_checked, ExecBlockStorage, Storage};
+use alpen_ee_common::{
+    chain_status_checked, BatchStorage, BlockNumHash, ExecBlockStorage, Storage,
+};
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
@@ -20,12 +26,13 @@ use alpen_ee_exec_chain::{
 };
 #[cfg(feature = "sequencer")]
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
-use alpen_ee_genesis::ensure_genesis_ee_account_state;
+use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OLTrackerBuilder};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
 };
+use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
@@ -50,6 +57,8 @@ use crate::payload_builder::AlpenRethPayloadEngine;
 use crate::{
     genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
+    noop_da_provider::NoopDaProvider,
+    noop_prover::NoopProver,
     rpc_client::RpcOLClient,
 };
 
@@ -151,6 +160,10 @@ fn main() {
                     .map_err(|e| eyre::eyre!("failed to create OL client: {e}"))?,
             );
 
+            // TODO: real prover and da provider interfaces
+            let batch_prover = Arc::new(NoopProver);
+            let batch_da_provider = Arc::new(NoopDaProvider);
+
             ensure_genesis(config.as_ref(), storage.as_ref())
                 .await
                 .context("genesis should not fail")?;
@@ -174,29 +187,43 @@ fn main() {
                 .await
                 .context("exec chain state initialization should not fail")?;
 
-            let best_ee_blockhash = {
+            let initial_preconf_head = {
                 #[cfg(feature = "sequencer")]
                 {
                     if ext.sequencer {
-                        exec_chain_state.tip_blockhash()
+                        exec_chain_state.tip_blocknumhash()
                     } else {
-                        ol_tracker_state.best_ee_state().last_exec_blkid()
+                        // In non-sequencer mode, we only have the hash from OL tracker.
+                        // Use block number 0 as initial value; it will be updated by gossip.
+                        let hash = ol_tracker_state.best_ee_state().last_exec_blkid();
+                        BlockNumHash::new(hash, 0)
                     }
                 }
                 #[cfg(not(feature = "sequencer"))]
                 {
-                    ol_tracker_state.best_ee_state().last_exec_blkid()
+                    // In non-sequencer mode, we only have the hash from OL tracker.
+                    // Use block number 0 as initial value; it will be updated by gossip.
+                    let hash = ol_tracker_state.best_ee_state().last_exec_blkid();
+                    BlockNumHash::new(hash, 0)
                 }
             };
 
+            let batch_builder_state = init_batch_builder_state(storage.as_ref())
+                .await
+                .context("batch builder state initialization should not fail")?;
+
+            let batch_lifecycle_state = init_lifecycle_state(storage.as_ref())
+                .await
+                .context("batch lifecycle state initialization should not fail")?;
             // --- INITIALIZE SERVICES ---
 
             // Create gossip channel before building the node so we can register it early
             let (gossip_tx, gossip_rx) = mpsc::unbounded_channel();
 
             // Create preconf channel for p2p head block gossip -> engine control integration
-            // This channel sends block hashes received from peers to the engine control task
-            let (preconf_tx, preconf_rx) = watch::channel(best_ee_blockhash);
+            // This channel sends block hash and number received from peers to the engine control
+            // task
+            let (preconf_tx, preconf_rx) = watch::channel(initial_preconf_head);
 
             let (ol_tracker, ol_tracker_task) = OLTrackerBuilder::new(
                 ol_tracker_state,
@@ -249,7 +276,7 @@ fn main() {
             }
 
             let engine_control_task = create_engine_control_task(
-                preconf_rx,
+                preconf_rx.clone(),
                 ol_tracker.consensus_watcher(),
                 node.provider.clone(),
                 AlpenRethExecEngine::new(node.beacon_engine_handle.clone()),
@@ -273,6 +300,12 @@ fn main() {
             #[cfg(feature = "sequencer")]
             if ext.sequencer {
                 // sequencer specific tasks
+
+                use alpen_ee_common::{require_latest_batch, BlockNumHash};
+                use alpen_ee_sequencer::{
+                    create_batch_builder, create_batch_lifecycle_task,
+                    create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
+                };
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
@@ -286,6 +319,41 @@ fn main() {
                     ol_tracker.ol_status_watcher(),
                     ol_client.clone(),
                     storage.clone(),
+                );
+
+                let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
+
+                let batch_sealing_policy = FixedBlockCountSealing::new(100);
+                let block_data_provider = Arc::new(BlockCountDataProvider);
+
+                let (batch_builder_handle, batch_builder_task) = create_batch_builder(
+                    latest_batch.id(),
+                    BlockNumHash::new(genesis_info.blockhash().0.into(), genesis_info.blocknum()),
+                    batch_builder_state,
+                    preconf_rx,
+                    block_data_provider,
+                    batch_sealing_policy,
+                    storage.clone(),
+                    storage.clone(),
+                    exec_chain_handle.clone(),
+                );
+
+                let (batch_lifecycle_handle, batch_lifecycle_task) = create_batch_lifecycle_task(
+                    None,
+                    batch_lifecycle_state,
+                    batch_builder_handle.latest_batch_watcher(),
+                    batch_da_provider,
+                    batch_prover.clone(),
+                    storage.clone(),
+                );
+
+                let update_submitter_task = create_update_submitter_task(
+                    ol_client,
+                    storage.clone(),
+                    storage.clone(),
+                    batch_prover,
+                    batch_lifecycle_handle.latest_proof_ready_watcher(),
+                    ol_tracker.ol_status_watcher(),
                 );
 
                 node.task_executor
@@ -310,7 +378,12 @@ fn main() {
                     ),
                 );
 
-                // TODO: batch assembly
+                node.task_executor
+                    .spawn_critical("ee_batch_builder", batch_builder_task);
+                node.task_executor
+                    .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
+                node.task_executor
+                    .spawn_critical("ee_update_submitter", update_submitter_task);
                 // TODO: proof generation
                 // TODO: post update to OL
             }
@@ -411,13 +484,14 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 
 /// Handle genesis related tasks.
 /// Mainly deals with ensuring database has minimal expected state.
-async fn ensure_genesis<TStorage: Storage + ExecBlockStorage>(
+async fn ensure_genesis<TStorage: Storage + ExecBlockStorage + BatchStorage>(
     config: &AlpenEeConfig,
     storage: &TStorage,
 ) -> eyre::Result<()> {
     ensure_genesis_ee_account_state(config, storage).await?;
     #[cfg(feature = "sequencer")]
     ensure_finalized_exec_chain_genesis(config, storage).await?;
-    // TODO: ensure_batch_genesis after BatchStorage is implemented
+    #[cfg(feature = "sequencer")]
+    ensure_batch_genesis(config, storage).await?;
     Ok(())
 }

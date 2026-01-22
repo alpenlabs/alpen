@@ -31,3 +31,5 @@ tracing.workspace = true
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
 mockall.workspace = true
+bitcoin.workspace = true
+tokio = { workspace = true }

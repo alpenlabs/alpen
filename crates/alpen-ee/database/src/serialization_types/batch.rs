@@ -139,10 +139,9 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
 /// Database representation of BatchStatus.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) enum DBBatchStatus {
+    Genesis,
     Sealed,
-    DaPending {
-        txns: Vec<DBTxidPair>,
-    },
+    DaPending,
     DaComplete {
         da: Vec<DBL1DaBlockRef>,
     },
@@ -158,15 +157,9 @@ pub(crate) enum DBBatchStatus {
 impl From<BatchStatus> for DBBatchStatus {
     fn from(value: BatchStatus) -> Self {
         match value {
+            BatchStatus::Genesis => Self::Genesis,
             BatchStatus::Sealed => Self::Sealed,
-            BatchStatus::DaPending { txns } => Self::DaPending {
-                txns: txns
-                    .into_iter()
-                    .map(|(txid, wtxid): (Txid, Wtxid)| {
-                        DBTxidPair::new(txid.to_byte_array(), wtxid.to_byte_array())
-                    })
-                    .collect(),
-            },
+            BatchStatus::DaPending => Self::DaPending,
             BatchStatus::DaComplete { da } => Self::DaComplete {
                 da: da.into_iter().map(Into::into).collect(),
             },
@@ -184,19 +177,9 @@ impl From<BatchStatus> for DBBatchStatus {
 impl From<DBBatchStatus> for BatchStatus {
     fn from(value: DBBatchStatus) -> Self {
         match value {
+            DBBatchStatus::Genesis => Self::Genesis,
             DBBatchStatus::Sealed => Self::Sealed,
-            DBBatchStatus::DaPending { txns } => Self::DaPending {
-                txns: txns
-                    .into_iter()
-                    .map(|pair| {
-                        let (txid_bytes, wtxid_bytes) = pair.into_parts();
-                        (
-                            Txid::from_byte_array(txid_bytes),
-                            Wtxid::from_byte_array(wtxid_bytes),
-                        )
-                    })
-                    .collect(),
-            },
+            DBBatchStatus::DaPending => Self::DaPending,
             DBBatchStatus::DaComplete { da } => Self::DaComplete {
                 da: da.into_iter().map(Into::into).collect(),
             },
