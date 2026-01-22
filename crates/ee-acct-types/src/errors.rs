@@ -81,6 +81,9 @@ pub enum EnvError {
     /// A deposit has an invalid destination address.
     #[error("invalid deposit address: {0}")]
     InvalidDepositAddress(strata_acct_types::SubjectId),
+
+    #[error("blocks in a chunk did not match the chunk's attested io")]
+    InconsistentChunkIo,
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;

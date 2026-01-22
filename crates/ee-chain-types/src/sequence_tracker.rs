@@ -46,7 +46,13 @@ impl<'a, T> SequenceTracker<'a, T> {
 
     /// Gets the next entry that would need to be be consumed, if there is one.
     fn expected_next(&self) -> Option<&'a T> {
-        self.expected_inputs.get(self.consumed)
+        self.expected_next_rel(0)
+    }
+
+    /// Gets the entry that would need to be consumed after some number of
+    /// calls to [`consume_input`], if there is one.
+    fn expected_next_rel(&self, off: usize) -> Option<&'a T> {
+        self.expected_inputs.get(self.consumed + off)
     }
 }
 
@@ -63,6 +69,29 @@ impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {
         }
 
         self.consumed += 1;
+        Ok(())
+    }
+
+    /// Like [`consume_input`], but checks multiple inputs and only updates the
+    /// consumed pointer state on success.
+    pub fn consume_inputs(&mut self, inputs: &[T]) -> SeqResult<()> {
+        // Bounds check early so we can skip it on each iteration.
+        if inputs.len() > self.remaining().len() {
+            return Err(SeqError::Overrun);
+        }
+
+        for (i, input) in inputs.iter().enumerate() {
+            // SAFETY: we already did bounds checking
+            let exp_next = self.expected_next_rel(i).unwrap();
+
+            // Just check equality and return the index if there's a mismatch.
+            if input != exp_next {
+                return Err(SeqError::Mismatch(self.consumed + i));
+            }
+        }
+
+        // Commit only after all checks succeed
+        self.consumed += inputs.len();
         Ok(())
     }
 

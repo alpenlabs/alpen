@@ -18,6 +18,22 @@ impl ChunkTransition {
             outputs,
         }
     }
+
+    pub fn parent_exec_blkid(&self) -> Hash {
+        self.parent_exec_blkid.0.into()
+    }
+
+    pub fn tip_exec_blkid(&self) -> Hash {
+        self.tip_exec_blkid.0.into()
+    }
+
+    pub fn inputs(&self) -> &ExecInputs {
+        &self.inputs
+    }
+
+    pub fn outputs(&self) -> &ExecOutputs {
+        &self.outputs
+    }
 }
 
 // TODO whatever proptest stuff?
