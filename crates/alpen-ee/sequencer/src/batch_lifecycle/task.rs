@@ -2,317 +2,23 @@
 
 use std::time::Duration;
 
-use alpen_ee_common::{
-    require_latest_batch, Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, DaStatus,
-    ProofGenerationStatus,
-};
+use alpen_ee_common::{require_latest_batch, BatchDaProvider, BatchProver, BatchStorage};
 use eyre::Result;
 use tokio::time;
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 
 use super::{
     ctx::BatchLifecycleCtx,
+    lifecycle::{
+        try_advance_da_complete, try_advance_da_pending, try_advance_proof_pending,
+        try_advance_proof_ready,
+    },
     reorg::{detect_reorg, handle_reorg, ReorgResult},
     state::BatchLifecycleState,
 };
 
 /// Polling interval for checking DA confirmations and proof status.
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
-
-/// Try to post DA for the next batch (Sealed → DaPending).
-async fn try_advance_da_pending<D, P, S>(
-    state: &mut BatchLifecycleState,
-    latest_batch: &Batch,
-    ctx: &BatchLifecycleCtx<D, P, S>,
-) -> Result<()>
-where
-    D: BatchDaProvider,
-    P: BatchProver,
-    S: BatchStorage,
-{
-    // Next batch to process is current frontier + 1
-    let target_idx = state.da_pending().idx() + 1;
-
-    // If we're past the latest batch, nothing to do
-    if target_idx > latest_batch.idx() {
-        return Ok(());
-    }
-
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
-        return Ok(()); // Batch doesn't exist yet
-    };
-
-    match status {
-        BatchStatus::Sealed => {
-            // Start DA posting. If this fails, we retry in the next cycle.
-            debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Posting DA");
-
-            ctx.da_provider.post_batch_da(batch.id()).await?;
-
-            ctx.batch_storage
-                .update_batch_status(batch.id(), BatchStatus::DaPending)
-                .await?;
-
-            state.advance_da_pending(target_idx, batch.id());
-        }
-        BatchStatus::DaPending
-        | BatchStatus::DaComplete { .. }
-        | BatchStatus::ProofPending { .. }
-        | BatchStatus::ProofReady { .. }
-        | BatchStatus::Genesis => {
-            // Already past this stage, advance frontier
-            state.advance_da_pending(target_idx, batch.id());
-        }
-    }
-
-    Ok(())
-}
-
-/// Try to confirm DA for the next batch (DaPending → DaComplete).
-async fn try_advance_da_complete<D, P, S>(
-    state: &mut BatchLifecycleState,
-    latest_batch: &Batch,
-    ctx: &BatchLifecycleCtx<D, P, S>,
-) -> Result<()>
-where
-    D: BatchDaProvider,
-    P: BatchProver,
-    S: BatchStorage,
-{
-    // Next batch to process is current frontier + 1
-    let target_idx = state.da_complete().idx() + 1;
-
-    // If we're past the latest batch, nothing to do
-    if target_idx > latest_batch.idx() {
-        return Ok(());
-    }
-
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
-        return Ok(()); // Batch doesn't exist yet
-    };
-
-    match status {
-        BatchStatus::Sealed => {
-            // Not ready, no action
-        }
-        BatchStatus::DaPending => {
-            // Check if DA is confirmed
-            match ctx.da_provider.check_da_status(batch.id()).await? {
-                DaStatus::Pending => {
-                    // Not ready, no action
-                }
-                DaStatus::Ready(da_refs) => {
-                    debug!(batch_idx = target_idx, batch_id = ?batch.id(), "DA confirmed");
-
-                    ctx.batch_storage
-                        .update_batch_status(batch.id(), BatchStatus::DaComplete { da: da_refs })
-                        .await?;
-
-                    state.advance_da_complete(target_idx, batch.id());
-                }
-                DaStatus::NotRequested => {
-                    // We've marked the batch as da pending, but da provider says da has not been
-                    // requested. Try to re-request and hope for the best.
-                    warn!(
-                        batch_idx = target_idx,
-                        batch_id = ?batch.id(),
-                        "Expected da operation to have been started. Retrying"
-                    );
-
-                    ctx.da_provider.post_batch_da(batch.id()).await?;
-                }
-                DaStatus::Failed { reason } => {
-                    // CRITICAL: Manual intervention required
-                    error!(
-                        batch_idx = target_idx,
-                        batch_id = ?batch.id(),
-                        reason = %reason,
-                        "CRITICAL: DA posting failed - manual intervention required. \
-                         Batch is stuck in DaPending state."
-                    );
-                    // Stay at frontier - manual intervention required
-                }
-            };
-        }
-        BatchStatus::DaComplete { .. }
-        | BatchStatus::ProofPending { .. }
-        | BatchStatus::ProofReady { .. }
-        | BatchStatus::Genesis => {
-            // Already past this stage, advance frontier
-            state.advance_da_complete(target_idx, batch.id());
-        }
-    }
-
-    Ok(())
-}
-
-/// Try to request proof for the next batch (DaComplete → ProofPending).
-async fn try_advance_proof_pending<D, P, S>(
-    state: &mut BatchLifecycleState,
-    latest_batch: &Batch,
-    ctx: &BatchLifecycleCtx<D, P, S>,
-) -> Result<()>
-where
-    D: BatchDaProvider,
-    P: BatchProver,
-    S: BatchStorage,
-{
-    // Next batch to process is current frontier + 1
-    let target_idx = state.proof_pending().idx() + 1;
-
-    // If we're past the latest batch, nothing to do
-    if target_idx > latest_batch.idx() {
-        return Ok(());
-    }
-
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
-        return Ok(()); // Batch doesn't exist yet
-    };
-
-    match status {
-        BatchStatus::Sealed | BatchStatus::DaPending => {
-            // Not ready, no action
-        }
-        BatchStatus::DaComplete { da } => {
-            // Request proof generation. If this fails, we retry in the next cycle.
-            debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Requesting proof");
-
-            ctx.prover.request_proof_generation(batch.id()).await?;
-
-            ctx.batch_storage
-                .update_batch_status(batch.id(), BatchStatus::ProofPending { da })
-                .await?;
-
-            state.advance_proof_pending(target_idx, batch.id());
-        }
-        BatchStatus::ProofPending { .. }
-        | BatchStatus::ProofReady { .. }
-        | BatchStatus::Genesis => {
-            // Already past this stage, advance frontier
-            state.advance_proof_pending(target_idx, batch.id());
-        }
-    }
-
-    Ok(())
-}
-
-/// Try to complete proof for the next batch (ProofPending → ProofReady).
-async fn try_advance_proof_ready<D, P, S>(
-    state: &mut BatchLifecycleState,
-    latest_batch: &Batch,
-    ctx: &BatchLifecycleCtx<D, P, S>,
-) -> Result<()>
-where
-    D: BatchDaProvider,
-    P: BatchProver,
-    S: BatchStorage,
-{
-    // Next batch to process is current frontier + 1
-    let target_idx = state.proof_ready().idx() + 1;
-
-    // If we're past the latest batch, nothing to do
-    if target_idx > latest_batch.idx() {
-        return Ok(());
-    }
-
-    let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
-        return Ok(()); // Batch doesn't exist yet
-    };
-
-    match status {
-        BatchStatus::Sealed | BatchStatus::DaPending | BatchStatus::DaComplete { .. } => {
-            // Not ready, no action
-        }
-        BatchStatus::ProofPending { da } => {
-            // Check proof status
-            match ctx.prover.check_proof_status(batch.id()).await? {
-                ProofGenerationStatus::Ready { proof_id } => {
-                    debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Proof ready");
-
-                    ctx.batch_storage
-                        .update_batch_status(
-                            batch.id(),
-                            BatchStatus::ProofReady {
-                                da,
-                                proof: proof_id,
-                            },
-                        )
-                        .await?;
-
-                    // Notify watchers
-                    let _ = ctx.proof_ready_tx.send(Some(batch.id()));
-
-                    state.advance_proof_ready(target_idx, batch.id());
-                }
-
-                ProofGenerationStatus::Failed { reason } => {
-                    // CRITICAL: Manual intervention required
-                    error!(
-                        batch_idx = target_idx,
-                        batch_id = ?batch.id(),
-                        reason = %reason,
-                        "CRITICAL: Proof generation failed - manual intervention required. \
-                         Batch is stuck in ProofPending state."
-                    );
-                    // Stay at frontier - manual intervention required
-                }
-
-                ProofGenerationStatus::Pending => {
-                    // Still waiting, no action
-                }
-
-                ProofGenerationStatus::NotStarted => {
-                    // We've marked the batch as proof pending, but prover says proof generation has
-                    // not started. Try to re-request proof generation and hope for the best.
-                    warn!(
-                        batch_idx = target_idx,
-                        batch_id = ?batch.id(),
-                        "Expected proof generation to have been started. Retrying proof generation"
-                    );
-
-                    ctx.prover.request_proof_generation(batch.id()).await?;
-                }
-            }
-        }
-        BatchStatus::ProofReady { .. } | BatchStatus::Genesis => {
-            // Already complete, advance frontier
-            state.advance_proof_ready(target_idx, batch.id());
-        }
-    }
-
-    Ok(())
-}
-
-/// Process one cycle of the batch lifecycle.
-///
-/// Returns an error if a critical operation fails. The caller (task loop) decides
-/// whether to continue or abort based on the error.
-pub(crate) async fn process_cycle<D, P, S>(
-    state: &mut BatchLifecycleState,
-    ctx: &BatchLifecycleCtx<D, P, S>,
-) -> Result<()>
-where
-    D: BatchDaProvider,
-    P: BatchProver,
-    S: BatchStorage,
-{
-    // Get latest batch
-    let (latest_batch, _) = require_latest_batch(ctx.batch_storage.as_ref()).await?;
-
-    // Detect and handle reorg
-    let reorg = detect_reorg(state, ctx.batch_storage.as_ref()).await?;
-    if !matches!(reorg, ReorgResult::None) {
-        handle_reorg(state, &latest_batch, ctx.batch_storage.as_ref(), reorg).await?;
-    }
-
-    // Try to advance each frontier (order doesn't matter, they're independent)
-    try_advance_da_pending(state, &latest_batch, ctx).await?;
-    try_advance_da_complete(state, &latest_batch, ctx).await?;
-    try_advance_proof_pending(state, &latest_batch, ctx).await?;
-    try_advance_proof_ready(state, &latest_batch, ctx).await?;
-
-    Ok(())
-}
 
 /// Main batch lifecycle task.
 ///
@@ -351,12 +57,43 @@ pub(crate) async fn batch_lifecycle_task<D, P, S>(
     }
 }
 
+/// Process one cycle of the batch lifecycle.
+///
+/// Returns an error if a critical operation fails. The caller (task loop) decides
+/// whether to continue or abort based on the error.
+pub(crate) async fn process_cycle<D, P, S>(
+    state: &mut BatchLifecycleState,
+    ctx: &BatchLifecycleCtx<D, P, S>,
+) -> Result<()>
+where
+    D: BatchDaProvider,
+    P: BatchProver,
+    S: BatchStorage,
+{
+    // Get latest batch
+    let (latest_batch, _) = require_latest_batch(ctx.batch_storage.as_ref()).await?;
+
+    // Detect and handle reorg
+    let reorg = detect_reorg(state, ctx.batch_storage.as_ref()).await?;
+    if !matches!(reorg, ReorgResult::None) {
+        handle_reorg(state, &latest_batch, ctx.batch_storage.as_ref(), reorg).await?;
+    }
+
+    // Try to advance each frontier (order doesn't matter, they're independent)
+    try_advance_da_pending(state, &latest_batch, ctx).await?;
+    try_advance_da_complete(state, &latest_batch, ctx).await?;
+    try_advance_proof_pending(state, &latest_batch, ctx).await?;
+    try_advance_proof_ready(state, &latest_batch, ctx).await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use alpen_ee_common::{
-        BatchId, DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver,
+        BatchId, BatchStatus, DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver,
         ProofGenerationStatus,
     };
     use tokio::sync::watch;

@@ -57,6 +57,7 @@
 
 mod ctx;
 mod handle;
+mod lifecycle;
 mod reorg;
 mod state;
 mod task;
