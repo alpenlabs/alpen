@@ -43,14 +43,15 @@ pub enum InvalidCheckpointPayload {
     )]
     L1HeightGoesBackwards { prev_height: u32, new_height: u32 },
 
-    /// Checkpoint claims L1 blocks that don't exist yet.
+    /// Checkpoint L1 height exceeds current block.
     ///
     /// This error occurs when a checkpoint claims to have processed L1 blocks
-    /// up to a height that is greater than or equal to the current L1 chain tip.
-    /// Checkpoints can only reference L1 blocks that have already been observed.
-    #[error(
-        "checkpoint claims unverified L1 blocks: checkpoint claims L1 height {checkpoint_height}, but current verified L1 tip is only at {current_height}"
-    )]
+    /// up to a height that is greater than or equal to the L1 block height
+    /// currently being applied in the ASM STF. Since the checkpoint transaction
+    /// itself is contained in the L1 block at `current_height`, it can only
+    /// reference L1 blocks that were processed **before** this block (i.e., up
+    /// to `current_height - 1`).
+    #[error("checkpoint L1 height {checkpoint_height} exceeds current block {current_height}")]
     CheckpointBeyondL1Tip {
         checkpoint_height: u32,
         current_height: u32,

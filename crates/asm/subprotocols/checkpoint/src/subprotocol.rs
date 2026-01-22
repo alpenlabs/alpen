@@ -74,15 +74,20 @@ impl Subprotocol for CheckpointSubprotocol {
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
+        // Calculate the current L1 height that this transaction is part of.
+        // We add 1 because `anchor_pre` represents the prestate before applying
+        // the new block. The `last_verified_block` is the previous block, so
+        // the current block being processed is at height `last_verified_block + 1`.
+        let current_l1_height = anchor_pre
+            .chain_view
+            .pow_state
+            .last_verified_block
+            .height_u32()
+            + 1;
+
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {
-                handle_checkpoint_tx(
-                    state,
-                    tx,
-                    &anchor_pre.chain_view,
-                    verified_aux_data,
-                    relayer,
-                )
+                handle_checkpoint_tx(state, tx, current_l1_height, verified_aux_data, relayer)
             }
         }
     }

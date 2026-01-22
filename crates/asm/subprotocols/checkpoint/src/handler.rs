@@ -1,9 +1,10 @@
 use bitcoin_bosd::Descriptor;
 use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
-use strata_asm_common::{ChainViewState, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
+use strata_asm_common::{MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_proto_checkpoint_txs::parser::extract_signed_checkpoint_from_envelope;
 use strata_checkpoint_types_ssz::OLLog;
 use strata_codec::decode_buf_exact;
+use strata_identifiers::L1Height;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
@@ -26,7 +27,7 @@ use crate::{
 pub(crate) fn handle_checkpoint_tx(
     state: &mut CheckpointState,
     tx: &TxInputRef<'_>,
-    l1view: &ChainViewState,
+    current_l1_height: L1Height,
     verified_aux_data: &VerifiedAuxData,
     relayer: &mut impl MsgRelayer,
 ) {
@@ -38,7 +39,6 @@ pub(crate) fn handle_checkpoint_tx(
 
     logging::debug!(epoch, "processing checkpoint transaction");
 
-    let current_l1_height = l1view.pow_state.last_verified_block.height_u32();
     match validate_checkpoint_payload(state, current_l1_height, &payload, verified_aux_data) {
         Ok(()) => {
             logging::info!(epoch, "checkpoint validated successfully");
