@@ -2,36 +2,23 @@ use std::num::NonZero;
 
 use alloy_primitives::B256;
 use alpen_ee_common::{DepositInfo, EnginePayload, PayloadBuildAttributes, PayloadBuilderEngine};
-use alpen_reth_evm::subject_to_address;
+use alpen_reth_evm::subject_to_address_unchecked;
 use strata_acct_types::Hash;
 use strata_ee_acct_types::{EeAccountState, PendingInputEntry, UpdateExtraData};
-use tracing::{debug, error};
+use tracing::debug;
 
 /// Extracts deposits from pending inputs, limited by `max_deposits`.
 ///
 /// Returns a vector of [`DepositInfo`] ready for payload building.
-///
-/// Deposits with invalid destination addresses (SubjectIds with non-zero padding
-/// in the first 12 bytes) are logged as warnings and skipped.
 pub(crate) fn extract_deposits(
     pending_inputs: &[PendingInputEntry],
     max_deposits: NonZero<u8>,
 ) -> Vec<DepositInfo> {
     pending_inputs
         .iter()
-        .filter_map(|entry| match entry {
+        .map(|entry| match entry {
             PendingInputEntry::Deposit(data) => {
-                match subject_to_address(&data.dest()) {
-                    Some(address) => Some(DepositInfo::new(address, data.value())),
-                    None => {
-                        // FIXME: https://alpenlabs.atlassian.net/browse/STR-2125
-                        error!(
-                            subject_id = %data.dest(),
-                            "Skipping deposit with invalid destination address (non-zero padding in first 12 bytes)"
-                        );
-                        None
-                    }
-                }
+                DepositInfo::new(subject_to_address_unchecked(&data.dest()), data.value())
             }
         })
         .take(max_deposits.get() as usize)
@@ -92,28 +79,6 @@ mod tests {
         let inputs = vec![make_deposit(subject_bytes, 1000)];
         let deposits = extract_deposits(&inputs, NonZero::new(10).unwrap());
 
-        assert_eq!(deposits.len(), 1);
-        assert_eq!(deposits[0].address(), Address::from([0xaa; 20]));
-    }
-
-    #[test]
-    fn extract_deposits_skips_invalid_address() {
-        // SubjectId with invalid padding: [0xff..0xff (12 bytes), 0xbb..0xbb (20 bytes)]
-        let mut invalid_subject = [0u8; 32];
-        invalid_subject[0..12].copy_from_slice(&[0xff; 12]);
-        invalid_subject[12..32].copy_from_slice(&[0xbb; 20]);
-
-        // Valid SubjectId: [0x00..0x00 (12 bytes), 0xaa..0xaa (20 bytes)]
-        let mut valid_subject = [0u8; 32];
-        valid_subject[12..32].copy_from_slice(&[0xaa; 20]);
-
-        let inputs = vec![
-            make_deposit(invalid_subject, 1000),
-            make_deposit(valid_subject, 2000),
-        ];
-        let deposits = extract_deposits(&inputs, NonZero::new(10).unwrap());
-
-        // Only the valid deposit should be extracted
         assert_eq!(deposits.len(), 1);
         assert_eq!(deposits[0].address(), Address::from([0xaa; 20]));
     }
