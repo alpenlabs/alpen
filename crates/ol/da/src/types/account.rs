@@ -2,12 +2,10 @@
 
 use strata_acct_types::BitcoinAmount;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_da_framework::{
-    BitSeqReader, BitSeqWriter, CompoundMember, DaError, DaRegister, DaWrite,
-};
+use strata_da_framework::{BitSeqReader, BitSeqWriter, CompoundMember, DaRegister, DaWrite};
 use strata_identifiers::AccountTypeId;
 
-use super::snark::{SnarkAccountDiff, SnarkAccountTarget};
+use super::snark::SnarkAccountDiff;
 
 /// Per-account diff keyed by account type.
 ///
@@ -64,40 +62,14 @@ impl AccountDiff {
             Self::Empty { balance } | Self::Snark { balance, .. } => balance,
         }
     }
-}
 
-impl DaWrite for AccountDiff {
-    type Target = AccountDiffTarget;
-    type Context = ();
-
-    fn is_default(&self) -> bool {
+    pub fn is_default(&self) -> bool {
         match self {
             Self::Empty { balance } => DaWrite::is_default(balance),
             Self::Snark { balance, snark } => {
                 DaWrite::is_default(balance) && CompoundMember::is_default(snark)
             }
         }
-    }
-
-    fn poll_context(
-        &self,
-        _target: &Self::Target,
-        _context: &Self::Context,
-    ) -> Result<(), DaError> {
-        Ok(())
-    }
-
-    fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), DaError> {
-        match self {
-            Self::Empty { balance } => {
-                balance.apply(&mut target.balance, context)?;
-            }
-            Self::Snark { balance, snark } => {
-                balance.apply(&mut target.balance, context)?;
-                snark.apply(&mut target.snark_state, context)?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -154,14 +126,4 @@ impl Codec for AccountDiff {
             _ => Err(CodecError::InvalidVariant("account_type_id")),
         }
     }
-}
-
-/// Target for applying an account diff.
-#[derive(Debug, Default)]
-pub struct AccountDiffTarget {
-    /// Current balance value.
-    pub balance: BitcoinAmount,
-
-    /// Snark account target.
-    pub snark_state: SnarkAccountTarget,
 }

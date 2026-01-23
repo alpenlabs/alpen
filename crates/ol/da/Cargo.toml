@@ -9,7 +9,6 @@ strata-codec.workspace = true
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
-strata-snark-acct-types.workspace = true
 
 thiserror.workspace = true
 
