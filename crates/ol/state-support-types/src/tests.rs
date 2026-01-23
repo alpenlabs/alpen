@@ -895,23 +895,23 @@ fn test_new_account_vk_persisted_from_ol_state() {
 }
 
 #[test]
-fn test_tracking_disabled_excludes_changes() {
+fn test_take_resets_accumulator() {
     let account_id = test_account_id(1);
     let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
     let mut da_state = DaAccumulatingState::new(state);
 
-    // Finalize an empty epoch and drop the blob.
-    da_state.take_completed_epoch_da_blob();
-
-    // Make changes while tracking is disabled.
+    // Finalize once after making changes.
     da_state
         .update_account(account_id, |acct| {
             let coin = Coin::new_unchecked(BitcoinAmount::from_sat(123));
             acct.add_balance(coin);
         })
         .unwrap();
+    da_state
+        .take_completed_epoch_da_blob()
+        .expect("expected DA blob");
 
-    // Finalize again.
+    // Finalize again without any new changes.
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");

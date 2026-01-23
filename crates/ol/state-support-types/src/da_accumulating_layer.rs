@@ -1,6 +1,9 @@
 //! OL state accessor that accumulates DA-covered writes over an epoch.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry};
+use std::{
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
+    mem::take,
+};
 
 use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
@@ -8,12 +11,12 @@ use strata_da_framework::{
     DaBuilder, DaCounterBuilder, DaQueueBuilder, DaRegister, DaWrite, counter_schemes::CtrU64ByU16,
     encode_to_vec,
 };
-use strata_identifiers::AccountSerial;
+use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
     AccountTypeState, AccountTypeStateRef, IAccountState, IAccountStateMut, ISnarkAccountState,
     IStateAccessor, NewAccountData,
 };
-use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
+use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
     InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OLDaBlobV1,
@@ -21,8 +24,6 @@ use strata_ol_da::{
 };
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use thiserror::Error;
-#[cfg(feature = "tracing")]
-use tracing::error;
 
 use crate::{
     index_types::{IndexerWrites, SnarkAcctStateUpdate},
@@ -149,40 +150,11 @@ struct EpochDaAccumulator {
     /// Pending withdrawals queue front increments recorded during the epoch.
     pending_withdraw_front_incr: u16,
 
-    /// Output logs emitted during the epoch.
-    output_logs: Vec<OLLog>,
-
-    /// Completed DA blobs waiting to be consumed.
-    completed_blobs: VecDeque<Vec<u8>>,
-
     /// Last error encountered while building a blob.
     last_error: Option<DaAccumulationError>,
 }
 
 impl EpochDaAccumulator {
-    /// Resets the accumulator for a new epoch.
-    fn reset_for_new_epoch(&mut self) {
-        self.slot_base = None;
-        self.slot_final = None;
-        self.first_new_serial = None;
-        self.new_accounts.clear();
-        self.new_account_ids.clear();
-        self.touched_accounts.clear();
-        self.pre_states.clear();
-        self.inbox_messages.clear();
-        self.snark_updates.clear();
-        self.withdrawal_intents.clear();
-        self.pending_withdraw_source = PendingWithdrawQueue::default();
-        self.pending_withdraw_front_incr = 0;
-        self.output_logs.clear();
-        self.last_error = None;
-    }
-
-    /// Takes the next completed DA blob from the accumulator.
-    fn take_completed_blob(&mut self) -> Option<Vec<u8>> {
-        self.completed_blobs.pop_front()
-    }
-
     /// Records a slot change event.
     fn record_slot_change(&mut self, prior: u64, new: u64) {
         if self.slot_base.is_none() {
@@ -463,20 +435,9 @@ impl EpochDaAccumulator {
 
         Ok(SnarkAccountDiff::new(seq_no, proof_state, inbox))
     }
-
-    /// Returns the withdrawal intents that remain in the queue tail.
-    fn effective_withdrawal_intents(&self) -> Vec<SimpleWithdrawalIntentLogData> {
-        let base_len = self.pending_withdraw_source.entries().len();
-        let consumed_new = (self.pending_withdraw_front_incr as usize).saturating_sub(base_len);
-        self.withdrawal_intents
-            .iter()
-            .skip(consumed_new)
-            .cloned()
-            .collect()
-    }
 }
 
-/// State accessor that accumulates DA-covered writes across an epoch.
+/// State accessor that accumulates DA-covered writes for a single epoch.
 #[derive(Debug)]
 pub struct DaAccumulatingState<S: IStateAccessor> {
     /// Wrapped state accessor.
@@ -511,7 +472,18 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
 
     /// Returns the next completed epoch DA blob, if any.
     pub fn take_completed_epoch_da_blob(&mut self) -> Option<Vec<u8>> {
-        self.epoch_acc.take_completed_blob()
+        if !self.da_tracking_enabled {
+            return None;
+        }
+
+        let mut acc = take(&mut self.epoch_acc);
+        match acc.finalize(&self.inner) {
+            Ok(blob) => Some(blob),
+            Err(err) => {
+                self.epoch_acc.last_error = Some(err);
+                None
+            }
+        }
     }
 
     /// Returns the last DA accumulation error, if any.
@@ -530,18 +502,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     pub fn record_pending_withdraw_front_incr(&mut self, incr: u16) {
         if self.da_tracking_enabled {
             self.epoch_acc.record_pending_withdraw_front_incr(incr);
-        }
-    }
-
-    /// Finalizes the epoch by building the DA blob.
-    fn finalize_epoch_blob(&mut self) {
-        match self.epoch_acc.finalize(&self.inner) {
-            Ok(blob) => self.epoch_acc.completed_blobs.push_back(blob),
-            Err(err) => {
-                #[cfg(feature = "tracing")]
-                error!(error = %err, "failed to finalize epoch DA blob");
-                self.epoch_acc.last_error = Some(err);
-            }
         }
     }
 }
@@ -578,33 +538,29 @@ where
 
     fn set_cur_epoch(&mut self, epoch: u32) {
         let prev = self.inner.cur_epoch();
-        self.inner.set_cur_epoch(epoch);
-        if epoch > prev {
-            self.epoch_acc.reset_for_new_epoch();
+        if self.da_tracking_enabled && epoch != prev {
+            panic!("da accumulating state cannot span epochs while tracking is enabled");
         }
+        self.inner.set_cur_epoch(epoch);
     }
 
-    fn last_l1_blkid(&self) -> &strata_identifiers::L1BlockId {
+    fn last_l1_blkid(&self) -> &L1BlockId {
         self.inner.last_l1_blkid()
     }
 
-    fn last_l1_height(&self) -> strata_identifiers::L1Height {
+    fn last_l1_height(&self) -> L1Height {
         self.inner.last_l1_height()
     }
 
-    fn append_manifest(
-        &mut self,
-        height: strata_identifiers::L1Height,
-        mf: strata_asm_manifest_types::AsmManifest,
-    ) {
+    fn append_manifest(&mut self, height: L1Height, mf: strata_asm_manifest_types::AsmManifest) {
         self.inner.append_manifest(height, mf);
     }
 
-    fn asm_recorded_epoch(&self) -> &strata_identifiers::EpochCommitment {
+    fn asm_recorded_epoch(&self) -> &EpochCommitment {
         self.inner.asm_recorded_epoch()
     }
 
-    fn set_asm_recorded_epoch(&mut self, epoch: strata_identifiers::EpochCommitment) {
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
         self.inner.set_asm_recorded_epoch(epoch);
     }
 
