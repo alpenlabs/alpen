@@ -1,9 +1,6 @@
 //! Register DA type.
 
-use crate::{
-    BuilderError, Codec, CodecError, CodecResult, CompoundMember, DaBuilder, DaWrite, Decoder,
-    Encoder,
-};
+use crate::{Codec, CodecError, CodecResult, CompoundMember, DaWrite, Decoder, Encoder};
 
 /// A register value.
 ///
@@ -74,6 +71,21 @@ impl<T> Default for DaRegister<T> {
     }
 }
 
+impl<T: Clone> DaRegister<T> {
+    /// Applies this register to a target of a different type via [`Into`] conversion.
+    ///
+    /// This is useful when the register stores a wrapper type (e.g., `CodecU256`)
+    /// but the target field is the unwrapped type (e.g., `U256`).
+    pub fn apply_into<U>(&self, target: &mut U)
+    where
+        T: Into<U>,
+    {
+        if let Some(v) = self.new_value.clone() {
+            *target = v.into();
+        }
+    }
+}
+
 impl<T: Clone> DaWrite for DaRegister<T> {
     type Target = T;
 
@@ -137,42 +149,5 @@ impl<T: Codec + Clone> CompoundMember for DaRegister<T> {
             v.encode(enc)?;
         }
         Ok(())
-    }
-}
-
-/// Builder for [`DaRegister`].
-pub struct DaRegisterBuilder<T> {
-    original: T,
-    new: T,
-}
-
-impl<T> DaRegisterBuilder<T> {
-    /// Gets the current value.
-    pub fn value(&self) -> &T {
-        &self.new
-    }
-
-    /// Sets the value.
-    pub fn set(&mut self, t: T) {
-        self.new = t;
-    }
-}
-
-impl<T: Clone + Eq> DaBuilder<T> for DaRegisterBuilder<T> {
-    type Write = DaRegister<T>;
-
-    fn from_source(t: T) -> Self {
-        Self {
-            original: t.clone(),
-            new: t,
-        }
-    }
-
-    fn into_write(self) -> Result<Self::Write, BuilderError> {
-        if self.new == self.original {
-            Ok(DaRegister::new_unset())
-        } else {
-            Ok(DaRegister::new_set(self.new))
-        }
     }
 }
