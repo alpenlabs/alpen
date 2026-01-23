@@ -1,13 +1,17 @@
 //! OL DA payload and state diff types.
 
+use std::marker::PhantomData;
+
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{
     CompoundMember, DaCounter, DaError, DaLinacc, DaQueue, DaQueueTarget, DaRegister, DaWrite,
     LinearAccumulator,
     counter_schemes::{self, CtrU64ByU16},
+    make_compound_impl,
 };
 use strata_identifiers::{AccountSerial, AccountTypeId};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_snark_acct_types::MessageEntry;
 
@@ -149,7 +153,7 @@ impl Codec for OLDaPayloadV1 {
 // ============================================================================
 
 /// Preseal OL state diff (global + ledger).
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct StateDiff {
     /// Global state diff.
     pub global: GlobalStateDiff,
@@ -176,6 +180,81 @@ impl Codec for StateDiff {
         let global = GlobalStateDiff::decode(dec)?;
         let ledger = LedgerDiff::decode(dec)?;
         Ok(Self { global, ledger })
+    }
+}
+
+/// Adapter for applying a state diff to a concrete state accessor.
+#[derive(Debug)]
+pub struct OLStateDiff<S: IStateAccessor> {
+    diff: StateDiff,
+    _target: PhantomData<S>,
+}
+
+impl<S: IStateAccessor> OLStateDiff<S> {
+    pub fn new(diff: StateDiff) -> Self {
+        Self {
+            diff,
+            _target: PhantomData,
+        }
+    }
+
+    pub fn as_inner(&self) -> &StateDiff {
+        &self.diff
+    }
+
+    pub fn into_inner(self) -> StateDiff {
+        self.diff
+    }
+}
+
+impl<S: IStateAccessor> Default for OLStateDiff<S> {
+    fn default() -> Self {
+        Self::new(StateDiff::default())
+    }
+}
+
+impl<S: IStateAccessor> From<StateDiff> for OLStateDiff<S> {
+    fn from(diff: StateDiff) -> Self {
+        Self::new(diff)
+    }
+}
+
+impl<S: IStateAccessor> From<OLStateDiff<S>> for StateDiff {
+    fn from(diff: OLStateDiff<S>) -> Self {
+        diff.diff
+    }
+}
+
+impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
+    type Target = S;
+    type Context = ();
+
+    fn is_default(&self) -> bool {
+        DaWrite::is_default(&self.diff.global) && self.diff.ledger.is_empty()
+    }
+
+    fn poll_context(
+        &self,
+        _target: &Self::Target,
+        _context: &Self::Context,
+    ) -> Result<(), DaError> {
+        if !self.diff.ledger.is_empty() || !DaWrite::is_default(&self.diff.global.pending_withdraws)
+        {
+            return Err(DaError::InsufficientContext);
+        }
+        Ok(())
+    }
+
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), DaError> {
+        if !self.diff.ledger.is_empty() || !DaWrite::is_default(&self.diff.global.pending_withdraws)
+        {
+            return Err(DaError::InsufficientContext);
+        }
+
+        let mut cur_slot = target.cur_slot();
+        self.diff.global.cur_slot.apply(&mut cur_slot, &())?;
+        target.set_cur_slot(cur_slot);
+        Ok(())
     }
 }
 
@@ -211,67 +290,10 @@ impl GlobalStateDiff {
     }
 }
 
-impl Codec for GlobalStateDiff {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Build a presence bitmask to keep encoding deterministic and compact.
-        let mut mask: u8 = 0;
-        // Emit the bitmask before any optional fields.
-        if !CompoundMember::is_default(&self.cur_slot) {
-            mask |= 1 << 0;
-        }
-        // Encode the withdrawal queue tail diff only when present.
-        if !CompoundMember::is_default(&self.pending_withdraws) {
-            mask |= 1 << 1;
-        }
-        mask.encode(enc)?;
-        // Encode the slot diff only when present.
-        if (mask & (1 << 0)) != 0 {
-            self.cur_slot.encode_set(enc)?;
-        }
-        // Encode the withdrawal queue tail diff only when present.
-        if (mask & (1 << 1)) != 0 {
-            self.pending_withdraws.encode_set(enc)?;
-        }
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        // Decode the presence bitmask first.
-        let mask = u8::decode(dec)?;
-        // Decode the slot diff only when present.
-        let cur_slot = if (mask & (1 << 0)) != 0 {
-            <DaCounter<counter_schemes::CtrU64ByU16> as CompoundMember>::decode_set(dec)?
-        } else {
-            DaCounter::new_unchanged()
-        };
-        // Decode the withdrawal queue tail diff only when present.
-        let pending_withdraws = if (mask & (1 << 1)) != 0 {
-            <DaQueue<PendingWithdrawQueue> as CompoundMember>::decode_set(dec)?
-        } else {
-            DaQueue::new()
-        };
-        // Return the new global state diff.
-        Ok(Self {
-            cur_slot,
-            pending_withdraws,
-        })
-    }
-}
-
-impl DaWrite for GlobalStateDiff {
-    type Target = GlobalStateTarget;
-    type Context = ();
-
-    fn is_default(&self) -> bool {
-        CompoundMember::is_default(&self.cur_slot)
-            && CompoundMember::is_default(&self.pending_withdraws)
-    }
-
-    fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), DaError> {
-        self.cur_slot.apply(&mut target.cur_slot, context)?;
-        self.pending_withdraws
-            .apply(&mut target.pending_withdraws, context)?;
-        Ok(())
+make_compound_impl! {
+    GlobalStateDiff u8 => GlobalStateTarget {
+        cur_slot: counter (counter_schemes::CtrU64ByU16),
+        pending_withdraws: compound (DaQueue<PendingWithdrawQueue>),
     }
 }
 
@@ -354,6 +376,15 @@ pub struct LedgerDiff {
     pub account_diffs: U16LenList<AccountDiffEntry>,
 }
 
+impl Default for LedgerDiff {
+    fn default() -> Self {
+        Self {
+            new_accounts: U16LenList::new(Vec::new()),
+            account_diffs: U16LenList::new(Vec::new()),
+        }
+    }
+}
+
 impl LedgerDiff {
     /// Creates a new [`LedgerDiff`] from a list of new accounts and account diffs.
     pub fn new(
@@ -364,6 +395,11 @@ impl LedgerDiff {
             new_accounts,
             account_diffs,
         }
+    }
+
+    /// Returns true when no ledger changes are present.
+    pub fn is_empty(&self) -> bool {
+        self.new_accounts.entries().is_empty() && self.account_diffs.entries().is_empty()
     }
 }
 
@@ -609,56 +645,10 @@ impl AccountDiff {
     }
 }
 
-impl Codec for AccountDiff {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        let mut mask: u8 = 0;
-        if !CompoundMember::is_default(&self.balance) {
-            mask |= 1 << 0;
-        }
-        if !CompoundMember::is_default(&self.snark_state) {
-            mask |= 1 << 1;
-        }
-        mask.encode(enc)?;
-        if (mask & (1 << 0)) != 0 {
-            self.balance.encode_set(enc)?;
-        }
-        if (mask & (1 << 1)) != 0 {
-            self.snark_state.encode_set(enc)?;
-        }
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let mask = u8::decode(dec)?;
-        let balance = if (mask & (1 << 0)) != 0 {
-            <DaRegister<BitcoinAmount> as CompoundMember>::decode_set(dec)?
-        } else {
-            DaRegister::new_unset()
-        };
-        let snark_state = if (mask & (1 << 1)) != 0 {
-            SnarkAccountDiff::decode(dec)?
-        } else {
-            <SnarkAccountDiff as Default>::default()
-        };
-        Ok(Self {
-            balance,
-            snark_state,
-        })
-    }
-}
-
-impl DaWrite for AccountDiff {
-    type Target = AccountDiffTarget;
-    type Context = ();
-
-    fn is_default(&self) -> bool {
-        CompoundMember::is_default(&self.balance) && CompoundMember::is_default(&self.snark_state)
-    }
-
-    fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), DaError> {
-        self.balance.apply(&mut target.balance, context)?;
-        self.snark_state.apply(&mut target.snark, context)?;
-        Ok(())
+make_compound_impl! {
+    AccountDiff u8 => AccountDiffTarget {
+        balance: register (BitcoinAmount),
+        snark_state: compound (SnarkAccountDiff),
     }
 }
 
@@ -669,7 +659,7 @@ pub struct AccountDiffTarget {
     pub balance: BitcoinAmount,
 
     /// Snark account target.
-    pub snark: SnarkAccountTarget,
+    pub snark_state: SnarkAccountTarget,
 }
 
 /// Diff for snark account state.
@@ -681,8 +671,8 @@ pub struct SnarkAccountDiff {
     /// Proof state register diff.
     pub proof_state: DaRegister<DaProofState>,
 
-    /// Inbox MMR append-only diff.
-    pub inbox_mmr: DaLinacc<InboxAccumulator>,
+    /// Inbox append-only diff.
+    pub inbox: DaLinacc<InboxAccumulator>,
 }
 
 impl Default for SnarkAccountDiff {
@@ -690,7 +680,7 @@ impl Default for SnarkAccountDiff {
         Self {
             seq_no: DaCounter::new_unchanged(),
             proof_state: DaRegister::new_unset(),
-            inbox_mmr: DaLinacc::new(),
+            inbox: DaLinacc::new(),
         }
     }
 }
@@ -700,75 +690,21 @@ impl SnarkAccountDiff {
     pub fn new(
         seq_no: DaCounter<counter_schemes::CtrU64ByU16>,
         proof_state: DaRegister<DaProofState>,
-        inbox_mmr: DaLinacc<InboxAccumulator>,
+        inbox: DaLinacc<InboxAccumulator>,
     ) -> Self {
         Self {
             seq_no,
             proof_state,
-            inbox_mmr,
+            inbox,
         }
     }
 }
 
-impl Codec for SnarkAccountDiff {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Build a presence bitmask to keep encoding deterministic and compact.
-        let mut mask: u8 = 0;
-        // Emit the bitmask before any optional fields.
-        if !CompoundMember::is_default(&self.seq_no) {
-            mask |= 1 << 0;
-        }
-        // Encode the proof state diff only when present.
-        if !CompoundMember::is_default(&self.proof_state) {
-            mask |= 1 << 1;
-        }
-        // Encode the inbox MMR diff only when present.
-        if !CompoundMember::is_default(&self.inbox_mmr) {
-            mask |= 1 << 2;
-        }
-        mask.encode(enc)?;
-        // Encode the sequence number diff only when present.
-        if (mask & (1 << 0)) != 0 {
-            self.seq_no.encode_set(enc)?;
-        }
-        // Encode the proof state diff only when present.
-        if (mask & (1 << 1)) != 0 {
-            self.proof_state.encode_set(enc)?;
-        }
-        // Encode the inbox MMR diff only when present.
-        if (mask & (1 << 2)) != 0 {
-            self.inbox_mmr.encode_set(enc)?;
-        }
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        // Decode the presence bitmask first.
-        let mask = u8::decode(dec)?;
-        // Decode the sequence number diff only when present.
-        let seq_no = if (mask & (1 << 0)) != 0 {
-            <DaCounter<counter_schemes::CtrU64ByU16> as CompoundMember>::decode_set(dec)?
-        } else {
-            DaCounter::new_unchanged()
-        };
-        // Decode the proof state diff only when present.
-        let proof_state = if (mask & (1 << 1)) != 0 {
-            <DaRegister<DaProofState> as CompoundMember>::decode_set(dec)?
-        } else {
-            DaRegister::new_unset()
-        };
-        // Decode the inbox MMR diff only when present.
-        let inbox_mmr = if (mask & (1 << 2)) != 0 {
-            <DaLinacc<InboxAccumulator> as CompoundMember>::decode_set(dec)?
-        } else {
-            DaLinacc::new()
-        };
-        // Return the new snark account diff.
-        Ok(Self {
-            seq_no,
-            proof_state,
-            inbox_mmr,
-        })
+make_compound_impl! {
+    SnarkAccountDiff u8 => SnarkAccountTarget {
+        seq_no: counter (counter_schemes::CtrU64ByU16),
+        proof_state: register (DaProofState),
+        inbox: compound (DaLinacc<InboxAccumulator>),
     }
 }
 
@@ -780,7 +716,7 @@ impl CompoundMember for SnarkAccountDiff {
     fn is_default(&self) -> bool {
         CompoundMember::is_default(&self.seq_no)
             && CompoundMember::is_default(&self.proof_state)
-            && CompoundMember::is_default(&self.inbox_mmr)
+            && CompoundMember::is_default(&self.inbox)
     }
 
     fn decode_set(dec: &mut impl Decoder) -> Result<Self, CodecError> {
@@ -792,24 +728,6 @@ impl CompoundMember for SnarkAccountDiff {
             return Err(CodecError::InvalidVariant("snark_account_diff"));
         }
         self.encode(enc)
-    }
-}
-
-impl DaWrite for SnarkAccountDiff {
-    type Target = SnarkAccountTarget;
-    type Context = ();
-
-    fn is_default(&self) -> bool {
-        CompoundMember::is_default(&self.seq_no)
-            && CompoundMember::is_default(&self.proof_state)
-            && CompoundMember::is_default(&self.inbox_mmr)
-    }
-
-    fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), DaError> {
-        self.seq_no.apply(&mut target.seq_no, context)?;
-        self.proof_state.apply(&mut target.proof_state, context)?;
-        self.inbox_mmr.apply(&mut target.inbox, context)?;
-        Ok(())
     }
 }
 
