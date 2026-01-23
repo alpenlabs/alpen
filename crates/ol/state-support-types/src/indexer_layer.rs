@@ -82,8 +82,8 @@ impl<S: ISnarkAccountStateMut + Clone> Clone for IndexerSnarkAccountStateMut<S> 
 }
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMut<S> {
-    fn verifying_key(&self) -> &PredicateKey {
-        self.inner.verifying_key()
+    fn update_vk(&self) -> &PredicateKey {
+        self.inner.update_vk()
     }
 
     fn seqno(&self) -> Seqno {
@@ -100,10 +100,6 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMu
 
     fn next_inbox_msg_idx(&self) -> u64 {
         self.inner.next_inbox_msg_idx()
-    }
-
-    fn update_vk(&self) -> &[u8] {
-        self.inner.update_vk()
     }
 }
 
