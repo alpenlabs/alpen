@@ -80,7 +80,7 @@ fn process_chunk_blocks<E: ExecutionEnvironment>(
 pub fn verify_chunk_transition<E: ExecutionEnvironment>(
     tsn: &ChunkTransition,
     ee: &E,
-    prev_header: <E::Block as ExecBlock>::Header,
+    prev_header: &<E::Block as ExecBlock>::Header,
     state: &mut E::PartialState,
     chunk: &Chunk<'_, E>,
 ) -> EnvResult<()> {
@@ -92,7 +92,8 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
         return Err(EnvError::MismatchedChainSegment);
     }
 
-    // 2. Make sure the chunk is nonempty and get the last block.
+    // 2. Make sure the chunk is nonempty and check that the last block matches
+    // the chunk transition.
     let Some(new_tip_header) = chunk.blocks().last().map(|b| b.exec_block().get_header()) else {
         return Err(EnvError::MalformedChainSegment);
     };
