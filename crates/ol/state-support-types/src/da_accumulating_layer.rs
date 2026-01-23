@@ -8,7 +8,7 @@ use std::{
 use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
-    DaBuilder, DaCounterBuilder, DaRegister, DaWrite, counter_schemes::CtrU64ByU16, encode_to_vec,
+    DaBuilder, DaCounterBuilder, DaRegister, counter_schemes::CtrU64ByU16, encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
@@ -16,10 +16,11 @@ use strata_ledger_types::{
     IStateAccessor, NewAccountData,
 };
 use strata_ol_da::{
-    AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry,
-    OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
+    AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, GlobalStateDiff,
+    InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OLDaPayloadV1,
+    SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
 };
+use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 
 use crate::{
@@ -72,6 +73,9 @@ pub enum DaAccumulationError {
 struct SnarkSnapshot {
     /// Sequence number at the start of DA-covered execution.
     seq_no: u64,
+
+    /// Next inbox message index at the start of DA-covered execution.
+    next_msg_read_idx: u64,
 }
 
 /// Snapshot of an account before DA-covered execution.
@@ -93,6 +97,7 @@ impl AccountSnapshot {
         let snark = match state.type_state() {
             AccountTypeStateRef::Snark(snark_state) => Some(SnarkSnapshot {
                 seq_no: *snark_state.seqno().inner(),
+                next_msg_read_idx: snark_state.next_inbox_msg_idx(),
             }),
             AccountTypeStateRef::Empty => None,
         };
@@ -136,13 +141,10 @@ struct EpochDaAccumulator {
     pre_states: BTreeMap<AccountId, AccountSnapshot>,
 
     /// Inbox messages appended during the epoch.
-    inbox_messages: BTreeMap<AccountId, Vec<DaMessageEntry>>,
+    inbox_messages: BTreeMap<AccountId, Vec<MessageEntry>>,
 
     /// Snark state updates recorded during the epoch.
     snark_updates: BTreeMap<AccountId, Vec<SnarkAcctStateUpdate>>,
-
-    /// Last error encountered while building a blob.
-    last_error: Option<DaAccumulationError>,
 }
 
 impl EpochDaAccumulator {
@@ -172,15 +174,7 @@ impl EpochDaAccumulator {
     /// Records the inbox messages and snark state updates from an indexer write.
     fn record_writes(&mut self, writes: IndexerWrites) {
         for msg in writes.inbox_messages() {
-            let payload_len = msg.entry.payload().data().len();
-            if payload_len > MAX_MSG_PAYLOAD_BYTES {
-                self.last_error = Some(DaAccumulationError::MessagePayloadTooLarge {
-                    provided: payload_len,
-                    max: MAX_MSG_PAYLOAD_BYTES,
-                });
-                continue;
-            }
-            let entry = DaMessageEntry::from(msg.entry.clone());
+            let entry = msg.entry.clone();
             self.inbox_messages
                 .entry(msg.account_id)
                 .or_default()
@@ -200,25 +194,10 @@ impl EpochDaAccumulator {
         &mut self,
         serial: AccountSerial,
         account_id: AccountId,
-        init: &AccountInit,
+        _init: &AccountInit,
     ) {
-        if let Some(first_serial) = self.first_new_serial {
-            let expected =
-                AccountSerial::new(*first_serial.inner() + self.new_account_records.len() as u32);
-            if serial != expected && self.last_error.is_none() {
-                self.last_error = Some(DaAccumulationError::NewAccountSerialGap(expected, serial));
-            }
-        } else {
+        if self.first_new_serial.is_none() {
             self.first_new_serial = Some(serial);
-        }
-        if let AccountTypeInit::Snark(init) = &init.type_state {
-            let vk_len = init.update_vk.as_slice().len();
-            if vk_len > MAX_VK_BYTES {
-                self.last_error = Some(DaAccumulationError::VkTooLarge {
-                    provided: vk_len,
-                    max: MAX_VK_BYTES,
-                });
-            }
         }
         self.new_account_ids.insert(account_id);
         self.new_account_records
@@ -232,9 +211,6 @@ impl EpochDaAccumulator {
 
     /// Finalizes the epoch by building the DA blob.
     fn finalize<S: IStateAccessor>(&mut self, state: &S) -> Result<Vec<u8>, DaAccumulationError> {
-        if let Some(err) = self.last_error.take() {
-            return Err(err);
-        }
         let global_diff = self.build_global_diff()?;
         let ledger_diff = self.build_ledger_diff(state)?;
         let state_diff = StateDiff::new(global_diff, ledger_diff);
@@ -296,6 +272,15 @@ impl EpochDaAccumulator {
                 .map_err(|_| DaAccumulationError::MissingAccount(entry.account_id))?
                 .ok_or(DaAccumulationError::MissingAccount(entry.account_id))?;
             let init = account_init_from_state(post)?;
+            if let AccountTypeInit::Snark(init) = &init.type_state {
+                let vk_len = init.update_vk.as_slice().len();
+                if vk_len > MAX_VK_BYTES {
+                    return Err(DaAccumulationError::VkTooLarge {
+                        provided: vk_len,
+                        max: MAX_VK_BYTES,
+                    });
+                }
+            }
             new_accounts.push(NewAccountEntry::new(entry.account_id, init));
         }
 
@@ -322,12 +307,12 @@ impl EpochDaAccumulator {
             let diff = match pre.ty {
                 AccountTypeId::Empty => AccountDiff::new_empty(balance),
                 AccountTypeId::Snark => {
-                    let snark_state = self.build_snark_diff(pre, post, *account_id)?;
+                    let snark_state = self.build_snark_diff(state, pre, post, *account_id)?;
                     AccountDiff::new_snark(balance, snark_state)
                 }
             };
 
-            if <AccountDiff as DaWrite>::is_default(&diff) {
+            if diff.is_default() {
                 continue;
             }
 
@@ -348,8 +333,9 @@ impl EpochDaAccumulator {
     }
 
     /// Builds the snark account diff for the epoch.
-    fn build_snark_diff<T: IAccountState>(
+    fn build_snark_diff<S: IStateAccessor, T: IAccountState>(
         &self,
+        state: &S,
         pre: &AccountSnapshot,
         post: &T,
         account_id: AccountId,
@@ -362,17 +348,18 @@ impl EpochDaAccumulator {
             .as_snark_account()
             .map_err(|_| DaAccumulationError::MissingAccount(account_id))?;
         let post_seq = *post_snark.seqno().inner();
+        let post_next_read = post_snark.next_inbox_msg_idx();
 
         let pre_seq = pre.snark.as_ref().map(|s| s.seq_no).unwrap_or(0);
+        let pre_next_read = pre.snark.as_ref().map(|s| s.next_msg_read_idx).unwrap_or(0);
         let mut seq_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(pre_seq);
         seq_builder.set(post_seq)?;
         let seq_no = seq_builder.into_write()?;
 
-        let proof_state = if let Some(updates) = self.snark_updates.get(&account_id) {
+        let inner_state_root = if let Some(updates) = self.snark_updates.get(&account_id) {
             if let Some(last) = updates.last() {
                 let state = last.state();
-                let next_read = last.next_read_idx();
-                DaRegister::new_set(DaProofState::new(state, next_read))
+                DaRegister::new_set(state)
             } else {
                 DaRegister::new_unset()
             }
@@ -380,10 +367,31 @@ impl EpochDaAccumulator {
             DaRegister::new_unset()
         };
 
+        let mut next_read_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(pre_next_read);
+        next_read_builder.set(post_next_read)?;
+        let next_msg_read_idx = next_read_builder.into_write()?;
+
         let mut inbox = strata_da_framework::DaLinacc::<InboxBuffer>::new();
         if let Some(msgs) = self.inbox_messages.get(&account_id) {
             for msg in msgs {
-                if !inbox.append_entry(msg.clone()) {
+                let payload_len = msg.payload().data().len();
+                if payload_len > MAX_MSG_PAYLOAD_BYTES {
+                    return Err(DaAccumulationError::MessagePayloadTooLarge {
+                        provided: payload_len,
+                        max: MAX_MSG_PAYLOAD_BYTES,
+                    });
+                }
+
+                let source_id = msg.source();
+                let source_serial = state
+                    .get_account_state(source_id)
+                    .map_err(|_| DaAccumulationError::MissingAccount(source_id))?
+                    .ok_or(DaAccumulationError::MissingAccount(source_id))?
+                    .serial();
+                let entry =
+                    DaMessageEntry::new(source_serial, msg.incl_epoch(), msg.payload().clone());
+
+                if !inbox.append_entry(entry) {
                     return Err(DaAccumulationError::Builder(
                         strata_da_framework::BuilderError::OutOfBoundsValue,
                     ));
@@ -391,7 +399,12 @@ impl EpochDaAccumulator {
             }
         }
 
-        Ok(SnarkAccountDiff::new(seq_no, proof_state, inbox))
+        Ok(SnarkAccountDiff::new(
+            seq_no,
+            inner_state_root,
+            next_msg_read_idx,
+            inbox,
+        ))
     }
 }
 
@@ -429,24 +442,19 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     }
 
     /// Returns the next completed epoch DA blob, if any.
-    pub fn take_completed_epoch_da_blob(&mut self) -> Option<Vec<u8>> {
+    pub fn take_completed_epoch_da_blob(&mut self) -> Result<Option<Vec<u8>>, DaAccumulationError> {
         if !self.da_tracking_enabled {
-            return None;
+            return Ok(None);
         }
 
         let mut acc = take(&mut self.epoch_acc);
         match acc.finalize(&self.inner) {
-            Ok(blob) => Some(blob),
+            Ok(blob) => Ok(Some(blob)),
             Err(err) => {
-                self.epoch_acc.last_error = Some(err);
-                None
+                self.epoch_acc = acc;
+                Err(err)
             }
         }
-    }
-
-    /// Returns the last DA accumulation error, if any.
-    pub fn last_error(&self) -> Option<&DaAccumulationError> {
-        self.epoch_acc.last_error.as_ref()
     }
 }
 
