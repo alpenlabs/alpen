@@ -14952,7 +14952,6 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-codec",
- "strata-codec-utils",
  "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",

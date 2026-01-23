@@ -16,7 +16,7 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaBlobV1};
+use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaPayloadV1};
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
 use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -813,7 +813,7 @@ fn test_account_diffs_ordered_by_serial() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     let diffs = blob.state_diff.ledger.account_diffs.entries();
     assert!(
@@ -848,7 +848,7 @@ fn test_new_account_post_state_encoded() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     let new_accounts = blob.state_diff.ledger.new_accounts.entries();
     assert_eq!(new_accounts.len(), 1);
@@ -879,7 +879,7 @@ fn test_new_account_vk_persisted_from_ol_state() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     let new_accounts = blob.state_diff.ledger.new_accounts.entries();
     assert_eq!(new_accounts.len(), 1);
@@ -915,7 +915,7 @@ fn test_take_resets_accumulator() {
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
-    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
 }
