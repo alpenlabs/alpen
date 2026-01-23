@@ -104,6 +104,13 @@ impl AccountSnapshot {
     }
 }
 
+/// Minimal tracking data for a newly created account.
+#[derive(Clone, Debug)]
+struct NewAccountRecord {
+    serial: AccountSerial,
+    account_id: AccountId,
+}
+
 /// Per-epoch accumulator of DA writes before encoding.
 #[derive(Default, Debug)]
 struct EpochDaAccumulator {
@@ -116,8 +123,8 @@ struct EpochDaAccumulator {
     /// First serial assigned in this epoch, used to enforce contiguity.
     first_new_serial: Option<AccountSerial>,
 
-    /// New account entries created during the epoch.
-    new_accounts: Vec<NewAccountEntry>,
+    /// New account records created during the epoch.
+    new_account_records: Vec<NewAccountRecord>,
 
     /// Account IDs created during the epoch.
     new_account_ids: BTreeSet<AccountId>,
@@ -189,17 +196,22 @@ impl EpochDaAccumulator {
     }
 
     /// Records a new account.
-    fn record_new_account(&mut self, serial: AccountSerial, entry: NewAccountEntry) {
+    fn record_new_account(
+        &mut self,
+        serial: AccountSerial,
+        account_id: AccountId,
+        init: &AccountInit,
+    ) {
         if let Some(first_serial) = self.first_new_serial {
             let expected =
-                AccountSerial::new(*first_serial.inner() + self.new_accounts.len() as u32);
+                AccountSerial::new(*first_serial.inner() + self.new_account_records.len() as u32);
             if serial != expected && self.last_error.is_none() {
                 self.last_error = Some(DaAccumulationError::NewAccountSerialGap(expected, serial));
             }
         } else {
             self.first_new_serial = Some(serial);
         }
-        if let AccountTypeInit::Snark(init) = &entry.init.type_state {
+        if let AccountTypeInit::Snark(init) = &init.type_state {
             let vk_len = init.update_vk.as_slice().len();
             if vk_len > MAX_VK_BYTES {
                 self.last_error = Some(DaAccumulationError::VkTooLarge {
@@ -208,8 +220,9 @@ impl EpochDaAccumulator {
                 });
             }
         }
-        self.new_account_ids.insert(entry.account_id);
-        self.new_accounts.push(entry);
+        self.new_account_ids.insert(account_id);
+        self.new_account_records
+            .push(NewAccountRecord { serial, account_id });
     }
 
     /// Records a touched account.
@@ -261,7 +274,7 @@ impl EpochDaAccumulator {
         &self,
         state: &S,
     ) -> Result<LedgerDiff, DaAccumulationError> {
-        let mut new_records = self.new_accounts.clone();
+        let mut new_records = self.new_account_records.clone();
         new_records.sort_by_key(|entry| entry.serial);
 
         if let Some(mut expected) = self.first_new_serial {
@@ -283,7 +296,7 @@ impl EpochDaAccumulator {
                 .map_err(|_| DaAccumulationError::MissingAccount(entry.account_id))?
                 .ok_or(DaAccumulationError::MissingAccount(entry.account_id))?;
             let init = account_init_from_state(post)?;
-            new_accounts.push(NewAccountEntry::new(entry.serial, entry.account_id, init));
+            new_accounts.push(NewAccountEntry::new(entry.account_id, init));
         }
 
         let mut account_diffs = Vec::new();
@@ -555,8 +568,7 @@ where
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 
         if let Some(init) = init {
-            let entry = NewAccountEntry::new(serial, id, init);
-            self.epoch_acc.record_new_account(serial, entry);
+            self.epoch_acc.record_new_account(serial, id, &init);
         }
 
         Ok(serial)
