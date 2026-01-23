@@ -3,7 +3,10 @@
 //! These tests verify that multiple wrapper layers can be composed together
 //! and work correctly.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::LazyLock,
+};
 
 use strata_acct_types::{
     AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload,
@@ -22,12 +25,16 @@ use strata_ol_da::{
 };
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::{
     BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,
     test_utils::*,
 };
+
+static ALWAYS_ACCEPT_PREDICATE_KEY: LazyLock<PredicateKey> =
+    LazyLock::new(PredicateKey::always_accept);
 
 // =============================================================================
 // IndexerState over WriteTrackingState tests
@@ -522,6 +529,14 @@ impl ISnarkAccountState for TestSnarkState {
     fn inbox_mmr(&self) -> &Mmr64 {
         &self.inbox_mmr
     }
+
+    fn verifying_key(&self) -> &PredicateKey {
+        &ALWAYS_ACCEPT_PREDICATE_KEY
+    }
+
+    fn next_inbox_msg_idx(&self) -> u64 {
+        0
+    }
 }
 
 impl ISnarkAccountStateMut for TestSnarkState {
@@ -752,6 +767,10 @@ impl IStateAccessor for TestState {
     fn compute_state_root(&self) -> strata_acct_types::AcctResult<Buf32> {
         Ok(Buf32::zero())
     }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        todo!()
+    }
 }
 
 #[test]
@@ -866,7 +885,11 @@ fn test_new_account_vk_persisted_from_ol_state() {
     let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
     let account_id = test_account_id(10);
     let update_vk = vec![9u8; 8];
-    let snark_state = OLSnarkAccountState::new_fresh(test_hash(4), update_vk.clone());
+    let snark_state = OLSnarkAccountState::new_fresh(
+        PredicateKey::always_accept(),
+        test_hash(4),
+        update_vk.clone(),
+    );
     let new_acct = NewAccountData::new(
         BitcoinAmount::from_sat(100),
         AccountTypeState::Snark(snark_state),
