@@ -14793,7 +14793,6 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-identifiers",
- "strata-ol-chain-types-new",
  "strata-predicate",
  "strata-snark-acct-types",
 ]

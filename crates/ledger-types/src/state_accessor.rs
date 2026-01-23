@@ -1,7 +1,6 @@
 use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ol_chain_types_new::OLLog;
 
 use crate::account::{IAccountState, IAccountStateMut, NewAccountData};
 
@@ -110,19 +109,5 @@ pub trait IStateAccessor {
     fn record_withdrawal_intent(&mut self, _amt: u64, _dest: Vec<u8>) {
         // Default implementation does nothing - only implementations that manage
         // the legacy chainstate need to implement this
-    }
-
-    /// Enables or disables DA tracking on a state accessor.
-    ///
-    /// Default implementation is a no-op for accessors that do not track DA writes.
-    fn set_da_tracking_enabled(&mut self, _enabled: bool) {
-        // Default implementation does nothing.
-    }
-
-    /// Records output logs for inclusion in the DA blob.
-    ///
-    /// Default implementation is a no-op for accessors that do not track DA logs.
-    fn record_output_logs(&mut self, _logs: &[OLLog]) {
-        // Default implementation does nothing.
     }
 }

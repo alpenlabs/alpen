@@ -124,46 +124,24 @@ impl<T: Codec> Codec for U16LenList<T> {
 pub struct OLDaBlobV1 {
     /// State diff for the epoch.
     pub state_diff: StateDiff,
-
-    /// Withdrawal intents encoded into the blob.
-    pub withdrawal_intents: WithdrawalIntents,
-
-    /// Ordered output logs emitted during execution.
-    pub output_logs: OutputLogs,
 }
 
 impl OLDaBlobV1 {
     /// Creates a new [`OlDaBlobV1`] from a state diff, withdrawal intents, and output logs.
-    pub fn new(
-        state_diff: StateDiff,
-        withdrawal_intents: WithdrawalIntents,
-        output_logs: OutputLogs,
-    ) -> Self {
-        Self {
-            state_diff,
-            withdrawal_intents,
-            output_logs,
-        }
+    pub fn new(state_diff: StateDiff) -> Self {
+        Self { state_diff }
     }
 }
 
 impl Codec for OLDaBlobV1 {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.state_diff.encode(enc)?;
-        self.withdrawal_intents.encode(enc)?;
-        self.output_logs.encode(enc)?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let state_diff = StateDiff::decode(dec)?;
-        let withdrawal_intents = WithdrawalIntents::decode(dec)?;
-        let output_logs = OutputLogs::decode(dec)?;
-        Ok(Self {
-            state_diff,
-            withdrawal_intents,
-            output_logs,
-        })
+        Ok(Self { state_diff })
     }
 }
 
