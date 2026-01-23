@@ -8,21 +8,18 @@ use std::{
 use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
-    DaBuilder, DaCounterBuilder, DaQueueBuilder, DaRegister, DaWrite, counter_schemes::CtrU64ByU16,
-    encode_to_vec,
+    DaBuilder, DaCounterBuilder, DaRegister, DaWrite, counter_schemes::CtrU64ByU16, encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
     AccountTypeState, AccountTypeStateRef, IAccountState, IAccountStateMut, ISnarkAccountState,
     IStateAccessor, NewAccountData,
 };
-use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry,
-    OLDaPayloadV1, PendingWithdrawQueue, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
+    GlobalStateDiff, InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES,
+    NewAccountEntry, OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
 };
-use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use thiserror::Error;
 
 use crate::{
@@ -56,10 +53,6 @@ pub enum DaAccumulationError {
     /// VK size exceeds maximum allowed.
     #[error("da accumulator vk too large: {provided} bytes (max {max})")]
     VkTooLarge { provided: usize, max: usize },
-
-    /// Withdrawal intent destination exceeds maximum allowed.
-    #[error("da accumulator withdrawal dest too large: {provided} bytes (max {max})")]
-    WithdrawalIntentTooLarge { provided: usize, max: usize },
 
     /// Message payload exceeds maximum allowed.
     #[error("da accumulator message payload too large: {provided} bytes (max {max})")]
@@ -141,15 +134,6 @@ struct EpochDaAccumulator {
     /// Snark state updates recorded during the epoch.
     snark_updates: BTreeMap<AccountId, Vec<SnarkAcctStateUpdate>>,
 
-    /// Withdrawal intents collected during the epoch.
-    withdrawal_intents: Vec<SimpleWithdrawalIntentLogData>,
-
-    /// Pending withdrawals queue snapshot at the start of the epoch.
-    pending_withdraw_source: PendingWithdrawQueue,
-
-    /// Pending withdrawals queue front increments recorded during the epoch.
-    pending_withdraw_front_incr: u16,
-
     /// Last error encountered while building a blob.
     last_error: Option<DaAccumulationError>,
 }
@@ -202,32 +186,6 @@ impl EpochDaAccumulator {
                 .or_default()
                 .push(update.clone());
         }
-    }
-
-    /// Records a withdrawal intent.
-    fn record_withdrawal_intent(&mut self, intent: SimpleWithdrawalIntentLogData) {
-        self.withdrawal_intents.push(intent);
-    }
-
-    /// Records a pending withdrawal queue snapshot.
-    fn record_pending_withdraw_queue(&mut self, pending: PendingWithdrawQueue) {
-        self.pending_withdraw_source = pending;
-    }
-
-    /// Records a pending withdrawals front increment.
-    fn record_pending_withdraw_front_incr(&mut self, incr: u16) {
-        if incr == 0 {
-            return;
-        }
-        let Some(new_total) = self.pending_withdraw_front_incr.checked_add(incr) else {
-            if self.last_error.is_none() {
-                self.last_error = Some(DaAccumulationError::Builder(
-                    strata_da_framework::BuilderError::OutOfBoundsValue,
-                ));
-            }
-            return;
-        };
-        self.pending_withdraw_front_incr = new_total;
     }
 
     /// Records a new account.
@@ -286,7 +244,7 @@ impl EpochDaAccumulator {
     }
 
     /// Builds the global state diff for the epoch.
-    fn build_global_diff(&self) -> Result<strata_ol_da::GlobalStateDiff, DaAccumulationError> {
+    fn build_global_diff(&self) -> Result<GlobalStateDiff, DaAccumulationError> {
         let cur_slot = if let (Some(base), Some(final_slot)) = (self.slot_base, self.slot_final) {
             let mut builder = DaCounterBuilder::<CtrU64ByU16>::from_source(base);
             builder.set(final_slot)?;
@@ -295,27 +253,7 @@ impl EpochDaAccumulator {
             strata_da_framework::DaCounter::new_unchanged()
         };
 
-        let mut queue_builder = DaQueueBuilder::<PendingWithdrawQueue>::from_source(
-            self.pending_withdraw_source.clone(),
-        );
-        for intent in &self.withdrawal_intents {
-            if !queue_builder.append_entry(intent.clone()) {
-                return Err(DaAccumulationError::Builder(
-                    strata_da_framework::BuilderError::OutOfBoundsValue,
-                ));
-            }
-        }
-        if !queue_builder.add_front_incr(self.pending_withdraw_front_incr) {
-            return Err(DaAccumulationError::Builder(
-                strata_da_framework::BuilderError::OutOfBoundsValue,
-            ));
-        }
-        let pending_withdraws = queue_builder.into_write()?;
-
-        Ok(strata_ol_da::GlobalStateDiff::new(
-            cur_slot,
-            pending_withdraws,
-        ))
+        Ok(GlobalStateDiff::new(cur_slot))
     }
 
     /// Builds the ledger diff for the epoch.
@@ -366,8 +304,15 @@ impl EpochDaAccumulator {
                 .ok_or(DaAccumulationError::MissingAccount(*account_id))?;
 
             let balance = DaRegister::compare(&pre.balance, &post.balance());
-            let snark_state = self.build_snark_diff(pre, post, *account_id)?;
-            let diff = AccountDiff::new(balance, snark_state);
+
+            // Build the appropriate diff variant based on account type
+            let diff = match pre.ty {
+                AccountTypeId::Empty => AccountDiff::new_empty(balance),
+                AccountTypeId::Snark => {
+                    let snark_state = self.build_snark_diff(pre, post, *account_id)?;
+                    AccountDiff::new_snark(balance, snark_state)
+                }
+            };
 
             if <AccountDiff as DaWrite>::is_default(&diff) {
                 continue;
@@ -489,20 +434,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     /// Returns the last DA accumulation error, if any.
     pub fn last_error(&self) -> Option<&DaAccumulationError> {
         self.epoch_acc.last_error.as_ref()
-    }
-
-    /// Records the pending withdrawal queue snapshot for the epoch.
-    pub fn record_pending_withdraw_queue(&mut self, queue: PendingWithdrawQueue) {
-        if self.da_tracking_enabled {
-            self.epoch_acc.record_pending_withdraw_queue(queue);
-        }
-    }
-
-    /// Records a front increment for the pending withdrawal queue.
-    pub fn record_pending_withdraw_front_incr(&mut self, incr: u16) {
-        if self.da_tracking_enabled {
-            self.epoch_acc.record_pending_withdraw_front_incr(incr);
-        }
     }
 }
 
@@ -645,31 +576,6 @@ where
 
     fn asm_manifests_mmr(&self) -> &Mmr64 {
         self.inner.asm_manifests_mmr()
-    }
-
-    fn record_withdrawal_intent(&mut self, amt: u64, dest: Vec<u8>) {
-        self.inner.record_withdrawal_intent(amt, dest.clone());
-
-        if !self.da_tracking_enabled {
-            return;
-        }
-
-        let dest_len = dest.len();
-
-        let Some(intent) = SimpleWithdrawalIntentLogData::new(amt, dest) else {
-            #[cfg(feature = "tracing")]
-            tracing::warn!("failed to record withdrawal intent (dest too large)");
-            return;
-        };
-
-        if dest_len > MAX_WITHDRAWAL_DESC_LEN {
-            self.epoch_acc.last_error = Some(DaAccumulationError::WithdrawalIntentTooLarge {
-                provided: dest_len,
-                max: MAX_WITHDRAWAL_DESC_LEN,
-            });
-        }
-
-        self.epoch_acc.record_withdrawal_intent(intent);
     }
 }
 
