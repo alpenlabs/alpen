@@ -15,6 +15,7 @@ pub struct PrivateInput {
     chunk_transition_ssz: Vec<u8>,
     raw_chunk: RawChunkData,
     raw_prev_header: Vec<u8>,
+    raw_partial_pre_state: Vec<u8>,
 }
 
 impl PrivateInput {
@@ -22,11 +23,13 @@ impl PrivateInput {
         chunk_transition: ChunkTransition,
         raw_chunk: RawChunkData,
         raw_prev_header: Vec<u8>,
+        raw_partial_pre_state: Vec<u8>,
     ) -> Self {
         Self {
             chunk_transition_ssz: chunk_transition.as_ssz_bytes(),
             raw_chunk,
             raw_prev_header,
+            raw_partial_pre_state,
         }
     }
 
@@ -45,6 +48,10 @@ impl PrivateInput {
         &self.raw_prev_header
     }
 
+    pub fn raw_partial_pre_state(&self) -> &[u8] {
+        &self.raw_partial_pre_state
+    }
+
     /// Tries to decode the chunk transition as its type.
     pub fn try_decode_chunk_transition(&self) -> Result<ChunkTransition, DecodeError> {
         ChunkTransition::from_ssz_bytes(self.chunk_transition_ssz())
@@ -55,6 +62,13 @@ impl PrivateInput {
         &self,
     ) -> Result<<E::Block as ExecBlock>::Header, CodecError> {
         strata_codec::decode_buf_exact(self.raw_prev_header())
+    }
+
+    /// Tries to decode the raw partial prestate for an execution environment.
+    pub fn try_decode_pre_state<E: ExecutionEnvironment>(
+        &self,
+    ) -> Result<E::PartialState, CodecError> {
+        strata_codec::decode_buf_exact(self.raw_partial_pre_state())
     }
 }
 
@@ -92,7 +106,7 @@ impl RawChunkData {
 }
 
 impl ArchivedRawChunkData {
-    pub fn chunks(&self) -> &[ArchivedRawBlockData] {
+    pub fn blocks(&self) -> &[ArchivedRawBlockData] {
         &self.blocks
     }
 }
