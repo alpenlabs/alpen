@@ -1,3 +1,4 @@
+use alpen_reth_evm::address_to_subject;
 use strata_bridge_types::WithdrawalIntent;
 use strata_ol_chain_types::ExecSegment;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload, l1::BitcoinAmount};
@@ -27,7 +28,7 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
             Op::Deposit(ELDepositData::new(
                 request.index,
                 gwei_to_sats(request.amount),
-                request.address.as_slice().to_vec(),
+                address_to_subject(request.address),
             ))
         })
         .collect::<Vec<_>>();

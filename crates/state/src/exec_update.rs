@@ -6,6 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_csm_types::BlobSpec;
+use strata_identifiers::SubjectId;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload};
 
 use crate::prelude::StateQueue;
@@ -179,7 +180,7 @@ pub fn construct_ops_from_deposit_intents(
         el_ops.push(Op::Deposit(ELDepositData::new(
             idx,
             pending_deposit.amt(),
-            pending_deposit.dest_ident().to_vec(),
+            *pending_deposit.dest_ident(),
         )));
     }
     el_ops
@@ -195,13 +196,12 @@ pub struct ELDepositData {
     /// Amount in L1 native asset.  For Bitcoin this is sats.
     amt: u64,
 
-    /// Dest addr encoded in a portable format, assumed to be valid but must be
-    /// checked by EL before committing to building block.
-    dest_addr: Vec<u8>,
+    /// Destination subject identifier within the execution environment.
+    dest_addr: SubjectId,
 }
 
 impl ELDepositData {
-    pub fn new(intent_idx: u64, amt: u64, dest_addr: Vec<u8>) -> Self {
+    pub fn new(intent_idx: u64, amt: u64, dest_addr: SubjectId) -> Self {
         Self {
             intent_idx,
             amt,
@@ -213,7 +213,7 @@ impl ELDepositData {
         self.amt
     }
 
-    pub fn dest_addr(&self) -> &[u8] {
+    pub fn dest_addr(&self) -> &SubjectId {
         &self.dest_addr
     }
 

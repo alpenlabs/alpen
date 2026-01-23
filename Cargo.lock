@@ -1037,6 +1037,7 @@ dependencies = [
  "sled",
  "strata-asm-txs-bridge-v1",
  "strata-cli-common",
+ "strata-identifiers",
  "strata-l1-txfmt",
  "strata-params",
  "strata-primitives",
@@ -1101,6 +1102,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
+ "alpen-reth-evm",
  "bitcoin-bosd",
  "eyre",
  "strata-acct-types",
@@ -1315,12 +1317,14 @@ dependencies = [
  "alloy-consensus",
  "alloy-sol-types",
  "alpen-reth-primitives",
+ "proptest",
  "reth-evm",
  "reth-primitives",
  "revm",
  "revm-primitives",
  "secp256k1 0.29.1",
  "strata-crypto",
+ "strata-identifiers",
  "strata-primitives",
 ]
 
@@ -13857,6 +13861,7 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-codec",
  "strata-l1-txfmt",
  "strata-primitives",
  "thiserror 2.0.18",
@@ -13980,6 +13985,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "borsh",
  "serde",
+ "strata-identifiers",
  "strata-primitives",
 ]
 
@@ -14586,6 +14592,7 @@ dependencies = [
  "anyhow",
  "strata-common",
  "strata-db-types",
+ "strata-identifiers",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
@@ -14684,6 +14691,7 @@ dependencies = [
  "ssz_types",
  "strata-codec",
  "strata-test-utils-ssz",
+ "thiserror 2.0.18",
  "tree_hash 0.12.3",
  "tree_hash_derive 0.12.3",
  "zeroize",
@@ -15368,6 +15376,7 @@ dependencies = [
  "strata-asm-stf",
  "strata-bridge-types",
  "strata-csm-types",
+ "strata-identifiers",
  "strata-primitives",
 ]
 

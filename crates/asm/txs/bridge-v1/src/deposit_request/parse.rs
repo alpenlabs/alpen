@@ -1,5 +1,4 @@
 use bitcoin::Transaction;
-use strata_codec::decode_buf_exact;
 use strata_l1_txfmt::extract_tx_magic_and_tag;
 
 use crate::{
@@ -12,8 +11,8 @@ use crate::{
 ///
 /// Parses a deposit request transaction following the SPS-50 specification and extracts the
 /// decoded auxiliary data ([`DrtHeaderAux`]) along with the deposit amount. The
-/// auxiliary data is encoded with [`strata_codec::Codec`] and includes the recovery public key
-/// and destination address.
+/// auxiliary data includes the recovery public key (first 32 bytes) and destination
+/// descriptor (remaining bytes).
 ///
 /// # Errors
 ///
@@ -23,9 +22,14 @@ pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, TxStructureErro
     let (_magic, tag) = extract_tx_magic_and_tag(tx)
         .map_err(|e| TxStructureError::invalid_tx_format(BridgeTxType::DepositRequest, e))?;
 
-    // Parse auxiliary data using DrtHeaderAux
-    let aux_data: DrtHeaderAux = decode_buf_exact(tag.aux_data())
-        .map_err(|e| TxStructureError::invalid_auxiliary_data(BridgeTxType::DepositRequest, e))?;
+    // Parse auxiliary data by splitting: first 32 bytes are recovery_pk, remaining bytes are
+    // destination
+    let aux_data = DrtHeaderAux::from_aux_data(tag.aux_data()).map_err(|_e| {
+        TxStructureError::invalid_auxiliary_data(
+            BridgeTxType::DepositRequest,
+            strata_codec::CodecError::MalformedField("deposit request aux data"),
+        )
+    })?;
 
     // Extract the deposit request output (second output at index 1)
     let drt_output = tx
@@ -47,7 +51,6 @@ pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, TxStructureErro
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
 
     use bitcoin::Transaction;
     use strata_primitives::l1::BitcoinAmount;
@@ -61,7 +64,7 @@ mod tests {
         test_utils::{create_connected_drt_and_dt, create_test_operators, mutate_aux_data},
     };
 
-    const AUX_LEN: usize = mem::size_of::<DrtHeaderAux>();
+    const MIN_AUX_LEN: usize = 32;
 
     fn create_drt_tx_with_info() -> (DepositRequestInfo, Transaction) {
         let mut arb = ArbitraryGenerator::new();
@@ -106,17 +109,7 @@ mod tests {
     fn test_parse_invalid_aux() {
         let (_, mut tx) = create_drt_tx_with_info();
 
-        let larger_aux = [0u8; AUX_LEN + 1].to_vec();
-        mutate_aux_data(&mut tx, larger_aux);
-
-        let err = parse_drt(&tx).unwrap_err();
-        assert_eq!(err.tx_type(), BridgeTxType::DepositRequest);
-        assert!(matches!(
-            err.kind(),
-            TxStructureErrorKind::InvalidAuxiliaryData(_)
-        ));
-
-        let smaller_aux = [0u8; AUX_LEN - 1].to_vec();
+        let smaller_aux = [0u8; MIN_AUX_LEN - 1].to_vec();
         mutate_aux_data(&mut tx, smaller_aux);
 
         let err = parse_drt(&tx).unwrap_err();
@@ -125,5 +118,9 @@ mod tests {
             err.kind(),
             TxStructureErrorKind::InvalidAuxiliaryData(_)
         ));
+
+        // REVIEW: Since we don't parse the deposit destination and treat it as a `Vec<u8>`, any
+        // SPS-50 auxiliary data with length ≥ [`MIN_AUX_LEN`] is considered valid at the
+        // ASM level, including empty destinations (32 bytes of just recovery_pk).
     }
 }

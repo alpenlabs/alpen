@@ -20,6 +20,7 @@ use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_identifiers::{AccountSerial, DepositDescriptor, SubjectIdBytes};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_primitives::crypto::even_kp;
 
@@ -111,7 +112,16 @@ fn prepare_deposit_request(
             .address
     };
 
-    let header_aux = DrtHeaderAux::new(recovery_public_key.serialize(), alpen_address.into());
+    let alpen_subject_bytes =
+        SubjectIdBytes::try_new(alpen_address.to_vec()).expect("must be valid subject bytes");
+    // Legacy: deposit intent supports a single execution environment (zero)
+    let deposit_descriptor = DepositDescriptor::new(AccountSerial::zero(), alpen_subject_bytes)
+        .expect("AccountSerial::zero() is always within valid range");
+    let header_aux = DrtHeaderAux::new(
+        recovery_public_key.serialize(),
+        deposit_descriptor.encode_to_varvec(),
+    )
+    .expect("header aux creation should succeed");
     let deposit_output = TxOut {
         value: bridge_in_amount,
         script_pubkey: bridge_in_address.script_pubkey(),

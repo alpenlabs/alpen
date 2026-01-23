@@ -77,6 +77,10 @@ pub enum EnvError {
     /// There was a tx that was invalid in a block, for some reason.
     #[error("invalid tx in a block")]
     InvalidBlockTx,
+
+    /// A deposit has an invalid destination address.
+    #[error("invalid deposit address: {0}")]
+    InvalidDepositAddress(strata_acct_types::SubjectId),
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;

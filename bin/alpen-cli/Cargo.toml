@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 strata-asm-txs-bridge-v1.workspace = true
 strata-cli-common.workspace = true
+strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true

@@ -8,9 +8,9 @@ use alloy_rpc_types::{
     },
     Withdrawal,
 };
-use alpen_reth_evm::constants::COINBASE_ADDRESS;
+use alpen_reth_evm::{address_to_subject, constants::COINBASE_ADDRESS, subject_to_address};
 use alpen_reth_node::AlpenPayloadAttributes;
-use revm_primitives::{Address, B256};
+use revm_primitives::B256;
 use strata_bridge_types::WithdrawalIntent;
 use strata_db_types::DbError;
 use strata_eectl::{
@@ -30,11 +30,6 @@ use crate::{
     el_payload::{make_update_input_from_payload_and_ops, ElPayload},
     http_client::EngineRpc,
 };
-
-fn address_from_slice(slice: &[u8]) -> Option<Address> {
-    let slice: Option<[u8; 20]> = slice.try_into().ok();
-    slice.map(Address::from)
-}
 
 fn sats_to_gwei(sats: u64) -> Option<u64> {
     // 1 BTC = 10^8 sats = 10^9 gwei
@@ -121,9 +116,8 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
             .map(|op| match op {
                 Op::Deposit(deposit_data) => Ok(Withdrawal {
                     index: deposit_data.intent_idx(),
-                    address: address_from_slice(deposit_data.dest_addr()).ok_or_else(|| {
-                        EngineError::InvalidAddress(deposit_data.dest_addr().to_vec())
-                    })?,
+                    address: subject_to_address(deposit_data.dest_addr())
+                        .ok_or_else(|| EngineError::InvalidAddress(*deposit_data.dest_addr()))?,
                     amount: sats_to_gwei(deposit_data.amt())
                         .ok_or(EngineError::AmountConversion(deposit_data.amt()))?,
                     ..Default::default()
@@ -182,7 +176,7 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
                 Op::Deposit(ELDepositData::new(
                     withdrawal.index,
                     gwei_to_sats(withdrawal.amount),
-                    withdrawal.address.as_slice().to_vec(),
+                    address_to_subject(withdrawal.address),
                 ))
             })
             .collect::<Vec<_>>();
@@ -225,15 +219,17 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
         let withdrawals: Vec<Withdrawal> = payload
             .ops()
             .iter()
-            .filter_map(|op| match op {
-                Op::Deposit(deposit_data) => Some(Withdrawal {
+            .map(|op| match op {
+                Op::Deposit(deposit_data) => Ok(Withdrawal {
                     index: deposit_data.intent_idx(),
-                    address: address_from_slice(deposit_data.dest_addr())?,
-                    amount: sats_to_gwei(deposit_data.amt())?,
+                    address: subject_to_address(deposit_data.dest_addr())
+                        .ok_or_else(|| EngineError::InvalidAddress(*deposit_data.dest_addr()))?,
+                    amount: sats_to_gwei(deposit_data.amt())
+                        .ok_or(EngineError::AmountConversion(deposit_data.amt()))?,
                     validator_index: 0,
                 }),
             })
-            .collect();
+            .collect::<Result<_, EngineError>>()?;
 
         let payload_inner = ExecutionPayloadV2 {
             payload_inner: el_payload.into(),
@@ -439,7 +435,7 @@ mod tests {
     };
     use alpen_reth_node::AlpenExecutionPayloadEnvelopeV4;
     use rand::{rngs::OsRng, Rng};
-    use revm_primitives::{alloy_primitives::Bloom, Bytes, FixedBytes, U256};
+    use revm_primitives::{alloy_primitives::Bloom, Address, Bytes, FixedBytes, U256};
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
     use strata_ol_chain_types::{L2Block, L2BlockAccessory};
     use strata_primitives::buf::Buf32;

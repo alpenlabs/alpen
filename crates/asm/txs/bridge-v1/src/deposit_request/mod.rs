@@ -43,7 +43,7 @@ mod parse;
 
 pub const DRT_OUTPUT_INDEX: usize = 1;
 
-pub use aux::DrtHeaderAux;
+pub use aux::{DrtHeaderAux, DrtHeaderAuxError};
 pub use info::DepositRequestInfo;
 pub use lock::{build_deposit_request_spend_info, create_deposit_request_locking_script};
 pub use parse::parse_drt;

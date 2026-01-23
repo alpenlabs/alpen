@@ -1,5 +1,6 @@
 use strata_asm_types::L1VerificationError;
 use strata_bridge_types::OperatorIdx;
+use strata_identifiers::DepositDescriptorError;
 use strata_primitives::l1::L1BlockId;
 use strata_state::prelude::*;
 use thiserror::Error;
@@ -77,4 +78,7 @@ pub enum OpError {
 
     #[error("checkpoint data is malformed")]
     MalformedCheckpoint,
+
+    #[error("deposit descriptor is malformed")]
+    MalformedDepositDescriptor(#[from] DepositDescriptorError),
 }

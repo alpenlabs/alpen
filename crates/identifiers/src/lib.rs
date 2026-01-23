@@ -6,6 +6,7 @@ mod macros;
 mod acct;
 mod buf;
 mod cred_rule;
+mod deposit;
 mod epoch;
 mod exec;
 pub mod hash;
@@ -14,10 +15,12 @@ mod mmr;
 mod ol;
 
 pub use acct::{
-    AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SYSTEM_RESERVED_ACCTS, SubjectId,
+    AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SUBJ_ID_LEN, SYSTEM_RESERVED_ACCTS,
+    SubjectId, SubjectIdBytes,
 };
 pub use buf::{Buf20, Buf32, Buf64};
 pub use cred_rule::CredRule;
+pub use deposit::{DepositDescriptor, DepositDescriptorError};
 pub use exec::{
     EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, create_evm_extra_payload,
 };

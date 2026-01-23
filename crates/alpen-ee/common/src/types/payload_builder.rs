@@ -37,8 +37,6 @@ impl PayloadBuildAttributes {
 /// Describes an incoming deposit that should be minted.
 #[derive(Debug, Clone)]
 pub struct DepositInfo {
-    /// Deposit index.
-    index: u64,
     /// Address inside evm chain where the deposit should be minted to.
     address: Address,
     /// Amount that has been deposited.
@@ -46,16 +44,8 @@ pub struct DepositInfo {
 }
 
 impl DepositInfo {
-    pub fn new(index: u64, address: Address, amount: BitcoinAmount) -> Self {
-        Self {
-            index,
-            address,
-            amount,
-        }
-    }
-
-    pub fn index(&self) -> u64 {
-        self.index
+    pub fn new(address: Address, amount: BitcoinAmount) -> Self {
+        Self { address, amount }
     }
 
     pub fn address(&self) -> Address {
