@@ -24,6 +24,14 @@ pub struct ChunkBlock<'c, E: ExecutionEnvironment> {
 }
 
 impl<'c, E: ExecutionEnvironment> ChunkBlock<'c, E> {
+    pub fn new(inputs: &'c ExecInputs, outputs: &'c ExecOutputs, exec_block: E::Block) -> Self {
+        Self {
+            inputs,
+            outputs,
+            exec_block,
+        }
+    }
+
     pub fn inputs(&self) -> &'c ExecInputs {
         self.inputs
     }
