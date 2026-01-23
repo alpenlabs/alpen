@@ -3,10 +3,7 @@
 //! These tests verify that multiple wrapper layers can be composed together
 //! and work correctly.
 
-use std::{
-    collections::{BTreeMap, VecDeque},
-    sync::LazyLock,
-};
+use std::collections::{BTreeMap, VecDeque};
 
 use strata_acct_types::{
     AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload,
@@ -22,16 +19,13 @@ use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaBlobV1};
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
-use strata_predicate::PredicateKey;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::{
     BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,
     test_utils::*,
 };
-
-static ALWAYS_ACCEPT_PREDICATE_KEY: LazyLock<PredicateKey> =
-    LazyLock::new(PredicateKey::always_accept);
 
 // =============================================================================
 // IndexerState over WriteTrackingState tests
@@ -490,7 +484,7 @@ fn build_simple_blob() -> Vec<u8> {
 
 #[derive(Clone, Debug)]
 struct TestSnarkState {
-    update_vk: Vec<u8>,
+    update_vk: PredicateKey,
     inner_state_root: Hash,
     seqno: Seqno,
     inbox_mmr: Mmr64,
@@ -500,6 +494,7 @@ impl TestSnarkState {
     fn new(update_vk: Vec<u8>) -> Self {
         let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
         let inbox_mmr = Mmr64::from_generic(&generic_mmr);
+        let update_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk);
         Self {
             update_vk,
             inner_state_root: Hash::from([0u8; 32]),
@@ -510,6 +505,10 @@ impl TestSnarkState {
 }
 
 impl ISnarkAccountState for TestSnarkState {
+    fn update_vk(&self) -> &PredicateKey {
+        &self.update_vk
+    }
+
     fn seqno(&self) -> Seqno {
         self.seqno
     }
@@ -518,16 +517,8 @@ impl ISnarkAccountState for TestSnarkState {
         self.inner_state_root
     }
 
-    fn update_vk(&self) -> &[u8] {
-        &self.update_vk
-    }
-
     fn inbox_mmr(&self) -> &Mmr64 {
         &self.inbox_mmr
-    }
-
-    fn verifying_key(&self) -> &PredicateKey {
-        &ALWAYS_ACCEPT_PREDICATE_KEY
     }
 
     fn next_inbox_msg_idx(&self) -> u64 {
@@ -878,15 +869,10 @@ fn test_new_account_post_state_encoded() {
 fn test_new_account_vk_persisted_from_ol_state() {
     let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
     let account_id = test_account_id(10);
-    let update_vk = vec![9u8; 8];
-    let snark_state = OLSnarkAccountState::new_fresh(
-        PredicateKey::always_accept(),
-        test_hash(4),
-        update_vk.clone(),
-    );
+    let snark_state = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(4));
     let new_acct = NewAccountData::new(
         BitcoinAmount::from_sat(100),
-        AccountTypeState::Snark(snark_state),
+        AccountTypeState::Snark(snark_state.clone()),
     );
     da_state.create_new_account(account_id, new_acct).unwrap();
 
@@ -899,7 +885,10 @@ fn test_new_account_vk_persisted_from_ol_state() {
     assert_eq!(new_accounts.len(), 1);
     match &new_accounts[0].init.type_state {
         AccountTypeInit::Snark(init) => {
-            assert_eq!(init.update_vk.as_slice(), update_vk.as_slice());
+            assert_eq!(
+                init.update_vk.as_slice(),
+                snark_state.update_vk().as_buf_ref().to_bytes()
+            );
         }
         _ => panic!("expected snark account init"),
     }

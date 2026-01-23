@@ -125,7 +125,7 @@ pub trait ISnarkAccountState: Sized {
     // Proof state accessors
 
     /// Gets the verification key for this snark account.
-    fn verifying_key(&self) -> &PredicateKey;
+    fn update_vk(&self) -> &PredicateKey;
 
     /// Gets the update seqno.
     fn seqno(&self) -> Seqno;
@@ -135,9 +135,6 @@ pub trait ISnarkAccountState: Sized {
 
     /// Gets the index of the next message to be read/processed by this account.
     fn next_inbox_msg_idx(&self) -> u64;
-
-    /// Gets the update verification key bytes.
-    fn update_vk(&self) -> &[u8];
 
     // Inbox accessors
 

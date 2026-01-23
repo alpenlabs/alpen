@@ -159,8 +159,8 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     // Set the slot
     state.set_cur_slot(slot);
     // Create a fresh snark account, then update its sequence number
-    let pred_key = PredicateKey::always_accept();
-    let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::zero(), Vec::new());
+    let update_vk = PredicateKey::always_accept();
+    let snark_state = OLSnarkAccountState::new_fresh(update_vk, Hash::zero());
     let new_acct =
         NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
     state.create_new_account(account_id, new_acct).unwrap();
@@ -327,8 +327,8 @@ pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlock
     // Most tests use SnarkAccountUpdate transactions which require Snark accounts
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
-        let pred_key = PredicateKey::always_accept();
-        let snark_state = OLSnarkAccountState::new_fresh(pred_key, Hash::zero(), Vec::new());
+        let update_vk = PredicateKey::always_accept();
+        let snark_state = OLSnarkAccountState::new_fresh(update_vk, Hash::zero());
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         // Ignore errors if account already exists
@@ -384,7 +384,7 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
     for id_byte in 0..=255u8 {
         let account_id = create_test_account_id_with(id_byte);
         let snark_state =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::zero(), Vec::new());
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::zero());
         let new_acct =
             NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark_state));
         if state.create_new_account(account_id, new_acct).is_ok() {
