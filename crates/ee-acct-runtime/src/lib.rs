@@ -10,11 +10,13 @@
 mod block_assembly;
 mod exec_processing;
 mod private_input;
+mod traits;
 mod update_processing;
 mod verification_state;
 
 pub use block_assembly::apply_input_messages;
 pub use private_input::SharedPrivateInput;
+pub use traits::*;
 pub use update_processing::{
     MsgData, MsgMeta, apply_final_update_changes, apply_update_operation_unconditionally,
     verify_and_apply_update_operation,
