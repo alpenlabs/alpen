@@ -1,9 +1,9 @@
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecHeader, ExecPayload, ExecutionEnvironment,
 };
-use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs};
+use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SequenceTracker};
 
-use crate::chunk::ChunkBlock;
+use crate::chunk::{Chunk, ChunkBlock};
 
 /// Processes a block from a chunk with associated inputs, merging results into
 /// the passed state.
@@ -38,8 +38,34 @@ pub fn process_chunk_transition<E: ExecutionEnvironment>(
     ee: &E,
     state: &mut E::PartialState,
     chunk: &Chunk<'_, E>,
-    transition: &ChunkTransition,
-) -> Result<()> {
+    tsn: &ChunkTransition,
+) -> EnvResult<()> {
+    // Set up the trackers.
+    let mut deposits_tracker = SequenceTracker::new(tsn.inputs().subject_deposits());
+    let mut out_msg_tracker = SequenceTracker::new(tsn.outputs().output_messages());
+    let mut out_xfr_tracker = SequenceTracker::new(tsn.outputs().output_transfers());
+
+    for cb in chunk.blocks() {
+        // Verify the block itself.
+        process_block(ee, state, cb)?;
+
+        // Check the block's IO.
+        deposits_tracker
+            .consume_inputs(cb.inputs().subject_deposits())
+            .map_err(|_| EnvError::InconsistentChunkIo)?;
+        out_msg_tracker
+            .consume_inputs(cb.outputs().output_messages())
+            .map_err(|_| EnvError::InconsistentChunkIo)?;
+        out_xfr_tracker
+            .consume_inputs(cb.outputs().output_transfers())
+            .map_err(|_| EnvError::InconsistentChunkIo)?;
+    }
+
+    // Make sure all the trackers are consumed.
+    if !deposits_tracker.is_empty() || !out_msg_tracker.is_empty() || !out_xfr_tracker.is_empty() {
+        return Err(EnvError::InconsistentChunkIo);
+    }
+
     // TODO
     Ok(())
 }
