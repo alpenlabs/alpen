@@ -12,17 +12,14 @@ use strata_acct_types::{
     AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload,
 };
 use strata_asm_manifest_types::AsmManifest;
-use strata_da_framework::{ContextlessDaWrite, decode_buf_exact};
+use strata_da_framework::decode_buf_exact;
 use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, WtxidsRoot};
 use strata_ledger_types::{
     AccountTypeState, AccountTypeStateRef, Coin, IAccountState, IAccountStateMut,
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
-use strata_ol_da::{
-    AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaBlobV1, PendingWithdrawQueue,
-};
+use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaBlobV1};
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
 use strata_predicate::PredicateKey;
@@ -486,7 +483,6 @@ fn build_simple_blob() -> Vec<u8> {
     da_state.record_withdrawal_intent(1_000, vec![1, 2, 3]);
     da_state.record_withdrawal_intent(2_000, vec![4, 5, 6]);
 
-    da_state.set_da_tracking_enabled(false);
     da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob")
@@ -823,7 +819,6 @@ fn test_account_diffs_ordered_by_serial() {
         })
         .unwrap();
 
-    da_state.set_da_tracking_enabled(false);
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
@@ -859,7 +854,6 @@ fn test_new_account_post_state_encoded() {
         })
         .unwrap();
 
-    da_state.set_da_tracking_enabled(false);
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
@@ -896,7 +890,6 @@ fn test_new_account_vk_persisted_from_ol_state() {
     );
     da_state.create_new_account(account_id, new_acct).unwrap();
 
-    da_state.set_da_tracking_enabled(false);
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
@@ -919,7 +912,6 @@ fn test_tracking_disabled_excludes_changes() {
     let mut da_state = DaAccumulatingState::new(state);
 
     // Finalize an empty epoch and drop the blob.
-    da_state.set_da_tracking_enabled(false);
     da_state.take_completed_epoch_da_blob();
 
     // Make changes while tracking is disabled.
@@ -930,104 +922,13 @@ fn test_tracking_disabled_excludes_changes() {
         })
         .unwrap();
 
-    // Re-enable and finalize again.
-    da_state.set_da_tracking_enabled(true);
-    da_state.set_da_tracking_enabled(false);
+    // Finalize again.
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
         .expect("expected DA blob");
     let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
     assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
-}
-
-#[test]
-fn test_output_logs_recorded_in_blob() {
-    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
-    let log1 = OLLog::new(AccountSerial::from(1), vec![1, 2, 3]);
-    let log2 = OLLog::new(AccountSerial::from(2), vec![4, 5]);
-    da_state.record_output_logs(&[log1.clone(), log2.clone()]);
-
-    da_state.set_da_tracking_enabled(false);
-    let blob_bytes = da_state
-        .take_completed_epoch_da_blob()
-        .expect("expected DA blob");
-    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
-
-    let logs = blob.output_logs.entries();
-    assert_eq!(logs.len(), 2);
-    assert_eq!(logs[0], log1);
-    assert_eq!(logs[1], log2);
-}
-
-#[test]
-fn test_withdrawal_intents_consistency() {
-    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
-    da_state.record_withdrawal_intent(10, vec![1, 2]);
-    da_state.record_withdrawal_intent(20, vec![3, 4, 5]);
-
-    da_state.set_da_tracking_enabled(false);
-    let blob_bytes = da_state
-        .take_completed_epoch_da_blob()
-        .expect("expected DA blob");
-    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
-
-    let intents = blob.withdrawal_intents.entries();
-    assert_eq!(intents.len(), 2);
-
-    let mut queue = PendingWithdrawQueue::default();
-    blob.state_diff
-        .global
-        .pending_withdraws
-        .apply(&mut queue)
-        .expect("apply queue diff");
-    assert_eq!(queue.entries(), intents);
-}
-
-#[test]
-fn test_pending_withdraw_queue_front_incr() {
-    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
-    let base_entries = vec![
-        SimpleWithdrawalIntentLogData::new(10, vec![1]).unwrap(),
-        SimpleWithdrawalIntentLogData::new(20, vec![2]).unwrap(),
-    ];
-    let base_queue = PendingWithdrawQueue::new(5, base_entries.clone());
-    da_state.record_pending_withdraw_queue(base_queue.clone());
-    da_state.record_pending_withdraw_front_incr(1);
-    da_state.record_withdrawal_intent(30, vec![3]);
-
-    da_state.set_da_tracking_enabled(false);
-    let blob_bytes = da_state
-        .take_completed_epoch_da_blob()
-        .expect("expected DA blob");
-    let blob: OLDaBlobV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
-
-    let intents = blob.withdrawal_intents.entries();
-    assert_eq!(intents.len(), 1);
-    assert_eq!(intents[0].amt(), 30);
-
-    let mut queue = base_queue;
-    blob.state_diff
-        .global
-        .pending_withdraws
-        .apply(&mut queue)
-        .expect("apply queue diff");
-    assert_eq!(queue.entries().len(), 2);
-    assert_eq!(queue.entries()[0].amt(), base_entries[1].amt());
-    assert_eq!(queue.entries()[1].amt(), intents[0].amt());
-}
-
-#[test]
-fn test_withdrawal_intent_too_large_sets_error() {
-    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
-    let oversize_dest = vec![0u8; MAX_WITHDRAWAL_DESC_LEN + 1];
-    da_state.record_withdrawal_intent(1, oversize_dest);
-
-    da_state.set_da_tracking_enabled(false);
-    assert!(matches!(
-        da_state.last_error(),
-        Some(DaAccumulationError::WithdrawalIntentTooLarge { .. })
-    ));
 }
 
 #[test]
@@ -1038,7 +939,6 @@ fn test_da_blob_size_limit() {
         da_state.record_withdrawal_intent(1, big_dest.clone());
     }
 
-    da_state.set_da_tracking_enabled(false);
     assert!(matches!(
         da_state.last_error(),
         Some(DaAccumulationError::PayloadTooLarge { .. })
@@ -1056,7 +956,6 @@ fn test_vk_size_limit_exceeded() {
     );
     da_state.create_new_account(account_id, new_acct).unwrap();
 
-    da_state.set_da_tracking_enabled(false);
     assert!(matches!(
         da_state.last_error(),
         Some(DaAccumulationError::VkTooLarge { .. })
@@ -1083,7 +982,6 @@ fn test_message_payload_size_limit() {
         .unwrap()
         .unwrap();
 
-    da_state.set_da_tracking_enabled(false);
     assert!(matches!(
         da_state.last_error(),
         Some(DaAccumulationError::MessagePayloadTooLarge { .. })
@@ -1108,7 +1006,6 @@ fn test_early_serial_gap_detection() {
         .unwrap();
     da_state.create_new_account(account_id_2, new_acct).unwrap();
 
-    da_state.set_da_tracking_enabled(false);
     assert!(matches!(
         da_state.last_error(),
         Some(DaAccumulationError::NewAccountSerialGap(_, _))

@@ -17,8 +17,7 @@ use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
     InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OLDaBlobV1,
-    OutputLogs, PendingWithdrawQueue, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
-    WithdrawalIntents,
+    PendingWithdrawQueue, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
 };
 use strata_ol_msg_types::MAX_WITHDRAWAL_DESC_LEN;
 use thiserror::Error;
@@ -259,11 +258,6 @@ impl EpochDaAccumulator {
         self.pending_withdraw_front_incr = new_total;
     }
 
-    /// Records output logs.
-    fn record_output_logs(&mut self, logs: &[OLLog]) {
-        self.output_logs.extend(logs.iter().cloned());
-    }
-
     /// Records a new account.
     fn record_new_account(&mut self, serial: AccountSerial, entry: NewAccountEntry) {
         if let Some(first_serial) = self.first_new_serial {
@@ -301,9 +295,7 @@ impl EpochDaAccumulator {
         let global_diff = self.build_global_diff()?;
         let ledger_diff = self.build_ledger_diff(state)?;
         let state_diff = StateDiff::new(global_diff, ledger_diff);
-        let withdrawal_intents = WithdrawalIntents::new(self.effective_withdrawal_intents());
-        let output_logs = OutputLogs::new(self.output_logs.clone());
-        let blob = OLDaBlobV1::new(state_diff, withdrawal_intents, output_logs);
+        let blob = OLDaBlobV1::new(state_diff);
 
         let encoded = encode_to_vec(&blob).map_err(|_| {
             // encode_to_vec only returns CodecError; map to builder error for now
@@ -722,22 +714,6 @@ where
         }
 
         self.epoch_acc.record_withdrawal_intent(intent);
-    }
-
-    fn record_output_logs(&mut self, logs: &[OLLog]) {
-        self.inner.record_output_logs(logs);
-
-        if self.da_tracking_enabled {
-            self.epoch_acc.record_output_logs(logs);
-        }
-    }
-
-    fn set_da_tracking_enabled(&mut self, enabled: bool) {
-        if self.da_tracking_enabled && !enabled {
-            self.finalize_epoch_blob();
-        }
-        self.da_tracking_enabled = enabled;
-        self.inner.set_da_tracking_enabled(enabled);
     }
 }
 
