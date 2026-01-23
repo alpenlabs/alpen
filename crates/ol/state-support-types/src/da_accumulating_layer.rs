@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry};
 
-use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount};
+use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     DaBuilder, DaCounterBuilder, DaQueueBuilder, DaRegister, DaWrite, counter_schemes::CtrU64ByU16,
@@ -693,6 +693,10 @@ where
 
     fn compute_state_root(&self) -> AcctResult<strata_identifiers::Buf32> {
         self.inner.compute_state_root()
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        self.inner.asm_manifests_mmr()
     }
 
     fn record_withdrawal_intent(&mut self, amt: u64, dest: Vec<u8>) {
