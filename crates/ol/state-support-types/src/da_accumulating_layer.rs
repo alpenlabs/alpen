@@ -351,7 +351,7 @@ impl EpochDaAccumulator {
         let post_next_read = post_snark.next_inbox_msg_idx();
 
         let pre_seq = pre.snark.as_ref().map(|s| s.seq_no).unwrap_or(0);
-        let pre_next_read = pre.snark.as_ref().map(|s| s.next_msg_read_idx).unwrap_or(0);
+        let pre_next_read_idx = pre.snark.as_ref().map(|s| s.next_msg_read_idx).unwrap_or(0);
         let mut seq_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(pre_seq);
         seq_builder.set(post_seq)?;
         let seq_no = seq_builder.into_write()?;
@@ -367,9 +367,9 @@ impl EpochDaAccumulator {
             DaRegister::new_unset()
         };
 
-        let mut next_read_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(pre_next_read);
+        let mut next_read_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(pre_next_read_idx);
         next_read_builder.set(post_next_read)?;
-        let next_msg_read_idx = next_read_builder.into_write()?;
+        let next_msg_read_idx_counter = next_read_builder.into_write()?;
 
         let mut inbox = strata_da_framework::DaLinacc::<InboxBuffer>::new();
         if let Some(msgs) = self.inbox_messages.get(&account_id) {
@@ -402,7 +402,7 @@ impl EpochDaAccumulator {
         Ok(SnarkAccountDiff::new(
             seq_no,
             inner_state_root,
-            next_msg_read_idx,
+            next_msg_read_idx_counter,
             inbox,
         ))
     }
