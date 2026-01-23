@@ -4,11 +4,15 @@ use strata_ee_acct_types::ExecutionEnvironment;
 use strata_ee_chain_types::{ExecInputs, ExecOutputs};
 
 pub struct Chunk<'c, E: ExecutionEnvironment> {
-    blocks: Vec<Chunk<'c, E>>,
+    blocks: Vec<ChunkBlock<'c, E>>,
 }
 
 impl<'c, E: ExecutionEnvironment> Chunk<'c, E> {
-    pub fn blocks(&self) -> &[Chunk<'c, E>] {
+    pub fn new(blocks: Vec<ChunkBlock<'c, E>>) -> Self {
+        Self { blocks }
+    }
+
+    pub fn blocks(&self) -> &[ChunkBlock<'c, E>] {
         &self.blocks
     }
 }
