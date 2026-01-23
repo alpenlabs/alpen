@@ -6,6 +6,10 @@ use strata_identifiers::Epoch;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment, prelude::*};
 
+/// Type alias for ChainSyncStatus that indicates this is OL specific even though the field types
+/// are same.
+pub type OLSyncStatus = ChainSyncStatus;
+
 /// Describes FCM state.
 #[derive(Copy, Clone, Debug)]
 pub struct ChainSyncStatus {
@@ -82,5 +86,21 @@ impl ChainSyncStatusUpdate {
     /// Returns the current epoch.
     pub fn cur_epoch(&self) -> Epoch {
         self.new_status().cur_epoch()
+    }
+}
+
+/// OL update published via FCM.
+#[derive(Debug, Clone)]
+pub struct OLSyncStatusUpdate {
+    new_status: OLSyncStatus,
+}
+
+impl OLSyncStatusUpdate {
+    pub fn new(new_status: OLSyncStatus) -> Self {
+        Self { new_status }
+    }
+
+    pub fn new_status(&self) -> OLSyncStatus {
+        self.new_status
     }
 }

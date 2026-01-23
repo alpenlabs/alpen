@@ -149,7 +149,9 @@ pub(crate) fn init_status_channel(storage: &NodeStorage) -> anyhow::Result<Statu
     };
 
     // TODO avoid clone, change status channel to use arc
-    Ok(StatusChannel::new(cur_state, cur_block, l1_status, None))
+    Ok(StatusChannel::new(
+        cur_state, cur_block, l1_status, None, None,
+    ))
 }
 
 pub(crate) fn init_engine_controller(

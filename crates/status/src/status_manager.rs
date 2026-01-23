@@ -53,20 +53,24 @@ impl StatusChannel {
         cl_block: L1BlockCommitment,
         l1_status: L1Status,
         ch_state: Option<ChainSyncStatusUpdate>,
+        ol_state: Option<OLSyncStatusUpdate>,
     ) -> Self {
         let (cl_tx, cl_rx) = watch::channel(CheckpointState::new(cl_state, cl_block));
         let (l1_tx, l1_rx) = watch::channel(l1_status);
         let (chs_tx, chs_rx) = watch::channel(ch_state);
+        let (ols_tx, ols_rx) = watch::channel(ol_state);
 
         let sender = Arc::new(StatusSender {
             cl: cl_tx,
             l1: l1_tx,
             chs: chs_tx,
+            ols: ols_tx,
         });
         let receiver = Arc::new(StatusReceiver {
             cl: cl_rx,
             l1: l1_rx,
             chs: chs_rx,
+            ols: ols_rx,
         });
 
         Self { sender, receiver }
@@ -145,6 +149,20 @@ impl StatusChannel {
             .map(|chs| chs.new_status())
     }
 
+    pub fn get_last_ol_status_update(&self) -> Option<OLSyncStatusUpdate> {
+        self.receiver.ols.borrow().clone()
+    }
+
+    /// Gets the ol sync status, which is regularly updated by the FCM
+    /// whenever the tip changes, if set.
+    pub fn get_ol_sync_status(&self) -> Option<OLSyncStatus> {
+        self.receiver
+            .ols
+            .borrow()
+            .as_ref()
+            .map(|ols| ols.new_status())
+    }
+
     // Subscription functions.
 
     /// Create a subscription to the client state watcher.
@@ -155,6 +173,11 @@ impl StatusChannel {
     /// Create a subscription to the chain sync status watcher.
     pub fn subscribe_chain_sync(&self) -> watch::Receiver<Option<ChainSyncStatusUpdate>> {
         self.sender.chs.subscribe()
+    }
+
+    /// Create a subscription to the ol sync status watcher.
+    pub fn subscribe_ol_sync(&self) -> watch::Receiver<Option<OLSyncStatusUpdate>> {
+        self.sender.ols.subscribe()
     }
 
     /// Waits until genesis and returns the client state where genesis was triggered.
@@ -170,6 +193,14 @@ impl StatusChannel {
     /// is dropped.
     pub fn update_chain_sync_status(&self, update: ChainSyncStatusUpdate) {
         if self.sender.chs.send(Some(update)).is_err() {
+            warn!("chain state receiver dropped");
+        }
+    }
+
+    /// Sends the updated `OLSyncStatusUpdate` to the chain state receiver. Logs a warning if the
+    /// receiver is dropped.
+    pub fn update_ol_sync_status(&self, update: OLSyncStatusUpdate) {
+        if self.sender.ols.send(Some(update)).is_err() {
             warn!("chain state receiver dropped");
         }
     }
@@ -202,6 +233,7 @@ struct StatusReceiver {
     cl: watch::Receiver<CheckpointState>,
     l1: watch::Receiver<L1Status>,
     chs: watch::Receiver<Option<ChainSyncStatusUpdate>>,
+    ols: watch::Receiver<Option<OLSyncStatusUpdate>>,
 }
 
 /// Wrapper for watch status senders
@@ -210,4 +242,5 @@ struct StatusSender {
     cl: watch::Sender<CheckpointState>,
     l1: watch::Sender<L1Status>,
     chs: watch::Sender<Option<ChainSyncStatusUpdate>>,
+    ols: watch::Sender<Option<OLSyncStatusUpdate>>,
 }

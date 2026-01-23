@@ -175,7 +175,7 @@ fn init_status_channel(storage: &NodeStorage) -> Result<Arc<StatusChannel>, Init
         ..Default::default()
     };
 
-    Ok(StatusChannel::new(cur_state, cur_block, l1_status, None).into())
+    Ok(StatusChannel::new(cur_state, cur_block, l1_status, None, None).into())
 }
 
 fn init_client_state(
