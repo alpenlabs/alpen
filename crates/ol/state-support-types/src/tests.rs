@@ -854,7 +854,13 @@ fn test_new_account_post_state_encoded() {
     match &entry.init.type_state {
         AccountTypeInit::Snark(init) => {
             assert_eq!(init.initial_state_root, test_hash(9));
-            assert_eq!(init.update_vk.as_slice(), update_vk.as_slice());
+            // The VK is stored with the predicate type ID prefix, so we need to compare
+            // with the full predicate key bytes (type ID + raw VK bytes)
+            let expected_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk.clone());
+            assert_eq!(
+                init.update_vk.as_slice(),
+                expected_vk.as_buf_ref().to_bytes()
+            );
         }
         _ => panic!("expected snark account init"),
     }
@@ -955,7 +961,9 @@ fn test_da_blob_size_limit() {
 fn test_vk_size_limit_exceeded() {
     let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
     let account_id = test_account_id(1);
-    let snark_state = TestSnarkState::new(vec![0u8; MAX_VK_BYTES + 1]);
+    // Use MAX_VK_BYTES as raw VK size. After the predicate type ID prefix is added,
+    // the total size will be MAX_VK_BYTES + 1, exceeding the limit.
+    let snark_state = TestSnarkState::new(vec![0u8; MAX_VK_BYTES]);
     let new_acct = NewAccountData::new(
         BitcoinAmount::from_sat(0),
         AccountTypeState::Snark(snark_state),
