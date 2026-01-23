@@ -285,7 +285,7 @@ pub fn init_forkchoice_manager(
 
     // Populate the unfinalized block tracker.
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
-    chain_tracker.load_unfinalized_ol_blocks(storage.ol_block().as_ref())?;
+    chain_tracker.load_unfinalized_blocks(storage.ol_block().as_ref())?;
 
     let cur_tip_block = determine_start_tip(&chain_tracker, storage.ol_block())?;
     debug!(?chain_tracker, "init chain tracker");
@@ -430,8 +430,8 @@ pub fn tracker_task(
         finalized_epoch: *fcm.chain_tracker.finalized_epoch(),
         safe_l1: last_l1_blk,
     };
-    let update = ChainSyncStatusUpdate::new(status, fcm.cur_olstate.clone());
-    status_channel.update_ol_chain_sync_status(update);
+    let update = OLSyncStatusUpdate::new(status);
+    status_channel.update_ol_sync_status(update);
 
     handle_unprocessed_blocks(&mut fcm, &storage, &status_channel)?;
 
@@ -606,9 +606,9 @@ fn process_fc_message(
                     safe_l1: last_l1_blk,
                 };
 
-                let update = ChainSyncStatusUpdate::new(status, fcm_state.cur_olstate.clone());
+                let update = OLSyncStatusUpdate::new(status);
                 trace!(%blkid, "publishing new ol_state");
-                status_channel.update_ol_chain_sync_status(update);
+                status_channel.update_ol_sync_status(update);
 
                 BlockStatus::Valid
             } else {

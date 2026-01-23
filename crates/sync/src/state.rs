@@ -80,7 +80,7 @@ pub(crate) async fn initialize_from_db(
         .spawn_blocking(move || {
             let mut tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
             tracker
-                .load_unfinalized_blocks(&l2man_tracker)
+                .load_unfinalized_blocks(l2man_tracker.as_ref())
                 .map(|_| tracker)
         })
         .await
