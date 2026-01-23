@@ -50,9 +50,6 @@ impl LedgerDiff {
 /// New account initialization entry.
 #[derive(Clone, Debug, Eq, PartialEq, Codec)]
 pub struct NewAccountEntry {
-    /// Assigned account serial number.
-    pub serial: AccountSerial,
-
     /// Account identifier.
     pub account_id: AccountId,
 
@@ -61,13 +58,11 @@ pub struct NewAccountEntry {
 }
 
 impl NewAccountEntry {
-    /// Creates a new [`NewAccountEntry`] from a serial, account ID, and initial data.
-    pub fn new(serial: AccountSerial, account_id: AccountId, init: AccountInit) -> Self {
-        Self {
-            serial,
-            account_id,
-            init,
-        }
+    /// Creates a new [`NewAccountEntry`] from an account ID and initial data.
+    ///
+    /// The account serial is inferred from context by applying entries in order.
+    pub fn new(account_id: AccountId, init: AccountInit) -> Self {
+        Self { account_id, init }
     }
 }
 
