@@ -475,6 +475,7 @@ fn build_simple_blob() -> Vec<u8> {
 
     da_state
         .take_completed_epoch_da_blob()
+        .expect("build DA blob")
         .expect("expected DA blob")
 }
 
@@ -808,6 +809,7 @@ fn test_account_diffs_ordered_by_serial() {
 
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
+        .expect("build DA blob")
         .expect("expected DA blob");
     let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
@@ -843,6 +845,7 @@ fn test_new_account_post_state_encoded() {
 
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
+        .expect("build DA blob")
         .expect("expected DA blob");
     let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
@@ -880,6 +883,7 @@ fn test_new_account_vk_persisted_from_ol_state() {
 
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
+        .expect("build DA blob")
         .expect("expected DA blob");
     let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
@@ -911,11 +915,13 @@ fn test_take_resets_accumulator() {
         .unwrap();
     da_state
         .take_completed_epoch_da_blob()
+        .expect("build DA blob")
         .expect("expected DA blob");
 
     // Finalize again without any new changes.
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
+        .expect("build DA blob")
         .expect("expected DA blob");
     let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
 
@@ -943,16 +949,12 @@ fn test_da_blob_size_limit() {
         if da_state.create_new_account(account_id, new_acct).is_err() {
             break;
         }
-        // Check if we've exceeded the limit
-        if da_state.last_error().is_some() {
-            break;
-        }
     }
 
     // Try to finalize - should fail with PayloadTooLarge
     let result = da_state.take_completed_epoch_da_blob();
     assert!(
-        result.is_none() || da_state.last_error().is_some(),
+        matches!(result, Err(DaAccumulationError::PayloadTooLarge { .. })),
         "expected DA blob size limit error"
     );
 }
@@ -970,9 +972,10 @@ fn test_vk_size_limit_exceeded() {
     );
     da_state.create_new_account(account_id, new_acct).unwrap();
 
+    let result = da_state.take_completed_epoch_da_blob();
     assert!(matches!(
-        da_state.last_error(),
-        Some(DaAccumulationError::VkTooLarge { .. })
+        result,
+        Err(DaAccumulationError::VkTooLarge { .. })
     ));
 }
 
@@ -996,9 +999,10 @@ fn test_message_payload_size_limit() {
         .unwrap()
         .unwrap();
 
+    let result = da_state.take_completed_epoch_da_blob();
     assert!(matches!(
-        da_state.last_error(),
-        Some(DaAccumulationError::MessagePayloadTooLarge { .. })
+        result,
+        Err(DaAccumulationError::MessagePayloadTooLarge { .. })
     ));
 }
 
@@ -1020,9 +1024,10 @@ fn test_early_serial_gap_detection() {
         .unwrap();
     da_state.create_new_account(account_id_2, new_acct).unwrap();
 
+    let result = da_state.take_completed_epoch_da_blob();
     assert!(matches!(
-        da_state.last_error(),
-        Some(DaAccumulationError::NewAccountSerialGap(_, _))
+        result,
+        Err(DaAccumulationError::NewAccountSerialGap(_, _))
     ));
 }
 
