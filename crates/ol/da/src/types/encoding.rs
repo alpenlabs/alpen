@@ -79,3 +79,26 @@ impl<T: Codec> Codec for U16LenList<T> {
         Ok(Self { entries })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+
+    use super::{U16LenBytes, U16LenList};
+
+    #[test]
+    fn test_u16_len_bytes_prefix_is_big_endian() {
+        let value = U16LenBytes::new(vec![0xaa, 0xbb, 0xcc]);
+        let encoded = encode_to_vec(&value).expect("encode");
+        assert_eq!(&encoded[..2], 3u16.to_be_bytes());
+    }
+
+    #[test]
+    fn test_u16_len_list_round_trip() {
+        let value = U16LenList::new(vec![1u8, 2u8, 3u8]);
+        let encoded = encode_to_vec(&value).expect("encode");
+        assert_eq!(&encoded[..2], 3u16.to_be_bytes());
+        let decoded: U16LenList<u8> = decode_buf_exact(&encoded).expect("decode");
+        assert_eq!(decoded.entries(), value.entries());
+    }
+}
