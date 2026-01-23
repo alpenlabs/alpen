@@ -8,7 +8,7 @@ use strata_da_framework::{
     make_compound_impl,
 };
 
-use super::inbox::InboxAccumulator;
+use super::inbox::InboxBuffer;
 
 /// Diff for snark account state.
 #[derive(Debug)]
@@ -20,7 +20,7 @@ pub struct SnarkAccountDiff {
     pub proof_state: DaRegister<DaProofState>,
 
     /// Inbox append-only diff.
-    pub inbox: DaLinacc<InboxAccumulator>,
+    pub inbox: DaLinacc<InboxBuffer>,
 }
 
 impl Default for SnarkAccountDiff {
@@ -38,7 +38,7 @@ impl SnarkAccountDiff {
     pub fn new(
         seq_no: DaCounter<counter_schemes::CtrU64ByU16>,
         proof_state: DaRegister<DaProofState>,
-        inbox: DaLinacc<InboxAccumulator>,
+        inbox: DaLinacc<InboxBuffer>,
     ) -> Self {
         Self {
             seq_no,
@@ -52,7 +52,7 @@ make_compound_impl! {
     SnarkAccountDiff u8 => SnarkAccountTarget {
         seq_no: counter (counter_schemes::CtrU64ByU16),
         proof_state: register (DaProofState),
-        inbox: compound (DaLinacc<InboxAccumulator>),
+        inbox: compound (DaLinacc<InboxBuffer>),
     }
 }
 
@@ -109,5 +109,5 @@ pub struct SnarkAccountTarget {
     pub proof_state: DaProofState,
 
     /// Current inbox accumulator.
-    pub inbox: InboxAccumulator,
+    pub inbox: InboxBuffer,
 }
