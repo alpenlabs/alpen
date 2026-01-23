@@ -17,8 +17,8 @@ use strata_ledger_types::{
 };
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    GlobalStateDiff, InboxAccumulator, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES,
-    NewAccountEntry, OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
+    GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry,
+    OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
 };
 use thiserror::Error;
 
@@ -380,7 +380,7 @@ impl EpochDaAccumulator {
             DaRegister::new_unset()
         };
 
-        let mut inbox = strata_da_framework::DaLinacc::<InboxAccumulator>::new();
+        let mut inbox = strata_da_framework::DaLinacc::<InboxBuffer>::new();
         if let Some(msgs) = self.inbox_messages.get(&account_id) {
             for msg in msgs {
                 if !inbox.append_entry(msg.clone()) {
