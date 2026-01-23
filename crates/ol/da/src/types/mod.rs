@@ -7,7 +7,7 @@
 //! - [`ledger`]: Ledger diff types (LedgerDiff, NewAccountEntry, AccountInit)
 //! - [`account`]: Account diff types (AccountDiff)
 //! - [`snark`]: Snark account diff types (SnarkAccountDiff, DaProofState)
-//! - [`inbox`]: Inbox accumulator types (DaMessageEntry, InboxAccumulator)
+//! - [`inbox`]: Inbox message buffer types (DaMessageEntry, InboxBuffer)
 
 mod account;
 mod encoding;
@@ -21,7 +21,7 @@ mod snark;
 pub use account::{AccountDiff, AccountDiffTarget};
 pub use encoding::{U16LenBytes, U16LenList};
 pub use global::{GlobalStateDiff, GlobalStateTarget};
-pub use inbox::{DaMessageEntry, InboxAccumulator};
+pub use inbox::{DaMessageEntry, InboxBuffer};
 pub use ledger::{
     AccountDiffEntry, AccountInit, AccountTypeInit, LedgerDiff, NewAccountEntry, SnarkAccountInit,
 };

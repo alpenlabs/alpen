@@ -53,20 +53,20 @@ impl Codec for DaMessageEntry {
     }
 }
 
-/// Linear accumulator of DA-encoded inbox messages.
+/// Buffer of DA-encoded inbox messages for insertion into the real accumulator.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct InboxAccumulator {
+pub struct InboxBuffer {
     /// Inbox entries appended during the epoch.
     entries: Vec<DaMessageEntry>,
 }
 
-impl InboxAccumulator {
+impl InboxBuffer {
     pub fn entries(&self) -> &[DaMessageEntry] {
         &self.entries
     }
 }
 
-impl LinearAccumulator for InboxAccumulator {
+impl LinearAccumulator for InboxBuffer {
     type InsertCnt = u16;
     type EntryData = DaMessageEntry;
     const MAX_INSERT: Self::InsertCnt = u16::MAX;
