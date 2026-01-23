@@ -5,7 +5,7 @@ use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState}
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
-use strata_params::Params;
+use strata_params::RollupParams;
 use strata_primitives::{Buf32, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
@@ -19,7 +19,7 @@ use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResol
 #[derive(Debug)]
 pub struct AsmWorkerServiceState<W> {
     /// Params.
-    pub(crate) params: Arc<Params>,
+    pub(crate) params: Arc<RollupParams>,
 
     /// Context for the state to interact with outer world.
     pub(crate) context: W,
@@ -39,8 +39,8 @@ pub struct AsmWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
-    pub fn new(context: W, params: Arc<Params>) -> Self {
-        let asm_spec = StrataAsmSpec::from_params(params.rollup());
+    pub fn new(context: W, params: Arc<RollupParams>) -> Self {
+        let asm_spec = StrataAsmSpec::from_params(&params);
         Self {
             params,
             context,
@@ -62,7 +62,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             }
             None => {
                 // Create genesis anchor state.
-                let genesis_l1_view = &self.params.rollup().genesis_l1_view;
+                let genesis_l1_view = &self.params.genesis_l1_view;
                 let empty_accumulator =
                     AsmHistoryAccumulatorState::new(genesis_l1_view.height_u64());
                 let state = AnchorState {
@@ -190,14 +190,14 @@ mod tests {
         let tip_hash = client.get_block_hash(101).await.unwrap();
 
         // 2. Setup Params
-        let mut params = gen_params();
-        params.rollup.network = Network::Regtest;
+        let mut params = gen_params().rollup;
+        params.network = Network::Regtest;
 
         // Sync parameters with the actual bitcoind state
         let genesis_view = get_genesis_l1_view(&client, &tip_hash)
             .await
             .expect("Failed to fetch genesis view");
-        params.rollup.genesis_l1_view = genesis_view;
+        params.genesis_l1_view = genesis_view;
 
         let params = Arc::new(params);
 

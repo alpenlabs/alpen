@@ -29,7 +29,7 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         &nodectx.executor,
         nodectx.executor.handle().clone(),
         nodectx.storage.clone(),
-        nodectx.params.clone(),
+        Arc::new(nodectx.params.rollup.clone()),
         nodectx.bitcoin_client.clone(),
     )?;
 

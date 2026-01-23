@@ -33,7 +33,7 @@ use strata_asm_txs_admin::{
 use strata_crypto::{
     keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfigUpdate,
 };
-use strata_params::Params;
+use strata_params::RollupParams;
 use strata_predicate::PredicateKey;
 use strata_primitives::{
     buf::Buf32,
@@ -88,7 +88,7 @@ impl AdminContext {
     /// Create admin context from rollup parameters.
     ///
     /// Uses the test operator key which is configured for both admin roles.
-    pub fn from_params(_params: &Params) -> Self {
+    pub fn from_params(_params: &RollupParams) -> Self {
         Self {
             privkeys: vec![get_test_operator_secret_key()],
             signer_indices: vec![0],

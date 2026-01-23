@@ -10,7 +10,7 @@ use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
-use strata_params::Params;
+use strata_params::{Params, RollupParams};
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;
@@ -96,7 +96,8 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // ASM worker.
     let asm_handle = executor.handle().clone();
     let asm_storage = storage.clone();
-    let asm_params = params.clone();
+    let asm_params = Arc::new(params.rollup().clone());
+
     let asm_controller = Arc::new(spawn_asm_worker(
         executor,
         asm_handle,
@@ -254,7 +255,7 @@ pub fn spawn_asm_worker(
     executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
-    params: Arc<Params>,
+    params: Arc<RollupParams>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<AsmWorkerHandle> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
