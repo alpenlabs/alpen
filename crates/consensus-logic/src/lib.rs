@@ -16,3 +16,4 @@ pub mod unfinalized_tracker;
 pub mod errors;
 
 pub use block_provider::*;
+pub use fcm::*;

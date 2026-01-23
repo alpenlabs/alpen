@@ -137,7 +137,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .unwrap_or_else(|| self.base.previous_epoch())
     }
 
-    fn set_previous_epoch(&mut self, epoch: EpochCommitment) {
+    fn set_previous_epoch(&mut self, _epoch: EpochCommitment) {
         #[cfg(feature = "tracing")]
         tracing::error!("BatchDiffState::set_previous_epoch called on read-only state");
     }

@@ -17,6 +17,10 @@ use crate::{
     errors::Error, fcm::context::FcmContext, unfinalized_tracker::UnfinalizedBlockTracker,
 };
 
+#[expect(
+    missing_debug_implementations,
+    reason = "Debug is not applicable to FcmState"
+)]
 pub struct FcmState {
     ctx: FcmContext,
     inner_state: FcmInnerState,
