@@ -56,9 +56,9 @@ class OLAccountTypeState(Union):
 
 ### Snark account state
 class OLSnarkAccountState(Container):
-    ### Verifying Key
+    ### Verifying Key used to verify updates
     #~# external_kind: container
-    verifying_key: strata_predicate.PredicateKey
+    update_vk: strata_predicate.PredicateKey
 
     ### Sequence number
     seqno: strata_snark_acct_types.Seqno
@@ -69,9 +69,6 @@ class OLSnarkAccountState(Container):
     ### Inbox MMR
     #~# external_kind: container
     inbox_mmr: strata_acct_types.Mmr64
-
-    ### Vk used to verify updates
-    update_vk: List[uint8, MAX_VK_BYTES]
 
 
 ### Proof state for snark accounts

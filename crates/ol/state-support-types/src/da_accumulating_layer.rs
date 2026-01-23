@@ -725,7 +725,7 @@ fn account_init_from_data<T: IAccountState>(data: &NewAccountData<T>) -> Account
         AccountTypeState::Snark(snark_state) => {
             let init = SnarkAccountInit::new(
                 snark_state.inner_state_root(),
-                snark_state.update_vk().to_vec(),
+                snark_state.update_vk().as_buf_ref().to_bytes(),
             );
             AccountInit::new(balance, AccountTypeInit::Snark(init))
         }
@@ -740,7 +740,7 @@ fn account_init_from_state<T: IAccountState>(
     match state.type_state() {
         AccountTypeStateRef::Empty => Ok(AccountInit::new(balance, AccountTypeInit::Empty)),
         AccountTypeStateRef::Snark(snark_state) => {
-            let vk = snark_state.update_vk();
+            let vk = snark_state.update_vk().as_buf_ref().to_bytes();
             if vk.len() > MAX_VK_BYTES {
                 return Err(DaAccumulationError::VkTooLarge {
                     provided: vk.len(),
