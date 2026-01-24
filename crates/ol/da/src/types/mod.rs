@@ -18,7 +18,7 @@ mod payload;
 mod snark;
 
 // Re-export all public types for API stability
-pub use account::AccountDiff;
+pub use account::{AccountDiff, AccountDiffTarget};
 pub use encoding::{U16LenBytes, U16LenList};
 pub use global::{GlobalStateDiff, GlobalStateTarget};
 pub use inbox::{DaMessageEntry, InboxBuffer};
@@ -26,13 +26,13 @@ pub use ledger::{
     AccountDiffEntry, AccountInit, AccountTypeInit, LedgerDiff, NewAccountEntry, SnarkAccountInit,
 };
 pub use payload::{OLDaPayloadV1, OLStateDiff, StateDiff};
-pub use snark::SnarkAccountDiff;
+pub use snark::{SnarkAccountDiff, SnarkAccountTarget};
 
 /// Maximum size for snark account update VK in DA payloads.
 ///
 /// The DA encoding uses a big-endian u16 length prefix, so the maximum
 /// representable length is `u16::MAX` (65_535 bytes).
-pub const MAX_VK_BYTES: usize = u16::MAX as usize;
+pub const MAX_VK_BYTES: usize = (1 << 16) - 1;
 
 /// Maximum size for a single message payload (4 KiB per SPS-ol-da-structure).
 pub const MAX_MSG_PAYLOAD_BYTES: usize = 4 * 1024;
