@@ -776,6 +776,44 @@ fn test_da_blob_deterministic() {
 }
 
 #[test]
+fn test_epoch_sealing_suspends_da_tracking() {
+    let account_id = test_account_id(1);
+    let (state, _) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+
+    da_state.begin_epoch_sealing();
+
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(25));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let diffs = blob.state_diff.ledger.account_diffs.entries();
+    assert_eq!(diffs.len(), 1);
+    let diff = &diffs[0].diff;
+    assert_eq!(
+        diff.balance.new_value(),
+        Some(&BitcoinAmount::from_sat(1_050))
+    );
+}
+
+#[test]
 fn test_account_diffs_ordered_by_serial() {
     let mut state = OLState::new_genesis();
     let account_id_1 = test_account_id(1);
@@ -1058,6 +1096,25 @@ fn test_early_serial_gap_detection() {
         .create_new_account(account_id_1, new_acct.clone())
         .unwrap();
     da_state.create_new_account(account_id_2, new_acct).unwrap();
+
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(matches!(
+        result,
+        Err(DaAccumulationError::NewAccountSerialGap(_, _))
+    ));
+}
+
+#[test]
+fn test_expected_first_serial_mismatch() {
+    let mut da_state =
+        DaAccumulatingState::new(TestState::new_with_serials(vec![AccountSerial::new(5)]));
+    let account_id = test_account_id(1);
+    let snark_state = TestSnarkState::new(vec![]);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(0),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
 
     let result = da_state.take_completed_epoch_da_blob();
     assert!(matches!(

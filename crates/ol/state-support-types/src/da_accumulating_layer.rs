@@ -135,8 +135,8 @@ struct EpochDaAccumulator {
     /// Final slot value seen during the epoch.
     slot_final: Option<u64>,
 
-    /// First serial assigned in this epoch, used to enforce contiguity.
-    first_new_serial: Option<AccountSerial>,
+    /// Expected first serial based on the pre-state next_account_serial.
+    expected_first_serial: Option<AccountSerial>,
 
     /// New account records created during the epoch.
     new_account_records: Vec<NewAccountRecord>,
@@ -199,12 +199,13 @@ impl EpochDaAccumulator {
     /// Records a new account.
     fn record_new_account(
         &mut self,
+        expected_first_serial: AccountSerial,
         serial: AccountSerial,
         account_id: AccountId,
         init: AccountInit,
     ) {
-        if self.first_new_serial.is_none() {
-            self.first_new_serial = Some(serial);
+        if self.expected_first_serial.is_none() {
+            self.expected_first_serial = Some(expected_first_serial);
         }
         self.new_account_records.push(NewAccountRecord {
             serial,
@@ -259,7 +260,17 @@ impl EpochDaAccumulator {
         let mut new_records = self.new_account_records.clone();
         new_records.sort_by_key(|entry| entry.serial);
 
-        if let Some(mut expected) = self.first_new_serial {
+        if let Some(first) = new_records.first() {
+            if let Some(expected) = self.expected_first_serial
+                && first.serial != expected
+            {
+                return Err(DaAccumulationError::NewAccountSerialGap(
+                    expected,
+                    first.serial,
+                ));
+            }
+
+            let mut expected = first.serial;
             for entry in &new_records {
                 if entry.serial != expected {
                     return Err(DaAccumulationError::NewAccountSerialGap(
@@ -507,15 +518,34 @@ where
 
     fn set_cur_epoch(&mut self, epoch: u32) {
         let prev = self.inner.cur_epoch();
-        if self.da_tracking_enabled && epoch != prev {
-            let mut acc = take(&mut self.epoch_acc);
-            match acc.finalize(&self.inner) {
-                Ok(blob) => self.pending_epoch_blobs.push_back(blob),
-                Err(err) => self.pending_epoch_error = Some(err),
+        if epoch != prev {
+            if self.da_tracking_enabled {
+                let mut acc = take(&mut self.epoch_acc);
+                match acc.finalize(&self.inner) {
+                    Ok(blob) => self.pending_epoch_blobs.push_back(blob),
+                    Err(err) => self.pending_epoch_error = Some(err),
+                }
+                self.epoch_acc = EpochDaAccumulator::default();
+            } else {
+                self.epoch_acc = EpochDaAccumulator::default();
             }
-            self.epoch_acc = EpochDaAccumulator::default();
+            self.da_tracking_enabled = true;
         }
         self.inner.set_cur_epoch(epoch);
+    }
+
+    fn begin_epoch_sealing(&mut self) {
+        if !self.da_tracking_enabled {
+            return;
+        }
+
+        let mut acc = take(&mut self.epoch_acc);
+        match acc.finalize(&self.inner) {
+            Ok(blob) => self.pending_epoch_blobs.push_back(blob),
+            Err(err) => self.pending_epoch_error = Some(err),
+        }
+        self.epoch_acc = EpochDaAccumulator::default();
+        self.da_tracking_enabled = false;
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -595,10 +625,16 @@ where
             None
         };
 
+        let expected_first_serial = if self.da_tracking_enabled {
+            Some(self.inner.next_account_serial())
+        } else {
+            None
+        };
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 
-        if let Some(init) = init {
-            self.epoch_acc.record_new_account(serial, id, init);
+        if let (Some(init), Some(expected)) = (init, expected_first_serial) {
+            self.epoch_acc
+                .record_new_account(expected, serial, id, init);
         }
 
         Ok(serial)
