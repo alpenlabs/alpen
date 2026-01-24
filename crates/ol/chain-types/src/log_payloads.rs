@@ -1,7 +1,6 @@
 //! Log payload types for orchestration layer logs.
 
-use strata_acct_types::VarVec;
-use strata_codec::Codec;
+use strata_codec::{Codec, VarVec};
 
 /// Payload for a simple withdrawal intent log.
 ///

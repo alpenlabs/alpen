@@ -1,7 +1,6 @@
 //! Withdrawal message types for bridge gateway account communication.
 
-use strata_acct_types::VarVec;
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, VarVec};
 use strata_identifiers::SubjectId;
 
 /// Message type ID for withdrawal initiation.

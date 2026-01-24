@@ -90,7 +90,8 @@ fn create_withdrawal_init_message_payload(
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{SubjectId, VarVec};
+    use strata_acct_types::SubjectId;
+    use strata_codec::VarVec;
     use strata_ee_acct_types::{CommitMsgData, DepositMsgData, SubjTransferMsgData};
 
     use super::*;
