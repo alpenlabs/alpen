@@ -1,14 +1,15 @@
 //! OL state accessor that accumulates DA-covered writes over an epoch.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, btree_map::Entry},
+    collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
     mem::take,
 };
 
 use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
-    DaBuilder, DaCounterBuilder, DaRegister, counter_schemes::CtrU64ByU16, encode_to_vec,
+    CodecError, DaBuilder, DaCounterBuilder, DaRegister, LinearAccumulator,
+    counter_schemes::CtrU64ByU16, encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
@@ -35,6 +36,10 @@ pub enum DaAccumulationError {
     #[error("da accumulator builder error: {0}")]
     Builder(#[from] strata_da_framework::BuilderError),
 
+    /// Error while encoding DA blob.
+    #[error("da accumulator codec error: {0}")]
+    Codec(#[from] CodecError),
+
     /// Account state missing when assembling diffs.
     #[error("da accumulator missing account {0}")]
     MissingAccount(AccountId),
@@ -58,6 +63,10 @@ pub enum DaAccumulationError {
     /// Message payload exceeds maximum allowed.
     #[error("da accumulator message payload too large: {provided} bytes (max {max})")]
     MessagePayloadTooLarge { provided: usize, max: usize },
+
+    /// Inbox buffer exceeded maximum message count.
+    #[error("da accumulator inbox buffer full: account {account_id} exceeded {max} messages")]
+    InboxBufferFull { account_id: AccountId, max: u16 },
 
     /// Encoded DA blob exceeds the maximum size limit.
     #[error("da accumulator payload too large: {provided} bytes (max {max})")]
@@ -114,6 +123,7 @@ impl AccountSnapshot {
 struct NewAccountRecord {
     serial: AccountSerial,
     account_id: AccountId,
+    init: AccountInit,
 }
 
 /// Per-epoch accumulator of DA writes before encoding.
@@ -130,9 +140,6 @@ struct EpochDaAccumulator {
 
     /// New account records created during the epoch.
     new_account_records: Vec<NewAccountRecord>,
-
-    /// Account IDs created during the epoch.
-    new_account_ids: BTreeSet<AccountId>,
 
     /// Accounts touched during the epoch (for diff generation).
     touched_accounts: BTreeSet<AccountId>,
@@ -194,14 +201,16 @@ impl EpochDaAccumulator {
         &mut self,
         serial: AccountSerial,
         account_id: AccountId,
-        _init: &AccountInit,
+        init: AccountInit,
     ) {
         if self.first_new_serial.is_none() {
             self.first_new_serial = Some(serial);
         }
-        self.new_account_ids.insert(account_id);
-        self.new_account_records
-            .push(NewAccountRecord { serial, account_id });
+        self.new_account_records.push(NewAccountRecord {
+            serial,
+            account_id,
+            init,
+        });
     }
 
     /// Records a touched account.
@@ -216,10 +225,7 @@ impl EpochDaAccumulator {
         let state_diff = StateDiff::new(global_diff, ledger_diff);
         let blob = OLDaPayloadV1::new(state_diff);
 
-        let encoded = encode_to_vec(&blob).map_err(|_| {
-            // encode_to_vec only returns CodecError; map to builder error for now
-            DaAccumulationError::Builder(strata_da_framework::BuilderError::OutOfBoundsValue)
-        })?;
+        let encoded = encode_to_vec(&blob)?;
 
         if encoded.len() as u64 > OL_DA_DIFF_MAX_SIZE {
             return Err(DaAccumulationError::PayloadTooLarge {
@@ -267,11 +273,11 @@ impl EpochDaAccumulator {
 
         let mut new_accounts = Vec::with_capacity(new_records.len());
         for entry in &new_records {
-            let post = state
+            state
                 .get_account_state(entry.account_id)
                 .map_err(|_| DaAccumulationError::MissingAccount(entry.account_id))?
                 .ok_or(DaAccumulationError::MissingAccount(entry.account_id))?;
-            let init = account_init_from_state(post)?;
+            let init = entry.init.clone();
             if let AccountTypeInit::Snark(init) = &init.type_state {
                 let vk_len = init.update_vk.as_slice().len();
                 if vk_len > MAX_VK_BYTES {
@@ -288,10 +294,6 @@ impl EpochDaAccumulator {
         let mut seen_serials = BTreeSet::new();
 
         for account_id in &self.touched_accounts {
-            if self.new_account_ids.contains(account_id) {
-                continue;
-            }
-
             let pre = self
                 .pre_states
                 .get(account_id)
@@ -392,9 +394,10 @@ impl EpochDaAccumulator {
                     DaMessageEntry::new(source_serial, msg.incl_epoch(), msg.payload().clone());
 
                 if !inbox.append_entry(entry) {
-                    return Err(DaAccumulationError::Builder(
-                        strata_da_framework::BuilderError::OutOfBoundsValue,
-                    ));
+                    return Err(DaAccumulationError::InboxBufferFull {
+                        account_id,
+                        max: InboxBuffer::MAX_INSERT,
+                    });
                 }
             }
         }
@@ -419,6 +422,12 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
 
     /// Epoch-scoped DA write accumulator.
     epoch_acc: EpochDaAccumulator,
+
+    /// Completed epoch blobs waiting to be drained.
+    pending_epoch_blobs: VecDeque<Vec<u8>>,
+
+    /// Error captured while finalizing an epoch via set_cur_epoch.
+    pending_epoch_error: Option<DaAccumulationError>,
 }
 
 impl<S: IStateAccessor> DaAccumulatingState<S> {
@@ -428,6 +437,8 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             inner,
             da_tracking_enabled: true,
             epoch_acc: EpochDaAccumulator::default(),
+            pending_epoch_blobs: VecDeque::new(),
+            pending_epoch_error: None,
         }
     }
 
@@ -443,6 +454,14 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
 
     /// Returns the next completed epoch DA blob, if any.
     pub fn take_completed_epoch_da_blob(&mut self) -> Result<Option<Vec<u8>>, DaAccumulationError> {
+        if let Some(err) = self.pending_epoch_error.take() {
+            return Err(err);
+        }
+
+        if let Some(blob) = self.pending_epoch_blobs.pop_front() {
+            return Ok(Some(blob));
+        }
+
         if !self.da_tracking_enabled {
             return Ok(None);
         }
@@ -491,7 +510,12 @@ where
     fn set_cur_epoch(&mut self, epoch: u32) {
         let prev = self.inner.cur_epoch();
         if self.da_tracking_enabled && epoch != prev {
-            panic!("da accumulating state cannot span epochs while tracking is enabled");
+            let mut acc = take(&mut self.epoch_acc);
+            match acc.finalize(&self.inner) {
+                Ok(blob) => self.pending_epoch_blobs.push_back(blob),
+                Err(err) => self.pending_epoch_error = Some(err),
+            }
+            self.epoch_acc = EpochDaAccumulator::default();
         }
         self.inner.set_cur_epoch(epoch);
     }
@@ -576,7 +600,7 @@ where
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 
         if let Some(init) = init {
-            self.epoch_acc.record_new_account(serial, id, &init);
+            self.epoch_acc.record_new_account(serial, id, init);
         }
 
         Ok(serial)
@@ -610,27 +634,6 @@ fn account_init_from_data<T: IAccountState>(data: &NewAccountData<T>) -> Account
                 snark_state.update_vk().as_buf_ref().to_bytes(),
             );
             AccountInit::new(balance, AccountTypeInit::Snark(init))
-        }
-    }
-}
-
-/// Converts post-state into DA init data for encoding new accounts.
-fn account_init_from_state<T: IAccountState>(
-    state: &T,
-) -> Result<AccountInit, DaAccumulationError> {
-    let balance = state.balance();
-    match state.type_state() {
-        AccountTypeStateRef::Empty => Ok(AccountInit::new(balance, AccountTypeInit::Empty)),
-        AccountTypeStateRef::Snark(snark_state) => {
-            let vk = snark_state.update_vk().as_buf_ref().to_bytes();
-            if vk.len() > MAX_VK_BYTES {
-                return Err(DaAccumulationError::VkTooLarge {
-                    provided: vk.len(),
-                    max: MAX_VK_BYTES,
-                });
-            }
-            let init = SnarkAccountInit::new(snark_state.inner_state_root(), vk.to_vec());
-            Ok(AccountInit::new(balance, AccountTypeInit::Snark(init)))
         }
     }
 }

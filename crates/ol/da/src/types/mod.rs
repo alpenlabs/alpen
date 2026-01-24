@@ -28,9 +28,11 @@ pub use ledger::{
 pub use payload::{OLDaPayloadV1, OLStateDiff, StateDiff};
 pub use snark::SnarkAccountDiff;
 
-/// Maximum size for snark account update VK (64 KiB per SPS-ol-chain-structures and
-/// SPS-ol-da-structure).
-pub const MAX_VK_BYTES: usize = 64 * 1024;
+/// Maximum size for snark account update VK in DA payloads.
+///
+/// The DA encoding uses a big-endian u16 length prefix, so the maximum
+/// representable length is `u16::MAX` (65_535 bytes).
+pub const MAX_VK_BYTES: usize = u16::MAX as usize;
 
 /// Maximum size for a single message payload (4 KiB per SPS-ol-da-structure).
 pub const MAX_MSG_PAYLOAD_BYTES: usize = 4 * 1024;
