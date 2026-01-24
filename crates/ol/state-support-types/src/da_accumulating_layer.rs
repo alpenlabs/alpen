@@ -306,13 +306,11 @@ impl EpochDaAccumulator {
             let balance = DaRegister::compare(&pre.balance, &post.balance());
 
             // Build the appropriate diff variant based on account type
-            let diff = match pre.ty {
-                AccountTypeId::Empty => AccountDiff::new_empty(balance),
-                AccountTypeId::Snark => {
-                    let snark_state = self.build_snark_diff(state, pre, post, *account_id)?;
-                    AccountDiff::new_snark(balance, snark_state)
-                }
+            let snark_state = match pre.ty {
+                AccountTypeId::Empty => SnarkAccountDiff::default(),
+                AccountTypeId::Snark => self.build_snark_diff(state, pre, post, *account_id)?,
             };
+            let diff = AccountDiff::new(balance, snark_state);
 
             if diff.is_default() {
                 continue;

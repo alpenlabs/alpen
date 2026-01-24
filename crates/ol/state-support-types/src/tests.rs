@@ -16,7 +16,7 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_da::{AccountDiff, AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
+use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::{MessageEntry, Seqno};
@@ -881,21 +881,17 @@ fn test_new_account_post_state_encoded() {
     let diffs = blob.state_diff.ledger.account_diffs.entries();
     assert_eq!(diffs.len(), 1);
     assert_eq!(diffs[0].account_serial, AccountSerial::one());
-    match &diffs[0].diff {
-        AccountDiff::Snark { balance, snark } => {
-            let expected_balance = BitcoinAmount::from_sat(150);
-            assert_eq!(balance.new_value(), Some(&expected_balance));
-            assert_eq!(snark.seq_no.diff().copied(), Some(1));
-            let expected_state_root = test_hash(9);
-            assert_eq!(
-                snark.inner_state_root.new_value(),
-                Some(&expected_state_root)
-            );
-            assert!(snark.next_msg_read_idx.diff().is_none());
-            assert!(snark.inbox.new_entries().is_empty());
-        }
-        _ => panic!("expected snark account diff"),
-    }
+    let diff = &diffs[0].diff;
+    let expected_balance = BitcoinAmount::from_sat(150);
+    assert_eq!(diff.balance.new_value(), Some(&expected_balance));
+    assert_eq!(diff.snark.seq_no.diff().copied(), Some(1));
+    let expected_state_root = test_hash(9);
+    assert_eq!(
+        diff.snark.inner_state_root.new_value(),
+        Some(&expected_state_root)
+    );
+    assert!(diff.snark.next_msg_read_idx.diff().is_none());
+    assert!(diff.snark.inbox.new_entries().is_empty());
 }
 
 #[test]
