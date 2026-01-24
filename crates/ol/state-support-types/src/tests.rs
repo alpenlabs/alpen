@@ -778,8 +778,7 @@ fn test_da_blob_deterministic() {
 #[test]
 fn test_epoch_sealing_suspends_da_tracking() {
     let account_id = test_account_id(1);
-    let (state, _) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
     let mut da_state = DaAccumulatingState::new(state);
 
     da_state
@@ -797,6 +796,7 @@ fn test_epoch_sealing_suspends_da_tracking() {
             acct.add_balance(coin);
         })
         .unwrap();
+    assert!(da_state.post_seal_writes_detected());
 
     let blob_bytes = da_state
         .take_completed_epoch_da_blob()
@@ -1050,6 +1050,31 @@ fn test_vk_size_truncates_to_predicate_limit() {
         }
         _ => panic!("expected snark account init"),
     }
+}
+
+#[test]
+fn test_message_source_missing_is_rejected() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    let payload = MsgPayload::new(BitcoinAmount::from_sat(0), vec![0u8; 4]);
+    let missing_source = test_account_id(99);
+    let msg = MessageEntry::new(missing_source, 0, payload);
+    da_state
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg)
+        })
+        .unwrap()
+        .unwrap();
+
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(matches!(
+        result,
+        Err(DaAccumulationError::MessageSourceMissing(id)) if id == missing_source
+    ));
 }
 
 #[test]

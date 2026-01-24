@@ -48,6 +48,10 @@ pub enum DaAccumulationError {
     #[error("da accumulator missing pre-state {0}")]
     MissingPreState(AccountId),
 
+    /// Inbox message source is missing from ledger state.
+    #[error("da accumulator missing message source {0}")]
+    MessageSourceMissing(AccountId),
+
     /// Duplicate account serial encountered when ordering diffs.
     #[error("da accumulator duplicate account serial {0}")]
     DuplicateAccountSerial(AccountSerial),
@@ -394,10 +398,13 @@ impl EpochDaAccumulator {
                 }
 
                 let source_id = msg.source();
+                if source_id.is_special() {
+                    return Err(DaAccumulationError::MessageSourceMissing(source_id));
+                }
                 let source_serial = state
                     .get_account_state(source_id)
-                    .map_err(|_| DaAccumulationError::MissingAccount(source_id))?
-                    .ok_or(DaAccumulationError::MissingAccount(source_id))?
+                    .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?
+                    .ok_or(DaAccumulationError::MessageSourceMissing(source_id))?
                     .serial();
                 let entry =
                     DaMessageEntry::new(source_serial, msg.incl_epoch(), msg.payload().clone());
@@ -437,6 +444,9 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
 
     /// Error captured while finalizing an epoch via set_cur_epoch.
     pending_epoch_error: Option<DaAccumulationError>,
+
+    /// Tracks whether any writes occurred during epoch sealing.
+    post_seal_writes: bool,
 }
 
 impl<S: IStateAccessor> DaAccumulatingState<S> {
@@ -448,6 +458,7 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             epoch_acc: EpochDaAccumulator::default(),
             pending_epoch_blobs: VecDeque::new(),
             pending_epoch_error: None,
+            post_seal_writes: false,
         }
     }
 
@@ -484,6 +495,17 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             }
         }
     }
+
+    #[cfg(test)]
+    pub fn post_seal_writes_detected(&self) -> bool {
+        self.post_seal_writes
+    }
+
+    fn record_post_seal_write(&mut self) {
+        if !self.da_tracking_enabled {
+            self.post_seal_writes = true;
+        }
+    }
 }
 
 impl<S> IStateAccessor for DaAccumulatingState<S>
@@ -506,6 +528,8 @@ where
         if self.da_tracking_enabled {
             let prior = self.inner.cur_slot();
             self.epoch_acc.record_slot_change(prior, slot);
+        } else {
+            self.record_post_seal_write();
         }
         self.inner.set_cur_slot(slot);
     }
@@ -530,10 +554,15 @@ where
                 self.epoch_acc = EpochDaAccumulator::default();
             }
             self.da_tracking_enabled = true;
+            self.post_seal_writes = false;
         }
         self.inner.set_cur_epoch(epoch);
     }
 
+    /// Finalizes the preseal DA diff and disables tracking for sealing-time updates.
+    ///
+    /// Per SPS-ol-da-structure, DA payloads include only preseal changes; any
+    /// epoch sealing updates derived from L1 MUST NOT be captured here.
     fn begin_epoch_sealing(&mut self) {
         if !self.da_tracking_enabled {
             return;
@@ -546,6 +575,7 @@ where
         }
         self.epoch_acc = EpochDaAccumulator::default();
         self.da_tracking_enabled = false;
+        self.post_seal_writes = false;
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -573,6 +603,7 @@ where
     }
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.record_post_seal_write();
         self.inner.set_total_ledger_balance(amt);
     }
 
@@ -590,11 +621,13 @@ where
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
-        if self.da_tracking_enabled
-            && let Some(account_state) = self.inner.get_account_state(id)?
-        {
-            self.epoch_acc.record_pre_state(id, account_state)?;
-            self.epoch_acc.record_touched_account(id);
+        if self.da_tracking_enabled {
+            if let Some(account_state) = self.inner.get_account_state(id)? {
+                self.epoch_acc.record_pre_state(id, account_state)?;
+                self.epoch_acc.record_touched_account(id);
+            }
+        } else {
+            self.record_post_seal_write();
         }
 
         let (result, local_writes) = self.inner.update_account(id, |inner_acct| {
@@ -622,6 +655,7 @@ where
         let init = if self.da_tracking_enabled {
             Some(account_init_from_data(&new_acct_data))
         } else {
+            self.record_post_seal_write();
             None
         };
 
