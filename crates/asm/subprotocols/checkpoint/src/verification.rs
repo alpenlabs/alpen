@@ -1,17 +1,14 @@
-use std::cmp::Ordering;
-
 use bitcoin_bosd::Descriptor;
 use ssz::Encode;
 use ssz_primitives::FixedBytes;
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::{VerifiedAuxData, logging};
 use strata_checkpoint_types_ssz::{
-    CheckpointClaim, CheckpointPayload, CheckpointTip, L2BlockRange, OLLog,
+    CheckpointClaim, CheckpointSidecar, CheckpointTip, L2BlockRange, OLLog,
     SignedCheckpointPayload, compute_asm_manifests_hash,
 };
 use strata_codec::decode_buf_exact;
 use strata_crypto::hash;
-use strata_identifiers::Epoch;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
@@ -49,7 +46,29 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         .into());
     }
 
-    // 3. Validate L2 progression
+    // 3. Validate L1 progression
+    let l1_height_covered_in_last_checkpoint = state.verified_tip.l1_height();
+    let l1_height_covered_in_new_checkpoint = payload.inner().new_tip.l1_height();
+
+    // 3a. Invalid: checkpoint exceeds the current L1 tip
+    if l1_height_covered_in_new_checkpoint >= current_l1_height {
+        return Err(InvalidCheckpointPayload::CheckpointBeyondL1Tip {
+            checkpoint_height: l1_height_covered_in_new_checkpoint,
+            current_height: current_l1_height,
+        }
+        .into());
+    }
+
+    // 3b. Invalid: checkpoint goes backwards in L1 height
+    if l1_height_covered_in_last_checkpoint > l1_height_covered_in_new_checkpoint {
+        return Err(InvalidCheckpointPayload::L1HeightGoesBackwards {
+            prev_height: l1_height_covered_in_last_checkpoint,
+            new_height: l1_height_covered_in_new_checkpoint,
+        }
+        .into());
+    }
+
+    // 4. Validate L2 progression
     let prev_slot = state.verified_tip().l2_commitment().slot();
     let new_slot = payload.inner().new_tip().l2_commitment().slot();
     if new_slot <= prev_slot {
@@ -60,22 +79,26 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         .into());
     }
 
-    // 4a. Construct full checkpoint claim
-    let claim = construct_full_claim(
-        expected_epoch,
-        current_l1_height,
-        &state.verified_tip,
-        payload.inner(),
+    // 5. Construct full checkpoint claim
+    let asm_manifests_hash = compute_asm_manifests_hash_for_checkpoint(
+        l1_height_covered_in_last_checkpoint + 1,
+        l1_height_covered_in_new_checkpoint,
         verified_aux_data,
     )?;
+    let claim = construct_full_claim(
+        &state.verified_tip,
+        payload.inner().new_tip(),
+        payload.inner().sidecar(),
+        asm_manifests_hash,
+    )?;
 
-    // 4b. Verify the proof
+    // 6. Verify the proof
     state
         .checkpoint_predicate()
         .verify_claim_witness(&claim.as_ssz_bytes(), payload.inner.proof())
         .map_err(InvalidCheckpointPayload::CheckpointPredicateVerification)?;
 
-    // 5. Extract and validate withdrawal intent logs
+    // 7. Extract and validate withdrawal intent logs
     let withdrawal_intents =
         extract_and_validate_withdrawal_intents(payload.inner().sidecar().ol_logs())?;
 
@@ -85,32 +108,21 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
 /// Constructs a complete checkpoint claim for verification by combining the verified tip state
 /// with the new checkpoint payload.
 fn construct_full_claim(
-    epoch: Epoch,
-    current_l1_height: u32,
     verified_tip: &CheckpointTip,
-    payload: &CheckpointPayload,
-    verified_aux_data: &VerifiedAuxData,
+    new_tip: &CheckpointTip,
+    sidecar: &CheckpointSidecar,
+    asm_manifests_hash: FixedBytes<32>,
 ) -> CheckpointValidationResult<CheckpointClaim> {
-    let l2_range = L2BlockRange::new(
-        *verified_tip.l2_commitment(),
-        payload.new_tip().l2_commitment,
-    );
+    let l2_range = L2BlockRange::new(*verified_tip.l2_commitment(), new_tip.l2_commitment);
 
-    let asm_manifests_hash = compute_asm_manifests_hash_for_checkpoint(
-        verified_tip,
-        payload.new_tip(),
-        current_l1_height,
-        verified_aux_data,
-    )?;
-
-    let state_diff_hash = hash::raw(payload.sidecar().ol_state_diff()).into();
+    let state_diff_hash = hash::raw(sidecar.ol_state_diff()).into();
 
     // Hash SSZ-encoded OL logs (convert to Vec for SSZ encoding)
-    let ol_logs_vec = payload.sidecar().ol_logs().to_vec();
+    let ol_logs_vec = sidecar.ol_logs().to_vec();
     let ol_logs_hash = hash::raw(&ol_logs_vec.as_ssz_bytes()).into();
 
     Ok(CheckpointClaim::new(
-        epoch,
+        new_tip.epoch,
         l2_range,
         asm_manifests_hash,
         state_diff_hash,
@@ -155,58 +167,22 @@ fn extract_and_validate_withdrawal_intents(
     Ok(withdrawal_intents)
 }
 
-/// Computes the ASM manifests hash for a checkpoint transition.
+/// Computes the ASM manifests hash for a range of L1 blocks.
 ///
-/// Validates L1 height progression between the previous and new checkpoint tips:
-/// - Returns an error if the new checkpoint goes backwards in L1 height
-/// - Returns an error if the new checkpoint exceeds the current L1 tip
-/// - Returns a zero hash if no new L1 blocks were processed (L1 height unchanged)
-/// - Otherwise computes and returns the hash of all ASM manifests from the L1 block range
+/// Returns an error if the manifest hashes cannot be retrieved from aux data.
 fn compute_asm_manifests_hash_for_checkpoint(
-    verified_tip: &CheckpointTip,
-    new_tip: &CheckpointTip,
-    current_l1_height: u32,
+    start_height: u32,
+    end_height: u32,
     verified_aux_data: &VerifiedAuxData,
 ) -> CheckpointValidationResult<FixedBytes<32>> {
-    let l1_height_covered_in_last_checkpoint = verified_tip.l1_height();
-    let l1_height_covered_in_new_checkpoint = new_tip.l1_height();
+    let manifest_hashes =
+        verified_aux_data.get_manifest_hashes(start_height as u64, end_height as u64)?;
 
-    if l1_height_covered_in_new_checkpoint >= current_l1_height {
-        return Err(InvalidCheckpointPayload::CheckpointBeyondL1Tip {
-            checkpoint_height: l1_height_covered_in_new_checkpoint,
-            current_height: current_l1_height,
-        }
-        .into());
-    }
-
-    match l1_height_covered_in_last_checkpoint.cmp(&l1_height_covered_in_new_checkpoint) {
-        // Invalid: checkpoint goes backwards in L1 height
-        Ordering::Greater => Err(InvalidCheckpointPayload::L1HeightGoesBackwards {
-            prev_height: l1_height_covered_in_last_checkpoint,
-            new_height: l1_height_covered_in_new_checkpoint,
-        }
-        .into()),
-
-        // Valid: checkpoint advances L2 state without consuming new L1 blocks
-        Ordering::Equal => Ok(FixedBytes::<32>::from([0u8; 32])),
-
-        // Valid: checkpoint processes new L1 blocks
-        // Start from (prev_checkpoint_l1_height + 1) since prev_checkpoint_l1_height
-        // was already processed in the previous checkpoint
-        Ordering::Less => {
-            let manifest_hashes = verified_aux_data.get_manifest_hashes(
-                (l1_height_covered_in_last_checkpoint + 1) as u64,
-                l1_height_covered_in_new_checkpoint as u64,
-            )?;
-
-            Ok(compute_asm_manifests_hash(manifest_hashes))
-        }
-    }
+    Ok(compute_asm_manifests_hash(manifest_hashes))
 }
 
 #[cfg(test)]
 mod tests {
-    use ssz_primitives::FixedBytes;
     use strata_asm_common::{AsmHistoryAccumulatorState, AuxData, VerifiedAuxData};
     use strata_identifiers::{AccountSerial, Buf64};
     use strata_ol_chain_types_new::OLLog;
@@ -277,17 +253,44 @@ mod tests {
     }
 
     #[test]
-    fn test_asm_manifests_hash_computation_payload_beyond_l1_tip() {
+    fn test_invalid_epoch_progression() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        payload.new_tip.epoch = state.verified_tip().epoch + 2;
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let signed_payload = harness.sign_payload(payload);
+
+        let current_l1_height = signed_payload.inner().new_tip().l1_height + 1;
+
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::InvalidEpoch { .. }
+            )
+        ));
+    }
+
+    #[test]
+    fn test_new_tip_beyond_current_l1_height() {
         let (state, harness) = test_setup();
         let payload = harness.build_payload();
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let signed_payload = harness.sign_payload(payload);
 
-        let current_l1_height = payload.new_tip().l1_height - 1;
+        let current_l1_height = signed_payload.inner().new_tip().l1_height - 1;
 
-        let err = compute_asm_manifests_hash_for_checkpoint(
-            &state.verified_tip,
-            payload.new_tip(),
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
             current_l1_height,
+            &signed_payload,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -300,38 +303,19 @@ mod tests {
     }
 
     #[test]
-    fn test_asm_manifests_hash_computation_l1_no_progress() {
+    fn test_new_l1_tip_goes_backwards() {
         let (state, harness) = test_setup();
         let mut payload = harness.build_payload();
-        let verified_aux_data = harness.gen_verified_aux(&payload.new_tip);
-
-        payload.new_tip.l1_height = state.verified_tip().l1_height;
-
-        let current_l1_height = state.verified_tip().l1_height + 1;
-
-        let res = compute_asm_manifests_hash_for_checkpoint(
-            &state.verified_tip,
-            payload.new_tip(),
-            current_l1_height,
-            &verified_aux_data,
-        )
-        .unwrap();
-        assert_eq!(res, FixedBytes::zero())
-    }
-
-    #[test]
-    fn test_asm_manifests_hash_computation_l1_backwards() {
-        let (state, harness) = test_setup();
-        let mut payload = harness.build_payload();
-        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
         payload.new_tip.l1_height = state.verified_tip().l1_height - 1;
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let signed_payload = harness.sign_payload(payload);
 
         let current_l1_height = state.verified_tip().l1_height + 1;
 
-        let err = compute_asm_manifests_hash_for_checkpoint(
-            &state.verified_tip,
-            payload.new_tip(),
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
             current_l1_height,
+            &signed_payload,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -341,6 +325,33 @@ mod tests {
                 InvalidCheckpointPayload::L1HeightGoesBackwards { .. }
             )
         ))
+    }
+
+    #[test]
+    fn test_l2_slot_does_not_advance() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+
+        // Set new L2 slot to be equal to the previous slot (no progression)
+        payload.new_tip.l2_commitment = *state.verified_tip().l2_commitment();
+
+        let current_l1_height = payload.new_tip().l1_height + 1;
+        let signed_payload = harness.sign_payload(payload);
+
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::L2SlotDoesNotAdvance { .. }
+            )
+        ));
     }
 
     #[test]
@@ -354,12 +365,9 @@ mod tests {
         let verified_aux_data =
             VerifiedAuxData::try_new(&aux_data, &asm_accumulator_state).unwrap();
 
-        let current_l1_height = payload.new_tip().l1_height + 1;
-
         let err = compute_asm_manifests_hash_for_checkpoint(
-            &state.verified_tip,
-            payload.new_tip(),
-            current_l1_height,
+            state.verified_tip.l1_height() + 1,
+            payload.new_tip().l1_height(),
             &verified_aux_data,
         )
         .unwrap_err();
@@ -445,33 +453,6 @@ mod tests {
             err,
             CheckpointValidationError::InvalidPayload(
                 InvalidCheckpointPayload::CheckpointPredicateVerification(_)
-            )
-        ));
-    }
-
-    #[test]
-    fn test_l2_slot_does_not_advance() {
-        let (state, harness) = test_setup();
-        let mut payload = harness.build_payload();
-        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
-
-        // Set new L2 slot to be equal to the previous slot (no progression)
-        payload.new_tip.l2_commitment = *state.verified_tip().l2_commitment();
-
-        let current_l1_height = payload.new_tip().l1_height + 1;
-        let signed_payload = harness.sign_payload(payload);
-
-        let err = validate_checkpoint_and_extract_withdrawal_intents(
-            &state,
-            current_l1_height,
-            &signed_payload,
-            &verified_aux_data,
-        )
-        .unwrap_err();
-        assert!(matches!(
-            err,
-            CheckpointValidationError::InvalidPayload(
-                InvalidCheckpointPayload::L2SlotDoesNotAdvance { .. }
             )
         ));
     }
