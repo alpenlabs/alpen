@@ -25,6 +25,7 @@ pub fn process_block_manifests<S: IStateAccessor>(
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     let terminating_epoch = state.cur_epoch();
+    state.begin_epoch_sealing();
 
     // 1. Process all the manifests.
     let orig_l1_height = state.last_l1_height();
