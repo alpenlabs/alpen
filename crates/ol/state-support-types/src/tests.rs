@@ -16,7 +16,9 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaPayloadV1};
+use strata_ol_da::{
+    AccountDiff, AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaPayloadV1,
+};
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::{MessageEntry, Seqno};
@@ -853,10 +855,10 @@ fn test_new_account_post_state_encoded() {
     assert_eq!(new_accounts.len(), 1);
     let entry = &new_accounts[0];
     assert_eq!(entry.account_id, account_id);
-    assert_eq!(entry.init.balance, BitcoinAmount::from_sat(150));
+    assert_eq!(entry.init.balance, BitcoinAmount::from_sat(100));
     match &entry.init.type_state {
         AccountTypeInit::Snark(init) => {
-            assert_eq!(init.initial_state_root, test_hash(9));
+            assert_eq!(init.initial_state_root, test_hash(0));
             // The VK is stored with the predicate type ID prefix, so we need to compare
             // with the full predicate key bytes (type ID + raw VK bytes)
             let expected_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk.clone());
@@ -867,7 +869,24 @@ fn test_new_account_post_state_encoded() {
         }
         _ => panic!("expected snark account init"),
     }
-    assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
+    let diffs = blob.state_diff.ledger.account_diffs.entries();
+    assert_eq!(diffs.len(), 1);
+    assert_eq!(diffs[0].account_serial, AccountSerial::one());
+    match &diffs[0].diff {
+        AccountDiff::Snark { balance, snark } => {
+            let expected_balance = BitcoinAmount::from_sat(150);
+            assert_eq!(balance.new_value(), Some(&expected_balance));
+            assert_eq!(snark.seq_no.diff().copied(), Some(1));
+            let expected_state_root = test_hash(9);
+            assert_eq!(
+                snark.inner_state_root.new_value(),
+                Some(&expected_state_root)
+            );
+            assert!(snark.next_msg_read_idx.diff().is_none());
+            assert!(snark.inbox.new_entries().is_empty());
+        }
+        _ => panic!("expected snark account diff"),
+    }
 }
 
 #[test]
