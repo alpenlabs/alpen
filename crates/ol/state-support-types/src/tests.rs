@@ -16,6 +16,7 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
+use strata_ol_chain_types_new::OLLog;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
@@ -776,6 +777,24 @@ fn test_da_blob_deterministic() {
 }
 
 #[test]
+fn test_output_logs_included_in_da_blob() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let mut da_state = DaAccumulatingState::new(state);
+    let log = OLLog::new(AccountSerial::one(), vec![1, 2, 3]);
+
+    da_state.record_output_logs(vec![log.clone()]);
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    assert_eq!(blob.output_logs.logs(), &[log]);
+}
+
+#[test]
 fn test_epoch_sealing_suspends_da_tracking() {
     let account_id = test_account_id(1);
     let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
@@ -902,10 +921,10 @@ fn test_new_account_post_state_encoded() {
     assert_eq!(new_accounts.len(), 1);
     let entry = &new_accounts[0];
     assert_eq!(entry.account_id, account_id);
-    assert_eq!(entry.init.balance, BitcoinAmount::from_sat(100));
+    assert_eq!(entry.init.balance, BitcoinAmount::from_sat(150));
     match &entry.init.type_state {
         AccountTypeInit::Snark(init) => {
-            assert_eq!(init.initial_state_root, test_hash(0));
+            assert_eq!(init.initial_state_root, test_hash(9));
             // The VK is stored with the predicate type ID prefix, so we need to compare
             // with the full predicate key bytes (type ID + raw VK bytes)
             let expected_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk.clone());
@@ -917,19 +936,7 @@ fn test_new_account_post_state_encoded() {
         _ => panic!("expected snark account init"),
     }
     let diffs = blob.state_diff.ledger.account_diffs.entries();
-    assert_eq!(diffs.len(), 1);
-    assert_eq!(diffs[0].account_serial, AccountSerial::one());
-    let diff = &diffs[0].diff;
-    let expected_balance = BitcoinAmount::from_sat(150);
-    assert_eq!(diff.balance.new_value(), Some(&expected_balance));
-    assert_eq!(diff.snark.seq_no.diff().copied(), Some(1));
-    let expected_state_root = test_hash(9);
-    assert_eq!(
-        diff.snark.inner_state_root.new_value(),
-        Some(&expected_state_root)
-    );
-    assert!(diff.snark.next_msg_read_idx.diff().is_none());
-    assert!(diff.snark.inbox.new_entries().is_empty());
+    assert!(diffs.is_empty());
 }
 
 #[test]
