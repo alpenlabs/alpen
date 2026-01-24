@@ -145,7 +145,7 @@ fn extract_and_validate_withdrawal_intents(
             // Since the extraction is done after the proof verification, this should have been a
             // proper descriptor.
             logging::error!("Failed to parse withdrawal destination descriptor");
-            return Err(InvalidCheckpointPayload::InvalidLog.into());
+            return Err(InvalidCheckpointPayload::MalformedWithdrawalDestDesc.into());
         };
 
         let withdraw_output = WithdrawOutput::new(destination, withdrawal_data.amt().into());

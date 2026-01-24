@@ -12,7 +12,7 @@ pub enum CheckpointValidationError {
     InvalidPayload(#[from] InvalidCheckpointPayload),
 
     /// Failed to retrieve manifest hashes from auxiliary data.
-    #[error("auxiliary data error: {0}")]
+    #[error("invalid auxiliary data: {0}")]
     InvalidAux(#[from] AuxError),
 }
 
@@ -30,7 +30,7 @@ pub enum InvalidCheckpointPayload {
     /// Checkpoint epoch does not match expected progression.
     ///
     /// Each checkpoint must advance the epoch by exactly 1.
-    #[error("invalid epoch: expected {expected}, got {actual}")]
+    #[error("invalid epoch: (expected {expected}, got {actual})")]
     InvalidEpoch { expected: Epoch, actual: Epoch },
 
     /// Checkpoint goes backwards in L1 height.
@@ -63,11 +63,11 @@ pub enum InvalidCheckpointPayload {
     )]
     L2SlotDoesNotAdvance { prev_slot: u64, new_slot: u64 },
 
-    /// Invalid log data.
+    /// Malformed withdrawal destination descriptor
     ///
     /// This error occurs when a withdrawal intent log contains a malformed
     /// destination descriptor. Since user funds have been destroyed on L2,
     /// this prevents the funds from being withdrawn on L1.
-    #[error("invalid log: malformed withdrawal destination descriptor")]
-    InvalidLog,
+    #[error("malformed withdrawal destination descriptor")]
+    MalformedWithdrawalDestDesc,
 }
