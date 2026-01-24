@@ -80,16 +80,12 @@ impl_borsh_via_ssz!(CheckpointClaim);
 
 /// Computes a hash commitment over all ASM manifests in an L1 block range.
 ///
-/// If the input is empty, returns a zero hash. Otherwise, concatenates the manifest
-/// hashes for all L1 blocks in the range and returns a single hash commitment over them.
-pub fn compute_asm_manifests_hash(manifest_hashes: Vec<[u8; 32]>) -> FixedBytes<32> {
+/// If the input is empty, returns a zero hash. Otherwise, hashes the manifest
+/// hashes for all L1 blocks in sequence and returns a single hash commitment over them.
+pub fn compute_asm_manifests_hash(manifest_hashes: &[[u8; 32]]) -> FixedBytes<32> {
     if manifest_hashes.is_empty() {
         return FixedBytes::ZERO;
     }
-    let mut data = Vec::with_capacity(manifest_hashes.len() * 32);
-    for h in manifest_hashes {
-        data.extend_from_slice(h.as_ref());
-    }
-    let hash = hash::raw(&data);
+    let hash = hash::sha256_iter(manifest_hashes.iter().map(|h| h.as_slice()));
     hash.into()
 }

@@ -178,7 +178,7 @@ fn compute_asm_manifests_hash_for_checkpoint(
     let manifest_hashes =
         verified_aux_data.get_manifest_hashes(start_height as u64, end_height as u64)?;
 
-    Ok(compute_asm_manifests_hash(manifest_hashes))
+    Ok(compute_asm_manifests_hash(&manifest_hashes))
 }
 
 #[cfg(test)]

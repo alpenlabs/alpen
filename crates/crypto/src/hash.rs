@@ -7,6 +7,18 @@ pub fn raw(buf: &[u8]) -> Buf32 {
     Buf32::from(<[u8; 32]>::from(Sha256::digest(buf)))
 }
 
+/// Computes a SHA-256 hash over a sequence of byte slices.
+///
+/// Updates the hasher incrementally for each slice, avoiding the need to
+/// concatenate inputs into a single buffer.
+pub fn sha256_iter<'a>(bufs: impl IntoIterator<Item = &'a [u8]>) -> Buf32 {
+    let mut hasher = Sha256::new();
+    for buf in bufs {
+        hasher.update(buf);
+    }
+    Buf32::from(<[u8; 32]>::from(hasher.finalize()))
+}
+
 pub fn compute_borsh_hash<T: BorshSerialize>(v: &T) -> Buf32 {
     let mut hasher = Sha256::new();
     v.serialize(&mut hasher).expect("Serialization failed");

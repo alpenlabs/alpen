@@ -171,7 +171,7 @@ impl CheckpointTestHarness {
         let ol_logs_hash = hash::raw(&ol_logs.as_ssz_bytes()).into();
 
         let manifest_hashes = self.gen_manifest_leaves(&new_tip);
-        let asm_manifests_hash = compute_asm_manifests_hash(manifest_hashes);
+        let asm_manifests_hash = compute_asm_manifests_hash(&manifest_hashes);
 
         let l2_range = L2BlockRange::new(verified_tip.l2_commitment, new_tip.l2_commitment);
         let claim = CheckpointClaim::new(
