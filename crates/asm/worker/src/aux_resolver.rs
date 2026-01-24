@@ -25,7 +25,7 @@ use strata_asm_common::{
 };
 use strata_asm_manifest_types::Hash32;
 use strata_btc_types::BitcoinTxid;
-use strata_params::Params;
+use strata_params::RollupParams;
 use strata_primitives::prelude::*;
 use tracing::*;
 
@@ -44,7 +44,7 @@ pub struct AuxDataResolver<'a> {
     /// Worker context for accessing ASM state and MMR database
     context: &'a dyn WorkerContext,
     /// Rollup parameters for genesis height calculation
-    params: Arc<Params>,
+    params: Arc<RollupParams>,
 }
 
 impl<'a> AuxDataResolver<'a> {
@@ -54,7 +54,7 @@ impl<'a> AuxDataResolver<'a> {
     ///
     /// * `context` - Worker context for ASM state access and MMR database
     /// * `params` - Rollup parameters (needed for genesis height)
-    pub fn new(context: &'a dyn WorkerContext, params: Arc<Params>) -> Self {
+    pub fn new(context: &'a dyn WorkerContext, params: Arc<RollupParams>) -> Self {
         Self { context, params }
     }
 
@@ -168,12 +168,7 @@ impl<'a> AuxDataResolver<'a> {
 
         debug!(count = ranges.len(), "Resolving manifest hash ranges");
 
-        let genesis_height = self
-            .params
-            .rollup()
-            .genesis_l1_view
-            .height()
-            .to_consensus_u32() as u64;
+        let genesis_height = self.params.genesis_l1_view.height_u64();
 
         let mut resolved = Vec::new();
 

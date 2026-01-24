@@ -54,7 +54,7 @@ use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
-use strata_params::Params;
+use strata_params::RollupParams;
 use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
@@ -91,7 +91,7 @@ pub struct AsmTestHarness {
     /// ASM worker context for querying state
     pub context: TestAsmWorkerContext,
     /// Rollup parameters
-    pub params: Arc<Params>,
+    pub params: Arc<RollupParams>,
     /// Task executor for spawning tasks
     pub executor: TaskExecutor,
     /// Genesis block height
@@ -124,10 +124,10 @@ impl AsmTestHarness {
         let genesis_hash = client.get_block_hash(genesis_height).await?;
 
         // 3. Setup parameters
-        let mut params = strata_test_utils_l2::gen_params();
-        params.rollup.network = Network::Regtest;
+        let mut params = strata_test_utils_l2::gen_params().rollup;
+        params.network = Network::Regtest;
         let genesis_view = get_genesis_l1_view(&client, &genesis_hash).await?;
-        params.rollup.genesis_l1_view = genesis_view;
+        params.genesis_l1_view = genesis_view;
         let params = Arc::new(params);
 
         // 4. Create worker context
@@ -490,7 +490,7 @@ impl AsmTestHarness {
 
         // Build SPS-50 compliant OP_RETURN tag using TagData and ParseConfig
         let tag_data = TagDataRef::new(subprotocol_id, tx_type, &[])?;
-        let parse_config = ParseConfig::new(self.params.rollup().magic_bytes);
+        let parse_config = ParseConfig::new(self.params.magic_bytes);
         let op_return_script = parse_config.encode_script_buf(&tag_data)?;
 
         let op_return_output = TxOut {

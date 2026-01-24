@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_params::Params;
+use strata_params::RollupParams;
 use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AsmWorkerBuilder<W> {
     context: Option<W>,
-    params: Option<Arc<Params>>,
+    params: Option<Arc<RollupParams>>,
 }
 
 impl<W> AsmWorkerBuilder<W> {
@@ -37,7 +37,7 @@ impl<W> AsmWorkerBuilder<W> {
     }
 
     /// Set the rollup parameters.
-    pub fn with_params(mut self, params: Arc<Params>) -> Self {
+    pub fn with_params(mut self, params: Arc<RollupParams>) -> Self {
         self.params = Some(params);
         self
     }
