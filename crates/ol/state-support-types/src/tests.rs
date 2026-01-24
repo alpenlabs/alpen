@@ -16,11 +16,9 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_da::{
-    AccountDiff, AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, OLDaPayloadV1,
-};
+use strata_ol_da::{AccountDiff, AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
-use strata_predicate::{PredicateKey, PredicateTypeId};
+use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use crate::{
@@ -458,7 +456,18 @@ fn test_write_tracking_over_batch_diff_inbox_message() {
 
 fn build_simple_blob() -> Vec<u8> {
     let account_id = test_account_id(1);
-    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let (mut state, _) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let source_account_id = test_account_id(7);
+    state
+        .create_new_account(
+            source_account_id,
+            NewAccountData::new(
+                BitcoinAmount::from_sat(0),
+                AccountTypeState::Snark(test_snark_account_state(2)),
+            ),
+        )
+        .unwrap();
     let mut da_state = DaAccumulatingState::new(state);
 
     da_state.set_cur_slot(10);
@@ -979,23 +988,34 @@ fn test_da_blob_size_limit() {
 }
 
 #[test]
-fn test_vk_size_limit_exceeded() {
+fn test_vk_size_truncates_to_predicate_limit() {
     let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
     let account_id = test_account_id(1);
-    // Use MAX_VK_BYTES as raw VK size. After the predicate type ID prefix is added,
-    // the total size will be MAX_VK_BYTES + 1, exceeding the limit.
-    let snark_state = TestSnarkState::new(vec![0u8; MAX_VK_BYTES]);
+    let oversized_vk_len = MAX_CONDITION_LEN as usize + 10;
+    let snark_state = TestSnarkState::new(vec![0u8; oversized_vk_len]);
     let new_acct = NewAccountData::new(
         BitcoinAmount::from_sat(0),
         AccountTypeState::Snark(snark_state),
     );
     da_state.create_new_account(account_id, new_acct).unwrap();
 
-    let result = da_state.take_completed_epoch_da_blob();
-    assert!(matches!(
-        result,
-        Err(DaAccumulationError::VkTooLarge { .. })
-    ));
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let new_accounts = blob.state_diff.ledger.new_accounts.entries();
+    assert_eq!(new_accounts.len(), 1);
+    match &new_accounts[0].init.type_state {
+        AccountTypeInit::Snark(init) => {
+            assert_eq!(
+                init.update_vk.as_slice().len(),
+                MAX_CONDITION_LEN as usize + 1
+            );
+        }
+        _ => panic!("expected snark account init"),
+    }
 }
 
 #[test]
