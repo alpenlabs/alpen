@@ -2,7 +2,7 @@
 //!
 //! This module is organized into sub-modules for different concerns:
 //! - [`encoding`]: Common encoding types (U16LenBytes, U16LenList)
-//! - [`payload`]: Top-level DA payload types (OLDaPayloadV1, StateDiff, OLStateDiff)
+//! - [`payload`]: Top-level DA payload types (OLDaPayloadV1, StateDiff, OutputLogs, OLStateDiff)
 //! - [`global`]: Global state diff types (GlobalStateDiff)
 //! - [`ledger`]: Ledger diff types (LedgerDiff, NewAccountEntry, AccountInit)
 //! - [`account`]: Account diff types (AccountDiff)
@@ -25,8 +25,8 @@ pub use inbox::{DaMessageEntry, InboxBuffer};
 pub use ledger::{
     AccountDiffEntry, AccountInit, AccountTypeInit, LedgerDiff, NewAccountEntry, SnarkAccountInit,
 };
-pub use payload::{OLDaPayloadV1, OLStateDiff, StateDiff};
-pub use snark::{SnarkAccountDiff, SnarkAccountTarget};
+pub use payload::{OLDaPayloadV1, OLStateDiff, OutputLogs, StateDiff};
+pub use snark::{DaProofState, SnarkAccountDiff, SnarkAccountTarget};
 
 /// Maximum size for snark account update VK in DA payloads.
 ///
@@ -39,9 +39,8 @@ pub const MAX_MSG_PAYLOAD_BYTES: usize = 4 * 1024;
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{BitcoinAmount, MsgPayload};
+    use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
     use strata_codec::{decode_buf_exact, encode_to_vec};
-    use strata_identifiers::AccountSerial;
 
     use super::*;
 
@@ -51,7 +50,7 @@ mod tests {
             BitcoinAmount::from_sat(0),
             vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
         );
-        let entry = DaMessageEntry::new(AccountSerial::new(0), 0, payload);
+        let entry = DaMessageEntry::new(AccountId::from([0u8; 32]), 0, payload);
 
         let encoded = encode_to_vec(&entry).expect("encode da message entry");
         let decoded: Result<DaMessageEntry, _> = decode_buf_exact(&encoded);
