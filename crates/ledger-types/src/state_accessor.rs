@@ -33,6 +33,12 @@ pub trait IStateAccessor {
     /// Sets the current epoch.
     fn set_cur_epoch(&mut self, epoch: u32);
 
+    /// Signals that epoch sealing (L1-derived updates) is about to begin.
+    ///
+    /// Implementations that track DA-covered writes can use this to finalize
+    /// the preseal diff and suspend tracking for sealing updates.
+    fn begin_epoch_sealing(&mut self) {}
+
     /// Last L1 block ID.
     fn last_l1_blkid(&self) -> &L1BlockId;
 
