@@ -1,16 +1,6 @@
 {
     "editor.formatOnSave": true,
     "rust-analyzer.checkOnSave": true,
-    "rust-analyzer.check.overrideCommand": [
-        "cargo",
-        "clippy",
-        "--workspace",
-        "--all-features",
-        "--benches",
-        "--tests",
-        "--examples",
-        "--message-format=json"
-    ],
     "rust-analyzer.linkedProjects": [
         "Cargo.toml",
         // "provers/sp1/guest-btc-blockspace/Cargo.toml",
