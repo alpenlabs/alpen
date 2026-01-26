@@ -66,6 +66,13 @@ pub use ssz_generated::ssz::payload::{
 pub use ssz_generated::ssz::payload::{
     MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE,
 };
+
+/// Maximum size for a single OL log payload (512 bytes per SPS-ol-chain-structures).
+pub const MAX_LOG_PAYLOAD_BYTES: usize = 512;
+
+/// Maximum total OL log payload size per checkpoint (16 KiB per SPS-ol-chain-structures).
+pub const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
+
 // Re-export OLLog for consumers parsing checkpoint sidecar logs
 pub use strata_ol_chain_types_new::OLLog;
 
