@@ -1,0 +1,16 @@
+[package]
+name = "strata-node-context"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-config.workspace = true
+strata-params.workspace = true
+strata-status.workspace = true
+strata-storage.workspace = true
+strata-tasks.workspace = true
+
+bitcoind-async-client.workspace = true
+
+[lints]
+workspace = true

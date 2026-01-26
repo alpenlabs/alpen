@@ -14297,6 +14297,7 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "rand 0.8.5",
+ "serde",
  "strata-asm-common",
  "strata-asm-worker",
  "strata-btc-types",
@@ -14782,6 +14783,18 @@ version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
 dependencies = [
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-node-context"
+version = "0.1.0"
+dependencies = [
+ "bitcoind-async-client",
+ "strata-config",
+ "strata-params",
+ "strata-status",
+ "strata-storage",
+ "strata-tasks",
 ]
 
 [[package]]
