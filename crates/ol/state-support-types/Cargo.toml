@@ -11,7 +11,6 @@ strata-da-framework.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-da.workspace = true
-strata-ol-chain-types-new.workspace = true
 strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
