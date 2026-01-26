@@ -93,15 +93,13 @@ class EpochalState(Container):
     #~# external_kind: container
     checkpointed_epoch: strata_identifiers.EpochCommitment
 
-<<<<<<< HEAD
     ### Manifests MMR
     #~# external_kind: container
     manifests_mmr: strata_acct_types.Mmr64
-=======
+
     ### Previous epoch commitment
     #~# external_kind: container
     previous_epoch: strata_identifiers.EpochCommitment
->>>>>>> 67a159463 (Add prev_epoch to epochal state)
 
 ### Global state tracking current slot
 class GlobalState(Container):
