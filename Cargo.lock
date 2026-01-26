@@ -14950,13 +14950,11 @@ dependencies = [
 name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
- "ssz",
  "strata-acct-types",
  "strata-codec",
  "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
- "strata-ol-chain-types-new",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
