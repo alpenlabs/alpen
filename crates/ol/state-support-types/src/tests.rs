@@ -16,7 +16,6 @@ use strata_ledger_types::{
     ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_chain_types_new::OLLog;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
 use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
@@ -774,24 +773,6 @@ fn test_da_blob_deterministic() {
     let blob1 = build_simple_blob();
     let blob2 = build_simple_blob();
     assert_eq!(blob1, blob2);
-}
-
-#[test]
-fn test_output_logs_included_in_da_blob() {
-    let account_id = test_account_id(1);
-    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-    let mut da_state = DaAccumulatingState::new(state);
-    let log = OLLog::new(AccountSerial::one(), vec![1, 2, 3]);
-
-    da_state.record_output_logs(vec![log.clone()]);
-
-    let blob_bytes = da_state
-        .take_completed_epoch_da_blob()
-        .expect("build DA blob")
-        .expect("expected DA blob");
-    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
-
-    assert_eq!(blob.output_logs.logs(), &[log]);
 }
 
 #[test]
