@@ -2,100 +2,31 @@
 
 use std::{collections::BTreeSet, marker::PhantomData};
 
-use ssz::{Decode, Encode};
 use strata_acct_types::{AccountId, BitcoinAmount};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::Codec;
 use strata_da_framework::{DaError, DaWrite};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
     Coin, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
     NewAccountData,
 };
-use strata_ol_chain_types_new::OLLog;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use super::{
-    AccountDiff, AccountInit, DaProofState, GlobalStateDiff, LedgerDiff, MAX_LOG_PAYLOAD_BYTES,
-    MAX_TOTAL_LOG_PAYLOAD_BYTES, SnarkAccountDiff,
+    AccountDiff, AccountInit, DaProofState, GlobalStateDiff, LedgerDiff, SnarkAccountDiff,
 };
 
-/// Versioned OL DA payload containing the state diff and output logs.
+/// Versioned OL DA payload containing the state diff.
 #[derive(Debug, Codec)]
 pub struct OLDaPayloadV1 {
     /// State diff for the epoch.
     pub state_diff: StateDiff,
-
-    /// Ordered output logs emitted during the epoch.
-    pub output_logs: OutputLogs,
 }
 
 impl OLDaPayloadV1 {
     /// Creates a new [`OLDaPayloadV1`] from a state diff.
-    pub fn new(state_diff: StateDiff, output_logs: OutputLogs) -> Self {
-        Self {
-            state_diff,
-            output_logs,
-        }
-    }
-}
-
-/// Ordered output logs emitted during the epoch.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct OutputLogs {
-    logs: Vec<OLLog>,
-}
-
-impl OutputLogs {
-    pub fn new(logs: Vec<OLLog>) -> Self {
-        Self { logs }
-    }
-
-    pub fn logs(&self) -> &[OLLog] {
-        &self.logs
-    }
-
-    pub fn into_logs(self) -> Vec<OLLog> {
-        self.logs
-    }
-}
-
-impl Codec for OutputLogs {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        validate_output_logs(&self.logs)?;
-        let len = u16::try_from(self.logs.len()).map_err(|_| CodecError::OverflowContainer)?;
-        len.encode(enc)?;
-        for log in &self.logs {
-            let bytes = log.as_ssz_bytes();
-            let log_len = u16::try_from(bytes.len()).map_err(|_| CodecError::OverflowContainer)?;
-            log_len.encode(enc)?;
-            enc.write_buf(&bytes)?;
-        }
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let len = u16::decode(dec)? as usize;
-        let mut logs = Vec::with_capacity(len);
-        let mut total_payload = 0usize;
-        for _ in 0..len {
-            let log_len = u16::decode(dec)? as usize;
-            let mut buf = vec![0u8; log_len];
-            dec.read_buf(&mut buf)?;
-            let log =
-                OLLog::from_ssz_bytes(&buf).map_err(|_| CodecError::InvalidVariant("ol_log"))?;
-            let payload_len = log.payload().len();
-            if payload_len > MAX_LOG_PAYLOAD_BYTES {
-                return Err(CodecError::OverflowContainer);
-            }
-            total_payload = total_payload
-                .checked_add(payload_len)
-                .ok_or(CodecError::OverflowContainer)?;
-            if total_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES {
-                return Err(CodecError::OverflowContainer);
-            }
-            logs.push(log);
-        }
-        Ok(Self { logs })
+    pub fn new(state_diff: StateDiff) -> Self {
+        Self { state_diff }
     }
 }
 
@@ -247,23 +178,6 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
     }
 }
 
-fn validate_output_logs(logs: &[OLLog]) -> Result<(), CodecError> {
-    let mut total_payload = 0usize;
-    for log in logs {
-        let payload_len = log.payload().len();
-        if payload_len > MAX_LOG_PAYLOAD_BYTES {
-            return Err(CodecError::OverflowContainer);
-        }
-        total_payload = total_payload
-            .checked_add(payload_len)
-            .ok_or(CodecError::OverflowContainer)?;
-        if total_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES {
-            return Err(CodecError::OverflowContainer);
-        }
-    }
-    Ok(())
-}
-
 fn validate_ledger_entries(
     pre_state_next_serial: AccountSerial,
     diff: &StateDiff,
@@ -380,32 +294,4 @@ fn apply_snark_diff<T: IAccountStateMut>(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use strata_codec::encode_to_vec;
-    use strata_ol_chain_types_new::OLLog;
-
-    use super::*;
-
-    #[test]
-    fn test_output_logs_rejects_oversize_payload() {
-        let log = OLLog::new(AccountSerial::one(), vec![0u8; MAX_LOG_PAYLOAD_BYTES + 1]);
-        let output_logs = OutputLogs::new(vec![log]);
-        assert!(encode_to_vec(&output_logs).is_err());
-    }
-
-    #[test]
-    fn test_output_logs_rejects_total_payload_limit() {
-        let mut logs = Vec::new();
-        for _ in 0..(MAX_TOTAL_LOG_PAYLOAD_BYTES / MAX_LOG_PAYLOAD_BYTES + 1) {
-            logs.push(OLLog::new(
-                AccountSerial::one(),
-                vec![0u8; MAX_LOG_PAYLOAD_BYTES],
-            ));
-        }
-        let output_logs = OutputLogs::new(logs);
-        assert!(encode_to_vec(&output_logs).is_err());
-    }
 }

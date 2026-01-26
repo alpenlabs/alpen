@@ -20,7 +20,7 @@ use strata_ol_chain_types_new::OLLog;
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
     GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry,
-    OLDaPayloadV1, OutputLogs, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
+    OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
 };
 use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
@@ -499,8 +499,8 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
                 .pending_epoch_diffs
                 .pop_front()
                 .expect("pending diff is available");
-            let logs = self.pending_epoch_logs.pop_front().unwrap_or_default();
-            let blob = encode_payload(state_diff, logs)?;
+            let _logs = self.pending_epoch_logs.pop_front().unwrap_or_default();
+            let blob = encode_payload(state_diff)?;
             return Ok(Some(blob));
         }
 
@@ -511,8 +511,8 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
         let mut acc = take(&mut self.epoch_acc);
         match acc.finalize(&self.inner) {
             Ok(state_diff) => {
-                let logs = take(&mut self.epoch_output_logs);
-                let blob = encode_payload(state_diff, logs)?;
+                let _logs = take(&mut self.epoch_output_logs);
+                let blob = encode_payload(state_diff)?;
                 Ok(Some(blob))
             }
             Err(err) => {
@@ -724,12 +724,8 @@ where
     }
 }
 
-fn encode_payload(
-    state_diff: StateDiff,
-    output_logs: Vec<OLLog>,
-) -> Result<Vec<u8>, DaAccumulationError> {
-    let output_logs = OutputLogs::new(output_logs);
-    let blob = OLDaPayloadV1::new(state_diff, output_logs);
+fn encode_payload(state_diff: StateDiff) -> Result<Vec<u8>, DaAccumulationError> {
+    let blob = OLDaPayloadV1::new(state_diff);
     let encoded = encode_to_vec(&blob)?;
 
     if encoded.len() as u64 > OL_DA_DIFF_MAX_SIZE {
