@@ -295,3 +295,19 @@ fn apply_snark_diff<T: IAccountStateMut>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_codec::encode_to_vec;
+
+    use super::*;
+
+    #[test]
+    fn test_payload_encodes_state_diff_only() {
+        let diff_bytes = encode_to_vec(&StateDiff::default()).expect("encode diff");
+        let payload = OLDaPayloadV1::new(StateDiff::default());
+        let payload_bytes = encode_to_vec(&payload).expect("encode payload");
+
+        assert_eq!(payload_bytes, diff_bytes);
+    }
+}
