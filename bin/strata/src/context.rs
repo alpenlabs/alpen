@@ -7,27 +7,16 @@ use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
+use strata_node_context::NodeContext;
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
-use strata_tasks::{TaskExecutor, TaskManager};
-use tokio::runtime::{self, Runtime};
+use strata_tasks::TaskManager;
+use tokio::runtime::Handle;
 use tracing::warn;
 
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
-
-/// Contains resources needed to run node services.
-pub(crate) struct NodeContext {
-    pub runtime: Runtime,
-    pub config: Config,
-    pub params: Arc<Params>,
-    pub task_manager: TaskManager,
-    pub executor: TaskExecutor,
-    pub storage: Arc<NodeStorage>,
-    pub bitcoin_client: Arc<Client>,
-    pub status_channel: Arc<StatusChannel>,
-}
 
 /// Load config early for logging initialization
 pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
@@ -35,16 +24,15 @@ pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
 }
 
 /// Initialize runtime, database, etc.
-pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContext, InitError> {
+pub(crate) fn init_node_context(
+    args: Args,
+    config: Config,
+    handle: Handle,
+) -> Result<NodeContext, InitError> {
     let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
-    let runtime = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("strata-rt")
-        .build()
-        .map_err(InitError::RuntimeBuild)?;
 
-    let task_manager = TaskManager::new(runtime.handle().clone());
+    let task_manager = TaskManager::new(handle.clone());
     let executor = task_manager.create_executor();
 
     let db = init_db::init_database(&config.client)
@@ -63,17 +51,17 @@ pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContex
 
     // Init status channel
     let status_channel = init_status_channel(&storage)?;
-
-    Ok(NodeContext {
-        runtime,
+    let nodectx = NodeContext::new(
+        executor.into(),
         config,
         params,
         task_manager,
-        executor,
         storage,
         bitcoin_client,
         status_channel,
-    })
+    );
+
+    Ok(nodectx)
 }
 
 // Config loading and validation

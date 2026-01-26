@@ -6,12 +6,14 @@ use anyhow::{Result, anyhow};
 use argh::from_env;
 use strata_common::logging;
 use strata_db_types as _;
-use tokio::runtime::Handle;
+use strata_node_context::NodeContext;
+use tokio::runtime::{self, Handle};
 use tracing::info;
 
 use crate::{
     args::Args,
-    context::{NodeContext, init_node_context},
+    context::init_node_context,
+    errors::InitError,
     services::{start_rpc, start_services},
 };
 
@@ -32,23 +34,35 @@ fn main() -> Result<()> {
     let config = context::load_config_early(&args)
         .map_err(|e| anyhow!("Failed to load configuration: {e}"))?;
 
+    // Init runtime
+    let rt = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("strata-rt")
+        .build()
+        .map_err(InitError::RuntimeBuild)?;
+
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(args, config.clone())
+    let nodectx = init_node_context(args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
-    init_logging(nodectx.executor.handle(), &config);
+    init_logging(rt.handle(), &config);
 
     do_startup_checks(&nodectx)?;
 
-    // Start services.
-    let runctx = start_services(nodectx)?;
+    rt.block_on(async {
+        // Start services.
+        let runctx = start_services(nodectx)?;
 
-    // Start RPC.
-    start_rpc(&runctx)?;
+        // Start RPC.
+        start_rpc(&runctx)?;
 
-    // Monitor tasks.
-    runctx.task_manager.start_signal_listeners();
-    runctx.task_manager.monitor(Some(Duration::from_secs(5)))?;
+        // Monitor tasks.
+        let tm = runctx.into_manager();
+        tm.start_signal_listeners();
+        tm.monitor(Some(Duration::from_secs(5)))?;
+
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     info!("Exiting strata");
     Ok(())
