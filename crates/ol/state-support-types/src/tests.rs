@@ -798,19 +798,39 @@ fn test_epoch_sealing_suspends_da_tracking() {
         .unwrap();
     assert!(da_state.post_seal_writes_detected());
 
-    let blob_bytes = da_state
+    let err = da_state
         .take_completed_epoch_da_blob()
-        .expect("build DA blob")
-        .expect("expected DA blob");
-    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+        .expect_err("expected post-seal write error");
+    assert!(matches!(
+        err,
+        DaAccumulationError::PostSealWrites {
+            context: "take_completed_epoch_da_blob"
+        }
+    ));
+}
 
-    let diffs = blob.state_diff.ledger.account_diffs.entries();
-    assert_eq!(diffs.len(), 1);
-    let diff = &diffs[0].diff;
-    assert_eq!(
-        diff.balance.new_value(),
-        Some(&BitcoinAmount::from_sat(1_050))
-    );
+#[test]
+fn test_post_seal_writes_surface_on_epoch_transition() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    da_state.begin_epoch_sealing();
+    da_state.set_cur_slot(da_state.cur_slot() + 1);
+    assert!(da_state.post_seal_writes_detected());
+
+    let next_epoch = da_state.cur_epoch() + 1;
+    da_state.set_cur_epoch(next_epoch);
+
+    let err = da_state
+        .take_completed_epoch_da_blob()
+        .expect_err("expected post-seal write error");
+    assert!(matches!(
+        err,
+        DaAccumulationError::PostSealWrites {
+            context: "set_cur_epoch"
+        }
+    ));
 }
 
 #[test]

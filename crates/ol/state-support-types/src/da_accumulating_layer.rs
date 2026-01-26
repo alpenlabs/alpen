@@ -79,6 +79,10 @@ pub enum DaAccumulationError {
     /// Encoded DA blob exceeds the maximum size limit.
     #[error("da accumulator payload too large: {provided} bytes (max {max})")]
     PayloadTooLarge { provided: usize, max: u64 },
+
+    /// DA-covered writes occurred during epoch sealing.
+    #[error("da accumulator post-seal writes detected during {context}")]
+    PostSealWrites { context: &'static str },
 }
 
 // ============================================================================
@@ -444,6 +448,9 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
 
     /// Tracks whether any writes occurred during epoch sealing.
     post_seal_writes: bool,
+
+    /// Tracks whether post-seal writes have been reported for the epoch.
+    post_seal_writes_reported: bool,
     // No log accumulation: OL output logs are posted in checkpoint sidecars.
 }
 
@@ -458,6 +465,7 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             pending_epoch_blobs: VecDeque::new(),
             pending_epoch_error: None,
             post_seal_writes: false,
+            post_seal_writes_reported: false,
         }
     }
 
@@ -476,6 +484,8 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
         if let Some(err) = self.pending_epoch_error.take() {
             return Err(err);
         }
+
+        self.ensure_no_post_seal_writes("take_completed_epoch_da_blob")?;
 
         if let Some(blob) = self.pending_epoch_blobs.pop_front() {
             return Ok(Some(blob));
@@ -517,6 +527,23 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             self.post_seal_writes = true;
         }
     }
+
+    fn ensure_no_post_seal_writes(
+        &mut self,
+        context: &'static str,
+    ) -> Result<(), DaAccumulationError> {
+        if !self.post_seal_writes {
+            return Ok(());
+        }
+
+        #[cfg(feature = "tracing")]
+        if !self.post_seal_writes_reported {
+            tracing::warn!(context, "post-seal writes detected");
+        }
+        self.post_seal_writes_reported = true;
+
+        Err(DaAccumulationError::PostSealWrites { context })
+    }
 }
 
 impl<S> IStateAccessor for DaAccumulatingState<S>
@@ -554,6 +581,9 @@ where
     fn set_cur_epoch(&mut self, epoch: u32) {
         let prev = self.inner.cur_epoch();
         if epoch != prev {
+            if let Err(err) = self.ensure_no_post_seal_writes("set_cur_epoch") {
+                self.pending_epoch_error = Some(err);
+            }
             if self.da_tracking_enabled {
                 let mut acc = take(&mut self.epoch_acc);
                 match acc.finalize(&self.inner) {
@@ -568,6 +598,7 @@ where
             }
             self.da_tracking_enabled = true;
             self.post_seal_writes = false;
+            self.post_seal_writes_reported = false;
         }
         self.inner.set_cur_epoch(epoch);
     }
@@ -591,6 +622,7 @@ where
         self.epoch_acc = EpochDaAccumulator::default();
         self.da_tracking_enabled = false;
         self.post_seal_writes = false;
+        self.post_seal_writes_reported = false;
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
