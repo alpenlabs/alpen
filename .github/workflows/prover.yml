@@ -51,11 +51,12 @@ jobs:
       - name: Install mold linker
         uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
-      - name: Set up Clang
-        uses: egor-tensin/setup-clang@ef434b41eb33a70396fb336b1bae39c76d740c3d # v1
-        with:
-          version: latest
-          platform: x64
+      # This was disabled with self-hosted runners.
+      # - name: Set up Clang
+      #   uses: egor-tensin/setup-clang@ef434b41eb33a70396fb336b1bae39c76d740c3d # v1
+      #   with:
+      #     version: latest
+      #     platform: x64
 
       - name: Install SP1 Toolchain
         run: |
