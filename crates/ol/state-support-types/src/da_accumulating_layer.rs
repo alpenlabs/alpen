@@ -16,7 +16,6 @@ use strata_ledger_types::{
     AccountTypeStateRef, IAccountState, IAccountStateMut, ISnarkAccountState, IStateAccessor,
     NewAccountData,
 };
-use strata_ol_chain_types_new::OLLog;
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
     GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry,
@@ -437,9 +436,6 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
     /// Pending state diffs waiting for output logs.
     pending_epoch_diffs: VecDeque<StateDiff>,
 
-    /// Pending output logs paired with finalized diffs.
-    pending_epoch_logs: VecDeque<Vec<OLLog>>,
-
     /// Completed epoch blobs waiting to be drained.
     pending_epoch_blobs: VecDeque<Vec<u8>>,
 
@@ -448,9 +444,7 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
 
     /// Tracks whether any writes occurred during epoch sealing.
     post_seal_writes: bool,
-
-    /// Output logs emitted during the current epoch.
-    epoch_output_logs: Vec<OLLog>,
+    // No log accumulation: OL output logs are posted in checkpoint sidecars.
 }
 
 impl<S: IStateAccessor> DaAccumulatingState<S> {
@@ -461,17 +455,10 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             da_tracking_enabled: true,
             epoch_acc: EpochDaAccumulator::default(),
             pending_epoch_diffs: VecDeque::new(),
-            pending_epoch_logs: VecDeque::new(),
             pending_epoch_blobs: VecDeque::new(),
             pending_epoch_error: None,
             post_seal_writes: false,
-            epoch_output_logs: Vec::new(),
         }
-    }
-
-    /// Records output logs emitted during DA-covered processing.
-    pub fn record_output_logs(&mut self, logs: impl IntoIterator<Item = OLLog>) {
-        self.epoch_output_logs.extend(logs);
     }
 
     /// Returns a reference to the wrapped state accessor.
@@ -499,7 +486,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
                 .pending_epoch_diffs
                 .pop_front()
                 .expect("pending diff is available");
-            let _logs = self.pending_epoch_logs.pop_front().unwrap_or_default();
             let blob = encode_payload(state_diff)?;
             return Ok(Some(blob));
         }
@@ -511,7 +497,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
         let mut acc = take(&mut self.epoch_acc);
         match acc.finalize(&self.inner) {
             Ok(state_diff) => {
-                let _logs = take(&mut self.epoch_output_logs);
                 let blob = encode_payload(state_diff)?;
                 Ok(Some(blob))
             }
@@ -574,20 +559,12 @@ where
                 match acc.finalize(&self.inner) {
                     Ok(state_diff) => {
                         self.pending_epoch_diffs.push_back(state_diff);
-                        self.pending_epoch_logs
-                            .push_back(take(&mut self.epoch_output_logs));
                     }
                     Err(err) => self.pending_epoch_error = Some(err),
                 }
                 self.epoch_acc = EpochDaAccumulator::default();
             } else {
                 self.epoch_acc = EpochDaAccumulator::default();
-                let sealing_logs = take(&mut self.epoch_output_logs);
-                if let Some(pending_logs) = self.pending_epoch_logs.back_mut() {
-                    pending_logs.extend(sealing_logs);
-                } else {
-                    self.pending_epoch_logs.push_back(sealing_logs);
-                }
             }
             self.da_tracking_enabled = true;
             self.post_seal_writes = false;
@@ -608,8 +585,6 @@ where
         match acc.finalize(&self.inner) {
             Ok(state_diff) => {
                 self.pending_epoch_diffs.push_back(state_diff);
-                self.pending_epoch_logs
-                    .push_back(take(&mut self.epoch_output_logs));
             }
             Err(err) => self.pending_epoch_error = Some(err),
         }
