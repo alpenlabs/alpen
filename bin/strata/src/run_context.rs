@@ -12,19 +12,22 @@ use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
+use tokio::runtime::Runtime;
 
 /// Holds handles and monitors for all running services.
 pub(crate) struct RunContext {
+    runtime: Runtime, // This is here just to keep runtime in scope
     pub task_manager: TaskManager,
-    pub common: CommonContext,
-    pub service_handles: ServiceHandles,
+    common: CommonContext,
+    service_handles: ServiceHandles,
 }
 
 impl RunContext {
     pub(crate) fn from_node_ctx(ctx: NodeContext, service_handles: ServiceHandles) -> Self {
-        let (task_manager, common) = ctx.into_parts();
+        let (runtime, task_manager, common) = ctx.into_parts();
         Self {
             task_manager,
+            runtime,
             common,
             service_handles,
         }
@@ -48,10 +51,6 @@ impl RunContext {
 
     pub(crate) fn executor(&self) -> &Arc<TaskExecutor> {
         self.common.executor()
-    }
-
-    pub(crate) fn into_manager(self) -> TaskManager {
-        self.task_manager
     }
 }
 

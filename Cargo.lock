@@ -14797,6 +14797,7 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "strata-tasks",
+ "tokio",
 ]
 
 [[package]]

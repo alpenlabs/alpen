@@ -1,14 +1,12 @@
 use std::{collections::VecDeque, sync::Arc, thread::sleep, time};
 
 use anyhow::anyhow;
-use strata_chain_worker_new::{ChainWorkerHandle, WorkerResult};
-use strata_csm_worker::CsmWorkerStatus;
+use strata_chain_worker_new::WorkerResult;
 use strata_db_types::{types::CheckpointConfStatus, DbError};
 use strata_ledger_types::IStateAccessor;
-use strata_node_context::NodeContext;
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
-use strata_service::{ServiceMonitor, ServiceState};
+use strata_service::ServiceState;
 use strata_storage::OLBlockManager;
 use tracing::{debug, warn};
 
@@ -76,14 +74,14 @@ impl FcmState {
         &mut self.inner_state.chain_tracker
     }
 
-    pub(crate) fn update_tip_block(
+    pub(crate) async fn update_tip_block(
         &mut self,
         block: OLBlockCommitment,
         state: Arc<OLState>,
     ) -> WorkerResult<()> {
         self.inner_state.cur_best_block = block;
         self.inner_state.cur_olstate = state;
-        self.ctx().chain_worker().update_safe_tip_blocking(block)
+        self.ctx().chain_worker().update_safe_tip(block).await
     }
 
     pub(crate) fn find_latest_pending_finalizable_epoch(&self) -> Option<(usize, EpochCommitment)> {
@@ -102,7 +100,7 @@ impl FcmState {
             .map(|(a, b)| (a, *b))
     }
 
-    pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> anyhow::Result<()> {
+    pub(crate) async fn finalize_epoch(&mut self, epoch: EpochCommitment) -> anyhow::Result<()> {
         // Safety check.
         let csm_status = self.ctx().csm_monitor().get_current();
         let fin_epoch = csm_status
@@ -113,7 +111,7 @@ impl FcmState {
         }
 
         // Do the leg work of applying the finalization.
-        self.ctx().chain_worker().finalize_epoch_blocking(epoch)?;
+        self.ctx().chain_worker().finalize_epoch(epoch).await?;
 
         // Now update the in memory bookkeeping about it.
         self.chain_tracker_mut().update_finalized_epoch(&epoch)?;
@@ -137,7 +135,7 @@ impl FcmState {
         Ok(())
     }
 
-    pub(crate) fn get_block_slot(&self, blkid: OLBlockId) -> anyhow::Result<u64> {
+    pub(crate) async fn get_block_slot(&self, blkid: OLBlockId) -> anyhow::Result<u64> {
         // FIXME this comes from old code that said "this is horrible but it makes our current use
         // case much faster, see below"
         if blkid == *self.cur_best_block().blkid() {
@@ -150,7 +148,8 @@ impl FcmState {
             .ctx()
             .storage()
             .ol_block()
-            .get_block_data_blocking(blkid)?
+            .get_block_data_async(blkid)
+            .await?
             .ok_or(Error::MissingL2Block(blkid))?;
         Ok(block.header().slot())
     }
@@ -201,17 +200,13 @@ impl FcmInnerState {
 }
 
 /// Creates the forkchoice manager state from a database and rollup params.
-pub fn init_fcm_service_state(
-    nodectx: &NodeContext,
-    chain_worker: Arc<ChainWorkerHandle>,
-    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-) -> anyhow::Result<FcmState> {
+pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmState> {
     // Load data about the last finalized block so we can use that to initialize
     // the finalized tracker.
 
-    let storage = nodectx.storage();
+    let storage = fcm_ctx.storage().clone();
     let genesis_blkid = loop {
-        if let Some(blkcommt) = storage.ol_block().get_canonical_block_at_blocking(0)? {
+        if let Some(blkcommt) = storage.ol_block().get_canonical_block_at_async(0).await? {
             break *blkcommt.blkid();
         }
         sleep(time::Duration::from_secs(1));
@@ -219,7 +214,8 @@ pub fn init_fcm_service_state(
 
     let csm_finalized_epoch = storage
         .ol_state()
-        .get_latest_toplevel_ol_state_blocking()?
+        .get_latest_toplevel_ol_state_async()
+        .await?
         .map(|(_, ols)| *ols.previous_epoch())
         .unwrap_or(EpochCommitment::new(0, 0, genesis_blkid));
 
@@ -232,23 +228,17 @@ pub fn init_fcm_service_state(
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
     chain_tracker.load_unfinalized_blocks(storage.ol_block().as_ref())?;
 
-    let cur_tip_block = determine_start_tip(&chain_tracker, storage.ol_block())?;
+    let cur_tip_block = determine_start_tip(&chain_tracker, storage.ol_block()).await?;
     debug!(?chain_tracker, "init chain tracker");
 
     // Load in that block's ol_state.
     let tip_blkid = cur_tip_block;
     let ol_state = storage
         .ol_state()
-        .get_toplevel_ol_state_blocking(tip_blkid)?
+        .get_toplevel_ol_state_async(tip_blkid)
+        .await?
         .ok_or(DbError::MissingSlotWriteBatch(*tip_blkid.blkid()))?;
 
-    let fcm_ctx = FcmContext::new(
-        nodectx.params().clone(),
-        storage.clone(),
-        chain_worker,
-        csm_monitor,
-        nodectx.status_channel().clone(),
-    );
     let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
 
     // Actually assemble the forkchoice manager state.
@@ -260,7 +250,7 @@ pub fn init_fcm_service_state(
         for epoch in finalized_epoch.epoch()..=csm_finalized_epoch.epoch() {
             let Some(checkpoint_entry) =
                 // TODO: use new checkpoint type and db(to be done in another ticket)
-                storage.checkpoint().get_checkpoint_blocking(epoch as u64)?
+                storage.checkpoint().get_checkpoint(epoch as u64).await?
             else {
                 warn!(%epoch, "missing expected checkpoint entry");
                 continue;
@@ -280,7 +270,7 @@ pub fn init_fcm_service_state(
 
 /// Determines the starting chain tip.  For now, this is just the block with the
 /// highest index, choosing the lowest ordered blockid in the case of ties.
-fn determine_start_tip(
+async fn determine_start_tip(
     unfin: &UnfinalizedBlockTracker,
     ol_block_mgr: &OLBlockManager,
 ) -> anyhow::Result<L2BlockCommitment> {
@@ -288,7 +278,8 @@ fn determine_start_tip(
 
     let mut best = iter.next().expect("fcm: no chain tips");
     let mut best_slot = ol_block_mgr
-        .get_block_data_blocking(*best)?
+        .get_block_data_async(*best)
+        .await?
         .ok_or(Error::MissingL2Block(*best))?
         .header()
         .slot();
@@ -296,7 +287,8 @@ fn determine_start_tip(
     // Iterate through the remaining elements and choose.
     for blkid in iter {
         let blkid_slot = ol_block_mgr
-            .get_block_data_blocking(*blkid)?
+            .get_block_data_async(*blkid)
+            .await?
             .ok_or(Error::MissingL2Block(*best))?
             .header()
             .slot();

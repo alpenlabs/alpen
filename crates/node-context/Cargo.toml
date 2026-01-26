@@ -11,6 +11,7 @@ strata-storage.workspace = true
 strata-tasks.workspace = true
 
 bitcoind-async-client.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

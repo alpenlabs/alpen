@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_csm_worker::CsmWorkerStatus;
+use strata_node_context::NodeContext;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
 #[derive(Clone)]
-pub(crate) struct FcmContext {
+pub struct FcmContext {
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
     chain_worker: Arc<ChainWorkerHandle>,
@@ -17,19 +18,17 @@ pub(crate) struct FcmContext {
 }
 
 impl FcmContext {
-    pub(crate) fn new(
-        params: Arc<Params>,
-        storage: Arc<NodeStorage>,
+    pub fn from_node_ctx(
+        nodectx: &NodeContext,
         chain_worker: Arc<ChainWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-        status_channel: Arc<StatusChannel>,
     ) -> Self {
         Self {
-            params,
-            storage,
+            params: nodectx.params().clone(),
+            storage: nodectx.storage().clone(),
+            status_channel: nodectx.status_channel().clone(),
             chain_worker,
             csm_monitor,
-            status_channel,
         }
     }
 

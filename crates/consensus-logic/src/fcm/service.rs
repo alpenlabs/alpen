@@ -3,21 +3,19 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use bitcoin::absolute::Height;
 use serde::Serialize;
-use strata_chain_worker_new::ChainWorkerHandle;
 use strata_csm_types::ClientState;
-use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{traits::BlockStatus, DbError};
 use strata_ledger_types::IStateAccessor;
-use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::OLBlock;
 use strata_params::RollupParams;
 use strata_primitives::{
     crypto::verify_schnorr_sig, Buf32, CredRule, EpochCommitment, L1BlockCommitment,
     OLBlockCommitment, OLBlockId,
 };
-use strata_service::{Response, Service, ServiceBuilder, ServiceMonitor, SyncService};
+use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
 use strata_status::{ChainSyncStatus, OLSyncStatusUpdate};
 use strata_storage::OLBlockManager;
+use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc::channel as mpsc_channel;
 use tracing::{debug, error, info, trace, warn};
 
@@ -27,29 +25,27 @@ use crate::{
     init_fcm_service_state,
     message::ForkChoiceMessage,
     tip_update::{compute_tip_update, TipUpdate},
-    FcmInput,
+    FcmContext, FcmInput,
 };
 
-pub fn start_fcm_service(
-    nodectx: &NodeContext,
-    chain_worker: Arc<ChainWorkerHandle>,
-    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
+pub async fn start_fcm_service(
+    fcm_ctx: FcmContext,
+    texec: Arc<TaskExecutor>,
 ) -> anyhow::Result<ServiceMonitor<FcmStatus>> {
-    // Get genesis block id
+    let clstate_rx = fcm_ctx.status_channel().subscribe_checkpoint_state();
 
     // initialize fcm state
-    let fcm_state = init_fcm_service_state(nodectx, chain_worker, csm_monitor)?;
+    let fcm_state = init_fcm_service_state(fcm_ctx).await?;
 
-    let texec = nodectx.executor();
     // TODO: can't seem to be able to use fcm_tx
     let (fcm_tx, fcm_rx) = mpsc_channel::<ForkChoiceMessage>(64);
-    let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
-    let fcm_input = FcmInput::new(texec.handle().clone(), fcm_rx, clstate_rx);
+    let fcm_input = FcmInput::new(fcm_rx, clstate_rx);
 
     ServiceBuilder::<FcmService, FcmInput>::new()
         .with_state(fcm_state)
         .with_input(fcm_input)
-        .launch_sync("fcm", texec)
+        .launch_async("fcm", texec.as_ref())
+        .await
 }
 
 #[derive(Clone, Debug)]
@@ -68,42 +64,49 @@ impl Service for FcmService {
     }
 }
 
-impl SyncService for FcmService {
-    fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
+impl AsyncService for FcmService {
+    async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn before_shutdown(
+    async fn before_shutdown(
         _state: &mut Self::State,
         _err: Option<&anyhow::Error>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn process_input(fcm_state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+    async fn process_input(
+        fcm_state: &mut Self::State,
+        input: &Self::Msg,
+    ) -> anyhow::Result<Response> {
         match input {
-            FcmEvent::NewFcmMsg(m) => process_fc_message(m, fcm_state)?,
-            FcmEvent::NewStateUpdate(st) => handle_new_client_state(fcm_state, st)?,
+            FcmEvent::NewFcmMsg(m) => process_fc_message(m, fcm_state).await?,
+            FcmEvent::NewStateUpdate(st) => handle_new_client_state(fcm_state, st).await?,
             FcmEvent::Abort => return Ok(Response::ShouldExit),
         };
         Ok(Response::Continue)
     }
 }
 
-fn process_fc_message(msg: &ForkChoiceMessage, fcm_state: &mut FcmState) -> anyhow::Result<()> {
+async fn process_fc_message(
+    msg: &ForkChoiceMessage,
+    fcm_state: &mut FcmState,
+) -> anyhow::Result<()> {
     let blk_db = fcm_state.ctx().storage().ol_block().clone();
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
             strata_common::check_bail_trigger("fcm_new_block");
 
             let block_bundle = blk_db
-                .get_block_data_blocking(*blkid)?
+                .get_block_data_async(*blkid)
+                .await?
                 .ok_or(Error::MissingL2Block(*blkid))?;
 
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
 
-            let ok = match handle_new_block(fcm_state, &block_bundle) {
+            let ok = match handle_new_block(fcm_state, &block_bundle).await {
                 Ok(v) => v,
                 Err(e) => {
                     // Really we shouldn't emit this error unless there's a
@@ -117,7 +120,7 @@ fn process_fc_message(msg: &ForkChoiceMessage, fcm_state: &mut FcmState) -> anyh
 
             let status = if ok {
                 // check if any pending blocks can be finalized
-                if let Err(err) = handle_epoch_finalization(fcm_state) {
+                if let Err(err) = handle_epoch_finalization(fcm_state).await {
                     error!(%err, "failed to finalize epoch");
                 }
 
@@ -150,14 +153,14 @@ fn process_fc_message(msg: &ForkChoiceMessage, fcm_state: &mut FcmState) -> anyh
                 BlockStatus::Invalid
             };
 
-            blk_db.set_block_status_blocking(*blkid, status)?;
+            blk_db.set_block_status_async(*blkid, status).await?;
         }
     }
 
     Ok(())
 }
 
-fn handle_new_client_state(fcm_state: &mut FcmState, cs: &ClientState) -> anyhow::Result<()> {
+async fn handle_new_client_state(fcm_state: &mut FcmState, cs: &ClientState) -> anyhow::Result<()> {
     let Some(new_fin_epoch) = cs.get_declared_final_epoch() else {
         debug!("got new CSM state, but finalized epoch still unset, ignoring");
         return Ok(());
@@ -166,7 +169,7 @@ fn handle_new_client_state(fcm_state: &mut FcmState, cs: &ClientState) -> anyhow
     info!(?new_fin_epoch, "got new finalized block");
     fcm_state.attach_epoch_pending_finalization(new_fin_epoch);
 
-    match handle_epoch_finalization(fcm_state) {
+    match handle_epoch_finalization(fcm_state).await {
         Err(err) => {
             error!(%err, "failed to finalize epoch");
         }
@@ -185,7 +188,7 @@ fn handle_new_client_state(fcm_state: &mut FcmState, cs: &ClientState) -> anyhow
     Ok(())
 }
 
-fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow::Result<bool> {
+async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow::Result<bool> {
     let blk_db = fcm_state.ctx().storage().ol_block().clone();
     let slot = bundle.header().slot();
     let blkid = &bundle.header().compute_blkid();
@@ -253,7 +256,7 @@ fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow::Resul
     debug!(%tip_blkid, "have new tip, applying update");
 
     // Apply the reorg.
-    let res = match apply_tip_update(tip_update, fcm_state, bundle) {
+    let res = match apply_tip_update(tip_update, fcm_state, bundle).await {
         Ok(()) => {
             info!(%tip_blkid, "new chain tip");
 
@@ -294,14 +297,16 @@ fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow::Resul
 ///        finalized in the EE.
 ///
 /// Return commitment to epoch that was finalized, if any.
-fn handle_epoch_finalization(fcm_state: &mut FcmState) -> anyhow::Result<Option<EpochCommitment>> {
+async fn handle_epoch_finalization(
+    fcm_state: &mut FcmState,
+) -> anyhow::Result<Option<EpochCommitment>> {
     let Some((_idx, next_finalizable_epoch)) = fcm_state.find_latest_pending_finalizable_epoch()
     else {
         // no new blocks to finalize
         return Ok(None);
     };
 
-    fcm_state.finalize_epoch(next_finalizable_epoch)?;
+    fcm_state.finalize_epoch(next_finalizable_epoch).await?;
 
     info!(?next_finalizable_epoch, "updated finalized tip");
     //trace!(?fin_report, "finalization report");
@@ -369,7 +374,7 @@ fn pick_best_block<'t>(
     Ok(best_tip)
 }
 
-fn apply_tip_update(
+async fn apply_tip_update(
     update: TipUpdate,
     fcm_state: &mut FcmState,
     bundle: &OLBlock,
@@ -383,10 +388,11 @@ fn apply_tip_update(
             let blk_cmmt =
                 OLBlockCommitment::new(bundle.header().slot(), bundle.header().compute_blkid());
             let ol_state = blk_db
-                .get_toplevel_ol_state_blocking(blk_cmmt)?
+                .get_toplevel_ol_state_async(blk_cmmt)
+                .await?
                 .ok_or(DbError::MissingStateInstance)?;
 
-            fcm_state.update_tip_block(blk_cmmt, ol_state)?;
+            fcm_state.update_tip_block(blk_cmmt, ol_state).await?;
 
             Ok(())
         }
@@ -407,14 +413,14 @@ fn apply_tip_update(
         TipUpdate::Reorg(reorg) => {
             // See if we need to roll back recent changes.
             let pivot_blkid = reorg.pivot();
-            let pivot_slot = fcm_state.get_block_slot(*pivot_blkid)?;
+            let pivot_slot = fcm_state.get_block_slot(*pivot_blkid).await?;
             let pivot_block = OLBlockCommitment::new(pivot_slot, *pivot_blkid);
 
             // We probably need to roll back to an earlier block and update our
             // in-memory state first.
             if pivot_slot < fcm_state.cur_best_block().slot() {
                 debug!(%pivot_blkid, %pivot_slot, "rolling back ol_state");
-                revert_ol_state_to_block(&pivot_block, fcm_state)?;
+                revert_ol_state_to_block(&pivot_block, fcm_state).await?;
             } else {
                 warn!("got a reorg that didn't roll back to an earlier pivot");
             }
@@ -425,9 +431,9 @@ fn apply_tip_update(
         }
 
         TipUpdate::Revert(_cur, new) => {
-            let slot = fcm_state.get_block_slot(new)?;
+            let slot = fcm_state.get_block_slot(new).await?;
             let block = OLBlockCommitment::new(slot, new);
-            revert_ol_state_to_block(&block, fcm_state)?;
+            revert_ol_state_to_block(&block, fcm_state).await?;
             Ok(())
         }
     }
@@ -435,7 +441,7 @@ fn apply_tip_update(
 
 /// Safely reverts the in-memory ol_state to a particular block, then rolls
 /// back the writes on-disk.
-fn revert_ol_state_to_block(
+async fn revert_ol_state_to_block(
     block: &OLBlockCommitment,
     fcm_state: &mut FcmState,
 ) -> anyhow::Result<()> {
@@ -447,7 +453,7 @@ fn revert_ol_state_to_block(
     let new_state = db
         .get_toplevel_ol_state_blocking(*block)?
         .ok_or(Error::MissingBlockChainstate(blkid))?;
-    let _ = fcm_state.update_tip_block(*block, new_state);
+    let _ = fcm_state.update_tip_block(*block, new_state).await;
 
     // FIXME: Rollback the writes on the database that we no longer need.
 

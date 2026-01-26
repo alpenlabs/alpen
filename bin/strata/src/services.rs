@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
 use strata_consensus_logic::{
-    start_fcm_service,
+    FcmContext, start_fcm_service,
     sync_manager::{spawn_asm_worker, spawn_csm_listener},
 };
 use strata_identifiers::OLBlockCommitment;
@@ -68,14 +68,20 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         .with_params(nodectx.params().clone())
         .with_status_channel(nodectx.status_channel().as_ref().clone())
         .with_runtime(nodectx.executor().handle().clone())
-        .launch(&nodectx.executor())?;
+        .launch(nodectx.executor())?;
     let chain_worker_handle = Arc::new(chain_worker_handle);
 
     // TODO: Start other tasks like l1writer, broadcaster, btcio reader, etc. all as
     // service, returning the monitors.
 
     // TODO: fcm_handle is whatttt ????
-    let fcm_handle = start_fcm_service(&nodectx, chain_worker_handle.clone(), csm_monitor.clone())?;
+    let fcm_ctx =
+        FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());
+
+    let fcm_handle = nodectx
+        .task_manager()
+        .handle()
+        .block_on(start_fcm_service(fcm_ctx, nodectx.executor().clone()));
 
     let service_handles =
         ServiceHandles::new(asm_handle, csm_monitor, mempool_handle, chain_worker_handle);
@@ -111,7 +117,7 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     // block_on is required because start_services is synchronous but we need
     // to initialize the mempool which requires async operations. The mempool
     // handle must be available before RunContext is constructed.
-    nodectx.executor().handle().block_on(async {
+    nodectx.task_manager().handle().block_on(async {
         MempoolBuilder::new(config, storage, status_channel, current_tip)
             .launch(&executor)
             .await
