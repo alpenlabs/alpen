@@ -13,7 +13,7 @@ use strata_tasks::{TaskExecutor, TaskManager};
     reason = "Not all attributes have debug"
 )]
 pub struct NodeContext {
-    executor: TaskExecutor,
+    executor: Arc<TaskExecutor>,
     config: Config,
     params: Arc<Params>,
     task_manager: TaskManager,
@@ -24,7 +24,7 @@ pub struct NodeContext {
 
 impl NodeContext {
     pub fn new(
-        executor: TaskExecutor,
+        executor: Arc<TaskExecutor>,
         config: Config,
         params: Arc<Params>,
         task_manager: TaskManager,
@@ -43,7 +43,7 @@ impl NodeContext {
         }
     }
 
-    pub fn executor(&self) -> &TaskExecutor {
+    pub fn executor(&self) -> &Arc<TaskExecutor> {
         &self.executor
     }
 
@@ -51,7 +51,7 @@ impl NodeContext {
         &self.config
     }
 
-    pub fn params(&self) -> &Params {
+    pub fn params(&self) -> &Arc<Params> {
         &self.params
     }
 
@@ -59,15 +59,63 @@ impl NodeContext {
         &self.task_manager
     }
 
-    pub fn storage(&self) -> &NodeStorage {
+    pub fn storage(&self) -> &Arc<NodeStorage> {
         &self.storage
     }
 
-    pub fn bitcoin_client(&self) -> &Client {
+    pub fn bitcoin_client(&self) -> &Arc<Client> {
         &self.bitcoin_client
     }
 
-    pub fn status_channel(&self) -> &StatusChannel {
+    pub fn status_channel(&self) -> &Arc<StatusChannel> {
+        &self.status_channel
+    }
+
+    pub fn into_parts(self) -> (TaskManager, CommonContext) {
+        (
+            self.task_manager,
+            CommonContext {
+                executor: self.executor,
+                params: self.params,
+                config: self.config,
+                storage: self.storage,
+                status_channel: self.status_channel,
+            },
+        )
+    }
+}
+
+/// Common items that all services can use
+#[expect(
+    missing_debug_implementations,
+    reason = "Not all attributes have debug implemented"
+)]
+pub struct CommonContext {
+    executor: Arc<TaskExecutor>,
+    params: Arc<Params>,
+    config: Config,
+    storage: Arc<NodeStorage>,
+    status_channel: Arc<StatusChannel>,
+}
+
+impl CommonContext {
+    pub fn executor(&self) -> &Arc<TaskExecutor> {
+        &self.executor
+    }
+
+    pub fn params(&self) -> &Arc<Params> {
+        &self.params
+    }
+
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub fn storage(&self) -> &Arc<NodeStorage> {
+        &self.storage
+    }
+
+    pub fn status_channel(&self) -> &Arc<StatusChannel> {
         &self.status_channel
     }
 }

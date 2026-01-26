@@ -1,35 +1,71 @@
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use bitcoin::absolute::Height;
+use serde::Serialize;
+use strata_chain_worker_new::ChainWorkerHandle;
 use strata_csm_types::ClientState;
+use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{traits::BlockStatus, DbError};
 use strata_ledger_types::IStateAccessor;
+use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::OLBlock;
 use strata_params::RollupParams;
 use strata_primitives::{
     crypto::verify_schnorr_sig, Buf32, CredRule, EpochCommitment, L1BlockCommitment,
     OLBlockCommitment, OLBlockId,
 };
-use strata_service::{Response, Service, SyncService};
+use strata_service::{Response, Service, ServiceBuilder, ServiceMonitor, SyncService};
 use strata_status::{ChainSyncStatus, OLSyncStatusUpdate};
 use strata_storage::OLBlockManager;
+use tokio::sync::mpsc::channel as mpsc_channel;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     errors::Error,
     fcm::{input::FcmEvent, state::FcmState},
+    init_fcm_service_state,
     message::ForkChoiceMessage,
     tip_update::{compute_tip_update, TipUpdate},
+    FcmInput,
 };
+
+pub fn start_fcm_service(
+    nodectx: &NodeContext,
+    chain_worker: Arc<ChainWorkerHandle>,
+    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
+) -> anyhow::Result<ServiceMonitor<FcmStatus>> {
+    // Get genesis block id
+
+    // initialize fcm state
+    let fcm_state = init_fcm_service_state(nodectx, chain_worker, csm_monitor)?;
+
+    let texec = nodectx.executor();
+    // TODO: can't seem to be able to use fcm_tx
+    let (fcm_tx, fcm_rx) = mpsc_channel::<ForkChoiceMessage>(64);
+    let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
+    let fcm_input = FcmInput::new(texec.handle().clone(), fcm_rx, clstate_rx);
+
+    ServiceBuilder::<FcmService, FcmInput>::new()
+        .with_state(fcm_state)
+        .with_input(fcm_input)
+        .launch_sync("fcm", texec)
+}
 
 #[derive(Clone, Debug)]
 pub struct FcmService;
 
+#[derive(Clone, Debug, Serialize)]
+pub struct FcmStatus;
+
 impl Service for FcmService {
     type Msg = FcmEvent;
     type State = FcmState;
-    type Status = ();
+    type Status = FcmStatus;
 
-    fn get_status(_s: &Self::State) -> Self::Status {}
+    fn get_status(_s: &Self::State) -> Self::Status {
+        FcmStatus
+    }
 }
 
 impl SyncService for FcmService {

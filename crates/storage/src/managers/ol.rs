@@ -123,9 +123,17 @@ impl OLBlockManager {
         self.ops.set_block_status_blocking(id, status)
     }
 
-    /// Gets the canonical tip block id.
+    /// Gets the canonical tip block commitment.
     pub fn get_canonical_tip_blocking(&self) -> DbResult<Option<OLBlockCommitment>> {
         let tip = self.get_tip_slot_blocking()?;
+        self.get_canonical_block_at_blocking(tip)
+    }
+
+    /// Gets the canonical block commitment at given height.
+    pub fn get_canonical_block_at_blocking(
+        &self,
+        tip: Slot,
+    ) -> DbResult<Option<OLBlockCommitment>> {
         let blocks = self.get_blocks_at_height_blocking(tip)?;
         // TODO: determine how to get the canonical block. for not it is just the first one
         Ok(blocks

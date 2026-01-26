@@ -13,7 +13,7 @@ pub(crate) struct FcmContext {
     storage: Arc<NodeStorage>,
     chain_worker: Arc<ChainWorkerHandle>,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-    status_channel: StatusChannel,
+    status_channel: Arc<StatusChannel>,
 }
 
 impl FcmContext {
@@ -22,7 +22,7 @@ impl FcmContext {
         storage: Arc<NodeStorage>,
         chain_worker: Arc<ChainWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-        status_channel: StatusChannel,
+        status_channel: Arc<StatusChannel>,
     ) -> Self {
         Self {
             params,

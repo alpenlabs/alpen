@@ -1,16 +1,15 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, sync::Arc, thread::sleep, time};
 
 use anyhow::anyhow;
 use strata_chain_worker_new::{ChainWorkerHandle, WorkerResult};
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{types::CheckpointConfStatus, DbError};
 use strata_ledger_types::IStateAccessor;
+use strata_node_context::NodeContext;
 use strata_ol_state_types::OLState;
-use strata_params::Params;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::{ServiceMonitor, ServiceState};
-use strata_status::StatusChannel;
-use strata_storage::{NodeStorage, OLBlockManager};
+use strata_storage::OLBlockManager;
 use tracing::{debug, warn};
 
 use crate::{
@@ -203,19 +202,26 @@ impl FcmInnerState {
 
 /// Creates the forkchoice manager state from a database and rollup params.
 pub fn init_fcm_service_state(
-    storage: &Arc<NodeStorage>,
-    params: &Arc<Params>,
-    csm_finalized_epoch: Option<EpochCommitment>,
-    genesis_blkid: OLBlockId,
+    nodectx: &NodeContext,
     chain_worker: Arc<ChainWorkerHandle>,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-    status_channel: StatusChannel,
 ) -> anyhow::Result<FcmState> {
     // Load data about the last finalized block so we can use that to initialize
     // the finalized tracker.
 
-    let csm_finalized_epoch =
-        csm_finalized_epoch.unwrap_or_else(|| EpochCommitment::new(0, 0, genesis_blkid));
+    let storage = nodectx.storage();
+    let genesis_blkid = loop {
+        if let Some(blkcommt) = storage.ol_block().get_canonical_block_at_blocking(0)? {
+            break *blkcommt.blkid();
+        }
+        sleep(time::Duration::from_secs(1));
+    };
+
+    let csm_finalized_epoch = storage
+        .ol_state()
+        .get_latest_toplevel_ol_state_blocking()?
+        .map(|(_, ols)| *ols.previous_epoch())
+        .unwrap_or(EpochCommitment::new(0, 0, genesis_blkid));
 
     // pick whatever is the earliest
     let finalized_epoch = csm_finalized_epoch; // TODO: correctly calculate finalized epoch
@@ -237,11 +243,11 @@ pub fn init_fcm_service_state(
         .ok_or(DbError::MissingSlotWriteBatch(*tip_blkid.blkid()))?;
 
     let fcm_ctx = FcmContext::new(
-        params.clone(),
+        nodectx.params().clone(),
         storage.clone(),
         chain_worker,
         csm_monitor,
-        status_channel,
+        nodectx.status_channel().clone(),
     );
     let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
 
