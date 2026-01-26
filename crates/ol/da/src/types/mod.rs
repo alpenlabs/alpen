@@ -37,6 +37,12 @@ pub const MAX_VK_BYTES: usize = (1 << 16) - 1;
 /// Maximum size for a single message payload (4 KiB per SPS-ol-da-structure).
 pub const MAX_MSG_PAYLOAD_BYTES: usize = 4 * 1024;
 
+/// Maximum size for a single OL log payload (512 bytes per SPS-ol-da-structure).
+pub const MAX_LOG_PAYLOAD_BYTES: usize = 512;
+
+/// Maximum total OL log payload size per checkpoint (16 KiB per SPS-ol-da-structure).
+pub const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
+
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
