@@ -6,7 +6,8 @@ use strata_ol_chain_types_new::OLLog;
 
 use crate::{
     CheckpointPayload, CheckpointPayloadError, CheckpointSidecar, CheckpointTip,
-    MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, SignedCheckpointPayload,
+    MAX_LOG_PAYLOAD_BYTES, MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, MAX_TOTAL_LOG_PAYLOAD_BYTES,
+    OL_DA_DIFF_MAX_SIZE, SignedCheckpointPayload,
 };
 
 impl CheckpointTip {
@@ -41,6 +42,8 @@ impl CheckpointSidecar {
             }
         })?;
 
+        validate_ol_logs_payloads(&ol_logs)?;
+
         let ol_logs_len = ol_logs.len() as u64;
         let ol_logs =
             VariableList::new(ol_logs).map_err(|_| CheckpointPayloadError::OlLogsTooLarge {
@@ -63,6 +66,32 @@ impl CheckpointSidecar {
     pub fn ol_logs(&self) -> &[OLLog] {
         &self.ol_logs
     }
+}
+
+fn validate_ol_logs_payloads(ol_logs: &[OLLog]) -> Result<(), CheckpointPayloadError> {
+    let mut total_payload = 0u64;
+    for log in ol_logs {
+        let payload_len = log.payload().len() as u64;
+        if payload_len > MAX_LOG_PAYLOAD_BYTES as u64 {
+            return Err(CheckpointPayloadError::OlLogPayloadTooLarge {
+                provided: payload_len,
+                max: MAX_LOG_PAYLOAD_BYTES as u64,
+            });
+        }
+        total_payload = total_payload.checked_add(payload_len).ok_or(
+            CheckpointPayloadError::OlLogsTotalPayloadTooLarge {
+                provided: u64::MAX,
+                max: MAX_TOTAL_LOG_PAYLOAD_BYTES as u64,
+            },
+        )?;
+        if total_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES as u64 {
+            return Err(CheckpointPayloadError::OlLogsTotalPayloadTooLarge {
+                provided: total_payload,
+                max: MAX_TOTAL_LOG_PAYLOAD_BYTES as u64,
+            });
+        }
+    }
+    Ok(())
 }
 
 impl CheckpointPayload {
@@ -108,5 +137,42 @@ impl SignedCheckpointPayload {
 
     pub fn signature(&self) -> &Buf64 {
         &self.signature
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_identifiers::AccountSerial;
+    use strata_ol_chain_types_new::OLLog;
+
+    use super::*;
+
+    #[test]
+    fn test_checkpoint_sidecar_rejects_oversize_log_payload() {
+        let log = OLLog::new(AccountSerial::one(), vec![0u8; MAX_LOG_PAYLOAD_BYTES + 1]);
+        let result = CheckpointSidecar::new(vec![], vec![log]);
+
+        assert!(matches!(
+            result,
+            Err(CheckpointPayloadError::OlLogPayloadTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn test_checkpoint_sidecar_rejects_total_log_payload() {
+        let mut logs = Vec::new();
+        for _ in 0..(MAX_TOTAL_LOG_PAYLOAD_BYTES / MAX_LOG_PAYLOAD_BYTES + 1) {
+            logs.push(OLLog::new(
+                AccountSerial::one(),
+                vec![0u8; MAX_LOG_PAYLOAD_BYTES],
+            ));
+        }
+
+        let result = CheckpointSidecar::new(vec![], logs);
+
+        assert!(matches!(
+            result,
+            Err(CheckpointPayloadError::OlLogsTotalPayloadTooLarge { .. })
+        ));
     }
 }
