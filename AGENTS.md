@@ -44,6 +44,7 @@ flowchart LR
 ```
 
 **State Transition Functions:**
+
 - **ASM STF**: `AnchorState + L1Block → (AnchorState', AsmManifest)`
 - **OL STF**: `OLState + OLBlock → (OLState', OLLogs)`
 - **EE STF**: `EEState + ExecBlock → (EEState', EEUpdate)`
@@ -70,6 +71,7 @@ ASM is the core of the Strata protocol, functioning as a "virtual smart contract
 - **Export State**: Accumulator for bridge proofs and operator claims
 
 **Subprotocol IDs:**
+
 | ID | Subprotocol | Purpose |
 |----|-------------|---------|
 | 0 | Admin | System upgrades |
@@ -101,9 +103,8 @@ The EE provides EVM execution, decoupled from OL. Currently implemented via Alpe
 
 | Binary | Description |
 |--------|-------------|
-| `strata` | Unified Strata client (new architecture) |
+| `strata` | OL (Strata) client |
 | `alpen-client` | EE client with OL tracking and payload building |
-| `strata-client` | Core L2 client (sequencer or full node mode) |
 | `alpen-reth` | Custom Reth node with Alpen precompiles and extensions |
 | `prover-client` | Validity proof generation (`checkpoint`, `cl-stf`, `evm-ee` proofs) |
 | `strata-sequencer-client` | Lightweight signing client for sequencer duties |
@@ -115,7 +116,7 @@ The EE provides EVM execution, decoupled from OL. Currently implemented via Alpe
 
 ## Library Crates (crates/)
 
-### ASM Domain (`crates/asm/`)
+### ASM Domain (`crates/asm/`, `crates/asm-types/`)
 
 Core Anchor State Machine implementation.
 
@@ -124,7 +125,7 @@ Core Anchor State Machine implementation.
 | `asm/common` | Core ASM types, state, subprotocol traits, aux data handling |
 | `asm/stf` | ASM state transition function and processing stages |
 | `asm/subprotocols/bridge-v1` | Bridge subprotocol: deposits, withdrawals, operators |
-| `asm/subprotocols/checkpoint-v1` | Checkpoint verification subprotocol |
+| `asm/subprotocols/checkpoint-v0` | Checkpoint verification subprotocol |
 | `asm/subprotocols/admin` | Administrative operations and upgrades |
 | `asm/subprotocols/debug-v1` | Debug subprotocol for testing |
 | `asm/txs/bridge-v1` | Bridge transaction parsing (deposit, withdrawal, slash, unstake) |
@@ -138,8 +139,9 @@ Core Anchor State Machine implementation.
 | `asm/msgs/checkpoint` | Checkpoint inter-subprotocol messages |
 | `asm/spec` | Production ASM specification |
 | `asm/spec-debug` | Debug ASM specification |
+| `asm-types` | Shared ASM type definitions used outside the ASM STF |
 
-### OL Domain (`crates/ol/`)
+### OL Domain (`crates/ol/`, `crates/ol-chain-types/`, `crates/ol-chainstate-types/`)
 
 Orchestration Layer implementation.
 
@@ -147,14 +149,15 @@ Orchestration Layer implementation.
 |-------|-------------|
 | `ol/stf` | OL state transition function (block, epoch, manifest processing) |
 | `ol/state-types` | State structures (toplevel, global, epochal, ledger, snark account) |
-| `ol/chain-types` | Block, transaction, log structures (SSZ) |
+| `ol/chain-types` | New OL block/transaction/log types (SSZ) |
 | `ol/msg-types` | Deposit and withdrawal message types |
 | `ol/da` | OL data availability traits |
 | `ol/block-assembly` | OL block construction |
 | `ol/mempool` | Transaction mempool |
 | `ol/state-support-types` | State access layers (batch diff, indexer, write tracking) |
+| `ol-chainstate-types` | OL chainstate type definitions |
 
-### EE Domain (`crates/alpen-ee/`)
+### EE Domain (`crates/alpen-ee/`, `crates/evm-ee/`, `crates/evmexec/`, `crates/eectl/`, `crates/ee-*`, `crates/simple-ee/`)
 
 Execution Environment implementation.
 
@@ -162,7 +165,7 @@ Execution Environment implementation.
 |-------|-------------|
 | `alpen-ee/engine` | EE sync and control logic |
 | `alpen-ee/exec-chain` | Execution chain state and orphan tracking |
-| `alpen-ee/ol_tracker` | OL state tracking from EE perspective |
+| `alpen-ee/ol-tracker` | OL state tracking from EE perspective |
 | `alpen-ee/sequencer` | EE block building and OL chain tracking |
 | `alpen-ee/database` | EE-specific storage (SledDB) |
 | `alpen-ee/common` | Shared EE types and traits |
@@ -175,6 +178,7 @@ Execution Environment implementation.
 | `ee-acct-types` | EE account types (SSZ) |
 | `ee-acct-runtime` | EE account runtime |
 | `ee-chain-types` | EE chain types (SSZ) |
+| `simple-ee` | Minimal EE implementation for tests and tooling |
 
 ### DA Framework (`crates/da-framework/`)
 
@@ -188,29 +192,55 @@ Data Availability primitives for state diff encoding.
 | `Queue` | FIFO structures |
 | `Compound` | Nested DA structures |
 
-### Core Domain
+### Core Types & Utilities
 
-Fundamental types and utilities.
+Fundamental types and shared utilities.
 
 | Crate | Description |
 |-------|-------------|
 | `primitives` | Core primitive types |
 | `identifiers` | Block IDs, transaction IDs, account IDs (SSZ) |
 | `crypto` | Cryptographic operations |
+| `params` | Network parameters |
+| `config` | Configuration types |
+| `common` | Shared helpers, traits, and utilities |
+| `codec-utils` | Helpers for `strata-codec` encoding/decoding |
+| `key-derivation` | Key derivation primitives and helpers |
+| `mpt` | Merkle-Patricia Trie implementation |
+| `status` | Shared status types for services and APIs |
+| `cli-common` | Shared CLI argument and output helpers |
+| `paas` | Prover-as-a-Service task orchestration framework |
+
+### Bitcoin Types & IO
+
+| Crate | Description |
+|-------|-------------|
 | `btc-types` | Bitcoin types (blocks, transactions, params) |
 | `btc-verification` | Bitcoin header and PoW verification |
 | `btcio` | Bitcoin I/O (reader, writer, broadcaster) |
+
+### Storage & State
+
+| Crate | Description |
+|-------|-------------|
 | `storage` | Storage managers and interfaces |
+| `storage-common` | Shared storage abstractions |
 | `db/store-sled` | SledDB storage implementation |
 | `db/types` | Database type definitions |
 | `state` | Chain and client state management |
-| `params` | Network parameters |
-| `config` | Configuration types |
+
+### Account & Protocol Types
+
+| Crate | Description |
+|-------|-------------|
 | `acct-types` | Account types and messages (SSZ) |
 | `snark-acct-types` | Snark account types (SSZ) |
+| `snark-acct-sys` | Snark account system logic |
 | `ledger-types` | Ledger entry types |
 | `bridge-types` | Bridge operation types |
 | `checkpoint-types` | Checkpoint and batch types |
+| `checkpoint-types-ssz` | SSZ containers for checkpoint types |
+| `csm-types` | Client state machine type definitions |
 
 ### Proof Domain (`crates/proof-impl/`, `crates/zkvm/`)
 
@@ -235,6 +265,21 @@ Custom Reth node components.
 | `reth/rpc` | Custom RPC endpoints |
 | `reth/chainspec` | Chain specification |
 | `reth/statediff` | State diff generation |
+| `reth/db` | Reth database glue |
+| `reth/primitives` | Reth primitive type bindings |
+| `reth/witness` | Witness and tracing helpers |
+
+### RPC (`crates/rpc/`, `crates/rpc-new/`)
+
+RPC APIs, types, and helpers.
+
+| Crate | Description |
+|-------|-------------|
+| `rpc/utils` | RPC helper utilities |
+| `rpc/bridge-api` | Bridge RPC API definitions |
+| `rpc/prover-client-api` | Prover client RPC API definitions |
+| `rpc-new/api` | New RPC API surface |
+| `rpc-new/types` | New RPC type definitions |
 
 ### Service Crates
 
@@ -242,13 +287,25 @@ Worker patterns and service infrastructure.
 
 | Crate | Description |
 |-------|-------------|
-| `chain-worker` | Generic chain worker pattern |
+| `chain-worker-new` | Chain worker implementation for new OL types |
 | `csm-worker` | Client state machine worker |
 | `chainexec` | Chain execution context |
 | `chaintsn` | Chain transition logic |
 | `consensus-logic` | Fork choice and sync management |
 | `sequencer` | Block production and checkpoint handling |
 | `sync` | Synchronization logic |
+
+### Test Utilities (`crates/test-utils/`)
+
+| Crate | Description |
+|-------|-------------|
+| `test-utils` | Shared test helpers |
+| `test-utils/btc` | Bitcoin test utilities |
+| `test-utils/btcio` | Bitcoin I/O test utilities |
+| `test-utils/evm-ee` | EVM EE test utilities |
+| `test-utils/l2` | L2 integration test utilities |
+| `test-utils/ssz` | SSZ test utilities |
+| `db/tests` | Database-focused test fixtures and helpers |
 
 ## Development Commands
 
@@ -477,12 +534,10 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 | `test` | Adding/fixing tests |
 | `chore` | Maintenance tasks |
 
-**Breaking Changes**: Use `!` after type/scope or `BREAKING CHANGE:` in footer.
+**Breaking Changes**: Use `!` after type/scope.
 
 ```
 feat(api)!: change response format
-
-BREAKING CHANGE: Response now returns array instead of object.
 ```
 
 ### Atomic Commits
@@ -605,7 +660,6 @@ PROVER_TEST=1 cd functional-tests && ./run_test.sh -g prover
 
 - **bitcoind**: Required for L1 integration and testing
 - **uv**: For Python functional tests
-- **nix**: Development shell (optional but recommended)
 
 ## Specifications Reference
 
@@ -623,6 +677,8 @@ Key SPS (Strata Protocol Specification) documents:
 | SPS-acct-sys | Account System | Ledger and system accounts |
 | SPS-snark-acct | Snark Accounts | Actor-like accounts with proven updates |
 | SPS-ol-chain-structures | Chain Structures | OL block and transaction types |
+| SPS-ol-da-primitives | Data Availability Primitives | OL data availability primitives |
+| SPS-ol-da-structure | Data Availability Structure | OL data availability structure |
 
 Full specification index available in the team Notion workspace.
 
@@ -631,5 +687,5 @@ Full specification index available in the team Notion workspace.
 - **Security**: Never commit secrets or keys to the repository
 - **Performance**: Proof generation is computationally intensive
 - **Dependencies**: Keep Alloy/Revm versions aligned with Reth
-- **Nix**: Use `nix develop -c <command>` for consistent environment
 - **Just**: Prefer `just` recipes over direct `cargo` commands
+- **Linting and Formatting**: Use `just lint-check-ws` and `just fmt-ws` to lint and format code after making changes
