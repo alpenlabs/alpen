@@ -14894,7 +14894,6 @@ name = "strata-ol-msg-types"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "strata-acct-types",
  "strata-codec",
  "strata-identifiers",
  "strata-msg-fmt",

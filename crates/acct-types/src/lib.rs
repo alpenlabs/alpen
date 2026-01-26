@@ -13,7 +13,6 @@ mod messages;
 mod mmr;
 mod state;
 mod util;
-mod varint_vec;
 
 // Include generated SSZ types from build.rs output
 #[allow(
@@ -46,4 +45,3 @@ pub use strata_identifiers::{
     AccountId, AccountSerial, AccountTypeId, Hash, RawAccountTypeId, SubjectId,
 };
 pub use util::compute_codec_sha256;
-pub use varint_vec::{VARINT_MAX, VarVec};

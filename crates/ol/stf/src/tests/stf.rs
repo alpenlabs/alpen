@@ -1,7 +1,8 @@
 //! Unit tests for the OL STF implementation.
 
-use strata_acct_types::{AccountId, VarVec};
+use strata_acct_types::AccountId;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
+use strata_codec::VarVec;
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::*;
@@ -125,7 +126,7 @@ fn test_genesis_with_initial_transactions() {
     // Create some test transactions for genesis
     let target = test_account_id(1);
     let msg = b"Hello from genesis".to_vec();
-    let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
+    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
 
     let tx = TransactionPayload::GenericAccountMessage(
         GamTxPayload::new(target, msg_varvec.into_inner())
@@ -646,7 +647,7 @@ fn test_verify_block_with_transactions() {
     // Create a transaction
     let target = test_account_id(1);
     let msg = b"Test message".to_vec();
-    let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
+    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
     let tx = TransactionPayload::GenericAccountMessage(
         GamTxPayload::new(target, msg_varvec.into_inner())
             .expect("GamTxPayload creation should succeed"),
@@ -973,7 +974,7 @@ fn test_verify_rejects_mismatched_logs_root() {
     // Create a block with a transaction (which will generate logs)
     let target = test_account_id(1);
     let msg = b"Test message".to_vec();
-    let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
+    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
     let tx = TransactionPayload::GenericAccountMessage(
         GamTxPayload::new(target, msg_varvec.into_inner())
             .expect("GamTxPayload creation should succeed"),
@@ -1049,7 +1050,7 @@ fn test_verify_rejects_mismatched_body_root() {
     // Assemble a block with a transaction
     let target = test_account_id(1);
     let msg = b"Test message".to_vec();
-    let msg_varvec = VarVec::from_vec(msg).expect("VarVec creation should succeed");
+    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
     let tx = TransactionPayload::GenericAccountMessage(
         GamTxPayload::new(target, msg_varvec.into_inner())
             .expect("GamTxPayload creation should succeed"),

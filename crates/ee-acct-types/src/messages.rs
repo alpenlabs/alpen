@@ -1,7 +1,7 @@
 //! Definitions for EE message types.
 
-use strata_acct_types::{SubjectId, VarVec};
-use strata_codec::{Codec, decode_buf_exact, impl_type_flat_struct};
+use strata_acct_types::SubjectId;
+use strata_codec::{Codec, VarVec, decode_buf_exact, impl_type_flat_struct};
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
 
 use crate::{MessageDecodeError, MessageDecodeResult};
