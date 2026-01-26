@@ -6,7 +6,7 @@ use strata_params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 
 /// Contains resources needed to run node services.
 #[expect(
@@ -14,7 +14,6 @@ use tokio::runtime::Runtime;
     reason = "Not all attributes have debug"
 )]
 pub struct NodeContext {
-    runtime: Runtime,
     executor: Arc<TaskExecutor>,
     config: Config,
     params: Arc<Params>,
@@ -26,17 +25,16 @@ pub struct NodeContext {
 
 impl NodeContext {
     pub fn new(
-        runtime: Runtime,
+        handle: Handle,
         config: Config,
         params: Arc<Params>,
         storage: Arc<NodeStorage>,
         bitcoin_client: Arc<Client>,
         status_channel: Arc<StatusChannel>,
     ) -> Self {
-        let task_manager = TaskManager::new(runtime.handle().clone());
+        let task_manager = TaskManager::new(handle);
         let executor = task_manager.create_executor();
         Self {
-            runtime,
             executor: Arc::new(executor),
             config,
             params,
@@ -75,13 +73,8 @@ impl NodeContext {
         &self.status_channel
     }
 
-    pub fn runtime(&self) -> &Runtime {
-        &self.runtime
-    }
-
-    pub fn into_parts(self) -> (Runtime, TaskManager, CommonContext) {
+    pub fn into_parts(self) -> (TaskManager, CommonContext) {
         (
-            self.runtime,
             self.task_manager,
             CommonContext {
                 executor: self.executor,

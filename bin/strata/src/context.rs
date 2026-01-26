@@ -12,7 +12,7 @@ use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
-use tokio::runtime::{self};
+use tokio::runtime::Handle;
 use tracing::warn;
 
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
@@ -23,14 +23,11 @@ pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
 }
 
 /// Initialize runtime, database, etc.
-pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContext, InitError> {
-    // Init runtime
-    let rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("strata-rt")
-        .build()
-        .map_err(InitError::RuntimeBuild)?;
-
+pub(crate) fn init_node_context(
+    args: Args,
+    config: Config,
+    handle: Handle,
+) -> Result<NodeContext, InitError> {
     let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
 
@@ -50,7 +47,14 @@ pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContex
 
     // Init status channel
     let status_channel = init_status_channel(&storage)?;
-    let nodectx = NodeContext::new(rt, config, params, storage, bitcoin_client, status_channel);
+    let nodectx = NodeContext::new(
+        handle,
+        config,
+        params,
+        storage,
+        bitcoin_client,
+        status_channel,
+    );
 
     Ok(nodectx)
 }

@@ -7,12 +7,13 @@ use argh::from_env;
 use strata_common::logging;
 use strata_db_types as _;
 use strata_node_context::NodeContext;
-use tokio::runtime::Handle;
+use tokio::runtime::{self, Handle};
 use tracing::info;
 
 use crate::{
     args::Args,
     context::init_node_context,
+    errors::InitError,
     services::{start_rpc, start_services},
 };
 
@@ -32,9 +33,15 @@ fn main() -> Result<()> {
     // Load config early to initialize logging with config settings
     let config = context::load_config_early(&args)
         .map_err(|e| anyhow!("Failed to load configuration: {e}"))?;
+    // Init runtime
+    let rt = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("strata-rt")
+        .build()
+        .map_err(InitError::RuntimeBuild)?;
 
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(args, config.clone())
+    let nodectx = init_node_context(args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     init_logging(nodectx.executor().handle(), &config);
