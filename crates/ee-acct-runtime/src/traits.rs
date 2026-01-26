@@ -1,28 +1,24 @@
 //! Snark account runtime traits.
 
 use strata_acct_types::Hash;
-use strata_codec::{Codec, CodecError};
-use thiserror::Error;
+use strata_codec::Codec;
 
-#[derive(Debug, Error)]
-pub enum ProgramError {
-    #[error("invalid coinput")]
-    InvalidCoinput,
+use crate::errors::ProgramResult;
 
-    #[error("malformed coinput")]
-    MalformedCoinput,
-
-    #[error("obligations unsatisfied after update finished processing")]
-    UnsatisfiedObligations,
-}
-
-pub type ProgramResult<T> = Result<T, ProgramError>;
-
+/// Describes a snark account program in terms of its state, the messages it
+/// receives, and the kinds of checks that get performed secretly as part of the
+/// process of proving an update.
+///
+/// These functions are structured in such a way that an implementor can only
+/// ever make modifications to the committed account state using data that is
+/// ensured to be durably stored, but we can have some rich state that we can
+/// use to perform checks across the state.
 pub trait SnarkAccountProgram {
     /// Account inner state.
     type State: IInnerState;
 
-    /// Temporary state that can be modified while processing coinputs but isno .
+    /// Temporary state that can be modified while processing coinputs but is
+    /// not persisted or accessible when modifying the state.
     type VState;
 
     /// Recognized messages.
@@ -34,7 +30,8 @@ pub trait SnarkAccountProgram {
     /// Starts an update, also producing a verification state we use while
     /// processing coinputs.
     ///
-    /// The result is discarded if we're not in a proof.
+    /// The [`Self::VState`] result may be simply discarded if we're not in a
+    /// context where we can verify coinputs using it.
     fn start_update(
         &self,
         state: &mut Self::State,
@@ -64,15 +61,15 @@ pub trait SnarkAccountProgram {
     ) -> ProgramResult<()>;
 
     /// Applies any final state changes after processing messages but before
-    /// performing finalization checks.
+    /// performing verification finalization checks.
     fn pre_finalize_state(
         &self,
         state: &mut Self::State,
         extra_data: &Self::ExtraData,
     ) -> ProgramResult<()>;
 
-    /// Performs any final checks against the verification state.
-    fn finalize_update(
+    /// Performs any final verification checks, consuming the vstate.
+    fn finalize_verification(
         &self,
         state: &Self::State,
         vstate: Self::VState,
@@ -87,9 +84,12 @@ pub trait SnarkAccountProgram {
     ) -> ProgramResult<()>;
 }
 
-/// Trait describing the program state.
+/// Trait describing the program's account state.
 pub trait IInnerState: Clone + Codec + 'static {
     /// Computes a commitment to the inner state.
+    ///
+    /// The return value of this function corresponds to the `inner_state` field
+    /// in the snark account state in the orchestration layer ledger.
     fn compute_state_root(&self) -> Hash;
 }
 
