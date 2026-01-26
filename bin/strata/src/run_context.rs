@@ -5,6 +5,7 @@ use std::sync::Arc;
 use strata_asm_worker::AsmWorkerHandle;
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
+use strata_consensus_logic::FcmServiceHandle;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
 use strata_ol_mempool::MempoolHandle;
@@ -57,6 +58,7 @@ pub(crate) struct ServiceHandles {
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     mempool_handle: Arc<MempoolHandle>,
     chain_worker_handle: Arc<ChainWorkerHandle>,
+    fcm_handle: Arc<FcmServiceHandle>,
 }
 
 impl ServiceHandles {
@@ -65,12 +67,14 @@ impl ServiceHandles {
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
+        fcm_handle: Arc<FcmServiceHandle>,
     ) -> Self {
         Self {
             asm_handle,
             csm_monitor,
             mempool_handle,
             chain_worker_handle,
+            fcm_handle,
         }
     }
 }

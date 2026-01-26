@@ -16,7 +16,7 @@ use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMon
 use strata_status::{ChainSyncStatus, OLSyncStatusUpdate};
 use strata_storage::OLBlockManager;
 use strata_tasks::TaskExecutor;
-use tokio::sync::mpsc::channel as mpsc_channel;
+use tokio::sync::mpsc::{channel as mpsc_channel, Sender};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
@@ -28,24 +28,34 @@ use crate::{
     FcmContext, FcmInput,
 };
 
+#[derive(Clone, Debug)]
+#[expect(unused, reason = "will be used later")]
+pub struct FcmServiceHandle {
+    fcm_tx: Sender<ForkChoiceMessage>,
+    service_monitor: ServiceMonitor<FcmStatus>,
+}
+
 pub async fn start_fcm_service(
     fcm_ctx: FcmContext,
     texec: Arc<TaskExecutor>,
-) -> anyhow::Result<ServiceMonitor<FcmStatus>> {
+) -> anyhow::Result<FcmServiceHandle> {
     let clstate_rx = fcm_ctx.status_channel().subscribe_checkpoint_state();
 
     // initialize fcm state
     let fcm_state = init_fcm_service_state(fcm_ctx).await?;
 
-    // TODO: can't seem to be able to use fcm_tx
     let (fcm_tx, fcm_rx) = mpsc_channel::<ForkChoiceMessage>(64);
     let fcm_input = FcmInput::new(fcm_rx, clstate_rx);
 
-    ServiceBuilder::<FcmService, FcmInput>::new()
+    let service_monitor = ServiceBuilder::<FcmService, FcmInput>::new()
         .with_state(fcm_state)
         .with_input(fcm_input)
         .launch_async("fcm", texec.as_ref())
-        .await
+        .await?;
+    Ok(FcmServiceHandle {
+        service_monitor,
+        fcm_tx,
+    })
 }
 
 #[derive(Clone, Debug)]

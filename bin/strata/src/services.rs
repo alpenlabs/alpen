@@ -74,17 +74,22 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
     // TODO: Start other tasks like l1writer, broadcaster, btcio reader, etc. all as
     // service, returning the monitors.
 
-    // TODO: fcm_handle is whatttt ????
     let fcm_ctx =
         FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());
 
     let fcm_handle = nodectx
         .task_manager()
         .handle()
-        .block_on(start_fcm_service(fcm_ctx, nodectx.executor().clone()));
+        .block_on(start_fcm_service(fcm_ctx, nodectx.executor().clone()))?;
+    let fcm_handle = Arc::new(fcm_handle);
 
-    let service_handles =
-        ServiceHandles::new(asm_handle, csm_monitor, mempool_handle, chain_worker_handle);
+    let service_handles = ServiceHandles::new(
+        asm_handle,
+        csm_monitor,
+        mempool_handle,
+        chain_worker_handle,
+        fcm_handle,
+    );
 
     Ok(RunContext::from_node_ctx(nodectx, service_handles))
 }
