@@ -3,9 +3,9 @@
 use alpen_ee_common::{
     Batch, BatchId, BatchStatus, BatchStorage, InMemoryStorage, L1DaBlockRef, ProofId,
 };
-use bitcoin::{absolute, hashes::Hash as _, BlockHash, Txid, Wtxid};
+use bitcoin::{hashes::Hash as _, BlockHash, Txid, Wtxid};
 use strata_acct_types::Hash;
-use strata_identifiers::{L1BlockCommitment, L1BlockId};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
 
 /// Helper to create a test hash from a single byte.
 pub(crate) fn test_hash(n: u8) -> Hash {
@@ -54,8 +54,8 @@ pub(crate) fn test_wtxid(n: u8) -> Wtxid {
 /// Helper to create test L1DaBlockRef.
 pub(crate) fn make_da_ref(block_n: u8, txn_n: u8) -> L1DaBlockRef {
     let block_hash = BlockHash::from_byte_array([block_n; 32]);
-    let height = absolute::Height::from_consensus(block_n as u32).expect("valid height");
-    let blkid = L1BlockId::from(block_hash);
+    let height = block_n as u32;
+    let blkid = L1BlockId::from(Buf32::from(block_hash.as_raw_hash().to_byte_array()));
     L1DaBlockRef {
         block: L1BlockCommitment::new(height, blkid),
         txns: vec![(test_txid(txn_n), test_wtxid(txn_n))],

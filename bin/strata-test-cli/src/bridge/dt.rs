@@ -52,7 +52,7 @@ pub(crate) fn create_deposit_transaction_cli(
 
     let pubkeys = signers
         .iter()
-        .map(|kp| Buf32::from(kp.x_only_public_key(SECP256K1).0))
+        .map(|kp| Buf32::from(kp.x_only_public_key(SECP256K1).0.serialize()))
         .collect::<Vec<_>>();
 
     let (_address, agg_pubkey) =

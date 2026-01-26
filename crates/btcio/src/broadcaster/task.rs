@@ -33,9 +33,11 @@ pub async fn broadcaster_task(
             _ = interval.tick() => {}
 
             Some((idx, txentry)) = entry_receiver.recv() => {
-                let txid: Txid = ops.get_txid_async(idx).await?.
-                    ok_or(BroadcasterError::TxNotFound(idx))
-                    .map(Into::into)?;
+                let txid: Txid = ops
+                    .get_txid_async(idx)
+                    .await?
+                    .ok_or(BroadcasterError::TxNotFound(idx))
+                    .map(|buf| Txid::from_byte_array(*buf.as_ref()))?;
                 info!(%idx, %txid, "Received txentry");
                 state.unfinalized_entries.push(IndexedEntry::new(idx, txentry));
             }

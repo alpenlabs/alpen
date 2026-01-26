@@ -559,7 +559,7 @@ impl BorshDeserialize for BitcoinTxid {
 impl<'a> Arbitrary<'a> for BitcoinTxid {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let value = Buf32::arbitrary(u)?;
-        let txid = Txid::from(value);
+        let txid = Txid::from_byte_array(value.0);
 
         Ok(Self(txid))
     }

@@ -5,9 +5,9 @@
 
 // Re-export identifier types from strata-identifiers
 pub use strata_identifiers::{
-    create_evm_extra_payload, impl_buf_wrapper, BitcoinBlockHeight, Buf20, Buf32, Buf64, CredRule,
-    EVMExtraPayload, EpochCommitment, EvmEeBlockCommitment, ExecBlockCommitment, L1BlockCommitment,
-    L1BlockId, L1Height, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId,
+    create_evm_extra_payload, impl_buf_wrapper, Buf20, Buf32, Buf64, CredRule, EVMExtraPayload,
+    EpochCommitment, EvmEeBlockCommitment, ExecBlockCommitment, L1BlockCommitment, L1BlockId,
+    L1Height, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId,
 };
 
 // Create module aliases that re-export from identifiers

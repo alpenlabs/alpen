@@ -156,7 +156,7 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     use async_trait::async_trait;
-    use bitcoin::{BlockHash, Network, absolute::Height, block::Header};
+    use bitcoin::{BlockHash, Network, block::Header, hashes::Hash as _};
     use bitcoind_async_client::{
         Client,
         traits::{Reader, Wallet},
@@ -164,7 +164,7 @@ mod tests {
     use corepc_node::Node;
     use strata_asm_common::AsmManifest;
     use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
-    use strata_primitives::{L1BlockId, hash::Hash, l1::GenesisL1View};
+    use strata_primitives::{Buf32, L1BlockId, hash::Hash, l1::GenesisL1View};
     use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
     use strata_test_utils_l2::gen_params;
 
@@ -231,11 +231,9 @@ mod tests {
         let height = client.get_block_height(hash).await?;
 
         // Construct L1BlockCommitment
-        let blkid: L1BlockId = header.block_hash().into();
-        let blk_commitment = L1BlockCommitment::new(
-            Height::from_consensus(height as u32).expect("Height u32 overflow"),
-            blkid,
-        );
+        let blkid: L1BlockId = Buf32::from(header.block_hash().as_raw_hash().to_byte_array()).into();
+        let blk_commitment = L1BlockCommitment::from_height_u64(height, blkid)
+            .expect("height should fit u32");
 
         // Create dummy/default values for other fields
         let next_target = header.bits.to_consensus();

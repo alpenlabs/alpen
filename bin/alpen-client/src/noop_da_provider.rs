@@ -1,6 +1,6 @@
 use alpen_ee_common::{BatchDaProvider, BatchId, DaStatus, L1DaBlockRef};
 use async_trait::async_trait;
-use bitcoin::{absolute::Height, hashes::Hash, Txid, Wtxid};
+use bitcoin::{hashes::Hash, Txid, Wtxid};
 use strata_identifiers::L1BlockCommitment;
 use strata_primitives::{Buf32, L1BlockId};
 
@@ -17,7 +17,7 @@ impl BatchDaProvider for NoopDaProvider {
     async fn check_da_status(&self, _batch_id: BatchId) -> eyre::Result<DaStatus> {
         let txid = Txid::from_raw_hash(Hash::all_zeros());
         let wtxid = Wtxid::from_raw_hash(Hash::all_zeros());
-        let block = L1BlockCommitment::new(Height::ZERO, L1BlockId::from(Buf32::zero()));
+        let block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
 
         let blockrefs = vec![L1DaBlockRef::new(block, vec![(txid, wtxid)])];
         Ok(DaStatus::Ready(blockrefs))

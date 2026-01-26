@@ -80,7 +80,7 @@ impl Subprotocol for CheckpointV0Subproto {
     ) {
         // Get current L1 height from anchor state
         let current_l1_height = anchor_pre.chain_view.pow_state.last_verified_block.height();
-        let current_l1_height_u64 = current_l1_height.to_consensus_u32() as u64;
+        let current_l1_height_u64 = current_l1_height as u64;
 
         for tx in txs {
             let tx_type = tx.tag().tx_type();

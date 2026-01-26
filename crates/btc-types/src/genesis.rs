@@ -1,5 +1,3 @@
-#[cfg(feature = "bitcoin")]
-use bitcoin::absolute;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
 
@@ -14,8 +12,7 @@ pub struct GenesisL1View {
 }
 
 impl GenesisL1View {
-    #[cfg(feature = "bitcoin")]
-    pub fn height(&self) -> absolute::Height {
+    pub fn height(&self) -> u32 {
         self.blk.height()
     }
 

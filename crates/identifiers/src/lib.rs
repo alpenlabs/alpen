@@ -25,7 +25,7 @@ pub use exec::{
     EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, create_evm_extra_payload,
 };
 pub use hash::Hash;
-pub use l1::{BitcoinBlockHeight, L1BlockId, L1Height, WtxidsRoot};
+pub use l1::{L1BlockId, L1Height, WtxidsRoot};
 pub use mmr::{MmrId, RawMmrId};
 pub use ol::{Epoch, L2BlockCommitment, L2BlockId, OLBlockId, OLTxId, Slot};
 
@@ -47,9 +47,6 @@ pub mod ssz_generated {
 }
 
 // Re-export generated commitment types
-#[cfg(feature = "bitcoin")]
-pub use l1::L1BlockCommitment;
-#[cfg(not(feature = "bitcoin"))]
 pub use ssz_generated::ssz::commitments::L1BlockCommitment;
 pub use ssz_generated::ssz::commitments::{
     EpochCommitment, EpochCommitmentRef, L1BlockCommitmentRef, OLBlockCommitment,

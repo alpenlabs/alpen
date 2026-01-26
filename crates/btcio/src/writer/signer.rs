@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bitcoin::hashes::Hash as _;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_db_types::types::{BundledPayloadEntry, L1TxEntry};
 use strata_primitives::buf::Buf32;
@@ -33,8 +34,8 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
         .await
         .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
         .tx;
-    let cid: Buf32 = signed_commit.compute_txid().into();
-    let rid: Buf32 = reveal.compute_txid().into();
+    let cid = Buf32::from(signed_commit.compute_txid().as_raw_hash().to_byte_array());
+    let rid = Buf32::from(reveal.compute_txid().as_raw_hash().to_byte_array());
 
     let centry = L1TxEntry::from_tx(&signed_commit);
     let rentry = L1TxEntry::from_tx(&reveal);

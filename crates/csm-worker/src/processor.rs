@@ -187,7 +187,6 @@ fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
 mod tests {
     use std::sync::Arc;
 
-    use bitcoin::absolute::Height;
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
@@ -272,7 +271,7 @@ mod tests {
 
         // Initialize with empty client state
         let initial_state = ClientState::new(None, None);
-        let initial_block = L1BlockCommitment::new(Height::ZERO, L1BlockId::default());
+        let initial_block = L1BlockCommitment::new(0, L1BlockId::default());
 
         storage
             .client_state()
@@ -311,8 +310,7 @@ mod tests {
     #[test]
     fn test_process_log_with_unknown_log_type() {
         let (mut state, _) = create_test_state();
-        let asm_block =
-            L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
+        let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
 
         let log = create_unknown_log_type();
 
@@ -327,8 +325,7 @@ mod tests {
     #[test]
     fn test_process_log_with_no_log_type() {
         let (mut state, _) = create_test_state();
-        let asm_block =
-            L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
+        let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
 
         let log = create_typeless_log();
 
@@ -343,8 +340,7 @@ mod tests {
     #[test]
     fn test_process_log_with_invalid_checkpoint_data() {
         let (mut state, _) = create_test_state();
-        let asm_block =
-            L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
+        let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
         state.last_asm_block = Some(asm_block);
 
         // Create a log with checkpoint type but invalid data
@@ -375,10 +371,8 @@ mod tests {
 
         for epoch in 1u32..=3u32 {
             // Create L1 block commitment for this checkpoint
-            let asm_block = L1BlockCommitment::new(
-                Height::from_consensus(100 + epoch).unwrap(),
-                arbgen.generate(),
-            );
+            let asm_block =
+                L1BlockCommitment::new(100 + epoch, arbgen.generate());
             state.last_asm_block = Some(asm_block);
 
             // Create L2 block range
@@ -392,14 +386,8 @@ mod tests {
             );
 
             // Create L1 block range
-            let l1_start = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch - 1).unwrap(),
-                arbgen.generate(),
-            );
-            let l1_end = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch).unwrap(),
-                arbgen.generate(),
-            );
+            let l1_start = L1BlockCommitment::new(90 + epoch - 1, arbgen.generate());
+            let l1_end = L1BlockCommitment::new(90 + epoch, arbgen.generate());
 
             // Create batch info
             let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (l2_start, l2_end));

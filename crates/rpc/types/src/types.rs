@@ -4,7 +4,7 @@
 //!  - implementation of RPC client
 //!  - crate for just data structures that represents the JSON responses from Bitcoin core RPC
 
-use bitcoin::{BlockHash, Network, Txid, Wtxid};
+use bitcoin::{hashes::Hash as _, BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
 use strata_asm_proto_bridge_v1::{DepositEntry, OperatorBitmap};
 use strata_bridge_types::WithdrawalIntent;
@@ -270,9 +270,9 @@ impl From<CheckpointL1Ref> for RpcCheckpointL1Ref {
     fn from(l1ref: CheckpointL1Ref) -> Self {
         Self {
             block_height: l1ref.l1_commitment.height_u64(),
-            block_id: (*l1ref.l1_commitment.blkid()).into(),
-            txid: l1ref.txid.into(),
-            wtxid: l1ref.wtxid.into(),
+            block_id: BlockHash::from_byte_array(*l1ref.l1_commitment.blkid().as_ref()),
+            txid: Txid::from_byte_array(*l1ref.txid.as_ref()),
+            wtxid: Wtxid::from_byte_array(*l1ref.wtxid.as_ref()),
         }
     }
 }

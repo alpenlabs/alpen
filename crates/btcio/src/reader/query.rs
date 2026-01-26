@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::bail;
-use bitcoin::{params, Block, BlockHash, CompactTarget};
+use bitcoin::{hashes::Hash as _, params, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use strata_asm_types::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
 use strata_config::btcio::ReaderConfig;
@@ -13,6 +13,7 @@ use strata_params::Params;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
     l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1BlockId},
+    Buf32,
 };
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
@@ -204,9 +205,10 @@ async fn poll_for_new_blocks<R: Reader>(
     if let Some((pivot_height, pivot_blkid)) = find_pivot_block(ctx.client.as_ref(), state).await? {
         if pivot_height < state.best_block_idx() {
             info!(%pivot_height, %pivot_blkid, "found apparent reorg");
+            let blkid =
+                L1BlockId::from(Buf32::from(pivot_blkid.as_raw_hash().to_byte_array()));
             let block =
-                L1BlockCommitment::from_height_u64(pivot_height, L1BlockId::from(pivot_blkid))
-                    .expect("valid height");
+                L1BlockCommitment::from_height_u64(pivot_height, blkid).expect("valid height");
             state.rollback_to_height(pivot_height);
 
             // Return with the revert event immediately
@@ -359,7 +361,8 @@ pub async fn fetch_genesis_l1_view(
     );
 
     // Compute the block ID for the verified block.
-    let block_id: L1BlockId = block_header.block_hash().into();
+    let block_id: L1BlockId =
+        L1BlockId::from(Buf32::from(block_header.block_hash().as_raw_hash().to_byte_array()));
 
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
     // next_block_target, else next_block_target will be current block's target

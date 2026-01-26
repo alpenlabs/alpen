@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bitcoin::{absolute::Height, block::Header, Block, BlockHash, Network, Txid};
+use bitcoin::{block::Header, hashes::Hash as _, Block, BlockHash, Network, Txid};
 use bitcoind_async_client::{traits::Reader, Client};
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
 use strata_btc_types::{GenesisL1View, RawBitcoinTx};
@@ -58,7 +58,8 @@ impl TestAsmWorkerContext {
     /// Fetch a block from regtest by hash, caching it for future use
     pub async fn fetch_and_cache_block(&self, block_hash: BlockHash) -> anyhow::Result<Block> {
         let block = self.client.get_block(&block_hash).await?;
-        let block_id = L1BlockId::from(block_hash);
+        let block_id =
+            L1BlockId::from(Buf32::from(block_hash.as_raw_hash().to_byte_array()));
         self.block_cache
             .lock()
             .unwrap()
@@ -75,7 +76,7 @@ impl WorkerContext for TestAsmWorkerContext {
         }
 
         // If not cached, fetch from regtest (synchronously)
-        let block_hash: BlockHash = (*blockid).into();
+        let block_hash = BlockHash::from_byte_array(*blockid.as_ref());
 
         // Try to use current runtime if available, otherwise create a new one
         let block = match Handle::try_current() {
@@ -208,11 +209,10 @@ pub async fn get_genesis_l1_view(
     let height = client.get_block_height(hash).await?;
 
     // Construct L1BlockCommitment
-    let blkid: L1BlockId = header.block_hash().into();
-    let blk_commitment = L1BlockCommitment::new(
-        Height::from_consensus(height as u32).expect("Height u32 overflow"),
-        blkid,
-    );
+    let blkid: L1BlockId =
+        L1BlockId::from(Buf32::from(header.block_hash().as_raw_hash().to_byte_array()));
+    let blk_commitment =
+        L1BlockCommitment::from_height_u64(height, blkid).expect("height should fit u32");
 
     // Create dummy/default values for other fields
     let next_target = header.bits.to_consensus();

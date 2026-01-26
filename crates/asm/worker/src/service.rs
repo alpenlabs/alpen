@@ -54,7 +54,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         // Traverse back the chain of l1 blocks until we find an l1 block which has AnchorState.
         // Remember all the blocks along the way and pass it (in the reverse order) to process.
         let pivot_span = info_span!("asm.pivot_lookup",
-            target_height = height.to_consensus_u32(),
+            target_height = height,
             target_block = %incoming_block.blkid()
         );
         let pivot_span_guard = pivot_span.enter();
@@ -65,12 +65,15 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         while pivot_anchor.is_err() && pivot_block.height() >= genesis_height {
             let block = ctx.get_l1_block(pivot_block.blkid())?;
-            let parent_height = pivot_block.height().to_consensus_u32() - 1;
-            let parent_block_id = L1BlockCommitment::from_height_u64(
-                parent_height as u64,
-                block.header.prev_blockhash.into(),
-            )
-            .expect("parent height should be valid");
+            let parent_height = pivot_block
+                .height()
+                .checked_sub(1)
+                .expect("pivot height should be > 0");
+            let parent_blkid =
+                L1BlockId::from(Buf32::from(block.header.prev_blockhash.as_raw_hash().to_byte_array()));
+            let parent_block_id =
+                L1BlockCommitment::from_height_u64(parent_height as u64, parent_blkid)
+                    .expect("parent height should be valid");
 
             // Push the unprocessed block.
             skipped_blocks.push((block, pivot_block));
@@ -101,7 +104,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         // Only create it if it doesn't exist yet (idempotency check via MMR leaf index 0).
         if pivot_block.height() == genesis_height && ctx.get_manifest_hash(0)?.is_none() {
             let genesis_span = info_span!("asm.genesis_manifest",
-                pivot_height = pivot_block.height().to_consensus_u32(),
+                pivot_height = pivot_block.height(),
                 pivot_block = %pivot_block.blkid()
             );
             let _genesis_guard = genesis_span.enter();
@@ -141,7 +144,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         // incoming_block.
         for (block, block_id) in skipped_blocks.iter().rev() {
             let transition_span = info_span!("asm.block_transition",
-                height = block_id.height().to_consensus_u32(),
+                height = block_id.height(),
                 block_id = %block_id.blkid()
             );
             let _transition_guard = transition_span.enter();

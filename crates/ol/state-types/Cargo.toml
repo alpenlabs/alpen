@@ -21,8 +21,6 @@ strata-snark-acct-types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
-bitcoin.workspace = true
-
 [build-dependencies]
 ssz_codegen.workspace = true
 

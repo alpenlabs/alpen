@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use bitcoin::Address;
+use bitcoin::{hashes::Hash as _, Address, Txid};
 use bitcoind_async_client::{
     traits::{Reader, Signer, Wallet},
     Client,
@@ -299,7 +299,9 @@ async fn update_l1_status(
         || *new_status == L1BundleStatus::Finalized
     {
         let status_updates = [
-            L1StatusUpdate::LastPublishedTxid(payloadentry.reveal_txid.into()),
+            L1StatusUpdate::LastPublishedTxid(Txid::from_byte_array(
+                *payloadentry.reveal_txid.as_ref(),
+            )),
             L1StatusUpdate::IncrementPublishedRevealCount,
         ];
         apply_status_updates(&status_updates, status_channel).await;

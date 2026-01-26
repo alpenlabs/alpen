@@ -135,7 +135,7 @@ impl BtcChainSegment {
 
     pub fn get_block_manifest(&self, height: u64) -> AsmManifest {
         let header = self.get_block_header_at(height).unwrap();
-        let blkid = header.block_hash().into();
+        let blkid = Buf32::from(header.block_hash().as_raw_hash().to_byte_array()).into();
         let wtxs_root = WtxidsRoot::from(Buf32::from(
             header.merkle_root.as_raw_hash().to_byte_array(),
         ));

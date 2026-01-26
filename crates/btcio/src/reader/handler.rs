@@ -1,3 +1,4 @@
+use bitcoin::hashes::Hash as _;
 use bitcoind_async_client::traits::Reader;
 use strata_identifiers::{Buf32, Epoch, L1BlockCommitment};
 use strata_state::BlockSubmitter;
@@ -57,7 +58,7 @@ async fn handle_blockdata<R: Reader>(
     }
 
     let block = blockdata.block();
-    let blkid: Buf32 = block.block_hash().into();
+    let blkid: Buf32 = Buf32::from(block.block_hash().as_raw_hash().to_byte_array());
     let l1blockid = blkid.into();
 
     // Store chain tracking data only - ASM worker will handle manifest creation

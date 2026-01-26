@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use bitcoin::absolute::Height;
 use bitcoind_async_client::Client;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
@@ -172,12 +171,14 @@ pub fn spawn_csm_listener(
 
     // Fetch historical ASM states starting from the next height.
     let max_historical_blocks = 1000;
-    let nh = Height::from_consensus(from_block.height().to_consensus_u32() + 1)
+    let nh = from_block
+        .height()
+        .checked_add(1)
         .expect("height + 1 should be valid");
-    let historical_states = storage.asm().get_states_from(
-        L1BlockCommitment::new(nh, Default::default()),
-        max_historical_blocks,
-    )?;
+    let historical_states =
+        storage
+            .asm()
+            .get_states_from(L1BlockCommitment::new(nh, Default::default()), max_historical_blocks)?;
 
     // Convert historical states to ASM worker status updates
     let initial_updates: Vec<AsmWorkerStatus> = historical_states

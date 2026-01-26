@@ -1,6 +1,5 @@
 //! Toplevel state.
 
-use bitcoin::absolute;
 use ssz::Encode;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
@@ -26,10 +25,7 @@ impl OLState {
             epoch: EpochalState::new(
                 BitcoinAmount::from(0),
                 0,
-                L1BlockCommitment::new(
-                    absolute::Height::from_consensus(0).unwrap(),
-                    L1BlockId::from(Buf32::zero()),
-                ),
+                L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero())),
                 EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
                 Mmr64::from_generic(&CompactMmr64::new(64)),
             ),
@@ -44,10 +40,7 @@ impl OLState {
             epoch: EpochalState::new(
                 BitcoinAmount::from(0),
                 epoch,
-                L1BlockCommitment::new(
-                    absolute::Height::from_consensus(0).unwrap(),
-                    L1BlockId::from(Buf32::zero()),
-                ),
+                L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero())),
                 EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
                 Mmr64::from_generic(&CompactMmr64::new(64)),
             ),
