@@ -1,11 +1,12 @@
 //! Top-level DA payload types.
 
-use std::marker::PhantomData;
+use std::{collections::BTreeSet, marker::PhantomData};
 
 use ssz::{Decode, Encode};
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{DaError, DaWrite};
+use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
     Coin, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
     NewAccountData,
@@ -14,7 +15,8 @@ use strata_ol_chain_types_new::OLLog;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use super::{
-    AccountDiff, AccountInit, DaProofState, GlobalStateDiff, LedgerDiff, SnarkAccountDiff,
+    AccountDiff, AccountInit, DaProofState, GlobalStateDiff, LedgerDiff, MAX_LOG_PAYLOAD_BYTES,
+    MAX_TOTAL_LOG_PAYLOAD_BYTES, SnarkAccountDiff,
 };
 
 /// Versioned OL DA payload containing the state diff and output logs.
@@ -59,6 +61,7 @@ impl OutputLogs {
 
 impl Codec for OutputLogs {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        validate_output_logs(&self.logs)?;
         let len = u16::try_from(self.logs.len()).map_err(|_| CodecError::OverflowContainer)?;
         len.encode(enc)?;
         for log in &self.logs {
@@ -73,12 +76,23 @@ impl Codec for OutputLogs {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let len = u16::decode(dec)? as usize;
         let mut logs = Vec::with_capacity(len);
+        let mut total_payload = 0usize;
         for _ in 0..len {
             let log_len = u16::decode(dec)? as usize;
             let mut buf = vec![0u8; log_len];
             dec.read_buf(&mut buf)?;
             let log =
                 OLLog::from_ssz_bytes(&buf).map_err(|_| CodecError::InvalidVariant("ol_log"))?;
+            let payload_len = log.payload().len();
+            if payload_len > MAX_LOG_PAYLOAD_BYTES {
+                return Err(CodecError::OverflowContainer);
+            }
+            total_payload = total_payload
+                .checked_add(payload_len)
+                .ok_or(CodecError::OverflowContainer)?;
+            if total_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES {
+                return Err(CodecError::OverflowContainer);
+            }
             logs.push(log);
         }
         Ok(Self { logs })
@@ -175,6 +189,7 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
 
     fn poll_context(&self, target: &Self::Target, context: &Self::Context) -> Result<(), DaError> {
         let pre_state_next_serial = target.next_account_serial();
+        validate_ledger_entries(pre_state_next_serial, &self.diff)?;
         let mut expected_serial = pre_state_next_serial;
         for entry in self.diff.ledger.new_accounts.entries() {
             context.new_account_data(&entry.init)?;
@@ -205,6 +220,7 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
         target.set_cur_slot(cur_slot);
 
         let pre_state_next_serial = target.next_account_serial();
+        validate_ledger_entries(pre_state_next_serial, &self.diff)?;
         let mut expected_serial = pre_state_next_serial;
         for entry in self.diff.ledger.new_accounts.entries() {
             let new_acct = context.new_account_data(&entry.init)?;
@@ -229,6 +245,56 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
         }
         Ok(())
     }
+}
+
+fn validate_output_logs(logs: &[OLLog]) -> Result<(), CodecError> {
+    let mut total_payload = 0usize;
+    for log in logs {
+        let payload_len = log.payload().len();
+        if payload_len > MAX_LOG_PAYLOAD_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
+        total_payload = total_payload
+            .checked_add(payload_len)
+            .ok_or(CodecError::OverflowContainer)?;
+        if total_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
+    }
+    Ok(())
+}
+
+fn validate_ledger_entries(
+    pre_state_next_serial: AccountSerial,
+    diff: &StateDiff,
+) -> Result<(), DaError> {
+    let mut seen_new_ids = BTreeSet::new();
+    for entry in diff.ledger.new_accounts.entries() {
+        if !seen_new_ids.insert(entry.account_id) {
+            return Err(DaError::InsufficientContext);
+        }
+    }
+
+    let pre_serial: u32 = pre_state_next_serial.into();
+    let new_count = diff.ledger.new_accounts.entries().len() as u32;
+    let _new_last = pre_serial
+        .checked_add(new_count.saturating_sub(1))
+        .ok_or(DaError::InsufficientContext)?;
+
+    let mut last_serial: Option<u32> = None;
+    for entry in diff.ledger.account_diffs.entries() {
+        let serial: u32 = entry.account_serial.into();
+        if serial >= pre_serial {
+            return Err(DaError::InsufficientContext);
+        }
+        if let Some(prev) = last_serial
+            && serial <= prev
+        {
+            return Err(DaError::InsufficientContext);
+        }
+        last_serial = Some(serial);
+    }
+    Ok(())
 }
 
 fn apply_account_diff<S: IStateAccessor>(
@@ -314,4 +380,32 @@ fn apply_snark_diff<T: IAccountStateMut>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_codec::encode_to_vec;
+    use strata_ol_chain_types_new::OLLog;
+
+    use super::*;
+
+    #[test]
+    fn test_output_logs_rejects_oversize_payload() {
+        let log = OLLog::new(AccountSerial::one(), vec![0u8; MAX_LOG_PAYLOAD_BYTES + 1]);
+        let output_logs = OutputLogs::new(vec![log]);
+        assert!(encode_to_vec(&output_logs).is_err());
+    }
+
+    #[test]
+    fn test_output_logs_rejects_total_payload_limit() {
+        let mut logs = Vec::new();
+        for _ in 0..(MAX_TOTAL_LOG_PAYLOAD_BYTES / MAX_LOG_PAYLOAD_BYTES + 1) {
+            logs.push(OLLog::new(
+                AccountSerial::one(),
+                vec![0u8; MAX_LOG_PAYLOAD_BYTES],
+            ));
+        }
+        let output_logs = OutputLogs::new(logs);
+        assert!(encode_to_vec(&output_logs).is_err());
+    }
 }
