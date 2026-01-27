@@ -8,7 +8,7 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
 use strata_da_framework::{
-    counter_schemes::{CtrU64ByVarint, VarintIncr},
+    counter_schemes::{CtrU64ByUnsignedVarint, UnsignedVarintIncr},
     DaCounter, DaRegister,
 };
 
@@ -50,8 +50,8 @@ impl From<AccountDiffSerde> for AccountDiff {
                 .unwrap_or_else(DaRegister::new_unset),
             nonce: serde
                 .nonce_incr
-                .and_then(VarintIncr::new)
-                .map(DaCounter::<CtrU64ByVarint>::new_changed)
+                .and_then(UnsignedVarintIncr::new)
+                .map(DaCounter::<CtrU64ByUnsignedVarint>::new_changed)
                 .unwrap_or_else(DaCounter::new_unchanged),
             code_hash: serde
                 .code_hash

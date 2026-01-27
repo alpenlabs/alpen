@@ -4,7 +4,7 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256, KECCAK_EMPTY};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{
-    counter_schemes::{CtrU64ByVarint, VarintIncr},
+    counter_schemes::{CtrU64ByUnsignedVarint, UnsignedVarintIncr},
     make_compound_impl, DaCounter, DaRegister, DaWrite,
 };
 
@@ -23,7 +23,7 @@ pub struct AccountDiff {
     /// Balance change (full replacement if changed).
     pub balance: DaRegister<CodecU256>,
     /// Nonce increment (counter - only increments, varint-encoded for safety).
-    pub nonce: DaCounter<CtrU64ByVarint>,
+    pub nonce: DaCounter<CtrU64ByUnsignedVarint>,
     /// Code hash change (only on contract creation).
     pub code_hash: DaRegister<CodecB256>,
 }
@@ -33,22 +33,22 @@ pub struct AccountDiff {
 make_compound_impl! {
     AccountDiff u8 => AccountSnapshot {
         balance: register [CodecU256 => U256],
-        nonce: counter (CtrU64ByVarint),
+        nonce: counter (CtrU64ByUnsignedVarint),
         code_hash: register [CodecB256 => B256],
     }
 }
 
-/// Converts a nonce delta to `DaCounter<CtrU64ByVarint>`.
+/// Converts a nonce delta to `DaCounter<CtrU64ByUnsignedVarint>`.
 ///
 /// Uses varint encoding to safely handle any reasonable nonce delta without panicking.
 /// Returns `None` if the delta exceeds the varint max (~1 billion), which would indicate
 /// a bug elsewhere in the system.
-fn nonce_incr_from_delta(delta: u64) -> Option<DaCounter<CtrU64ByVarint>> {
+fn nonce_incr_from_delta(delta: u64) -> Option<DaCounter<CtrU64ByUnsignedVarint>> {
     if delta == 0 {
         return Some(DaCounter::new_unchanged());
     }
     let delta_u32 = u32::try_from(delta).ok()?;
-    let incr = VarintIncr::new(delta_u32)?;
+    let incr = UnsignedVarintIncr::new(delta_u32)?;
     Some(DaCounter::new_changed(incr))
 }
 
@@ -64,7 +64,7 @@ impl AccountDiff {
     /// Panics if `nonce` exceeds the varint max (~1 billion).
     pub fn new_created(balance: U256, nonce: u64, code_hash: B256) -> Self {
         let nonce_u32 = u32::try_from(nonce).expect("nonce exceeds u32::MAX");
-        let incr = VarintIncr::new(nonce_u32).expect("nonce exceeds varint max");
+        let incr = UnsignedVarintIncr::new(nonce_u32).expect("nonce exceeds varint max");
         Self {
             balance: DaRegister::new_set(CodecU256(balance)),
             nonce: DaCounter::new_changed(incr),
@@ -236,7 +236,7 @@ mod tests {
 
         let diff = AccountDiff {
             balance: DaRegister::new_set(CodecU256(U256::from(200))),
-            nonce: DaCounter::new_changed(VarintIncr::new(3).unwrap()),
+            nonce: DaCounter::new_changed(UnsignedVarintIncr::new(3).unwrap()),
             code_hash: DaRegister::new_unset(),
         };
 
