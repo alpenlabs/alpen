@@ -17,6 +17,9 @@ const DEFAULT_DATADIR: &str = "strata-data";
 /// Default DB retry delay in ms.
 const DEFAULT_DB_RETRY_DELAY: u64 = 200;
 
+/// Default maximum transactions per block.
+const DEFAULT_MAX_TXS_PER_BLOCK: usize = 1000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -71,10 +74,50 @@ fn default_db_retry_delay() -> u64 {
     DEFAULT_DB_RETRY_DELAY
 }
 
+fn default_max_txs_per_block() -> usize {
+    DEFAULT_MAX_TXS_PER_BLOCK
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
     pub l1_follow_distance: u64,
     pub client_checkpoint_interval: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SequencerConfig {
+    /// Maximum number of transactions to fetch from mempool per block.
+    #[serde(default = "default_max_txs_per_block")]
+    pub max_txs_per_block: usize,
+}
+
+/// Default slots per epoch for epoch sealing.
+const DEFAULT_SLOTS_PER_EPOCH: u64 = 64;
+
+fn default_slots_per_epoch() -> u64 {
+    DEFAULT_SLOTS_PER_EPOCH
+}
+
+/// Configuration for epoch sealing policy.
+///
+/// Determines when epochs should be sealed (i.e., when to create terminal blocks).
+/// Different variants support different sealing strategies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "policy")]
+pub enum EpochSealingConfig {
+    /// Seal every N slots.
+    FixedSlot {
+        #[serde(default = "default_slots_per_epoch")]
+        slots_per_epoch: u64,
+    },
+}
+
+impl Default for EpochSealingConfig {
+    fn default() -> Self {
+        Self::FixedSlot {
+            slots_per_epoch: DEFAULT_SLOTS_PER_EPOCH,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +175,14 @@ pub struct Config {
     pub sync: SyncConfig,
     pub exec: ExecConfig,
 
+    /// Sequencer configuration (only required if client.is_sequencer = true).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequencer: Option<SequencerConfig>,
+
+    /// Epoch sealing configuration (only required if client.is_sequencer = true).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub epoch_sealing: Option<EpochSealingConfig>,
+
     /// Logging configuration (optional section in TOML).
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -181,6 +232,13 @@ mod test {
 
             [btcio.broadcaster]
             poll_interval_ms = 1000
+
+            [sequencer]
+            max_txs_per_block = 1000
+
+            [epoch_sealing]
+            policy = "FixedSlot"
+            slots_per_epoch = 10
         "#;
 
         let config = toml::from_str::<Config>(config_string_sequencer);
@@ -189,6 +247,25 @@ mod test {
             "should be able to load sequencer TOML config but got: {:?}",
             config.err()
         );
+        let config = config.unwrap();
+        assert!(
+            config.sequencer.is_some(),
+            "sequencer config should be present for sequencer"
+        );
+
+        assert!(
+            config.epoch_sealing.is_some(),
+            "batch builder config should be present for sequencer"
+        );
+
+        match config.epoch_sealing.as_ref().unwrap() {
+            EpochSealingConfig::FixedSlot { slots_per_epoch } => {
+                assert_eq!(
+                    *slots_per_epoch, 10,
+                    "parsed slots_per_epoch should match TOML value"
+                );
+            }
+        }
 
         let config_string_fullnode = r#"
             [bitcoind]
@@ -239,6 +316,16 @@ mod test {
             config.is_ok(),
             "should be able to load full-node TOML config but got: {:?}",
             config.err()
+        );
+        let config = config.unwrap();
+        assert!(
+            config.sequencer.is_none(),
+            "sequencer config should be absent for fullnode"
+        );
+
+        assert!(
+            config.epoch_sealing.is_none(),
+            "batcher config should be absent for fullnode"
         );
     }
 }

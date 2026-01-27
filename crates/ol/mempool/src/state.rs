@@ -18,7 +18,7 @@ use strata_storage::{NodeStorage, OLStateManager};
 use tracing::warn;
 
 use crate::{
-    MempoolTxRemovalReason, OLMempoolError, OLMempoolResult,
+    MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
     types::{
         MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
         OLMempoolTransaction,
@@ -282,12 +282,16 @@ impl<P: StateProvider> MempoolServiceState<P> {
         Ok(result)
     }
 
-    /// Handle remove transactions command.
-    pub(crate) fn handle_remove_transactions(
+    /// Handle report invalid transactions command.
+    pub(crate) fn handle_report_invalid_transactions(
         &mut self,
-        txs: Vec<(OLTxId, crate::MempoolTxRemovalReason)>,
-    ) -> OLMempoolResult<Vec<OLTxId>> {
-        self.remove_transactions(&txs)
+        txs: Vec<(OLTxId, MempoolTxInvalidReason)>,
+    ) {
+        let remove_ids: Vec<_> = txs
+            .into_iter()
+            .filter_map(|(txid, reason)| should_remove_tx(reason).then_some(txid))
+            .collect();
+        self.remove_transactions(&remove_ids, true);
     }
 
     /// Check if transaction exists in mempool.
@@ -401,8 +405,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         // Check if this is a replacement transaction and remove old one if needed
         if let Some(old_txid) = self.find_account_tx_with_same_seqno(&tx) {
-            // Remove old tx with same sequence number (last-write-wins)
-            self.remove_transactions(&[(old_txid, MempoolTxRemovalReason::Replaced)])?;
+            // Remove old tx with same sequence number (last-write-wins), no cascade
+            self.remove_transactions(&[old_txid], false);
         }
 
         // Generate timestamp for ordering
@@ -493,58 +497,22 @@ impl<P: StateProvider> MempoolServiceState<P> {
         Ok(())
     }
 
-    /// Remove transactions from the mempool with optional cascade.
+    /// Remove transactions from the mempool.
     ///
-    /// Takes a list of (txid, reason) pairs where reason determines cascade behavior:
-    /// - `Included`: Remove only this transaction (included in block)
-    /// - `Replaced`: Remove this transaction for replacement by a new version
-    /// - `Failed`: Remove this transaction AND cascade to dependent transactions
-    ///
-    /// Returns the removed transaction IDs (including cascaded removals for Failed).
-    pub(crate) fn remove_transactions(
-        &mut self,
-        txs: &[(OLTxId, crate::MempoolTxRemovalReason)],
-    ) -> OLMempoolResult<Vec<OLTxId>> {
-        use crate::MempoolTxRemovalReason;
+    /// If `cascade` is true, also removes dependent transactions (same account, higher seq_no).
+    /// Returns the IDs of all removed transactions.
+    fn remove_transactions(&mut self, ids: &[OLTxId], cascade: bool) -> Vec<OLTxId> {
+        let Ok((mut removed, account_min_seq)) = self.remove_txs_internal(ids) else {
+            return Vec::new();
+        };
 
-        // Separate transactions by removal reason
-        let no_cascade_ids: Vec<OLTxId> = txs
-            .iter()
-            .filter_map(|(id, reason)| {
-                matches!(
-                    reason,
-                    MempoolTxRemovalReason::Included | MempoolTxRemovalReason::Replaced
-                )
-                .then_some(*id)
-            })
-            .collect();
-
-        let failed_ids: Vec<OLTxId> = txs
-            .iter()
-            .filter_map(|(id, reason)| (*reason == MempoolTxRemovalReason::Failed).then_some(*id))
-            .collect();
-
-        let mut removed = Vec::new();
-
-        // Remove transactions that don't cascade (Included, Replaced)
-        if !no_cascade_ids.is_empty() {
-            let (no_cascade_removed, _) = self.remove_txs_internal(&no_cascade_ids)?;
-            removed.extend(no_cascade_removed);
-        }
-
-        // Remove failed transactions (with cascade)
-        if !failed_ids.is_empty() {
-            let (mut failed_removed, account_min_seq) = self.remove_txs_internal(&failed_ids)?;
-
-            // Cascade-remove dependent transactions
+        if cascade {
             for (account, min_failed_seq) in account_min_seq {
-                self.cascade_remove_for_account(account, min_failed_seq, &mut failed_removed)?;
+                let _ = self.cascade_remove_for_account(account, min_failed_seq, &mut removed);
             }
-
-            removed.extend(failed_removed);
         }
 
-        Ok(removed)
+        removed
     }
 
     /// Internal helper to remove specified transactions and collect account tracking info.
@@ -748,25 +716,17 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Step 2: Extract transaction IDs grouped by account
         let txids_by_account = Self::extract_account_txs_from_block(&block);
 
-        // Step 3: Remove included transactions from mempool
-        let included_txids: Vec<(OLTxId, MempoolTxRemovalReason)> = txids_by_account
-            .values()
-            .flatten()
-            .map(|&txid| (txid, MempoolTxRemovalReason::Included))
-            .collect();
+        // Step 3: Remove included transactions from mempool (no cascade)
+        let included_txids: Vec<OLTxId> = txids_by_account.values().flatten().copied().collect();
         if !included_txids.is_empty() {
-            self.remove_transactions(&included_txids)?;
+            self.remove_transactions(&included_txids, false);
         }
 
         // Step 4: Revalidate all transactions
-        let invalid_txids: Vec<(OLTxId, MempoolTxRemovalReason)> = self
-            .revalidate_all_transactions()
-            .into_iter()
-            .map(|txid| (txid, MempoolTxRemovalReason::Failed))
-            .collect();
+        let invalid_txids: Vec<OLTxId> = self.revalidate_all_transactions();
         if !invalid_txids.is_empty() {
             // Remove invalid transactions with cascade (dependents are also invalid)
-            self.remove_transactions(&invalid_txids)?;
+            self.remove_transactions(&invalid_txids, true);
         }
 
         Ok(())
@@ -852,6 +812,11 @@ impl<P: StateProvider> ServiceState for MempoolServiceState<P> {
     }
 }
 
+/// Returns true if a transaction reported as invalid should be removed from the mempool.
+fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
+    matches!(reason, MempoolTxInvalidReason::Invalid)
+}
+
 #[cfg(test)]
 mod tests {
     use ssz_types::Optional;
@@ -860,7 +825,6 @@ mod tests {
     use super::*;
     use crate::{
         DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH,
-        MempoolTxRemovalReason,
         test_utils::{
             create_test_account_id_with, create_test_attachment_with_slots,
             create_test_block_commitment, create_test_context, create_test_generic_tx_with_size,
@@ -1201,10 +1165,8 @@ mod tests {
 
         assert_eq!(state.stats().mempool_size(), 2);
 
-        // Remove one transaction
-        let removed = state
-            .remove_transactions(&[(txid1, MempoolTxRemovalReason::Included)])
-            .unwrap();
+        // Remove one transaction (no cascade)
+        let removed = state.remove_transactions(&[txid1], false);
         assert_eq!(removed.len(), 1);
         assert_eq!(removed[0], txid1);
 
@@ -1232,9 +1194,7 @@ mod tests {
 
         // Remove transaction that doesn't exist - should succeed with empty result
         let fake_txid = OLTxId::from(Buf32::from([0u8; 32]));
-        let removed = state
-            .remove_transactions(&[(fake_txid, MempoolTxRemovalReason::Included)])
-            .unwrap();
+        let removed = state.remove_transactions(&[fake_txid], false);
         assert_eq!(removed.len(), 0);
     }
 
@@ -1521,9 +1481,7 @@ mod tests {
         ));
 
         // Remove middle transaction (seq_no 1) - creates gap!
-        let removed = state
-            .remove_transactions(&[(txid1, MempoolTxRemovalReason::Failed)])
-            .unwrap();
+        let removed = state.remove_transactions(&[txid1], true);
 
         // Should remove tx1 AND tx2 (cascade due to gap)
         assert_eq!(removed.len(), 2); // Both tx1 and tx2 removed
@@ -1584,9 +1542,7 @@ mod tests {
         assert_eq!(state.stats().mempool_size(), 3);
 
         // Remove middle transaction WITHOUT cascade (simulating successful inclusion)
-        let removed = state
-            .remove_transactions(&[(txid1, MempoolTxRemovalReason::Included)])
-            .unwrap();
+        let removed = state.remove_transactions(&[txid1], false);
 
         // Should only remove tx1 (no cascade)
         assert_eq!(removed.len(), 1);
@@ -1667,14 +1623,10 @@ mod tests {
         state.state_accessor = state_accessor_111;
 
         // Revalidate all transactions - should find expired tx1
-        let invalid_txids: Vec<(OLTxId, MempoolTxRemovalReason)> = state
-            .revalidate_all_transactions()
-            .into_iter()
-            .map(|txid| (txid, MempoolTxRemovalReason::Failed))
-            .collect();
+        let invalid_txids: Vec<OLTxId> = state.revalidate_all_transactions();
         assert_eq!(invalid_txids.len(), 1); // tx1 is invalid (expired)
 
-        state.remove_transactions(&invalid_txids).unwrap();
+        state.remove_transactions(&invalid_txids, true);
 
         // Should remove tx1 AND tx2 (cascade because tx1 expired creates gap)
         assert_eq!(state.stats().mempool_size(), 1);
@@ -1722,9 +1674,7 @@ mod tests {
         );
 
         // Test remove_transactions (no cascade) - remove tx1
-        state
-            .remove_transactions(&[(txid1, MempoolTxRemovalReason::Included)])
-            .unwrap();
+        state.remove_transactions(&[txid1], false);
 
         // pending_seq_no should still be 3 (max remaining is still 3)
         assert_eq!(
@@ -1746,9 +1696,7 @@ mod tests {
             .map(|(id, _)| *id)
             .unwrap();
 
-        state
-            .remove_transactions(&[(tx2_id, MempoolTxRemovalReason::Failed)])
-            .unwrap();
+        state.remove_transactions(&[tx2_id], true);
 
         // pending_seq_no should be 0 (last seen is now 0)
         assert_eq!(
@@ -1992,9 +1940,7 @@ mod tests {
 
         // Now min_pending = 0, max_pending = 2
         // Remove tx0 from mempool to simulate it being mined, so min_pending = 1
-        state
-            .remove_transactions(&[(txid0, MempoolTxRemovalReason::Included)])
-            .unwrap();
+        state.remove_transactions(&[txid0], false);
 
         // Now min_pending = 1, max_pending = 2
         // Try to add transaction with seq_no=0 (replay - less than min)

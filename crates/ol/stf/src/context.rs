@@ -27,7 +27,7 @@ pub struct BlockInfo {
 }
 
 impl BlockInfo {
-    pub(crate) fn new(timestamp: u64, slot: Slot, epoch: Epoch) -> Self {
+    pub fn new(timestamp: u64, slot: Slot, epoch: Epoch) -> Self {
         Self {
             timestamp,
             slot,
@@ -202,7 +202,7 @@ pub struct BasicExecContext<'b> {
 }
 
 impl<'b> BasicExecContext<'b> {
-    pub(crate) fn new(block_info: BlockInfo, output_buffer: &'b ExecOutputBuffer) -> Self {
+    pub fn new(block_info: BlockInfo, output_buffer: &'b ExecOutputBuffer) -> Self {
         Self {
             block_info,
             output_buffer,

@@ -1,18 +1,60 @@
 //! Transaction validation for mempool using STF helpers.
 use std::{collections::HashMap, sync::Arc};
 
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
-use strata_ledger_types::IStateAccessor;
-use strata_ol_stf::{
-    ExecError, check_snark_account_seq_no, check_tx_attachment, get_account_state,
-    get_snark_account_seq_no,
-};
+use strata_ledger_types::{IAccountState, IStateAccessor};
+use strata_ol_stf::{ExecError, check_tx_attachment, get_account_state};
+use strata_snark_acct_sys as snark_sys;
+use strata_snark_acct_types::UpdateOperationData;
 use tracing::error;
 
 use crate::{
     OLMempoolError, OLMempoolResult, state::AccountMempoolState, types::OLMempoolTransaction,
 };
+
+/// Checks sequence number against a range and returns appropriate error.
+/// - `tx_seq_no < min_expected` → `UsedSequenceNumber`
+/// - `tx_seq_no > max_expected` → `SequenceNumberGap`
+fn check_seq_no_in_range(
+    txid: OLTxId,
+    tx_seq_no: u64,
+    min_expected: u64,
+    max_expected: u64,
+) -> OLMempoolResult<()> {
+    if tx_seq_no < min_expected {
+        return Err(OLMempoolError::UsedSequenceNumber {
+            txid,
+            expected: min_expected,
+            actual: tx_seq_no,
+        });
+    }
+    if tx_seq_no > max_expected {
+        return Err(OLMempoolError::SequenceNumberGap {
+            expected: max_expected,
+            actual: tx_seq_no,
+        });
+    }
+    Ok(())
+}
+
+/// Converts an [`AcctError::InvalidUpdateSequence`] to the appropriate mempool error.
+/// - `got < expected` → `UsedSequenceNumber`
+/// - `got > expected` → `SequenceNumberGap`
+fn seq_no_error_to_mempool_error(txid: OLTxId, expected: u64, got: u64) -> OLMempoolError {
+    if got < expected {
+        OLMempoolError::UsedSequenceNumber {
+            txid,
+            expected,
+            actual: got,
+        }
+    } else {
+        OLMempoolError::SequenceNumberGap {
+            expected,
+            actual: got,
+        }
+    }
+}
 
 /// Validates sequence number for a
 /// [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transaction.
@@ -23,34 +65,20 @@ use crate::{
 /// - On-chain state (if no pending transactions)
 fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
     txid: OLTxId,
-    tx_seq_no: u64,
     target_account: AccountId,
+    operation: &UpdateOperationData,
     mempool_seq_no_range: Option<(u64, u64)>,
     state_accessor: &Arc<S>,
 ) -> OLMempoolResult<()> {
+    let tx_seq_no = operation.seq_no();
+
     if let Some((min_seq_no, max_seq_no)) = mempool_seq_no_range {
         // Has SnarkAccountUpdate transactions in mempool - validate against range
-
-        // Check for used sequence number: cannot be used twice
-        if tx_seq_no < min_seq_no {
-            return Err(OLMempoolError::UsedSequenceNumber {
-                txid,
-                expected: min_seq_no,
-                actual: tx_seq_no,
-            });
-        }
-
-        // Check for gap: skipping sequence numbers
-        if tx_seq_no > max_seq_no + 1 {
-            return Err(OLMempoolError::SequenceNumberGap {
-                expected: max_seq_no + 1,
-                actual: tx_seq_no,
-            });
-        }
+        check_seq_no_in_range(txid, tx_seq_no, min_seq_no, max_seq_no + 1)?;
     } else {
         // No SnarkAccountUpdate transactions in mempool - validate against on-chain state
-        let expected_seq_no = get_snark_account_seq_no(state_accessor.as_ref(), target_account)
-            .map_err(|e| match e {
+        let account_state =
+            get_account_state(state_accessor.as_ref(), target_account).map_err(|e| match e {
                 ExecError::UnknownAccount(account) => {
                     error!(
                         %txid,
@@ -59,27 +87,24 @@ fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
                     );
                     OLMempoolError::AccountDoesNotExist { account }
                 }
-                ExecError::IncorrectTxTargetType => OLMempoolError::AccountTypeMismatch {
-                    txid,
-                    account: target_account,
-                },
-                _ => OLMempoolError::AccountStateAccess(format!(
-                    "Failed to get on-chain seq_no: {e}"
-                )),
+                _ => {
+                    OLMempoolError::AccountStateAccess(format!("Failed to get account state: {e}"))
+                }
             })?;
 
-        check_snark_account_seq_no(target_account, tx_seq_no, expected_seq_no).map_err(
-            |e| match e {
-                ExecError::InvalidSequenceNumber(_, expected, actual) => {
-                    OLMempoolError::UsedSequenceNumber {
-                        txid,
-                        expected,
-                        actual,
-                    }
-                }
-                _ => OLMempoolError::AccountStateAccess(format!("Seq_no validation failed: {e}")),
-            },
-        )?;
+        let snark_state =
+            account_state
+                .as_snark_account()
+                .map_err(|_| OLMempoolError::AccountTypeMismatch {
+                    txid,
+                    account: target_account,
+                })?;
+
+        if let Err(AcctError::InvalidUpdateSequence { expected, got, .. }) =
+            snark_sys::verify_seq_no(target_account, snark_state, operation)
+        {
+            return Err(seq_no_error_to_mempool_error(txid, expected, got));
+        }
     }
 
     Ok(())
@@ -129,7 +154,7 @@ pub(crate) fn validate_transaction<S: IStateAccessor>(
 
     // 3. Sequence number in proper range (for SnarkAccountUpdate transactions).
     if let Some(base_update) = tx.base_update() {
-        let tx_seq_no = base_update.operation().seq_no();
+        let operation = base_update.operation();
 
         // Check if there are SnarkAccountUpdate transactions in mempool for this account
         let mempool_seq_no_range = account_state
@@ -138,8 +163,8 @@ pub(crate) fn validate_transaction<S: IStateAccessor>(
 
         validate_snark_account_update_tx_seq_no(
             txid,
-            tx_seq_no,
             target_account,
+            operation,
             mempool_seq_no_range,
             state_accessor,
         )?;

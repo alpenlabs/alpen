@@ -7,11 +7,40 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-strata-asm-common.workspace = true
+ssz.workspace = true
+strata-acct-types.workspace = true
+strata-asm-manifest-types.workspace = true
+strata-config.workspace = true
+strata-crypto.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
+strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true
-strata-primitives.workspace = true
+strata-ol-state-support-types.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
+strata-params.workspace = true
+strata-service.workspace = true
+strata-snark-acct-types.workspace = true
+strata-storage.workspace = true
+strata-tasks.workspace = true
 
+anyhow.workspace = true
+async-trait.workspace = true
+serde.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+bitcoin.workspace = true
+proptest.workspace = true
+strata-asm-common.workspace = true
+strata-asm-manifest-types.workspace = true
+strata-asm-types.workspace = true
+strata-db-store-sled.workspace = true
+strata-predicate.workspace = true
+strata-state.workspace = true
+threadpool.workspace = true

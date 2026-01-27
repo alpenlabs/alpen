@@ -29,7 +29,8 @@ pub struct BlockExecOutputs {
 }
 
 impl BlockExecOutputs {
-    fn new(post_state_roots: BlockPostStateCommitments, logs: Vec<OLLog>) -> Self {
+    /// Creates a new `BlockExecOutputs` with the given post-state roots and logs.
+    pub fn new(post_state_roots: BlockPostStateCommitments, logs: Vec<OLLog>) -> Self {
         Self {
             post_state_roots,
             logs,
@@ -92,14 +93,14 @@ pub fn execute_block_inputs<S: IStateAccessor>(
     // across phases.
     let output = ExecOutputBuffer::new_empty();
 
-    // 1. If it's the first block of the epoch, call process_epoch_initial.
+    // 1. Process the slot start for every block.
+    chain_processing::process_block_start(state, &block_context)?;
+
+    // 2. If it's the first block of the epoch, call process_epoch_initial.
     if block_context.is_epoch_initial() {
         let init_ctx = block_context.get_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &init_ctx)?;
     }
-
-    // 2. Process the slot start for every block.
-    chain_processing::process_block_start(state, &block_context)?;
 
     // 3. Call process_block_tx_segment for every block as usual.
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);

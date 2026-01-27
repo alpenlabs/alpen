@@ -16,6 +16,7 @@ mod ssz_generated {
 }
 
 mod account;
+mod batch_application;
 mod epochal;
 mod global;
 mod ledger;
@@ -29,6 +30,7 @@ mod write_batch;
 mod test_utils;
 
 // Re-export SSZ-generated types that are used publicly
+pub use batch_application::*;
 pub use serial_map::*;
 pub use ssz_generated::ssz::state::*;
 pub use state_provider::*;
