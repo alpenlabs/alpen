@@ -10,6 +10,7 @@
 mod block_assembly;
 mod errors;
 mod exec_processing;
+mod message;
 mod private_input;
 mod traits;
 mod update_processing;
@@ -17,6 +18,7 @@ mod verification_state;
 
 pub use block_assembly::apply_input_messages;
 pub use errors::*;
+pub use message::*;
 pub use private_input::SharedPrivateInput;
 pub use traits::*;
 pub use update_processing::{
