@@ -9,19 +9,15 @@ use strata_checkpoint_types_ssz::{CheckpointClaim, L2BlockRange};
 use strata_crypto::hash;
 use strata_identifiers::OLBlockCommitment;
 use strata_ledger_types::{AsmManifest, IStateAccessor};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLTxSegment};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
 use zkaleido::ZkVmEnv;
 
 /// Processes a batch of OL blocks and generates a checkpoint claim.
 ///
-/// This function is the main entry point for the OL STF proof program. It:
-/// 1. Deserializes the initial state and block batch from zkVM inputs
-/// 2. Validates state consistency between parent block and initial state
-/// 3. Applies each block's state transition sequentially
-/// 4. Accumulates ASM manifests and OL logs across the batch
-/// 5. Constructs and commits a [`CheckpointClaim`] to the zkVM
+/// This function is the main entry point for the OL STF proof program. It handles
+/// zkVM I/O operations: reading inputs and committing outputs.
 ///
 /// # Inputs (read from zkVM)
 ///
@@ -35,16 +31,12 @@ use zkaleido::ZkVmEnv;
 ///
 /// # Panics
 ///
-/// This function panics if:
-/// - Any SSZ deserialization fails
-/// - The parent state root doesn't match the initial state root
-/// - The block batch is empty
-/// - Any block execution fails
-/// - The computed block header doesn't match the input block header
+/// This function panics if any SSZ deserialization fails.
+/// See [`process_ol_stf_core`] for additional panic conditions.
 pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
     // Read and deserialize the initial OL state from zkVM input
     let initial_state_ssz_bytes = zkvm.read_buf();
-    let mut state = OLState::from_ssz_bytes(&initial_state_ssz_bytes)
+    let state = OLState::from_ssz_bytes(&initial_state_ssz_bytes)
         .expect("failed to deserialize initial OL state from SSZ bytes");
 
     // Read and deserialize the batch of blocks to process from zkVM input
@@ -55,9 +47,40 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
     // Read and deserialize the parent block header from zkVM input
     // This header's state root must match the initial state's root
     let parent_ssz_bytes = zkvm.read_buf();
-    let mut parent = OLBlockHeader::from_ssz_bytes(&parent_ssz_bytes)
+    let parent = OLBlockHeader::from_ssz_bytes(&parent_ssz_bytes)
         .expect("failed to deserialize parent block header from SSZ bytes");
 
+    // Execute the core STF logic to get the claim
+    let claim = process_ol_stf_core(state, blocks, parent);
+
+    // Serialize and commit the checkpoint claim to the zkVM as public output
+    let claim_ssz_bytes = claim.as_ssz_bytes();
+    zkvm.commit_buf(&claim_ssz_bytes);
+}
+
+/// Core OL STF computation logic.
+///
+/// This function contains the pure computation logic for processing a batch of OL blocks,
+/// separated from zkVM I/O operations for testability and clarity.
+///
+/// It:
+/// 1. Validates state consistency between parent block and initial state
+/// 2. Applies each block's state transition sequentially
+/// 3. Accumulates ASM manifests and OL logs across the batch
+/// 4. Constructs and returns a [`CheckpointClaim`]
+///
+/// # Panics
+///
+/// This function panics if:
+/// - The parent state root doesn't match the initial state root
+/// - The block batch is empty
+/// - Any block execution fails
+/// - The computed block header doesn't match the input block header
+pub fn process_ol_stf_core(
+    mut state: OLState,
+    blocks: Vec<OLBlock>,
+    parent: OLBlockHeader,
+) -> CheckpointClaim {
     // Verify that the parent block's state root matches the initial state's computed root.
     // This ensures state continuity and prevents invalid state transitions.
     let initial_state_root = state
@@ -106,14 +129,60 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
     // TODO: Implement after https://alpenlabs.atlassian.net/browse/STR-1366
     let state_diff_hash = FixedBytes::<32>::from([0u8; 32]);
 
-    // Initialize accumulators for batch-level data:
-    // - ASM manifests hash: tracks L1 updates across the batch
-    // - OL logs: collects all logs emitted during block execution
+    // Execute all blocks in the batch and collect execution artifacts
+    let (logs, asm_manifests_hash) = execute_block_batch(&mut state, &blocks, &parent);
+
+    // Compute the hash of all accumulated OL logs for the checkpoint claim
+    let ol_logs_hash = FixedBytes::<32>::from(hash::raw(&logs.as_ssz_bytes()));
+
+    // Construct the checkpoint claim containing:
+    // - epoch: The epoch number of the batch
+    // - l2_range: The block range from parent to last block
+    // - asm_manifests_hash: Hash of all ASM manifests in the batch
+    // - state_diff_hash: Placeholder for future state diff tracking
+    // - ol_logs_hash: Hash of all logs emitted during batch execution
+    CheckpointClaim::new(
+        epoch,
+        l2_range,
+        asm_manifests_hash,
+        state_diff_hash,
+        ol_logs_hash,
+    )
+}
+
+/// Executes a batch of blocks and collects execution artifacts.
+///
+/// Processes each block sequentially, applying state transitions to the provided state
+/// and accumulating logs and ASM manifest hashes along the way.
+///
+/// # Arguments
+///
+/// * `state` - Mutable reference to the OL state to apply transitions to
+/// * `blocks` - Slice of blocks to execute
+/// * `initial_parent` - The parent block header for the first block in the batch
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `Vec<OLLog>`: All logs emitted during block execution
+/// - `FixedBytes<32>`: Hash of ASM manifests encountered in the batch
+///
+/// # Panics
+///
+/// Panics if:
+/// - Any block execution fails
+/// - The computed block header doesn't match the input block header
+fn execute_block_batch(
+    state: &mut OLState,
+    blocks: &[OLBlock],
+    initial_parent: &OLBlockHeader,
+) -> (Vec<OLLog>, FixedBytes<32>) {
+    let mut parent = initial_parent.clone();
     let mut asm_manifests_hash = FixedBytes::<32>::from([0u8; 32]);
     let mut logs = Vec::new();
 
     // Process each block in the batch sequentially, applying state transitions
-    for block in &blocks {
+    for block in blocks {
         // Extract block metadata and create execution context
         let info = BlockInfo::from_header(block.header());
         let context = BlockContext::new(&info, Some(&parent));
@@ -145,7 +214,7 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
 
         // Execute the block's state transition function.
         // This applies transactions, processes manifests, and updates state.
-        let output = construct_block(&mut state, context, components).expect(
+        let output = construct_block(state, context, components).expect(
             "block execution failed; all blocks in proof input must be valid and executable",
         );
 
@@ -165,26 +234,7 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
         parent = output.completed_block().header().clone();
     }
 
-    // Compute the hash of all accumulated OL logs for the checkpoint claim
-    let ol_logs_hash = FixedBytes::<32>::from(hash::raw(&logs.as_ssz_bytes()));
-
-    // Construct the checkpoint claim containing:
-    // - epoch: The epoch number of the batch
-    // - l2_range: The block range from parent to last block
-    // - asm_manifests_hash: Hash of all ASM manifests in the batch
-    // - state_diff_hash: Placeholder for future state diff tracking
-    // - ol_logs_hash: Hash of all logs emitted during batch execution
-    let claim = CheckpointClaim::new(
-        epoch,
-        l2_range,
-        asm_manifests_hash,
-        state_diff_hash,
-        ol_logs_hash,
-    );
-
-    // Serialize and commit the checkpoint claim to the zkVM as public output
-    let claim_ssz_bytes = claim.as_ssz_bytes();
-    zkvm.commit_buf(&claim_ssz_bytes);
+    (logs, asm_manifests_hash)
 }
 
 /// Computes a commitment hash over a sequence of ASM manifests.

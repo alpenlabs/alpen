@@ -9,4 +9,4 @@ pub mod program;
 
 mod statements;
 
-pub use statements::process_ol_stf;
+pub use statements::{process_ol_stf, process_ol_stf_core};
