@@ -31,6 +31,9 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
 strata-db-store-sled.workspace = true
 strata-ledger-types.workspace = true
+strata-identifiers = { workspace = true, features = ["test-utils"] }
 proptest.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
