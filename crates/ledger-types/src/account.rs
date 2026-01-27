@@ -143,6 +143,12 @@ pub trait ISnarkAccountState: Sized {
     fn inbox_mmr(&self) -> &Mmr64;
 }
 
+/// Constructor helper for snark account state.
+pub trait ISnarkAccountStateConstructible: ISnarkAccountState {
+    /// Builds a fresh snark state from the update predicate key and initial root.
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self;
+}
+
 /// Mutable accessor to snark account state.
 pub trait ISnarkAccountStateMut: ISnarkAccountState {
     /// Sets the inner state root unconditionally.

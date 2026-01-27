@@ -54,6 +54,12 @@ impl ISnarkAccountState for OLSnarkAccountState {
     }
 }
 
+impl ISnarkAccountStateConstructible for OLSnarkAccountState {
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
+        OLSnarkAccountState::new_fresh(update_vk, initial_state_root)
+    }
+}
+
 impl ISnarkAccountStateMut for OLSnarkAccountState {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
         self.proof_state = ProofState::new(state, next_read_idx);
