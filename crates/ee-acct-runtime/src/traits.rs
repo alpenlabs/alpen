@@ -2,8 +2,9 @@
 
 use strata_acct_types::Hash;
 use strata_codec::Codec;
+use strata_msg_fmt::Msg;
 
-use crate::errors::ProgramResult;
+use crate::{InputMessage, MsgMeta, errors::ProgramResult};
 
 /// Describes a snark account program in terms of its state, the messages it
 /// receives, and the kinds of checks that get performed secretly as part of the
@@ -21,7 +22,8 @@ pub trait SnarkAccountProgram {
     /// not persisted or accessible when modifying the state.
     type VState;
 
-    /// Recognized messages.
+    /// Recognized messages.  If parsing returns an error then we pass
+    /// [`InputMessage::Unknown`] to `verify_coinput and `process_message`.
     type Msg: IAcctMsg;
 
     /// Update extra data.
@@ -47,7 +49,7 @@ pub trait SnarkAccountProgram {
         &self,
         state: &Self::State,
         vstate: &mut Self::VState,
-        msg: &Self::Msg,
+        msg: &InputMessage<Self::Msg>,
         coinput: &[u8],
         extra_data: &Self::ExtraData,
     ) -> ProgramResult<()>;
@@ -56,7 +58,7 @@ pub trait SnarkAccountProgram {
     fn process_message(
         &self,
         state: &mut Self::State,
-        msg: Self::Msg,
+        msg: InputMessage<Self::Msg>,
         extra_data: &Self::ExtraData,
     ) -> ProgramResult<()>;
 
