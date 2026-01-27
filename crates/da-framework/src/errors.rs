@@ -7,6 +7,12 @@ use thiserror::Error;
 pub enum DaError {
     #[error("context missing required data")]
     InsufficientContext,
+
+    #[error("invalid state diff: {0}")]
+    InvalidStateDiff(&'static str),
+
+    #[error("invalid ledger diff: {0}")]
+    InvalidLedgerDiff(&'static str),
 }
 
 /// Errors generated in building a diff.
