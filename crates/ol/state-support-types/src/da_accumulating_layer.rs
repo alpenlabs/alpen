@@ -1,14 +1,15 @@
 //! OL state accessor that accumulates DA-covered writes over an epoch.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    fmt,
     mem::take,
 };
 
-use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64};
+use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
-    CodecError, DaBuilder, DaCounterBuilder, DaRegister, LinearAccumulator,
+    CodecError, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister, LinearAccumulator,
     counter_schemes::CtrU64ByU16, encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
@@ -21,13 +22,9 @@ use strata_ol_da::{
     GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry,
     OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
 };
-use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 
-use crate::{
-    index_types::{IndexerWrites, SnarkAcctStateUpdate},
-    indexer_layer::IndexerAccountStateMut,
-};
+use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
 
 /// Errors while building or encoding epoch DA payloads.
 #[derive(Debug, Error)]
@@ -47,6 +44,27 @@ pub enum DaAccumulationError {
     /// Missing pre-state snapshot for a touched account.
     #[error("da accumulator missing pre-state {0}")]
     MissingPreState(AccountId),
+
+    /// Account type changed during the epoch.
+    #[error(
+        "da accumulator account type changed for {account_id} (expected {expected}, got {actual})"
+    )]
+    AccountTypeChanged {
+        account_id: AccountId,
+        expected: AccountTypeId,
+        actual: AccountTypeId,
+    },
+
+    /// Snark state missing for a snark diff.
+    #[error("da accumulator missing snark state {0}")]
+    MissingSnarkState(AccountId),
+
+    /// Inbox message targeted unexpected account.
+    #[error("da accumulator inbox account mismatch (expected {expected}, got {actual})")]
+    InboxAccountMismatch {
+        expected: AccountId,
+        actual: AccountId,
+    },
 
     /// Inbox message source is missing from ledger state.
     #[error("da accumulator missing message source {0}")]
@@ -79,58 +97,80 @@ pub enum DaAccumulationError {
     /// Encoded DA blob exceeds the maximum size limit.
     #[error("da accumulator payload too large: {provided} bytes (max {max})")]
     PayloadTooLarge { provided: usize, max: u64 },
-
-    /// DA-covered writes occurred during epoch sealing.
-    #[error("da accumulator post-seal writes detected during {context}")]
-    PostSealWrites { context: &'static str },
 }
 
 // ============================================================================
 // Accumulator data
 // ============================================================================
 
-/// Snapshot of snark account fields needed for diffing.
+/// Tracked snark account fields needed for diffing.
 #[derive(Clone, Debug)]
-struct SnarkSnapshot {
-    /// Sequence number at the start of DA-covered execution.
-    seq_no: u64,
-
-    /// Inner state root at the start of DA-covered execution.
-    inner_state_root: Hash,
-
-    /// Next inbox message index at the start of DA-covered execution.
-    next_msg_read_idx: u64,
+struct SnarkDelta {
+    base_seq_no: u64,
+    final_seq_no: u64,
+    base_proof_state: DaProofState,
+    final_proof_state: DaProofState,
+    inbox: DaLinacc<InboxBuffer>,
 }
 
-/// Snapshot of an account before DA-covered execution.
-#[derive(Clone, Debug)]
-struct AccountSnapshot {
-    /// Account balance at the start of DA-covered execution.
-    balance: BitcoinAmount,
+impl SnarkDelta {
+    fn from_state<T: ISnarkAccountState>(state: &T) -> Self {
+        let base_seq_no = *state.seqno().inner();
+        let base_proof_state =
+            DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+        Self {
+            base_seq_no,
+            final_seq_no: base_seq_no,
+            base_proof_state: base_proof_state.clone(),
+            final_proof_state: base_proof_state,
+            inbox: DaLinacc::new(),
+        }
+    }
 
-    /// Account type at the start of DA-covered execution.
+    fn update_from_state<T: ISnarkAccountState>(&mut self, state: &T) {
+        self.final_seq_no = *state.seqno().inner();
+        self.final_proof_state =
+            DaProofState::new(state.inner_state_root(), state.next_inbox_msg_idx());
+    }
+
+    fn build_diff(&self) -> Result<SnarkAccountDiff, DaAccumulationError> {
+        let mut seq_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(self.base_seq_no);
+        seq_builder.set(self.final_seq_no)?;
+        let seq_no = seq_builder.into_write()?;
+        let proof_state = DaRegister::compare(&self.base_proof_state, &self.final_proof_state);
+        Ok(SnarkAccountDiff::new(
+            seq_no,
+            proof_state,
+            self.inbox.clone(),
+        ))
+    }
+}
+
+/// Tracked account fields for DA diffing.
+#[derive(Clone, Debug)]
+struct AccountDelta {
+    serial: AccountSerial,
+    base_balance: BitcoinAmount,
+    final_balance: BitcoinAmount,
     ty: AccountTypeId,
-
-    /// Snark snapshot if the account is a snark account.
-    snark: Option<SnarkSnapshot>,
+    snark: Option<SnarkDelta>,
 }
 
-impl AccountSnapshot {
-    fn from_state<T: IAccountState>(state: &T) -> AcctResult<Self> {
+impl AccountDelta {
+    fn from_state<T: IAccountState>(state: &T) -> Self {
         let ty = state.ty();
         let snark = match state.type_state() {
-            AccountTypeStateRef::Snark(snark_state) => Some(SnarkSnapshot {
-                seq_no: *snark_state.seqno().inner(),
-                inner_state_root: snark_state.inner_state_root(),
-                next_msg_read_idx: snark_state.next_inbox_msg_idx(),
-            }),
+            AccountTypeStateRef::Snark(snark_state) => Some(SnarkDelta::from_state(snark_state)),
             AccountTypeStateRef::Empty => None,
         };
-        Ok(Self {
-            balance: state.balance(),
+        let balance = state.balance();
+        Self {
+            serial: state.serial(),
+            base_balance: balance,
+            final_balance: balance,
             ty,
             snark,
-        })
+        }
     }
 }
 
@@ -142,13 +182,10 @@ struct NewAccountRecord {
 }
 
 /// Per-epoch accumulator of DA writes before encoding.
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct EpochDaAccumulator {
-    /// Slot value at the start of the epoch.
-    slot_base: Option<u64>,
-
-    /// Final slot value seen during the epoch.
-    slot_final: Option<u64>,
+    /// Slot counter builder for the epoch.
+    slot_builder: Option<DaCounterBuilder<CtrU64ByU16>>,
 
     /// Expected first serial based on the pre-state next_account_serial.
     expected_first_serial: Option<AccountSerial>,
@@ -156,59 +193,110 @@ struct EpochDaAccumulator {
     /// New account records created during the epoch.
     new_account_records: Vec<NewAccountRecord>,
 
-    /// Accounts touched during the epoch (for diff generation).
-    touched_accounts: BTreeSet<AccountId>,
+    /// New account IDs for quick lookup.
+    new_account_ids: BTreeSet<AccountId>,
 
-    /// Pre-execution snapshots for touched accounts.
-    pre_states: BTreeMap<AccountId, AccountSnapshot>,
+    /// Per-account deltas accumulated during the epoch.
+    account_deltas: BTreeMap<AccountId, AccountDelta>,
+}
 
-    /// Inbox messages appended during the epoch.
-    inbox_messages: BTreeMap<AccountId, Vec<MessageEntry>>,
-
-    /// Snark state updates recorded during the epoch.
-    snark_updates: BTreeMap<AccountId, Vec<SnarkAcctStateUpdate>>,
+impl fmt::Debug for EpochDaAccumulator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EpochDaAccumulator")
+            .field("slot_builder_set", &self.slot_builder.is_some())
+            .field("expected_first_serial", &self.expected_first_serial)
+            .field("new_account_records", &self.new_account_records)
+            .field("new_account_ids", &self.new_account_ids)
+            .field("account_deltas", &self.account_deltas)
+            .finish()
+    }
 }
 
 impl EpochDaAccumulator {
     /// Records a slot change event.
-    fn record_slot_change(&mut self, prior: u64, new: u64) {
-        if self.slot_base.is_none() {
-            self.slot_base = Some(prior);
-        }
-        self.slot_final = Some(new);
-    }
-
-    /// Records the pre-state of an account.
-    fn record_pre_state<T: IAccountState>(
-        &mut self,
-        account_id: AccountId,
-        state: &T,
-    ) -> AcctResult<()> {
-        if !self.pre_states.contains_key(&account_id) {
-            let snapshot = AccountSnapshot::from_state(state)?;
-            if let Entry::Vacant(entry) = self.pre_states.entry(account_id) {
-                entry.insert(snapshot);
-            }
-        }
+    fn record_slot_change(&mut self, prior: u64, new: u64) -> Result<(), DaAccumulationError> {
+        let builder = self
+            .slot_builder
+            .get_or_insert_with(|| DaCounterBuilder::<CtrU64ByU16>::from_source(prior));
+        builder.set(new)?;
         Ok(())
     }
 
-    /// Records the inbox messages and snark state updates from an indexer write.
-    fn record_writes(&mut self, writes: IndexerWrites) {
-        for msg in writes.inbox_messages() {
-            let entry = msg.entry.clone();
-            self.inbox_messages
-                .entry(msg.account_id)
-                .or_default()
-                .push(entry);
+    /// Ensures there is a tracked delta for an account.
+    fn ensure_account_delta<T: IAccountState>(&mut self, account_id: AccountId, state: &T) {
+        self.account_deltas
+            .entry(account_id)
+            .or_insert_with(|| AccountDelta::from_state(state));
+    }
+
+    /// Records writes and post-state for an updated account.
+    fn record_account_update<S: IStateAccessor, T: IAccountState>(
+        &mut self,
+        state: &S,
+        account_id: AccountId,
+        post_state: &T,
+        writes: &IndexerWrites,
+    ) -> Result<(), DaAccumulationError> {
+        let Some(delta) = self.account_deltas.get_mut(&account_id) else {
+            return Err(DaAccumulationError::MissingPreState(account_id));
+        };
+
+        let actual_ty = post_state.ty();
+        if actual_ty != delta.ty {
+            return Err(DaAccumulationError::AccountTypeChanged {
+                account_id,
+                expected: delta.ty,
+                actual: actual_ty,
+            });
         }
 
-        for update in writes.snark_state_updates() {
-            self.snark_updates
-                .entry(update.account_id())
-                .or_default()
-                .push(update.clone());
+        delta.final_balance = post_state.balance();
+        if let (Some(snark_delta), AccountTypeStateRef::Snark(snark_state)) =
+            (&mut delta.snark, post_state.type_state())
+        {
+            snark_delta.update_from_state(snark_state);
         }
+
+        for msg in writes.inbox_messages() {
+            if msg.account_id() != account_id {
+                return Err(DaAccumulationError::InboxAccountMismatch {
+                    expected: account_id,
+                    actual: msg.account_id(),
+                });
+            }
+            let Some(snark_delta) = delta.snark.as_mut() else {
+                return Err(DaAccumulationError::MissingSnarkState(account_id));
+            };
+            let entry = msg.entry();
+            let payload_len = entry.payload().data().len();
+            if payload_len > MAX_MSG_PAYLOAD_BYTES {
+                return Err(DaAccumulationError::MessagePayloadTooLarge {
+                    provided: payload_len,
+                    max: MAX_MSG_PAYLOAD_BYTES,
+                });
+            }
+
+            let source_id = entry.source();
+            if source_id.is_special() {
+                return Err(DaAccumulationError::MessageSourceMissing(source_id));
+            }
+            let exists = state
+                .check_account_exists(source_id)
+                .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
+            if !exists {
+                return Err(DaAccumulationError::MessageSourceMissing(source_id));
+            }
+
+            let entry = DaMessageEntry::new(source_id, entry.incl_epoch(), entry.payload().clone());
+            if !snark_delta.inbox.append_entry(entry) {
+                return Err(DaAccumulationError::InboxBufferFull {
+                    account_id,
+                    max: InboxBuffer::MAX_INSERT,
+                });
+            }
+        }
+
+        Ok(())
     }
 
     /// Records a new account.
@@ -217,17 +305,16 @@ impl EpochDaAccumulator {
         expected_first_serial: AccountSerial,
         serial: AccountSerial,
         account_id: AccountId,
-    ) {
+    ) -> Result<(), DaAccumulationError> {
         if self.expected_first_serial.is_none() {
             self.expected_first_serial = Some(expected_first_serial);
         }
+        if !self.new_account_ids.insert(account_id) {
+            return Err(DaAccumulationError::DuplicateNewAccountId(account_id));
+        }
         self.new_account_records
             .push(NewAccountRecord { serial, account_id });
-    }
-
-    /// Records a touched account.
-    fn record_touched_account(&mut self, account_id: AccountId) {
-        self.touched_accounts.insert(account_id);
+        Ok(())
     }
 
     /// Finalizes the epoch by building the state diff.
@@ -238,13 +325,11 @@ impl EpochDaAccumulator {
     }
 
     /// Builds the global state diff for the epoch.
-    fn build_global_diff(&self) -> Result<GlobalStateDiff, DaAccumulationError> {
-        let cur_slot = if let (Some(base), Some(final_slot)) = (self.slot_base, self.slot_final) {
-            let mut builder = DaCounterBuilder::<CtrU64ByU16>::from_source(base);
-            builder.set(final_slot)?;
+    fn build_global_diff(&mut self) -> Result<GlobalStateDiff, DaAccumulationError> {
+        let cur_slot = if let Some(builder) = self.slot_builder.take() {
             builder.into_write()?
         } else {
-            strata_da_framework::DaCounter::new_unchanged()
+            DaCounter::new_unchanged()
         };
 
         Ok(GlobalStateDiff::new(cur_slot))
@@ -280,13 +365,9 @@ impl EpochDaAccumulator {
             }
         }
 
-        let mut new_account_ids = BTreeSet::new();
         let mut new_account_serials = BTreeSet::new();
         let mut new_accounts = Vec::with_capacity(new_records.len());
         for entry in &new_records {
-            if !new_account_ids.insert(entry.account_id) {
-                return Err(DaAccumulationError::DuplicateNewAccountId(entry.account_id));
-            }
             if !new_account_serials.insert(entry.serial) {
                 return Err(DaAccumulationError::DuplicateAccountSerial(entry.serial));
             }
@@ -310,25 +391,21 @@ impl EpochDaAccumulator {
         let mut account_diffs = Vec::new();
         let mut seen_serials = BTreeSet::new();
 
-        for account_id in &self.touched_accounts {
-            if new_account_ids.contains(account_id) {
+        for (account_id, delta) in &self.account_deltas {
+            if self.new_account_ids.contains(account_id) {
                 continue;
             }
-            let pre = self
-                .pre_states
-                .get(account_id)
-                .ok_or(DaAccumulationError::MissingPreState(*account_id))?;
-            let post = state
-                .get_account_state(*account_id)
-                .map_err(|_| DaAccumulationError::MissingAccount(*account_id))?
-                .ok_or(DaAccumulationError::MissingAccount(*account_id))?;
 
-            let balance = DaRegister::compare(&pre.balance, &post.balance());
-
-            // Build the appropriate diff variant based on account type
-            let snark_state = match pre.ty {
+            let balance = DaRegister::compare(&delta.base_balance, &delta.final_balance);
+            let snark_state = match delta.ty {
                 AccountTypeId::Empty => SnarkAccountDiff::default(),
-                AccountTypeId::Snark => self.build_snark_diff(state, pre, post, *account_id)?,
+                AccountTypeId::Snark => {
+                    let snark = delta
+                        .snark
+                        .as_ref()
+                        .ok_or(DaAccumulationError::MissingSnarkState(*account_id))?;
+                    snark.build_diff()?
+                }
             };
             let diff = AccountDiff::new(balance, snark_state);
 
@@ -336,7 +413,7 @@ impl EpochDaAccumulator {
                 continue;
             }
 
-            let serial = post.serial();
+            let serial = delta.serial;
             if new_account_serials.contains(&serial) || !seen_serials.insert(serial) {
                 return Err(DaAccumulationError::DuplicateAccountSerial(serial));
             }
@@ -351,88 +428,16 @@ impl EpochDaAccumulator {
             U16LenList::new(account_diffs),
         ))
     }
-
-    /// Builds the snark account diff for the epoch.
-    fn build_snark_diff<S: IStateAccessor, T: IAccountState>(
-        &self,
-        state: &S,
-        pre: &AccountSnapshot,
-        post: &T,
-        account_id: AccountId,
-    ) -> Result<SnarkAccountDiff, DaAccumulationError> {
-        if pre.ty != strata_identifiers::AccountTypeId::Snark {
-            return Ok(SnarkAccountDiff::default());
-        }
-
-        let post_snark = post
-            .as_snark_account()
-            .map_err(|_| DaAccumulationError::MissingAccount(account_id))?;
-        let post_seq = *post_snark.seqno().inner();
-        let post_inner_state_root = post_snark.inner_state_root();
-        let post_next_read = post_snark.next_inbox_msg_idx();
-
-        let pre_snark = pre.snark.as_ref();
-        let pre_seq = pre_snark.map(|s| s.seq_no).unwrap_or(0);
-        let pre_inner_state_root = pre_snark
-            .map(|s| s.inner_state_root)
-            .unwrap_or(Hash::from([0u8; 32]));
-        let pre_next_read_idx = pre_snark.map(|s| s.next_msg_read_idx).unwrap_or(0);
-        let mut seq_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(pre_seq);
-        seq_builder.set(post_seq)?;
-        let seq_no = seq_builder.into_write()?;
-
-        let proof_state = if post_inner_state_root != pre_inner_state_root
-            || post_next_read != pre_next_read_idx
-        {
-            DaRegister::new_set(DaProofState::new(post_inner_state_root, post_next_read))
-        } else {
-            DaRegister::new_unset()
-        };
-
-        let mut inbox = strata_da_framework::DaLinacc::<InboxBuffer>::new();
-        if let Some(msgs) = self.inbox_messages.get(&account_id) {
-            for msg in msgs {
-                let payload_len = msg.payload().data().len();
-                if payload_len > MAX_MSG_PAYLOAD_BYTES {
-                    return Err(DaAccumulationError::MessagePayloadTooLarge {
-                        provided: payload_len,
-                        max: MAX_MSG_PAYLOAD_BYTES,
-                    });
-                }
-
-                let source_id = msg.source();
-                if source_id.is_special() {
-                    return Err(DaAccumulationError::MessageSourceMissing(source_id));
-                }
-                let exists = state
-                    .check_account_exists(source_id)
-                    .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
-                if !exists {
-                    return Err(DaAccumulationError::MessageSourceMissing(source_id));
-                }
-                let entry = DaMessageEntry::new(source_id, msg.incl_epoch(), msg.payload().clone());
-
-                if !inbox.append_entry(entry) {
-                    return Err(DaAccumulationError::InboxBufferFull {
-                        account_id,
-                        max: InboxBuffer::MAX_INSERT,
-                    });
-                }
-            }
-        }
-
-        Ok(SnarkAccountDiff::new(seq_no, proof_state, inbox))
-    }
 }
 
 /// State accessor that accumulates DA-covered writes for a single epoch.
+///
+/// This wrapper should only be used for preseal execution; epoch sealing
+/// updates derived from L1 must be applied on a non-DA tracking accessor.
 #[derive(Debug)]
 pub struct DaAccumulatingState<S: IStateAccessor> {
     /// Wrapped state accessor.
     inner: S,
-
-    /// Toggle for recording DA-covered writes.
-    da_tracking_enabled: bool,
 
     /// Epoch-scoped DA write accumulator.
     epoch_acc: EpochDaAccumulator,
@@ -445,12 +450,6 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
 
     /// Error captured while finalizing an epoch via set_cur_epoch.
     pending_epoch_error: Option<DaAccumulationError>,
-
-    /// Tracks whether any writes occurred during epoch sealing.
-    post_seal_writes: bool,
-
-    /// Tracks whether post-seal writes have been reported for the epoch.
-    post_seal_writes_reported: bool,
     // No log accumulation: OL output logs are posted in checkpoint sidecars.
 }
 
@@ -459,13 +458,10 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     pub fn new(inner: S) -> Self {
         Self {
             inner,
-            da_tracking_enabled: true,
             epoch_acc: EpochDaAccumulator::default(),
             pending_epoch_diffs: VecDeque::new(),
             pending_epoch_blobs: VecDeque::new(),
             pending_epoch_error: None,
-            post_seal_writes: false,
-            post_seal_writes_reported: false,
         }
     }
 
@@ -485,8 +481,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             return Err(err);
         }
 
-        self.ensure_no_post_seal_writes("take_completed_epoch_da_blob")?;
-
         if let Some(blob) = self.pending_epoch_blobs.pop_front() {
             return Ok(Some(blob));
         }
@@ -500,10 +494,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             return Ok(Some(blob));
         }
 
-        if !self.da_tracking_enabled {
-            return Ok(None);
-        }
-
         let mut acc = take(&mut self.epoch_acc);
         match acc.finalize(&self.inner) {
             Ok(state_diff) => {
@@ -515,34 +505,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
                 Err(err)
             }
         }
-    }
-
-    #[cfg(test)]
-    pub fn post_seal_writes_detected(&self) -> bool {
-        self.post_seal_writes
-    }
-
-    fn record_post_seal_write(&mut self) {
-        if !self.da_tracking_enabled {
-            self.post_seal_writes = true;
-        }
-    }
-
-    fn ensure_no_post_seal_writes(
-        &mut self,
-        context: &'static str,
-    ) -> Result<(), DaAccumulationError> {
-        if !self.post_seal_writes {
-            return Ok(());
-        }
-
-        #[cfg(feature = "tracing")]
-        if !self.post_seal_writes_reported {
-            tracing::warn!(context, "post-seal writes detected");
-        }
-        self.post_seal_writes_reported = true;
-
-        Err(DaAccumulationError::PostSealWrites { context })
     }
 }
 
@@ -563,11 +525,11 @@ where
     }
 
     fn set_cur_slot(&mut self, slot: u64) {
-        if self.da_tracking_enabled {
-            let prior = self.inner.cur_slot();
-            self.epoch_acc.record_slot_change(prior, slot);
-        } else {
-            self.record_post_seal_write();
+        let prior = self.inner.cur_slot();
+        if let Err(err) = self.epoch_acc.record_slot_change(prior, slot)
+            && self.pending_epoch_error.is_none()
+        {
+            self.pending_epoch_error = Some(err);
         }
         self.inner.set_cur_slot(slot);
     }
@@ -581,48 +543,20 @@ where
     fn set_cur_epoch(&mut self, epoch: u32) {
         let prev = self.inner.cur_epoch();
         if epoch != prev {
-            if let Err(err) = self.ensure_no_post_seal_writes("set_cur_epoch") {
-                self.pending_epoch_error = Some(err);
-            }
-            if self.da_tracking_enabled {
-                let mut acc = take(&mut self.epoch_acc);
-                match acc.finalize(&self.inner) {
-                    Ok(state_diff) => {
-                        self.pending_epoch_diffs.push_back(state_diff);
-                    }
-                    Err(err) => self.pending_epoch_error = Some(err),
+            let mut acc = take(&mut self.epoch_acc);
+            match acc.finalize(&self.inner) {
+                Ok(state_diff) => {
+                    self.pending_epoch_diffs.push_back(state_diff);
                 }
-                self.epoch_acc = EpochDaAccumulator::default();
-            } else {
-                self.epoch_acc = EpochDaAccumulator::default();
+                Err(err) => {
+                    if self.pending_epoch_error.is_none() {
+                        self.pending_epoch_error = Some(err);
+                    }
+                }
             }
-            self.da_tracking_enabled = true;
-            self.post_seal_writes = false;
-            self.post_seal_writes_reported = false;
+            self.epoch_acc = EpochDaAccumulator::default();
         }
         self.inner.set_cur_epoch(epoch);
-    }
-
-    /// Finalizes the preseal DA diff and disables tracking for sealing-time updates.
-    ///
-    /// Per SPS-ol-da-structure, DA payloads include only preseal changes; any
-    /// epoch sealing updates derived from L1 MUST NOT be captured here.
-    fn begin_epoch_sealing(&mut self) {
-        if !self.da_tracking_enabled {
-            return;
-        }
-
-        let mut acc = take(&mut self.epoch_acc);
-        match acc.finalize(&self.inner) {
-            Ok(state_diff) => {
-                self.pending_epoch_diffs.push_back(state_diff);
-            }
-            Err(err) => self.pending_epoch_error = Some(err),
-        }
-        self.epoch_acc = EpochDaAccumulator::default();
-        self.da_tracking_enabled = false;
-        self.post_seal_writes = false;
-        self.post_seal_writes_reported = false;
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -650,7 +584,6 @@ where
     }
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.record_post_seal_write();
         self.inner.set_total_ledger_balance(amt);
     }
 
@@ -668,27 +601,32 @@ where
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
-        if self.da_tracking_enabled {
-            if let Some(account_state) = self.inner.get_account_state(id)? {
-                self.epoch_acc.record_pre_state(id, account_state)?;
-                self.epoch_acc.record_touched_account(id);
-            }
-        } else {
-            self.record_post_seal_write();
+        if let Some(account_state) = self.inner.get_account_state(id)? {
+            self.epoch_acc.ensure_account_delta(id, account_state);
         }
 
-        let (result, local_writes) = self.inner.update_account(id, |inner_acct| {
+        let (result, (local_writes, post_state)) = self.inner.update_account(id, |inner_acct| {
             let mut wrapped = IndexerAccountStateMut::new(inner_acct.clone(), id);
             let user_result = f(&mut wrapped);
             let (modified_inner, writes, was_modified) = wrapped.into_parts();
             if was_modified {
-                *inner_acct = modified_inner;
+                *inner_acct = modified_inner.clone();
             }
-            (user_result, writes)
+            let post_state = if was_modified {
+                Some(modified_inner)
+            } else {
+                None
+            };
+            (user_result, (writes, post_state))
         })?;
 
-        if self.da_tracking_enabled {
-            self.epoch_acc.record_writes(local_writes);
+        if let Some(post_state) = post_state
+            && let Err(err) =
+                self.epoch_acc
+                    .record_account_update(&self.inner, id, &post_state, &local_writes)
+            && self.pending_epoch_error.is_none()
+        {
+            self.pending_epoch_error = Some(err);
         }
 
         Ok(result)
@@ -699,16 +637,15 @@ where
         id: AccountId,
         new_acct_data: NewAccountData<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
-        let expected_first_serial = if self.da_tracking_enabled {
-            Some(self.inner.next_account_serial())
-        } else {
-            self.record_post_seal_write();
-            None
-        };
+        let expected_first_serial = self.inner.next_account_serial();
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 
-        if let Some(expected) = expected_first_serial {
-            self.epoch_acc.record_new_account(expected, serial, id);
+        if let Err(err) = self
+            .epoch_acc
+            .record_new_account(expected_first_serial, serial, id)
+            && self.pending_epoch_error.is_none()
+        {
+            self.pending_epoch_error = Some(err);
         }
 
         Ok(serial)
