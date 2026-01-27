@@ -97,7 +97,7 @@ class AlpenClientFactory(flexitest.Factory):
             "--datadir", str(datadir),
             "--sequencer",
             "--sequencer-pubkey", sequencer_pubkey,
-            "--ol-client-http", "http://localhost:9999",  # Dummy, not used (DummyOLClient)
+            "--dummy-ol-client",  # Use DummyOLClient (no real OL connection needed)
             "--addr", "127.0.0.1",  # Force IPv4 for testing
             "--nat", "extip:127.0.0.1",  # Force enode to show 127.0.0.1
             "--port", str(p2p_port),
@@ -213,7 +213,7 @@ class AlpenClientFactory(flexitest.Factory):
             "alpen-client",
             "--datadir", str(datadir),
             "--sequencer-pubkey", sequencer_pubkey,
-            "--ol-client-http", "http://localhost:9999",  # Dummy, not used
+            "--dummy-ol-client",  # Use DummyOLClient (no real OL connection needed)
             "--addr", "127.0.0.1",  # Force IPv4 for testing
             "--nat", "extip:127.0.0.1",  # Force enode to show 127.0.0.1
             "--port", str(p2p_port),
