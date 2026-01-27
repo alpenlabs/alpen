@@ -14533,6 +14533,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-csm-types",
  "strata-identifiers",
  "strata-merkle",
