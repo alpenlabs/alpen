@@ -12,7 +12,7 @@ permissions: {}
 jobs:
   self-care:
     name: Flake self-check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: read
       actions: read
@@ -32,7 +32,7 @@ jobs:
 
   build-packages:
     name: "${{ matrix.os-name }} - Build ${{ matrix.package }}"
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     timeout-minutes: 120
     strategy:
       matrix:

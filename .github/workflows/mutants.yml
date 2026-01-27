@@ -18,7 +18,7 @@ permissions: {}
 jobs:
   mutants-test:
     name: Generate mutants on diff against default branch and test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     continue-on-error: true # FIXME: remove this if all mutants are covered
     strategy:
       fail-fast: false # Collect all mutants even if some are missed

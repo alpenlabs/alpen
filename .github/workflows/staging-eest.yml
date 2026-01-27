@@ -16,7 +16,7 @@ jobs:
       contents: read
       id-token: write
       pull-requests: read
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment:
       name: development
     timeout-minutes: 120 # TODO: change to 60 once the exex witness generation is optimized.

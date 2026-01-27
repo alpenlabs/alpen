@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   extract-rust-version:
     name: Extract Rust toolchain version
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
@@ -28,7 +28,7 @@ jobs:
 
   run:
     name: Run functional tests
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: extract-rust-version
     timeout-minutes: 120 # TODO: change to 60 once the exex witness generation is optimized.
 

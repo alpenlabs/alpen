@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   extract-rust-version:
     name: Extract Rust toolchain version
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
@@ -26,7 +26,7 @@ jobs:
 
   lint:
     name: Lint test files
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
 
     steps:
@@ -53,7 +53,7 @@ jobs:
 
   run:
     name: Run new functional tests
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: extract-rust-version
     timeout-minutes: 60
     env:
@@ -171,7 +171,7 @@ jobs:
 
   functional-tests-success:
     name: Check that all checks pass
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: always()
     needs: [lint, run]
     timeout-minutes: 60
