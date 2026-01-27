@@ -2,10 +2,9 @@
 
 // TODO: Move this to a "node" crate when it's ready.
 
-use anyhow::Result;
-use strata_asm_common::AsmManifest;
+use anyhow::{Result, anyhow};
 use strata_db_types::traits::BlockStatus;
-use strata_identifiers::{Buf32, Buf64, L1BlockId, OLBlockCommitment, WtxidsRoot};
+use strata_identifiers::{Buf64, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, execute_and_complete_block};
@@ -22,16 +21,15 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
     let mut ol_state = OLState::new_genesis();
 
     // Create genesis block info
-    let genesis_ts = params.rollup().genesis_l1_view.last_11_timestamps[10] as u64;
+    let genesis_l1 = &params.rollup().genesis_l1_view;
+    let genesis_ts = genesis_l1.last_11_timestamps[10] as u64;
     let genesis_info = BlockInfo::new_genesis(genesis_ts);
 
     // Create empty ASM manifest for genesis
-    let genesis_manifest = AsmManifest::new(
-        0,
-        L1BlockId::from(Buf32::zero()),
-        WtxidsRoot::from(Buf32::zero()),
-        vec![],
-    );
+    let genesis_manifest = storage
+        .l1()
+        .get_block_manifest(&genesis_l1.blkid())?
+        .ok_or_else(|| anyhow!("Can't find genesis l1 manisfest"))?;
 
     // Build genesis block components
     let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
