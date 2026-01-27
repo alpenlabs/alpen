@@ -32,7 +32,9 @@ tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
 strata-db-tests.workspace = true
+strata-identifiers = { workspace = true, features = ["test-utils"] }
 sled = "0.34.7"
 
 [lints]
