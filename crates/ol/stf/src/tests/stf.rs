@@ -181,8 +181,8 @@ fn test_epoch_transition_from_genesis() {
     const SLOTS_PER_EPOCH: u64 = 10;
 
     // Build a chain through the first epoch transition
-    let headers =
-        build_empty_chain(&mut state, 12, SLOTS_PER_EPOCH).expect("Chain building should succeed");
+    let headers = build_empty_chain_headers(&mut state, 12, SLOTS_PER_EPOCH)
+        .expect("Chain building should succeed");
 
     // Verify we have the expected number of blocks
     assert_eq!(headers.len(), 12);
@@ -216,7 +216,7 @@ fn test_empty_chain_building() {
 
     // Build a chain of 5 empty blocks
     let headers =
-        build_empty_chain(&mut state, 5, 100).expect("Building empty chain should succeed");
+        build_empty_chain_headers(&mut state, 5, 100).expect("Building empty chain should succeed");
 
     assert_eq!(headers.len(), 5);
 

@@ -20,3 +20,6 @@ zkaleido.workspace = true
 
 [target.'cfg(not(target_os = "zkvm"))'.dependencies]
 zkaleido-native-adapter.workspace = true
+
+[dev-dependencies]
+strata-ol-stf = { workspace = true, features = ["test-utils"] }
