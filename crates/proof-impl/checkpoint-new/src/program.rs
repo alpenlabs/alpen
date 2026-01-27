@@ -27,7 +27,7 @@ impl ZkVmProgram for CheckpointProgram {
     type Output = CheckpointClaim;
 
     fn name() -> String {
-        "OL STF".to_string()
+        "OL Checkpoint".to_string()
     }
 
     fn proof_type() -> zkaleido::ProofType {
@@ -80,7 +80,6 @@ impl CheckpointProgram {
 #[cfg(test)]
 mod tests {
     use strata_identifiers::Buf64;
-    use strata_ledger_types::IStateAccessor;
     use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
     use strata_ol_state_types::OLState;
     use strata_ol_stf::test_utils::build_empty_chain;
@@ -107,9 +106,6 @@ mod tests {
                 )
             })
             .collect();
-
-        dbg!(&parent);
-        dbg!(&start_state.compute_state_root());
 
         CheckpointProverInput {
             start_state,

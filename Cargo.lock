@@ -15040,6 +15040,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-checkpoint-new"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_primitives",
+ "strata-checkpoint-types-ssz",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-chain-types-new",
+ "strata-ol-state-types",
+ "strata-ol-stf",
+ "zkaleido",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
 name = "strata-proofimpl-cl-stf"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15078,23 +15095,6 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
-name = "strata-proofimpl-ol-stf"
-version = "0.1.0"
-dependencies = [
- "ssz",
- "ssz_primitives",
- "strata-checkpoint-types-ssz",
- "strata-crypto",
- "strata-identifiers",
- "strata-ledger-types",
- "strata-ol-chain-types-new",
- "strata-ol-state-types",
- "strata-ol-stf",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
