@@ -23,6 +23,7 @@ use strata_snark_acct_types::{
 
 use crate::{
     exec_processing::process_segments,
+    message::MsgMeta,
     private_input::SharedPrivateInput,
     verification_state::{PendingCommit, UpdateVerificationState},
 };
@@ -57,16 +58,6 @@ impl<'v> SharedData<'v> {
     fn private_input(&self) -> &'v SharedPrivateInput {
         self.shared_private
     }
-}
-
-/// Meta fields extracted from a message.
-#[derive(Debug)]
-pub struct MsgMeta {
-    #[expect(dead_code, reason = "for future use")]
-    pub(crate) source: AccountId,
-    #[expect(dead_code, reason = "for future use")]
-    pub(crate) incl_epoch: u32,
-    pub(crate) value: BitcoinAmount,
 }
 
 /// Decoded message and its metadata.
