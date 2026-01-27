@@ -12,8 +12,9 @@ use strata_asm_manifest_types::AsmManifest;
 use strata_da_framework::decode_buf_exact;
 use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, WtxidsRoot};
 use strata_ledger_types::{
-    AccountTypeState, AccountTypeStateRef, Coin, IAccountState, IAccountStateMut,
-    ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
+    AccountTypeState, AccountTypeStateRef, Coin, IAccountState, IAccountStateConstructible,
+    IAccountStateMut, ISnarkAccountState, ISnarkAccountStateConstructible, ISnarkAccountStateMut,
+    IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
@@ -556,6 +557,19 @@ impl ISnarkAccountStateMut for TestSnarkState {
     }
 }
 
+impl ISnarkAccountStateConstructible for TestSnarkState {
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
+        let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
+        let inbox_mmr = Mmr64::from_generic(&generic_mmr);
+        Self {
+            update_vk,
+            inner_state_root: initial_state_root,
+            seqno: Seqno::zero(),
+            inbox_mmr,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct TestAccountState {
     serial: AccountSerial,
@@ -612,6 +626,22 @@ impl IAccountStateMut for TestAccountState {
         self.snark
             .as_mut()
             .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
+    }
+}
+
+impl IAccountStateConstructible for TestAccountState {
+    fn new_with_serial(new_acct_data: NewAccountData<Self>, serial: AccountSerial) -> Self {
+        let balance = new_acct_data.initial_balance();
+        let (ty, snark) = match new_acct_data.into_type_state() {
+            AccountTypeState::Empty => (AccountTypeId::Empty, None),
+            AccountTypeState::Snark(snark_state) => (AccountTypeId::Snark, Some(snark_state)),
+        };
+        Self {
+            serial,
+            balance,
+            ty,
+            snark,
+        }
     }
 }
 
@@ -729,18 +759,7 @@ impl IStateAccessor for TestState {
             serial
         };
 
-        let balance = new_acct_data.initial_balance();
-        let (ty, snark) = match new_acct_data.into_type_state() {
-            AccountTypeState::Empty => (AccountTypeId::Empty, None),
-            AccountTypeState::Snark(snark_state) => (AccountTypeId::Snark, Some(snark_state)),
-        };
-
-        let acct = TestAccountState {
-            serial,
-            balance,
-            ty,
-            snark,
-        };
+        let acct = TestAccountState::new_with_serial(new_acct_data, serial);
         self.accounts.insert(id, acct);
         Ok(serial)
     }
