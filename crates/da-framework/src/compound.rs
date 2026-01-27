@@ -252,6 +252,17 @@ macro_rules! make_compound_impl {
     };
 }
 
+/// Helper macro to unwrap delimited field types.
+#[macro_export]
+macro_rules! _mct_field_ty {
+    (($fty:ty)) => {
+        $fty
+    };
+    ({$fty:ty}) => {
+        $fty
+    };
+}
+
 /// Expands to a decoder for each type of member that we support in a compound.
 #[macro_export]
 macro_rules! _mct_field_decode {
@@ -260,25 +271,16 @@ macro_rules! _mct_field_decode {
         $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
     };
     // Register without coercion - type is wrapped in parens or braces to be a single tt
-    ($reader:ident $dec:ident; register ( $fty:ty )) => {
-        $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
-    };
-    ($reader:ident $dec:ident; register { $fty:ty }) => {
-        $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
+    ($reader:ident $dec:ident; register $fty:tt) => {
+        $reader.decode_next_member::<$crate::DaRegister<$crate::_mct_field_ty!($fty)>>($dec)?
     };
     // Counter - type is wrapped in parens or braces to be a single tt
-    ($reader:ident $dec:ident; counter ( $fty:ty )) => {
-        $reader.decode_next_member::<$crate::DaCounter<$fty>>($dec)?
-    };
-    ($reader:ident $dec:ident; counter { $fty:ty }) => {
-        $reader.decode_next_member::<$crate::DaCounter<$fty>>($dec)?
+    ($reader:ident $dec:ident; counter $fty:tt) => {
+        $reader.decode_next_member::<$crate::DaCounter<$crate::_mct_field_ty!($fty)>>($dec)?
     };
     // Compound member - type implements CompoundMember directly
-    ($reader:ident $dec:ident; compound ( $fty:ty )) => {
-        $reader.decode_next_member::<$fty>($dec)?
-    };
-    ($reader:ident $dec:ident; compound { $fty:ty }) => {
-        $reader.decode_next_member::<$fty>($dec)?
+    ($reader:ident $dec:ident; compound $fty:tt) => {
+        $reader.decode_next_member::<$crate::_mct_field_ty!($fty)>($dec)?
     };
 }
 
@@ -293,24 +295,15 @@ macro_rules! _mct_field_poll_context {
         // Skip: coercion field types don't match, poll_context not applicable
     };
     // Normal register - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident register ( $fty:ty )) => {
-        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident register { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident register $fty:tt) => {
         $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
     };
     // Counter - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident counter ( $fty:ty )) => {
-        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident counter { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident counter $fty:tt) => {
         $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
     };
     // Compound member - use the compound context directly
-    ($self:ident $target:ident $context:ident; $fname:ident compound ( $fty:ty )) => {
-        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, $context)?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident compound { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident compound $fty:tt) => {
         $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, $context)?
     };
 }
@@ -326,24 +319,15 @@ macro_rules! _mct_field_apply {
         $self.$fname.apply_into(&mut $target.$fname)
     };
     // Normal register - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident register ( $fty:ty )) => {
-        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident register { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident register $fty:tt) => {
         $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
     // Counter - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident counter ( $fty:ty )) => {
-        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident counter { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident counter $fty:tt) => {
         $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
     // Compound member - use the compound context directly
-    ($self:ident $target:ident $context:ident; $fname:ident compound ( $fty:ty )) => {
-        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, $context)?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident compound { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident compound $fty:tt) => {
         $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, $context)?
     };
 }

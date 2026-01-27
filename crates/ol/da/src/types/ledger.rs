@@ -139,7 +139,7 @@ pub struct SnarkAccountInit {
     /// Initial inner state root.
     pub initial_state_root: Hash,
 
-    /// Update verification key bytes.
+    /// Update verification key bytes (u16 length prefix per SPS-ol-da-structure).
     pub update_vk: U16LenBytes,
 }
 
