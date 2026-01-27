@@ -86,7 +86,7 @@ impl CheckpointTestHarness {
     /// - Increment the epoch by 1
     /// - Process 1-100 random L1 blocks
     /// - Process 1-200 random L2 blocks
-    fn gen_new_tip(&self) -> CheckpointTip {
+    pub fn gen_new_tip(&self) -> CheckpointTip {
         let mut rng = thread_rng();
         let mut arb = ArbitraryGenerator::new();
         let l1_blocks_processed: u32 = rng.gen_range(1..=100);
@@ -101,6 +101,11 @@ impl CheckpointTestHarness {
         let new_ol_block_commitment = OLBlockCommitment::new(new_ol_slot, new_ol_blkid);
 
         CheckpointTip::new(new_epoch, new_covered_l1_height, new_ol_block_commitment)
+    }
+
+    /// Updates the verified tip to reflect a newly accepted checkpoint.
+    pub fn update_verified_tip(&mut self, new_tip: CheckpointTip) {
+        self.verified_tip = new_tip
     }
 
     /// Generates deterministic manifest leaves for L1 blocks between verified tip and new tip.
@@ -151,19 +156,23 @@ impl CheckpointTestHarness {
         VerifiedAuxData::try_new(&data, &asm_accumulator_state).unwrap()
     }
 
+    /// Generates a valid checkpoint payload with a randomly generated tip.
+    ///
+    /// Convenience wrapper around [`Self::build_payload_with_tip`] that automatically
+    /// generates a new checkpoint tip advancing from the current verified tip.
+    pub fn build_payload(&self) -> CheckpointPayload {
+        let new_tip = self.gen_new_tip();
+        self.build_payload_with_tip(new_tip)
+    }
+
     /// Generates a valid checkpoint payload signed by the checkpoint predicate.
     ///
     /// Creates a complete checkpoint payload including:
-    /// - New checkpoint tip advancing from the current verified tip
-    /// - Random state diff and OL logs in the sidecar
-    /// - Properly constructed checkpoint claim
+    /// - Random state diff and empty OL logs in the sidecar
+    /// - Properly constructed checkpoint claim with manifest hashes
     /// - Valid checkpoint proof signature
-    pub fn build_payload(&self) -> CheckpointPayload {
-        let mut arb = ArbitraryGenerator::new();
-        let verified_tip = self.verified_tip;
-        let new_tip = self.gen_new_tip();
-
-        let state_diff: Vec<u8> = arb.generate();
+    pub fn build_payload_with_tip(&self, new_tip: CheckpointTip) -> CheckpointPayload {
+        let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
         let ol_logs = Vec::new();
         let sidecar = CheckpointSidecar::new(state_diff.clone(), ol_logs.clone()).unwrap();
 
@@ -173,7 +182,7 @@ impl CheckpointTestHarness {
         let manifest_hashes = self.gen_manifest_leaves(&new_tip);
         let asm_manifests_hash = compute_asm_manifests_hash(&manifest_hashes);
 
-        let l2_range = L2BlockRange::new(verified_tip.l2_commitment, new_tip.l2_commitment);
+        let l2_range = L2BlockRange::new(self.verified_tip.l2_commitment, new_tip.l2_commitment);
         let claim = CheckpointClaim::new(
             new_tip.epoch,
             l2_range,

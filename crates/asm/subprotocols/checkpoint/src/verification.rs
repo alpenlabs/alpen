@@ -130,6 +130,20 @@ fn construct_full_claim(
     ))
 }
 
+/// Computes the ASM manifests hash for a range of L1 blocks.
+///
+/// Returns an error if the manifest hashes cannot be retrieved from aux data.
+fn compute_asm_manifests_hash_for_checkpoint(
+    start_height: u32,
+    end_height: u32,
+    verified_aux_data: &VerifiedAuxData,
+) -> CheckpointValidationResult<FixedBytes<32>> {
+    let manifest_hashes =
+        verified_aux_data.get_manifest_hashes(start_height as u64, end_height as u64)?;
+
+    Ok(compute_asm_manifests_hash(&manifest_hashes))
+}
+
 /// Extracts and validates withdrawal intent logs from OL logs.
 ///
 /// Filters OL logs from the bridge gateway account, validates that withdrawal intent
@@ -165,20 +179,6 @@ fn extract_and_validate_withdrawal_intents(
     }
 
     Ok(withdrawal_intents)
-}
-
-/// Computes the ASM manifests hash for a range of L1 blocks.
-///
-/// Returns an error if the manifest hashes cannot be retrieved from aux data.
-fn compute_asm_manifests_hash_for_checkpoint(
-    start_height: u32,
-    end_height: u32,
-    verified_aux_data: &VerifiedAuxData,
-) -> CheckpointValidationResult<FixedBytes<32>> {
-    let manifest_hashes =
-        verified_aux_data.get_manifest_hashes(start_height as u64, end_height as u64)?;
-
-    Ok(compute_asm_manifests_hash(&manifest_hashes))
 }
 
 #[cfg(test)]
@@ -325,6 +325,28 @@ mod tests {
                 InvalidCheckpointPayload::L1HeightGoesBackwards { .. }
             )
         ))
+    }
+
+    #[test]
+    fn test_new_l1_tip_same_as_last_verified() {
+        let (state, harness) = test_setup();
+
+        let mut new_tip = harness.gen_new_tip();
+        new_tip.l1_height = state.verified_tip().l1_height;
+        let payload = harness.build_payload_with_tip(new_tip);
+
+        let verified_aux_data = harness.gen_verified_aux(&new_tip);
+        let signed_payload = harness.sign_payload(payload);
+
+        let current_l1_height = state.verified_tip().l1_height + 1;
+
+        let res = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        );
+        assert!(res.is_ok());
     }
 
     #[test]
