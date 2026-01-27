@@ -7,13 +7,16 @@ use strata_codec::Codec;
 use strata_da_framework::{DaError, DaWrite};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
-    Coin, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
+    AccountTypeState, Coin, IAccountState, IAccountStateConstructible, IAccountStateMut,
+    ISnarkAccountState, ISnarkAccountStateConstructible, ISnarkAccountStateMut, IStateAccessor,
     NewAccountData,
 };
+use strata_predicate::PredicateKeyBuf;
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
 use super::{
-    AccountDiff, AccountInit, DaProofState, GlobalStateDiff, LedgerDiff, SnarkAccountDiff,
+    AccountDiff, AccountInit, AccountTypeInit, DaProofState, GlobalStateDiff, LedgerDiff,
+    SnarkAccountDiff,
 };
 
 /// Versioned OL DA payload containing the state diff.
@@ -44,27 +47,6 @@ impl StateDiff {
     /// Creates a new [`StateDiff`] from a global state diff and ledger diff.
     pub fn new(global: GlobalStateDiff, ledger: LedgerDiff) -> Self {
         Self { global, ledger }
-    }
-}
-
-/// Context required to apply OL state diffs that include ledger changes.
-#[derive(Clone, Copy, Debug)]
-pub struct OLApplyContext<S: IStateAccessor> {
-    new_account_data: fn(&AccountInit) -> Result<NewAccountData<S::AccountState>, DaError>,
-}
-
-impl<S: IStateAccessor> OLApplyContext<S> {
-    pub fn new(
-        new_account_data: fn(&AccountInit) -> Result<NewAccountData<S::AccountState>, DaError>,
-    ) -> Self {
-        Self { new_account_data }
-    }
-
-    pub fn new_account_data(
-        &self,
-        init: &AccountInit,
-    ) -> Result<NewAccountData<S::AccountState>, DaError> {
-        (self.new_account_data)(init)
     }
 }
 
@@ -110,21 +92,24 @@ impl<S: IStateAccessor> From<OLStateDiff<S>> for StateDiff {
     }
 }
 
-impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
+impl<S> DaWrite for OLStateDiff<S>
+where
+    S: IStateAccessor,
+    S::AccountState: IAccountStateConstructible,
+    <S::AccountState as IAccountState>::SnarkAccountState: ISnarkAccountStateConstructible,
+{
     type Target = S;
-    type Context = OLApplyContext<S>;
+    type Context = ();
 
     fn is_default(&self) -> bool {
         DaWrite::is_default(&self.diff.global) && self.diff.ledger.is_empty()
     }
 
-    fn poll_context(&self, target: &Self::Target, context: &Self::Context) -> Result<(), DaError> {
+    fn poll_context(&self, target: &Self::Target, _context: &Self::Context) -> Result<(), DaError> {
         let pre_state_next_serial = target.next_account_serial();
         validate_ledger_entries(pre_state_next_serial, &self.diff)?;
         for entry in self.diff.ledger.new_accounts.entries() {
-            context
-                .new_account_data(&entry.init)
-                .map_err(|_| DaError::InvalidLedgerDiff("invalid new account init"))?;
+            new_account_data_from_init::<S::AccountState>(&entry.init)?;
             let exists = target
                 .check_account_exists(entry.account_id)
                 .map_err(|_| DaError::InsufficientContext)?;
@@ -142,7 +127,7 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
         Ok(())
     }
 
-    fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), DaError> {
+    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), DaError> {
         let mut cur_slot = target.cur_slot();
         self.diff.global.cur_slot.apply(&mut cur_slot, &())?;
         target.set_cur_slot(cur_slot);
@@ -157,9 +142,7 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
             if exists {
                 return Err(DaError::InvalidLedgerDiff("new account already exists"));
             }
-            let new_acct = context
-                .new_account_data(&entry.init)
-                .map_err(|_| DaError::InvalidLedgerDiff("invalid new account init"))?;
+            let new_acct = new_account_data_from_init::<S::AccountState>(&entry.init)?;
             let serial = target
                 .create_new_account(entry.account_id, new_acct)
                 .map_err(|_| DaError::InvalidLedgerDiff("failed to create new account"))?;
@@ -178,6 +161,24 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
         }
         Ok(())
     }
+}
+
+fn new_account_data_from_init<T>(init: &AccountInit) -> Result<NewAccountData<T>, DaError>
+where
+    T: IAccountState + IAccountStateConstructible,
+    T::SnarkAccountState: ISnarkAccountStateConstructible,
+{
+    let type_state = match &init.type_state {
+        AccountTypeInit::Empty => AccountTypeState::Empty,
+        AccountTypeInit::Snark(snark) => {
+            let buf = PredicateKeyBuf::try_from(snark.update_vk.as_slice())
+                .map_err(|_| DaError::InvalidLedgerDiff("invalid predicate key"))?;
+            let snark_state =
+                T::SnarkAccountState::new_fresh(buf.to_owned(), snark.initial_state_root);
+            AccountTypeState::Snark(snark_state)
+        }
+    };
+    Ok(NewAccountData::new(init.balance, type_state))
 }
 
 fn validate_ledger_entries(

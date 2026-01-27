@@ -14886,6 +14886,7 @@ dependencies = [
  "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-predicate",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
