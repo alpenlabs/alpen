@@ -111,7 +111,10 @@ make_compound_impl! {
     }
 }
 
-/// Target for applying a snark account diff.
+/// Target state for applying a [`SnarkAccountDiff`].
+///
+/// This struct is the `DaWrite::Target` for snark diffs and is used by
+/// higher-level account diff targets during DA application.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SnarkAccountTarget {
     pub seq_no: u64,
