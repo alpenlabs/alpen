@@ -8,7 +8,7 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
 use strata_da_framework::{
-    counter_schemes::{CtrU64ByUnsignedVarint, UnsignedVarintIncr},
+    counter_schemes::{CtrU64BySignedVarint, SignedVarintIncr},
     DaCounter, DaRegister,
 };
 
@@ -23,9 +23,9 @@ pub struct AccountDiffSerde {
     /// New balance value (None = unchanged).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub balance: Option<U256>,
-    /// Nonce increment (None = unchanged).
+    /// Nonce delta (None = unchanged). Can be negative post-Shanghai via selfdestruct+recreate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nonce_incr: Option<u32>,
+    pub nonce_delta: Option<i32>,
     /// New code hash (None = unchanged).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_hash: Option<B256>,
@@ -35,7 +35,7 @@ impl From<&AccountDiff> for AccountDiffSerde {
     fn from(diff: &AccountDiff) -> Self {
         Self {
             balance: diff.balance.new_value().map(|v| v.0),
-            nonce_incr: diff.nonce.diff().map(|v| v.inner()),
+            nonce_delta: diff.nonce.diff().map(|v| v.inner()),
             code_hash: diff.code_hash.new_value().map(|v| v.0),
         }
     }
@@ -49,9 +49,9 @@ impl From<AccountDiffSerde> for AccountDiff {
                 .map(|v| DaRegister::new_set(CodecU256(v)))
                 .unwrap_or_else(DaRegister::new_unset),
             nonce: serde
-                .nonce_incr
-                .and_then(UnsignedVarintIncr::new)
-                .map(DaCounter::<CtrU64ByUnsignedVarint>::new_changed)
+                .nonce_delta
+                .and_then(SignedVarintIncr::new)
+                .map(DaCounter::<CtrU64BySignedVarint>::new_changed)
                 .unwrap_or_else(DaCounter::new_unchanged),
             code_hash: serde
                 .code_hash
@@ -149,7 +149,7 @@ mod tests {
         // Convert to serde type
         let serde: AccountDiffSerde = (&diff).into();
         assert_eq!(serde.balance, Some(U256::from(1000)));
-        assert_eq!(serde.nonce_incr, Some(5));
+        assert_eq!(serde.nonce_delta, Some(5));
         assert_eq!(serde.code_hash, Some(B256::from([0x11u8; 32])));
 
         // Convert back

@@ -4,7 +4,7 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256, KECCAK_EMPTY};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{
-    counter_schemes::{CtrU64ByUnsignedVarint, UnsignedVarintIncr},
+    counter_schemes::{CtrU64BySignedVarint, SignedVarintIncr},
     make_compound_impl, DaCounter, DaRegister, DaWrite,
 };
 
@@ -16,14 +16,21 @@ use crate::{
 /// Diff for a single account using DA framework primitives.
 ///
 /// - `balance`: Register (can change arbitrarily)
-/// - `nonce`: Counter (increments only, stored as varint-encoded delta)
+/// - `nonce`: Counter (signed delta, varint-encoded)
 /// - `code_hash`: Register (only changes on contract creation)
+///
+/// # Why signed nonce deltas?
+///
+/// Post-Shanghai, account nonces can effectively decrease via the selfdestruct + recreate
+/// pattern: when a contract selfdestructs and is recreated in the same block (or batch),
+/// the new account starts with nonce 0 or 1, which may be lower than the original nonce.
+/// Using signed deltas allows encoding these transitions compactly.
 #[derive(Clone, Debug, Default)]
 pub struct AccountDiff {
     /// Balance change (full replacement if changed).
     pub balance: DaRegister<CodecU256>,
-    /// Nonce increment (counter - only increments, varint-encoded for safety).
-    pub nonce: DaCounter<CtrU64ByUnsignedVarint>,
+    /// Nonce delta (signed, supports both increments and decrements).
+    pub nonce: DaCounter<CtrU64BySignedVarint>,
     /// Code hash change (only on contract creation).
     pub code_hash: DaRegister<CodecB256>,
 }
@@ -33,22 +40,23 @@ pub struct AccountDiff {
 make_compound_impl! {
     AccountDiff u8 => AccountSnapshot {
         balance: register [CodecU256 => U256],
-        nonce: counter (CtrU64ByUnsignedVarint),
+        nonce: counter (CtrU64BySignedVarint),
         code_hash: register [CodecB256 => B256],
     }
 }
 
-/// Converts a nonce delta to `DaCounter<CtrU64ByUnsignedVarint>`.
+/// Converts a nonce delta to `DaCounter<CtrU64BySignedVarint>`.
 ///
-/// Uses varint encoding to safely handle any reasonable nonce delta without panicking.
-/// Returns `None` if the delta exceeds the varint max (~1 billion), which would indicate
-/// a bug elsewhere in the system.
-fn nonce_incr_from_delta(delta: u64) -> Option<DaCounter<CtrU64ByUnsignedVarint>> {
+/// Uses signed varint encoding to handle nonce changes in either direction.
+/// Nonces can decrease post-Shanghai via selfdestruct + recreate patterns.
+///
+/// Returns `None` if the delta exceeds the signed varint range (~±536 million).
+fn nonce_delta_to_counter(delta: i64) -> Option<DaCounter<CtrU64BySignedVarint>> {
     if delta == 0 {
         return Some(DaCounter::new_unchanged());
     }
-    let delta_u32 = u32::try_from(delta).ok()?;
-    let incr = UnsignedVarintIncr::new(delta_u32)?;
+    let delta_i32 = i32::try_from(delta).ok()?;
+    let incr = SignedVarintIncr::new(delta_i32)?;
     Some(DaCounter::new_changed(incr))
 }
 
@@ -61,10 +69,10 @@ impl AccountDiff {
     /// Creates a diff representing a new account creation.
     ///
     /// # Panics
-    /// Panics if `nonce` exceeds the varint max (~1 billion).
+    /// Panics if `nonce` exceeds the signed varint max (~536 million).
     pub fn new_created(balance: U256, nonce: u64, code_hash: B256) -> Self {
-        let nonce_u32 = u32::try_from(nonce).expect("nonce exceeds u32::MAX");
-        let incr = UnsignedVarintIncr::new(nonce_u32).expect("nonce exceeds varint max");
+        let nonce_i32 = i32::try_from(nonce).expect("nonce exceeds i32::MAX");
+        let incr = SignedVarintIncr::new(nonce_i32).expect("nonce exceeds signed varint max");
         Self {
             balance: DaRegister::new_set(CodecU256(balance)),
             nonce: DaCounter::new_changed(incr),
@@ -76,6 +84,8 @@ impl AccountDiff {
     ///
     /// If `original` is None, all fields are treated as changed (account creation).
     /// Returns None if no fields changed or if the nonce delta is invalid.
+    ///
+    /// Note: nonce deltas can be negative post-Shanghai due to selfdestruct + recreate.
     pub fn from_account_snapshot(
         current: &AccountSnapshot,
         original: Option<&AccountSnapshot>,
@@ -90,8 +100,9 @@ impl AccountDiff {
             _ => DaRegister::new_set(CodecU256(current.balance)),
         };
 
-        let nonce_delta = current.nonce.saturating_sub(orig_nonce);
-        let nonce = nonce_incr_from_delta(nonce_delta)?;
+        // Signed delta: can be negative if account was selfdestructed and recreated
+        let nonce_delta = (current.nonce as i64) - (orig_nonce as i64);
+        let nonce = nonce_delta_to_counter(nonce_delta)?;
 
         let code_hash = match orig_code_hash {
             Some(oc) if oc == current.code_hash => DaRegister::new_unset(),
@@ -167,6 +178,7 @@ impl Codec for AccountChange {
 #[cfg(test)]
 mod tests {
     use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_da_framework::ContextlessDaWrite;
 
     use super::*;
 
@@ -226,8 +238,6 @@ mod tests {
 
     #[test]
     fn test_account_diff_apply() {
-        use strata_da_framework::ContextlessDaWrite;
-
         let mut snapshot = AccountSnapshot {
             balance: U256::from(100),
             nonce: 5,
@@ -236,7 +246,7 @@ mod tests {
 
         let diff = AccountDiff {
             balance: DaRegister::new_set(CodecU256(U256::from(200))),
-            nonce: DaCounter::new_changed(UnsignedVarintIncr::new(3).unwrap()),
+            nonce: DaCounter::new_changed(SignedVarintIncr::new(3).unwrap()),
             code_hash: DaRegister::new_unset(),
         };
 
@@ -256,5 +266,40 @@ mod tests {
         let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
 
         assert_eq!(decoded.nonce.diff().map(|v| v.inner()), Some(500));
+    }
+
+    #[test]
+    fn test_account_diff_negative_nonce_delta() {
+        // Post-Shanghai: selfdestruct + recreate can result in negative nonce delta.
+        // Example: account had nonce 100, selfdestructs, gets recreated with nonce 1.
+
+        let original = AccountSnapshot {
+            balance: U256::from(1000),
+            nonce: 100,
+            code_hash: B256::ZERO,
+        };
+
+        let current = AccountSnapshot {
+            balance: U256::from(500),
+            nonce: 1, // Recreated with lower nonce
+            code_hash: B256::from([0x11u8; 32]),
+        };
+
+        let diff =
+            AccountDiff::from_account_snapshot(&current, Some(&original), Address::ZERO).unwrap();
+
+        // Nonce delta should be -99 (1 - 100)
+        assert_eq!(diff.nonce.diff().map(|v| v.inner()), Some(-99));
+
+        // Verify encoding roundtrip
+        let encoded = encode_to_vec(&diff).unwrap();
+        let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
+        assert_eq!(decoded.nonce.diff().map(|v| v.inner()), Some(-99));
+
+        // Verify apply works correctly
+        let mut snapshot = original.clone();
+        ContextlessDaWrite::apply(&decoded, &mut snapshot).unwrap();
+        assert_eq!(snapshot.nonce, 1);
+        assert_eq!(snapshot.balance, U256::from(500));
     }
 }
