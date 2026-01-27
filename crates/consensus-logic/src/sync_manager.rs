@@ -10,6 +10,7 @@ use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
+use strata_node_context::NodeContext;
 use strata_params::{Params, RollupParams};
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
@@ -249,6 +250,16 @@ fn spawn_chain_worker(
         .launch(executor)?;
 
     Ok(handle)
+}
+
+pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWorkerHandle> {
+    spawn_asm_worker(
+        nodectx.executor(),
+        nodectx.executor().handle().clone(),
+        nodectx.storage().clone(),
+        nodectx.params().rollup.clone().into(),
+        nodectx.bitcoin_client().clone(),
+    )
 }
 
 pub fn spawn_asm_worker(

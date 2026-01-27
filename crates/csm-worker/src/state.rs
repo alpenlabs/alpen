@@ -51,7 +51,7 @@ impl CsmWorkerState {
         let (cur_block, cur_state) = storage
             .client_state()
             .fetch_most_recent_state()?
-            .expect("missing initial client state?");
+            .unwrap_or((params.rollup.genesis_l1_view.blk, ClientState::default()));
 
         Ok(Self {
             _params: params,

@@ -1,10 +1,11 @@
 //! Strata client binary entrypoint.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
 use strata_common::logging;
+use strata_consensus_logic::sync_manager::spawn_asm_worker_with_ctx;
 use strata_db_types as _;
 use strata_node_context::NodeContext;
 use tokio::runtime::{self, Handle};
@@ -12,9 +13,9 @@ use tracing::info;
 
 use crate::{
     args::Args,
-    context::init_node_context,
+    context::{check_and_init_genesis, init_node_context},
     errors::InitError,
-    services::{start_rpc, start_services},
+    services::{start_rpc, start_strata_services},
 };
 
 mod args;
@@ -48,8 +49,15 @@ fn main() -> Result<()> {
 
     do_startup_checks(&nodectx)?;
 
+    // start Asm Service for genesis manifest, or maybe we can just start bitcoin reader service
+    // that feeds L1BlockCommitment to Asm
+    let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
+
+    // Check and do genesis if not yet
+    check_and_init_genesis(nodectx.storage().as_ref(), nodectx.params().as_ref())?;
+
     // Start services.
-    let runctx = start_services(nodectx)?;
+    let runctx = start_strata_services(nodectx, asm_handle)?;
 
     // Start RPC.
     start_rpc(&runctx)?;
@@ -64,7 +72,8 @@ fn main() -> Result<()> {
 
 fn do_startup_checks(_ctx: &NodeContext) -> Result<()> {
     // TODO: things like if bitcoin client is running or not, db consistency checks and any other
-    // checks prior to starting services, GENESIS checks etc.
+    // checks prior to starting services, etc.
+
     Ok(())
 }
 

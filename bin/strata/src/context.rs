@@ -12,14 +12,26 @@ use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
+use strata_tasks::TaskManager;
 use tokio::runtime::Handle;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
 /// Load config early for logging initialization
 pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
     get_config(args.clone())
+}
+
+pub(crate) fn init_storage(config: &Config) -> Result<Arc<NodeStorage>, InitError> {
+    let db = init_db::init_database(&config.client)
+        .map_err(|e| InitError::StorageCreation(e.to_string()))?;
+    let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
+    let storage = Arc::new(
+        create_node_storage(db, pool.clone())
+            .map_err(|e| InitError::StorageCreation(e.to_string()))?,
+    );
+    Ok(storage)
 }
 
 /// Initialize runtime, database, etc.
@@ -31,22 +43,13 @@ pub(crate) fn init_node_context(
     let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
 
-    let db = init_db::init_database(&config.client)
-        .map_err(|e| InitError::StorageCreation(e.to_string()))?;
-    let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
-    let storage = Arc::new(
-        create_node_storage(db, pool.clone())
-            .map_err(|e| InitError::StorageCreation(e.to_string()))?,
-    );
-
-    // Init client state
-    init_client_state(&storage, params.as_ref())?;
+    let storage = init_storage(&config)?;
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
 
     // Init status channel
-    let status_channel = init_status_channel(&storage)?;
+    let status_channel = init_status_channel(params.rollup(), &storage)?;
     let nodectx = NodeContext::new(
         handle,
         config,
@@ -104,7 +107,10 @@ fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
     toml::from_str(&config_str).map_err(InitError::TomlParse)
 }
 
-fn resolve_and_validate_params(path: &Path, config: &Config) -> Result<Arc<Params>, InitError> {
+pub(crate) fn resolve_and_validate_params(
+    path: &Path,
+    config: &Config,
+) -> Result<Arc<Params>, InitError> {
     let rollup_params = load_rollup_params(path)?;
     rollup_params.check_well_formed()?;
 
@@ -147,12 +153,16 @@ fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, Ini
 }
 
 /// Status channel initialization
-fn init_status_channel(storage: &NodeStorage) -> Result<Arc<StatusChannel>, InitError> {
+fn init_status_channel(
+    params: &RollupParams,
+    storage: &NodeStorage,
+) -> Result<Arc<StatusChannel>, InitError> {
+    let gen_l1 = params.genesis_l1_view.blk;
     let csman = storage.client_state();
     let (cur_block, cur_state) = csman
         .fetch_most_recent_state()
         .map_err(|e| InitError::StorageCreation(e.to_string()))?
-        .ok_or(InitError::MissingInitialState)?;
+        .unwrap_or((gen_l1, ClientState::default()));
 
     let l1_status = L1Status {
         ..Default::default()
@@ -161,7 +171,7 @@ fn init_status_channel(storage: &NodeStorage) -> Result<Arc<StatusChannel>, Init
     Ok(StatusChannel::new(cur_state, cur_block, l1_status, None, None).into())
 }
 
-fn init_client_state(
+pub(crate) fn check_and_init_genesis(
     storage: &NodeStorage,
     params: &Params,
 ) -> Result<(L1BlockCommitment, ClientState), InitError> {
@@ -173,6 +183,7 @@ fn init_client_state(
     match recent_state {
         None => {
             // Initialize OL genesis block and state
+            info!("NO RECENT STATE, SO TRYING OL GENESIS");
             init_ol_genesis(params, storage)
                 .map_err(|e| InitError::StorageCreation(e.to_string()))?;
 

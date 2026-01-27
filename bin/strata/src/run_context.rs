@@ -9,6 +9,7 @@ use strata_consensus_logic::FcmServiceHandle;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
 use strata_ol_mempool::MempoolHandle;
+use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -33,6 +34,10 @@ impl RunContext {
 
     pub(crate) fn config(&self) -> &Config {
         self.common.config()
+    }
+
+    pub(crate) fn params(&self) -> &Arc<Params> {
+        self.common.params()
     }
 
     pub(crate) fn storage(&self) -> &Arc<NodeStorage> {

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
+use strata_asm_worker::AsmWorkerHandle;
 use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
 use strata_consensus_logic::{
     FcmContext, start_fcm_service,
@@ -32,16 +33,19 @@ struct RpcDeps {
 }
 
 /// Just simply starts services. This can later be extended to service registry pattern.
-pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
+pub(crate) fn start_strata_services(
+    nodectx: NodeContext,
+    asm_handle: Arc<AsmWorkerHandle>,
+) -> Result<RunContext> {
     // Start Asm worker
-    let asm_handle = spawn_asm_worker(
-        nodectx.executor(),
-        nodectx.executor().handle().clone(),
-        nodectx.storage().clone(),
-        Arc::new(nodectx.params().rollup.clone()),
-        nodectx.bitcoin_client().clone(),
-    )?;
-    let asm_handle = Arc::new(asm_handle);
+    // let asm_handle = spawn_asm_worker(
+    //     nodectx.executor(),
+    //     nodectx.executor().handle().clone(),
+    //     nodectx.storage().clone(),
+    //     Arc::new(nodectx.params().rollup.clone()),
+    //     nodectx.bitcoin_client().clone(),
+    // )?;
+    // let asm_handle = Arc::new(asm_handle);
 
     // Start Csm worker
     let csm_monitor = spawn_csm_listener(

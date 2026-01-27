@@ -6,6 +6,7 @@ Creates Strata sequencer and fullnode instances.
 import contextlib
 from pathlib import Path
 
+from common.config.params import GenesisL1View
 import flexitest
 
 from common.config import BitcoindConfig, ClientConfig, RollupParams, ServiceType, StrataConfig
@@ -30,6 +31,7 @@ class StrataFactory(flexitest.Factory):
     def create_node(
         self,
         bconfig: BitcoindConfig,
+        genesis_l1: GenesisL1View,
         is_sequencer: bool = True,
         config_overrides: dict | None = None,
         **kwargs,
@@ -56,13 +58,14 @@ class StrataFactory(flexitest.Factory):
 
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
+        print("BCONFIG: ", bconfig)
         config = StrataConfig(bitcoind=bconfig, client=client_config)
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
 
         # Create rollup params
-        params = RollupParams()  # Initialize with default values
+        params = RollupParams().with_genesis_l1(genesis_l1)
         params_path = datadir / "rollup-params.json"
         with open(params_path, "w") as f:
             f.write(params.as_json_string())

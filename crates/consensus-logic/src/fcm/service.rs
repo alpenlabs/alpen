@@ -29,7 +29,6 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-#[expect(unused, reason = "will be used later")]
 pub struct FcmServiceHandle {
     fcm_tx: Sender<ForkChoiceMessage>,
     service_monitor: ServiceMonitor<FcmStatus>,

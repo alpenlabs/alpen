@@ -2,6 +2,7 @@
 
 from typing import cast
 
+from common.config.params import GenesisL1View
 import flexitest
 
 from common.config import BitcoindConfig, ServiceType
@@ -45,7 +46,8 @@ class StrataEnvConfig(flexitest.EnvConfig):
         # TODO: set up reth config
 
         # Start Strata sequencer
-        strata = strata_factory.create_node(bitcoind_config, is_sequencer=True)
+        genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
+        strata = strata_factory.create_node(bitcoind_config, genesis_l1, is_sequencer=True)
         strata.wait_for_ready(timeout=10)
 
         services = {

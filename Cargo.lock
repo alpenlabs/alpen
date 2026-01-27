@@ -13630,7 +13630,6 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "ssz",
- "strata-asm-common",
  "strata-asm-worker",
  "strata-chain-worker-new",
  "strata-common",
