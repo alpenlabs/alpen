@@ -15509,6 +15509,7 @@ dependencies = [
  "proptest",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-csm-types",
  "strata-db-store-sled",
  "strata-db-types",
