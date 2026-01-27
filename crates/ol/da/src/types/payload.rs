@@ -121,22 +121,19 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
     fn poll_context(&self, target: &Self::Target, context: &Self::Context) -> Result<(), DaError> {
         let pre_state_next_serial = target.next_account_serial();
         validate_ledger_entries(pre_state_next_serial, &self.diff)?;
-        let mut expected_serial = pre_state_next_serial;
         for entry in self.diff.ledger.new_accounts.entries() {
-            context.new_account_data(&entry.init)?;
+            context
+                .new_account_data(&entry.init)
+                .map_err(|_| DaError::InvalidLedgerDiff("invalid new account init"))?;
             let exists = target
                 .check_account_exists(entry.account_id)
                 .map_err(|_| DaError::InsufficientContext)?;
             if exists {
-                return Err(DaError::InsufficientContext);
+                return Err(DaError::InvalidLedgerDiff("new account already exists"));
             }
-            expected_serial = expected_serial.incr();
         }
 
         for diff in self.diff.ledger.account_diffs.entries() {
-            if diff.account_serial >= pre_state_next_serial {
-                return Err(DaError::InsufficientContext);
-            }
             target
                 .find_account_id_by_serial(diff.account_serial)
                 .map_err(|_| DaError::InsufficientContext)?
@@ -154,20 +151,25 @@ impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
         validate_ledger_entries(pre_state_next_serial, &self.diff)?;
         let mut expected_serial = pre_state_next_serial;
         for entry in self.diff.ledger.new_accounts.entries() {
-            let new_acct = context.new_account_data(&entry.init)?;
+            let exists = target
+                .check_account_exists(entry.account_id)
+                .map_err(|_| DaError::InsufficientContext)?;
+            if exists {
+                return Err(DaError::InvalidLedgerDiff("new account already exists"));
+            }
+            let new_acct = context
+                .new_account_data(&entry.init)
+                .map_err(|_| DaError::InvalidLedgerDiff("invalid new account init"))?;
             let serial = target
                 .create_new_account(entry.account_id, new_acct)
-                .map_err(|_| DaError::InsufficientContext)?;
+                .map_err(|_| DaError::InvalidLedgerDiff("failed to create new account"))?;
             if serial != expected_serial {
-                return Err(DaError::InsufficientContext);
+                return Err(DaError::InvalidLedgerDiff("new account serial mismatch"));
             }
             expected_serial = expected_serial.incr();
         }
 
         for entry in self.diff.ledger.account_diffs.entries() {
-            if entry.account_serial >= pre_state_next_serial {
-                return Err(DaError::InsufficientContext);
-            }
             let account_id = target
                 .find_account_id_by_serial(entry.account_serial)
                 .map_err(|_| DaError::InsufficientContext)?
@@ -185,26 +187,34 @@ fn validate_ledger_entries(
     let mut seen_new_ids = BTreeSet::new();
     for entry in diff.ledger.new_accounts.entries() {
         if !seen_new_ids.insert(entry.account_id) {
-            return Err(DaError::InsufficientContext);
+            return Err(DaError::InvalidLedgerDiff("duplicate new account id"));
         }
     }
 
     let pre_serial: u32 = pre_state_next_serial.into();
     let new_count = diff.ledger.new_accounts.entries().len() as u32;
-    let _new_last = pre_serial
-        .checked_add(new_count.saturating_sub(1))
-        .ok_or(DaError::InsufficientContext)?;
+    if new_count > 0 {
+        pre_serial
+            .checked_add(new_count - 1)
+            .ok_or(DaError::InvalidLedgerDiff(
+                "new account serial range overflows",
+            ))?;
+    }
 
     let mut last_serial: Option<u32> = None;
     for entry in diff.ledger.account_diffs.entries() {
         let serial: u32 = entry.account_serial.into();
         if serial >= pre_serial {
-            return Err(DaError::InsufficientContext);
+            return Err(DaError::InvalidLedgerDiff(
+                "account diff serial out of range",
+            ));
         }
         if let Some(prev) = last_serial
             && serial <= prev
         {
-            return Err(DaError::InsufficientContext);
+            return Err(DaError::InvalidLedgerDiff(
+                "account diff serials not strictly increasing",
+            ));
         }
         last_serial = Some(serial);
     }
@@ -218,7 +228,7 @@ fn apply_account_diff<S: IStateAccessor>(
 ) -> Result<(), DaError> {
     target
         .update_account(account_id, |acct| apply_account_diff_to_account(acct, diff))
-        .map_err(|_| DaError::InsufficientContext)?
+        .map_err(|_| DaError::InvalidStateDiff("failed to update account diff"))?
 }
 
 fn apply_account_diff_to_account<T: IAccountStateMut>(
@@ -229,7 +239,9 @@ fn apply_account_diff_to_account<T: IAccountStateMut>(
         apply_balance(acct, *new_balance)?;
     }
 
-    apply_snark_diff(acct, &diff.snark)?;
+    if !DaWrite::is_default(&diff.snark) {
+        apply_snark_diff(acct, &diff.snark)?;
+    }
     Ok(())
 }
 
@@ -241,15 +253,15 @@ fn apply_balance<T: IAccountStateMut>(
     if new_balance > current {
         let delta = new_balance
             .checked_sub(current)
-            .ok_or(DaError::InsufficientContext)?;
+            .expect("new balance exceeds current");
         let coin = Coin::new_unchecked(delta);
         acct.add_balance(coin);
     } else if new_balance < current {
         let delta = current
             .checked_sub(new_balance)
-            .ok_or(DaError::InsufficientContext)?;
+            .expect("current balance exceeds new");
         acct.take_balance(delta)
-            .map_err(|_| DaError::InsufficientContext)?;
+            .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
     }
     Ok(())
 }
@@ -258,16 +270,9 @@ fn apply_snark_diff<T: IAccountStateMut>(
     acct: &mut T,
     diff: &SnarkAccountDiff,
 ) -> Result<(), DaError> {
-    if diff.seq_no.diff().is_none()
-        && diff.proof_state.new_value().is_none()
-        && diff.inbox.new_entries().is_empty()
-    {
-        return Ok(());
-    }
-
     let snark = acct
         .as_snark_account_mut()
-        .map_err(|_| DaError::InsufficientContext)?;
+        .map_err(|_| DaError::InvalidStateDiff("snark diff applied to non-snark account"))?;
 
     let mut seq_no = *snark.seqno().inner();
     diff.seq_no.apply(&mut seq_no, &())?;
@@ -290,7 +295,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
         let msg = MessageEntry::new(entry.source, entry.incl_epoch, entry.payload.clone());
         snark
             .insert_inbox_message(msg)
-            .map_err(|_| DaError::InsufficientContext)?;
+            .map_err(|_| DaError::InvalidStateDiff("failed to insert inbox message"))?;
     }
 
     Ok(())
