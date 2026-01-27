@@ -1,0 +1,8 @@
+[advisories]
+ignore = [
+  # RUSTSEC-2025-0055 (tracing-subscriber 0.2.25)
+  # Pulled in via ark-relations.
+  # Upgrade blocked until upstream bumps tracing-subscriber >= 0.3.20.
+  # Low risk: affects ANSI escape sequences in logs only.
+  "RUSTSEC-2025-0055",
+]
