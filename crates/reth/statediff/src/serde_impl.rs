@@ -14,15 +14,24 @@ use strata_da_framework::{
 
 use crate::{
     batch::{AccountChange, AccountDiff, BatchStateDiff, StorageDiff},
-    codec::{CodecB256, CodecU256},
+    codec::{CodecB256, CtrU256BySignedU256, SignedU256Delta},
 };
+
+/// Serde-friendly representation of a signed balance delta.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BalanceDeltaSerde {
+    /// True if positive (balance increased), false if negative (balance decreased).
+    pub positive: bool,
+    /// Absolute magnitude of the change.
+    pub magnitude: U256,
+}
 
 /// Serde-friendly representation of [`AccountDiff`] for RPC.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AccountDiffSerde {
-    /// New balance value (None = unchanged).
+    /// Balance delta (None = unchanged).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub balance: Option<U256>,
+    pub balance_delta: Option<BalanceDeltaSerde>,
     /// Nonce delta (None = unchanged). Can be negative post-Shanghai via selfdestruct+recreate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nonce_delta: Option<i32>,
@@ -34,7 +43,10 @@ pub struct AccountDiffSerde {
 impl From<&AccountDiff> for AccountDiffSerde {
     fn from(diff: &AccountDiff) -> Self {
         Self {
-            balance: diff.balance.new_value().map(|v| v.0),
+            balance_delta: diff.balance.diff().map(|d| BalanceDeltaSerde {
+                positive: d.is_positive(),
+                magnitude: d.magnitude(),
+            }),
             nonce_delta: diff.nonce.diff().map(|v| v.inner()),
             code_hash: diff.code_hash.new_value().map(|v| v.0),
         }
@@ -45,9 +57,16 @@ impl From<AccountDiffSerde> for AccountDiff {
     fn from(serde: AccountDiffSerde) -> Self {
         Self {
             balance: serde
-                .balance
-                .map(|v| DaRegister::new_set(CodecU256(v)))
-                .unwrap_or_else(DaRegister::new_unset),
+                .balance_delta
+                .map(|d| {
+                    let delta = if d.positive {
+                        SignedU256Delta::positive(d.magnitude)
+                    } else {
+                        SignedU256Delta::negative(d.magnitude)
+                    };
+                    DaCounter::<CtrU256BySignedU256>::new_changed(delta)
+                })
+                .unwrap_or_else(DaCounter::new_unchanged),
             nonce: serde
                 .nonce_delta
                 .and_then(SignedVarintIncr::new)
@@ -148,13 +167,18 @@ mod tests {
 
         // Convert to serde type
         let serde: AccountDiffSerde = (&diff).into();
-        assert_eq!(serde.balance, Some(U256::from(1000)));
+        // Balance delta is +1000 (from 0 for new account)
+        let balance_delta = serde.balance_delta.as_ref().unwrap();
+        assert!(balance_delta.positive);
+        assert_eq!(balance_delta.magnitude, U256::from(1000));
         assert_eq!(serde.nonce_delta, Some(5));
         assert_eq!(serde.code_hash, Some(B256::from([0x11u8; 32])));
 
         // Convert back
         let roundtrip: AccountDiff = serde.into();
-        assert_eq!(roundtrip.balance.new_value().unwrap().0, U256::from(1000));
+        let roundtrip_delta = roundtrip.balance.diff().unwrap();
+        assert!(roundtrip_delta.is_positive());
+        assert_eq!(roundtrip_delta.magnitude(), U256::from(1000));
         assert_eq!(roundtrip.nonce.diff().map(|v| v.inner()), Some(5));
         assert_eq!(
             roundtrip.code_hash.new_value().unwrap().0,

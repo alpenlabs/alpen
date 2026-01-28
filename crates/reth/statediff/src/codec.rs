@@ -3,6 +3,7 @@
 use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_da_framework::CounterScheme;
 
 /// Trimmed U256 encoding - strips leading zeros for space efficiency.
 ///
@@ -207,9 +208,152 @@ impl From<CodecAddress> for Address {
     }
 }
 
+/// Signed U256 delta for balance changes.
+///
+/// Encoding format:
+/// - `0x00` = zero delta (not normally encoded, handled by DaCounter)
+/// - `0x01` + TrimmedU256 = positive delta (balance increased)
+/// - `0x02` + TrimmedU256 = negative delta (balance decreased)
+///
+/// This allows encoding balance changes of any magnitude up to U256::MAX,
+/// using only 2-34 bytes depending on the delta size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SignedU256Delta {
+    /// True if this is a positive delta (addition), false for negative (subtraction).
+    positive: bool,
+    /// Absolute value of the change.
+    magnitude: U256,
+}
+
+impl Default for SignedU256Delta {
+    fn default() -> Self {
+        // Zero delta is normalized to positive
+        Self {
+            positive: true,
+            magnitude: U256::ZERO,
+        }
+    }
+}
+
+impl SignedU256Delta {
+    /// Creates a new signed delta.
+    fn new(positive: bool, magnitude: U256) -> Self {
+        // Normalize: if magnitude is zero, sign doesn't matter
+        if magnitude.is_zero() {
+            Self {
+                positive: true,
+                magnitude: U256::ZERO,
+            }
+        } else {
+            Self {
+                positive,
+                magnitude,
+            }
+        }
+    }
+
+    /// Creates a positive delta (balance increase).
+    pub fn positive(magnitude: U256) -> Self {
+        Self::new(true, magnitude)
+    }
+
+    /// Creates a negative delta (balance decrease).
+    pub fn negative(magnitude: U256) -> Self {
+        Self::new(false, magnitude)
+    }
+
+    /// Returns true if this delta is zero.
+    pub fn is_zero(&self) -> bool {
+        self.magnitude.is_zero()
+    }
+
+    /// Returns the sign (true = positive, false = negative).
+    pub fn is_positive(&self) -> bool {
+        self.positive
+    }
+
+    /// Returns the absolute magnitude of the change.
+    pub fn magnitude(&self) -> U256 {
+        self.magnitude
+    }
+}
+
+impl Codec for SignedU256Delta {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        if self.magnitude.is_zero() {
+            // Zero delta: single byte
+            enc.write_buf(&[0x00])?;
+        } else if self.positive {
+            // Positive delta: 0x01 + trimmed magnitude
+            enc.write_buf(&[0x01])?;
+            TrimmedU256(self.magnitude).encode(enc)?;
+        } else {
+            // Negative delta: 0x02 + trimmed magnitude
+            enc.write_buf(&[0x02])?;
+            TrimmedU256(self.magnitude).encode(enc)?;
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let [tag] = dec.read_arr::<1>()?;
+        match tag {
+            0x00 => Ok(Self::default()),
+            0x01 => {
+                let magnitude = TrimmedU256::decode(dec)?.0;
+                Ok(Self::positive(magnitude))
+            }
+            0x02 => {
+                let magnitude = TrimmedU256::decode(dec)?.0;
+                Ok(Self::negative(magnitude))
+            }
+            _ => Err(CodecError::InvalidVariant("SignedU256Delta")),
+        }
+    }
+}
+
+/// Counter scheme for U256 balance with signed delta.
+///
+/// Supports balance changes of any magnitude (up to U256::MAX) in either direction.
+/// Encoding is compact: 2-34 bytes depending on delta size.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CtrU256BySignedU256;
+
+impl CounterScheme for CtrU256BySignedU256 {
+    type Base = U256;
+    type Incr = SignedU256Delta;
+
+    fn is_zero(incr: &Self::Incr) -> bool {
+        incr.is_zero()
+    }
+
+    fn update(base: &mut Self::Base, incr: &Self::Incr) {
+        if incr.is_zero() {
+            return;
+        }
+        if incr.positive {
+            // Saturating add to prevent overflow
+            *base = base.saturating_add(incr.magnitude);
+        } else {
+            // Saturating sub to prevent underflow
+            *base = base.saturating_sub(incr.magnitude);
+        }
+    }
+
+    fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
+        // Compute b - a as a signed delta
+        if b >= a {
+            Some(SignedU256Delta::positive(b - a))
+        } else {
+            Some(SignedU256Delta::negative(a - b))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_da_framework::{ContextlessDaWrite, CounterScheme, DaCounter};
 
     use super::*;
 
@@ -341,5 +485,195 @@ mod tests {
         assert_eq!(key_trimmed, vec![1, 5]); // Would be 2 bytes if we used trimming
                                              // But hash keys would be 33 bytes (1 + 32), worse than
                                              // fixed 32 bytes
+    }
+
+    #[test]
+    fn test_signed_u256_delta_zero() {
+        let delta = SignedU256Delta::default();
+        assert!(delta.is_zero());
+        assert!(delta.is_positive()); // Zero is normalized to positive
+
+        let encoded = encode_to_vec(&delta).unwrap();
+        assert_eq!(encoded, vec![0x00]); // Single byte for zero
+
+        let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
+        assert!(decoded.is_zero());
+    }
+
+    #[test]
+    fn test_signed_u256_delta_positive_small() {
+        let delta = SignedU256Delta::positive(U256::from(100u8));
+        assert!(!delta.is_zero());
+        assert!(delta.is_positive());
+        assert_eq!(delta.magnitude(), U256::from(100u8));
+
+        let encoded = encode_to_vec(&delta).unwrap();
+        // 0x01 (positive tag) + [1, 100] (trimmed U256)
+        assert_eq!(encoded, vec![0x01, 1, 100]);
+
+        let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
+        assert_eq!(decoded.magnitude(), U256::from(100u8));
+        assert!(decoded.is_positive());
+    }
+
+    #[test]
+    fn test_signed_u256_delta_negative_small() {
+        let delta = SignedU256Delta::negative(U256::from(50u8));
+        assert!(!delta.is_zero());
+        assert!(!delta.is_positive());
+        assert_eq!(delta.magnitude(), U256::from(50u8));
+
+        let encoded = encode_to_vec(&delta).unwrap();
+        // 0x02 (negative tag) + [1, 50] (trimmed U256)
+        assert_eq!(encoded, vec![0x02, 1, 50]);
+
+        let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
+        assert_eq!(decoded.magnitude(), U256::from(50u8));
+        assert!(!decoded.is_positive());
+    }
+
+    #[test]
+    fn test_signed_u256_delta_large() {
+        // Test with a large U256 value (full 32 bytes)
+        let mut bytes = [0xffu8; 32];
+        bytes[0] = 0x80;
+        let large = U256::from_be_bytes(bytes);
+
+        let delta = SignedU256Delta::positive(large);
+        let encoded = encode_to_vec(&delta).unwrap();
+        // 0x01 + [32] + 32 bytes = 34 bytes total
+        assert_eq!(encoded.len(), 34);
+        assert_eq!(encoded[0], 0x01);
+
+        let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
+        assert_eq!(decoded.magnitude(), large);
+        assert!(decoded.is_positive());
+    }
+
+    #[test]
+    fn test_signed_u256_delta_normalization() {
+        // Creating a "negative zero" should normalize to positive zero
+        let delta = SignedU256Delta::new(false, U256::ZERO);
+        assert!(delta.is_zero());
+        assert!(delta.is_positive()); // Normalized
+    }
+
+    // ==================== CtrU256BySignedU256 Tests ====================
+
+    #[test]
+    fn test_ctr_u256_compare_increase() {
+        let a = U256::from(100u8);
+        let b = U256::from(150u8);
+
+        let delta = CtrU256BySignedU256::compare(a, b).unwrap();
+        assert!(delta.is_positive());
+        assert_eq!(delta.magnitude(), U256::from(50u8));
+    }
+
+    #[test]
+    fn test_ctr_u256_compare_decrease() {
+        let a = U256::from(150u8);
+        let b = U256::from(100u8);
+
+        let delta = CtrU256BySignedU256::compare(a, b).unwrap();
+        assert!(!delta.is_positive());
+        assert_eq!(delta.magnitude(), U256::from(50u8));
+    }
+
+    #[test]
+    fn test_ctr_u256_compare_no_change() {
+        let a = U256::from(100u8);
+        let b = U256::from(100u8);
+
+        let delta = CtrU256BySignedU256::compare(a, b).unwrap();
+        assert!(delta.is_zero());
+    }
+
+    #[test]
+    fn test_ctr_u256_update_positive() {
+        let mut base = U256::from(100u8);
+        let delta = SignedU256Delta::positive(U256::from(50u8));
+
+        CtrU256BySignedU256::update(&mut base, &delta);
+        assert_eq!(base, U256::from(150u8));
+    }
+
+    #[test]
+    fn test_ctr_u256_update_negative() {
+        let mut base = U256::from(100u8);
+        let delta = SignedU256Delta::negative(U256::from(30u8));
+
+        CtrU256BySignedU256::update(&mut base, &delta);
+        assert_eq!(base, U256::from(70u8));
+    }
+
+    #[test]
+    fn test_ctr_u256_update_saturation() {
+        // Test underflow saturation
+        let mut base = U256::from(50u8);
+        let delta = SignedU256Delta::negative(U256::from(100u8));
+
+        CtrU256BySignedU256::update(&mut base, &delta);
+        assert_eq!(base, U256::ZERO); // Saturates at zero
+
+        // Test overflow saturation
+        let mut base = U256::MAX;
+        let delta = SignedU256Delta::positive(U256::from(100u8));
+
+        CtrU256BySignedU256::update(&mut base, &delta);
+        assert_eq!(base, U256::MAX); // Saturates at max
+    }
+
+    #[test]
+    fn test_ctr_u256_da_counter_apply() {
+        let delta = SignedU256Delta::negative(U256::from(25u8));
+        let ctr = DaCounter::<CtrU256BySignedU256>::new_changed(delta);
+
+        let mut balance = U256::from(100u8);
+        ContextlessDaWrite::apply(&ctr, &mut balance).unwrap();
+
+        assert_eq!(balance, U256::from(75u8));
+    }
+
+    #[test]
+    fn test_ctr_u256_da_counter_unchanged() {
+        let ctr = DaCounter::<CtrU256BySignedU256>::new_unchanged();
+        assert!(!ctr.is_changed());
+
+        let mut balance = U256::from(100u8);
+        ContextlessDaWrite::apply(&ctr, &mut balance).unwrap();
+        assert_eq!(balance, U256::from(100u8)); // Unchanged
+    }
+
+    #[test]
+    fn test_ctr_u256_da_counter_zero_normalized() {
+        // Creating a counter with zero delta should normalize to unchanged
+        let delta = SignedU256Delta::positive(U256::ZERO);
+        let ctr = DaCounter::<CtrU256BySignedU256>::new_changed(delta);
+        assert!(!ctr.is_changed()); // Normalized to unchanged
+    }
+
+    #[test]
+    fn test_ctr_u256_encoding_size_comparison() {
+        // Compare encoding sizes: register vs counter for balance changes
+
+        // Scenario: balance changes from 1 ETH to 1.001 ETH (small delta)
+        let one_eth = U256::from(1_000_000_000_000_000_000u64); // 1e18 wei
+        let small_delta = U256::from(1_000_000_000_000_000u64); // 0.001 ETH
+
+        // Register encoding (full value): 32 bytes
+        let register_enc = encode_to_vec(&CodecU256(one_eth + small_delta)).unwrap();
+        assert_eq!(register_enc.len(), 32);
+
+        // Counter encoding (delta only): 1 (tag) + 1 (len) + 8 (bytes) = 10 bytes
+        let delta = SignedU256Delta::positive(small_delta);
+        let counter_enc = encode_to_vec(&delta).unwrap();
+        assert!(counter_enc.len() < register_enc.len());
+
+        // For very small deltas, savings are even better
+        let tiny_delta = U256::from(100u8);
+        let tiny_enc = encode_to_vec(&SignedU256Delta::positive(tiny_delta)).unwrap();
+        // 1 (tag) + 1 (len) + 1 (byte) = 3 bytes vs 32 bytes
+        assert_eq!(tiny_enc.len(), 3);
     }
 }

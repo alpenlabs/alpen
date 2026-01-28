@@ -10,25 +10,29 @@ use strata_da_framework::{
 
 use crate::{
     block::AccountSnapshot,
-    codec::{CodecB256, CodecU256},
+    codec::{CodecB256, CtrU256BySignedU256, SignedU256Delta},
 };
 
 /// Diff for a single account using DA framework primitives.
 ///
-/// - `balance`: Register (can change arbitrarily)
+/// - `balance`: Counter (signed U256 delta, trimmed encoding)
 /// - `nonce`: Counter (signed delta, varint-encoded)
 /// - `code_hash`: Register (only changes on contract creation)
 ///
-/// # Why signed nonce deltas?
+/// # Why signed deltas?
 ///
-/// Post-Shanghai, account nonces can effectively decrease via the selfdestruct + recreate
-/// pattern: when a contract selfdestructs and is recreated in the same block (or batch),
+/// **Balance**: Using delta encoding instead of full value replacement provides significant
+/// space savings for typical transactions where balance changes by small amounts (gas fees,
+/// small transfers) compared to the total balance. The signed delta supports both increases
+/// (deposits, rewards) and decreases (transfers, fees).
+///
+/// **Nonce**: Post-Shanghai, account nonces can effectively decrease via the selfdestruct +
+/// recreate pattern: when a contract selfdestructs and is recreated in the same block (or batch),
 /// the new account starts with nonce 0 or 1, which may be lower than the original nonce.
-/// Using signed deltas allows encoding these transitions compactly.
 #[derive(Clone, Debug, Default)]
 pub struct AccountDiff {
-    /// Balance change (full replacement if changed).
-    pub balance: DaRegister<CodecU256>,
+    /// Balance delta (signed, supports increases and decreases).
+    pub balance: DaCounter<CtrU256BySignedU256>,
     /// Nonce delta (signed, supports both increments and decrements).
     pub nonce: DaCounter<CtrU64BySignedVarint>,
     /// Code hash change (only on contract creation).
@@ -36,10 +40,10 @@ pub struct AccountDiff {
 }
 
 // Generate Codec and DaWrite impls via compound macro.
-// Uses type coercion for balance (CodecU256 => U256) and code_hash (CodecB256 => B256).
+// Uses type coercion for code_hash (CodecB256 => B256).
 make_compound_impl! {
     AccountDiff u8 => AccountSnapshot {
-        balance: register [CodecU256 => U256],
+        balance: counter (CtrU256BySignedU256),
         nonce: counter (CtrU64BySignedVarint),
         code_hash: register [CodecB256 => B256],
     }
@@ -60,6 +64,21 @@ fn nonce_delta_to_counter(delta: i64) -> Option<DaCounter<CtrU64BySignedVarint>>
     Some(DaCounter::new_changed(incr))
 }
 
+/// Converts a balance delta to `DaCounter<CtrU256BySignedU256>`.
+///
+/// Computes the signed difference between old and new balance.
+fn balance_delta_to_counter(old: U256, new: U256) -> DaCounter<CtrU256BySignedU256> {
+    if old == new {
+        return DaCounter::new_unchanged();
+    }
+    let delta = if new >= old {
+        SignedU256Delta::positive(new - old)
+    } else {
+        SignedU256Delta::negative(old - new)
+    };
+    DaCounter::new_changed(delta)
+}
+
 impl AccountDiff {
     /// Creates a new account diff with all fields unchanged.
     pub fn new_unchanged() -> Self {
@@ -72,10 +91,12 @@ impl AccountDiff {
     /// Panics if `nonce` exceeds the signed varint max (~536 million).
     pub fn new_created(balance: U256, nonce: u64, code_hash: B256) -> Self {
         let nonce_i32 = i32::try_from(nonce).expect("nonce exceeds i32::MAX");
-        let incr = SignedVarintIncr::new(nonce_i32).expect("nonce exceeds signed varint max");
+        let nonce_incr = SignedVarintIncr::new(nonce_i32).expect("nonce exceeds signed varint max");
+        // For new accounts, balance delta is the full balance (from 0)
+        let balance_delta = SignedU256Delta::positive(balance);
         Self {
-            balance: DaRegister::new_set(CodecU256(balance)),
-            nonce: DaCounter::new_changed(incr),
+            balance: DaCounter::new_changed(balance_delta),
+            nonce: DaCounter::new_changed(nonce_incr),
             code_hash: DaRegister::new_set(CodecB256(code_hash)),
         }
     }
@@ -92,15 +113,13 @@ impl AccountDiff {
         _addr: Address,
     ) -> Option<Self> {
         let (orig_balance, orig_nonce, orig_code_hash) = original
-            .map(|o| (Some(o.balance), o.nonce, Some(o.code_hash)))
-            .unwrap_or((None, 0, None));
+            .map(|o| (o.balance, o.nonce, Some(o.code_hash)))
+            .unwrap_or((U256::ZERO, 0, None));
 
-        let balance = match orig_balance {
-            Some(ob) if ob == current.balance => DaRegister::new_unset(),
-            _ => DaRegister::new_set(CodecU256(current.balance)),
-        };
+        // Balance delta (signed): can be positive or negative
+        let balance = balance_delta_to_counter(orig_balance, current.balance);
 
-        // Signed delta: can be negative if account was selfdestructed and recreated
+        // Nonce delta (signed): can be negative if account was selfdestructed and recreated
         let nonce_delta = (current.nonce as i64) - (orig_nonce as i64);
         let nonce = nonce_delta_to_counter(nonce_delta)?;
 
@@ -203,7 +222,10 @@ mod tests {
         let encoded = encode_to_vec(&diff).unwrap();
         let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
 
-        assert_eq!(decoded.balance.new_value().unwrap().0, U256::from(1000));
+        // Balance delta should be +1000 (from 0)
+        let balance_diff = decoded.balance.diff().unwrap();
+        assert!(balance_diff.is_positive());
+        assert_eq!(balance_diff.magnitude(), U256::from(1000));
         assert_eq!(decoded.nonce.diff().map(|v| v.inner()), Some(1));
         assert_eq!(
             decoded.code_hash.new_value().unwrap().0,
@@ -216,7 +238,7 @@ mod tests {
         let created =
             AccountChange::Created(AccountDiff::new_created(U256::from(1000), 1, B256::ZERO));
         let updated = AccountChange::Updated(AccountDiff {
-            balance: DaRegister::new_set(CodecU256(U256::from(500))),
+            balance: DaCounter::new_changed(SignedU256Delta::positive(U256::from(500))),
             nonce: DaCounter::new_unchanged(),
             code_hash: DaRegister::new_unset(),
         });
@@ -245,7 +267,8 @@ mod tests {
         };
 
         let diff = AccountDiff {
-            balance: DaRegister::new_set(CodecU256(U256::from(200))),
+            // Balance increases by 100 (from 100 to 200)
+            balance: DaCounter::new_changed(SignedU256Delta::positive(U256::from(100))),
             nonce: DaCounter::new_changed(SignedVarintIncr::new(3).unwrap()),
             code_hash: DaRegister::new_unset(),
         };
@@ -301,5 +324,43 @@ mod tests {
         ContextlessDaWrite::apply(&decoded, &mut snapshot).unwrap();
         assert_eq!(snapshot.nonce, 1);
         assert_eq!(snapshot.balance, U256::from(500));
+    }
+
+    #[test]
+    fn test_account_diff_negative_balance_delta() {
+        // Balance decreased: e.g., transfer out or gas payment
+        let original = AccountSnapshot {
+            balance: U256::from(1_000_000),
+            nonce: 5,
+            code_hash: B256::ZERO,
+        };
+
+        let current = AccountSnapshot {
+            balance: U256::from(999_000), // Decreased by 1000
+            nonce: 6,
+            code_hash: B256::ZERO,
+        };
+
+        let diff =
+            AccountDiff::from_account_snapshot(&current, Some(&original), Address::ZERO).unwrap();
+
+        // Balance delta should be negative (decrease of 1000)
+        let balance_delta = diff.balance.diff().unwrap();
+        assert!(!balance_delta.is_positive());
+        assert_eq!(balance_delta.magnitude(), U256::from(1000));
+
+        // Verify encoding roundtrip
+        let encoded = encode_to_vec(&diff).unwrap();
+        let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
+
+        let decoded_delta = decoded.balance.diff().unwrap();
+        assert!(!decoded_delta.is_positive());
+        assert_eq!(decoded_delta.magnitude(), U256::from(1000));
+
+        // Verify apply works correctly
+        let mut snapshot = original.clone();
+        ContextlessDaWrite::apply(&decoded, &mut snapshot).unwrap();
+        assert_eq!(snapshot.balance, U256::from(999_000));
+        assert_eq!(snapshot.nonce, 6);
     }
 }
