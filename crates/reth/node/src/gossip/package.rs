@@ -184,6 +184,7 @@ impl AlpenGossipPackage {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
+    use strata_identifiers::test_utils::{buf32_strategy, buf64_strategy};
 
     use super::*;
 
@@ -192,20 +193,6 @@ mod tests {
     /// In the future, this could be extended to generate headers with various fields.
     fn header_strategy() -> impl Strategy<Value = Header> {
         Just(Header::default())
-    }
-
-    /// Strategy for generating arbitrary Buf32 values.
-    fn buf32_strategy() -> impl Strategy<Value = Buf32> {
-        prop::array::uniform32(0u8..).prop_map(Buf32::from)
-    }
-
-    /// Strategy for generating arbitrary Buf64 values.
-    fn buf64_strategy() -> impl Strategy<Value = Buf64> {
-        prop::collection::vec(0u8.., 64).prop_map(|vec| {
-            let mut arr = [0u8; 64];
-            arr.copy_from_slice(&vec);
-            Buf64::from(arr)
-        })
     }
 
     proptest! {
