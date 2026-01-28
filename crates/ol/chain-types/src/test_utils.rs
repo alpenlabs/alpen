@@ -36,15 +36,6 @@ pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
         .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload))
 }
 
-/// Strategy for generating random [`OLLog`] values.
-pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
-    (
-        any::<u32>().prop_map(AccountSerial::from),
-        prop::collection::vec(any::<u8>(), 0..1024),
-    )
-        .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload))
-}
-
 pub fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
     prop::collection::vec(ol_transaction_strategy(), 0..10)
         .prop_map(|txs| OLTxSegment { txs: txs.into() })
