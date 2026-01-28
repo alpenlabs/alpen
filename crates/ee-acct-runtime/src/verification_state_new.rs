@@ -1,17 +1,49 @@
-//! Verification state accumulator.
+//! Verification state for EE accounts.
+//!
+//! This module contains the verification state types used during update
+//! processing in SNARK proofs.
 
 use strata_acct_types::{BitcoinAmount, Hash};
-use strata_ee_acct_types::{EeAccountState, EnvResult};
+use strata_ee_acct_types::{CommitChainSegment, EeAccountState, EnvResult, ExecutionEnvironment};
 use strata_ee_chain_types::ExecOutputs;
 use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
 
-/// State tracker that accumulates changes that we need to make checks about
-/// later on in update processing.
-#[derive(Debug)]
-pub(crate) struct UpdateVerificationState {
-    // balance bookkeeping as additional checks to avoid overdraw
+use crate::commit::PendingCommit;
+
+/// Verification input for EE accounts.
+///
+/// Contains references to:
+/// - The shared private input (chain segments, prev header, pre-state)
+/// - The execution environment for block execution
+///
+/// This is passed by value to `start_verification` when using the verification
+/// path, so that its contents (the references) can be moved into `VState`.
+#[expect(missing_debug_implementations, reason = "E may not implement Debug")]
+pub struct EeVerificationInput<'a, E: ExecutionEnvironment> {
+    /// Shared private input data.
+    pub shared_private: &'a crate::private_input::SharedPrivateInput,
+
+    /// Execution environment for block execution.
+    pub ee: &'a E,
+}
+
+impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
+    /// Creates new verification input.
+    pub fn new(shared_private: &'a crate::private_input::SharedPrivateInput, ee: &'a E) -> Self {
+        Self { shared_private, ee }
+    }
+}
+
+/// Verification state for EE accounts.
+///
+/// This type tracks all verification-related state during update processing,
+/// including balance bookkeeping, pending commits, outputs, and references to
+/// the private input data needed for chain segment verification.
+#[expect(missing_debug_implementations, reason = "E may not implement Debug")]
+pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
+    // Balance bookkeeping as additional checks to avoid overdraw
     #[expect(dead_code, reason = "for future use")]
     orig_tracked_balance: BitcoinAmount,
 
@@ -20,28 +52,42 @@ pub(crate) struct UpdateVerificationState {
     #[expect(dead_code, reason = "for future use")]
     total_val_recv: BitcoinAmount,
 
-    // commits to check
+    // Commits to check
     pending_commits: Vec<PendingCommit>,
 
-    // number of inputs we've consumed
+    // Number of inputs we've consumed
     consumed_inputs: usize,
 
-    // recorded outputs we'll check later
+    // Recorded outputs we'll check later
     accumulated_outputs: UpdateOutputs,
 
     // Recorded DA.
     #[expect(dead_code, reason = "for future use")]
     l1_da_blob_hashes: Vec<Hash>,
+
+    /// Execution environment for block execution.
+    ee: &'a E,
+
+    /// Chain segments to verify.
+    commit_data: &'a [CommitChainSegment],
+
+    /// Previous header that we already have in our state.
+    raw_prev_header: &'a [u8],
+
+    /// Partial pre-state corresponding to the previous header.
+    raw_partial_pre_state: &'a [u8],
 }
 
-impl UpdateVerificationState {
+impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Constructs a verification state using the account's initial state as a
-    /// reference.
-    ///
-    /// We don't take ownership of it, because that makes the types less clean
-    /// to work with later on and breaks our use of the type system to enforce
-    /// correctness about not updating the state with private information.
-    pub(crate) fn new_from_state(state: &EeAccountState) -> Self {
+    /// reference, along with the verification input data.
+    pub fn new_from_state(
+        state: &EeAccountState,
+        ee: &'a E,
+        commit_data: &'a [CommitChainSegment],
+        raw_prev_header: &'a [u8],
+        raw_partial_pre_state: &'a [u8],
+    ) -> Self {
         Self {
             orig_tracked_balance: state.tracked_balance(),
             total_val_sent: 0.into(),
@@ -50,17 +96,24 @@ impl UpdateVerificationState {
             consumed_inputs: 0,
             accumulated_outputs: UpdateOutputs::new_empty(),
             l1_da_blob_hashes: Vec::new(),
+            ee,
+            commit_data,
+            raw_prev_header,
+            raw_partial_pre_state,
         }
     }
 
+    /// Returns the pending commits.
     pub(crate) fn pending_commits(&self) -> &[PendingCommit] {
         &self.pending_commits
     }
 
+    /// Adds a pending commit.
     pub(crate) fn add_pending_commit(&mut self, commit: PendingCommit) {
         self.pending_commits.push(commit);
     }
 
+    /// Returns the number of consumed inputs.
     #[expect(dead_code, reason = "for future use")]
     pub(crate) fn consumed_inputs(&self) -> usize {
         self.consumed_inputs
@@ -71,16 +124,17 @@ impl UpdateVerificationState {
         self.consumed_inputs += amt;
     }
 
+    /// Returns the accumulated outputs.
     #[expect(dead_code, reason = "for future use")]
     pub(crate) fn accumulated_outputs(&self) -> &UpdateOutputs {
         &self.accumulated_outputs
     }
 
     /// Appends a package block's outputs into the pending outputs being
-    /// built internally.  This way we can compare it against the update op data
+    /// built internally. This way we can compare it against the update op data
     /// later.
     pub(crate) fn merge_block_outputs(&mut self, outputs: &ExecOutputs) {
-        // Just merge the entries into the buffer.  This is a little more
+        // Just merge the entries into the buffer. This is a little more
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
         // confusion because they do refer to different concepts.
@@ -104,7 +158,7 @@ impl UpdateVerificationState {
                 )
             });
 
-        // This panic should never happen: capacity limit is [`MAX_TRANSFERS`].
+        // This panic should never happen: capacity limit is [`MAX_MESSAGES`].
         // If hit, it indicates either a malicious block or a bug. We panic to
         // fail fast rather than continue with inconsistent state.
         self.accumulated_outputs
@@ -143,20 +197,24 @@ impl UpdateVerificationState {
         // TODO
         Ok(())
     }
-}
 
-/// Data about a pending commit.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PendingCommit {
-    new_tip_exec_blkid: Hash,
-}
-
-impl PendingCommit {
-    pub(crate) fn new(new_tip_exec_blkid: Hash) -> Self {
-        Self { new_tip_exec_blkid }
+    /// Returns the chain segments to verify.
+    pub fn commit_data(&self) -> &'a [CommitChainSegment] {
+        self.commit_data
     }
 
-    pub(crate) fn new_tip_exec_blkid(&self) -> Hash {
-        self.new_tip_exec_blkid
+    /// Returns the raw previous header.
+    pub fn raw_prev_header(&self) -> &'a [u8] {
+        self.raw_prev_header
+    }
+
+    /// Returns the raw partial pre-state.
+    pub fn raw_partial_pre_state(&self) -> &'a [u8] {
+        self.raw_partial_pre_state
+    }
+
+    /// Returns the execution environment.
+    pub fn ee(&self) -> &'a E {
+        self.ee
     }
 }

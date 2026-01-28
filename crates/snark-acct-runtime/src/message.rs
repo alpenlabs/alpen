@@ -5,11 +5,34 @@ use crate::traits::IAcctMsg;
 /// Meta fields extracted from a message.
 #[derive(Copy, Clone, Debug)]
 pub struct MsgMeta {
-    #[expect(dead_code, reason = "for future use")]
-    pub(crate) source: AccountId,
-    #[expect(dead_code, reason = "for future use")]
-    pub(crate) incl_epoch: u32,
-    pub(crate) value: BitcoinAmount,
+    source: AccountId,
+    incl_epoch: u32,
+    value: BitcoinAmount,
+}
+
+impl MsgMeta {
+    pub fn new(source: AccountId, incl_epoch: u32, value: BitcoinAmount) -> Self {
+        Self {
+            source,
+            incl_epoch,
+            value,
+        }
+    }
+
+    /// Gets the ID of the account the sent the message.
+    pub fn source(&self) -> AccountId {
+        self.source
+    }
+
+    /// Gets the epoch that the message was included in the input queue.
+    pub fn incl_epoch(&self) -> u32 {
+        self.incl_epoch
+    }
+
+    /// Gets the value passed with the message (in sats).
+    pub fn value(&self) -> BitcoinAmount {
+        self.value
+    }
 }
 
 /// Represents a parsed message.
