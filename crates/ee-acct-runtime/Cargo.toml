@@ -13,6 +13,7 @@ strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
+strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
 
 digest.workspace = true
@@ -20,6 +21,7 @@ sha2.workspace = true
 thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
+ssz_derive.workspace = true
 strata-msg-fmt.workspace = true
 strata-simple-ee.workspace = true
 

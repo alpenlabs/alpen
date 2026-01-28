@@ -1,42 +1,11 @@
+use strata_snark_acct_runtime::ProgramError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EnvError {
-    /// Codec error during encoding or decoding.
-    #[error("codec error")]
-    Codec(#[from] strata_codec::CodecError),
-
     /// Malformed extra data.
     #[error("malformed extra data")]
     MalformedExtraData,
-
-    /// Extra coinputs were provided than needed.
-    #[error("mismatched coinput count")]
-    MismatchedCoinputCnt,
-
-    /// Coinput could not be parsed.
-    #[error("coinput invalid for msg")]
-    MalformedCoinput,
-
-    /// Coinput could not be parsed.
-    #[error("coinput invalid for message (idx {0})")]
-    MalformedCoinputIdx(usize),
-
-    /// Coinput was parsed but did not match msg.
-    #[error("coinput did not correspond to msg")]
-    MismatchedCoinput,
-
-    /// Coinput was parsed but did not match msg.
-    #[error("coinput did not correspond to msg (idx {0})")]
-    MismatchedCoinputIdx(usize),
-
-    /// Coinput was parsed and seemed to match msg, but was internally malformed.
-    #[error("coinput is internally inconsistent")]
-    InconsistentCoinput,
-
-    /// Coinput was parsed and seemed to match msg, but was internally malformed.
-    #[error("coinput is internally inconsistent (idx {0})")]
-    InconsistentCoinputIdx(usize),
 
     /// Chain segment provided for EE verification was malformed.
     #[error("provided chain segment malformed")]
@@ -58,6 +27,12 @@ pub enum EnvError {
     /// match.
     #[error("mismatched data in current state and whatever")]
     MismatchedCurStateData,
+
+    #[error("mismatched intermediate state")]
+    MismatchedIntermediateState,
+
+    #[error("mismatched terminal state")]
+    MismatchedTerminalState,
 
     /// There were some unsatisfied obligations left to deal with in the update
     /// verification state.
@@ -84,9 +59,25 @@ pub enum EnvError {
 
     #[error("blocks in a chunk did not match the chunk's attested io")]
     InconsistentChunkIo,
+
+    /// Codec error during encoding or decoding.
+    #[error("codec: {0}")]
+    Codec(#[from] strata_codec::CodecError),
 }
 
 pub type EnvResult<T> = Result<T, EnvError>;
+
+impl From<EnvError> for ProgramError<EnvError> {
+    fn from(value: EnvError) -> Self {
+        match value {
+            // Pass codec errors through unchanged.
+            EnvError::Codec(e) => ProgramError::Codec(e),
+            _ => ProgramError::Internal(value),
+        }
+    }
+}
+
+pub type EnvProgramResult<T> = Result<T, ProgramError<EnvError>>;
 
 #[derive(Debug, Error)]
 pub enum MessageDecodeError {
