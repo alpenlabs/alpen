@@ -95,6 +95,7 @@ members = [
   "crates/rpc/types",
   "crates/rpc/utils",
   "crates/sequencer",
+  "crates/sequencer-new",
   "crates/simple-ee",
   "crates/snark-acct-sys",
   "crates/snark-acct-types",
@@ -253,6 +254,7 @@ strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-types-new = { path = "crates/rpc-new/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
+strata-sequencer-new = { path = "crates/sequencer-new" }
 strata-simple-ee = { path = "crates/simple-ee" }
 strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
 strata-snark-acct-types = { path = "crates/snark-acct-types" }

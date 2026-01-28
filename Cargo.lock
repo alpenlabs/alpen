@@ -15437,6 +15437,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-sequencer-new"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "ssz",
+ "strata-asm-manifest-types",
+ "strata-chainexec",
+ "strata-chaintsn",
+ "strata-checkpoint-types-ssz",
+ "strata-crypto",
+ "strata-csm-types",
+ "strata-db-types",
+ "strata-ol-block-assembly",
+ "strata-ol-chain-types-new",
+ "strata-ol-msg-types",
+ "strata-ol-state-types",
+ "strata-params",
+ "strata-primitives",
+ "strata-status",
+ "strata-storage",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "strata-service"
 version = "0.3.0-alpha.1"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
