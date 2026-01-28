@@ -26,7 +26,7 @@ mod ssz_generated {
 }
 
 pub use commit::*;
-pub use errors::{EnvError, EnvResult, MessageDecodeError, MessageDecodeResult};
+pub use errors::{EnvError, EnvProgramResult, EnvResult, MessageDecodeError, MessageDecodeResult};
 pub use extra_data::*;
 pub use inputs::ExecPayload;
 pub use messages::*;
