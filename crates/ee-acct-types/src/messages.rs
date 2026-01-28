@@ -3,6 +3,7 @@
 use strata_acct_types::SubjectId;
 use strata_codec::{Codec, VarVec, decode_buf_exact, impl_type_flat_struct};
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
+use strata_snark_acct_runtime::IAcctMsg;
 
 use crate::{MessageDecodeError, MessageDecodeResult};
 
@@ -55,6 +56,14 @@ impl DecodedEeMessageData {
 
             ty => Err(MessageDecodeError::UnsupportedType(ty)),
         }
+    }
+}
+
+impl IAcctMsg for DecodedEeMessageData {
+    type ParseError = MessageDecodeError;
+
+    fn try_parse(buf: &[u8]) -> Result<Self, Self::ParseError> {
+        Self::decode_raw(buf)
     }
 }
 

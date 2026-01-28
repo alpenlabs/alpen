@@ -2,6 +2,7 @@
 
 use strata_acct_types::Hash;
 use strata_codec::impl_type_flat_struct;
+use strata_snark_acct_runtime::IExtraData;
 
 impl_type_flat_struct! {
     /// Message sent in the extra data field in the update operation.
@@ -17,3 +18,5 @@ impl_type_flat_struct! {
         processed_fincls: u32,
     }
 }
+
+impl IExtraData for UpdateExtraData {}

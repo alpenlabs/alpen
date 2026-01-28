@@ -14711,12 +14711,14 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "sha2",
+ "ssz_derive",
  "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-msg-fmt",
  "strata-simple-ee",
+ "strata-snark-acct-runtime",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
@@ -14736,6 +14738,7 @@ dependencies = [
  "strata-ee-chain-types",
  "strata-identifiers",
  "strata-msg-fmt",
+ "strata-snark-acct-runtime",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.12.3",
@@ -15554,6 +15557,17 @@ dependencies = [
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
+]
+
+[[package]]
+name = "strata-snark-acct-runtime"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_derive",
+ "strata-acct-types",
+ "strata-codec",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
