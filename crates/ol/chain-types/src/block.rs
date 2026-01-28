@@ -269,8 +269,9 @@ mod tests {
     }
 
     mod l1_update {
+        use strata_identifiers::test_utils::buf32_strategy;
+
         use super::*;
-        use crate::test_utils::buf32_strategy;
 
         fn l1_update_non_option_strategy() -> impl Strategy<Value = OLL1Update> {
             buf32_strategy().prop_map(|preseal_state_root| OLL1Update {
