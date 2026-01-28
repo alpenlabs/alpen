@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
-use strata_asm_worker::AsmWorkerHandle;
 use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
 use strata_consensus_logic::{
     FcmContext, start_fcm_service,
-    sync_manager::{spawn_asm_worker, spawn_csm_listener},
+    sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
 use strata_identifiers::OLBlockCommitment;
 use strata_node_context::NodeContext;
@@ -18,6 +17,7 @@ use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
 use crate::{
+    context::check_and_init_genesis,
     rpc::OLRpcServer,
     run_context::{RunContext, ServiceHandles},
 };
@@ -33,30 +33,16 @@ struct RpcDeps {
 }
 
 /// Just simply starts services. This can later be extended to service registry pattern.
-pub(crate) fn start_strata_services(
-    nodectx: NodeContext,
-    asm_handle: Arc<AsmWorkerHandle>,
-) -> Result<RunContext> {
+pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> {
     // Start Asm worker
-    // let asm_handle = spawn_asm_worker(
-    //     nodectx.executor(),
-    //     nodectx.executor().handle().clone(),
-    //     nodectx.storage().clone(),
-    //     Arc::new(nodectx.params().rollup.clone()),
-    //     nodectx.bitcoin_client().clone(),
-    // )?;
-    // let asm_handle = Arc::new(asm_handle);
-
+    let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
     // Start Csm worker
-    let csm_monitor = spawn_csm_listener(
-        nodectx.executor().as_ref(),
-        nodectx.params().clone(),
-        nodectx.storage().clone(),
-        nodectx.status_channel().as_ref().clone(),
-        asm_handle.monitor(),
-    )?;
+    let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(&nodectx, asm_handle.monitor())?);
 
-    let csm_monitor = Arc::new(csm_monitor);
+    // Check and do genesis if not yet. This should be done after asm/csm and before mempool
+    // because genesis requires asm to be working and mempool and other services expect genesis to
+    // have happened.
+    check_and_init_genesis(nodectx.storage().as_ref(), nodectx.params().as_ref())?;
 
     // Start mempool service
     let mempool_handle = Arc::new(start_mempool(&nodectx)?);

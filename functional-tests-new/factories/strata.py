@@ -6,10 +6,10 @@ Creates Strata sequencer and fullnode instances.
 import contextlib
 from pathlib import Path
 
-from common.config.params import GenesisL1View
 import flexitest
 
 from common.config import BitcoindConfig, ClientConfig, RollupParams, ServiceType, StrataConfig
+from common.config.params import GenesisL1View
 from common.services import StrataProps, StrataService
 
 

@@ -22,6 +22,7 @@ pub(crate) struct RunContext {
     service_handles: ServiceHandles,
 }
 
+#[expect(unused, reason = "will be used later")]
 impl RunContext {
     pub(crate) fn from_node_ctx(ctx: NodeContext, service_handles: ServiceHandles) -> Self {
         let (task_manager, common) = ctx.into_parts();

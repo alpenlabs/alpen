@@ -2,10 +2,10 @@
 
 from typing import cast
 
-from common.config.params import GenesisL1View
 import flexitest
 
 from common.config import BitcoindConfig, ServiceType
+from common.config.params import GenesisL1View
 from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
 

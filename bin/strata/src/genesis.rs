@@ -22,6 +22,7 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
     info!("initializing OL genesis block and state");
 
     // Create initial OL state (uses genesis defaults)
+    // TODO: initialize with a Snark EE account for Alpen. Possibly with rollup params.
     let mut ol_state = OLState::new_genesis();
 
     // Create genesis block info
@@ -30,11 +31,13 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
     let genesis_info = BlockInfo::new_genesis(genesis_ts);
 
     // Wait for ASM manifest for genesis to be available
-    // TODO: get these from config?
-    // const WAIT_INTERVAL_MS: u64 = 1000; // Check every second
-    // const MAX_ATTEMPTS: u32 = 60;
+    //
+    // TODO: do this when btcio service is ready because otherwise asm won't get inputs(l1 block
+    // commitments) to process
+    //
     // let genesis_manifest =
     //     wait_for_genesis_manifest(storage, &genesis_l1.blkid(), MAX_ATTEMPTS, WAIT_INTERVAL_MS)?;
+
     let genesis_manifest = AsmManifest::new(
         genesis_l1.height_u64(),
         genesis_l1.blkid(),
@@ -74,6 +77,10 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
 
 /// Wait for the genesis block manifest to be available in the database.
 /// Retries periodically until the manifest is found or max attempts is reached.
+#[expect(
+    unused,
+    reason = "will be used after btc reader and asm read blocks from l1"
+)]
 fn wait_for_genesis_manifest(
     storage: &NodeStorage,
     block_id: &L1BlockId,

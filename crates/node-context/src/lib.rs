@@ -1,3 +1,4 @@
+//! Stores contexts that can be passed for initializing and running various strata services
 use std::sync::Arc;
 
 use bitcoind_async_client::Client;

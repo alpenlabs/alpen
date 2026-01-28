@@ -1,11 +1,10 @@
 //! Strata client binary entrypoint.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
 use strata_common::logging;
-use strata_consensus_logic::sync_manager::spawn_asm_worker_with_ctx;
 use strata_db_types as _;
 use strata_node_context::NodeContext;
 use tokio::runtime::{self, Handle};
@@ -13,7 +12,7 @@ use tracing::info;
 
 use crate::{
     args::Args,
-    context::{check_and_init_genesis, init_node_context},
+    context::init_node_context,
     errors::InitError,
     services::{start_rpc, start_strata_services},
 };
@@ -34,30 +33,27 @@ fn main() -> Result<()> {
     // Load config early to initialize logging with config settings
     let config = context::load_config_early(&args)
         .map_err(|e| anyhow!("Failed to load configuration: {e}"))?;
-    // Init runtime
+
+    // Init runtime. This needs to exist through the scope of main function so can't be created
+    // inside `init_node_context`. Plus, logging also requires a handle to this.
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("strata-rt")
         .build()
         .map_err(InitError::RuntimeBuild)?;
 
+    // Initialize logging
+    init_logging(rt.handle(), &config);
+
     // Validate params, configs and create node context.
     let nodectx = init_node_context(args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
-    init_logging(nodectx.executor().handle(), &config);
-
+    // Check for db consistency, external rpc clients reachable, etc.
     do_startup_checks(&nodectx)?;
 
-    // start Asm Service for genesis manifest, or maybe we can just start bitcoin reader service
-    // that feeds L1BlockCommitment to Asm
-    let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
-
-    // Check and do genesis if not yet
-    check_and_init_genesis(nodectx.storage().as_ref(), nodectx.params().as_ref())?;
-
-    // Start services.
-    let runctx = start_strata_services(nodectx, asm_handle)?;
+    // Start services, and do genesis if necessary
+    let runctx = start_strata_services(nodectx)?;
 
     // Start RPC.
     start_rpc(&runctx)?;

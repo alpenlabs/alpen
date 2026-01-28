@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_db_types::{traits::AsmDatabase, DbResult};
-use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 use threadpool::ThreadPool;
 

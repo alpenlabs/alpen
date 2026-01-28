@@ -43,9 +43,6 @@ pub(crate) enum InitError {
     #[error("failed to create bitcoin RPC client: {0}")]
     BitcoinClientCreation(String),
 
-    #[error("missing initial client state in database")]
-    MissingInitialState,
-
     #[error("database: {0}")]
     Database(#[from] DbError),
 }

@@ -34,6 +34,20 @@ pub struct FcmServiceHandle {
     service_monitor: ServiceMonitor<FcmStatus>,
 }
 
+impl FcmServiceHandle {
+    pub fn submit_chain_tip_msg_blocking(&self, msg: ForkChoiceMessage) -> bool {
+        self.fcm_tx.blocking_send(msg).is_ok()
+    }
+
+    pub async fn submit_chain_tip_msg_async(&self, msg: ForkChoiceMessage) -> bool {
+        self.fcm_tx.send(msg).await.is_ok()
+    }
+
+    pub fn fcm_status(&self) -> FcmStatus {
+        self.service_monitor.get_current()
+    }
+}
+
 pub async fn start_fcm_service(
     fcm_ctx: FcmContext,
     texec: Arc<TaskExecutor>,

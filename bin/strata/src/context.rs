@@ -12,7 +12,6 @@ use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
-use strata_tasks::TaskManager;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
@@ -40,9 +39,11 @@ pub(crate) fn init_node_context(
     config: Config,
     handle: Handle,
 ) -> Result<NodeContext, InitError> {
+    // Validate params
     let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
 
+    // Init storage
     let storage = init_storage(&config)?;
 
     // Init bitcoin client
@@ -50,6 +51,7 @@ pub(crate) fn init_node_context(
 
     // Init status channel
     let status_channel = init_status_channel(params.rollup(), &storage)?;
+
     let nodectx = NodeContext::new(
         handle,
         config,
@@ -183,7 +185,6 @@ pub(crate) fn check_and_init_genesis(
     match recent_state {
         None => {
             // Initialize OL genesis block and state
-            info!("NO RECENT STATE, SO TRYING OL GENESIS");
             init_ol_genesis(params, storage)
                 .map_err(|e| InitError::StorageCreation(e.to_string()))?;
 

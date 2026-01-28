@@ -37,7 +37,7 @@ pub struct CsmWorkerState {
     pub(crate) last_processed_epoch: Option<Epoch>,
 
     /// Status channel for publishing state updates.
-    pub(crate) status_channel: StatusChannel,
+    pub(crate) status_channel: Arc<StatusChannel>,
 }
 
 impl CsmWorkerState {
@@ -45,7 +45,7 @@ impl CsmWorkerState {
     pub fn new(
         params: Arc<Params>,
         storage: Arc<NodeStorage>,
-        status_channel: StatusChannel,
+        status_channel: Arc<StatusChannel>,
     ) -> anyhow::Result<Self> {
         // Load the most recent client state from storage
         let (cur_block, cur_state) = storage

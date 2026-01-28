@@ -218,7 +218,7 @@ pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmSt
         .await?
         .map(|(_, ols)| *ols.previous_epoch())
         .unwrap_or(EpochCommitment::new(0, 0, genesis_blkid));
-    // Special case for null previouse epoch. Because null epoch has last tip id Buf32::zero() which
+    // Special case for null previous epoch. Because null epoch has last tip id Buf32::zero() which
     // won't be in the db
     let csm_finalized_epoch = if csm_finalized_epoch.is_null() {
         EpochCommitment::new(0, 0, genesis_blkid)

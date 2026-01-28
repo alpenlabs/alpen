@@ -9,6 +9,10 @@ use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
 #[derive(Clone)]
+#[expect(
+    missing_debug_implementations,
+    reason = "Not all attributes have debug impls"
+)]
 pub struct FcmContext {
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
