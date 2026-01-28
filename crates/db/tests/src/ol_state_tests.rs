@@ -1,5 +1,5 @@
 use strata_db_types::traits::OLStateDatabase;
-use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 
@@ -63,6 +63,39 @@ pub fn test_delete_ol_state(db: &impl OLStateDatabase) {
     assert!(deleted.is_none());
 }
 
+pub fn test_put_and_get_preseal_ol_state(db: &impl OLStateDatabase) {
+    let state = OLState::new_genesis();
+    let commitment = EpochCommitment::new(0, 0, OLBlockId::default());
+
+    db.put_preseal_ol_state(commitment, state.clone())
+        .expect("test: put preseal");
+    let retrieved_state = db
+        .get_preseal_ol_state(commitment)
+        .expect("test: get preseal")
+        .unwrap();
+    assert_eq!(retrieved_state.cur_slot(), state.cur_slot());
+}
+
+pub fn test_delete_preseal_ol_state(db: &impl OLStateDatabase) {
+    let state = OLState::new_genesis();
+    let commitment = EpochCommitment::new(0, 0, OLBlockId::default());
+
+    db.put_preseal_ol_state(commitment, state.clone())
+        .expect("test: put preseal");
+    let retrieved = db
+        .get_preseal_ol_state(commitment)
+        .expect("test: get preseal")
+        .unwrap();
+    assert_eq!(retrieved.cur_slot(), state.cur_slot());
+
+    db.del_preseal_ol_state(commitment)
+        .expect("test: delete preseal");
+    let deleted = db
+        .get_preseal_ol_state(commitment)
+        .expect("test: get preseal after delete");
+    assert!(deleted.is_none());
+}
+
 pub fn test_write_batch_operations(db: &impl OLStateDatabase) {
     let state = OLState::new_genesis();
     let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
@@ -110,6 +143,18 @@ macro_rules! ol_state_db_tests {
         fn test_delete_ol_state() {
             let db = $setup_expr;
             $crate::ol_state_tests::test_delete_ol_state(&db);
+        }
+
+        #[test]
+        fn test_put_and_get_preseal_ol_state() {
+            let db = $setup_expr;
+            $crate::ol_state_tests::test_put_and_get_preseal_ol_state(&db);
+        }
+
+        #[test]
+        fn test_delete_preseal_ol_state() {
+            let db = $setup_expr;
+            $crate::ol_state_tests::test_delete_preseal_ol_state(&db);
         }
 
         #[test]

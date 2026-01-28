@@ -4,7 +4,7 @@ use std::{future::Future, num::NonZeroUsize, sync::Arc};
 
 use futures::TryFutureExt;
 use strata_db_types::{errors::DbError, traits::OLStateDatabase, DbResult};
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_ol_state_types::{OLAccountState, OLState, StateProvider, WriteBatch};
 use strata_storage_common::exec::{GenericRecv, OpsError};
 use threadpool::ThreadPool;
@@ -139,6 +139,60 @@ impl OLStateManager {
         self.ops.del_toplevel_ol_state_blocking(commitment)?;
         self.state_cache.purge_blocking(&commitment);
         Ok(())
+    }
+
+    /// Stores a preseal OLState snapshot for a given epoch commitment.
+    pub async fn put_preseal_ol_state_async(
+        &self,
+        commitment: EpochCommitment,
+        state: OLState,
+    ) -> DbResult<()> {
+        self.ops
+            .put_preseal_ol_state_async(commitment, state.clone())
+            .await?;
+        Ok(())
+    }
+
+    /// Stores a preseal OLState snapshot for a given epoch commitment.
+    pub fn put_preseal_ol_state_blocking(
+        &self,
+        commitment: EpochCommitment,
+        state: OLState,
+    ) -> DbResult<()> {
+        self.ops
+            .put_preseal_ol_state_blocking(commitment, state.clone())?;
+        Ok(())
+    }
+
+    /// Retrieves a preseal OLState snapshot for a given epoch commitment.
+    pub async fn get_preseal_ol_state_async(
+        &self,
+        commitment: EpochCommitment,
+    ) -> DbResult<Option<Arc<OLState>>> {
+        self.ops
+            .get_preseal_ol_state_async(commitment)
+            .await
+            .map(|opt| opt.map(Arc::new))
+    }
+
+    /// Retrieves a preseal OLState snapshot for a given epoch commitment.
+    pub fn get_preseal_ol_state_blocking(
+        &self,
+        commitment: EpochCommitment,
+    ) -> DbResult<Option<Arc<OLState>>> {
+        self.ops
+            .get_preseal_ol_state_blocking(commitment)
+            .map(|opt| opt.map(Arc::new))
+    }
+
+    /// Deletes a preseal OLState snapshot for a given epoch commitment.
+    pub async fn del_preseal_ol_state_async(&self, commitment: EpochCommitment) -> DbResult<()> {
+        self.ops.del_preseal_ol_state_async(commitment).await
+    }
+
+    /// Deletes a preseal OLState snapshot for a given epoch commitment.
+    pub fn del_preseal_ol_state_blocking(&self, commitment: EpochCommitment) -> DbResult<()> {
+        self.ops.del_preseal_ol_state_blocking(commitment)
     }
 
     /// Stores a write batch for a given block commitment.
