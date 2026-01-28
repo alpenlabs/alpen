@@ -7,7 +7,10 @@
 
 use proptest::prelude::*;
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, MsgPayload, RawMerkleProof};
-use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot};
+use strata_identifiers::{
+    Epoch, Slot,
+    test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy},
+};
 use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, MmrEntryProof,
     OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer,
@@ -23,18 +26,6 @@ use crate::{
         OLTxSegment, SignedOLBlockHeader,
     },
 };
-
-pub fn buf32_strategy() -> impl Strategy<Value = Buf32> {
-    any::<[u8; 32]>().prop_map(Buf32::from)
-}
-
-pub fn buf64_strategy() -> impl Strategy<Value = Buf64> {
-    any::<[u8; 64]>().prop_map(Buf64::from)
-}
-
-pub fn ol_block_id_strategy() -> impl Strategy<Value = OLBlockId> {
-    buf32_strategy().prop_map(OLBlockId::from)
-}
 
 /// Strategy for generating random [`OLLog`] values.
 pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
