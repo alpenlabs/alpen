@@ -88,14 +88,14 @@ impl BlockAssemblyState {
     pub(crate) fn get_pending_block_template_by_parent(
         &self,
         parent_block_id: OLBlockId,
-    ) -> Result<BlockTemplate, BlockAssemblyError> {
+    ) -> Result<FullBlockTemplate, BlockAssemblyError> {
         let template_id = self.pending_by_parent.get(&parent_block_id).ok_or(
             BlockAssemblyError::NoPendingTemplateForParent(parent_block_id),
         )?;
 
         self.pending_templates
             .get(template_id)
-            .map(BlockTemplate::from_full_ref)
+            .cloned()
             .ok_or(BlockAssemblyError::UnknownTemplateId(*template_id))
     }
 
