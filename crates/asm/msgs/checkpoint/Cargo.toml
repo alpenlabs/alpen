@@ -10,6 +10,6 @@ workspace = true
 borsh.workspace = true
 
 strata-asm-common.workspace = true
-strata-asm-proto-checkpoint-txs.workspace = true
+strata-asm-txs-checkpoint-v0.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true

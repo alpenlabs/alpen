@@ -27,7 +27,7 @@ members = [
   "crates/asm/subprotocols/debug-v1",
   "crates/asm/subprotocols/admin",
   "crates/asm/txs/admin",
-  "crates/asm/txs/checkpoint",
+  "crates/asm/txs/checkpoint-v0",
   "crates/asm/subprotocols/checkpoint-v0",
   "crates/asm/subprotocols/checkpoint",
   "crates/asm/txs/bridge-v1",
@@ -191,7 +191,6 @@ strata-asm-params = { path = "crates/asm/params" }
 strata-asm-proto-administration = { path = "crates/asm/subprotocols/admin" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
 strata-asm-proto-checkpoint = { path = "crates/asm/subprotocols/checkpoint" }
-strata-asm-proto-checkpoint-txs = { path = "crates/asm/txs/checkpoint" }
 strata-asm-proto-checkpoint-v0 = { path = "crates/asm/subprotocols/checkpoint-v0" }
 strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
 strata-asm-spec = { path = "crates/asm/spec" }
@@ -199,6 +198,7 @@ strata-asm-spec-debug = { path = "crates/asm/spec-debug" }
 strata-asm-stf = { path = "crates/asm/stf" }
 strata-asm-txs-admin = { path = "crates/asm/txs/admin" }
 strata-asm-txs-bridge-v1 = { path = "crates/asm/txs/bridge-v1" }
+strata-asm-txs-checkpoint-v0 = { path = "crates/asm/txs/checkpoint-v0" }
 strata-asm-types = { path = "crates/asm-types" }
 strata-asm-worker = { path = "crates/asm/worker" }
 strata-bridge-types = { path = "crates/bridge-types" }

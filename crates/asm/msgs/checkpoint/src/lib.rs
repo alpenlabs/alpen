@@ -8,7 +8,7 @@ use std::any::Any;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
-use strata_asm_proto_checkpoint_txs::CHECKPOINT_V0_SUBPROTOCOL_ID;
+use strata_asm_txs_checkpoint_v0::CHECKPOINT_V0_SUBPROTOCOL_ID;
 use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
 

@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-proto-checkpoint-txs"
+name = "strata-asm-txs-checkpoint-v0"
 version = "0.1.0"
 edition = "2024"
 
