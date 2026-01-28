@@ -34,10 +34,12 @@ mod claim;
 mod error;
 mod payload;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 pub use error::CheckpointPayloadError;
 use ssz_types::FixedBytes;
 use strata_crypto::hash;
-use strata_identifiers::{impl_borsh_via_ssz, impl_borsh_via_ssz_fixed};
 
 /// SSZ-generated types for serialization and merkleization.
 #[allow(
@@ -66,17 +68,6 @@ pub use ssz_generated::ssz::payload::{
 };
 // Re-export OLLog for consumers parsing checkpoint sidecar logs
 pub use strata_ol_chain_types_new::OLLog;
-
-// Borsh SSZ adapters for state persistence
-// Fixed-size types (no length prefix needed)
-impl_borsh_via_ssz_fixed!(L2BlockRange);
-impl_borsh_via_ssz_fixed!(CheckpointTip);
-
-// Variable-size types (need length prefix for nesting)
-impl_borsh_via_ssz!(CheckpointSidecar);
-impl_borsh_via_ssz!(CheckpointPayload);
-impl_borsh_via_ssz!(SignedCheckpointPayload);
-impl_borsh_via_ssz!(CheckpointClaim);
 
 /// Computes a hash commitment over all ASM manifests in an L1 block range.
 ///
