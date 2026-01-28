@@ -1394,6 +1394,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "serde",
+ "strata-identifiers",
  "strata-primitives",
  "tokio",
  "tokio-stream",
