@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc, thread::sleep, time};
+use std::{collections::VecDeque, sync::Arc, time};
 
 use anyhow::anyhow;
 use strata_chain_worker_new::WorkerResult;
@@ -8,6 +8,7 @@ use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
 use strata_storage::OLBlockManager;
+use tokio::time::sleep;
 use tracing::{debug, warn};
 
 use crate::{
@@ -209,7 +210,7 @@ pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmSt
         if let Some(blkcommt) = storage.ol_block().get_canonical_block_at_async(0).await? {
             break *blkcommt.blkid();
         }
-        sleep(time::Duration::from_secs(1));
+        let _ = sleep(time::Duration::from_secs(1)).await;
     };
 
     let csm_finalized_epoch = storage

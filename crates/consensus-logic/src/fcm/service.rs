@@ -340,22 +340,24 @@ async fn handle_epoch_finalization(
 
 /// Checks OL block's credential to ensure that it was authentically proposed.
 pub fn check_ol_block_proposal_valid(
-    _blkid: &OLBlockId,
+    blkid: &OLBlockId,
     block: &OLBlock,
     params: &RollupParams,
 ) -> anyhow::Result<()> {
     // If it's not the genesis block, check that the block is correctly signed.
     if block.header().slot() > 0 {
-        let sig = block
-            .signed_header()
-            .signature()
-            .expect("signature not present");
+        let Some(sig) = block.signed_header().signature() else {
+            // Just ignore blocks without signature
+            warn!(%blkid, "Received block without signature. ignoring");
+            return Ok(());
+        };
         let msg: Buf32 = block.header().compute_blkid().into();
         let is_valid = match params.cred_rule {
             CredRule::Unchecked => true,
             CredRule::SchnorrKey(pubkey) => verify_schnorr_sig(sig, &msg, &pubkey),
         };
         if !is_valid {
+            warn!(%blkid, "Received block with invalid signature.");
             return Err(anyhow!("block creds check failed"));
         }
     }
