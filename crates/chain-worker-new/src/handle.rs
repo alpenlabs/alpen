@@ -2,9 +2,9 @@
 
 use strata_identifiers::OLBlockCommitment;
 use strata_primitives::epoch::EpochCommitment;
-use strata_service::{CommandHandle, ServiceError};
+use strata_service::{CommandHandle, ServiceError, ServiceMonitor};
 
-use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
+use crate::{ChainWorkerStatus, WorkerError, WorkerResult, message::ChainWorkerMessage};
 
 /// Handle for interacting with the chain worker service.
 ///
@@ -13,12 +13,19 @@ use crate::{WorkerError, WorkerResult, message::ChainWorkerMessage};
 #[derive(Debug)]
 pub struct ChainWorkerHandle {
     command_handle: CommandHandle<ChainWorkerMessage>,
+    monitor: ServiceMonitor<ChainWorkerStatus>,
 }
 
 impl ChainWorkerHandle {
     /// Create a new chain worker handle from a service command handle.
-    pub fn new(command_handle: CommandHandle<ChainWorkerMessage>) -> Self {
-        Self { command_handle }
+    pub fn new(
+        command_handle: CommandHandle<ChainWorkerMessage>,
+        monitor: ServiceMonitor<ChainWorkerStatus>,
+    ) -> Self {
+        Self {
+            command_handle,
+            monitor,
+        }
     }
 
     /// Returns the number of pending inputs that have not been processed yet.
@@ -75,6 +82,11 @@ impl ChainWorkerHandle {
                 ChainWorkerMessage::UpdateSafeTip(safe_tip, completion)
             })
             .map_err(convert_service_error)?
+    }
+
+    /// Get status
+    pub fn get_status(&self) -> ChainWorkerStatus {
+        self.monitor.get_current()
     }
 }
 

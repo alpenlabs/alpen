@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
-use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
+use strata_chain_worker_new::start_chain_worker_service_from_ctx;
 use strata_consensus_logic::{
     FcmContext, start_fcm_service,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
@@ -36,6 +36,7 @@ struct RpcDeps {
 pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> {
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
+
     // Start Csm worker
     let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(&nodectx, asm_handle.monitor())?);
 
@@ -48,18 +49,7 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
     let mempool_handle = Arc::new(start_mempool(&nodectx)?);
 
     // Start Chain worker
-    let chain_worker_context = ChainWorkerContextImpl::new(
-        nodectx.storage().ol_block().clone(),
-        nodectx.storage().ol_state().clone(),
-        nodectx.storage().checkpoint().clone(),
-    );
-    let chain_worker_handle = ChainWorkerBuilder::new()
-        .with_context(chain_worker_context)
-        .with_params(nodectx.params().clone())
-        .with_status_channel(nodectx.status_channel().as_ref().clone())
-        .with_runtime(nodectx.executor().handle().clone())
-        .launch(nodectx.executor())?;
-    let chain_worker_handle = Arc::new(chain_worker_handle);
+    let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
 
     // TODO: Start other tasks like l1writer, broadcaster, btcio reader, etc. all as
     // service, returning the monitors.

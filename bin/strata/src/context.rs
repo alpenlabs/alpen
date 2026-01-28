@@ -13,7 +13,7 @@ use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
 use tokio::runtime::Handle;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
@@ -33,7 +33,7 @@ pub(crate) fn init_storage(config: &Config) -> Result<Arc<NodeStorage>, InitErro
     Ok(storage)
 }
 
-/// Initialize runtime, database, etc.
+/// Initialize runtime, database, bitcoin client, status channel etc.
 pub(crate) fn init_node_context(
     args: Args,
     config: Config,

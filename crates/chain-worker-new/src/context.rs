@@ -7,11 +7,15 @@ use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::IndexerWrites;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
+use strata_status::StatusChannel;
 use strata_storage::{CheckpointDbManager, OLBlockManager, OLStateManager};
+use tokio::runtime::Handle;
 use tracing::warn;
 
 use crate::{
@@ -38,20 +42,40 @@ pub struct ChainWorkerContextImpl {
 
     /// Manager for checkpoint and epoch summary data.
     checkpoint_mgr: Arc<CheckpointDbManager>,
+
+    /// Status channel to send/receive messages.
+    status_channel: Arc<StatusChannel>,
+
+    /// Rollup params
+    params: Arc<Params>,
+
+    /// Runtime handle
+    handle: Handle,
 }
 
 impl ChainWorkerContextImpl {
     /// Creates a new context with the given storage managers.
-    pub fn new(
-        ol_block_mgr: Arc<OLBlockManager>,
-        ol_state_mgr: Arc<OLStateManager>,
-        checkpoint_mgr: Arc<CheckpointDbManager>,
-    ) -> Self {
+    pub fn from_node_context(nodectx: &NodeContext) -> Self {
         Self {
-            ol_block_mgr,
-            ol_state_mgr,
-            checkpoint_mgr,
+            ol_block_mgr: nodectx.storage().ol_block().clone(),
+            ol_state_mgr: nodectx.storage().ol_state().clone(),
+            checkpoint_mgr: nodectx.storage().checkpoint().clone(),
+            status_channel: nodectx.status_channel().clone(),
+            params: nodectx.params().clone(),
+            handle: nodectx.executor().handle().clone(),
         }
+    }
+
+    pub fn status_channel(&self) -> &StatusChannel {
+        &self.status_channel
+    }
+
+    pub fn params(&self) -> &Params {
+        &self.params
+    }
+
+    pub fn handle(&self) -> &Handle {
+        &self.handle
     }
 }
 
