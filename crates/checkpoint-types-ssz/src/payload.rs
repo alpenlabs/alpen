@@ -1,7 +1,9 @@
 //! Impl blocks for checkpoint payload types.
 
 use ssz_types::VariableList;
-use strata_identifiers::{Buf64, Epoch, OLBlockCommitment};
+use strata_identifiers::{
+    Buf64, Epoch, OLBlockCommitment, impl_borsh_via_ssz, impl_borsh_via_ssz_fixed,
+};
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
@@ -26,6 +28,8 @@ impl CheckpointTip {
         &self.l2_commitment
     }
 }
+
+impl_borsh_via_ssz_fixed!(CheckpointTip);
 
 impl CheckpointSidecar {
     pub fn new(
@@ -65,6 +69,8 @@ impl CheckpointSidecar {
     }
 }
 
+impl_borsh_via_ssz!(CheckpointSidecar);
+
 impl CheckpointPayload {
     pub fn new(
         new_tip: CheckpointTip,
@@ -97,6 +103,8 @@ impl CheckpointPayload {
     }
 }
 
+impl_borsh_via_ssz!(CheckpointPayload);
+
 impl SignedCheckpointPayload {
     pub fn new(inner: CheckpointPayload, signature: Buf64) -> Self {
         Self { inner, signature }
@@ -108,5 +116,43 @@ impl SignedCheckpointPayload {
 
     pub fn signature(&self) -> &Buf64 {
         &self.signature
+    }
+}
+
+impl_borsh_via_ssz!(SignedCheckpointPayload);
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use crate::{
+        CheckpointPayload, CheckpointSidecar, CheckpointTip, SignedCheckpointPayload,
+        test_utils::{
+            checkpoint_payload_strategy, checkpoint_sidecar_strategy, checkpoint_tip_strategy,
+            signed_checkpoint_payload_strategy,
+        },
+    };
+
+    mod checkpoint_tip {
+        use super::*;
+        ssz_proptest!(CheckpointTip, checkpoint_tip_strategy());
+    }
+
+    mod checkpoint_sidecar {
+        use super::*;
+        ssz_proptest!(CheckpointSidecar, checkpoint_sidecar_strategy());
+    }
+
+    mod checkpoint_payload {
+        use super::*;
+        ssz_proptest!(CheckpointPayload, checkpoint_payload_strategy());
+    }
+
+    mod signed_checkpoint_payload {
+        use super::*;
+        ssz_proptest!(
+            SignedCheckpointPayload,
+            signed_checkpoint_payload_strategy()
+        );
     }
 }

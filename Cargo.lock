@@ -14166,6 +14166,7 @@ name = "strata-checkpoint-types-ssz"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "proptest",
  "serde",
  "ssz",
  "ssz_codegen",
@@ -14174,6 +14175,7 @@ dependencies = [
  "ssz_types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
+ "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.12.3",
  "tree_hash_derive 0.12.3",
