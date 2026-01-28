@@ -102,19 +102,14 @@ pub fn compute_asm_manifests_hash(manifests: &[AsmManifest]) -> FixedBytes<32> {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
-    use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
+    use strata_identifiers::{
+        Buf32, L1BlockId, WtxidsRoot,
+        test_utils::{buf32_strategy, l1_block_id_strategy},
+    };
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::AsmManifest;
     use crate::ssz_generated::ssz::log::AsmLogEntry;
-
-    fn buf32_strategy() -> impl Strategy<Value = Buf32> {
-        any::<[u8; 32]>().prop_map(Buf32::from)
-    }
-
-    fn l1_block_id_strategy() -> impl Strategy<Value = L1BlockId> {
-        buf32_strategy().prop_map(L1BlockId::from)
-    }
 
     fn wtxids_root_strategy() -> impl Strategy<Value = WtxidsRoot> {
         buf32_strategy().prop_map(WtxidsRoot::from)
