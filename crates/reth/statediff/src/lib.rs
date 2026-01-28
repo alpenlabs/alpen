@@ -28,6 +28,21 @@
 //! | [`BatchStateDiff`] | `batch` | Aggregated diff for DA |
 //! | [`BatchBuilder`] | `batch` | Aggregates blocks with revert detection |
 //! | [`StateReconstructor`] | `reconstruct` | Applies diffs to rebuild state |
+//!
+//! # Features
+//!
+//! ## `serde`
+//!
+//! Enables JSON-serializable wrapper types for RPC responses:
+//!
+//! | Type | Wraps | Purpose |
+//! |------|-------|---------|
+//! | [`BatchStateDiffSerde`] | [`BatchStateDiff`] | Full batch diff with accounts and storage |
+//! | [`AccountChangeSerde`] | [`AccountChange`] | Created/Updated/Deleted enum |
+//! | [`AccountDiffSerde`] | [`AccountDiff`] | Balance, nonce delta, code hash |
+//!
+//! These types flatten the DA framework primitives into simple JSON fields
+//! (e.g., `nonce_delta: i32` instead of `DaCounter<CtrU64BySignedVarint>`).
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 

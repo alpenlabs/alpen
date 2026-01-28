@@ -16,9 +16,9 @@ use crate::{
 /// Error that may occur during state reconstruction.
 #[derive(Debug, ThisError)]
 pub enum ReconstructError {
-    #[error("MPT error: {0}")]
+    #[error("MPT: {0}")]
     Mpt(#[from] strata_mpt::Error),
-    #[error("DA apply error: {0}")]
+    #[error("DA apply: {0}")]
     Da(#[from] strata_da_framework::DaError),
 }
 

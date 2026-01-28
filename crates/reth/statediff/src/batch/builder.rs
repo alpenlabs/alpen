@@ -1,12 +1,44 @@
 //! Builder for constructing BatchStateDiff from multiple block diffs.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 
 use super::{AccountChange, AccountDiff, BatchStateDiff, StorageDiff};
 use crate::block::{AccountSnapshot, BlockStateDiff};
+
+/// Tracks the original and current state of a value across a batch.
+///
+/// Used internally by [`BatchBuilder`] to detect reverts (when current == original)
+/// and compute proper diffs.
+#[derive(Clone, Debug, Default)]
+struct TrackedState<T> {
+    /// State before the batch started.
+    original: T,
+    /// Current state after applying blocks.
+    current: T,
+}
+
+impl<T: Clone> TrackedState<T> {
+    /// Creates a new tracked state where both original and current are the same.
+    fn new(value: T) -> Self {
+        Self {
+            original: value.clone(),
+            current: value,
+        }
+    }
+}
+
+impl<T> TrackedState<T> {
+    /// Returns true if the value reverted to its original state.
+    fn is_unchanged(&self) -> bool
+    where
+        T: PartialEq,
+    {
+        self.original == self.current
+    }
+}
 
 /// Builder for constructing [`BatchStateDiff`] from consecutive block diffs.
 ///
@@ -26,15 +58,14 @@ use crate::block::{AccountSnapshot, BlockStateDiff};
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct BatchBuilder {
-    /// Account states: address -> (original_before_batch, current_state).
-    /// Original is None if account didn't exist before the batch started.
-    accounts: BTreeMap<Address, (Option<AccountSnapshot>, Option<AccountSnapshot>)>,
+    /// Account states: address -> tracked state (original is None if account didn't exist).
+    accounts: BTreeMap<Address, TrackedState<Option<AccountSnapshot>>>,
 
-    /// Storage states: address -> slot -> (original_value, current_value).
-    storage: BTreeMap<Address, BTreeMap<U256, (U256, U256)>>,
+    /// Storage states: address -> slot -> tracked value.
+    storage: BTreeMap<Address, BTreeMap<U256, TrackedState<U256>>>,
 
     /// Deployed contract code hashes (deduplicated).
-    deployed_code_hashes: Vec<B256>,
+    deployed_code_hashes: BTreeSet<B256>,
 }
 
 impl BatchBuilder {
@@ -49,11 +80,12 @@ impl BatchBuilder {
         for (addr, change) in &block_diff.accounts {
             let entry = self.accounts.entry(*addr).or_insert_with(|| {
                 // First time seeing this account - record original from this block
-                (change.original.clone(), None)
+                TrackedState {
+                    original: change.original.clone(),
+                    current: None,
+                }
             });
-
-            // Update current state
-            entry.1 = change.current.clone();
+            entry.current = change.current.clone();
         }
 
         // Process storage changes
@@ -63,19 +95,15 @@ impl BatchBuilder {
             for (slot_key, (original, current)) in &storage_diff.slots {
                 let slot_entry = storage_entry.entry(*slot_key).or_insert_with(|| {
                     // First time seeing this slot - record original from this block
-                    (*original, *original)
+                    TrackedState::new(*original)
                 });
-                // Update current value
-                slot_entry.1 = *current;
+                slot_entry.current = *current;
             }
         }
 
-        // Collect deployed contract code hashes
-        for hash in &block_diff.deployed_code_hashes {
-            if !self.deployed_code_hashes.contains(hash) {
-                self.deployed_code_hashes.push(*hash);
-            }
-        }
+        // Collect deployed contract code hashes (BTreeSet handles deduplication)
+        self.deployed_code_hashes
+            .extend(&block_diff.deployed_code_hashes);
     }
 
     /// Builds the final [`BatchStateDiff`] for DA.
@@ -85,10 +113,13 @@ impl BatchBuilder {
         let mut result = BatchStateDiff::new();
 
         // Process accounts
-        for (addr, (original, current)) in self.accounts {
-            let change = match (&original, &current) {
-                // Reverted to original or no change
-                _ if original == current => continue,
+        for (addr, tracked) in self.accounts {
+            // Skip if reverted to original
+            if tracked.is_unchanged() {
+                continue;
+            }
+
+            let change = match (&tracked.original, &tracked.current) {
                 // Account deleted
                 (Some(_), None) => AccountChange::Deleted,
                 // Account created
@@ -103,7 +134,7 @@ impl BatchBuilder {
                         None => continue,
                     }
                 }
-                // Shouldn't happen
+                // Shouldn't happen (caught by is_unchanged)
                 (None, None) => continue,
             };
 
@@ -114,16 +145,16 @@ impl BatchBuilder {
         for (addr, slots) in self.storage {
             let mut storage_diff = StorageDiff::new();
 
-            for (key, (original, current)) in slots {
+            for (key, tracked) in slots {
                 // Skip if reverted to original
-                if original == current {
+                if tracked.is_unchanged() {
                     continue;
                 }
 
-                if current.is_zero() {
+                if tracked.current.is_zero() {
                     storage_diff.delete_slot(key);
                 } else {
-                    storage_diff.set_slot(key, current);
+                    storage_diff.set_slot(key, tracked.current);
                 }
             }
 
@@ -132,7 +163,7 @@ impl BatchBuilder {
             }
         }
 
-        result.deployed_code_hashes = self.deployed_code_hashes;
+        result.deployed_code_hashes = self.deployed_code_hashes.into_iter().collect();
         result
     }
 }

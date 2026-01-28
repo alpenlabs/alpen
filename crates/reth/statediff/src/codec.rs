@@ -34,9 +34,8 @@ impl Codec for TrimmedU256 {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let mut len_buf = [0u8; 1];
-        dec.read_buf(&mut len_buf)?;
-        let len = len_buf[0] as usize;
+        let [len] = dec.read_arr::<1>()?;
+        let len = len as usize;
 
         if len > 32 {
             return Err(CodecError::MalformedField("TrimmedU256 length exceeds 32"));
@@ -96,9 +95,8 @@ impl Codec for TrimmedStorageValue {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let mut len_buf = [0u8; 1];
-        dec.read_buf(&mut len_buf)?;
-        let len = len_buf[0] as usize;
+        let [len] = dec.read_arr::<1>()?;
+        let len = len as usize;
 
         if len == 0 {
             return Ok(Self(None));
@@ -138,8 +136,7 @@ impl Codec for CodecU256 {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let mut buf = [0u8; 32];
-        dec.read_buf(&mut buf)?;
+        let buf = dec.read_arr::<32>()?;
         Ok(Self(U256::from_le_bytes(buf)))
     }
 }
@@ -166,8 +163,7 @@ impl Codec for CodecB256 {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let mut buf = [0u8; 32];
-        dec.read_buf(&mut buf)?;
+        let buf = dec.read_arr::<32>()?;
         Ok(Self(B256::from(buf)))
     }
 }
@@ -194,8 +190,7 @@ impl Codec for CodecAddress {
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let mut buf = [0u8; 20];
-        dec.read_buf(&mut buf)?;
+        let buf = dec.read_arr::<20>()?;
         Ok(Self(Address::from(buf)))
     }
 }

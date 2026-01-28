@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 
 use revm_primitives::{Address, B256};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_da_framework::{decode_map_with, decode_vec_with, encode_map_with, encode_vec_with};
 
 use super::{AccountChange, StorageDiff};
+use crate::codec::{CodecAddress, CodecB256};
 
 /// Complete state diff for a batch, optimized for DA encoding.
 ///
@@ -35,60 +37,16 @@ impl BatchStateDiff {
 
 impl Codec for BatchStateDiff {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Encode accounts (sorted by BTreeMap)
-        (self.accounts.len() as u32).encode(enc)?;
-        for (addr, change) in &self.accounts {
-            enc.write_buf(addr.as_slice())?;
-            change.encode(enc)?;
-        }
-
-        // Encode storage (sorted by BTreeMap)
-        (self.storage.len() as u32).encode(enc)?;
-        for (addr, storage_diff) in &self.storage {
-            enc.write_buf(addr.as_slice())?;
-            storage_diff.encode(enc)?;
-        }
-
-        // Encode deployed code hashes
-        (self.deployed_code_hashes.len() as u32).encode(enc)?;
-        for hash in &self.deployed_code_hashes {
-            enc.write_buf(hash.as_slice())?;
-        }
-
+        encode_map_with(&self.accounts, enc, |a| CodecAddress(*a), Clone::clone)?;
+        encode_map_with(&self.storage, enc, |a| CodecAddress(*a), Clone::clone)?;
+        encode_vec_with(&self.deployed_code_hashes, enc, |h| CodecB256(*h))?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        // Decode accounts
-        let accounts_count = u32::decode(dec)? as usize;
-        let mut accounts = BTreeMap::new();
-        for _ in 0..accounts_count {
-            let mut addr_buf = [0u8; 20];
-            dec.read_buf(&mut addr_buf)?;
-            let addr = Address::from(addr_buf);
-            let change = AccountChange::decode(dec)?;
-            accounts.insert(addr, change);
-        }
-
-        // Decode storage
-        let storage_count = u32::decode(dec)? as usize;
-        let mut storage = BTreeMap::new();
-        for _ in 0..storage_count {
-            let mut addr_buf = [0u8; 20];
-            dec.read_buf(&mut addr_buf)?;
-            let addr = Address::from(addr_buf);
-            let storage_diff = StorageDiff::decode(dec)?;
-            storage.insert(addr, storage_diff);
-        }
-
-        // Decode deployed code hashes
-        let code_count = u32::decode(dec)? as usize;
-        let mut deployed_code_hashes = Vec::with_capacity(code_count);
-        for _ in 0..code_count {
-            let mut hash_buf = [0u8; 32];
-            dec.read_buf(&mut hash_buf)?;
-            deployed_code_hashes.push(B256::from(hash_buf));
-        }
+        let accounts = decode_map_with(dec, |k: CodecAddress| k.0, |v| v)?;
+        let storage = decode_map_with(dec, |k: CodecAddress| k.0, |v| v)?;
+        let deployed_code_hashes = decode_vec_with(dec, |h: CodecB256| h.0)?;
 
         Ok(Self {
             accounts,
