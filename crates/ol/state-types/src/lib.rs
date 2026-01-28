@@ -26,8 +26,8 @@ mod state_provider;
 mod toplevel;
 mod write_batch;
 
-#[cfg(test)]
-mod test_utils;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
 // Re-export SSZ-generated types that are used publicly
 pub use batch_application::*;
