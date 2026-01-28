@@ -346,10 +346,10 @@ pub fn check_ol_block_proposal_valid(
 ) -> anyhow::Result<()> {
     // If it's not the genesis block, check that the block is correctly signed.
     if block.header().slot() > 0 {
-        let sig = block
-            .signed_header()
-            .signature()
-            .expect("signature not present");
+        let Some(sig) = block.signed_header().signature() else {
+            // Just ignore blocks without signature
+            return Ok(());
+        };
         let msg: Buf32 = block.header().compute_blkid().into();
         let is_valid = match params.cred_rule {
             CredRule::Unchecked => true,
