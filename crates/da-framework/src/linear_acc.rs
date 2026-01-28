@@ -79,6 +79,8 @@ impl<A: LinearAccumulator> DaWrite for DaLinacc<A> {
 
     type Context = ();
 
+    type Error = crate::DaError;
+
     fn is_default(&self) -> bool {
         self.new_entries.is_empty()
     }
@@ -87,7 +89,7 @@ impl<A: LinearAccumulator> DaWrite for DaLinacc<A> {
         &self,
         target: &mut Self::Target,
         _context: &Self::Context,
-    ) -> Result<(), crate::DaError> {
+    ) -> Result<(), Self::Error> {
         for e in &self.new_entries {
             target.insert(e);
         }

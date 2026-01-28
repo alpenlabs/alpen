@@ -29,7 +29,7 @@ impl GlobalStateDiff {
 }
 
 make_compound_impl! {
-    GlobalStateDiff u8 => GlobalStateTarget {
+    GlobalStateDiff < (), crate::DaError > u8 => GlobalStateTarget {
         cur_slot: counter (counter_schemes::CtrU64ByU16),
     }
 }
