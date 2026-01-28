@@ -563,18 +563,18 @@ impl fmt::Display for L1BlockId {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
+    use crate::test_utils::{buf32_strategy, l1_block_commitment_strategy};
 
     mod l1_block_id {
         use super::*;
 
         ssz_proptest!(
             L1BlockId,
-            any::<[u8; 32]>().prop_map(Buf32::from),
+            buf32_strategy(),
             transparent_wrapper_of(Buf32, from)
         );
 
@@ -590,21 +590,7 @@ mod tests {
     mod l1_block_commitment {
         use super::*;
 
-        ssz_proptest!(
-            L1BlockCommitment,
-            (any::<u32>(), any::<[u8; 32]>()).prop_map(|(height, blkid)| {
-                #[cfg(feature = "bitcoin")]
-                {
-                    let h = height % 500_000_000;
-                    let height = absolute::Height::from_consensus(h).unwrap();
-                    L1BlockCommitment::new(height, L1BlockId::from(Buf32::from(blkid)))
-                }
-                #[cfg(not(feature = "bitcoin"))]
-                {
-                    L1BlockCommitment::new(height, L1BlockId::from(Buf32::from(blkid)))
-                }
-            })
-        );
+        ssz_proptest!(L1BlockCommitment, l1_block_commitment_strategy());
 
         #[test]
         fn test_zero_ssz() {

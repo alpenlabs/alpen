@@ -14,6 +14,9 @@ mod l1;
 mod mmr;
 mod ol;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 pub use acct::{
     AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SUBJ_ID_LEN, SYSTEM_RESERVED_ACCTS,
     SubjectId, SubjectIdBytes,
