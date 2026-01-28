@@ -147,17 +147,19 @@ mod tests {
         #[test]
         fn test_subject_to_address_rejects_non_zero_padding(
             addr_bytes in prop::array::uniform20(any::<u8>()),
-            padding in prop::collection::vec(1u8..=255u8, 1..=12)
+            padding_pos in 0usize..12,
+            padding_val in 1u8..=255u8,
         ) {
-            // Create a SubjectId with non-zero padding
-            let mut subject_bytes = addr_bytes.to_vec();
-            subject_bytes.extend_from_slice(&padding);
+            // Create a 32-byte SubjectId with non-zero in padding area (first 12 bytes)
+            let mut subject_buf = [0u8; 32];
+            // Put address in last 20 bytes
+            subject_buf[12..32].copy_from_slice(&addr_bytes);
+            // Put non-zero value in padding area
+            subject_buf[padding_pos] = padding_val;
 
-            if let Ok(subject_id_bytes) = SubjectIdBytes::try_new(subject_bytes) {
-                let subject = subject_id_bytes.to_subject_id();
-                let result = subject_to_address(&subject);
-                prop_assert!(result.is_none(), "should reject subject with non-zero padding");
-            }
+            let subject = SubjectId::new(subject_buf);
+            let result = subject_to_address(&subject);
+            prop_assert!(result.is_none(), "should reject subject with non-zero padding");
         }
     }
 
