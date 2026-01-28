@@ -14891,6 +14891,7 @@ dependencies = [
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "int-enum",
  "proptest",
  "ssz",

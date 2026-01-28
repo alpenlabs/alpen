@@ -6,7 +6,7 @@
 #![allow(unreachable_pub, reason = "test utils module")]
 
 use proptest::prelude::*;
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, RawMerkleProof};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, MsgPayload, RawMerkleProof};
 use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot};
 use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, MmrEntryProof,
@@ -15,7 +15,7 @@ use strata_snark_acct_types::{
 };
 
 use crate::{
-    GamTxPayload, OLTransaction, SnarkAccountUpdateTxPayload, TransactionAttachment,
+    GamTxPayload, OLLog, OLTransaction, SnarkAccountUpdateTxPayload, TransactionAttachment,
     TransactionPayload,
     block_flags::BlockFlags,
     ssz_generated::ssz::block::{
@@ -34,6 +34,15 @@ pub fn buf64_strategy() -> impl Strategy<Value = Buf64> {
 
 pub fn ol_block_id_strategy() -> impl Strategy<Value = OLBlockId> {
     buf32_strategy().prop_map(OLBlockId::from)
+}
+
+/// Strategy for generating random [`OLLog`] values.
+pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
+    (
+        any::<u32>().prop_map(AccountSerial::from),
+        prop::collection::vec(any::<u8>(), 0..1024),
+    )
+        .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload))
 }
 
 pub fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
