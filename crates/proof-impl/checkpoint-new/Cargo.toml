@@ -11,7 +11,6 @@ ssz.workspace = true
 ssz_primitives.workspace = true
 strata-checkpoint-types-ssz.workspace = true
 strata-crypto.workspace = true
-strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-state-types.workspace = true
@@ -23,3 +22,4 @@ zkaleido-native-adapter.workspace = true
 
 [dev-dependencies]
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
+strata-identifiers.workspace = true

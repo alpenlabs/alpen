@@ -7,7 +7,6 @@ use ssz::{Decode, Encode};
 use ssz_primitives::FixedBytes;
 use strata_checkpoint_types_ssz::{CheckpointClaim, L2BlockRange};
 use strata_crypto::hash;
-use strata_identifiers::OLBlockCommitment;
 use strata_ledger_types::{AsmManifest, IStateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_state_types::OLState;
@@ -102,12 +101,15 @@ pub fn process_ol_stf_core(
 
     // Construct the L2 block range for the checkpoint claim.
     // The range spans from the parent block to the last block in the batch.
-    let start = OLBlockCommitment::new(parent.slot(), parent.compute_blkid());
+    let start = parent.compute_block_commitment();
 
     // SAFETY: blocks is guaranteed non-empty by the assertion above
     let last_block = blocks
         .last()
         .expect("blocks is non-empty, verified by assertion above");
+
+    let end = last_block.header().compute_block_commitment();
+    let l2_range = L2BlockRange::new(start, end);
 
     // All blocks in the batch belong to the same epoch (checkpoints span exactly one epoch).
     // We extract the epoch from the last block as it represents the terminal block of the epoch.
@@ -119,12 +121,6 @@ pub fn process_ol_stf_core(
         parent.epoch() + 1,
         epoch
     );
-
-    let end = OLBlockCommitment::new(
-        last_block.header().slot(),
-        last_block.header().compute_blkid(),
-    );
-    let l2_range = L2BlockRange::new(start, end);
 
     // TODO: Implement after https://alpenlabs.atlassian.net/browse/STR-1366
     let state_diff_hash = FixedBytes::<32>::from([0u8; 32]);
