@@ -1,10 +1,5 @@
-use std::{
-    panic::{catch_unwind, AssertUnwindSafe},
-    sync::Arc,
-};
-
-use zkaleido::{ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
-use zkaleido_native_adapter::{NativeHost, NativeMachine};
+use zkaleido::{ProofType, PublicValues, ZkVmInputResult, ZkVmProgram, ZkVmResult};
+use zkaleido_native_adapter::NativeHost;
 
 use crate::{
     primitives::{EvmEeProofInput, EvmEeProofOutput},
@@ -50,15 +45,7 @@ impl ZkVmProgram for EvmEeProgram {
 
 impl EvmEeProgram {
     pub fn native_host() -> NativeHost {
-        NativeHost {
-            process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
-                catch_unwind(AssertUnwindSafe(|| {
-                    process_block_transaction_outer(zkvm);
-                }))
-                .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
-                Ok(())
-            })),
-        }
+        NativeHost::new(process_block_transaction_outer)
     }
 
     // Add this new convenience method

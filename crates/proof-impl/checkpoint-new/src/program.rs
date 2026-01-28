@@ -1,14 +1,9 @@
-use std::{
-    panic::{AssertUnwindSafe, catch_unwind},
-    sync::Arc,
-};
-
 use ssz::{Decode, Encode};
 use strata_checkpoint_types_ssz::CheckpointClaim;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::OLState;
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
-use zkaleido_native_adapter::{NativeHost, NativeMachine};
+use zkaleido_native_adapter::NativeHost;
 
 use crate::statements::process_ol_stf;
 
@@ -56,15 +51,7 @@ impl ZkVmProgram for CheckpointProgram {
 
 impl CheckpointProgram {
     pub fn native_host() -> NativeHost {
-        NativeHost {
-            process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
-                catch_unwind(AssertUnwindSafe(|| {
-                    process_ol_stf(zkvm);
-                }))
-                .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
-                Ok(())
-            })),
-        }
+        NativeHost::new(process_ol_stf)
     }
 
     // Add this new convenience method
