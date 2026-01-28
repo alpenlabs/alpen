@@ -29,6 +29,7 @@ pub fn process_epoch_initial<S: IStateAccessor>(
     // For genesis block (epoch 0), there is no previous terminal
     if state_cur_epoch > 0 {
         let prev_ec = EpochCommitment::from_terminal(state_cur_epoch - 1, context.prev_terminal());
+        state.set_previous_epoch(prev_ec);
         // TODO insert into MMR
     }
 

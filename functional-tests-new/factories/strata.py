@@ -58,7 +58,6 @@ class StrataFactory(flexitest.Factory):
 
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
-        print("BCONFIG: ", bconfig)
         config = StrataConfig(bitcoind=bconfig, client=client_config)
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
