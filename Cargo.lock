@@ -13754,6 +13754,7 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
+ "strata-crypto",
  "strata-identifiers",
  "strata-msg-fmt",
  "strata-test-utils-ssz",
@@ -15045,6 +15046,7 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "ssz_primitives",
+ "strata-asm-manifest-types",
  "strata-checkpoint-types-ssz",
  "strata-crypto",
  "strata-identifiers",

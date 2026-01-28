@@ -5,9 +5,10 @@
 
 use ssz::{Decode, Encode};
 use ssz_primitives::FixedBytes;
+use strata_asm_manifest_types::compute_asm_manifests_hash;
 use strata_checkpoint_types_ssz::{CheckpointClaim, L2BlockRange};
 use strata_crypto::hash;
-use strata_ledger_types::{AsmManifest, IStateAccessor};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
@@ -231,23 +232,4 @@ fn execute_block_batch(
     }
 
     (logs, asm_manifests_hash)
-}
-
-/// Computes a commitment hash over a sequence of ASM manifests.
-///
-/// This function concatenates the individual hashes of each manifest and
-/// hashes the resulting byte sequence to produce a single commitment value.
-fn compute_asm_manifests_hash(manifests: &[AsmManifest]) -> FixedBytes<32> {
-    // Pre-allocate buffer for concatenated manifest hashes
-    // Each manifest hash is 32 bytes
-    let mut manifest_hashes_buf = Vec::with_capacity(manifests.len() * 32);
-
-    // Concatenate individual manifest hashes
-    for manifest in manifests {
-        let manifest_hash = manifest.compute_hash();
-        manifest_hashes_buf.extend_from_slice(&manifest_hash);
-    }
-
-    // Compute final commitment hash over the concatenated hashes
-    hash::raw(&manifest_hashes_buf).into()
 }

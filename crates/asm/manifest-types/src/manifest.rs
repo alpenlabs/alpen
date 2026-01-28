@@ -1,5 +1,7 @@
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+use ssz_types::FixedBytes;
+use strata_crypto::hash;
 use strata_identifiers::{L1BlockId, WtxidsRoot};
 use tree_hash::{Sha256Hasher, TreeHash};
 
@@ -75,6 +77,25 @@ impl<'a> Arbitrary<'a> for AsmManifest {
 
         Ok(AsmManifest::new(height, blkid, wtxids_root, logs))
     }
+}
+
+/// Computes a commitment hash over a sequence of ASM manifests.
+///
+/// This function concatenates the individual hashes of each manifest and
+/// hashes the resulting byte sequence to produce a single commitment value.
+pub fn compute_asm_manifests_hash(manifests: &[AsmManifest]) -> FixedBytes<32> {
+    // Pre-allocate buffer for concatenated manifest hashes
+    // Each manifest hash is 32 bytes
+    let mut manifest_hashes_buf = Vec::with_capacity(manifests.len() * 32);
+
+    // Concatenate individual manifest hashes
+    for manifest in manifests {
+        let manifest_hash = manifest.compute_hash();
+        manifest_hashes_buf.extend_from_slice(&manifest_hash);
+    }
+
+    // Compute final commitment hash over the concatenated hashes
+    hash::raw(&manifest_hashes_buf).into()
 }
 
 #[cfg(test)]
