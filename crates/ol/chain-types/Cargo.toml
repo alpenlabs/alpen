@@ -19,10 +19,12 @@ strata-snark-acct-types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
+arbitrary = { optional = true, workspace = true }
 int-enum.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+arbitrary.workspace = true
 proptest.workspace = true
 strata-test-utils-ssz.workspace = true
 
@@ -34,7 +36,7 @@ workspace = true
 ssz_codegen.workspace = true
 
 [features]
-test-utils = ["dep:proptest"]
+test-utils = ["dep:arbitrary", "dep:proptest"]
 
 [lints]
 workspace = true
