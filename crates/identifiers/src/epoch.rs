@@ -145,23 +145,16 @@ impl PartialOrd for EpochCommitment {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
+    use crate::test_utils::epoch_commitment_strategy;
 
     mod epoch_commitment {
         use super::*;
 
-        ssz_proptest!(
-            EpochCommitment,
-            (any::<u32>(), any::<u64>(), any::<[u8; 32]>()).prop_map(
-                |(epoch, last_slot, blkid)| {
-                    EpochCommitment::new(epoch, last_slot, OLBlockId::from(Buf32::from(blkid)))
-                }
-            )
-        );
+        ssz_proptest!(EpochCommitment, epoch_commitment_strategy());
 
         #[test]
         fn test_zero_ssz() {
