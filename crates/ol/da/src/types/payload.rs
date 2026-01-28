@@ -246,9 +246,9 @@ fn apply_account_diff_to_account<T: IAccountStateMut>(
     acct: &mut T,
     diff: &AccountDiff,
 ) -> Result<(), DaError> {
-    if let Some(new_balance) = diff.balance.new_value() {
-        apply_balance(acct, *new_balance)?;
-    }
+    let mut new_balance = acct.balance().to_sat();
+    DaWrite::apply(&diff.balance, &mut new_balance, &())?;
+    apply_balance(acct, BitcoinAmount::from_sat(new_balance))?;
 
     if !DaWrite::is_default(&diff.snark) {
         apply_snark_diff(acct, &diff.snark)?;

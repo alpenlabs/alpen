@@ -1,7 +1,8 @@
 //! Account diff types.
 
-use strata_acct_types::BitcoinAmount;
-use strata_da_framework::{DaRegister, DaWrite, make_compound_impl};
+use strata_da_framework::{
+    DaCounter, DaWrite, counter_schemes::CtrU64BySignedVarint, make_compound_impl,
+};
 
 use super::snark::{SnarkAccountDiff, SnarkAccountTarget};
 
@@ -11,8 +12,11 @@ use super::snark::{SnarkAccountDiff, SnarkAccountTarget};
 /// for snark accounts.
 #[derive(Debug)]
 pub struct AccountDiff {
-    /// Balance register diff.
-    pub balance: DaRegister<BitcoinAmount>,
+    /// Balance: The account’s balance in satoshis. The `SignedVarint` increment
+    /// guarantees that small increments (most common) will take minimal space
+    /// while allowing for maximum bitcoin supply (21 million BTC) changes
+    /// (very unlikely).
+    pub balance: DaCounter<CtrU64BySignedVarint>,
 
     /// Snark state diff.
     pub snark: SnarkAccountDiff,
@@ -21,7 +25,7 @@ pub struct AccountDiff {
 impl Default for AccountDiff {
     fn default() -> Self {
         Self {
-            balance: DaRegister::new_unset(),
+            balance: DaCounter::new_unchanged(),
             snark: SnarkAccountDiff::default(),
         }
     }
@@ -29,12 +33,12 @@ impl Default for AccountDiff {
 
 impl AccountDiff {
     /// Creates a new account diff.
-    pub fn new(balance: DaRegister<BitcoinAmount>, snark: SnarkAccountDiff) -> Self {
+    pub fn new(balance: DaCounter<CtrU64BySignedVarint>, snark: SnarkAccountDiff) -> Self {
         Self { balance, snark }
     }
 
     /// Returns the balance diff, regardless of account type.
-    pub fn balance(&self) -> &DaRegister<BitcoinAmount> {
+    pub fn balance(&self) -> &DaCounter<CtrU64BySignedVarint> {
         &self.balance
     }
 
@@ -45,13 +49,13 @@ impl AccountDiff {
 
 make_compound_impl! {
     AccountDiff < (), crate::DaError > u8 => AccountDiffTarget {
-        balance: register (BitcoinAmount),
+        balance: counter (CtrU64BySignedVarint),
         snark: compound (SnarkAccountDiff),
     }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AccountDiffTarget {
-    pub balance: BitcoinAmount,
+    pub balance: u64,
     pub snark: SnarkAccountTarget,
 }

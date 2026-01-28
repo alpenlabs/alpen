@@ -10,7 +10,8 @@ use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister, LinearAccumulator,
-    counter_schemes::CtrU64ByU16, encode_to_vec,
+    counter_schemes::{CtrU64BySignedVarint, CtrU64ByU16},
+    encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
@@ -396,7 +397,10 @@ impl EpochDaAccumulator {
                 continue;
             }
 
-            let balance = DaRegister::compare(&delta.base_balance, &delta.final_balance);
+            let mut balance_builder =
+                DaCounterBuilder::<CtrU64BySignedVarint>::from_source(delta.base_balance.to_sat());
+            balance_builder.set(delta.final_balance.to_sat())?;
+            let balance = balance_builder.into_write()?;
             let snark_state = match delta.ty {
                 AccountTypeId::Empty => SnarkAccountDiff::default(),
                 AccountTypeId::Snark => {
