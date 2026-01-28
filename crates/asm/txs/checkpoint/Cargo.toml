@@ -1,0 +1,16 @@
+[package]
+name = "strata-asm-txs-checkpoint"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+ssz.workspace = true
+strata-asm-common.workspace = true
+strata-checkpoint-types-ssz.workspace = true
+strata-l1-envelope-fmt.workspace = true
+
+bitcoin.workspace = true
+thiserror.workspace = true

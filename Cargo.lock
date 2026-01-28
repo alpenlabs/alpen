@@ -13685,7 +13685,7 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "ssz",
- "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-checkpoint",
  "strata-asm-worker",
  "strata-btcio",
  "strata-chain-worker-new",
@@ -14034,6 +14034,18 @@ dependencies = [
  "strata-primitives",
  "strata-test-utils",
  "strata-test-utils-btcio",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-asm-txs-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "ssz",
+ "strata-asm-common",
+ "strata-checkpoint-types-ssz",
+ "strata-l1-envelope-fmt",
  "thiserror 2.0.18",
 ]
 
@@ -15050,7 +15062,7 @@ dependencies = [
  "bitcoind-async-client",
  "strata-acct-types",
  "strata-asm-common",
- "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-checkpoint",
  "strata-btc-types",
  "strata-codec",
  "strata-da-framework",
