@@ -12,12 +12,12 @@ strata-asm-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
-strata-identifiers.workspace = true
+strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ledger-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-chainstate-types.workspace = true
-strata-ol-state-types.workspace = true
+strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-test-utils.workspace = true
