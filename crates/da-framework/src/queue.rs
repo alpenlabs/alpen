@@ -80,6 +80,8 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
 
     type Context = ();
 
+    type Error = crate::DaError;
+
     fn is_default(&self) -> bool {
         self.tail.is_empty() && self.incr_front == 0
     }
@@ -88,7 +90,7 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
         &self,
         target: &mut Self::Target,
         _context: &Self::Context,
-    ) -> Result<(), crate::DaError> {
+    ) -> Result<(), Self::Error> {
         target.insert_entries(&self.tail);
         if self.incr_front > 0 {
             target.increment_front(self.incr_front);

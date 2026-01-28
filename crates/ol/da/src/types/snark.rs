@@ -104,7 +104,7 @@ impl SnarkAccountDiff {
 }
 
 make_compound_impl! {
-    SnarkAccountDiff u8 => SnarkAccountTarget {
+    SnarkAccountDiff < (), crate::DaError > u8 => SnarkAccountTarget {
         seq_no: counter (counter_schemes::CtrU64ByU16),
         proof_state: register (DaProofState),
         inbox: compound (DaLinacc<InboxBuffer>),

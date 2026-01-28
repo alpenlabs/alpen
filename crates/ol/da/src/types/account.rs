@@ -44,7 +44,7 @@ impl AccountDiff {
 }
 
 make_compound_impl! {
-    AccountDiff u8 => AccountDiffTarget {
+    AccountDiff < (), crate::DaError > u8 => AccountDiffTarget {
         balance: register (BitcoinAmount),
         snark: compound (SnarkAccountDiff),
     }

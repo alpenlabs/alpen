@@ -91,6 +91,8 @@ impl<T: Clone> DaWrite for DaRegister<T> {
 
     type Context = ();
 
+    type Error = crate::DaError;
+
     fn is_default(&self) -> bool {
         self.new_value.is_none()
     }
@@ -99,7 +101,7 @@ impl<T: Clone> DaWrite for DaRegister<T> {
         &self,
         target: &mut Self::Target,
         _context: &Self::Context,
-    ) -> Result<(), crate::DaError> {
+    ) -> Result<(), Self::Error> {
         if let Some(v) = self.new_value.clone() {
             *target = v;
         }

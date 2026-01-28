@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, marker::PhantomData};
 
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_codec::Codec;
-use strata_da_framework::{DaError, DaWrite};
+use strata_da_framework::{DaError as FrameworkDaError, DaWrite};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
     AccountTypeState, Coin, IAccountState, IAccountStateConstructible, IAccountStateMut,
@@ -18,6 +18,7 @@ use super::{
     AccountDiff, AccountInit, AccountTypeInit, DaProofState, GlobalStateDiff, LedgerDiff,
     SnarkAccountDiff,
 };
+use crate::DaError;
 
 /// Versioned OL DA payload containing the state diff.
 #[derive(Debug, Codec)]
@@ -100,19 +101,24 @@ where
 {
     type Target = S;
     type Context = ();
+    type Error = DaError;
 
     fn is_default(&self) -> bool {
         DaWrite::is_default(&self.diff.global) && self.diff.ledger.is_empty()
     }
 
-    fn poll_context(&self, target: &Self::Target, _context: &Self::Context) -> Result<(), DaError> {
+    fn poll_context(
+        &self,
+        target: &Self::Target,
+        _context: &Self::Context,
+    ) -> Result<(), Self::Error> {
         let pre_state_next_serial = target.next_account_serial();
         validate_ledger_entries(pre_state_next_serial, &self.diff)?;
         for entry in self.diff.ledger.new_accounts.entries() {
             new_account_data_from_init::<S::AccountState>(&entry.init)?;
             let exists = target
                 .check_account_exists(entry.account_id)
-                .map_err(|_| DaError::InsufficientContext)?;
+                .map_err(|_| FrameworkDaError::InsufficientContext)?;
             if exists {
                 return Err(DaError::InvalidLedgerDiff("new account already exists"));
             }
@@ -121,13 +127,17 @@ where
         for diff in self.diff.ledger.account_diffs.entries() {
             target
                 .find_account_id_by_serial(diff.account_serial)
-                .map_err(|_| DaError::InsufficientContext)?
-                .ok_or(DaError::InsufficientContext)?;
+                .map_err(|_| FrameworkDaError::InsufficientContext)?
+                .ok_or(FrameworkDaError::InsufficientContext)?;
         }
         Ok(())
     }
 
-    fn apply(&self, target: &mut Self::Target, _context: &Self::Context) -> Result<(), DaError> {
+    fn apply(
+        &self,
+        target: &mut Self::Target,
+        _context: &Self::Context,
+    ) -> Result<(), Self::Error> {
         let mut cur_slot = target.cur_slot();
         self.diff.global.cur_slot.apply(&mut cur_slot, &())?;
         target.set_cur_slot(cur_slot);
@@ -138,7 +148,7 @@ where
         for entry in self.diff.ledger.new_accounts.entries() {
             let exists = target
                 .check_account_exists(entry.account_id)
-                .map_err(|_| DaError::InsufficientContext)?;
+                .map_err(|_| FrameworkDaError::InsufficientContext)?;
             if exists {
                 return Err(DaError::InvalidLedgerDiff("new account already exists"));
             }
@@ -155,8 +165,8 @@ where
         for entry in self.diff.ledger.account_diffs.entries() {
             let account_id = target
                 .find_account_id_by_serial(entry.account_serial)
-                .map_err(|_| DaError::InsufficientContext)?
-                .ok_or(DaError::InsufficientContext)?;
+                .map_err(|_| FrameworkDaError::InsufficientContext)?
+                .ok_or(FrameworkDaError::InsufficientContext)?;
             apply_account_diff(target, account_id, &entry.diff)?;
         }
         Ok(())
