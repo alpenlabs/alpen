@@ -4,8 +4,8 @@ use proptest::prelude::*;
 use ssz_types::VariableList;
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_identifiers::{
-    AccountSerial, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
-    test_utils::buf32_strategy,
+    EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
+    test_utils::{account_id_strategy, account_serial_strategy, buf32_strategy},
 };
 use strata_merkle::Mmr64B32;
 use strata_predicate::PredicateKey;
@@ -15,23 +15,15 @@ use crate::ssz_generated::ssz::state::{
     ProofState, TsnlAccountEntry, TsnlLedgerAccountsTable,
 };
 
-pub(crate) fn account_id_strategy() -> impl Strategy<Value = AccountId> {
-    any::<[u8; 32]>().prop_map(AccountId::from)
-}
-
-pub(crate) fn account_serial_strategy() -> impl Strategy<Value = AccountSerial> {
-    any::<u32>().prop_map(AccountSerial::from)
-}
-
-pub(crate) fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
+pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
     any::<u64>().prop_map(BitcoinAmount::from_sat)
 }
 
-pub(crate) fn global_state_strategy() -> impl Strategy<Value = GlobalState> {
+pub fn global_state_strategy() -> impl Strategy<Value = GlobalState> {
     any::<u64>().prop_map(|cur_slot| GlobalState { cur_slot })
 }
 
-pub(crate) fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
+pub fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
     (
         bitcoin_amount_strategy(),
         any::<u32>(),
@@ -57,7 +49,7 @@ pub(crate) fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
         )
 }
 
-pub(crate) fn proof_state_strategy() -> impl Strategy<Value = ProofState> {
+pub fn proof_state_strategy() -> impl Strategy<Value = ProofState> {
     (buf32_strategy(), any::<u64>()).prop_map(|(inner_state, next_idx)| {
         let hash_bytes: [u8; 32] = inner_state.into();
         ProofState {
@@ -67,14 +59,14 @@ pub(crate) fn proof_state_strategy() -> impl Strategy<Value = ProofState> {
     })
 }
 
-pub(crate) fn ol_snark_account_state_strategy() -> impl Strategy<Value = OLSnarkAccountState> {
+pub fn ol_snark_account_state_strategy() -> impl Strategy<Value = OLSnarkAccountState> {
     buf32_strategy().prop_map(|inner_state| {
         // Use new_fresh to create a valid snark account state
         OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), inner_state)
     })
 }
 
-pub(crate) fn ol_account_type_state_strategy() -> impl Strategy<Value = OLAccountTypeState> {
+pub fn ol_account_type_state_strategy() -> impl Strategy<Value = OLAccountTypeState> {
     prop::bool::ANY.prop_flat_map(|is_snark| {
         if is_snark {
             ol_snark_account_state_strategy()
@@ -86,7 +78,7 @@ pub(crate) fn ol_account_type_state_strategy() -> impl Strategy<Value = OLAccoun
     })
 }
 
-pub(crate) fn ol_account_state_strategy() -> impl Strategy<Value = OLAccountState> {
+pub fn ol_account_state_strategy() -> impl Strategy<Value = OLAccountState> {
     (
         account_serial_strategy(),
         bitcoin_amount_strategy(),
@@ -99,13 +91,12 @@ pub(crate) fn ol_account_state_strategy() -> impl Strategy<Value = OLAccountStat
         })
 }
 
-pub(crate) fn tsnl_account_entry_strategy() -> impl Strategy<Value = TsnlAccountEntry> {
+pub fn tsnl_account_entry_strategy() -> impl Strategy<Value = TsnlAccountEntry> {
     (account_id_strategy(), ol_account_state_strategy())
         .prop_map(|(id, state)| TsnlAccountEntry { id, state })
 }
 
-pub(crate) fn tsnl_ledger_accounts_table_strategy() -> impl Strategy<Value = TsnlLedgerAccountsTable>
-{
+pub fn tsnl_ledger_accounts_table_strategy() -> impl Strategy<Value = TsnlLedgerAccountsTable> {
     // Small number of accounts for testing (0-10)
     prop::collection::vec(tsnl_account_entry_strategy(), 0..10).prop_map(|mut entries| {
         // Sort entries by account ID (requirement for TsnlLedgerAccountsTable)
@@ -135,7 +126,7 @@ pub(crate) fn tsnl_ledger_accounts_table_strategy() -> impl Strategy<Value = Tsn
     })
 }
 
-pub(crate) fn ol_state_strategy() -> impl Strategy<Value = OLState> {
+pub fn ol_state_strategy() -> impl Strategy<Value = OLState> {
     (
         epochal_state_strategy(),
         global_state_strategy(),

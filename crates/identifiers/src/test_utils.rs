@@ -3,15 +3,27 @@
 //! This module contains reusable test utilities and proptest strategies that are used
 //! across multiple test modules to avoid code duplication.
 
-#![allow(unreachable_pub, reason = "test utils module")]
-
 use proptest::prelude::*;
 use ssz_types::FixedBytes;
 
 use crate::{
-    Buf32, Buf64, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment,
-    OLBlockId, Slot,
+    AccountId, AccountSerial, Buf32, Buf64, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId,
+    OLBlockCommitment, OLBlockId, Slot,
 };
+
+// =============================================================================
+// Account strategies
+// =============================================================================
+
+/// Strategy for generating random [`AccountId`] values.
+pub fn account_id_strategy() -> impl Strategy<Value = AccountId> {
+    any::<[u8; 32]>().prop_map(AccountId::from)
+}
+
+/// Strategy for generating random [`AccountSerial`] values.
+pub fn account_serial_strategy() -> impl Strategy<Value = AccountSerial> {
+    any::<u32>().prop_map(AccountSerial::from)
+}
 
 // =============================================================================
 // Buffer strategies
