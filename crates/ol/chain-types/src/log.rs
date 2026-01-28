@@ -28,6 +28,18 @@ impl OLLog {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+impl<'a> arbitrary::Arbitrary<'a> for OLLog {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let account_serial = AccountSerial::from(u.arbitrary::<u32>()?);
+        let payload_len = u.int_in_range(0..=1024)?;
+        let payload: Vec<u8> = (0..payload_len)
+            .map(|_| u.arbitrary())
+            .collect::<arbitrary::Result<_>>()?;
+        Ok(Self::new(account_serial, payload))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
