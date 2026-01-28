@@ -3,11 +3,11 @@
 mod dummy_ol_client;
 mod genesis;
 mod gossip;
-mod ol_client;
 #[cfg(feature = "sequencer")]
 mod noop_da_provider;
 #[cfg(feature = "sequencer")]
 mod noop_prover;
+mod ol_client;
 #[cfg(feature = "sequencer")]
 mod payload_builder;
 mod rpc_client;
