@@ -14945,6 +14945,7 @@ dependencies = [
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "bitcoin",
  "proptest",
  "ssz",
