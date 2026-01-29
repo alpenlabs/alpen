@@ -49,7 +49,7 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
     let chain_worker_context = ChainWorkerContextImpl::new(
         nodectx.storage.ol_block().clone(),
         nodectx.storage.ol_state().clone(),
-        nodectx.storage.checkpoint().clone(),
+        nodectx.storage.ol_checkpoint().clone(),
     );
     let chain_worker_handle = ChainWorkerBuilder::new()
         .with_context(chain_worker_context)

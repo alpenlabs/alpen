@@ -11,7 +11,7 @@ use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::IndexerWrites;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
-use strata_storage::{CheckpointDbManager, OLBlockManager, OLStateManager};
+use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateManager};
 use tracing::warn;
 
 use crate::{
@@ -37,7 +37,7 @@ pub struct ChainWorkerContextImpl {
     ol_state_mgr: Arc<OLStateManager>,
 
     /// Manager for checkpoint and epoch summary data.
-    checkpoint_mgr: Arc<CheckpointDbManager>,
+    checkpoint_mgr: Arc<OLCheckpointManager>,
 }
 
 impl ChainWorkerContextImpl {
@@ -45,7 +45,7 @@ impl ChainWorkerContextImpl {
     pub fn new(
         ol_block_mgr: Arc<OLBlockManager>,
         ol_state_mgr: Arc<OLStateManager>,
-        checkpoint_mgr: Arc<CheckpointDbManager>,
+        checkpoint_mgr: Arc<OLCheckpointManager>,
     ) -> Self {
         Self {
             ol_block_mgr,
