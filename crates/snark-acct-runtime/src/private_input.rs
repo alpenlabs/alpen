@@ -1,3 +1,3 @@
 //! Private inputs to runtime update proof.
 
-// TODO
+// TODO rkyv types

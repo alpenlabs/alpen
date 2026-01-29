@@ -16,6 +16,7 @@ use strata_ee_acct_runtime::ChainSegmentBuilder;
 use strata_ee_acct_types::{EnvError, ExecHeader, PendingInputEntry};
 use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
 use strata_simple_ee::{SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeaderIntrinsics};
+use strata_snark_acct_runtime::ProgramError;
 
 #[test]
 fn test_mismatched_processed_inputs_count() {
@@ -80,7 +81,11 @@ fn test_mismatched_processed_inputs_count() {
         &ee,
     );
 
-    assert!(matches!(result, Err(EnvError::InvalidBlock)));
+    eprintln!("result {result:?}");
+    assert!(matches!(
+        result,
+        Err(ProgramError::Internal(EnvError::MismatchedChainSegment))
+    ));
 }
 
 #[test]
@@ -130,7 +135,10 @@ fn test_mismatched_segment_count() {
         &ee,
     );
 
-    assert!(matches!(result, Err(EnvError::MismatchedChainSegment)));
+    assert!(matches!(
+        result,
+        Err(ProgramError::Internal(EnvError::MismatchedChainSegment))
+    ));
 }
 
 #[test]
@@ -235,7 +243,13 @@ fn test_mismatched_coinput_count() {
         &ee,
     );
 
-    assert!(matches!(result, Err(EnvError::MismatchedCoinputCnt)));
+    assert!(matches!(
+        result,
+        Err(ProgramError::MismatchedCoinputCount {
+            expected: 1,
+            actual: 2,
+        })
+    ));
 
     // Try with too few coinputs - the generic runtime uses empty coinputs as
     // defaults when missing, and EE's verify_coinput accepts empty coinputs,

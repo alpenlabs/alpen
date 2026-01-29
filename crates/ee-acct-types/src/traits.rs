@@ -61,7 +61,7 @@ pub trait ExecBlock: Codec + Sized {
 }
 
 /// Execution environment.
-pub trait ExecutionEnvironment: Sized {
+pub trait ExecutionEnvironment: Sized + 'static {
     /// Partial execution chain state.
     type PartialState: ExecPartialState;
 
