@@ -14,8 +14,7 @@ use strata_merkle::CompactMmr64;
 use crate::{
     IStateBatchApplicable, WriteBatch,
     ssz_generated::ssz::state::{
-        EpochalState, GlobalState, OLAccountState, OLAccountTypeState, OLState,
-        TsnlLedgerAccountsTable,
+        EpochalState, GlobalState, OLAccountState, OLState, TsnlLedgerAccountsTable,
     },
 };
 
@@ -236,9 +235,7 @@ impl IStateAccessor for OLState {
         new_acct_data: NewAccountData<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
         let serial = self.ledger.next_avail_serial();
-        let bal = new_acct_data.initial_balance();
-        let state = OLAccountTypeState::from_generic(new_acct_data.into_type_state());
-        let account = OLAccountState::new(serial, bal, state);
+        let account = OLAccountState::new_with_serial(new_acct_data, serial);
         self.ledger.create_account(id, account)
     }
 

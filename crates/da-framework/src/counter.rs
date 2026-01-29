@@ -89,6 +89,8 @@ impl<S: CounterScheme> DaWrite for DaCounter<S> {
 
     type Context = ();
 
+    type Error = crate::DaError;
+
     fn is_default(&self) -> bool {
         !self.is_changed()
     }
@@ -97,7 +99,7 @@ impl<S: CounterScheme> DaWrite for DaCounter<S> {
         &self,
         target: &mut Self::Target,
         _context: &Self::Context,
-    ) -> Result<(), crate::DaError> {
+    ) -> Result<(), Self::Error> {
         if let Self::Changed(v) = self {
             S::update(target, v);
         }
@@ -312,6 +314,106 @@ pub mod counter_schemes {
         }
     }
 
+    // Signed varint payload is 61 bits (prefixes consume the top 3 bits), so
+    // the representable range is [-2^60, 2^60 - 1], not full i64.
+    const SIGNED_VARINT_MIN: i64 = -(1_i64 << 60);
+    const SIGNED_VARINT_MAX: i64 = (1_i64 << 60) - 1;
+    const SIGNED_VARINT_1_MIN: i64 = -(1_i64 << 6);
+    const SIGNED_VARINT_1_MAX: i64 = (1_i64 << 6) - 1;
+    const SIGNED_VARINT_2_MIN: i64 = -(1_i64 << 13);
+    const SIGNED_VARINT_2_MAX: i64 = (1_i64 << 13) - 1;
+    const SIGNED_VARINT_4_MIN: i64 = -(1_i64 << 28);
+    const SIGNED_VARINT_4_MAX: i64 = (1_i64 << 28) - 1;
+
+    fn sign_extend(value: u64, bits: u32) -> i64 {
+        let shift = 64 - bits;
+        ((value << shift) as i64) >> shift
+    }
+
+    /// Newtype wrapper around a signed varint that adds [`Default`] and [`Clone`].
+    ///
+    /// This uses a prefix format aligned with [`Varint`] while supporting signed values.
+    #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+    pub struct SignedVarintIncr(i64);
+
+    impl SignedVarintIncr {
+        /// Creates a new signed varint increment from an i64 value.
+        ///
+        /// Returns `None` if the value is outside the signed varint range.
+        pub fn new(v: i64) -> Option<Self> {
+            if (SIGNED_VARINT_MIN..=SIGNED_VARINT_MAX).contains(&v) {
+                Some(Self(v))
+            } else {
+                None
+            }
+        }
+
+        /// Returns the inner i64 value.
+        pub fn inner(self) -> i64 {
+            self.0
+        }
+    }
+
+    impl Codec for SignedVarintIncr {
+        fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+            let v = self.0;
+            if !(SIGNED_VARINT_MIN..=SIGNED_VARINT_MAX).contains(&v) {
+                return Err(CodecError::OobInteger);
+            }
+
+            if (SIGNED_VARINT_1_MIN..=SIGNED_VARINT_1_MAX).contains(&v) {
+                let payload = (v as i8 as u8) & 0x7f; // 0b0xxxxxxx (7-bit payload)
+                enc.write_buf(&[payload])?;
+                return Ok(());
+            }
+
+            if (SIGNED_VARINT_2_MIN..=SIGNED_VARINT_2_MAX).contains(&v) {
+                let payload = (v as i16 as u16) & 0x3fff; // 14-bit payload
+                let val = payload | 0x8000; // 0b10xxxxxx_xxxxxxxx prefix
+                enc.write_buf(&val.to_be_bytes())?;
+                return Ok(());
+            }
+
+            if (SIGNED_VARINT_4_MIN..=SIGNED_VARINT_4_MAX).contains(&v) {
+                let payload = (v as i32 as u32) & 0x1fff_ffff; // 29-bit payload
+                let val = payload | 0xc000_0000; // 0b110xxxxx_xxxxxxxx_xxxxxxxx_xxxxxxxx prefix
+                enc.write_buf(&val.to_be_bytes())?;
+                return Ok(());
+            }
+
+            let payload = (v as u64) & 0x1fff_ffff_ffff_ffff; // 61-bit payload
+            let val = payload | 0xe000_0000_0000_0000; // 0b111xxxxx... prefix
+            enc.write_buf(&val.to_be_bytes())?;
+            Ok(())
+        }
+
+        fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+            let first = u8::decode(dec)?;
+            let (payload, bits) = if first & 0x80 == 0 {
+                ((first & 0x7f) as u64, 7)
+            } else if first & 0xc0 == 0x80 {
+                let second = u8::decode(dec)?;
+                let val = u16::from_be_bytes([first, second]);
+                ((val & 0x3fff) as u64, 14) // 0b10 prefix, 14-bit payload
+            } else if first & 0xe0 == 0xc0 {
+                let mut rest = [0u8; 3];
+                dec.read_buf(&mut rest)?;
+                let val = u32::from_be_bytes([first, rest[0], rest[1], rest[2]]);
+                ((val & 0x1fff_ffff) as u64, 29) // 0b110 prefix, 29-bit payload
+            } else {
+                let mut rest = [0u8; 7];
+                dec.read_buf(&mut rest)?;
+                let val = u64::from_be_bytes([
+                    first, rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], rest[6],
+                ]);
+                (val & 0x1fff_ffff_ffff_ffff, 61) // 0b111 prefix, 61-bit payload
+            };
+
+            let signed = sign_extend(payload, bits);
+            SignedVarintIncr::new(signed).ok_or(CodecError::OobInteger)
+        }
+    }
+
     /// Counter scheme for u64 base with varint-encoded increment.
     ///
     /// This allows increments up to ~1 billion while using only 1-4 bytes:
@@ -342,13 +444,46 @@ pub mod counter_schemes {
             VarintIncr::new(diff_u32)
         }
     }
+
+    /// Counter scheme for u64 base with signed varint-encoded increment.
+    ///
+    /// This allows small positive or negative increments to use 1-4 bytes while
+    /// supporting large deltas with an 8-byte encoding.
+    #[derive(Copy, Clone, Debug, Default)]
+    pub struct CtrU64BySignedVarint;
+
+    impl crate::CounterScheme for CtrU64BySignedVarint {
+        type Base = u64;
+        type Incr = SignedVarintIncr;
+
+        fn is_zero(incr: &Self::Incr) -> bool {
+            incr.inner() == 0
+        }
+
+        fn update(base: &mut Self::Base, incr: &Self::Incr) {
+            let delta = incr.inner();
+            if delta >= 0 {
+                *base = base.saturating_add(delta as u64);
+            } else {
+                *base = base.saturating_sub(delta.unsigned_abs());
+            }
+        }
+
+        fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
+            let diff = (b as i128).checked_sub(a as i128)?;
+            let diff_i64 = i64::try_from(diff).ok()?;
+            SignedVarintIncr::new(diff_i64)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         DaCounter,
-        counter_schemes::{CtrU64ByI16, CtrU64ByVarint, VarintIncr},
+        counter_schemes::{
+            CtrU64ByI16, CtrU64BySignedVarint, CtrU64ByVarint, SignedVarintIncr, VarintIncr,
+        },
     };
     use crate::{ContextlessDaWrite, decode_buf_exact, encode_to_vec};
 
@@ -399,6 +534,71 @@ mod tests {
     }
 
     #[test]
+    fn test_signed_varint_incr_encoding_sizes() {
+        let small = SignedVarintIncr::new(42).unwrap();
+        let encoded_small = encode_to_vec(&small).unwrap();
+        assert_eq!(encoded_small.len(), 1);
+
+        let small_neg = SignedVarintIncr::new(-42).unwrap();
+        let encoded_small_neg = encode_to_vec(&small_neg).unwrap();
+        assert_eq!(encoded_small_neg.len(), 1);
+
+        let medium = SignedVarintIncr::new(1000).unwrap();
+        let encoded_medium = encode_to_vec(&medium).unwrap();
+        assert_eq!(encoded_medium.len(), 2);
+
+        let medium_neg = SignedVarintIncr::new(-1000).unwrap();
+        let encoded_medium_neg = encode_to_vec(&medium_neg).unwrap();
+        assert_eq!(encoded_medium_neg.len(), 2);
+
+        let large = SignedVarintIncr::new(100_000).unwrap();
+        let encoded_large = encode_to_vec(&large).unwrap();
+        assert_eq!(encoded_large.len(), 4);
+
+        let large_neg = SignedVarintIncr::new(-100_000).unwrap();
+        let encoded_large_neg = encode_to_vec(&large_neg).unwrap();
+        assert_eq!(encoded_large_neg.len(), 4);
+
+        let huge = SignedVarintIncr::new(1_i64 << 40).unwrap();
+        let encoded_huge = encode_to_vec(&huge).unwrap();
+        assert_eq!(encoded_huge.len(), 8);
+
+        let huge_neg = SignedVarintIncr::new(-(1_i64 << 40)).unwrap();
+        let encoded_huge_neg = encode_to_vec(&huge_neg).unwrap();
+        assert_eq!(encoded_huge_neg.len(), 8);
+    }
+
+    #[test]
+    fn test_signed_varint_incr_roundtrip() {
+        for val in [
+            -100_000,
+            -16_384,
+            -16_383,
+            -1_000,
+            -128,
+            -64,
+            -1,
+            0,
+            1,
+            63,
+            64,
+            127,
+            128,
+            1_000,
+            16_383,
+            16_384,
+            100_000,
+            1_i64 << 40,
+            -(1_i64 << 40),
+        ] {
+            let incr = SignedVarintIncr::new(val).unwrap();
+            let encoded = encode_to_vec(&incr).unwrap();
+            let decoded: SignedVarintIncr = decode_buf_exact(&encoded).unwrap();
+            assert_eq!(decoded.inner(), val);
+        }
+    }
+
+    #[test]
     fn test_varint_counter_apply() {
         let incr = VarintIncr::new(42).unwrap();
         let ctr = DaCounter::<CtrU64ByVarint>::new_changed(incr);
@@ -427,5 +627,15 @@ mod tests {
         let mut v = 100u64;
         ctr.apply(&mut v).unwrap();
         assert_eq!(v, 100); // Unchanged
+    }
+
+    #[test]
+    fn test_signed_varint_counter_apply() {
+        let incr = SignedVarintIncr::new(-42).unwrap();
+        let ctr = DaCounter::<CtrU64BySignedVarint>::new_changed(incr);
+
+        let mut v = 100u64;
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 58);
     }
 }

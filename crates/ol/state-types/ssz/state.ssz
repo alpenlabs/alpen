@@ -6,6 +6,8 @@ import strata_snark_acct_types
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
+### Max VK bytes encoded with a u16 length prefix (65_535 bytes).
+MAX_VK_BYTES = 65535
 
 ### Top-level OL state
 class OLState(Container):
@@ -55,9 +57,9 @@ class OLAccountTypeState(Union):
 
 ### Snark account state
 class OLSnarkAccountState(Container):
-    ### Verifying Key
+    ### Verifying Key used to verify updates
     #~# external_kind: container
-    verifying_key: strata_predicate.PredicateKey
+    update_vk: strata_predicate.PredicateKey
 
     ### Sequence number
     seqno: strata_snark_acct_types.Seqno
@@ -68,6 +70,7 @@ class OLSnarkAccountState(Container):
     ### Inbox MMR
     #~# external_kind: container
     inbox_mmr: strata_acct_types.Mmr64
+
 
 ### Proof state for snark accounts
 class ProofState(Container):

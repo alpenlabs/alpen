@@ -441,9 +441,9 @@ pub fn setup_genesis_with_snark_account(
     initial_balance: u64,
 ) -> CompletedBlock {
     // Create snark account with initial balance directly
-    let vk = PredicateKey::always_accept();
+    let update_vk = PredicateKey::always_accept();
     let initial_state_root = get_test_state_root(1);
-    let snark_state = OLSnarkAccountState::new_fresh(vk, initial_state_root);
+    let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
     let balance = BitcoinAmount::from_sat(initial_balance);
     let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
     state

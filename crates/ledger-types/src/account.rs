@@ -125,7 +125,7 @@ pub trait ISnarkAccountState: Sized {
     // Proof state accessors
 
     /// Gets the verification key for this snark account.
-    fn verifying_key(&self) -> &PredicateKey;
+    fn update_vk(&self) -> &PredicateKey;
 
     /// Gets the update seqno.
     fn seqno(&self) -> Seqno;
@@ -141,6 +141,12 @@ pub trait ISnarkAccountState: Sized {
     /// Gets current the inbox MMR state, which we can use to check proofs
     /// against the state.
     fn inbox_mmr(&self) -> &Mmr64;
+}
+
+/// Constructor helper for snark account state.
+pub trait ISnarkAccountStateConstructible: ISnarkAccountState {
+    /// Builds a fresh snark state from the update predicate key and initial root.
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self;
 }
 
 /// Mutable accessor to snark account state.

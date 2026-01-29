@@ -126,13 +126,6 @@ fn handle_bridge_gateway_message<S: IStateAccessor>(
         return Ok(());
     }
 
-    // TODO: remove ASAP
-    // Record the withdrawal in the legacy chainstate (hack until #1209)
-    state.record_withdrawal_intent(
-        withdrawal_amt.into(),
-        withdrawal_data.clone().into_dest_desc().to_vec(),
-    );
-
     // If it is, then we can emit a OL log with the amount and destination.
     let log_data = SimpleWithdrawalIntentLogData {
         amt: withdrawal_amt.into(),
