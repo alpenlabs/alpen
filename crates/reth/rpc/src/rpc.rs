@@ -50,7 +50,7 @@ where
             .get_state_diff_by_hash(block_hash)
             .map_err(to_jsonrpsee_error("Failed fetching block state diff"))?;
 
-        // Convert BlockStateDiff -> BatchStateDiff -> BatchStateDiffSerde
+        // Convert BlockStateChanges -> BatchStateDiff -> BatchStateDiffSerde
         Ok(block_diff.map(|diff| BatchStateDiffSerde::from(BatchStateDiff::from(&diff))))
     }
 
@@ -68,7 +68,7 @@ where
 
             match block_diff {
                 Some(diff) => {
-                    // Convert BlockStateDiff -> BatchStateDiff for apply_diff
+                    // Convert BlockStateChanges -> BatchStateDiff for apply_diff
                     let batch_diff = BatchStateDiff::from(&diff);
                     state
                         .apply_diff(&batch_diff)

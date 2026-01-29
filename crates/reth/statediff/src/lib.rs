@@ -6,16 +6,16 @@
 //! # Architecture
 //!
 //! ```text
-//! BundleState → BlockStateDiff → stored per block (DB)
+//! BundleState → BlockStateChanges → stored per block (DB)
 //!                                       ↓
-//! BlockStateDiff[n..m] → BatchBuilder → BatchStateDiff → DA (through Codec)
+//! BlockStateChanges[n..m] → BatchBuilder → BatchStateDiff → DA (through Codec)
 //!                                              ↓
 //!                                 StateReconstructor.apply_diff()
 //! ```
 //!
 //! # Modules
 //!
-//! - [`block`]: Per-block diff types stored in DB (preserves original values)
+//! - [`block`]: Per-block changes types stored in DB (preserves original values)
 //! - [`batch`]: DA-optimized batch diff types (compact, no originals), actually posted on-chain
 //! - `reconstruct`: State reconstruction from diffs (see [`StateReconstructor`]), currently
 //!   experimental and used only in tests - will be adjusted later (for syncing from diffs).
@@ -24,7 +24,7 @@
 //!
 //! | Type | Module | Purpose |
 //! |------|--------|---------|
-//! | [`BlockStateDiff`] | `block` | Per-block diff for DB storage |
+//! | [`BlockStateChanges`] | `block` | Per-block changes for DB storage |
 //! | [`BatchStateDiff`] | `batch` | Aggregated diff for DA |
 //! | [`BatchBuilder`] | `batch` | Aggregates blocks with revert detection |
 //! | [`StateReconstructor`] | `reconstruct` | Applies diffs to rebuild state |
@@ -59,7 +59,7 @@ mod serde_impl;
 
 // Re-export main types at crate level for convenience
 pub use batch::{AccountChange, AccountDiff, BatchBuilder, BatchStateDiff, StorageDiff};
-pub use block::{AccountSnapshot, BlockAccountChange, BlockStateDiff, BlockStorageDiff};
+pub use block::{AccountSnapshot, BlockAccountChange, BlockStateChanges, BlockStorageDiff};
 pub use reconstruct::{ReconstructError, StateReconstructor};
 #[cfg(feature = "serde")]
 pub use serde_impl::{AccountChangeSerde, AccountDiffSerde, BatchStateDiffSerde};

@@ -6,7 +6,7 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 
 use super::{AccountChange, AccountDiff, BatchStateDiff, StorageDiff};
-use crate::block::{AccountSnapshot, BlockStateDiff};
+use crate::block::{AccountSnapshot, BlockStateChanges};
 
 /// Tracks the original and current state of a value across a batch.
 ///
@@ -75,7 +75,7 @@ impl BatchBuilder {
     }
 
     /// Applies a block's state diff. Blocks must be applied in order.
-    pub fn apply_block(&mut self, block_diff: &BlockStateDiff) {
+    pub fn apply_block(&mut self, block_diff: &BlockStateChanges) {
         // Process account changes
         for (addr, change) in &block_diff.accounts {
             let entry = self.accounts.entry(*addr).or_insert_with(|| {
@@ -170,16 +170,16 @@ impl BatchBuilder {
 
 // === Single block conversion ===
 
-impl From<&BlockStateDiff> for BatchStateDiff {
-    fn from(block_diff: &BlockStateDiff) -> Self {
+impl From<&BlockStateChanges> for BatchStateDiff {
+    fn from(block_diff: &BlockStateChanges) -> Self {
         let mut builder = BatchBuilder::new();
         builder.apply_block(block_diff);
         builder.build()
     }
 }
 
-impl From<BlockStateDiff> for BatchStateDiff {
-    fn from(block_diff: BlockStateDiff) -> Self {
+impl From<BlockStateChanges> for BatchStateDiff {
+    fn from(block_diff: BlockStateChanges) -> Self {
         Self::from(&block_diff)
     }
 }
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_single_block_created() {
-        let mut block = BlockStateDiff::new();
+        let mut block = BlockStateChanges::new();
         block.accounts.insert(
             Address::from([0x11u8; 20]),
             BlockAccountChange {
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_single_block_deleted() {
-        let mut block = BlockStateDiff::new();
+        let mut block = BlockStateChanges::new();
         block.accounts.insert(
             Address::from([0x11u8; 20]),
             BlockAccountChange {
@@ -240,7 +240,7 @@ mod tests {
         let addr = Address::from([0x11u8; 20]);
 
         // Block 1: balance 0 -> 1000
-        let mut block1 = BlockStateDiff::new();
+        let mut block1 = BlockStateChanges::new();
         block1.accounts.insert(
             addr,
             BlockAccountChange {
@@ -250,7 +250,7 @@ mod tests {
         );
 
         // Block 2: balance 1000 -> 0 (revert!)
-        let mut block2 = BlockStateDiff::new();
+        let mut block2 = BlockStateChanges::new();
         block2.accounts.insert(
             addr,
             BlockAccountChange {
@@ -274,13 +274,13 @@ mod tests {
         let slot = U256::from(1);
 
         // Block 1: slot 0 -> 100
-        let mut block1 = BlockStateDiff::new();
+        let mut block1 = BlockStateChanges::new();
         let mut storage1 = BlockStorageDiff::new();
         storage1.slots.insert(slot, (U256::ZERO, U256::from(100)));
         block1.storage.insert(addr, storage1);
 
         // Block 2: slot 100 -> 0 (revert!)
-        let mut block2 = BlockStateDiff::new();
+        let mut block2 = BlockStateChanges::new();
         let mut storage2 = BlockStorageDiff::new();
         storage2.slots.insert(slot, (U256::from(100), U256::ZERO));
         block2.storage.insert(addr, storage2);
@@ -299,7 +299,7 @@ mod tests {
         let addr = Address::from([0x11u8; 20]);
 
         // Block 1: nonce 0 -> 2
-        let mut block1 = BlockStateDiff::new();
+        let mut block1 = BlockStateChanges::new();
         block1.accounts.insert(
             addr,
             BlockAccountChange {
@@ -309,7 +309,7 @@ mod tests {
         );
 
         // Block 2: nonce 2 -> 5
-        let mut block2 = BlockStateDiff::new();
+        let mut block2 = BlockStateChanges::new();
         block2.accounts.insert(
             addr,
             BlockAccountChange {
@@ -336,10 +336,10 @@ mod tests {
     fn test_code_hash_deduplication() {
         let hash = B256::from([0x11u8; 32]);
 
-        let mut block1 = BlockStateDiff::new();
+        let mut block1 = BlockStateChanges::new();
         block1.deployed_code_hashes.push(hash);
 
-        let mut block2 = BlockStateDiff::new();
+        let mut block2 = BlockStateChanges::new();
         block2.deployed_code_hashes.push(hash); // Same hash
 
         let mut builder = BatchBuilder::new();

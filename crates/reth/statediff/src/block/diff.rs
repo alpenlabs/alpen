@@ -13,7 +13,7 @@ use super::{AccountSnapshot, BlockAccountChange, BlockStorageDiff};
 /// Contains both original and current values to enable proper batch aggregation
 /// with revert detection when building [`BatchStateDiff`](crate::batch::BatchStateDiff).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct BlockStateDiff {
+pub struct BlockStateChanges {
     /// Account changes with original values for tracking.
     pub accounts: BTreeMap<Address, BlockAccountChange>,
     /// Storage changes with original values per account.
@@ -22,7 +22,7 @@ pub struct BlockStateDiff {
     pub deployed_code_hashes: Vec<B256>,
 }
 
-impl BlockStateDiff {
+impl BlockStateChanges {
     pub fn new() -> Self {
         Self::default()
     }
@@ -34,7 +34,7 @@ impl BlockStateDiff {
 
 // === Conversion from BundleState ===
 
-impl From<&BundleState> for BlockStateDiff {
+impl From<&BundleState> for BlockStateChanges {
     fn from(bundle: &BundleState) -> Self {
         let mut result = Self::new();
 
@@ -92,7 +92,7 @@ impl From<&BundleState> for BlockStateDiff {
     }
 }
 
-impl From<BundleState> for BlockStateDiff {
+impl From<BundleState> for BlockStateChanges {
     fn from(bundle: BundleState) -> Self {
         Self::from(&bundle)
     }
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_block_state_diff_roundtrip() {
-        let mut diff = BlockStateDiff::new();
+        let mut diff = BlockStateChanges::new();
 
         diff.accounts.insert(
             Address::from([0x11u8; 20]),
@@ -129,7 +129,7 @@ mod tests {
         diff.deployed_code_hashes.push(B256::from([0x33u8; 32]));
 
         let encoded = bincode::serialize(&diff).unwrap();
-        let decoded: BlockStateDiff = bincode::deserialize(&encoded).unwrap();
+        let decoded: BlockStateChanges = bincode::deserialize(&encoded).unwrap();
 
         assert_eq!(decoded.accounts.len(), 1);
         assert_eq!(decoded.storage.len(), 1);

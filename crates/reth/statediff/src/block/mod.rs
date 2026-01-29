@@ -8,5 +8,5 @@ mod diff;
 mod storage;
 
 pub use account::{AccountSnapshot, BlockAccountChange};
-pub use diff::BlockStateDiff;
+pub use diff::BlockStateChanges;
 pub use storage::BlockStorageDiff;
