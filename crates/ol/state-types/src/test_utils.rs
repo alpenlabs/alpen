@@ -56,7 +56,6 @@ pub(crate) fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
                     entries: 0,
                     roots: Default::default(),
                 },
-                previous_epoch: EpochCommitment::new(cp_epoch, cp_slot, OLBlockId::from(cp_blkid)),
             },
         )
 }

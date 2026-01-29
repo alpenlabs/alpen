@@ -80,7 +80,6 @@ mod tests {
             L1BlockCommitment::from_height_u64(0, L1BlockId::from(Buf32::zero())).unwrap(),
             EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
             Mmr64B32::from_generic(&CompactMmr64::new(64)),
-            EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
         )
     }
 

@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc, time};
 
 use anyhow::anyhow;
 use strata_chain_worker_new::WorkerResult;
-use strata_db_types::{types::CheckpointConfStatus, DbError};
+use strata_db_types::DbError;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
@@ -28,6 +28,7 @@ impl FcmState {
     pub(crate) fn cur_ol_state(&self) -> Arc<OLState> {
         self.inner_state.cur_olstate.clone()
     }
+
     /// Gets the most recently finalized epoch, even if it's one that we haven't
     /// accepted as a new base yet due to missing intermediary blocks.
     fn get_most_recently_finalized_epoch(&self) -> &EpochCommitment {
@@ -213,22 +214,11 @@ pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmSt
         let _ = sleep(time::Duration::from_secs(1)).await;
     };
 
-    let csm_finalized_epoch = storage
-        .ol_state()
-        .get_latest_toplevel_ol_state_async()
-        .await?
-        .map(|(_, ols)| *ols.previous_epoch())
+    let finalized_epoch = fcm_ctx
+        .csm_monitor()
+        .get_current()
+        .last_finalized_epoch
         .unwrap_or(EpochCommitment::new(0, 0, genesis_blkid));
-    // Special case for null previous epoch. Because null epoch has last tip id Buf32::zero() which
-    // won't be in the db
-    let csm_finalized_epoch = if csm_finalized_epoch.is_null() {
-        EpochCommitment::new(0, 0, genesis_blkid)
-    } else {
-        csm_finalized_epoch
-    };
-
-    // TODO: correctly calculate finalized epoch
-    let finalized_epoch = csm_finalized_epoch;
 
     debug!(?finalized_epoch, "loading from finalized block...");
 
@@ -250,30 +240,7 @@ pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmSt
     let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
 
     // Actually assemble the forkchoice manager state.
-    let mut fcm = FcmState::new(fcm_ctx, fcm_inner);
-
-    if finalized_epoch != csm_finalized_epoch {
-        // csm is ahead of ol_state
-        // search for all pending checkpoints
-        for epoch in finalized_epoch.epoch()..=csm_finalized_epoch.epoch() {
-            let Some(checkpoint_entry) =
-                // TODO: use new checkpoint type and db(to be done in another ticket)
-                storage.checkpoint().get_checkpoint(epoch as u64).await?
-            else {
-                warn!(%epoch, "missing expected checkpoint entry");
-                continue;
-            };
-            if let CheckpointConfStatus::Finalized(_) = checkpoint_entry.confirmation_status {
-                let commitment = checkpoint_entry
-                    .checkpoint
-                    .batch_info()
-                    .get_epoch_commitment();
-                fcm.attach_epoch_pending_finalization(commitment);
-            }
-        }
-    }
-
-    Ok(fcm)
+    Ok(FcmState::new(fcm_ctx, fcm_inner))
 }
 
 /// Determines the starting chain tip.  For now, this is just the block with the

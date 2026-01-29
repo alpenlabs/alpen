@@ -154,9 +154,16 @@ async fn process_fc_message(
                     *fcm_state.cur_ol_state().last_l1_blkid(),
                 );
 
+                let cur_state = fcm_state.cur_ol_state();
+                let prev_epoch = EpochCommitment::new(
+                    cur_state.cur_epoch().saturating_sub(1),
+                    // TODO(STR-2142): correctly calculate previous epoch terminal info
+                    0,
+                    Buf32::zero().into(),
+                );
                 let status = ChainSyncStatus {
                     tip: fcm_state.cur_best_block(),
-                    prev_epoch: *fcm_state.cur_ol_state().previous_epoch(),
+                    prev_epoch,
                     finalized_epoch: *fcm_state.chain_tracker().finalized_epoch(),
                     // FIXME this is a bit convoluted, could this be simpler?
                     safe_l1: last_l1_blk,
@@ -232,7 +239,7 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
     let exec_ok = match fcm_state.ctx().chain_worker().try_exec_block_blocking(bc) {
         Ok(()) => true,
         Err(err) => {
-            // TODO Need some way to distinguish an invalid block from a exec failure
+            // TODO(STR-2141): Need some way to distinguish an invalid block from a exec failure
             error!(%err, "try_exec_block failed");
             false
         }
@@ -480,7 +487,7 @@ async fn revert_ol_state_to_block(
         .ok_or(Error::MissingBlockChainstate(blkid))?;
     let _ = fcm_state.update_tip_block(*block, new_state).await;
 
-    // FIXME: Rollback the writes on the database that we no longer need.
+    // FIXME(STR-2140): Rollback the writes on the database that we no longer need.
 
     Ok(())
 }

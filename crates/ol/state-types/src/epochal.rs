@@ -17,7 +17,6 @@ impl EpochalState {
         last_l1_block: L1BlockCommitment,
         checkpointed_epoch: EpochCommitment,
         manifests_mmr: Mmr64,
-        previous_epoch: EpochCommitment,
     ) -> Self {
         Self {
             total_ledger_funds,
@@ -25,7 +24,6 @@ impl EpochalState {
             last_l1_block,
             checkpointed_epoch,
             manifests_mmr,
-            previous_epoch,
         }
     }
 
@@ -37,14 +35,6 @@ impl EpochalState {
     /// Sets the current epoch.
     pub fn set_cur_epoch(&mut self, epoch: u32) {
         self.cur_epoch = epoch;
-    }
-
-    pub fn previous_epoch(&self) -> &EpochCommitment {
-        &self.previous_epoch
-    }
-
-    pub fn set_previous_epoch(&mut self, epoch: EpochCommitment) {
-        self.previous_epoch = epoch;
     }
 
     /// Last L1 block ID.

@@ -141,7 +141,8 @@ impl OLBlockManager {
         tip: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
         let blocks = self.get_blocks_at_height_blocking(tip)?;
-        // TODO: determine how to get the canonical block. for not it is just the first one
+        // TODO(STR-2105): determine how to get the canonical block. for now it is just the first
+        // one
         Ok(blocks
             .first()
             .cloned()
@@ -154,7 +155,8 @@ impl OLBlockManager {
         tip: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
         let blocks = self.get_blocks_at_height_async(tip).await?;
-        // TODO: determine how to get the canonical block. for not it is just the first one
+        // TODO(STR-2105): determine how to get the canonical block. for now, it is just the first
+        // one
         Ok(blocks
             .first()
             .cloned()
