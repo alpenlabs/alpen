@@ -3,6 +3,7 @@
 mod batch_builder;
 mod batch_lifecycle;
 mod block_builder;
+mod da_publisher;
 mod ol_chain_tracker;
 #[cfg(test)]
 pub(crate) mod test_utils;
@@ -21,4 +22,5 @@ pub use ol_chain_tracker::{
     build_ol_chain_tracker, init_ol_chain_tracker_state, InboxMessages, OLChainTrackerHandle,
     OLChainTrackerState,
 };
+pub use da_publisher::{DaTracker, EeDaPublisher};
 pub use update_submitter::create_update_submitter_task;

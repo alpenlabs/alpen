@@ -6,6 +6,7 @@ pub mod chain_state;
 pub mod checkpoint;
 pub mod client_state;
 mod config;
+pub mod da_blob;
 pub mod global_mmr;
 mod init;
 mod instrumentation;

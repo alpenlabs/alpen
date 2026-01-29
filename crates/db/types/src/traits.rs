@@ -23,7 +23,10 @@ use zkaleido::ProofReceiptWithMetadata;
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_helpers::MmrAlgorithm,
-    types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry, MempoolTxData},
+    types::{
+        BundledPayloadEntry, CheckpointEntry, DaBlobEntry, DaBlobStatusDb, DaChunkEntry,
+        IntentEntry, L1TxEntry, MempoolTxData,
+    },
     DbError, DbResult,
 };
 
@@ -504,4 +507,68 @@ pub trait MempoolDatabase: Send + Sync + 'static {
     ///
     /// Returns true if the transaction existed and was deleted, false otherwise.
     fn del_tx(&self, txid: OLTxId) -> DbResult<bool>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DA Blob Database Trait
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Database interface for DA blob (chunked envelope) storage.
+///
+/// Stores DA blobs and their associated chunk entries for tracking
+/// chunked publication progress to L1.
+pub trait L1DaBlobDatabase: Send + Sync + 'static {
+    // ─────────────────────────────────────────────────────────────────────────
+    // Blob operations
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Stores a DA blob entry.
+    ///
+    /// The blob_id is used as the primary key.
+    fn put_da_blob(&self, blob_id: &Buf32, entry: DaBlobEntry) -> DbResult<()>;
+
+    /// Retrieves a DA blob entry by its ID.
+    fn get_da_blob(&self, blob_id: &Buf32) -> DbResult<Option<DaBlobEntry>>;
+
+    /// Updates the status of a DA blob.
+    fn update_da_blob_status(&self, blob_id: &Buf32, status: DaBlobStatusDb) -> DbResult<()>;
+
+    /// Deletes a DA blob entry.
+    ///
+    /// Returns true if the blob existed and was deleted, false otherwise.
+    fn del_da_blob(&self, blob_id: &Buf32) -> DbResult<bool>;
+
+    /// Gets all pending DA blobs (status == Pending or CommitConfirmed).
+    fn get_pending_da_blobs(&self) -> DbResult<Vec<DaBlobEntry>>;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Chunk operations
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Stores a DA chunk entry at the given index.
+    fn put_da_chunk(&self, idx: u64, entry: DaChunkEntry) -> DbResult<()>;
+
+    /// Retrieves a DA chunk entry by its index.
+    fn get_da_chunk(&self, idx: u64) -> DbResult<Option<DaChunkEntry>>;
+
+    /// Gets the next available chunk index.
+    fn get_next_da_chunk_idx(&self) -> DbResult<u64>;
+
+    /// Deletes a DA chunk entry.
+    ///
+    /// Returns true if the chunk existed and was deleted, false otherwise.
+    fn del_da_chunk(&self, idx: u64) -> DbResult<bool>;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Cross-blob linking
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Stores the last chunk wtxid for a given tag (for cross-blob linking).
+    ///
+    /// This allows the next blob with the same tag to reference the previous
+    /// blob's tail chunk.
+    fn put_da_last_chunk_wtxid(&self, tag: [u8; 4], wtxid: [u8; 32]) -> DbResult<()>;
+
+    /// Gets the last chunk wtxid for a given tag.
+    fn get_da_last_chunk_wtxid(&self, tag: [u8; 4]) -> DbResult<Option<[u8; 32]>>;
 }

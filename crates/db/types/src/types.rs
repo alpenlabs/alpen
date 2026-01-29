@@ -344,6 +344,149 @@ impl MempoolTxData {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// DA Blob Types (for chunked envelope publication)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Maximum number of chunks per DA blob.
+pub const MAX_DA_CHUNKS: u16 = 31;
+
+/// Internal status for DA blob publication progress.
+///
+/// Status progression: Pending → CommitConfirmed → AllRevealsConfirmed → Finalized
+#[derive(
+    Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
+)]
+pub enum DaBlobStatusDb {
+    /// Transactions constructed, commit not yet confirmed.
+    Pending,
+    /// Commit tx confirmed, reveals being processed.
+    CommitConfirmed {
+        /// Number of confirmed reveals.
+        reveals_confirmed: u16,
+    },
+    /// All reveal txs have at least 1 confirmation.
+    AllRevealsConfirmed,
+    /// All transactions finalized (sufficient confirmation depth).
+    Finalized,
+    /// Failed, requires manual intervention.
+    Failed(String),
+}
+
+/// Entry for a DA blob stored in the database.
+///
+/// Tracks the overall blob publication state including all associated chunks.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+pub struct DaBlobEntry {
+    /// Caller-provided blob identifier.
+    pub blob_id: Buf32,
+    /// SHA256 hash of the blob content.
+    pub blob_hash: [u8; 32],
+    /// Original blob size in bytes.
+    pub blob_size: u64,
+    /// Total number of chunks.
+    pub total_chunks: u16,
+    /// OP_RETURN tag bytes (4 bytes).
+    pub tag: [u8; 4],
+    /// Current publication status.
+    pub status: DaBlobStatusDb,
+    /// Indices of associated DaChunkEntry records.
+    pub da_chunk_indices: Vec<u64>,
+    /// Commit transaction ID.
+    pub commit_txid: Buf32,
+    /// Wtxid of the last chunk (for cross-blob linking).
+    pub last_chunk_wtxid: [u8; 32],
+    /// Number of retry attempts.
+    pub retry_count: u8,
+    /// Last error message if failed.
+    pub last_error: Option<String>,
+}
+
+impl DaBlobEntry {
+    /// Creates a new DA blob entry in pending status.
+    pub fn new_pending(
+        blob_id: Buf32,
+        blob_hash: [u8; 32],
+        blob_size: u64,
+        total_chunks: u16,
+        tag: [u8; 4],
+        commit_txid: Buf32,
+    ) -> Self {
+        Self {
+            blob_id,
+            blob_hash,
+            blob_size,
+            total_chunks,
+            tag,
+            status: DaBlobStatusDb::Pending,
+            da_chunk_indices: Vec::with_capacity(total_chunks as usize),
+            commit_txid,
+            last_chunk_wtxid: [0u8; 32],
+            retry_count: 0,
+            last_error: None,
+        }
+    }
+}
+
+/// Entry for a single chunk within a DA blob.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+pub struct DaChunkEntry {
+    /// Parent blob identifier.
+    pub blob_id: Buf32,
+    /// Zero-based chunk index.
+    pub chunk_index: u16,
+    /// Total number of chunks in the parent blob.
+    pub total_chunks: u16,
+    /// SHA256 hash of the parent blob.
+    pub payload_hash: [u8; 32],
+    /// Wtxid of the previous chunk (or zeros for first chunk).
+    pub prev_chunk_wtxid: [u8; 32],
+    /// Wtxid of this chunk's reveal transaction (set after broadcast).
+    pub reveal_wtxid: Option<[u8; 32]>,
+    /// Txid of the commit transaction output this chunk spends.
+    pub commit_txid: Buf32,
+    /// Txid of the reveal transaction.
+    pub reveal_txid: Buf32,
+    /// Current status of this chunk.
+    pub status: L1BundleStatus,
+    /// Block height at which the reveal was confirmed (if confirmed).
+    pub confirmed_height: Option<u64>,
+}
+
+impl DaChunkEntry {
+    /// Creates a new chunk entry in unsigned status.
+    pub fn new_unsigned(
+        blob_id: Buf32,
+        chunk_index: u16,
+        total_chunks: u16,
+        payload_hash: [u8; 32],
+        prev_chunk_wtxid: [u8; 32],
+        commit_txid: Buf32,
+        reveal_txid: Buf32,
+    ) -> Self {
+        Self {
+            blob_id,
+            chunk_index,
+            total_chunks,
+            payload_hash,
+            prev_chunk_wtxid,
+            reveal_wtxid: None,
+            commit_txid,
+            reveal_txid,
+            status: L1BundleStatus::Unsigned,
+            confirmed_height: None,
+        }
+    }
+
+    /// Returns true if this chunk is confirmed.
+    pub fn is_confirmed(&self) -> bool {
+        matches!(
+            self.status,
+            L1BundleStatus::Confirmed | L1BundleStatus::Finalized
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json;

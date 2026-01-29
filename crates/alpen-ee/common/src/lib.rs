@@ -6,7 +6,7 @@ mod utils;
 
 #[cfg(feature = "test-utils")]
 pub use traits::{
-    da::MockBatchDaProvider,
+    da::{MockBatchDaProvider, MockChunkedBlobPublisher},
     ol_client::{MockOLClient, MockSequencerOLClient},
     prover::MockBatchProver,
     storage::{
@@ -15,7 +15,7 @@ pub use traits::{
     },
 };
 pub use traits::{
-    da::{BatchDaProvider, DaStatus},
+    da::{BatchDaProvider, ChunkedBlobPublisher, ChunkedBlobStatus, DaStatus},
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
@@ -34,6 +34,11 @@ pub use types::{
     chunk::{Chunk, ChunkId, ChunkStatus},
     consensus_heads::ConsensusHeads,
     ee_account_state::EeAccountStateAtEpoch,
+    ee_da::{
+        DaError, EeDaBlobManifest, DEFAULT_DA_FINALIZATION_DEPTH, EE_DA_MAX_CHUNK_PAYLOAD,
+        EE_DA_MAX_CHUNKS, EE_DA_MAX_PAYLOAD_SIZE, EE_DA_SUBPROTOCOL_ID, EE_DA_TAG, EE_DA_TX_TYPE,
+        MIN_DA_CONFIRMATIONS,
+    },
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     ol_account_epoch_summary::OLEpochSummary,
     ol_chain_status::{OLChainStatus, OLFinalizedStatus},
