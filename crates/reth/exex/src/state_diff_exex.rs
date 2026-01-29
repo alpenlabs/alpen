@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use alloy_rpc_types::BlockNumHash;
 use alpen_reth_db::StateDiffStore;
+use alpen_reth_statediff::BlockStateChanges;
 use futures_util::TryStreamExt;
 use reth_exex::{ExExContext, ExExEvent};
 use reth_node_api::{FullNodeComponents, NodeTypes};
@@ -43,7 +44,7 @@ impl<
         for (block_hash, outcome) in bundles {
             #[cfg(debug_assertions)]
             assert!(outcome.len() == 1, "should only contain single block");
-            let state_diff = outcome.bundle.into();
+            let state_diff = BlockStateChanges::from(&outcome.bundle);
 
             // fetch current block
             let current_block = self

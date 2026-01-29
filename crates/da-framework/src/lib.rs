@@ -8,7 +8,9 @@ mod register;
 mod traits;
 
 pub use codec::{
-    Codec, CodecError, CodecResult, Decoder, Encoder, Varint, decode_buf_exact, encode_to_vec,
+    Codec, CodecError, CodecResult, Decoder, Encoder, Varint, decode_buf_exact, decode_map,
+    decode_map_with, decode_vec, decode_vec_with, encode_map, encode_map_with, encode_to_vec,
+    encode_vec, encode_vec_with,
 };
 pub use compound::{BitSeqReader, BitSeqWriter, Bitmap, CompoundMember};
 pub use counter::{CounterScheme, DaCounter, DaCounterBuilder, counter_schemes};

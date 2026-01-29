@@ -1338,6 +1338,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types",
  "alpen-reth-db",
+ "alpen-reth-statediff",
  "eyre",
  "futures-util",
  "reth-chainspec",
@@ -1450,11 +1451,14 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "alpen-chainspec",
+ "bincode",
  "eyre",
  "revm",
  "revm-primitives",
  "serde",
  "serde_json",
+ "strata-codec",
+ "strata-da-framework",
  "strata-mpt",
  "thiserror 2.0.18",
 ]

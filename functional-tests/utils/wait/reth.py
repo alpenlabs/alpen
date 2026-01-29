@@ -32,7 +32,7 @@ class RethWaiter(RpcWaiter):
 
     def wait_until_state_diff_at_blockhash(self, blockhash, timeout: None | int = None):
         return self._wait_until_with_value(
-            lambda: self.rpc_client.strataee_getBlockStateDiff(blockhash),
+            lambda: self.rpc_client.strataee_getStateDiffForBlock(blockhash),
             lambda value: value is not None,
             error_with="Finding non empty statediff for blockhash {blockhash} timed out",
             timeout=timeout or self.timeout,
