@@ -14882,6 +14882,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "ssz",
+ "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
+ "strata-db-types",
+ "strata-ol-chain-types-new",
+ "strata-primitives",
+ "strata-service",
+ "strata-status",
+ "strata-storage",
+ "strata-tasks",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
