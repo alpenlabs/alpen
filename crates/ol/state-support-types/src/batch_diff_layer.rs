@@ -199,7 +199,8 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .map(|b| b.ledger().new_accounts().len() as u32)
             .sum();
         let base_serial: u32 = self.base.next_account_serial().into();
-        AccountSerial::from(base_serial + total_new_accounts)
+        AccountSerial::try_from(base_serial + total_new_accounts)
+            .expect("acctsys: account serial out of varint range")
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
@@ -357,7 +358,8 @@ mod tests {
             BitcoinAmount::from_sat(5000),
             AccountTypeState::Snark(snark_state2),
         );
-        let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
+        let serial2 = AccountSerial::try_from(SYSTEM_RESERVED_ACCTS + 1)
+            .expect("serial is within varint bounds");
         batch2
             .ledger_mut()
             .create_account_from_data(account_id, new_acct2, serial2);
@@ -395,7 +397,8 @@ mod tests {
             BitcoinAmount::from_sat(2000),
             AccountTypeState::Snark(snark_state2),
         );
-        let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
+        let serial2 = AccountSerial::try_from(SYSTEM_RESERVED_ACCTS + 1)
+            .expect("serial is within varint bounds");
         batch2
             .ledger_mut()
             .create_account_from_data(account_id_2, new_acct2, serial2);

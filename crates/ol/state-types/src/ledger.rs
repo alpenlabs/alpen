@@ -45,7 +45,8 @@ impl TsnlLedgerAccountsTable {
     }
 
     pub(crate) fn next_avail_serial(&self) -> AccountSerial {
-        AccountSerial::from(self.serials.len() as u32)
+        AccountSerial::try_from(self.serials.len() as u32)
+            .expect("acctsys: account serial out of varint range")
     }
 
     fn get_acct_entry_idx(&self, id: &AccountId) -> Option<usize> {
@@ -117,7 +118,7 @@ impl TsnlLedgerAccountsTable {
 
     /// Gets the account ID corresponding to a serial.
     pub(crate) fn get_serial_acct_id(&self, serial: AccountSerial) -> Option<&AccountId> {
-        self.serials.get(*serial.inner() as usize)
+        self.serials.get(serial.value() as usize)
     }
 
     /// Calculates the total funds across all accounts in the ledger.
@@ -155,6 +156,10 @@ mod tests {
         OLAccountState::new(serial, balance, OLAccountTypeState::Empty)
     }
 
+    fn serial_from_u32(value: u32) -> AccountSerial {
+        AccountSerial::try_from(value).expect("serial is within varint bounds")
+    }
+
     // Helper function to create test account IDs
     fn test_account_id(n: u8) -> AccountId {
         let mut bytes = [0u8; 32];
@@ -180,7 +185,8 @@ mod tests {
         // Verify next available serial is correct
         assert_eq!(
             table.next_avail_serial(),
-            AccountSerial::from(SYSTEM_RESERVED_ACCTS)
+            AccountSerial::try_from(SYSTEM_RESERVED_ACCTS)
+                .expect("acctsys: account serial out of varint range")
         );
     }
 
@@ -322,7 +328,7 @@ mod tests {
         assert!(state.is_none());
 
         // Try to get account ID for non-existent serial
-        let serial = AccountSerial::from(1000);
+        let serial = serial_from_u32(1000);
         let serial_account_id = table.get_serial_acct_id(serial);
         assert!(serial_account_id.is_none());
     }
@@ -336,7 +342,7 @@ mod tests {
 
         for i in 0..10 {
             let serial = table.next_avail_serial();
-            assert_eq!(serial, AccountSerial::from(expected_serial));
+            assert_eq!(serial, serial_from_u32(expected_serial));
 
             let account_id = test_account_id(i);
             let account_state =
@@ -347,10 +353,7 @@ mod tests {
         }
 
         // Verify final serial is correct
-        assert_eq!(
-            table.next_avail_serial(),
-            AccountSerial::from(expected_serial)
-        );
+        assert_eq!(table.next_avail_serial(), serial_from_u32(expected_serial));
     }
 
     #[test]
@@ -360,7 +363,7 @@ mod tests {
 
         // Create account with wrong serial (should panic)
         let account_id = test_account_id(1);
-        let wrong_serial = AccountSerial::from(999); // Wrong serial
+        let wrong_serial = serial_from_u32(999); // Wrong serial
         let account_state = create_empty_account_state(wrong_serial, BitcoinAmount::from_sat(1000));
 
         // This should panic
@@ -438,7 +441,7 @@ mod tests {
 
         // Test system reserved serials (should all be zero)
         for i in 0..SYSTEM_RESERVED_ACCTS {
-            let serial = AccountSerial::from(i);
+            let serial = serial_from_u32(i);
             let account_id = table.get_serial_acct_id(serial);
             assert!(account_id.is_some());
             assert_eq!(*account_id.unwrap(), AccountId::zero());
@@ -456,7 +459,7 @@ mod tests {
         assert_eq!(*retrieved_id.unwrap(), account_id);
 
         // Test out-of-bounds serial
-        let out_of_bounds = AccountSerial::from(1000);
+        let out_of_bounds = serial_from_u32(1000);
         assert!(table.get_serial_acct_id(out_of_bounds).is_none());
     }
 

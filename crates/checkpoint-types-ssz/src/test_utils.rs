@@ -1,11 +1,9 @@
 //! Test utilities and proptest strategies for checkpoint types.
 
 use proptest::prelude::*;
-use strata_identifiers::{
-    AccountSerial,
-    test_utils::{
-        buf64_strategy, epoch_strategy, fixed_bytes_32_strategy, ol_block_commitment_strategy,
-    },
+use strata_identifiers::test_utils::{
+    account_serial_strategy, buf64_strategy, epoch_strategy, fixed_bytes_32_strategy,
+    ol_block_commitment_strategy,
 };
 
 use crate::{
@@ -39,7 +37,7 @@ fn proof_strategy() -> impl Strategy<Value = Vec<u8>> {
 fn ol_logs_strategy() -> impl Strategy<Value = Vec<crate::OLLog>> {
     prop::collection::vec(
         (
-            any::<u32>().prop_map(AccountSerial::from),
+            account_serial_strategy(),
             prop::collection::vec(any::<u8>(), 0..=MAX_LOG_PAYLOAD_BYTES),
         )
             .prop_map(|(account_serial, payload)| crate::OLLog::new(account_serial, payload)),

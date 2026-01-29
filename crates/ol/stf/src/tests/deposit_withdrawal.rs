@@ -229,7 +229,7 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     for log in logs {
         // Check if it's a withdrawal intent log (from the bridge gateway)
-        if log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL
+        if log.account_serial() == *BRIDGE_GATEWAY_ACCT_SERIAL
             && let Ok(withdrawal_log) = strata_codec::decode_buf_exact::<
                 strata_ol_chain_types_new::SimpleWithdrawalIntentLogData,
             >(log.payload())

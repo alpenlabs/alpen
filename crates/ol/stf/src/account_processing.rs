@@ -134,7 +134,7 @@ fn handle_bridge_gateway_message<S: IStateAccessor>(
 
     // Encode the log data and then just emit it.
     let encoded_log = encode_to_vec(&log_data)?;
-    let log = OLLog::new(BRIDGE_GATEWAY_ACCT_SERIAL, encoded_log);
+    let log = OLLog::new(*BRIDGE_GATEWAY_ACCT_SERIAL, encoded_log);
     context.emit_log(log);
 
     Ok(())

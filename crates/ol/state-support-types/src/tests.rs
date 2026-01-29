@@ -1076,8 +1076,8 @@ fn test_message_payload_size_limit() {
 #[test]
 fn test_early_serial_gap_detection() {
     let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![
-        AccountSerial::new(1),
-        AccountSerial::new(3),
+        AccountSerial::new(1).expect("valid serial"),
+        AccountSerial::new(3).expect("valid serial"),
     ]));
     let account_id_1 = test_account_id(1);
     let account_id_2 = test_account_id(2);
@@ -1100,8 +1100,9 @@ fn test_early_serial_gap_detection() {
 
 #[test]
 fn test_expected_first_serial_mismatch() {
-    let mut da_state =
-        DaAccumulatingState::new(TestState::new_with_serials(vec![AccountSerial::new(5)]));
+    let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![
+        AccountSerial::new(5).expect("valid serial"),
+    ]));
     let account_id = test_account_id(1);
     let snark_state = TestSnarkState::new(vec![]);
     let new_acct = NewAccountData::new(

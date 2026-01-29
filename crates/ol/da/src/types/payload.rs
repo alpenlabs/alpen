@@ -349,7 +349,7 @@ mod tests {
             ),
         );
 
-        let result = validate_ledger_entries(AccountSerial::from(1u32), &diff);
+        let result = validate_ledger_entries(AccountSerial::try_from(1u32).unwrap(), &diff);
         assert!(matches!(
             result,
             Err(DaError::InvalidLedgerDiff("duplicate new account id"))
