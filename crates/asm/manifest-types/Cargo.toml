@@ -12,6 +12,7 @@ ssz_derive.workspace = true
 ssz_primitives.workspace = true
 ssz_types = { workspace = true, features = ["serde"] }
 strata-codec.workspace = true
+strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
 thiserror.workspace = true

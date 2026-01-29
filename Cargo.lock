@@ -13755,6 +13755,7 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
+ "strata-crypto",
  "strata-identifiers",
  "strata-msg-fmt",
  "strata-test-utils-ssz",
@@ -15069,6 +15070,24 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-checkpoint-types",
  "strata-proofimpl-cl-stf",
+ "zkaleido",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
+name = "strata-proofimpl-checkpoint-new"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_primitives",
+ "strata-asm-manifest-types",
+ "strata-checkpoint-types-ssz",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-chain-types-new",
+ "strata-ol-state-types",
+ "strata-ol-stf",
  "zkaleido",
  "zkaleido-native-adapter",
 ]

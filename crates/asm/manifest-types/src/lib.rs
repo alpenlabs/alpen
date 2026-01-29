@@ -22,6 +22,7 @@ mod ssz_generated {
 
 pub use errors::*;
 pub use log::*;
+pub use manifest::compute_asm_manifests_hash;
 pub use payloads::*;
 // Re-export generated SSZ types
 pub use ssz_generated::ssz::{

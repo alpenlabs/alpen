@@ -63,11 +63,11 @@ pub fn build_empty_chain(
     state: &mut OLState,
     num_blocks: usize,
     slots_per_epoch: u64,
-) -> ExecResult<Vec<OLBlockHeader>> {
-    let mut headers = Vec::with_capacity(num_blocks);
+) -> ExecResult<Vec<CompletedBlock>> {
+    let mut blocks = Vec::with_capacity(num_blocks);
 
     if num_blocks == 0 {
-        return Ok(headers);
+        return Ok(blocks);
     }
 
     // Execute genesis block (always terminal)
@@ -80,14 +80,14 @@ pub fn build_empty_chain(
     );
     let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
     let genesis = execute_block(state, &genesis_info, None, genesis_components)?;
-    headers.push(genesis.header().clone());
+    blocks.push(genesis);
 
     // Execute subsequent blocks
     for i in 1..num_blocks {
         let slot = i as u64;
         // With genesis as terminal: epoch 0 is just genesis, then normal epochs
         let epoch = ((slot - 1) / slots_per_epoch + 1) as u32;
-        let parent = &headers[i - 1];
+        let parent = blocks[i - 1].header();
         let timestamp = 1000000 + (i as u64 * 1000);
         let block_info = BlockInfo::new(timestamp, slot, epoch);
 
@@ -109,10 +109,24 @@ pub fn build_empty_chain(
         };
 
         let block = execute_block(state, &block_info, Some(parent), components)?;
-        headers.push(block.header().clone());
+        blocks.push(block);
     }
 
-    Ok(headers)
+    Ok(blocks)
+}
+
+/// Build and execute a chain of empty blocks starting from genesis.
+///
+/// Returns the headers of all blocks in the chain.
+pub fn build_empty_chain_headers(
+    state: &mut OLState,
+    num_blocks: usize,
+    slots_per_epoch: u64,
+) -> ExecResult<Vec<OLBlockHeader>> {
+    Ok(build_empty_chain(state, num_blocks, slots_per_epoch)?
+        .into_iter()
+        .map(|b| b.into_header())
+        .collect())
 }
 
 /// Create test account IDs with predictable values.
@@ -309,9 +323,16 @@ pub fn get_test_proof(variant: u8) -> Vec<u8> {
 
 /// Helper to track inbox MMR proofs in parallel with the actual STF inbox MMR.
 /// This allows generating valid MMR proofs for testing by maintaining proofs as leaves are added.
+#[derive(Debug)]
 pub struct InboxMmrTracker {
     mmr: Mmr64,
     proofs: Vec<MerkleProof<[u8; 32]>>,
+}
+
+impl Default for InboxMmrTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InboxMmrTracker {
@@ -358,9 +379,16 @@ impl InboxMmrTracker {
 }
 
 /// Tracks ASM manifests in a parallel MMR to generate proofs for ledger references.
+#[derive(Debug)]
 pub struct ManifestMmrTracker {
     mmr: Mmr64,
     proofs: Vec<MerkleProof<[u8; 32]>>,
+}
+
+impl Default for ManifestMmrTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ManifestMmrTracker {
@@ -452,6 +480,7 @@ pub fn execute_tx_in_block(
 /// Builder pattern for creating SnarkAccountUpdate transactions.
 /// Captures the starting state and builds toward the resulting state,
 /// ensuring correct sequence numbers and message indices.
+#[derive(Debug)]
 pub struct SnarkUpdateBuilder {
     // Captured from old state at construction
     seq_no: u64,
