@@ -1,0 +1,26 @@
+[package]
+name = "strata-proofimpl-checkpoint-new"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+ssz.workspace = true
+ssz_primitives.workspace = true
+strata-asm-manifest-types.workspace = true
+strata-checkpoint-types-ssz.workspace = true
+strata-crypto.workspace = true
+strata-ledger-types.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
+zkaleido.workspace = true
+
+[target.'cfg(not(target_os = "zkvm"))'.dependencies]
+zkaleido-native-adapter.workspace = true
+
+[dev-dependencies]
+strata-ol-stf = { workspace = true, features = ["test-utils"] }
+strata-identifiers.workspace = true

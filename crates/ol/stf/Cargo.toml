@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ssz_primitives = { workspace = true, optional = true }
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
@@ -16,14 +17,18 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-da.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-state-types.workspace = true
+strata-predicate = { workspace = true, optional = true }
 strata-snark-acct-sys.workspace = true
 strata-snark-acct-types.workspace = true
 
 thiserror.workspace = true
 
 [dev-dependencies]
-ssz_primitives.workspace = true
 strata-predicate.workspace = true
+ssz_primitives.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+test-utils = ["dep:strata-predicate", "dep:ssz_primitives"]

@@ -4,7 +4,7 @@ use ssz::Encode;
 use ssz_types::VariableList;
 use strata_asm_common::AsmManifest;
 use strata_crypto::hash;
-use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockId, Slot};
+use strata_identifiers::{Buf32, Buf64, Epoch, OLBlockCommitment, OLBlockId, Slot};
 
 use crate::{
     block_flags::BlockFlags,
@@ -136,6 +136,11 @@ impl OLBlockHeader {
         let encoded = self.as_ssz_bytes();
         let hash = hash::raw(&encoded);
         OLBlockId::from(hash)
+    }
+
+    /// Computes the block commitment.
+    pub fn compute_block_commitment(&self) -> OLBlockCommitment {
+        OLBlockCommitment::new(self.slot(), self.compute_blkid())
     }
 }
 

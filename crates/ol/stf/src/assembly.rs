@@ -236,6 +236,10 @@ impl CompletedBlock {
         &self.header
     }
 
+    pub fn into_header(self) -> OLBlockHeader {
+        self.header
+    }
+
     pub fn body(&self) -> &OLBlockBody {
         &self.body
     }
