@@ -14,34 +14,20 @@ use strata_snark_acct_runtime::*;
 use crate::{
     commit::PendingCommit,
     exec_processing::process_segments,
-    verification_state_new::{EeVerificationInput, EeVerificationState},
+    verification_state::{EeVerificationInput, EeVerificationState},
 };
 
-/// EE-specific snark account program implementation.
-///
-/// This program implements [`SnarkAccountProgram`] for core update processing.
-/// For verification within proofs, it also implements
-/// [`SnarkAccountProgramVerification`] with [`EeVerificationInput`] as the
-/// `VInput` type.
+/// Snark account program for execution environments.
 ///
 /// The type parameter `E` is the execution environment type used for block
 /// execution during verification.
-///
-/// For the unconditional path (state reconstruction), use
-/// [`crate::program_processing::apply_update_unconditionally`] which only
-/// requires the base [`SnarkAccountProgram`] trait.
-///
-/// For the verification path (within SNARK proofs), use
-/// [`crate::program_processing::verify_and_apply_update`] with an
-/// [`EeVerificationInput`] containing the execution environment and private
-/// input data.
 #[derive(Debug)]
 pub struct EeSnarkAccountProgram<E: ExecutionEnvironment> {
     _marker: std::marker::PhantomData<E>,
 }
 
 impl<E: ExecutionEnvironment> EeSnarkAccountProgram<E> {
-    /// Creates a new EE snark account program.
+    /// Creates a new instance.
     pub fn new() -> Self {
         Self {
             _marker: std::marker::PhantomData,
@@ -113,6 +99,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
         if !coinput.is_empty() {
             return Err(ProgramError::MalformedCoinput);
         }
+
         Ok(())
     }
 
@@ -122,8 +109,13 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
         mut vstate: Self::VState<'a>,
         extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
-        // Add pending commit if tip changed.
-        if *extra_data.new_tip_blkid() != state.last_exec_blkid() {
+        // Add pending commit if tip changed and it's not the tip commit already.
+        let is_ntip_changed = *extra_data.new_tip_blkid() != state.last_exec_blkid();
+        let is_ntip_committed = vstate
+            .pending_commits()
+            .last()
+            .is_some_and(|pc| pc.new_tip_exec_blkid() == *extra_data.new_tip_blkid());
+        if is_ntip_changed && !is_ntip_committed {
             vstate.add_pending_commit(PendingCommit::new(*extra_data.new_tip_blkid()));
         }
 
@@ -164,12 +156,12 @@ pub fn apply_decoded_message(
         }
 
         DecodedEeMessageData::SubjTransfer(_data) => {
-            // TODO: Handle subject transfers.
+            // TODO handle subject transfers
         }
 
         DecodedEeMessageData::Commit(_data) => {
             // Just ignore this one for now because we're not handling it.
-            // TODO: Improve handling.
+            // TODO support this
         }
     }
 
@@ -177,6 +169,7 @@ pub fn apply_decoded_message(
 }
 
 /// Processes an input message, updating state accordingly.
+// why is this a separate function?
 pub fn process_ee_message(
     state: &mut EeAccountState,
     msg: InputMessage<DecodedEeMessageData>,

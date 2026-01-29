@@ -1,9 +1,6 @@
 //! Error types used by the runtime.
 
-use std::{
-    error::Error,
-    fmt::{Debug, Display},
-};
+use std::{error::Error, fmt::Debug};
 
 use strata_codec::CodecError;
 use thiserror::Error;

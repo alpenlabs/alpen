@@ -10,7 +10,7 @@ use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
 
-use crate::commit::PendingCommit;
+use crate::{commit::PendingCommit, private_input::SharedPrivateInput};
 
 /// Verification input for EE accounts.
 ///
@@ -23,7 +23,7 @@ use crate::commit::PendingCommit;
 #[expect(missing_debug_implementations, reason = "E may not implement Debug")]
 pub struct EeVerificationInput<'a, E: ExecutionEnvironment> {
     /// Shared private input data.
-    pub shared_private: &'a crate::private_input::SharedPrivateInput,
+    pub shared_private: &'a SharedPrivateInput,
 
     /// Execution environment for block execution.
     pub ee: &'a E,
@@ -31,7 +31,7 @@ pub struct EeVerificationInput<'a, E: ExecutionEnvironment> {
 
 impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
     /// Creates new verification input.
-    pub fn new(shared_private: &'a crate::private_input::SharedPrivateInput, ee: &'a E) -> Self {
+    pub fn new(shared_private: &'a SharedPrivateInput, ee: &'a E) -> Self {
         Self { shared_private, ee }
     }
 }
@@ -194,7 +194,8 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Final checks to see if there's anything in the verification state that
     /// were supposed to have been dealt with but weren't.
     pub(crate) fn check_obligations(&self) -> EnvResult<()> {
-        // TODO
+        // TODO check these obligations!  this is all being refactored for
+        // chunk/multiproof updates soon so this is fine to be a no-op
         Ok(())
     }
 

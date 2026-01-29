@@ -1,6 +1,7 @@
 use strata_ee_acct_types::CommitChainSegment;
 
 /// Additional private input accessible to verification fns.
+// TODO convert to rkyv
 #[derive(Clone, Debug)]
 pub struct SharedPrivateInput {
     /// Implicit commits that we're processing.

@@ -15567,6 +15567,7 @@ dependencies = [
  "ssz_derive",
  "strata-acct-types",
  "strata-codec",
+ "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
 
