@@ -1,18 +1,13 @@
-use std::{
-    panic::{catch_unwind, AssertUnwindSafe},
-    sync::Arc,
-};
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_ol_chain_types::{L2Block, L2BlockHeader};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::RollupParams;
 use strata_primitives::buf::Buf32;
 use zkaleido::{
-    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
-    ZkVmInputResult, ZkVmProgram, ZkVmResult,
+    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmInputResult,
+    ZkVmProgram, ZkVmResult,
 };
-use zkaleido_native_adapter::{NativeHost, NativeMachine};
+use zkaleido_native_adapter::NativeHost;
 
 use crate::process_cl_stf;
 
@@ -74,15 +69,9 @@ impl ZkVmProgram for ClStfProgram {
 impl ClStfProgram {
     pub fn native_host() -> NativeHost {
         const MOCK_VK: [u32; 8] = [0u32; 8];
-        NativeHost {
-            process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
-                catch_unwind(AssertUnwindSafe(|| {
-                    process_cl_stf(zkvm, &MOCK_VK);
-                }))
-                .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
-                Ok(())
-            })),
-        }
+        NativeHost::new(move |zkvm| {
+            process_cl_stf(zkvm, &MOCK_VK);
+        })
     }
 
     // Add this new convenience method
