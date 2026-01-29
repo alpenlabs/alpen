@@ -9,46 +9,22 @@
 //! even though both must live in [`ChainWorkerServiceState`] due to the current
 //! service framework design.
 
-use std::sync::Arc;
-
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::verify_block;
-use strata_params::Params;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
-use strata_status::StatusChannel;
-use tokio::runtime::Handle;
 use tracing::*;
 
 use crate::{
+    ChainWorkerContextImpl,
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
     traits::ChainWorkerContext,
 };
-
-/// Static dependencies for the chain worker.
-///
-/// These are initialized once and don't change during the worker's lifetime.
-/// Ideally these would live in the Service struct, but the current framework
-/// requires all dependencies to be passed through State.
-struct ChainWorkerDeps<W> {
-    /// Parameters for the chain.
-    #[expect(unused, reason = "params will be used for chain configuration")]
-    params: Arc<Params>,
-
-    /// Context for the worker (database access layer).
-    context: W,
-
-    /// Status channel for the worker.
-    status_channel: StatusChannel,
-
-    /// Runtime handle for the worker.
-    runtime_handle: Handle,
-}
 
 /// Mutable state for the chain worker.
 ///
@@ -81,38 +57,23 @@ impl Default for ChainWorkerMutableState {
 /// This combines static dependencies with mutable state. The separation is
 /// internal to make the code clearer about what is actual "state" vs what
 /// are just dependencies needed for operations.
-///
-/// NOTE: Ideally, the dependencies (`ChainWorkerDeps`) would live in the Service
-/// struct rather than State, with only `ChainWorkerMutableState` here. However,
-/// the current service framework doesn't support this pattern. This should be
-/// refactored when the framework is updated.
 #[expect(
     missing_debug_implementations,
     reason = "Some inner types don't have Debug impl"
 )]
-pub struct ChainWorkerServiceState<W> {
+pub struct ChainWorkerServiceState {
     /// Static dependencies.
-    deps: ChainWorkerDeps<W>,
+    ctx: ChainWorkerContextImpl,
 
     /// Mutable state.
     state: ChainWorkerMutableState,
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
+impl ChainWorkerServiceState {
     /// Creates a new chain worker service state.
-    pub fn new(
-        context: W,
-        params: Arc<Params>,
-        status_channel: StatusChannel,
-        runtime_handle: Handle,
-    ) -> Self {
+    pub fn new(ctx: ChainWorkerContextImpl) -> Self {
         Self {
-            deps: ChainWorkerDeps {
-                params,
-                context,
-                status_channel,
-                runtime_handle,
-            },
+            ctx,
             state: ChainWorkerMutableState::default(),
         }
     }
@@ -148,7 +109,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         // First, check if we have an existing chain tip in the database.
         // This allows us to resume from where we left off after a restart,
         // including unfinalized blocks.
-        if let Some(db_tip) = self.deps.context.fetch_chain_tip()? {
+        if let Some(db_tip) = self.ctx.fetch_chain_tip()? {
             info!(slot = db_tip.slot(), %db_tip, "resuming from database chain tip");
             return Ok(db_tip);
         }
@@ -157,13 +118,13 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         info!("waiting until genesis");
 
         let _init_state = self
-            .deps
-            .runtime_handle
-            .block_on(self.deps.status_channel.wait_until_genesis())
+            .ctx
+            .handle()
+            .block_on(self.ctx.status_channel().wait_until_genesis())
             .map_err(|_| WorkerError::ShutdownBeforeGenesis)?;
 
         // Start from genesis block
-        let genesis_block_ids = self.deps.context.fetch_blocks_at_slot(0)?;
+        let genesis_block_ids = self.ctx.fetch_blocks_at_slot(0)?;
         let genesis_blkid = *genesis_block_ids
             .first()
             .ok_or(WorkerError::MissingGenesisBlock)?;
@@ -220,8 +181,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         let blkid = block_commitment.blkid();
 
         let block = self
-            .deps
-            .context
+            .ctx
             .fetch_block(blkid)?
             .ok_or(WorkerError::MissingOLBlock(*blkid))?;
 
@@ -238,8 +198,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
             None
         } else {
             Some(
-                self.deps
-                    .context
+                self.ctx
                     .fetch_header(parent_commitment.blkid())?
                     .ok_or(WorkerError::MissingOLBlock(*parent_commitment.blkid()))?,
             )
@@ -260,8 +219,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
     ) -> WorkerResult<OLBlockExecutionOutput> {
         // Fetch parent state
         let parent_state = self
-            .deps
-            .context
+            .ctx
             .fetch_ol_state(parent_commitment)?
             .ok_or(WorkerError::MissingPreState(parent_commitment))?;
 
@@ -313,11 +271,8 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         block_commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
-        self.deps
-            .context
-            .store_block_output(block_commitment, output)?;
-        self.deps
-            .context
+        self.ctx.store_block_output(block_commitment, output)?;
+        self.ctx
             .store_auxiliary_data(block_commitment, output.indexer_writes())?;
         Ok(())
     }
@@ -358,7 +313,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
         );
 
         debug!(?summary, "completed chain epoch");
-        self.deps.context.store_summary(summary)?;
+        self.ctx.store_summary(summary)?;
 
         Ok(())
     }
@@ -371,13 +326,13 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> ChainWorkerServiceState<W> {
 
     /// Finalizes an epoch, merging write batches into finalized state.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        self.deps.context.merge_finalized_epoch(&epoch)?;
+        self.ctx.merge_finalized_epoch(&epoch)?;
         self.state.last_finalized_epoch = Some(epoch);
         Ok(())
     }
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> ServiceState for ChainWorkerServiceState<W> {
+impl ServiceState for ChainWorkerServiceState {
     fn name(&self) -> &str {
         "chain_worker_new"
     }

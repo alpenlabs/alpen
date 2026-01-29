@@ -33,6 +33,9 @@ pub enum DbError {
     #[error("L1 canonical chain is empty")]
     L1CanonicalChainEmpty,
 
+    #[error("OL canonical chain is empty")]
+    OLCanonicalChainEmpty,
+
     #[error("Revert height {0} above chain tip height {0}")]
     L1InvalidRevertHeight(u64, u64),
 

@@ -35,7 +35,7 @@ pub(crate) struct OLRpcServer {
     status_channel: Arc<StatusChannel>,
 
     /// Mempool handle for transaction submission.
-    mempool_handle: MempoolHandle,
+    mempool_handle: Arc<MempoolHandle>,
 }
 
 impl OLRpcServer {
@@ -43,7 +43,7 @@ impl OLRpcServer {
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
-        mempool_handle: MempoolHandle,
+        mempool_handle: Arc<MempoolHandle>,
     ) -> Self {
         Self {
             storage,

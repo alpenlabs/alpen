@@ -293,7 +293,7 @@ mod tests {
         );
 
         let state =
-            CsmWorkerState::new(params.clone(), storage.clone(), status_channel.clone()).unwrap();
+            CsmWorkerState::new(params.clone(), storage.clone(), status_channel.into()).unwrap();
 
         (state, storage)
     }

@@ -89,6 +89,14 @@ impl L2BlockHeader {
         fill_sighash_buf(self, &mut buf).expect("blockasm: compute sighash");
         hash::raw(&buf)
     }
+
+    pub fn slot(&self) -> u64 {
+        self.slot
+    }
+
+    pub fn prev_block(&self) -> L2BlockId {
+        self.prev_block
+    }
 }
 
 impl From<SignedL2BlockHeader> for L2BlockHeader {

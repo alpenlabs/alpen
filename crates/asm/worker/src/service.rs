@@ -125,7 +125,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                 pivot_block.height_u64(),
                 *pivot_block.blkid(),
                 wtxids_root.into(),
-                vec![],
+                vec![], // TODO: this is not supposed to be empty right?
             );
 
             let manifest_hash = genesis_manifest.compute_hash();

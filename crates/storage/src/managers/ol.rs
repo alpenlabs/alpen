@@ -8,6 +8,7 @@ use strata_db_types::{
 };
 use strata_identifiers::{OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
+use strata_primitives::OLBlockCommitment;
 use threadpool::ThreadPool;
 
 use crate::{cache, ops};
@@ -120,6 +121,46 @@ impl OLBlockManager {
     /// Sets the block's verification status. Returns true if the status was updated. Blocking.
     pub fn set_block_status_blocking(&self, id: OLBlockId, status: BlockStatus) -> DbResult<bool> {
         self.ops.set_block_status_blocking(id, status)
+    }
+
+    /// Gets the canonical tip block commitment.
+    pub fn get_canonical_tip_blocking(&self) -> DbResult<Option<OLBlockCommitment>> {
+        let tip = self.get_tip_slot_blocking()?;
+        self.get_canonical_block_at_blocking(tip)
+    }
+
+    /// Gets the canonical tip block commitment.
+    pub async fn get_canonical_tip_async(&self) -> DbResult<Option<OLBlockCommitment>> {
+        let tip = self.get_tip_slot_async().await?;
+        self.get_canonical_block_at_async(tip).await
+    }
+
+    /// Gets the canonical block commitment at given height.
+    pub fn get_canonical_block_at_blocking(
+        &self,
+        tip: Slot,
+    ) -> DbResult<Option<OLBlockCommitment>> {
+        let blocks = self.get_blocks_at_height_blocking(tip)?;
+        // TODO(STR-2105): determine how to get the canonical block. for now it is just the first
+        // one
+        Ok(blocks
+            .first()
+            .cloned()
+            .map(|id| OLBlockCommitment::new(tip, id)))
+    }
+
+    /// Gets the canonical block commitment at given height.
+    pub async fn get_canonical_block_at_async(
+        &self,
+        tip: Slot,
+    ) -> DbResult<Option<OLBlockCommitment>> {
+        let blocks = self.get_blocks_at_height_async(tip).await?;
+        // TODO(STR-2105): determine how to get the canonical block. for now, it is just the first
+        // one
+        Ok(blocks
+            .first()
+            .cloned()
+            .map(|id| OLBlockCommitment::new(tip, id)))
     }
 }
 

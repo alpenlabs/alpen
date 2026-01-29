@@ -26,6 +26,7 @@ impl Service for CsmWorkerService {
         CsmWorkerStatus {
             cur_block: state.last_asm_block,
             last_processed_epoch: state.last_processed_epoch.map(|e| e as u64),
+            last_finalized_epoch: state.cur_state.get_declared_final_epoch(),
         }
     }
 }
