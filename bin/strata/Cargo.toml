@@ -20,6 +20,7 @@ strata-ledger-types.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly.workspace = true
 strata-ol-chain-types-new.workspace = true
+strata-ol-checkpoint.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true

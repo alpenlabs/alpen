@@ -13664,6 +13664,7 @@ dependencies = [
  "strata-node-context",
  "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
+ "strata-ol-checkpoint",
  "strata-ol-mempool",
  "strata-ol-state-types",
  "strata-ol-stf",
