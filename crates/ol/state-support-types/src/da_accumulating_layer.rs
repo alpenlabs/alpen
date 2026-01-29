@@ -10,7 +10,8 @@ use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister, LinearAccumulator,
-    counter_schemes::CtrU64ByU16, encode_to_vec,
+    counter_schemes::{CtrU64ByU16, CtrU64ByUnsignedVarint},
+    encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
@@ -19,8 +20,9 @@ use strata_ledger_types::{
 };
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry,
-    OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff, U16LenList,
+    DaProofStateDiff, GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES,
+    MAX_VK_BYTES, NewAccountEntry, OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff,
+    U16LenList,
 };
 use thiserror::Error;
 
@@ -137,7 +139,16 @@ impl SnarkDelta {
         let mut seq_builder = DaCounterBuilder::<CtrU64ByU16>::from_source(self.base_seq_no);
         seq_builder.set(self.final_seq_no)?;
         let seq_no = seq_builder.into_write()?;
-        let proof_state = DaRegister::compare(&self.base_proof_state, &self.final_proof_state);
+        let inner_state = DaRegister::compare(
+            &self.base_proof_state.inner().inner_state(),
+            &self.final_proof_state.inner().inner_state(),
+        );
+        let mut next_idx_builder = DaCounterBuilder::<CtrU64ByUnsignedVarint>::from_source(
+            self.base_proof_state.inner().next_inbox_msg_idx(),
+        );
+        next_idx_builder.set(self.final_proof_state.inner().next_inbox_msg_idx())?;
+        let next_inbox_msg_idx = next_idx_builder.into_write()?;
+        let proof_state = DaProofStateDiff::new(inner_state, next_inbox_msg_idx);
         Ok(SnarkAccountDiff::new(
             seq_no,
             proof_state,

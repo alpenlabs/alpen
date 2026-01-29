@@ -289,13 +289,9 @@ fn apply_snark_diff<T: IAccountStateMut>(
     diff.seq_no.apply(&mut seq_no, &())?;
     let next_seqno = Seqno::new(seq_no);
 
-    let current_proof_state =
+    let mut next_proof_state =
         DaProofState::new(snark.inner_state_root(), snark.next_inbox_msg_idx());
-    let next_proof_state = diff
-        .proof_state
-        .new_value()
-        .cloned()
-        .unwrap_or(current_proof_state);
+    diff.proof_state.apply(&mut next_proof_state, &())?;
     snark.set_proof_state_directly(
         next_proof_state.inner().inner_state(),
         next_proof_state.inner().next_inbox_msg_idx(),
