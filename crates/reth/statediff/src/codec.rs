@@ -253,11 +253,17 @@ impl SignedU256Delta {
     }
 
     /// Creates a positive delta (balance increase).
+    ///
+    /// Note: Zero magnitude is normalized - the returned delta will have `is_nonnegative() == true`
+    /// regardless, since zero has no meaningful sign.
     pub fn positive(magnitude: U256) -> Self {
         Self::new(true, magnitude)
     }
 
     /// Creates a negative delta (balance decrease).
+    ///
+    /// Note: Zero magnitude is normalized to a nonnegative zero - if `magnitude.is_zero()`,
+    /// the returned delta will have `is_nonnegative() == true` since zero has no meaningful sign.
     pub fn negative(magnitude: U256) -> Self {
         Self::new(false, magnitude)
     }
@@ -267,8 +273,8 @@ impl SignedU256Delta {
         self.magnitude.is_zero()
     }
 
-    /// Returns the sign (true = positive, false = negative).
-    pub fn is_positive(&self) -> bool {
+    /// Returns true if this delta is non-negative (positive or zero).
+    pub fn is_nonnegative(&self) -> bool {
         self.positive
     }
 
@@ -491,7 +497,7 @@ mod tests {
     fn test_signed_u256_delta_zero() {
         let delta = SignedU256Delta::default();
         assert!(delta.is_zero());
-        assert!(delta.is_positive()); // Zero is normalized to positive
+        assert!(delta.is_nonnegative()); // Zero is normalized to positive
 
         let encoded = encode_to_vec(&delta).unwrap();
         assert_eq!(encoded, vec![0x00]); // Single byte for zero
@@ -504,7 +510,7 @@ mod tests {
     fn test_signed_u256_delta_positive_small() {
         let delta = SignedU256Delta::positive(U256::from(100u8));
         assert!(!delta.is_zero());
-        assert!(delta.is_positive());
+        assert!(delta.is_nonnegative());
         assert_eq!(delta.magnitude(), U256::from(100u8));
 
         let encoded = encode_to_vec(&delta).unwrap();
@@ -513,14 +519,14 @@ mod tests {
 
         let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
         assert_eq!(decoded.magnitude(), U256::from(100u8));
-        assert!(decoded.is_positive());
+        assert!(decoded.is_nonnegative());
     }
 
     #[test]
     fn test_signed_u256_delta_negative_small() {
         let delta = SignedU256Delta::negative(U256::from(50u8));
         assert!(!delta.is_zero());
-        assert!(!delta.is_positive());
+        assert!(!delta.is_nonnegative());
         assert_eq!(delta.magnitude(), U256::from(50u8));
 
         let encoded = encode_to_vec(&delta).unwrap();
@@ -529,7 +535,7 @@ mod tests {
 
         let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
         assert_eq!(decoded.magnitude(), U256::from(50u8));
-        assert!(!decoded.is_positive());
+        assert!(!decoded.is_nonnegative());
     }
 
     #[test]
@@ -547,7 +553,7 @@ mod tests {
 
         let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
         assert_eq!(decoded.magnitude(), large);
-        assert!(decoded.is_positive());
+        assert!(decoded.is_nonnegative());
     }
 
     #[test]
@@ -555,7 +561,7 @@ mod tests {
         // Creating a "negative zero" should normalize to positive zero
         let delta = SignedU256Delta::new(false, U256::ZERO);
         assert!(delta.is_zero());
-        assert!(delta.is_positive()); // Normalized
+        assert!(delta.is_nonnegative()); // Normalized
     }
 
     // ==================== CtrU256BySignedU256 Tests ====================
@@ -566,7 +572,7 @@ mod tests {
         let b = U256::from(150u8);
 
         let delta = CtrU256BySignedU256::compare(a, b).unwrap();
-        assert!(delta.is_positive());
+        assert!(delta.is_nonnegative());
         assert_eq!(delta.magnitude(), U256::from(50u8));
     }
 
@@ -576,7 +582,7 @@ mod tests {
         let b = U256::from(100u8);
 
         let delta = CtrU256BySignedU256::compare(a, b).unwrap();
-        assert!(!delta.is_positive());
+        assert!(!delta.is_nonnegative());
         assert_eq!(delta.magnitude(), U256::from(50u8));
     }
 

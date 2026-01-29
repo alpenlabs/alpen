@@ -24,8 +24,13 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
         block = get_latest_eth_block_number(rethrpc)
         self.info(f"Latest reth block={block}")
 
+        # Wait for state diff to be available (race: block may exist before diff is stored)
+        block_info = rethrpc.eth_getBlockByNumber(hex(block), False)
+        block_hash = block_info["hash"]
+        reth_waiter.wait_until_state_diff_at_blockhash(block_hash)
+
         reconstructed_root = rethrpc.strataee_getStateRootByDiffs(block)
-        actual_root = rethrpc.eth_getBlockByNumber(hex(block), False)["stateRoot"]
+        actual_root = block_info["stateRoot"]
         self.info(f"reconstructed state root = {reconstructed_root}")
         self.info(f"actual state root = {actual_root}")
 

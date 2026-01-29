@@ -44,7 +44,7 @@ impl From<&AccountDiff> for AccountDiffSerde {
     fn from(diff: &AccountDiff) -> Self {
         Self {
             balance_delta: diff.balance.diff().map(|d| BalanceDeltaSerde {
-                positive: d.is_positive(),
+                positive: d.is_nonnegative(),
                 magnitude: d.magnitude(),
             }),
             nonce_delta: diff.nonce.diff().map(|v| v.inner()),
@@ -177,7 +177,7 @@ mod tests {
         // Convert back
         let roundtrip: AccountDiff = serde.into();
         let roundtrip_delta = roundtrip.balance.diff().unwrap();
-        assert!(roundtrip_delta.is_positive());
+        assert!(roundtrip_delta.is_nonnegative());
         assert_eq!(roundtrip_delta.magnitude(), U256::from(1000));
         assert_eq!(roundtrip.nonce.diff().map(|v| v.inner()), Some(5));
         assert_eq!(

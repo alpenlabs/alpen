@@ -56,6 +56,32 @@ impl<T> TrackedState<T> {
 /// builder.apply_block(&block2_diff);
 /// let diff = builder.build();
 /// ```
+///
+/// # Limitations
+///
+/// ## No block ordering validation
+///
+/// Currently, [`apply_block`](Self::apply_block) does not validate that blocks are applied
+/// in consecutive order. Callers must ensure blocks are applied sequentially (block N, then
+/// block N+1, etc.). Applying blocks out of order will produce incorrect diffs.
+///
+/// **TODO**: Add block number tracking and validation to reject non-consecutive blocks.
+///
+/// ## No pre-state provider
+///
+/// The builder assumes the first block diff for each account/slot contains the correct
+/// "original" value. If an account is touched in block 5 but not in blocks 1-4, the builder
+/// has no way to know the account's state before block 1.
+///
+/// This works correctly when:
+/// - Building a diff for a single block (original comes from that block's diff)
+/// - All touched accounts/slots appear in at least the first block where they're modified
+///
+/// This may produce incorrect "Created vs Updated" classification when:
+/// - An account existed before the batch but is first touched in a later block
+///
+/// **TODO**: Add an optional pre-state provider trait that the builder can query for the
+/// true original state of any account/slot when first encountered within the batch.
 #[derive(Clone, Debug, Default)]
 pub struct BatchBuilder {
     /// Account states: address -> tracked state (original is None if account didn't exist).

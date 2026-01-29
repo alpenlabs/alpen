@@ -19,12 +19,20 @@ use crate::{
 /// - `nonce`: Counter (signed delta, varint-encoded)
 /// - `code_hash`: Register (only changes on contract creation)
 ///
+/// # Delta vs Full Value Replacement
+///
+/// **Full value replacement** (register): Store the new value directly.
+/// - Example: balance changes from 1000 to 1005 → encode `1005` (full 32 bytes for U256)
+///
+/// **Delta encoding** (counter): Store only the difference between old and new.
+/// - Example: balance changes from 1000 to 1005 → encode `+5` (1 byte for sign + 1 byte for value)
+///
 /// # Why signed deltas?
 ///
-/// **Balance**: Using delta encoding instead of full value replacement provides significant
-/// space savings for typical transactions where balance changes by small amounts (gas fees,
-/// small transfers) compared to the total balance. The signed delta supports both increases
-/// (deposits, rewards) and decreases (transfers, fees).
+/// **Balance**: Delta encoding provides significant space savings for typical transactions
+/// where balance changes by small amounts (gas fees, small transfers) compared to the total
+/// balance. The signed delta supports both increases (deposits, rewards) and decreases
+/// (transfers, fees).
 ///
 /// **Nonce**: Post-Shanghai, account nonces can effectively decrease via the selfdestruct +
 /// recreate pattern: when a contract selfdestructs and is recreated in the same block (or batch),
@@ -71,7 +79,7 @@ fn balance_delta_to_counter(old: U256, new: U256) -> DaCounter<CtrU256BySignedU2
     if old == new {
         return DaCounter::new_unchanged();
     }
-    let delta = if new >= old {
+    let delta = if new > old {
         SignedU256Delta::positive(new - old)
     } else {
         SignedU256Delta::negative(old - new)
@@ -101,7 +109,7 @@ impl AccountDiff {
         }
     }
 
-    /// Creates a diff from block-level account states.
+    /// Creates a diff from two point-in-time account state ([`AccountSnapshot`]).
     ///
     /// If `original` is None, all fields are treated as changed (account creation).
     /// Returns None if no fields changed or if the nonce delta is invalid.
@@ -224,7 +232,7 @@ mod tests {
 
         // Balance delta should be +1000 (from 0)
         let balance_diff = decoded.balance.diff().unwrap();
-        assert!(balance_diff.is_positive());
+        assert!(balance_diff.is_nonnegative());
         assert_eq!(balance_diff.magnitude(), U256::from(1000));
         assert_eq!(decoded.nonce.diff().map(|v| v.inner()), Some(1));
         assert_eq!(
@@ -346,7 +354,7 @@ mod tests {
 
         // Balance delta should be negative (decrease of 1000)
         let balance_delta = diff.balance.diff().unwrap();
-        assert!(!balance_delta.is_positive());
+        assert!(!balance_delta.is_nonnegative());
         assert_eq!(balance_delta.magnitude(), U256::from(1000));
 
         // Verify encoding roundtrip
@@ -354,7 +362,7 @@ mod tests {
         let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
 
         let decoded_delta = decoded.balance.diff().unwrap();
-        assert!(!decoded_delta.is_positive());
+        assert!(!decoded_delta.is_nonnegative());
         assert_eq!(decoded_delta.magnitude(), U256::from(1000));
 
         // Verify apply works correctly

@@ -59,7 +59,8 @@ where
         let mut state = StateReconstructor::from_chain_spec("dev")
             .map_err(to_jsonrpsee_error("Can't initialize reconstructed state"))?;
 
-        // Apply each block's diff sequentially
+        // Aggregate all block diffs into a single BatchStateDiff
+        let mut builder = BatchBuilder::new();
         for i in 1..=block_number {
             let block_diff = self
                 .db
@@ -67,13 +68,7 @@ where
                 .map_err(to_jsonrpsee_error("Failed fetching block state diff"))?;
 
             match block_diff {
-                Some(diff) => {
-                    // Convert BlockStateChanges -> BatchStateDiff for apply_diff
-                    let batch_diff = BatchStateDiff::from(&diff);
-                    state
-                        .apply_diff(&batch_diff)
-                        .map_err(to_jsonrpsee_error("Error while applying state diff"))?;
-                }
+                Some(diff) => builder.apply_block(&diff),
                 None => {
                     return RpcResult::Err(to_jsonrpsee_error_object(
                         Some("missing_diff"),
@@ -82,6 +77,12 @@ where
                 }
             }
         }
+
+        // Apply aggregated diff once
+        let batch_diff = builder.build();
+        state
+            .apply_diff(&batch_diff)
+            .map_err(to_jsonrpsee_error("Error while applying state diff"))?;
 
         RpcResult::Ok(Some(state.state_root()))
     }
