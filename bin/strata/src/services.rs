@@ -7,6 +7,7 @@ use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
 use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_checkpoint::{OLCheckpointBuilder, ol_checkpoint_worker};
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_rpc_api_new::OLClientRpcServer;
 
@@ -49,7 +50,7 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
     let chain_worker_context = ChainWorkerContextImpl::new(
         nodectx.storage.ol_block().clone(),
         nodectx.storage.ol_state().clone(),
-        nodectx.storage.checkpoint().clone(),
+        nodectx.storage.ol_checkpoint().clone(),
     );
     let chain_worker_handle = ChainWorkerBuilder::new()
         .with_context(chain_worker_context)
@@ -57,6 +58,23 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         .with_status_channel((*nodectx.status_channel).clone())
         .with_runtime(nodectx.executor.handle().clone())
         .launch(&nodectx.executor)?;
+
+    // Start OL checkpoint service
+    let checkpoint_handle = OLCheckpointBuilder::new()
+        .with_storage(nodectx.storage.clone())
+        .with_status_channel((*nodectx.status_channel).clone())
+        .with_runtime(nodectx.executor.handle().clone())
+        .launch(&nodectx.executor)?;
+
+    // Spawn checkpoint worker to monitor chain sync and trigger checkpoint building
+    let status_ch = (*nodectx.status_channel).clone();
+    let ckpt_handle = checkpoint_handle.clone();
+    let rt = nodectx.executor.handle().clone();
+    nodectx
+        .executor
+        .spawn_critical("ol_checkpoint_worker", |shutdown| {
+            ol_checkpoint_worker(shutdown, status_ch, ckpt_handle, rt)
+        });
 
     // TODO: Start other tasks like l1writer, broadcaster, fcm, btcio reader, etc. all as
     // service, returning the monitors.
@@ -71,6 +89,7 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         csm_monitor,
         mempool_handle,
         chain_worker_handle,
+        checkpoint_handle,
         storage: nodectx.storage,
         status_channel: nodectx.status_channel,
     })

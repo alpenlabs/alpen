@@ -21,6 +21,7 @@ borsh.workspace = true
 const-hex = "1.14"
 hex.workspace = true
 int-enum.workspace = true
+proptest = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
@@ -30,7 +31,6 @@ ssz_codegen.workspace = true
 
 [dev-dependencies]
 strata-test-utils-ssz.workspace = true
-ssz_types.workspace = true
 
 bitcoin.workspace = true
 bincode.workspace = true
@@ -40,3 +40,4 @@ serde_json.workspace = true
 [features]
 default = ["bitcoin"]
 bitcoin = ["dep:bitcoin"]
+test-utils = ["dep:proptest"]
