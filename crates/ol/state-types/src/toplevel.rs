@@ -1,6 +1,10 @@
 //! Toplevel state.
 
 use bitcoin::absolute;
+#[cfg(feature = "test-utils")]
+use proptest::strategy::{Strategy, ValueTree};
+#[cfg(feature = "test-utils")]
+use proptest::test_runner::TestRunner;
 use ssz::Encode;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
@@ -11,6 +15,8 @@ use strata_identifiers::{
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
 
+#[cfg(feature = "test-utils")]
+use crate::test_utils::ol_state_strategy;
 use crate::{
     IStateBatchApplicable, WriteBatch,
     ssz_generated::ssz::state::{
@@ -262,6 +268,17 @@ impl IStateBatchApplicable for OLState {
     fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
         // Delegate to the inherent method
         OLState::apply_write_batch(self, batch)
+    }
+}
+
+#[cfg(feature = "test-utils")]
+impl<'a> arbitrary::Arbitrary<'a> for OLState {
+    fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let mut runner = TestRunner::deterministic();
+        let tree = ol_state_strategy()
+            .new_tree(&mut runner)
+            .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+        Ok(tree.current())
     }
 }
 
