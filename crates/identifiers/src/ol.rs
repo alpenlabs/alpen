@@ -164,18 +164,18 @@ crate::impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
+    use crate::test_utils::{buf32_strategy, ol_block_commitment_strategy};
 
     mod ol_block_id {
         use super::*;
 
         ssz_proptest!(
             OLBlockId,
-            any::<[u8; 32]>().prop_map(Buf32::from),
+            buf32_strategy(),
             transparent_wrapper_of(Buf32, from)
         );
 
@@ -191,12 +191,7 @@ mod tests {
     mod ol_block_commitment {
         use super::*;
 
-        ssz_proptest!(
-            OLBlockCommitment,
-            (any::<u64>(), any::<[u8; 32]>()).prop_map(|(slot, blkid)| {
-                OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from(blkid)))
-            })
-        );
+        ssz_proptest!(OLBlockCommitment, ol_block_commitment_strategy());
 
         #[test]
         fn test_zero_ssz() {
@@ -213,7 +208,7 @@ mod tests {
 
         ssz_proptest!(
             OLTxId,
-            any::<[u8; 32]>().prop_map(Buf32::from),
+            buf32_strategy(),
             transparent_wrapper_of(Buf32, from)
         );
 

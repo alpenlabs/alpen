@@ -9,7 +9,9 @@ use strata_acct_types::CompactMmr64;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
-use strata_identifiers::{Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot};
+use strata_identifiers::{
+    Epoch, EpochCommitment, Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot,
+};
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
@@ -23,7 +25,10 @@ use zkaleido::ProofReceiptWithMetadata;
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_helpers::MmrAlgorithm,
-    types::{BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry, MempoolTxData},
+    types::{
+        BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry, MempoolTxData,
+        OLCheckpointEntry,
+    },
     DbError, DbResult,
 };
 
@@ -39,6 +44,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
     fn ol_state_db(&self) -> Arc<impl OLStateDatabase>;
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
+    fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
@@ -181,6 +187,7 @@ pub enum BlockStatus {
 }
 
 /// Database for checkpoint data.
+// TODO: Remove when we switch to using OL checkpoint database in all relevant places.
 pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Inserts an epoch summary retrievable by its epoch commitment.
     ///
@@ -234,6 +241,56 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Get the next checkpoint index that has PendingProof status.
     /// Returns the lowest index checkpoint that still needs proof generation.
     fn get_next_unproven_checkpoint_idx(&self) -> DbResult<Option<u64>>;
+}
+
+/// Database for OL checkpoint data.
+pub trait OLCheckpointDatabase: Send + Sync + 'static {
+    /// Inserts an epoch summary retrievable by its epoch commitment.
+    ///
+    /// Fails if there's already an entry there.
+    fn insert_epoch_summary(&self, epoch: EpochSummary) -> DbResult<()>;
+
+    /// Gets an epoch summary given an epoch commitment.
+    fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>>;
+
+    /// Gets all commitments for an epoch. This makes no guarantees about ordering.
+    fn get_epoch_commitments_at(&self, epoch: u64) -> DbResult<Vec<EpochCommitment>>;
+
+    /// Gets the index of the last epoch that we have a summary for, if any.
+    fn get_last_summarized_epoch(&self) -> DbResult<Option<u64>>;
+
+    /// Delete a specific epoch summary by epoch commitment.
+    ///
+    /// Returns true if the epoch summary existed and was deleted, false otherwise.
+    fn del_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
+    /// Delete epoch summaries from the specified epoch onwards (inclusive).
+    ///
+    /// This method deletes all epoch summaries with epoch index >= start_epoch.
+    /// Returns a vector of deleted epoch indices.
+    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
+
+    /// Store an [`OLCheckpointEntry`] by epoch.
+    fn put_checkpoint(&self, epoch: Epoch, entry: OLCheckpointEntry) -> DbResult<()>;
+
+    /// Get an [`OLCheckpointEntry`] by epoch.
+    fn get_checkpoint(&self, epoch: Epoch) -> DbResult<Option<OLCheckpointEntry>>;
+
+    /// Get last written checkpoint epoch.
+    fn get_last_checkpoint_epoch(&self) -> DbResult<Option<Epoch>>;
+
+    /// Get the next checkpoint epoch that is unsigned.
+    fn get_next_unsigned_checkpoint_epoch(&self) -> DbResult<Option<Epoch>>;
+
+    /// Delete a checkpoint by epoch.
+    ///
+    /// Returns true if it existed and was deleted.
+    fn del_checkpoint(&self, epoch: Epoch) -> DbResult<bool>;
+
+    /// Delete checkpoints from the specified epoch onwards (inclusive).
+    ///
+    /// Returns a vector of deleted epochs.
+    fn del_checkpoints_from_epoch(&self, start_epoch: Epoch) -> DbResult<Vec<Epoch>>;
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the

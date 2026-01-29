@@ -1,7 +1,9 @@
 //! Impl blocks for checkpoint payload types.
 
 use ssz_types::VariableList;
-use strata_identifiers::{Buf64, Epoch, OLBlockCommitment};
+use strata_identifiers::{
+    Buf64, Epoch, OLBlockCommitment, impl_borsh_via_ssz, impl_borsh_via_ssz_fixed,
+};
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
@@ -26,6 +28,8 @@ impl CheckpointTip {
         &self.l2_commitment
     }
 }
+
+impl_borsh_via_ssz_fixed!(CheckpointTip);
 
 impl CheckpointSidecar {
     pub fn new(
@@ -65,6 +69,8 @@ impl CheckpointSidecar {
     }
 }
 
+impl_borsh_via_ssz!(CheckpointSidecar);
+
 impl CheckpointPayload {
     pub fn new(
         new_tip: CheckpointTip,
@@ -97,6 +103,8 @@ impl CheckpointPayload {
     }
 }
 
+impl_borsh_via_ssz!(CheckpointPayload);
+
 impl SignedCheckpointPayload {
     pub fn new(inner: CheckpointPayload, signature: Buf64) -> Self {
         Self { inner, signature }
@@ -108,5 +116,94 @@ impl SignedCheckpointPayload {
 
     pub fn signature(&self) -> &Buf64 {
         &self.signature
+    }
+}
+
+impl_borsh_via_ssz!(SignedCheckpointPayload);
+
+#[cfg(any(test, feature = "test-utils"))]
+impl<'a> arbitrary::Arbitrary<'a> for CheckpointTip {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            epoch: u.arbitrary()?,
+            l1_height: u.arbitrary()?,
+            l2_commitment: u.arbitrary()?,
+        })
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl<'a> arbitrary::Arbitrary<'a> for CheckpointSidecar {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let state_diff_len = u.int_in_range(0..=1024)?;
+        let state_diff: Vec<u8> = (0..state_diff_len)
+            .map(|_| u.arbitrary())
+            .collect::<arbitrary::Result<_>>()?;
+
+        let logs_len = u.int_in_range(0..=10)?;
+        let ol_logs: Vec<OLLog> = (0..logs_len)
+            .map(|_| u.arbitrary())
+            .collect::<arbitrary::Result<_>>()?;
+
+        Self::new(state_diff, ol_logs).map_err(|_| arbitrary::Error::IncorrectFormat)
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl<'a> arbitrary::Arbitrary<'a> for CheckpointPayload {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let proof_len = u.int_in_range(0..=512)?;
+        let proof: Vec<u8> = (0..proof_len)
+            .map(|_| u.arbitrary())
+            .collect::<arbitrary::Result<_>>()?;
+
+        Self::new(u.arbitrary()?, u.arbitrary()?, proof)
+            .map_err(|_| arbitrary::Error::IncorrectFormat)
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl<'a> arbitrary::Arbitrary<'a> for SignedCheckpointPayload {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            inner: u.arbitrary()?,
+            signature: u.arbitrary()?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use crate::{
+        CheckpointPayload, CheckpointSidecar, CheckpointTip, SignedCheckpointPayload,
+        test_utils::{
+            checkpoint_payload_strategy, checkpoint_sidecar_strategy, checkpoint_tip_strategy,
+            signed_checkpoint_payload_strategy,
+        },
+    };
+
+    mod checkpoint_tip {
+        use super::*;
+        ssz_proptest!(CheckpointTip, checkpoint_tip_strategy());
+    }
+
+    mod checkpoint_sidecar {
+        use super::*;
+        ssz_proptest!(CheckpointSidecar, checkpoint_sidecar_strategy());
+    }
+
+    mod checkpoint_payload {
+        use super::*;
+        ssz_proptest!(CheckpointPayload, checkpoint_payload_strategy());
+    }
+
+    mod signed_checkpoint_payload {
+        use super::*;
+        ssz_proptest!(
+            SignedCheckpointPayload,
+            signed_checkpoint_payload_strategy()
+        );
     }
 }

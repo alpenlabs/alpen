@@ -1394,6 +1394,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "serde",
+ "strata-identifiers",
  "strata-primitives",
  "tokio",
  "tokio-stream",
@@ -14166,7 +14167,9 @@ dependencies = [
 name = "strata-checkpoint-types-ssz"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "borsh",
+ "proptest",
  "serde",
  "ssz",
  "ssz_codegen",
@@ -14175,6 +14178,7 @@ dependencies = [
  "ssz_types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
+ "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.12.3",
  "tree_hash_derive 0.12.3",
@@ -14443,6 +14447,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-csm-types",
  "strata-db-tests",
@@ -14468,6 +14473,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-types",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-csm-types",
  "strata-db-types",
  "strata-identifiers",
@@ -14497,6 +14503,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-csm-types",
  "strata-identifiers",
  "strata-merkle",
@@ -14841,6 +14848,7 @@ dependencies = [
 name = "strata-ol-chain-types-new"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "int-enum",
  "proptest",
  "ssz",
@@ -15444,12 +15452,14 @@ name = "strata-storage"
 version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
+ "arbitrary",
  "async-trait",
  "borsh",
  "futures",
  "proptest",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-csm-types",
  "strata-db-store-sled",
  "strata-db-types",

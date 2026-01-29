@@ -10,6 +10,7 @@ use bitcoin::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar};
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::OLTxId;
 use strata_ol_chainstate_types::Chainstate;
@@ -342,6 +343,38 @@ impl MempoolTxData {
             timestamp_micros,
         }
     }
+}
+
+/// Index into the L1 payload intent store.
+pub type L1PayloadIntentIndex = u64;
+
+/// Entry for an OL checkpoint.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct OLCheckpointEntry {
+    /// The checkpoint payload to be posted to L1.
+    pub checkpoint: CheckpointPayload,
+
+    /// Signing status.
+    pub status: OLCheckpointStatus,
+}
+
+impl OLCheckpointEntry {
+    pub fn new(checkpoint: CheckpointPayload, status: OLCheckpointStatus) -> Self {
+        Self { checkpoint, status }
+    }
+
+    pub fn new_unsigned(checkpoint: CheckpointPayload) -> Self {
+        Self::new(checkpoint, OLCheckpointStatus::Unsigned)
+    }
+}
+
+/// Signing status of an OL checkpoint.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
+pub enum OLCheckpointStatus {
+    /// Not signed yet.
+    Unsigned,
+    /// Signed and stored as L1PayloadIntent with given index.
+    Signed(L1PayloadIntentIndex),
 }
 
 #[cfg(test)]

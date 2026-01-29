@@ -4,7 +4,8 @@ use proptest::prelude::*;
 use ssz_types::VariableList;
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_identifiers::{
-    AccountSerial, Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
+    AccountSerial, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
+    test_utils::buf32_strategy,
 };
 use strata_merkle::Mmr64B32;
 use strata_predicate::PredicateKey;
@@ -13,10 +14,6 @@ use crate::ssz_generated::ssz::state::{
     EpochalState, GlobalState, OLAccountState, OLAccountTypeState, OLSnarkAccountState, OLState,
     ProofState, TsnlAccountEntry, TsnlLedgerAccountsTable,
 };
-
-pub(crate) fn buf32_strategy() -> impl Strategy<Value = Buf32> {
-    any::<[u8; 32]>().prop_map(Buf32::from)
-}
 
 pub(crate) fn account_id_strategy() -> impl Strategy<Value = AccountId> {
     any::<[u8; 32]>().prop_map(AccountId::from)
