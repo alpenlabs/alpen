@@ -3,7 +3,7 @@
 use std::marker;
 
 use bitcoin::hashes::Hash;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strata_primitives::prelude::*;
 use strata_service::{Response, Service, SyncService};
 use strata_state::asm_state::AsmState;
@@ -182,7 +182,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 }
 
 /// Status information for the ASM worker service.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AsmWorkerStatus {
     pub is_initialized: bool,
     pub cur_block: Option<L1BlockCommitment>,
