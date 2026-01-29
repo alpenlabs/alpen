@@ -10,7 +10,7 @@ use strata_ee_acct_types::{
 };
 use strata_ee_chain_types::{ExecInputs, SequenceTracker};
 
-use crate::{commit::PendingCommit, verification_state_new::EeVerificationState};
+use crate::{commit::PendingCommit, verification_state::EeVerificationState};
 
 /// Validates that block inputs match pending inputs in the tracker.
 ///

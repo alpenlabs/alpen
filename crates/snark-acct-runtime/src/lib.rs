@@ -8,6 +8,5 @@ mod traits;
 
 pub use errors::*;
 pub use message::{InputMessage, MsgMeta};
-pub use private_input::*;
 pub use program_processing::*;
 pub use traits::*;
