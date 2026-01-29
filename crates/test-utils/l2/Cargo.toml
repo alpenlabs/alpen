@@ -7,9 +7,14 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
+strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
+strata-checkpoint-types-ssz.workspace = true
 strata-consensus-logic.workspace = true
 strata-crypto.workspace = true
+strata-identifiers.workspace = true
+strata-merkle.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-params.workspace = true
@@ -20,4 +25,5 @@ strata-test-utils-btc.workspace = true
 
 bitcoin = { workspace = true, features = ["rand-std"] }
 borsh.workspace = true
+k256.workspace = true
 rand.workspace = true

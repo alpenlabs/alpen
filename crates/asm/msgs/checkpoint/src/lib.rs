@@ -16,6 +16,7 @@ use strata_primitives::buf::Buf32;
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub enum CheckpointIncomingMsg {
     /// Update the Schnorr public key used to verify sequencer signatures embedded in checkpoints.
+    // TODO: (@PG) make this directly take PredicateKey
     UpdateSequencerKey(Buf32),
     /// Update the rollup proving system verifying key used for Groth16 proof verification.
     UpdateCheckpointPredicate(PredicateKey),
