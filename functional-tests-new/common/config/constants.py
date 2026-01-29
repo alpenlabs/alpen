@@ -17,6 +17,7 @@ class ServiceType(str, Enum):
         bitcoin = self.get_service(ServiceType.Bitcoin)
     """
 
+    AlpenClient = "alpen_client"
     Bitcoin = "bitcoin"
     Strata = "strata"
 

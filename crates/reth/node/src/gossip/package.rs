@@ -20,6 +20,10 @@ use strata_primitives::{
 /// Size of the sequence number in bytes.
 const SEQ_NO_SIZE: usize = mem::size_of::<u64>();
 
+/// Message ID for gossip packages
+/// This is prepended to each Message
+const GOSSIP_PACKAGE_MSG_ID: u8 = 0x00;
+
 /// Gossip message types.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlpenGossipMessage {
@@ -139,9 +143,16 @@ impl AlpenGossipPackage {
         verify_schnorr_sig(signature, &hash, public_key)
     }
 
-    /// Encodes a [`AlpenGossipPackage`] into bytes.
+    /// Encodes a [`AlpenGossipPackage`] into bytes for wire transmission.
+    ///
+    /// The format is: `msg_id || message || public_key || signature`
+    /// where `msg_id` is a single byte that identifies the message type within
+    /// the alpen_gossip subprotocol. The RLPx multiplexer will add an offset
+    /// to this byte to produce the final wire message ID.
     pub(crate) fn encode(&self) -> BytesMut {
         let mut buf = BytesMut::new();
+        // Prepend message ID for the RLPx multiplexer
+        buf.put_u8(GOSSIP_PACKAGE_MSG_ID);
         let message = self.message.encode();
         buf.put_slice(&message);
         buf.put_slice(&self.public_key.0);
@@ -150,8 +161,18 @@ impl AlpenGossipPackage {
     }
 
     /// Decodes a [`AlpenGossipPackage`] from bytes with detailed error reporting.
+    ///
+    /// The format is: `msg_id || message || public_key || signature`
+    /// where `msg_id` has been normalized by the RLPx multiplexer (offset subtracted).
     pub(crate) fn try_decode(buf: &mut &[u8]) -> Result<Self> {
         ensure!(!buf.is_empty(), "buffer is empty");
+
+        // Read and verify message ID
+        let msg_id = buf.get_u8();
+        ensure!(
+            msg_id == GOSSIP_PACKAGE_MSG_ID,
+            "unexpected gossip message type: expected {GOSSIP_PACKAGE_MSG_ID}, got {msg_id}"
+        );
 
         let message = AlpenGossipMessage::try_decode(buf)?;
 

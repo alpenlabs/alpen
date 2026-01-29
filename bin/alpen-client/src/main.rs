@@ -1,11 +1,13 @@
 //! Reth node for the Alpen codebase.
 
+mod dummy_ol_client;
 mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
 mod noop_da_provider;
 #[cfg(feature = "sequencer")]
 mod noop_prover;
+mod ol_client;
 #[cfg(feature = "sequencer")]
 mod payload_builder;
 mod rpc_client;
@@ -55,10 +57,12 @@ use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 use crate::payload_builder::AlpenRethPayloadEngine;
 use crate::{
+    dummy_ol_client::DummyOLClient,
     genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
     noop_da_provider::NoopDaProvider,
     noop_prover::NoopProver,
+    ol_client::OLClientKind,
     rpc_client::RpcOLClient,
 };
 
@@ -75,8 +79,6 @@ fn main() {
 
     // use provided alpen chain spec
     command.chain = command.ext.custom_chain.clone();
-    // disable peer discovery
-    command.network.discovery.disable_discovery = true;
     // enable engine api v4
     command.engine.accept_execution_requests_hash = true;
     // allow chain fork blocks to be created
@@ -107,10 +109,13 @@ fn main() {
 
             info!(?params, sequencer = ext.sequencer, "Starting EE Node");
 
+            // OL client URL is not used when dummy_ol_client is enabled
+            let ol_client_url = ext.ol_client_url.clone().unwrap_or_default();
+
             let config = Arc::new(AlpenEeConfig::new(
                 params,
                 CredRule::Unchecked,
-                ext.ol_client_url,
+                ol_client_url,
                 ext.sequencer_http,
                 ext.db_retry_count,
             ));
@@ -155,10 +160,25 @@ fn main() {
                 .context("failed to load alpen database")?
                 .into();
 
-            let ol_client = Arc::new(
-                RpcOLClient::try_new(config.params().account_id(), config.ol_client_http())
-                    .map_err(|e| eyre::eyre!("failed to create OL client: {e}"))?,
-            );
+            let ol_client = if ext.dummy_ol_client {
+                use strata_primitives::EpochCommitment;
+                let genesis_epoch = EpochCommitment::new(
+                    0,
+                    config.params().genesis_ol_slot(),
+                    config.params().genesis_ol_blockid(),
+                );
+                info!(target: "alpen-client", "Using dummy OL client (no real OL connection)");
+                OLClientKind::Dummy(DummyOLClient { genesis_epoch })
+            } else {
+                let ol_url = ext.ol_client_url.as_ref().ok_or_else(|| {
+                    eyre::eyre!("--ol-client-url is required when not using --dummy-ol-client")
+                })?;
+                OLClientKind::Rpc(
+                    RpcOLClient::try_new(config.params().account_id(), ol_url)
+                        .map_err(|e| eyre::eyre!("failed to create OL client: {e}"))?,
+                )
+            };
+            let ol_client = Arc::new(ol_client);
 
             // TODO: real prover and da provider interfaces
             let batch_prover = Arc::new(NoopProver);
@@ -420,8 +440,18 @@ pub struct AdditionalConfig {
     pub sequencer_http: Option<String>,
 
     /// URL of OL node RPC (can be either `http[s]://` or `ws[s]://`).
-    #[arg(long, required = true)]
-    pub ol_client_url: String,
+    /// Required unless `--dummy-ol-client` is specified.
+    #[arg(long)]
+    pub ol_client_url: Option<String>,
+
+    /// Use a dummy OL client instead of connecting to a real OL node.
+    /// This is useful for testing EE functionality in isolation.
+    ///
+    /// NOTE: This is intentionally separate from OL-EE integration tests which
+    /// need the real OL RPC client. The dummy client is only for EE-specific
+    /// tests that don't need OL interaction.
+    #[arg(long, default_value_t = false)]
+    pub dummy_ol_client: bool,
 
     #[arg(long, required = false)]
     pub db_retry_count: Option<u16>,

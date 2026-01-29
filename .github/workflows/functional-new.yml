@@ -120,9 +120,9 @@ jobs:
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
         run: |
-          NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
-          export PATH="$NEWPATH:$PATH"
+          export PATH="${{ github.workspace }}/target/llvm-cov-target/debug:$PATH"
           which strata-client
+          which alpen-client
           cd functional-tests-new && uv run python entry.py
 
       - name: Generate combined coverage lcov
