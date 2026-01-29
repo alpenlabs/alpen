@@ -3,7 +3,6 @@
 //! This crate provides a clean, worker-less template management system
 //! for the new OL architecture. Key differences from the old sequencer:
 //! - No worker thread pattern
-//! - No execution environment integration
 //! - Templates embedded in duties
 //! - TTL-based cache with automatic cleanup
 //! - Direct async operations
