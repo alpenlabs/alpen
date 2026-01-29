@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alpen_reth_db::{StateDiffProvider, WitnessProvider};
-use alpen_reth_statediff::{state::ReconstructedState, BatchStateDiffBuilder, BlockStateDiff};
+use alpen_reth_statediff::{BatchBuilder, BatchStateDiff, BatchStateDiffSerde, StateReconstructor};
 use jsonrpsee::core::RpcResult;
 use revm_primitives::alloy_primitives::B256;
 use strata_rpc_utils::{to_jsonrpsee_error, to_jsonrpsee_error_object};
@@ -44,39 +44,82 @@ where
         res.map_err(to_jsonrpsee_error("Failed fetching witness"))
     }
 
-    fn get_block_state_diff(&self, block_hash: B256) -> RpcResult<Option<BlockStateDiff>> {
-        self.db
+    fn get_state_diff_for_block(&self, block_hash: B256) -> RpcResult<Option<BatchStateDiffSerde>> {
+        let block_diff = self
+            .db
             .get_state_diff_by_hash(block_hash)
-            .map_err(to_jsonrpsee_error("Failed fetching block state diff"))
+            .map_err(to_jsonrpsee_error("Failed fetching block state diff"))?;
+
+        // Convert BlockStateChanges -> BatchStateDiff -> BatchStateDiffSerde
+        Ok(block_diff.map(|diff| BatchStateDiffSerde::from(BatchStateDiff::from(&diff))))
     }
 
     fn get_state_root_via_diffs(&self, block_number: u64) -> RpcResult<Option<B256>> {
-        let mut builder = BatchStateDiffBuilder::new();
+        // Initialize state from genesis
+        let mut state = StateReconstructor::from_chain_spec("dev")
+            .map_err(to_jsonrpsee_error("Can't initialize reconstructed state"))?;
 
-        // First construct the batch state diff consisting of all the changes so far.
+        // Aggregate all block diffs into a single BatchStateDiff
+        let mut builder = BatchBuilder::new();
         for i in 1..=block_number {
             let block_diff = self
                 .db
                 .get_state_diff_by_number(i)
                 .map_err(to_jsonrpsee_error("Failed fetching block state diff"))?;
 
-            if block_diff.is_none() {
-                return RpcResult::Err(to_jsonrpsee_error_object(
-                    Some(""),
-                    "block diff is missing",
-                ));
+            match block_diff {
+                Some(diff) => builder.apply_block(&diff),
+                None => {
+                    return RpcResult::Err(to_jsonrpsee_error_object(
+                        Some("missing_diff"),
+                        &format!("state diff missing for block {i}"),
+                    ));
+                }
             }
-            builder.apply(block_diff.unwrap());
         }
 
-        // Apply the batch state diff onto the genesis State and return the resulting state root.
-        // P.S. currently, genesis is hardcoded to be taken from "dev" spec.
-        let mut state = ReconstructedState::new_from_spec("dev")
-            .map_err(to_jsonrpsee_error("Can't initialize reconstructured state"))?;
+        // Apply aggregated diff once
+        let batch_diff = builder.build();
         state
-            .apply(builder.build())
-            .map_err(to_jsonrpsee_error("Error while reconstructing the state"))?;
+            .apply_diff(&batch_diff)
+            .map_err(to_jsonrpsee_error("Error while applying state diff"))?;
 
         RpcResult::Ok(Some(state.state_root()))
+    }
+
+    fn get_state_diff_for_range(
+        &self,
+        from_block: u64,
+        to_block: u64,
+    ) -> RpcResult<Option<BatchStateDiffSerde>> {
+        if from_block > to_block {
+            return RpcResult::Err(to_jsonrpsee_error_object(
+                Some("invalid_range"),
+                "from_block must be <= to_block",
+            ));
+        }
+
+        // Use builder to aggregate block diffs with proper revert detection
+        let mut builder = BatchBuilder::new();
+
+        for i in from_block..=to_block {
+            let block_diff = self
+                .db
+                .get_state_diff_by_number(i)
+                .map_err(to_jsonrpsee_error("Failed fetching block state diff"))?;
+
+            match block_diff {
+                Some(diff) => builder.apply_block(&diff),
+                None => {
+                    return RpcResult::Err(to_jsonrpsee_error_object(
+                        Some("missing_diff"),
+                        &format!("state diff missing for block {i}"),
+                    ));
+                }
+            }
+        }
+
+        let aggregated = builder.build();
+        Ok(Some(BatchStateDiffSerde::from(&aggregated)))
     }
 }
