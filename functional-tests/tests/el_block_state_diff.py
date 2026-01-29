@@ -1,3 +1,5 @@
+import logging
+
 import flexitest
 from web3 import Web3
 
@@ -31,7 +33,22 @@ class ElBlockStateDiffDataGenerationTest(testenv.StrataTestBase):
 
         # wait for witness data generation
         state_diff_data = reth_waiter.wait_until_state_diff_at_blockhash(blockhash, timeout=2)
-        self.info(state_diff_data)
+        logging.info(state_diff_data)
+
+        # Get the actual state root from the block
+        block = rethrpc.eth_getBlockByNumber(hex(blocknum), False)
+        actual_state_root = block["stateRoot"]
+        logging.info(f"Actual state root from block: {actual_state_root}")
+
+        # Get state root reconstructed from state diffs
+        reconstructed_state_root = rethrpc.strataee_getStateRootByDiffs(blocknum)
+        logging.info(f"Reconstructed state root from diffs: {reconstructed_state_root}")
+
+        # Validate they match
+        assert actual_state_root == reconstructed_state_root, (
+            f"State root mismatch! Actual: {actual_state_root}, "
+            f"Reconstructed: {reconstructed_state_root}"
+        )
 
 
 def get_contract() -> tuple[list, str]:

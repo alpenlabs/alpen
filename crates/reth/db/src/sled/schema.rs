@@ -10,7 +10,7 @@ define_table_without_codec!(
 
 define_table_without_codec!(
     /// store of block state diff data. Data stored as serialized bytes for directly serving in rpc
-    (BlockStateDiffSchema) B256 => Vec<u8>
+    (BlockStateChangesSchema) B256 => Vec<u8>
 );
 
 define_table_without_codec!(
@@ -47,7 +47,7 @@ impl KeyCodec<BlockWitnessSchema> for B256 {
     }
 }
 
-impl KeyCodec<BlockStateDiffSchema> for B256 {
+impl KeyCodec<BlockStateChangesSchema> for B256 {
     fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
         use bincode::Options;
 
@@ -56,7 +56,7 @@ impl KeyCodec<BlockStateDiffSchema> for B256 {
         bincode_options
             .serialize(self)
             .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockStateDiffSchema",
+                schema: "BlockStateChangesSchema",
                 source: err.into(),
             })
     }
@@ -69,7 +69,7 @@ impl KeyCodec<BlockStateDiffSchema> for B256 {
         bincode_options
             .deserialize_from(&mut &data[..])
             .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockStateDiffSchema",
+                schema: "BlockStateChangesSchema",
                 source: err.into(),
             })
     }
@@ -86,7 +86,7 @@ impl ValueCodec<BlockWitnessSchema> for Vec<u8> {
     }
 }
 
-impl ValueCodec<BlockStateDiffSchema> for Vec<u8> {
+impl ValueCodec<BlockStateChangesSchema> for Vec<u8> {
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
