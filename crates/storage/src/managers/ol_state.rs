@@ -4,7 +4,7 @@ use std::{future::Future, num::NonZeroUsize, sync::Arc};
 
 use futures::TryFutureExt;
 use strata_db_types::{errors::DbError, traits::OLStateDatabase, DbResult};
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_ol_state_types::{OLAccountState, OLState, StateProvider, WriteBatch};
 use strata_storage_common::exec::{GenericRecv, OpsError};
 use threadpool::ThreadPool;
@@ -141,6 +141,60 @@ impl OLStateManager {
         Ok(())
     }
 
+    /// Stores a preseal OLState snapshot for a given epoch commitment.
+    pub async fn put_preseal_ol_state_async(
+        &self,
+        commitment: EpochCommitment,
+        state: OLState,
+    ) -> DbResult<()> {
+        self.ops
+            .put_preseal_ol_state_async(commitment, state.clone())
+            .await?;
+        Ok(())
+    }
+
+    /// Stores a preseal OLState snapshot for a given epoch commitment.
+    pub fn put_preseal_ol_state_blocking(
+        &self,
+        commitment: EpochCommitment,
+        state: OLState,
+    ) -> DbResult<()> {
+        self.ops
+            .put_preseal_ol_state_blocking(commitment, state.clone())?;
+        Ok(())
+    }
+
+    /// Retrieves a preseal OLState snapshot for a given epoch commitment.
+    pub async fn get_preseal_ol_state_async(
+        &self,
+        commitment: EpochCommitment,
+    ) -> DbResult<Option<Arc<OLState>>> {
+        self.ops
+            .get_preseal_ol_state_async(commitment)
+            .await
+            .map(|opt| opt.map(Arc::new))
+    }
+
+    /// Retrieves a preseal OLState snapshot for a given epoch commitment.
+    pub fn get_preseal_ol_state_blocking(
+        &self,
+        commitment: EpochCommitment,
+    ) -> DbResult<Option<Arc<OLState>>> {
+        self.ops
+            .get_preseal_ol_state_blocking(commitment)
+            .map(|opt| opt.map(Arc::new))
+    }
+
+    /// Deletes a preseal OLState snapshot for a given epoch commitment.
+    pub async fn del_preseal_ol_state_async(&self, commitment: EpochCommitment) -> DbResult<()> {
+        self.ops.del_preseal_ol_state_async(commitment).await
+    }
+
+    /// Deletes a preseal OLState snapshot for a given epoch commitment.
+    pub fn del_preseal_ol_state_blocking(&self, commitment: EpochCommitment) -> DbResult<()> {
+        self.ops.del_preseal_ol_state_blocking(commitment)
+    }
+
     /// Stores a write batch for a given block commitment.
     pub async fn put_write_batch_async(
         &self,
@@ -225,12 +279,19 @@ impl StateProvider for OLStateManager {
 mod tests {
     use std::sync::Arc;
 
+    use proptest::prelude::*;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::traits::DatabaseBackend;
-    use strata_identifiers::{OLBlockCommitment, OLBlockId, Slot};
+    use strata_identifiers::{
+        test_utils::{epoch_commitment_strategy, ol_block_commitment_strategy},
+        EpochCommitment, OLBlockCommitment,
+    };
     use strata_ledger_types::IStateAccessor;
-    use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+    use strata_ol_state_types::{
+        test_utils::ol_state_strategy, OLAccountState, OLState, WriteBatch,
+    };
     use threadpool::ThreadPool;
+    use tokio::runtime::Runtime;
 
     use super::*;
 
@@ -241,120 +302,182 @@ mod tests {
         OLStateManager::new(pool, ol_state_db)
     }
 
-    #[tokio::test]
-    async fn test_put_and_get_ol_state_async() {
-        let manager = setup_manager();
-        let state = OLState::new_genesis();
-        let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
+    // =============================================================================
+    // Proptest helper functions (blocking)
+    // =============================================================================
 
-        // Put state
+    fn proptest_put_and_get_toplevel_blocking(commitment: OLBlockCommitment, state: OLState) {
+        let manager = setup_manager();
+        manager
+            .put_toplevel_ol_state_blocking(commitment, state.clone())
+            .expect("test: put");
+        let retrieved = manager
+            .get_toplevel_ol_state_blocking(commitment)
+            .expect("test: get")
+            .unwrap();
+        assert_eq!(retrieved.cur_slot(), state.cur_slot());
+    }
+
+    fn proptest_get_latest_toplevel_blocking(
+        commitment1: OLBlockCommitment,
+        commitment2: OLBlockCommitment,
+        state: OLState,
+    ) {
+        let manager = setup_manager();
+        let (lower, higher) = if commitment1.slot() < commitment2.slot() {
+            (commitment1, commitment2)
+        } else if commitment1.slot() > commitment2.slot() {
+            (commitment2, commitment1)
+        } else if commitment1.blkid() < commitment2.blkid() {
+            (commitment1, commitment2)
+        } else {
+            (commitment2, commitment1)
+        };
+        manager
+            .put_toplevel_ol_state_blocking(lower, state.clone())
+            .expect("test: put 1");
+        manager
+            .put_toplevel_ol_state_blocking(higher, state.clone())
+            .expect("test: put 2");
+        let (latest_commitment, latest_state) = manager
+            .get_latest_toplevel_ol_state_blocking()
+            .expect("test: get latest")
+            .unwrap();
+        assert_eq!(latest_commitment, higher);
+        assert_eq!(latest_state.cur_slot(), state.cur_slot());
+    }
+
+    fn proptest_delete_toplevel_blocking(commitment: OLBlockCommitment, state: OLState) {
+        let manager = setup_manager();
+        manager
+            .put_toplevel_ol_state_blocking(commitment, state)
+            .expect("test: put");
+        manager
+            .del_toplevel_ol_state_blocking(commitment)
+            .expect("test: delete");
+        let deleted = manager
+            .get_toplevel_ol_state_blocking(commitment)
+            .expect("test: get after delete");
+        assert!(deleted.is_none());
+    }
+
+    fn proptest_put_and_get_preseal_blocking(commitment: EpochCommitment, state: OLState) {
+        let manager = setup_manager();
+        manager
+            .put_preseal_ol_state_blocking(commitment, state.clone())
+            .expect("test: put preseal");
+        let retrieved = manager
+            .get_preseal_ol_state_blocking(commitment)
+            .expect("test: get preseal")
+            .unwrap();
+        assert_eq!(retrieved.cur_slot(), state.cur_slot());
+    }
+
+    fn proptest_delete_preseal_blocking(commitment: EpochCommitment, state: OLState) {
+        let manager = setup_manager();
+        manager
+            .put_preseal_ol_state_blocking(commitment, state)
+            .expect("test: put preseal");
+        manager
+            .del_preseal_ol_state_blocking(commitment)
+            .expect("test: delete preseal");
+        let deleted = manager
+            .get_preseal_ol_state_blocking(commitment)
+            .expect("test: get preseal after delete");
+        assert!(deleted.is_none());
+    }
+
+    fn proptest_put_and_get_write_batch_blocking(commitment: OLBlockCommitment, state: OLState) {
+        let manager = setup_manager();
+        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+        manager
+            .put_write_batch_blocking(commitment, wb.clone())
+            .expect("test: put");
+        let retrieved = manager
+            .get_write_batch_blocking(commitment)
+            .expect("test: get")
+            .unwrap();
+        assert_eq!(
+            retrieved.global().get_cur_slot(),
+            wb.global().get_cur_slot()
+        );
+    }
+
+    fn proptest_delete_write_batch_blocking(commitment: OLBlockCommitment, state: OLState) {
+        let manager = setup_manager();
+        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+        manager
+            .put_write_batch_blocking(commitment, wb)
+            .expect("test: put");
+        manager
+            .del_write_batch_blocking(commitment)
+            .expect("test: delete");
+        let deleted = manager
+            .get_write_batch_blocking(commitment)
+            .expect("test: get after delete");
+        assert!(deleted.is_none());
+    }
+
+    // =============================================================================
+    // Proptest helper functions (async)
+    // =============================================================================
+
+    async fn proptest_put_and_get_toplevel_async(commitment: OLBlockCommitment, state: OLState) {
+        let manager = setup_manager();
         manager
             .put_toplevel_ol_state_async(commitment, state.clone())
             .await
             .expect("test: put");
-
-        // Get state (should be cached)
         let retrieved = manager
             .get_toplevel_ol_state_async(commitment)
             .await
             .expect("test: get")
             .unwrap();
-        // Verify state was retrieved (can't compare directly as OLState doesn't implement
-        // PartialEq)
         assert_eq!(retrieved.cur_slot(), state.cur_slot());
     }
 
-    #[test]
-    fn test_put_and_get_ol_state_blocking() {
+    async fn proptest_get_latest_toplevel_async(
+        commitment1: OLBlockCommitment,
+        commitment2: OLBlockCommitment,
+        state: OLState,
+    ) {
         let manager = setup_manager();
-        let state = OLState::new_genesis();
-        let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
-
-        // Put state
+        let (lower, higher) = if commitment1.slot() < commitment2.slot() {
+            (commitment1, commitment2)
+        } else if commitment1.slot() > commitment2.slot() {
+            (commitment2, commitment1)
+        } else if commitment1.blkid() < commitment2.blkid() {
+            (commitment1, commitment2)
+        } else {
+            (commitment2, commitment1)
+        };
         manager
-            .put_toplevel_ol_state_blocking(commitment, state.clone())
-            .expect("test: put");
-
-        // Get state (should be cached)
-        let retrieved = manager
-            .get_toplevel_ol_state_blocking(commitment)
-            .expect("test: get")
-            .unwrap();
-        // Verify state was retrieved (can't compare directly as OLState doesn't implement
-        // PartialEq)
-        assert_eq!(retrieved.cur_slot(), state.cur_slot());
-    }
-
-    #[tokio::test]
-    async fn test_get_latest_ol_state_async() {
-        let manager = setup_manager();
-        let state = OLState::new_genesis();
-        let commitment1 = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
-        let commitment2 = OLBlockCommitment::new(Slot::from(1u64), OLBlockId::default());
-
-        // Put two states
-        manager
-            .put_toplevel_ol_state_async(commitment1, state.clone())
+            .put_toplevel_ol_state_async(lower, state.clone())
             .await
             .expect("test: put 1");
         manager
-            .put_toplevel_ol_state_async(commitment2, state.clone())
+            .put_toplevel_ol_state_async(higher, state.clone())
             .await
             .expect("test: put 2");
-
-        // Latest should be the one with highest slot
         let (latest_commitment, latest_state) = manager
             .get_latest_toplevel_ol_state_async()
             .await
             .expect("test: get latest")
             .unwrap();
-        assert_eq!(latest_commitment, commitment2);
+        assert_eq!(latest_commitment, higher);
         assert_eq!(latest_state.cur_slot(), state.cur_slot());
     }
 
-    #[test]
-    fn test_get_latest_ol_state_blocking() {
+    async fn proptest_delete_toplevel_async(commitment: OLBlockCommitment, state: OLState) {
         let manager = setup_manager();
-        let state = OLState::new_genesis();
-        let commitment1 = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
-        let commitment2 = OLBlockCommitment::new(Slot::from(1u64), OLBlockId::default());
-
-        // Put two states
-        manager
-            .put_toplevel_ol_state_blocking(commitment1, state.clone())
-            .expect("test: put 1");
-        manager
-            .put_toplevel_ol_state_blocking(commitment2, state.clone())
-            .expect("test: put 2");
-
-        // Latest should be the one with highest slot
-        let (latest_commitment, latest_state) = manager
-            .get_latest_toplevel_ol_state_blocking()
-            .expect("test: get latest")
-            .unwrap();
-        assert_eq!(latest_commitment, commitment2);
-        assert_eq!(latest_state.cur_slot(), state.cur_slot());
-    }
-
-    #[tokio::test]
-    async fn test_delete_ol_state_async() {
-        let manager = setup_manager();
-        let state = OLState::new_genesis();
-        let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
-
-        // Put state
         manager
             .put_toplevel_ol_state_async(commitment, state)
             .await
             .expect("test: put");
-
-        // Delete state
         manager
             .del_toplevel_ol_state_async(commitment)
             .await
             .expect("test: delete");
-
-        // Verify it's gone
         let deleted = manager
             .get_toplevel_ol_state_async(commitment)
             .await
@@ -362,62 +485,66 @@ mod tests {
         assert!(deleted.is_none());
     }
 
-    #[test]
-    fn test_delete_ol_state_blocking() {
+    async fn proptest_put_and_get_preseal_async(commitment: EpochCommitment, state: OLState) {
         let manager = setup_manager();
-        let state = OLState::new_genesis();
-        let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
-
-        // Put state
         manager
-            .put_toplevel_ol_state_blocking(commitment, state)
-            .expect("test: put");
+            .put_preseal_ol_state_async(commitment, state.clone())
+            .await
+            .expect("test: put preseal");
+        let retrieved = manager
+            .get_preseal_ol_state_async(commitment)
+            .await
+            .expect("test: get preseal")
+            .unwrap();
+        assert_eq!(retrieved.cur_slot(), state.cur_slot());
+    }
 
-        // Delete state
+    async fn proptest_delete_preseal_async(commitment: EpochCommitment, state: OLState) {
+        let manager = setup_manager();
         manager
-            .del_toplevel_ol_state_blocking(commitment)
-            .expect("test: delete");
-
-        // Verify it's gone
+            .put_preseal_ol_state_async(commitment, state)
+            .await
+            .expect("test: put preseal");
+        manager
+            .del_preseal_ol_state_async(commitment)
+            .await
+            .expect("test: delete preseal");
         let deleted = manager
-            .get_toplevel_ol_state_blocking(commitment)
-            .expect("test: get after delete");
+            .get_preseal_ol_state_async(commitment)
+            .await
+            .expect("test: get preseal after delete");
         assert!(deleted.is_none());
     }
 
-    #[tokio::test]
-    async fn test_write_batch_operations_async() {
+    async fn proptest_put_and_get_write_batch_async(commitment: OLBlockCommitment, state: OLState) {
         let manager = setup_manager();
-        let state = OLState::new_genesis();
         let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
-        let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
-
-        // Put write batch
         manager
             .put_write_batch_async(commitment, wb.clone())
             .await
             .expect("test: put");
-
-        // Get write batch (should be cached)
         let retrieved = manager
             .get_write_batch_async(commitment)
             .await
             .expect("test: get")
             .unwrap();
-        // Verify write batch was retrieved (can't compare directly as WriteBatch doesn't implement
-        // PartialEq)
         assert_eq!(
             retrieved.global().get_cur_slot(),
             wb.global().get_cur_slot()
         );
+    }
 
-        // Delete write batch
+    async fn proptest_delete_write_batch_async(commitment: OLBlockCommitment, state: OLState) {
+        let manager = setup_manager();
+        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+        manager
+            .put_write_batch_async(commitment, wb)
+            .await
+            .expect("test: put");
         manager
             .del_write_batch_async(commitment)
             .await
             .expect("test: delete");
-
-        // Verify it's gone
         let deleted = manager
             .get_write_batch_async(commitment)
             .await
@@ -425,39 +552,143 @@ mod tests {
         assert!(deleted.is_none());
     }
 
-    #[test]
-    fn test_write_batch_operations_blocking() {
-        let manager = setup_manager();
-        let state = OLState::new_genesis();
-        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
-        let commitment = OLBlockCommitment::new(Slot::from(0u64), OLBlockId::default());
+    // =============================================================================
+    // Proptest-based tests (blocking)
+    // =============================================================================
 
-        // Put write batch
-        manager
-            .put_write_batch_blocking(commitment, wb.clone())
-            .expect("test: put");
+    proptest! {
+        #[test]
+        fn test_put_and_get_toplevel_blocking(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            proptest_put_and_get_toplevel_blocking(commitment, state);
+        }
 
-        // Get write batch (should be cached)
-        let retrieved = manager
-            .get_write_batch_blocking(commitment)
-            .expect("test: get")
-            .unwrap();
-        // Verify write batch was retrieved (can't compare directly as WriteBatch doesn't implement
-        // PartialEq)
-        assert_eq!(
-            retrieved.global().get_cur_slot(),
-            wb.global().get_cur_slot()
-        );
+        #[test]
+        fn test_get_latest_toplevel_blocking(
+            commitment1 in ol_block_commitment_strategy(),
+            commitment2 in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            proptest_get_latest_toplevel_blocking(commitment1, commitment2, state);
+        }
 
-        // Delete write batch
-        manager
-            .del_write_batch_blocking(commitment)
-            .expect("test: delete");
+        #[test]
+        fn test_delete_toplevel_blocking(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            proptest_delete_toplevel_blocking(commitment, state);
+        }
 
-        // Verify it's gone
-        let deleted = manager
-            .get_write_batch_blocking(commitment)
-            .expect("test: get after delete");
-        assert!(deleted.is_none());
+        #[test]
+        fn test_put_and_get_preseal_blocking(
+            commitment in epoch_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            proptest_put_and_get_preseal_blocking(commitment, state);
+        }
+
+        #[test]
+        fn test_delete_preseal_blocking(
+            commitment in epoch_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            proptest_delete_preseal_blocking(commitment, state);
+        }
+
+        #[test]
+        fn test_put_and_get_write_batch_blocking(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            proptest_put_and_get_write_batch_blocking(commitment, state);
+        }
+
+        #[test]
+        fn test_delete_write_batch_blocking(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            proptest_delete_write_batch_blocking(commitment, state);
+        }
+    }
+
+    // =============================================================================
+    // Proptest-based tests (async)
+    // =============================================================================
+
+    proptest! {
+        #[test]
+        fn test_put_and_get_toplevel_async(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            Runtime::new().unwrap().block_on(async {
+                proptest_put_and_get_toplevel_async(commitment, state).await;
+            });
+        }
+
+        #[test]
+        fn test_get_latest_toplevel_async(
+            commitment1 in ol_block_commitment_strategy(),
+            commitment2 in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            Runtime::new().unwrap().block_on(async {
+                proptest_get_latest_toplevel_async(commitment1, commitment2, state).await;
+            });
+        }
+
+        #[test]
+        fn test_delete_toplevel_async(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            Runtime::new().unwrap().block_on(async {
+                proptest_delete_toplevel_async(commitment, state).await;
+            });
+        }
+
+        #[test]
+        fn test_put_and_get_preseal_async(
+            commitment in epoch_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            Runtime::new().unwrap().block_on(async {
+                proptest_put_and_get_preseal_async(commitment, state).await;
+            });
+        }
+
+        #[test]
+        fn test_delete_preseal_async(
+            commitment in epoch_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            Runtime::new().unwrap().block_on(async {
+                proptest_delete_preseal_async(commitment, state).await;
+            });
+        }
+
+        #[test]
+        fn test_put_and_get_write_batch_async(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            Runtime::new().unwrap().block_on(async {
+                proptest_put_and_get_write_batch_async(commitment, state).await;
+            });
+        }
+
+        #[test]
+        fn test_delete_write_batch_async(
+            commitment in ol_block_commitment_strategy(),
+            state in ol_state_strategy(),
+        ) {
+            Runtime::new().unwrap().block_on(async {
+                proptest_delete_write_batch_async(commitment, state).await;
+            });
+        }
     }
 }

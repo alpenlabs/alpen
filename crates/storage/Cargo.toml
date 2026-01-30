@@ -31,6 +31,8 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-strata-db-store-sled.workspace = true
-strata-ledger-types.workspace = true
 proptest.workspace = true
+strata-db-store-sled.workspace = true
+strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-ledger-types.workspace = true
+strata-ol-state-types = { workspace = true, features = ["test-utils"] }

@@ -429,6 +429,15 @@ pub trait OLStateDatabase: Send + Sync + 'static {
     /// Deletes a toplevel OLState snapshot for a given block commitment.
     fn del_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<()>;
 
+    /// Stores a preseal (inner post-state) OLState snapshot for a terminal epoch commitment.
+    fn put_preseal_ol_state(&self, commitment: EpochCommitment, state: OLState) -> DbResult<()>;
+
+    /// Retrieves a preseal (inner post-state) OLState snapshot for a terminal epoch commitment.
+    fn get_preseal_ol_state(&self, commitment: EpochCommitment) -> DbResult<Option<OLState>>;
+
+    /// Deletes a preseal OLState snapshot for a terminal epoch commitment.
+    fn del_preseal_ol_state(&self, commitment: EpochCommitment) -> DbResult<()>;
+
     /// Stores an OL write batch for a given block commitment.
     ///
     /// Write batches represent state changes that can be applied to a state.
