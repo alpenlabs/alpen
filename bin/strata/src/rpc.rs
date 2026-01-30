@@ -11,16 +11,24 @@ use jsonrpsee::{
     },
 };
 use ssz::Encode;
+use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
+use strata_btcio::writer::EnvelopeHandle;
+use strata_checkpoint_types_ssz::SignedCheckpointPayload;
+use strata_crypto::hash;
+use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
+use strata_db_types::types::OLCheckpointStatus;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_l1_txfmt::TagData;
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
-use strata_primitives::HexBytes;
-use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
+use strata_primitives::{Buf64, HexBytes, HexBytes64};
+use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer, OLSequencerRpcServer};
 use strata_rpc_types_new::{
-    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
+    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry, RpcDuty,
     RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
 };
+use strata_sequencer_new::{BlockCompletionData, TemplateManager, extract_duties};
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -36,6 +44,12 @@ pub(crate) struct OLRpcServer {
 
     /// Mempool handle for transaction submission.
     mempool_handle: Arc<MempoolHandle>,
+
+    /// Block template manager.
+    template_manager: Arc<TemplateManager>,
+
+    /// Envelope Handle for managing bitcoin payloads
+    envelope_handle: Arc<EnvelopeHandle>,
 }
 
 impl OLRpcServer {
@@ -44,11 +58,15 @@ impl OLRpcServer {
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
         mempool_handle: Arc<MempoolHandle>,
+        template_manager: Arc<TemplateManager>,
+        envelope_handle: Arc<EnvelopeHandle>,
     ) -> Self {
         Self {
             storage,
             status_channel,
             mempool_handle,
+            template_manager,
+            envelope_handle,
         }
     }
 
@@ -478,6 +496,72 @@ impl OLFullNodeRpcServer for OLRpcServer {
             .await
             .map(|b| HexBytes(b.as_ssz_bytes()))?;
         Ok(raw_blk)
+    }
+}
+
+#[async_trait]
+impl OLSequencerRpcServer for OLRpcServer {
+    async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcDuty>> {
+        let Some(tip_blkid) = self
+            .status_channel
+            .get_ol_sync_status()
+            .map(|s| s.tip_blkid().clone())
+        else {
+            // If there is no tip then there's definitely no checkpoint to sign, so return empty
+            // duties.
+            return Ok(vec![]);
+        };
+        let duties = extract_duties(
+            self.template_manager.as_ref(),
+            tip_blkid,
+            self.storage.as_ref(),
+        )
+        .await
+        .map_err(db_error)?
+        .into_iter()
+        .map(RpcDuty::from)
+        .collect();
+        Ok(duties)
+    }
+    async fn complete_block_template(
+        &self,
+        template_id: OLBlockId,
+        completion: BlockCompletionData,
+    ) -> RpcResult<OLBlockId> {
+        todo!()
+    }
+
+    async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()> {
+        let db = self.storage.ol_checkpoint();
+        let Some(entry) = db.get_checkpoint_async(epoch).await.map_err(db_error)? else {
+            return Err(not_found_error(format!(
+                "checkpoint {epoch} not found in db"
+            )));
+        };
+        // Assumes that checkpoint db contains only proven checkpoints
+        if entry.status == OLCheckpointStatus::Unsigned {
+            let signed_checkpoint = SignedCheckpointPayload::new(entry.checkpoint, Buf64(sig.0));
+            // TODO: verify sig
+            let checkpoint_tag = TagData::new(
+                CHECKPOINT_V0_SUBPROTOCOL_ID,
+                OL_STF_CHECKPOINT_TX_TYPE,
+                vec![],
+            )
+            .map_err(|e| internal_error(e.to_string()))?;
+            let payload = L1Payload::new(vec![signed_checkpoint.as_ssz_bytes()], checkpoint_tag);
+            // TODO: compute sighash correctly. It should be the same as the sequencer signer uses
+            // to sign the checkpoint and to verify
+            let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
+
+            let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
+
+            self.envelope_handle
+                .submit_intent_async(payload_intent)
+                .await
+                .map_err(|e| internal_error(e.to_string()))?;
+        }
+        // If already signed, then fine, return
+        Ok(())
     }
 }
 
