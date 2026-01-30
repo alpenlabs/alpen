@@ -1,0 +1,22 @@
+[package]
+name = "strata-sequencer-new"
+version = "0.3.0-alpha.1"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-checkpoint-types-ssz.workspace = true
+strata-crypto.workspace = true
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-params.workspace = true
+strata-storage.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+strata-acct-types.workspace = true
+strata-ol-chain-types-new.workspace = true
