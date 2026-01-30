@@ -3,11 +3,13 @@
 use std::sync::Arc;
 
 use strata_asm_worker::AsmWorkerHandle;
+use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
 use strata_consensus_logic::FcmServiceHandle;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
+use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
@@ -65,15 +67,26 @@ pub(crate) struct ServiceHandles {
     mempool_handle: Arc<MempoolHandle>,
     chain_worker_handle: Arc<ChainWorkerHandle>,
     fcm_handle: Arc<FcmServiceHandle>,
+    // Sequencer-specific handles (None for fullnodes)
+    broadcast_handle: Option<Arc<L1BroadcastHandle>>,
+    envelope_handle: Option<Arc<EnvelopeHandle>>,
+    blockasm_handle: Option<BlockasmHandle>,
 }
 
 impl ServiceHandles {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Service handles aggregates all service handles"
+    )]
     pub(crate) fn new(
         asm_handle: Arc<AsmWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
+        broadcast_handle: Option<Arc<L1BroadcastHandle>>,
+        envelope_handle: Option<Arc<EnvelopeHandle>>,
+        blockasm_handle: Option<BlockasmHandle>,
     ) -> Self {
         Self {
             asm_handle,
@@ -81,6 +94,9 @@ impl ServiceHandles {
             mempool_handle,
             chain_worker_handle,
             fcm_handle,
+            broadcast_handle,
+            envelope_handle,
+            blockasm_handle,
         }
     }
 }

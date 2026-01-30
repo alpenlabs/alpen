@@ -22,15 +22,25 @@ pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
     get_config(args.clone())
 }
 
-pub(crate) fn init_storage(config: &Config) -> Result<Arc<NodeStorage>, InitError> {
+pub(crate) fn init_storage(
+    config: &Config,
+) -> Result<
+    (
+        Arc<NodeStorage>,
+        Arc<strata_db_store_sled::SledBackend>,
+        threadpool::ThreadPool,
+    ),
+    InitError,
+> {
     let db = init_db::init_database(&config.client)
         .map_err(|e| InitError::StorageCreation(e.to_string()))?;
     let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
+    // Clone db Arc before passing to create_node_storage so we can use it for sequencer tasks
     let storage = Arc::new(
-        create_node_storage(db, pool.clone())
+        create_node_storage(db.clone(), pool.clone())
             .map_err(|e| InitError::StorageCreation(e.to_string()))?,
     );
-    Ok(storage)
+    Ok((storage, db, pool))
 }
 
 /// Initialize runtime, database, bitcoin client, status channel etc.
@@ -44,7 +54,7 @@ pub(crate) fn init_node_context(
     let params = resolve_and_validate_params(&params_path, &config)?;
 
     // Init storage
-    let storage = init_storage(&config)?;
+    let (storage, db, pool) = init_storage(&config)?;
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
@@ -56,6 +66,8 @@ pub(crate) fn init_node_context(
         handle,
         config,
         params,
+        db,
+        pool,
         storage,
         bitcoin_client,
         status_channel,

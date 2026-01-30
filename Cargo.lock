@@ -13637,6 +13637,7 @@ dependencies = [
  "serde_json",
  "ssz",
  "strata-asm-worker",
+ "strata-btcio",
  "strata-chain-worker-new",
  "strata-common",
  "strata-config",
@@ -13648,6 +13649,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-node-context",
+ "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
  "strata-ol-state-types",
@@ -14831,10 +14833,12 @@ version = "0.1.0"
 dependencies = [
  "bitcoind-async-client",
  "strata-config",
+ "strata-db-store-sled",
  "strata-params",
  "strata-status",
  "strata-storage",
  "strata-tasks",
+ "threadpool",
  "tokio",
 ]
 

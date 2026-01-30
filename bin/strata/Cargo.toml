@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 ssz.workspace = true
 strata-asm-worker.workspace = true
+strata-btcio.workspace = true
 strata-chain-worker-new.workspace = true
 strata-common.workspace = true
 strata-config.workspace = true
@@ -17,6 +18,7 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-node-context.workspace = true
+strata-ol-block-assembly.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-state-types.workspace = true

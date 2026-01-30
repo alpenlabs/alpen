@@ -3,10 +3,12 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use strata_config::Config;
+use strata_db_store_sled::SledBackend;
 use strata_params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
+use threadpool::ThreadPool;
 use tokio::runtime::Handle;
 
 /// Contains resources needed to run node services.
@@ -19,16 +21,24 @@ pub struct NodeContext {
     config: Config,
     params: Arc<Params>,
     task_manager: TaskManager,
+    db: Arc<SledBackend>,
+    pool: ThreadPool,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
     status_channel: Arc<StatusChannel>,
 }
 
 impl NodeContext {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Node context needs all these dependencies"
+    )]
     pub fn new(
         handle: Handle,
         config: Config,
         params: Arc<Params>,
+        db: Arc<SledBackend>,
+        pool: ThreadPool,
         storage: Arc<NodeStorage>,
         bitcoin_client: Arc<Client>,
         status_channel: Arc<StatusChannel>,
@@ -40,6 +50,8 @@ impl NodeContext {
             config,
             params,
             task_manager,
+            db,
+            pool,
             storage,
             bitcoin_client,
             status_channel,
@@ -72,6 +84,14 @@ impl NodeContext {
 
     pub fn status_channel(&self) -> &Arc<StatusChannel> {
         &self.status_channel
+    }
+
+    pub fn db(&self) -> &Arc<SledBackend> {
+        &self.db
+    }
+
+    pub fn pool(&self) -> &ThreadPool {
+        &self.pool
     }
 
     pub fn into_parts(self) -> (TaskManager, CommonContext) {
