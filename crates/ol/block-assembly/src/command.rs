@@ -7,11 +7,11 @@ use tokio::sync::oneshot;
 
 use crate::{
     error::BlockAssemblyError,
-    types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate},
+    types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate},
 };
 
 /// Type alias for block template generation result.
-type GenerateBlockTemplateResult = Result<BlockTemplate, BlockAssemblyError>;
+type GenerateBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
 
 /// Type alias for block template completion result.
 type CompleteBlockTemplateResult = Result<OLBlock, BlockAssemblyError>;
