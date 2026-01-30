@@ -4,8 +4,6 @@
 //! minimal valid responses. It's useful for testing EE-specific functionality
 //! in isolation without needing to run a full OL node.
 
-use std::mem;
-
 use alpen_ee_common::{
     OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
     SequencerOLClient,
@@ -51,7 +49,19 @@ impl OLClient for DummyOLClient {
             epoch as u64,
             self.slot_to_block_commitment(epoch as u64).blkid,
         );
-        Ok(OLEpochSummary::new(commitment, commitment, vec![]))
+        // Compute previous epoch commitment for proper chaining.
+        // For epoch 0, use genesis; otherwise use epoch - 1.
+        let prev = if epoch == 0 {
+            self.genesis_epoch
+        } else {
+            let prev_epoch = epoch - 1;
+            EpochCommitment::new(
+                prev_epoch,
+                prev_epoch as u64,
+                self.slot_to_block_commitment(prev_epoch as u64).blkid,
+            )
+        };
+        Ok(OLEpochSummary::new(commitment, prev, vec![]))
     }
 }
 
@@ -97,7 +107,10 @@ fn slot_to_block_commitment(slot: u64) -> OLBlockCommitment {
 }
 
 fn u64_to_256(v: u64) -> [u8; 32] {
-    // SAFETY: This is a simple bit reinterpretation for generating deterministic test data.
-    // The resulting array is used only for creating mock block IDs.
-    unsafe { mem::transmute([1u64, 0u64, 0u64, v]) }
+    // Use explicit little-endian byte order for deterministic cross-platform behavior.
+    let mut result = [0u8; 32];
+    result[0..8].copy_from_slice(&1u64.to_le_bytes());
+    // bytes 8..16 and 16..24 are already zero
+    result[24..32].copy_from_slice(&v.to_le_bytes());
+    result
 }

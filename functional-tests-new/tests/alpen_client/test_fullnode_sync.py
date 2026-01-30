@@ -75,6 +75,7 @@ class TestFullnodeSync(AlpenClientTest):
 
             # Verify new block relay
             new_target = target_block + 5
+            sequencer.wait_for_block(new_target, timeout=120)
             fullnode_1.wait_for_block(new_target, timeout=60)
 
             logger.info(f"fullnode_1 synced block {target_block} and new block {new_target}")
