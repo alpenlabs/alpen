@@ -8,17 +8,21 @@
 #![cfg_attr(test, expect(unused_crate_dependencies, reason = "test weirdness"))]
 
 mod block_assembly;
+mod commit;
+pub mod ee_program;
+mod errors;
 mod exec_processing;
 mod private_input;
 mod update_processing;
 mod verification_state;
 
 pub use block_assembly::apply_input_messages;
+pub use ee_program::EeSnarkAccountProgram;
 pub use private_input::SharedPrivateInput;
 pub use update_processing::{
-    MsgData, MsgMeta, apply_final_update_changes, apply_update_operation_unconditionally,
-    verify_and_apply_update_operation,
+    apply_update_operation_unconditionally, verify_and_apply_update_operation,
 };
+pub use verification_state::{EeVerificationInput, EeVerificationState};
 
 // Builder utils
 //

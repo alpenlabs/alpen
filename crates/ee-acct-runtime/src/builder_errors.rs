@@ -2,6 +2,7 @@
 
 use strata_codec::CodecError;
 use strata_ee_acct_types::{EnvError, MessageDecodeError};
+use strata_snark_acct_runtime::ProgramError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,6 +19,10 @@ pub enum BuilderError {
     #[error("message decode error")]
     MessageDecode(#[from] MessageDecodeError),
 
+    /// Program error during message processing.
+    #[error("snark program: {0}")]
+    Program(ProgramError<EnvError>),
+
     /// State root mismatch when building a block.
     #[error("state root mismatch")]
     StateRootMismatch,
@@ -29,6 +34,13 @@ pub enum BuilderError {
     /// No blocks in chain segment.
     #[error("chain segment has no blocks")]
     EmptyChainSegment,
+}
+
+/// Manual impl for this trait due to macro inflexibility, I guess?
+impl From<ProgramError<EnvError>> for BuilderError {
+    fn from(value: ProgramError<EnvError>) -> Self {
+        Self::Program(value)
+    }
 }
 
 pub type BuilderResult<T> = Result<T, BuilderError>;
