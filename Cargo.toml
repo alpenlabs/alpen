@@ -119,6 +119,7 @@ members = [
   "bin/alpen-client",
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
+  "bin/strata-sequencer",
   "bin/prover-client",
   "bin/prover-perf",
   "bin/strata",                  # New binary

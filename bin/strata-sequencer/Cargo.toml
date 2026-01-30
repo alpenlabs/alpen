@@ -1,0 +1,41 @@
+[package]
+name = "strata-sequencer-bin"
+version = "0.3.0-alpha.1"
+edition = "2024"
+
+[[bin]]
+name = "strata-sequencer"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-checkpoint-types-ssz.workspace = true
+strata-codec.workspace = true
+strata-codec-utils.workspace = true
+strata-common.workspace = true
+strata-crypto.workspace = true
+strata-identifiers.workspace = true
+strata-key-derivation.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-primitives.workspace = true
+strata-rpc-api-new = { workspace = true, features = ["client"] }
+strata-rpc-types-new.workspace = true
+strata-sequencer-new.workspace = true
+strata-tasks.workspace = true
+
+bitcoin.workspace = true
+
+anyhow.workspace = true
+argh.workspace = true
+jsonrpsee = { workspace = true, features = ["ws-client"] }
+serde.workspace = true
+ssz.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
