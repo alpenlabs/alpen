@@ -15280,6 +15280,7 @@ name = "strata-rpc-types-new"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "proptest",
  "serde",
  "serde_json",
  "ssz",

@@ -5,6 +5,7 @@ mod account_summary;
 mod block;
 mod blocktag;
 mod chain_status;
+mod sequencer;
 mod snark_acct_update;
 mod txn;
 
@@ -13,6 +14,10 @@ pub use account_summary::{RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMes
 pub use block::RpcBlockRangeEntry;
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::RpcOLChainStatus;
+pub use sequencer::{
+    RpcBlockGenerationConfig, RpcOLBlockSigningDuty, RpcOLBlockTemplate, RpcOLCheckpointDuty,
+    RpcOLDuty,
+};
 pub use snark_acct_update::RpcSnarkAccountUpdate;
 pub use txn::{
     RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionAttachment, RpcTransactionPayload,
