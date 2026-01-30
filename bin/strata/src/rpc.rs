@@ -11,22 +11,30 @@ use jsonrpsee::{
     },
 };
 use ssz::Encode;
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_db_types::types::OLCheckpointStatus;
+use strata_identifiers::{
+    AccountId, Buf64, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId,
+};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_block_assembly::{BlockCompletionData, BlockGenerationConfig, BlockasmHandle};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
-use strata_primitives::HexBytes;
-use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
+use strata_params::Params;
+use strata_primitives::{HexBytes, HexBytes64};
+use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer, OLSequencerRpcServer};
 use strata_rpc_types_new::{
-    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
-    RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
+    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockGenerationConfig,
+    RpcBlockRangeEntry, RpcOLBlockSigningDuty, RpcOLBlockTemplate, RpcOLChainStatus,
+    RpcOLCheckpointDuty, RpcOLDuty, RpcOLTransaction, RpcSnarkAccountState,
 };
+use strata_sequencer_new::duty::{extractor::extract_duties, types::Duty};
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::error;
 
 /// OL RPC server implementation.
+#[derive(Clone)]
 pub(crate) struct OLRpcServer {
     /// Storage backend.
     storage: Arc<NodeStorage>,
@@ -36,6 +44,12 @@ pub(crate) struct OLRpcServer {
 
     /// Mempool handle for transaction submission.
     mempool_handle: MempoolHandle,
+
+    /// Block assembly handle for sequencer RPC.
+    blockasm_handle: Option<Arc<BlockasmHandle>>,
+
+    /// Params for duty extraction.
+    params: Arc<Params>,
 }
 
 impl OLRpcServer {
@@ -44,11 +58,15 @@ impl OLRpcServer {
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
         mempool_handle: MempoolHandle,
+        blockasm_handle: Option<Arc<BlockasmHandle>>,
+        params: Arc<Params>,
     ) -> Self {
         Self {
             storage,
             status_channel,
             mempool_handle,
+            blockasm_handle,
+            params,
         }
     }
 
@@ -433,6 +451,93 @@ impl OLClientRpcServer for OLRpcServer {
     }
 }
 
+#[async_trait]
+impl OLSequencerRpcServer for OLRpcServer {
+    async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcOLDuty>> {
+        let chain_status = self
+            .status_channel
+            .get_chain_sync_status()
+            .ok_or_else(|| internal_error("Chain sync status not available"))?;
+        let tip_blkid = *chain_status.tip.blkid();
+
+        let duties = extract_duties(
+            tip_blkid,
+            self.storage.ol_block().as_ref(),
+            self.storage.ol_checkpoint().as_ref(),
+            &self.params,
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to extract duties: {e}")))?;
+
+        let rpc_duties = duties.into_iter().map(duty_to_rpc).collect();
+        Ok(rpc_duties)
+    }
+
+    async fn get_ol_block_template(
+        &self,
+        config: RpcBlockGenerationConfig,
+    ) -> RpcResult<RpcOLBlockTemplate> {
+        let Some(blockasm_handle) = &self.blockasm_handle else {
+            return Err(internal_error("Sequencer block assembly not configured"));
+        };
+
+        let block_config = rpc_block_generation_config(&config);
+        let template = blockasm_handle
+            .generate_block_template(block_config)
+            .await
+            .map_err(|e| internal_error(format!("Failed to generate block template: {e}")))?;
+
+        let header_bytes = template.header().as_ssz_bytes();
+        Ok(RpcOLBlockTemplate::new(
+            template.template_id(),
+            HexBytes(header_bytes),
+        ))
+    }
+
+    async fn complete_ol_block_template(
+        &self,
+        template_id: OLBlockId,
+        sig: HexBytes64,
+    ) -> RpcResult<OLBlockId> {
+        let Some(blockasm_handle) = &self.blockasm_handle else {
+            return Err(internal_error("Sequencer block assembly not configured"));
+        };
+
+        let completion = BlockCompletionData::from_signature(Buf64::from(sig.0));
+        let block = blockasm_handle
+            .complete_block_template(template_id, completion)
+            .await
+            .map_err(|e| internal_error(format!("Failed to complete block template: {e}")))?;
+
+        Ok(block.header().compute_blkid())
+    }
+
+    async fn complete_checkpoint_signature(&self, epoch: u64, _sig: HexBytes64) -> RpcResult<()> {
+        let epoch = epoch as Epoch;
+        let Some(entry) = self
+            .storage
+            .ol_checkpoint()
+            .get_checkpoint_async(epoch)
+            .await
+            .map_err(db_error)?
+        else {
+            return Err(not_found_error(format!(
+                "No OL checkpoint entry found for epoch {epoch}"
+            )));
+        };
+
+        if entry.status != OLCheckpointStatus::Unsigned {
+            return Err(invalid_params_error(format!(
+                "OL checkpoint entry for epoch {epoch} is not unsigned"
+            )));
+        }
+
+        Err(internal_error(
+            "Checkpoint signature handling is not wired to L1 writer yet",
+        ))
+    }
+}
+
 const MAX_RAW_BLOCKS_RANGE: usize = 5000; // FIXME: make this configurable
 
 #[async_trait]
@@ -534,6 +639,30 @@ fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
         | OLMempoolError::StateProvider(_) => {
             error!(?err, "Internal mempool error");
             internal_error(err.to_string())
+        }
+    }
+}
+
+fn rpc_block_generation_config(config: &RpcBlockGenerationConfig) -> BlockGenerationConfig {
+    let mut generated = BlockGenerationConfig::new(config.parent_block_commitment());
+    if let Some(ts) = config.ts() {
+        generated = generated.with_ts(ts);
+    }
+    generated
+}
+
+fn duty_to_rpc(duty: Duty) -> RpcOLDuty {
+    match duty {
+        Duty::SignBlock(duty) => RpcOLDuty::SignBlock(RpcOLBlockSigningDuty::new(
+            duty.target_slot(),
+            duty.parent(),
+            duty.target_ts(),
+        )),
+        Duty::CommitBatch(duty) => {
+            let payload = duty.into_inner();
+            let epoch = payload.new_tip().epoch;
+            let payload_bytes = payload.as_ssz_bytes();
+            RpcOLDuty::CommitBatch(RpcOLCheckpointDuty::new(epoch, HexBytes(payload_bytes)))
         }
     }
 }

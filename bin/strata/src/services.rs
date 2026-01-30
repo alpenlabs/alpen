@@ -5,10 +5,15 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use strata_chain_worker_new::{ChainWorkerBuilder, ChainWorkerContextImpl};
+use strata_config::EpochSealingConfig;
 use strata_consensus_logic::sync_manager::{spawn_asm_worker, spawn_csm_listener};
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_block_assembly::{
+    BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
+};
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
-use strata_rpc_api_new::OLClientRpcServer;
+use strata_rpc_api_new::{OLClientRpcServer, OLSequencerRpcServer};
+use strata_status::StatusChannel;
 
 use crate::{context::NodeContext, rpc::OLRpcServer, run_context::RunContext};
 
@@ -18,8 +23,10 @@ struct RpcDeps {
     rpc_host: String,
     rpc_port: u16,
     storage: Arc<strata_storage::NodeStorage>,
-    status_channel: Arc<strata_status::StatusChannel>,
+    status_channel: Arc<StatusChannel>,
     mempool_handle: MempoolHandle,
+    blockasm_handle: Option<Arc<BlockasmHandle>>,
+    params: Arc<strata_params::Params>,
 }
 
 /// Just simply starts services. This can later be extended to service registry pattern.
@@ -58,6 +65,15 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         .with_runtime(nodectx.executor.handle().clone())
         .launch(&nodectx.executor)?;
 
+    let blockasm_handle = if nodectx.config.client.is_sequencer {
+        Some(Arc::new(start_block_assembly(
+            &nodectx,
+            mempool_handle.clone(),
+        )?))
+    } else {
+        None
+    };
+
     // TODO: Start other tasks like l1writer, broadcaster, fcm, btcio reader, etc. all as
     // service, returning the monitors.
 
@@ -71,6 +87,7 @@ pub(crate) fn start_services(nodectx: NodeContext) -> Result<RunContext> {
         csm_monitor,
         mempool_handle,
         chain_worker_handle,
+        blockasm_handle,
         storage: nodectx.storage,
         status_channel: nodectx.status_channel,
     })
@@ -111,6 +128,36 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     })
 }
 
+fn start_block_assembly(
+    nodectx: &NodeContext,
+    mempool_handle: MempoolHandle,
+) -> Result<strata_ol_block_assembly::BlockasmHandle> {
+    let sequencer_config = nodectx
+        .config
+        .sequencer
+        .clone()
+        .ok_or_else(|| anyhow!("Missing sequencer configuration"))?;
+    let epoch_sealing = nodectx.config.epoch_sealing.clone().unwrap_or_default();
+
+    let epoch_sealing_policy = match epoch_sealing {
+        EpochSealingConfig::FixedSlot { slots_per_epoch } => FixedSlotSealing::new(slots_per_epoch),
+    };
+
+    let mempool_provider = MempoolProviderImpl::new(Arc::new(mempool_handle));
+    let state_provider = nodectx.storage.ol_state().clone();
+
+    let builder = BlockasmBuilder::new(
+        nodectx.params.clone(),
+        nodectx.storage.clone(),
+        mempool_provider,
+        epoch_sealing_policy,
+        state_provider,
+        sequencer_config,
+    );
+
+    nodectx.runtime.block_on(builder.launch(&nodectx.executor))
+}
+
 /// Starts the RPC server.
 pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
@@ -120,6 +167,8 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         storage: runctx.storage.clone(),
         status_channel: runctx.status_channel.clone(),
         mempool_handle: runctx.mempool_handle.clone(),
+        blockasm_handle: runctx.blockasm_handle.clone(),
+        params: runctx.params.clone(),
     };
 
     runctx
@@ -138,11 +187,21 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     });
 
     // Create and register OL RPC server
-    let ol_rpc_server = OLRpcServer::new(deps.storage, deps.status_channel, deps.mempool_handle);
-    let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
+    let ol_rpc_server = OLRpcServer::new(
+        deps.storage,
+        deps.status_channel,
+        deps.mempool_handle,
+        deps.blockasm_handle,
+        deps.params,
+    );
+    let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server.clone());
+    let ol_sequencer_module = OLSequencerRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
         .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))?;
+    module
+        .merge(ol_sequencer_module)
+        .map_err(|e| anyhow!("Failed to merge OL sequencer RPC module: {}", e))?;
 
     let addr = format!("{}:{}", deps.rpc_host, deps.rpc_port);
     let rpc_server = ServerBuilder::new()

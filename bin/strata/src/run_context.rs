@@ -6,6 +6,7 @@ use strata_asm_worker::AsmWorkerHandle;
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
 use strata_csm_worker::CsmWorkerStatus;
+use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
@@ -28,6 +29,7 @@ pub(crate) struct RunContext {
     pub csm_monitor: ServiceMonitor<CsmWorkerStatus>,
     pub mempool_handle: MempoolHandle,
     pub chain_worker_handle: ChainWorkerHandle,
+    pub blockasm_handle: Option<Arc<BlockasmHandle>>,
     // Shared infrastructure
     pub storage: Arc<NodeStorage>,
     pub status_channel: Arc<StatusChannel>,
