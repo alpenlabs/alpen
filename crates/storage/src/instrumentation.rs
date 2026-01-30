@@ -37,4 +37,7 @@ pub(crate) mod components {
 
     /// L1WriterDatabase operations. Fields: envelope_id, payload_size
     pub(crate) const STORAGE_L1_WRITER: &str = "storage:l1_writer";
+
+    /// OLCheckpointDatabase operations. Fields: epoch
+    pub(crate) const STORAGE_OL_CHECKPOINT: &str = "storage:ol_checkpoint";
 }

@@ -2,7 +2,7 @@
 
 use ssz::Encode;
 use ssz_types::FixedBytes;
-use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_identifiers::{Epoch, OLBlockCommitment, impl_borsh_via_ssz, impl_borsh_via_ssz_fixed};
 
 use crate::{L2BlockRange, ssz_generated::ssz::claim::CheckpointClaim};
 
@@ -19,6 +19,8 @@ impl L2BlockRange {
         &self.end
     }
 }
+
+impl_borsh_via_ssz_fixed!(L2BlockRange);
 
 impl CheckpointClaim {
     pub fn new(
@@ -60,5 +62,27 @@ impl CheckpointClaim {
     /// Serializes the claim to SSZ bytes for proof verification.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.as_ssz_bytes()
+    }
+}
+
+impl_borsh_via_ssz!(CheckpointClaim);
+
+#[cfg(test)]
+mod tests {
+    use strata_test_utils_ssz::ssz_proptest;
+
+    use crate::{
+        CheckpointClaim, L2BlockRange,
+        test_utils::{checkpoint_claim_strategy, l2_block_range_strategy},
+    };
+
+    mod l2_block_range {
+        use super::*;
+        ssz_proptest!(L2BlockRange, l2_block_range_strategy());
+    }
+
+    mod checkpoint_claim {
+        use super::*;
+        ssz_proptest!(CheckpointClaim, checkpoint_claim_strategy());
     }
 }

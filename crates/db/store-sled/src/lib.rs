@@ -14,6 +14,7 @@ pub mod l2;
 pub mod macros;
 pub mod mempool;
 pub mod ol;
+pub mod ol_checkpoint;
 pub mod ol_state;
 pub mod prover;
 #[cfg(feature = "test_utils")]
@@ -35,13 +36,15 @@ use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use mempool::db::MempoolDBSled;
 use ol::db::OLBlockDBSled;
+use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
 use strata_db_types::{
     DbResult,
     chainstate::ChainstateDatabase,
     traits::{
-        self, AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend, L1Database,
-        L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLStateDatabase,
+        AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend, L1BroadcastDatabase,
+        L1Database, L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase,
+        OLCheckpointDatabase, OLStateDatabase, ProofDatabase,
     },
 };
 use typed_sled::SledDb;
@@ -76,6 +79,7 @@ pub struct SledBackend {
     chain_state_db: Arc<ChainstateDBSled>,
     ol_block_db: Arc<OLBlockDBSled>,
     ol_state_db: Arc<OLStateDBSled>,
+    ol_checkpoint_db: Arc<OLCheckpointDBSled>,
     checkpoint_db: Arc<CheckpointDBSled>,
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
@@ -96,6 +100,8 @@ impl SledBackend {
         let chain_state_db = Arc::new(ChainstateDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_block_db = Arc::new(OLBlockDBSled::new(db_ref.clone(), config_ref.clone())?);
         let ol_state_db = Arc::new(OLStateDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let ol_checkpoint_db =
+            Arc::new(OLCheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
@@ -110,6 +116,7 @@ impl SledBackend {
             chain_state_db,
             ol_block_db,
             ol_state_db,
+            ol_checkpoint_db,
             checkpoint_db,
             writer_db,
             prover_db,
@@ -153,15 +160,19 @@ impl DatabaseBackend for SledBackend {
         self.checkpoint_db.clone()
     }
 
-    fn writer_db(&self) -> Arc<impl traits::L1WriterDatabase> {
+    fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase> {
+        self.ol_checkpoint_db.clone()
+    }
+
+    fn writer_db(&self) -> Arc<impl L1WriterDatabase> {
         self.writer_db.clone()
     }
 
-    fn prover_db(&self) -> Arc<impl traits::ProofDatabase> {
+    fn prover_db(&self) -> Arc<impl ProofDatabase> {
         self.prover_db.clone()
     }
 
-    fn broadcast_db(&self) -> Arc<impl traits::L1BroadcastDatabase> {
+    fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase> {
         self.broadcast_db.clone()
     }
 

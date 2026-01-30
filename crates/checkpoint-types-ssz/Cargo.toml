@@ -19,8 +19,22 @@ strata-identifiers.workspace = true
 strata-ol-chain-types-new.workspace = true
 
 borsh.workspace = true
+proptest = { optional = true, workspace = true }
 serde.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
+strata-test-utils-ssz.workspace = true
+
 [build-dependencies]
 ssz_codegen.workspace = true
+
+[features]
+test-utils = [
+  "dep:proptest",
+  "strata-identifiers/test-utils",
+  "strata-ol-chain-types-new/test-utils",
+]
