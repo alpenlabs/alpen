@@ -87,5 +87,5 @@ pub trait OLSequencerRpc {
     ) -> RpcResult<OLBlockId>;
 
     #[method(name = "strataadmin_completeCheckpointSignature")]
-    async fn complete_checkpoint_signature(&self, idx: u64, sig: HexBytes64) -> RpcResult<()>;
+    async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()>;
 }
