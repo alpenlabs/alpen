@@ -14864,6 +14864,7 @@ dependencies = [
  "arbitrary",
  "int-enum",
  "proptest",
+ "serde",
  "ssz",
  "ssz_codegen",
  "ssz_derive",

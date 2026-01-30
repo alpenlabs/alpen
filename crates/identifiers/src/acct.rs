@@ -105,6 +105,8 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
     Encode,
     BorshSerialize,
     BorshDeserialize,
+    Serialize,
+    Deserialize,
 )]
 pub struct AccountSerial(RawAccountSerial);
 
