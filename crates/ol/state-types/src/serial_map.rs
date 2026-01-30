@@ -134,8 +134,8 @@ impl SerialMap {
         if self.ids.is_empty() {
             return None;
         }
-        let serial_val = serial.inner();
-        let first_val = self.first.inner();
+        let serial_val = serial.value();
+        let first_val = self.first.value();
         if serial_val < first_val {
             return None;
         }
@@ -180,7 +180,8 @@ impl Codec for SerialMap {
 }
 
 fn offset_serial_by(serial: AccountSerial, amt: usize) -> AccountSerial {
-    AccountSerial::from(serial.inner() + amt as u32)
+    AccountSerial::try_from(serial.value() + amt as u32)
+        .expect("serial offset is within varint bounds")
 }
 
 #[cfg(test)]
@@ -193,6 +194,10 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes[0] = seed;
         AccountId::from(bytes)
+    }
+
+    fn serial_from_u32(value: u32) -> AccountSerial {
+        AccountSerial::try_from(value).expect("serial is within varint bounds")
     }
 
     #[test]
@@ -209,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_new_first_creates_map_with_one_entry() {
-        let serial = AccountSerial::from(10u32);
+        let serial = serial_from_u32(10);
         let id = test_account_id(1);
         let map = SerialMap::new_first(serial, id);
 
@@ -219,33 +224,33 @@ mod tests {
         assert_eq!(map.first_serial(), Some(serial));
         assert_eq!(map.last_id(), Some(&id));
         assert_eq!(map.last_serial(), Some(serial));
-        assert_eq!(map.next_expected_serial(), Some(AccountSerial::from(11u32)));
+        assert_eq!(map.next_expected_serial(), Some(serial_from_u32(11)));
     }
 
     #[test]
     fn test_check_next_serial_empty_map() {
         let map = SerialMap::new();
         // Empty map accepts any serial
-        assert!(map.check_next_serial(AccountSerial::from(0u32)));
-        assert!(map.check_next_serial(AccountSerial::from(100u32)));
+        assert!(map.check_next_serial(serial_from_u32(0)));
+        assert!(map.check_next_serial(serial_from_u32(100)));
     }
 
     #[test]
     fn test_check_next_serial_non_empty_map() {
-        let serial = AccountSerial::from(10u32);
+        let serial = serial_from_u32(10);
         let id = test_account_id(1);
         let map = SerialMap::new_first(serial, id);
 
         // Should only accept the next serial (11)
-        assert!(!map.check_next_serial(AccountSerial::from(10u32)));
-        assert!(map.check_next_serial(AccountSerial::from(11u32)));
-        assert!(!map.check_next_serial(AccountSerial::from(12u32)));
+        assert!(!map.check_next_serial(serial_from_u32(10)));
+        assert!(map.check_next_serial(serial_from_u32(11)));
+        assert!(!map.check_next_serial(serial_from_u32(12)));
     }
 
     #[test]
     fn test_insert_next_first_entry() {
         let mut map = SerialMap::new();
-        let serial = AccountSerial::from(5u32);
+        let serial = serial_from_u32(5);
         let id = test_account_id(1);
 
         assert!(map.insert_next(serial, id));
@@ -262,23 +267,23 @@ mod tests {
         let id3 = test_account_id(3);
 
         // Insert first entry
-        assert!(map.insert_next(AccountSerial::from(10u32), id1));
+        assert!(map.insert_next(serial_from_u32(10), id1));
         assert_eq!(map.len(), 1);
 
         // Insert second entry with correct serial
-        assert!(map.insert_next(AccountSerial::from(11u32), id2));
+        assert!(map.insert_next(serial_from_u32(11), id2));
         assert_eq!(map.len(), 2);
 
         // Insert third entry with correct serial
-        assert!(map.insert_next(AccountSerial::from(12u32), id3));
+        assert!(map.insert_next(serial_from_u32(12), id3));
         assert_eq!(map.len(), 3);
 
         // Verify all serials and IDs
-        assert_eq!(map.first_serial(), Some(AccountSerial::from(10u32)));
-        assert_eq!(map.last_serial(), Some(AccountSerial::from(12u32)));
+        assert_eq!(map.first_serial(), Some(serial_from_u32(10)));
+        assert_eq!(map.last_serial(), Some(serial_from_u32(12)));
         assert_eq!(map.first_id(), Some(&id1));
         assert_eq!(map.last_id(), Some(&id3));
-        assert_eq!(map.next_expected_serial(), Some(AccountSerial::from(13u32)));
+        assert_eq!(map.next_expected_serial(), Some(serial_from_u32(13)));
     }
 
     #[test]
@@ -288,20 +293,20 @@ mod tests {
         let id2 = test_account_id(2);
 
         // Insert first entry
-        assert!(map.insert_next(AccountSerial::from(10u32), id1));
+        assert!(map.insert_next(serial_from_u32(10), id1));
 
         // Try to insert with wrong serial (not 11)
-        assert!(!map.insert_next(AccountSerial::from(12u32), id2));
+        assert!(!map.insert_next(serial_from_u32(12), id2));
         assert_eq!(map.len(), 1); // Should not have been added
 
         // Insert with correct serial should work
-        assert!(map.insert_next(AccountSerial::from(11u32), id2));
+        assert!(map.insert_next(serial_from_u32(11), id2));
         assert_eq!(map.len(), 2);
     }
 
     #[test]
     fn test_insert_next_unchecked() {
-        let mut map = SerialMap::new_first(AccountSerial::from(5u32), test_account_id(1));
+        let mut map = SerialMap::new_first(serial_from_u32(5), test_account_id(1));
         let id2 = test_account_id(2);
         let id3 = test_account_id(3);
 
@@ -312,7 +317,7 @@ mod tests {
         assert_eq!(map.len(), 3);
 
         assert_eq!(map.last_id(), Some(&id3));
-        assert_eq!(map.last_serial(), Some(AccountSerial::from(7u32)));
+        assert_eq!(map.last_serial(), Some(serial_from_u32(7)));
     }
 
     #[test]
@@ -331,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_find_account_serial_single_entry() {
-        let serial = AccountSerial::from(10u32);
+        let serial = serial_from_u32(10);
         let id = test_account_id(1);
         let map = SerialMap::new_first(serial, id);
 
@@ -346,23 +351,14 @@ mod tests {
         let id2 = test_account_id(2);
         let id3 = test_account_id(3);
 
-        map.insert_next(AccountSerial::from(100u32), id1);
-        map.insert_next(AccountSerial::from(101u32), id2);
-        map.insert_next(AccountSerial::from(102u32), id3);
+        map.insert_next(serial_from_u32(100), id1);
+        map.insert_next(serial_from_u32(101), id2);
+        map.insert_next(serial_from_u32(102), id3);
 
         // Find each account
-        assert_eq!(
-            map.find_account_serial(&id1),
-            Some(AccountSerial::from(100u32))
-        );
-        assert_eq!(
-            map.find_account_serial(&id2),
-            Some(AccountSerial::from(101u32))
-        );
-        assert_eq!(
-            map.find_account_serial(&id3),
-            Some(AccountSerial::from(102u32))
-        );
+        assert_eq!(map.find_account_serial(&id1), Some(serial_from_u32(100)));
+        assert_eq!(map.find_account_serial(&id2), Some(serial_from_u32(101)));
+        assert_eq!(map.find_account_serial(&id3), Some(serial_from_u32(102)));
 
         // Non-existent account
         assert_eq!(map.find_account_serial(&test_account_id(4)), None);
@@ -375,14 +371,14 @@ mod tests {
         let id2 = test_account_id(2);
         let id3 = test_account_id(3);
 
-        map.insert_next(AccountSerial::from(50u32), id1);
-        map.insert_next(AccountSerial::from(51u32), id2);
-        map.insert_next(AccountSerial::from(52u32), id3);
+        map.insert_next(serial_from_u32(50), id1);
+        map.insert_next(serial_from_u32(51), id2);
+        map.insert_next(serial_from_u32(52), id3);
 
         assert_eq!(map.first_id(), Some(&id1));
-        assert_eq!(map.first_serial(), Some(AccountSerial::from(50u32)));
+        assert_eq!(map.first_serial(), Some(serial_from_u32(50)));
         assert_eq!(map.last_id(), Some(&id3));
-        assert_eq!(map.last_serial(), Some(AccountSerial::from(52u32)));
+        assert_eq!(map.last_serial(), Some(serial_from_u32(52)));
     }
 
     #[test]
@@ -393,16 +389,16 @@ mod tests {
         assert_eq!(map.next_expected_serial(), None);
 
         // After first insert
-        map.insert_next(AccountSerial::from(10u32), test_account_id(1));
-        assert_eq!(map.next_expected_serial(), Some(AccountSerial::from(11u32)));
+        map.insert_next(serial_from_u32(10), test_account_id(1));
+        assert_eq!(map.next_expected_serial(), Some(serial_from_u32(11)));
 
         // After second insert
-        map.insert_next(AccountSerial::from(11u32), test_account_id(2));
-        assert_eq!(map.next_expected_serial(), Some(AccountSerial::from(12u32)));
+        map.insert_next(serial_from_u32(11), test_account_id(2));
+        assert_eq!(map.next_expected_serial(), Some(serial_from_u32(12)));
 
         // After third insert
-        map.insert_next(AccountSerial::from(12u32), test_account_id(3));
-        assert_eq!(map.next_expected_serial(), Some(AccountSerial::from(13u32)));
+        map.insert_next(serial_from_u32(12), test_account_id(3));
+        assert_eq!(map.next_expected_serial(), Some(serial_from_u32(13)));
     }
 
     #[test]
@@ -415,14 +411,14 @@ mod tests {
         // Empty map yields nothing
         assert_eq!(map.iter().count(), 0);
 
-        map.insert_next(AccountSerial::from(100u32), id1);
-        map.insert_next(AccountSerial::from(101u32), id2);
-        map.insert_next(AccountSerial::from(102u32), id3);
+        map.insert_next(serial_from_u32(100), id1);
+        map.insert_next(serial_from_u32(101), id2);
+        map.insert_next(serial_from_u32(102), id3);
 
         let entries: Vec<_> = map.iter().collect();
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0], (AccountSerial::from(100u32), &id1));
-        assert_eq!(entries[1], (AccountSerial::from(101u32), &id2));
-        assert_eq!(entries[2], (AccountSerial::from(102u32), &id3));
+        assert_eq!(entries[0], (serial_from_u32(100), &id1));
+        assert_eq!(entries[1], (serial_from_u32(101), &id2));
+        assert_eq!(entries[2], (serial_from_u32(102), &id3));
     }
 }

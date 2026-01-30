@@ -3,6 +3,7 @@
 use proptest::prelude::*;
 use ssz_types::VariableList;
 use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_codec::VARINT_MAX;
 use strata_identifiers::{
     AccountSerial, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
     test_utils::buf32_strategy,
@@ -20,7 +21,8 @@ pub(crate) fn account_id_strategy() -> impl Strategy<Value = AccountId> {
 }
 
 pub(crate) fn account_serial_strategy() -> impl Strategy<Value = AccountSerial> {
-    any::<u32>().prop_map(AccountSerial::from)
+    (0..=VARINT_MAX)
+        .prop_map(|value| AccountSerial::try_from(value).expect("serial is within varint bounds"))
 }
 
 pub(crate) fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
