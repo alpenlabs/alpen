@@ -528,7 +528,11 @@ impl OLSequencerRpcServer for OLRpcServer {
         template_id: OLBlockId,
         completion: BlockCompletionData,
     ) -> RpcResult<OLBlockId> {
-        todo!()
+        self.template_manager
+            .complete_template(template_id, *completion.signature())
+            .await
+            .map_err(|e| internal_error(e.to_string()))?;
+        Ok(template_id)
     }
 
     async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()> {

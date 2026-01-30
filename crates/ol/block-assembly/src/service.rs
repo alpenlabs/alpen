@@ -113,7 +113,6 @@ where
         MempoolProvider::report_invalid_transactions(state.context(), &failed_txs).await?;
     }
 
-    let template = BlockTemplate::from_full_ref(&full_template);
     let template_id = full_template.get_blockid();
 
     state

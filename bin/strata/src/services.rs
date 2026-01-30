@@ -262,6 +262,7 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     });
 
     // Create and register OL RPC server
+    // TODO: pass envelope handler and block template manager(from sequencer-new).
     let ol_rpc_server = OLRpcServer::new(deps.storage, deps.status_channel, deps.mempool_handle);
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
