@@ -12,7 +12,7 @@ use crate::{
     command::{BlockasmCommand, create_completion},
     error::BlockAssemblyError,
     service::BlockasmServiceStatus,
-    types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate},
+    types::{BlockCompletionData, BlockGenerationConfig, FullBlockTemplate},
 };
 
 /// Handle for interacting with the OL block assembly service.
@@ -56,7 +56,7 @@ impl BlockasmHandle {
     pub async fn generate_block_template(
         &self,
         config: BlockGenerationConfig,
-    ) -> BlockAssemblyResult<BlockTemplate> {
+    ) -> BlockAssemblyResult<FullBlockTemplate> {
         let (completion, rx) = create_completion();
         let command = BlockasmCommand::GenerateBlockTemplate { config, completion };
         self.send_command(command, rx).await?

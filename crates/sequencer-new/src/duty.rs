@@ -135,6 +135,10 @@ impl CheckpointSigningDuty {
         let bytes = self.checkpoint.as_ssz_bytes();
         hash::raw(&bytes).into()
     }
+
+    pub fn checkpoint(&self) -> &CheckpointPayload {
+        &self.checkpoint
+    }
 }
 
 #[cfg(test)]
@@ -288,7 +292,7 @@ mod tests {
         let ep = 5;
         let checkpoint = create_checkpoint_payload(ep);
 
-        let checkpoint_duty = Duty::SignCheckpoint(CheckpointSigningDuty { checkpoint });
+        let checkpoint_duty = Duty::SignCheckpoint(CheckpointSigningDuty::new(checkpoint));
         assert!(matches!(
             checkpoint_duty.expiry(),
             Expiry::CheckpointFinalized(epoch) if epoch == ep

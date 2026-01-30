@@ -12,7 +12,7 @@ use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
 
 use crate::{
-    BlockAssemblyStateAccess, EpochSealingPolicy, MempoolProvider,
+    BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate, MempoolProvider,
     block_assembly::generate_block_template_inner,
     command::BlockasmCommand,
     error::BlockAssemblyError,
@@ -84,7 +84,7 @@ async fn generate_block_template<
 >(
     state: &mut BlockasmServiceState<M, E, S>,
     config: BlockGenerationConfig,
-) -> Result<BlockTemplate, BlockAssemblyError>
+) -> Result<FullBlockTemplate, BlockAssemblyError>
 where
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
@@ -118,9 +118,9 @@ where
 
     state
         .state_mut()
-        .insert_template(template_id, full_template);
+        .insert_template(template_id, full_template.clone());
 
-    Ok(template)
+    Ok(full_template)
 }
 
 /// Complete a block template with signature.
