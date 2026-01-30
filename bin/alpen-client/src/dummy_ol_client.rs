@@ -114,3 +114,36 @@ fn u64_to_256(v: u64) -> [u8; 32] {
     result[24..32].copy_from_slice(&v.to_le_bytes());
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn u64_to_256_is_deterministic_and_reversible(v: u64) {
+            let bytes = u64_to_256(v);
+
+            // Verify structure: [1u64 LE][0u64][0u64][v LE]
+            let prefix = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+            let mid1 = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+            let mid2 = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+            let suffix = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+
+            prop_assert_eq!(prefix, 1u64);
+            prop_assert_eq!(mid1, 0u64);
+            prop_assert_eq!(mid2, 0u64);
+            prop_assert_eq!(suffix, v);
+        }
+
+        #[test]
+        fn u64_to_256_produces_unique_outputs(v1: u64, v2: u64) {
+            prop_assume!(v1 != v2);
+            let bytes1 = u64_to_256(v1);
+            let bytes2 = u64_to_256(v2);
+            prop_assert_ne!(bytes1, bytes2);
+        }
+    }
+}
