@@ -3,6 +3,7 @@ import strata_identifiers
 MAX_LOG_PAYLOAD_LEN = 1 << 12
 
 ### OL log entry emitted during block execution.
+#~# derive: Serialize, Deserialize
 class OLLog(Container):
     ### Account serial number this log relates to
     account_serial: strata_identifiers.AccountSerial

@@ -16,7 +16,7 @@ MAX_OL_LOGS_PER_CHECKPOINT = 1 << 14
 MAX_PROOF_LEN = 1 << 12
 
 ### Checkpoint tip position after processing an epoch.
-#~# derive: Copy, Serialize, Deserialize
+#~# derive: Serialize, Deserialize
 class CheckpointTip(Container):
     ### Checkpoint epoch number.
     epoch: strata_identifiers.Epoch
@@ -33,6 +33,7 @@ class CheckpointTip(Container):
 ###
 ### ASM reconstructs full CheckpointClaim by combining this with stored state
 ### and auxiliary L1 data.
+#~# derive: Serialize, Deserialize
 class CheckpointPayload(Container):
     ### New claimed checkpoint tip.
     new_tip: CheckpointTip
@@ -47,6 +48,7 @@ class CheckpointPayload(Container):
 ###
 ### Provides data availability for OL state reconstruction and message
 ### processing.
+#~# derive: Serialize, Deserialize
 class CheckpointSidecar(Container):
     ### OL state diff that transforms last verified state to new claimed
     ### state.
@@ -65,6 +67,7 @@ class CheckpointSidecar(Container):
 
 ### Signed checkpoint payload for L1 posting.
 ### The signature is over the hash of the inner payload.
+#~# derive: Serialize, Deserialize
 class SignedCheckpointPayload(Container):
     ### The checkpoint payload.
     inner: CheckpointPayload
