@@ -13827,14 +13827,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-proto-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "bitcoin-bosd",
+ "borsh",
+ "ssz",
+ "ssz_primitives",
+ "strata-asm-bridge-msgs",
+ "strata-asm-checkpoint-msgs",
+ "strata-asm-common",
+ "strata-asm-proto-checkpoint-txs",
+ "strata-checkpoint-types-ssz",
+ "strata-codec",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-ol-stf",
+ "strata-predicate",
+ "strata-test-utils-l2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-asm-proto-checkpoint-txs"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "ssz",
  "strata-asm-common",
  "strata-bridge-types",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-l1-envelope-fmt",
  "strata-ol-chainstate-types",
  "thiserror 2.0.18",
@@ -14177,6 +14202,7 @@ dependencies = [
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
+ "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "thiserror 2.0.18",
@@ -15034,7 +15060,9 @@ dependencies = [
  "arbitrary",
  "borsh",
  "hex",
+ "k256",
  "serde",
+ "signature",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -15043,6 +15071,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tree_hash 0.12.3",
  "tree_hash_derive 0.12.3",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
@@ -15596,10 +15625,16 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "borsh",
+ "k256",
  "rand 0.8.5",
+ "ssz",
+ "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-consensus-logic",
  "strata-crypto",
+ "strata-identifiers",
+ "strata-merkle",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",

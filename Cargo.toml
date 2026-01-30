@@ -27,6 +27,7 @@ members = [
   "crates/asm/txs/admin",
   "crates/asm/txs/checkpoint",
   "crates/asm/subprotocols/checkpoint-v0",
+  "crates/asm/subprotocols/checkpoint",
   "crates/asm/txs/bridge-v1",
   "crates/asm-types",
   "crates/asm/worker",
