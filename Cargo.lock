@@ -1072,6 +1072,7 @@ dependencies = [
  "clap",
  "eyre",
  "jsonrpsee",
+ "proptest",
  "reth-chainspec",
  "reth-cli-commands",
  "reth-cli-runner",

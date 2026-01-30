@@ -24,9 +24,11 @@ from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
 # Import environments
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
+from envconfigs.alpen_client import AlpenClientEnv
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
+from factories.alpen_client import AlpenClientFactory
 from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
 
@@ -226,6 +228,7 @@ def main(argv: list[str]) -> int:
 
     # Create factories
     factories: dict[ServiceType, flexitest.Factory] = {
+        ServiceType.AlpenClient: AlpenClientFactory(range(30303, 30503)),
         ServiceType.Bitcoin: BitcoinFactory(range(18443, 18543)),
         ServiceType.Strata: StrataFactory(range(19443, 19543)),
     }
@@ -233,6 +236,16 @@ def main(argv: list[str]) -> int:
     # Define global environments
     global_envs: dict[str, flexitest.EnvConfig] = {
         "basic": StrataEnvConfig(pre_generate_blocks=110),
+        # Alpen-client environments
+        "alpen_client": AlpenClientEnv(),  # admin_addPeer, no discovery
+        "alpen_client_discovery": AlpenClientEnv(enable_discovery=True, pure_discovery=True),
+        "alpen_client_multi": AlpenClientEnv(fullnode_count=3),
+        "alpen_client_mesh": AlpenClientEnv(
+            fullnode_count=5,
+            enable_discovery=True,
+            pure_discovery=True,
+            mesh_bootnodes=True,
+        ),
     }
 
     # Set up test runtime

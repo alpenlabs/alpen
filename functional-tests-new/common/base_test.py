@@ -8,6 +8,7 @@ import flexitest
 
 from common.config import ServiceType
 from common.services import (
+    AlpenClientService,
     BitcoinService,
     StrataService,
 )
@@ -54,6 +55,27 @@ class StrataNodeTest(BaseTest):
         if svc is None:
             raise RuntimeError(
                 f"Service '{typ}' not found. Available services: "
-                f"{list(self.runctx.env.services.keys())}"  # type: ignore[union-attr]
+                f"{list(self.runctx.env.services.keys())}"
+            )
+        return svc
+
+
+class AlpenClientTest(BaseTest):
+    """
+    Base Test class for alpen-client P2P tests.
+    """
+
+    @overload
+    def get_service(self, typ: Literal[ServiceType.AlpenClient]) -> AlpenClientService: ...
+
+    @overload
+    def get_service(self, typ: str) -> AlpenClientService: ...
+
+    def get_service(self, typ):
+        svc = self.runctx.get_service(typ)
+        if svc is None:
+            raise RuntimeError(
+                f"Service '{typ}' not found. Available services: "
+                f"{list(self.runctx.env.services.keys())}"
             )
         return svc
