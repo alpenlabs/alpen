@@ -101,7 +101,7 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
 pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
-    state_provider: S,
+    state_provider: Arc<S>,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
@@ -114,7 +114,7 @@ impl<M, S> Debug for BlockAssemblyContext<M, S> {
 
 impl<M, S> BlockAssemblyContext<M, S> {
     /// Create a new block assembly context.
-    pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: S) -> Self {
+    pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: Arc<S>) -> Self {
         Self {
             storage,
             mempool_provider,

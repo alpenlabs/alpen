@@ -30,7 +30,7 @@ where
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     epoch_sealing_policy: E,
-    state_provider: S,
+    state_provider: Arc<S>,
     sequencer_config: SequencerConfig,
     command_buffer_size: usize,
 }
@@ -46,7 +46,7 @@ where
         storage: Arc<NodeStorage>,
         mempool_provider: M,
         epoch_sealing_policy: E,
-        state_provider: S,
+        state_provider: Arc<S>,
         sequencer_config: SequencerConfig,
     ) -> Self {
         Self {
