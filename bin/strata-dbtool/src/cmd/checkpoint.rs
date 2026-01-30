@@ -1,9 +1,11 @@
 use argh::FromArgs;
+use strata_asm_logs::CheckpointUpdate;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{
-    traits::{CheckpointDatabase, DatabaseBackend},
+    traits::{AsmDatabase, CheckpointDatabase, DatabaseBackend, L1Database},
     types::CheckpointEntry,
 };
+use strata_primitives::l1::L1BlockCommitment;
 
 use crate::{
     cli::OutputFormat,
@@ -12,15 +14,6 @@ use crate::{
         output,
     },
 };
-
-/// Get the last epoch index from the database.
-///
-/// This finds the highest epoch index in the database.
-pub(crate) fn get_last_epoch(db: &impl DatabaseBackend) -> Result<Option<u64>, DisplayedError> {
-    db.checkpoint_db()
-        .get_last_summarized_epoch()
-        .internal_error("Failed to get last summarized epoch")
-}
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-checkpoint")]
@@ -59,6 +52,97 @@ pub(crate) struct GetEpochSummaryArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
+}
+
+/// Get the last epoch index from the database.
+///
+/// This finds the highest epoch index in the database.
+pub(crate) fn get_last_epoch(db: &impl DatabaseBackend) -> Result<Option<u64>, DisplayedError> {
+    db.checkpoint_db()
+        .get_last_summarized_epoch()
+        .internal_error("Failed to get last summarized epoch")
+}
+
+/// Count unique checkpoints found in ASM logs starting from a given L1 height.
+///
+/// This scans ASM states from the specified height onwards and counts unique
+/// checkpoint epoch commitments found in the logs.
+fn count_checkpoints_in_asm_logs(
+    db: &impl DatabaseBackend,
+    height_from: u64,
+) -> Result<u64, DisplayedError> {
+    let asm_db = db.asm_db();
+    let l1_db = db.l1_db();
+
+    // Get the latest ASM state to determine the range to scan
+    let latest_asm_state = asm_db
+        .get_latest_asm_state()
+        .internal_error("Failed to get latest ASM state")?;
+
+    let Some((latest_l1_commitment, _)) = latest_asm_state else {
+        // No ASM states in the database
+        return Ok(0);
+    };
+
+    // Get the canonical block ID at height_from to create a proper commitment.
+    let block_id = l1_db
+        .get_canonical_blockid_at_height(height_from)
+        .internal_error("Failed to get canonical block ID at height")?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                format!("No L1 block found at height {}", height_from),
+                Box::new(height_from),
+            )
+        })?;
+
+    let start_l1_commitment = L1BlockCommitment::from_height_u64(height_from, block_id)
+        .ok_or_else(|| {
+            DisplayedError::InternalError(
+                "Invalid height for L1BlockCommitment".to_string(),
+                Box::new(height_from),
+            )
+        })?;
+
+    let mut checkpoint_count = 0u64;
+
+    // Batch size for iteration to avoid loading everything at once
+    const BATCH_SIZE: usize = 1000;
+    let mut current_l1_commitment = start_l1_commitment;
+
+    loop {
+        let asm_states = asm_db
+            .get_asm_states_from(current_l1_commitment, BATCH_SIZE)
+            .internal_error("Failed to get ASM states from database")?;
+
+        if asm_states.is_empty() {
+            break;
+        }
+
+        // Process each ASM state's logs
+        for (commitment, asm_state) in &asm_states {
+            // Only process blocks at or after height_from
+            if commitment.height_u64() < height_from {
+                continue;
+            }
+
+            // Iterate through logs in this ASM state
+            for log_entry in asm_state.logs() {
+                // Try to parse as CheckpointUpdate
+                if log_entry.try_into_log::<CheckpointUpdate>().is_ok() {
+                    checkpoint_count += 1;
+                }
+            }
+        }
+
+        let (next_l1_commitment, _) = asm_states.last().unwrap();
+        if *next_l1_commitment >= latest_l1_commitment {
+            break;
+        }
+
+        current_l1_commitment = *next_l1_commitment;
+    }
+
+    Ok(checkpoint_count)
 }
 
 /// Get a checkpoint entry at a specific index.
@@ -156,11 +240,8 @@ pub(crate) fn get_checkpoints_summary(
     }
     let checkpoints_found_in_db = checkpoint_commitments.len() as u64;
 
-    // Note: L1 checkpoint verification via transaction scanning is no longer available
-    // in the ASM-based flow. Checkpoint detection is now done via ASM logs
-    // (CheckpointAckLogData). The L1 blocks now contain AsmManifest with logs, not
-    // protocol operations in transactions.
-    let checkpoints_in_l1_blocks = 0u64;
+    // Count unique checkpoints found in ASM logs from L1 blocks
+    let checkpoints_in_l1_blocks = count_checkpoints_in_asm_logs(db, args.height_from)?;
     let unexpected_checkpoints_info: Vec<UnexpectedCheckpointInfo> = Vec::new();
 
     // Create the output data structure
