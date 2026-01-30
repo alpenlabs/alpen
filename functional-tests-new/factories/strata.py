@@ -9,6 +9,7 @@ from pathlib import Path
 import flexitest
 
 from common.config import BitcoindConfig, ClientConfig, RollupParams, ServiceType, StrataConfig
+from common.config.params import GenesisL1View
 from common.services import StrataProps, StrataService
 
 
@@ -30,6 +31,7 @@ class StrataFactory(flexitest.Factory):
     def create_node(
         self,
         bconfig: BitcoindConfig,
+        genesis_l1: GenesisL1View,
         is_sequencer: bool = True,
         config_overrides: dict | None = None,
         **kwargs,
@@ -62,7 +64,7 @@ class StrataFactory(flexitest.Factory):
             f.write(config.as_toml_string())
 
         # Create rollup params
-        params = RollupParams()  # Initialize with default values
+        params = RollupParams().with_genesis_l1(genesis_l1)
         params_path = datadir / "rollup-params.json"
         with open(params_path, "w") as f:
             f.write(params.as_json_string())

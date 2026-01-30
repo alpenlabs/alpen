@@ -10,6 +10,7 @@ use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
+use strata_node_context::NodeContext;
 use strata_params::{Params, RollupParams};
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
@@ -116,7 +117,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         executor,
         csm_params,
         csm_storage,
-        csm_st_ch,
+        csm_st_ch.into(),
         csm_asm_monitor,
     )?;
 
@@ -147,12 +148,25 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     })
 }
 
-pub fn spawn_csm_listener(
+pub fn spawn_csm_listener_with_ctx(
+    nodectx: &NodeContext,
+    asm_monitor: &ServiceMonitor<AsmWorkerStatus>,
+) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
+    spawn_csm_listener(
+        nodectx.executor(),
+        nodectx.params().clone(),
+        nodectx.storage().clone(),
+        nodectx.status_channel().clone(),
+        asm_monitor,
+    )
+}
+
+fn spawn_csm_listener(
     executor: &TaskExecutor,
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
-    status_channel: StatusChannel,
-    asm_monitor: &strata_service::ServiceMonitor<AsmWorkerStatus>,
+    status_channel: Arc<StatusChannel>,
+    asm_monitor: &ServiceMonitor<AsmWorkerStatus>,
 ) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
     // Create CSM worker state.
     let csm_state = CsmWorkerState::new(params, storage.clone(), status_channel.clone())?;
@@ -249,6 +263,16 @@ fn spawn_chain_worker(
         .launch(executor)?;
 
     Ok(handle)
+}
+
+pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWorkerHandle> {
+    spawn_asm_worker(
+        nodectx.executor(),
+        nodectx.executor().handle().clone(),
+        nodectx.storage().clone(),
+        nodectx.params().rollup.clone().into(),
+        nodectx.bitcoin_client().clone(),
+    )
 }
 
 pub fn spawn_asm_worker(

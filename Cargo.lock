@@ -13634,7 +13634,6 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "ssz",
- "strata-asm-common",
  "strata-asm-worker",
  "strata-chain-worker-new",
  "strata-common",
@@ -13646,6 +13645,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-node-context",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
  "strata-ol-state-types",
@@ -14128,6 +14128,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-merkle",
+ "strata-node-context",
  "strata-ol-chain-types-new",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
@@ -14137,7 +14138,6 @@ dependencies = [
  "strata-service",
  "strata-status",
  "strata-storage",
- "strata-tasks",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -14328,10 +14328,12 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "rand 0.8.5",
+ "serde",
  "strata-asm-common",
  "strata-asm-worker",
  "strata-btc-types",
  "strata-chain-worker",
+ "strata-chain-worker-new",
  "strata-chainexec",
  "strata-chaintsn",
  "strata-checkpoint-types",
@@ -14342,9 +14344,13 @@ dependencies = [
  "strata-db-types",
  "strata-eectl",
  "strata-identifiers",
+ "strata-ledger-types",
  "strata-merkle",
+ "strata-node-context",
  "strata-ol-chain-types",
+ "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
+ "strata-ol-state-types",
  "strata-params",
  "strata-predicate",
  "strata-primitives",
@@ -14809,6 +14815,19 @@ version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
 dependencies = [
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-node-context"
+version = "0.1.0"
+dependencies = [
+ "bitcoind-async-client",
+ "strata-config",
+ "strata-params",
+ "strata-status",
+ "strata-storage",
+ "strata-tasks",
+ "tokio",
 ]
 
 [[package]]

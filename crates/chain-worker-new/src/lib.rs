@@ -14,7 +14,6 @@
 //! - [`IndexerState<WriteTrackingState<OLState>>`](strata_ol_state_support_types::IndexerState) for
 //!   state tracking
 
-mod builder;
 mod context;
 mod errors;
 mod handle;
@@ -24,12 +23,11 @@ mod service;
 mod state;
 mod traits;
 
-pub use builder::ChainWorkerBuilder;
 pub use context::ChainWorkerContextImpl;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::ChainWorkerHandle;
 pub use message::ChainWorkerMessage;
 pub use output::OLBlockExecutionOutput;
-pub use service::{ChainWorkerService, ChainWorkerStatus};
+pub use service::{ChainWorkerService, ChainWorkerStatus, start_chain_worker_service_from_ctx};
 pub use state::ChainWorkerServiceState;
 pub use traits::ChainWorkerContext;

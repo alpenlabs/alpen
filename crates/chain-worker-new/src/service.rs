@@ -1,24 +1,22 @@
 //! Service framework integration for chain worker.
 
-use std::marker::PhantomData;
-
 use serde::Serialize;
 use strata_identifiers::OLBlockCommitment;
+use strata_node_context::NodeContext;
 use strata_primitives::epoch::EpochCommitment;
-use strata_service::{Response, Service, SyncService};
+use strata_service::{Response, Service, ServiceBuilder, SyncService};
 
 use crate::{
-    message::ChainWorkerMessage, state::ChainWorkerServiceState, traits::ChainWorkerContext,
+    ChainWorkerContextImpl, ChainWorkerHandle, WorkerError, message::ChainWorkerMessage,
+    state::ChainWorkerServiceState,
 };
 
 /// Chain worker service implementation using the service framework.
 #[derive(Debug)]
-pub struct ChainWorkerService<W: ChainWorkerContext + Send + Sync + 'static> {
-    _phantom: PhantomData<W>,
-}
+pub struct ChainWorkerService;
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> Service for ChainWorkerService<W> {
-    type State = ChainWorkerServiceState<W>;
+impl Service for ChainWorkerService {
+    type State = ChainWorkerServiceState;
     type Msg = ChainWorkerMessage;
     type Status = ChainWorkerStatus;
 
@@ -31,7 +29,7 @@ impl<W: ChainWorkerContext + Send + Sync + 'static> Service for ChainWorkerServi
     }
 }
 
-impl<W: ChainWorkerContext + Send + Sync + 'static> SyncService for ChainWorkerService<W> {
+impl SyncService for ChainWorkerService {
     fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
         let cur_tip = state.wait_for_genesis_and_resolve_tip()?;
         state.initialize_with_tip(cur_tip)?;
@@ -71,4 +69,23 @@ pub struct ChainWorkerStatus {
 
     /// Last finalized epoch, if any.
     pub last_finalized_epoch: Option<EpochCommitment>,
+}
+
+/// Starts chain worker service from node ctx
+pub fn start_chain_worker_service_from_ctx(
+    nodectx: &NodeContext,
+) -> anyhow::Result<ChainWorkerHandle> {
+    let ctx = ChainWorkerContextImpl::from_node_context(nodectx);
+    let state = ChainWorkerServiceState::new(ctx);
+    let mut builder = ServiceBuilder::<ChainWorkerService, _>::new().with_state(state);
+
+    // Create the command handle before launching.
+    let command_handle = builder.create_command_handle(64);
+
+    // Launch the service using the sync worker.
+    let monitor = builder
+        .launch_sync("chain_worker_new", nodectx.executor().as_ref())
+        .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
+
+    Ok(ChainWorkerHandle::new(command_handle, monitor))
 }
