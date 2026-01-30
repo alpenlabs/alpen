@@ -15,6 +15,7 @@ strata-crypto.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
+strata-ol-block-template-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-mempool.workspace = true

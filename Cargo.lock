@@ -14811,6 +14811,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-ol-block-template-types",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
@@ -14828,6 +14829,15 @@ dependencies = [
  "threadpool",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-ol-block-template-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
 ]
 
 [[package]]
