@@ -37,7 +37,7 @@ impl From<Duty> for RpcDuty {
                 RpcDuty::SignBlock(RpcBlockSigningDuty { template })
             }
             Duty::SignCheckpoint(c) => {
-                let checkpoint = c.checkpoint.as_ssz_bytes();
+                let checkpoint = c.checkpoint().as_ssz_bytes();
                 RpcDuty::SignCheckpiont(RpcCheckpointSigningDuty { checkpoint })
             }
         }
@@ -83,7 +83,7 @@ impl TryFrom<RpcDuty> for Duty {
                 let checkpoint = CheckpointPayload::from_ssz_bytes(&rpc_checkpoint_duty.checkpoint)
                     .map_err(|e| RpcDutyConversionError::CheckpointDecodeError(e.to_string()))?;
 
-                let duty = CheckpointSigningDuty { checkpoint };
+                let duty = CheckpointSigningDuty::new(checkpoint);
                 Ok(Duty::SignCheckpoint(duty))
             }
         }
@@ -120,9 +120,7 @@ mod tests {
     fn test_rpc_duty_roundtrip_conversion() {
         // Create a simple checkpoint duty for testing
         let checkpoint_payload = create_checkpoint_payload(1);
-        let checkpoint_duty = CheckpointSigningDuty {
-            checkpoint: checkpoint_payload,
-        };
+        let checkpoint_duty = CheckpointSigningDuty::new(checkpoint_payload);
         let duty = Duty::SignCheckpoint(checkpoint_duty);
 
         // Convert to RpcDuty
@@ -134,8 +132,8 @@ mod tests {
         // Verify the checkpoint data is preserved
         if let (Duty::SignCheckpoint(orig), Duty::SignCheckpoint(conv)) = (&duty, &converted_duty) {
             assert_eq!(
-                orig.checkpoint.as_ssz_bytes(),
-                conv.checkpoint.as_ssz_bytes()
+                orig.checkpoint().as_ssz_bytes(),
+                conv.checkpoint().as_ssz_bytes()
             );
         } else {
             panic!("Duty type mismatch after conversion");
