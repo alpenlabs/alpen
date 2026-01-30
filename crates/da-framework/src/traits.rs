@@ -1,6 +1,6 @@
 //! Traits for working with DA
 
-use crate::{BuilderError, DaError};
+use crate::BuilderError;
 
 /// Describes a way to change to a type.
 pub trait DaWrite: Default {
@@ -12,6 +12,9 @@ pub trait DaWrite: Default {
     /// Default is nothing.
     type Context;
 
+    /// Error type returned by poll_context/apply.
+    type Error;
+
     /// Returns if this write is the default operation, like a no-op.
     fn is_default(&self) -> bool;
 
@@ -21,22 +24,22 @@ pub trait DaWrite: Default {
         &self,
         _target: &Self::Target,
         _context: &Self::Context,
-    ) -> Result<(), DaError> {
+    ) -> Result<(), Self::Error> {
         // do nothing by default
         Ok(())
     }
 
     /// Applies the write to the target type.
-    fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), DaError>;
+    fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), Self::Error>;
 }
 
 /// Extension trait for when a [`DaWrite`] uses an empty context.
 pub trait ContextlessDaWrite: DaWrite<Context = ()> {
-    fn apply(&self, target: &mut <Self as DaWrite>::Target) -> Result<(), DaError>;
+    fn apply(&self, target: &mut <Self as DaWrite>::Target) -> Result<(), Self::Error>;
 }
 
 impl<W: DaWrite<Context = ()>> ContextlessDaWrite for W {
-    fn apply(&self, target: &mut <Self as DaWrite>::Target) -> Result<(), DaError> {
+    fn apply(&self, target: &mut <Self as DaWrite>::Target) -> Result<(), Self::Error> {
         <Self as DaWrite>::apply(self, target, &())
     }
 }

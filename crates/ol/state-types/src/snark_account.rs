@@ -9,13 +9,13 @@ use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};
 impl OLSnarkAccountState {
     /// Creates an account instance with specific values.
     pub(crate) fn new(
-        verifying_key: PredicateKey,
+        update_vk: PredicateKey,
         seqno: Seqno,
         proof_state: ProofState,
         inbox_mmr: Mmr64,
     ) -> Self {
         Self {
-            verifying_key,
+            update_vk,
             seqno,
             proof_state,
             inbox_mmr,
@@ -24,17 +24,17 @@ impl OLSnarkAccountState {
 
     /// Creates a new fresh instance with a particular initial state, but other
     /// bookkeeping set to 0.
-    pub fn new_fresh(verification_key: PredicateKey, initial_state_root: Hash) -> Self {
+    pub fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
         let ps = ProofState::new(initial_state_root, 0);
         let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
         let mmr64 = Mmr64::from_generic(&generic_mmr);
-        Self::new(verification_key, Seqno::zero(), ps, mmr64)
+        Self::new(update_vk, Seqno::zero(), ps, mmr64)
     }
 }
 
 impl ISnarkAccountState for OLSnarkAccountState {
-    fn verifying_key(&self) -> &PredicateKey {
-        &self.verifying_key
+    fn update_vk(&self) -> &PredicateKey {
+        &self.update_vk
     }
 
     fn seqno(&self) -> Seqno {
@@ -51,6 +51,12 @@ impl ISnarkAccountState for OLSnarkAccountState {
 
     fn inbox_mmr(&self) -> &Mmr64B32 {
         &self.inbox_mmr
+    }
+}
+
+impl ISnarkAccountStateConstructible for OLSnarkAccountState {
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
+        OLSnarkAccountState::new_fresh(update_vk, initial_state_root)
     }
 }
 

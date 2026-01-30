@@ -79,6 +79,44 @@ impl BlockExecOutputs {
     }
 }
 
+/// Executes epoch-initial state transitions when needed.
+pub fn execute_epoch_initial_if_needed<S: IStateAccessor>(
+    state: &mut S,
+    block_context: &BlockContext<'_>,
+) -> ExecResult<()> {
+    if block_context.is_epoch_initial() {
+        let init_ctx = block_context.get_epoch_initial_context();
+        chain_processing::process_epoch_initial(state, &init_ctx)?;
+    }
+    Ok(())
+}
+
+/// Executes the per-block start phase.
+pub fn execute_block_start<S: IStateAccessor>(
+    state: &mut S,
+    block_context: &BlockContext<'_>,
+) -> ExecResult<()> {
+    chain_processing::process_block_start(state, block_context)
+}
+
+/// Executes the transaction segment for a block.
+pub fn execute_block_tx_segment<S: IStateAccessor>(
+    state: &mut S,
+    tx_segment: &OLTxSegment,
+    tx_ctx: &TxExecContext<'_>,
+) -> ExecResult<()> {
+    transaction_processing::process_block_tx_segment(state, tx_segment, tx_ctx)
+}
+
+/// Executes manifest processing for a terminal block.
+pub fn execute_block_manifests<S: IStateAccessor>(
+    state: &mut S,
+    manifest_container: &OLL1ManifestContainer,
+    term_ctx: &BasicExecContext<'_>,
+) -> ExecResult<()> {
+    manifest_processing::process_block_manifests(state, manifest_container, term_ctx)
+}
+
 /// Performs execution using parts of a block on top of a state, producing
 /// records of its output that we can use to complete a header for that drafted
 /// block.
@@ -93,23 +131,16 @@ pub fn execute_block_inputs<S: IStateAccessor>(
     // across phases.
     let output = ExecOutputBuffer::new_empty();
 
-    // 1. Process the slot start for every block.
-    chain_processing::process_block_start(state, &block_context)?;
+    // 1. If it's the first block of the epoch, call process_epoch_initial.
+    execute_epoch_initial_if_needed(state, &block_context)?;
 
-    // 2. If it's the first block of the epoch, call process_epoch_initial.
-    if block_context.is_epoch_initial() {
-        let init_ctx = block_context.get_epoch_initial_context();
-        chain_processing::process_epoch_initial(state, &init_ctx)?;
-    }
+    // 2. Process the slot start for every block.
+    execute_block_start(state, &block_context)?;
 
     // 3. Call process_block_tx_segment for every block as usual.
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
-    transaction_processing::process_block_tx_segment(
-        state,
-        block_exec_input.tx_segment(),
-        &tx_ctx,
-    )?;
+    execute_block_tx_segment(state, block_exec_input.tx_segment(), &tx_ctx)?;
 
     // 4. Compute the state root and remember it.
     let pre_manifest_state_root = state.compute_state_root()?;
@@ -121,7 +152,7 @@ pub fn execute_block_inputs<S: IStateAccessor>(
     let post_state_roots = if let Some(manifest_container) = block_exec_input.manifest_container() {
         // Terminal block, with manifests.
         let term_ctx = tx_ctx.basic_context();
-        manifest_processing::process_block_manifests(state, manifest_container, term_ctx)?;
+        execute_block_manifests(state, manifest_container, term_ctx)?;
 
         // Then finally extract the stuff.
         let final_state_root = state.compute_state_root()?;

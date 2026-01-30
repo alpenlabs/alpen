@@ -120,7 +120,7 @@ impl<T: Bitmap> Default for BitSeqWriter<T> {
 ///
 /// # Basic syntax (no type coercion)
 ///
-/// Type specs must be wrapped in parentheses, braces, or brackets to form a single token tree.
+/// Type specs must be wrapped in parentheses or brackets to form a single token tree.
 ///
 /// ```ignore
 /// make_compound_impl! {
@@ -166,20 +166,20 @@ impl<T: Bitmap> Default for BitSeqWriter<T> {
 // TODO turn this into a proc macro
 #[macro_export]
 macro_rules! make_compound_impl {
-    // Entry point without context type - uses () context
+    // Entry point without context type - uses () context and default error
     (
         $tyname:ident $maskty:ident => $target:ty {
             $( $fname:ident : $daty:ident $fspec:tt ),* $(,)?
         }
     ) => {
         $crate::make_compound_impl! {
-            $tyname < () > $maskty => $target {
+            $tyname < (), $crate::DaError > $maskty => $target {
                 $( $fname : $daty $fspec ),*
             }
         }
     };
 
-    // Main implementation with context type
+    // Entry point with context type - uses default error
     (
         $tyname:ident < $ctxty:ty > $maskty:ident => $target:ty {
             $( $fname:ident : $daty:ident $fspec:tt ),* $(,)?
@@ -222,6 +222,7 @@ macro_rules! make_compound_impl {
         impl $crate::DaWrite for $tyname {
             type Target = $target;
             type Context = $ctxty;
+            type Error = $crate::DaError;
 
             fn is_default(&self) -> bool {
                 let mut v = true;
@@ -231,7 +232,11 @@ macro_rules! make_compound_impl {
                 v
             }
 
-            fn poll_context(&self, target: &Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
+            fn poll_context(
+                &self,
+                target: &Self::Target,
+                context: &Self::Context,
+            ) -> Result<(), Self::Error> {
                 // Suppress unused variable warning when no fields use context resolver
                 let _ = context;
                 $(
@@ -240,7 +245,92 @@ macro_rules! make_compound_impl {
                 Ok(())
             }
 
-            fn apply(&self, target: &mut Self::Target, context: &Self::Context) -> Result<(), $crate::DaError> {
+            fn apply(
+                &self,
+                target: &mut Self::Target,
+                context: &Self::Context,
+            ) -> Result<(), Self::Error> {
+                // Suppress unused variable warning when no fields use context resolver
+                let _ = context;
+                $(
+                    $crate::_mct_field_apply!(self target context; $fname $daty $fspec);
+                )*
+                Ok(())
+            }
+        }
+    };
+
+    // Main implementation with context and error type
+    (
+        $tyname:ident < $ctxty:ty, $errty:ty > $maskty:ident => $target:ty {
+            $( $fname:ident : $daty:ident $fspec:tt ),* $(,)?
+        }
+    ) => {
+        // Compile-time check: ensure bitmap has enough bits for all fields.
+        const _: () = {
+            const FIELD_COUNT: usize = [$(stringify!($fname)),*].len();
+            const MASK_BITS: usize = <$maskty>::BITS as usize;
+            assert!(FIELD_COUNT <= MASK_BITS, "compound type has more fields than bitmap can hold");
+        };
+
+        impl $crate::Codec for $tyname {
+            fn decode(dec: &mut impl $crate::Decoder) -> Result<Self, $crate::CodecError> {
+                let mask = <$maskty>::decode(dec)?;
+                let mut bitr = $crate::BitSeqReader::from_mask(mask);
+
+                $(let $fname = $crate::_mct_field_decode!(bitr dec; $daty $fspec);)*
+
+                Ok(Self { $($fname,)* })
+            }
+
+            fn encode(&self, enc: &mut impl $crate::Encoder) -> Result<(), $crate::CodecError> {
+                let mut bitw = $crate::BitSeqWriter::<$maskty>::new();
+
+                $(bitw.prepare_member(&self.$fname);)*
+
+                bitw.mask().encode(enc)?;
+
+                $(
+                    if !$crate::CompoundMember::is_default(&self.$fname) {
+                        $crate::CompoundMember::encode_set(&self.$fname, enc)?;
+                    }
+                )*
+
+                Ok(())
+            }
+        }
+
+        impl $crate::DaWrite for $tyname {
+            type Target = $target;
+            type Context = $ctxty;
+            type Error = $errty;
+
+            fn is_default(&self) -> bool {
+                let mut v = true;
+                $(
+                    v &= $crate::DaWrite::is_default(&self.$fname);
+                )*
+                v
+            }
+
+            fn poll_context(
+                &self,
+                target: &Self::Target,
+                context: &Self::Context,
+            ) -> Result<(), Self::Error> {
+                // Suppress unused variable warning when no fields use context resolver
+                let _ = context;
+                $(
+                    $crate::_mct_field_poll_context!(self target context; $fname $daty $fspec);
+                )*
+                Ok(())
+            }
+
+            fn apply(
+                &self,
+                target: &mut Self::Target,
+                context: &Self::Context,
+            ) -> Result<(), Self::Error> {
                 // Suppress unused variable warning when no fields use context resolver
                 let _ = context;
                 $(
@@ -252,6 +342,14 @@ macro_rules! make_compound_impl {
     };
 }
 
+/// Helper macro to unwrap delimited field types.
+#[macro_export]
+macro_rules! _mct_field_ty {
+    (($fty:ty)) => {
+        $fty
+    };
+}
+
 /// Expands to a decoder for each type of member that we support in a compound.
 #[macro_export]
 macro_rules! _mct_field_decode {
@@ -259,19 +357,17 @@ macro_rules! _mct_field_decode {
     ($reader:ident $dec:ident; register [ $fty:ty => $targetfty:ty ]) => {
         $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
     };
-    // Register without coercion - type is wrapped in parens or braces to be a single tt
-    ($reader:ident $dec:ident; register ( $fty:ty )) => {
-        $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
+    // Register without coercion - type is wrapped in parens to be a single tt
+    ($reader:ident $dec:ident; register $fty:tt) => {
+        $reader.decode_next_member::<$crate::DaRegister<$crate::_mct_field_ty!($fty)>>($dec)?
     };
-    ($reader:ident $dec:ident; register { $fty:ty }) => {
-        $reader.decode_next_member::<$crate::DaRegister<$fty>>($dec)?
+    // Counter - type is wrapped in parens to be a single tt
+    ($reader:ident $dec:ident; counter $fty:tt) => {
+        $reader.decode_next_member::<$crate::DaCounter<$crate::_mct_field_ty!($fty)>>($dec)?
     };
-    // Counter - type is wrapped in parens or braces to be a single tt
-    ($reader:ident $dec:ident; counter ( $fty:ty )) => {
-        $reader.decode_next_member::<$crate::DaCounter<$fty>>($dec)?
-    };
-    ($reader:ident $dec:ident; counter { $fty:ty }) => {
-        $reader.decode_next_member::<$crate::DaCounter<$fty>>($dec)?
+    // Compound member - type implements CompoundMember directly
+    ($reader:ident $dec:ident; compound $fty:tt) => {
+        $reader.decode_next_member::<$crate::_mct_field_ty!($fty)>($dec)?
     };
 }
 
@@ -286,18 +382,16 @@ macro_rules! _mct_field_poll_context {
         // Skip: coercion field types don't match, poll_context not applicable
     };
     // Normal register - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident register ( $fty:ty )) => {
-        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident register { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident register $fty:tt) => {
         $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
     };
     // Counter - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident counter ( $fty:ty )) => {
+    ($self:ident $target:ident $context:ident; $fname:ident counter $fty:tt) => {
         $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
     };
-    ($self:ident $target:ident $context:ident; $fname:ident counter { $fty:ty }) => {
-        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, &())?
+    // Compound member - use the compound context directly
+    ($self:ident $target:ident $context:ident; $fname:ident compound $fty:tt) => {
+        $crate::DaWrite::poll_context(&$self.$fname, &$target.$fname, $context)?
     };
 }
 
@@ -312,18 +406,16 @@ macro_rules! _mct_field_apply {
         $self.$fname.apply_into(&mut $target.$fname)
     };
     // Normal register - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident register ( $fty:ty )) => {
-        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
-    };
-    ($self:ident $target:ident $context:ident; $fname:ident register { $fty:ty }) => {
+    ($self:ident $target:ident $context:ident; $fname:ident register $fty:tt) => {
         $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
     // Counter - primitives have Context = (), pass &()
-    ($self:ident $target:ident $context:ident; $fname:ident counter ( $fty:ty )) => {
+    ($self:ident $target:ident $context:ident; $fname:ident counter $fty:tt) => {
         $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
     };
-    ($self:ident $target:ident $context:ident; $fname:ident counter { $fty:ty }) => {
-        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, &())?
+    // Compound member - use the compound context directly
+    ($self:ident $target:ident $context:ident; $fname:ident compound $fty:tt) => {
+        $crate::DaWrite::apply(&$self.$fname, &mut $target.$fname, $context)?
     };
 }
 
@@ -613,6 +705,7 @@ mod tests {
         impl DaWrite for TransferDiff {
             type Target = Transfer;
             type Context = SerialResolver;
+            type Error = DaError;
 
             fn is_default(&self) -> bool {
                 DaWrite::is_default(&self.from)
@@ -624,7 +717,7 @@ mod tests {
                 &self,
                 _target: &Self::Target,
                 _context: &Self::Context,
-            ) -> Result<(), DaError> {
+            ) -> Result<(), Self::Error> {
                 // Could validate that serials exist in resolver here
                 Ok(())
             }
@@ -633,7 +726,7 @@ mod tests {
                 &self,
                 target: &mut Self::Target,
                 context: &Self::Context,
-            ) -> Result<(), DaError> {
+            ) -> Result<(), Self::Error> {
                 // Use context to resolve serials to full IDs
                 if let Some(serial) = self.from.new_value() {
                     target.from = context.resolve(*serial)?;

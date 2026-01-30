@@ -82,8 +82,8 @@ impl<S: ISnarkAccountStateMut + Clone> Clone for IndexerSnarkAccountStateMut<S> 
 }
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMut<S> {
-    fn verifying_key(&self) -> &PredicateKey {
-        self.inner.verifying_key()
+    fn update_vk(&self) -> &PredicateKey {
+        self.inner.update_vk()
     }
 
     fn seqno(&self) -> Seqno {
@@ -193,7 +193,7 @@ impl<A: IAccountStateMut + fmt::Debug> fmt::Debug for IndexerAccountStateMut<A> 
 
 impl<A: IAccountStateMut> IndexerAccountStateMut<A> {
     /// Creates a new wrapper.
-    fn new(inner: A, account_id: AccountId) -> Self {
+    pub fn new(inner: A, account_id: AccountId) -> Self {
         Self {
             inner,
             account_id,
