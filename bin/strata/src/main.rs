@@ -20,6 +20,7 @@ mod config;
 mod context;
 mod errors;
 mod genesis;
+mod helpers;
 mod init_db;
 mod rpc;
 mod run_context;

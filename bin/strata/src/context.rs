@@ -7,6 +7,7 @@ use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
+use strata_db_store_sled::SledBackend;
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
@@ -24,6 +25,8 @@ pub(crate) struct NodeContext {
     pub params: Arc<Params>,
     pub task_manager: TaskManager,
     pub executor: TaskExecutor,
+    pub db: Arc<SledBackend>,
+    pub pool: threadpool::ThreadPool,
     pub storage: Arc<NodeStorage>,
     pub bitcoin_client: Arc<Client>,
     pub status_channel: Arc<StatusChannel>,
@@ -50,8 +53,9 @@ pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContex
     let db = init_db::init_database(&config.client)
         .map_err(|e| InitError::StorageCreation(e.to_string()))?;
     let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
+    // Clone db Arc before passing to create_node_storage so we can use it for sequencer tasks
     let storage = Arc::new(
-        create_node_storage(db, pool.clone())
+        create_node_storage(db.clone(), pool.clone())
             .map_err(|e| InitError::StorageCreation(e.to_string()))?,
     );
 
@@ -70,6 +74,8 @@ pub(crate) fn init_node_context(args: Args, config: Config) -> Result<NodeContex
         params,
         task_manager,
         executor,
+        db,
+        pool,
         storage,
         bitcoin_client,
         status_channel,

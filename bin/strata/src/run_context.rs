@@ -3,9 +3,11 @@
 use std::sync::Arc;
 
 use strata_asm_worker::AsmWorkerHandle;
+use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
 use strata_csm_worker::CsmWorkerStatus;
+use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
@@ -24,10 +26,14 @@ pub(crate) struct RunContext {
     pub params: Arc<Params>,
     pub config: Config,
     // Service handles
-    pub asm_handle: AsmWorkerHandle,
+    pub asm_handle: Arc<AsmWorkerHandle>,
     pub csm_monitor: ServiceMonitor<CsmWorkerStatus>,
     pub mempool_handle: MempoolHandle,
     pub chain_worker_handle: ChainWorkerHandle,
+    // Sequencer-specific handles (None for fullnodes)
+    pub broadcast_handle: Option<Arc<L1BroadcastHandle>>,
+    pub envelope_handle: Option<Arc<EnvelopeHandle>>,
+    pub blockasm_handle: Option<BlockasmHandle>,
     // Shared infrastructure
     pub storage: Arc<NodeStorage>,
     pub status_channel: Arc<StatusChannel>,

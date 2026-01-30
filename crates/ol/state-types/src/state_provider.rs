@@ -101,3 +101,26 @@ pub trait StateProvider: Send + Sync + 'static {
         tip: OLBlockCommitment,
     ) -> Result<Option<Arc<Self::State>>, Self::Error>;
 }
+
+/// Blanket implementation for Arc-wrapped state providers.
+///
+/// Enables sharing state providers across async boundaries without
+/// requiring the inner type to implement Clone.
+impl<T: StateProvider> StateProvider for Arc<T> {
+    type State = T::State;
+    type Error = T::Error;
+
+    fn get_state_for_tip_async(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+        T::get_state_for_tip_async(self, tip)
+    }
+
+    fn get_state_for_tip_blocking(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+        T::get_state_for_tip_blocking(self, tip)
+    }
+}
