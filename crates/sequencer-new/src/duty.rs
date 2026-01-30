@@ -72,10 +72,13 @@ pub struct BlockSigningDuty {
 #[derive(Debug, Clone)]
 pub struct CheckpointSigningDuty {
     /// The checkpoint to sign.
-    pub checkpoint: CheckpointPayload,
+    checkpoint: CheckpointPayload,
 }
 
 impl BlockSigningDuty {
+    pub fn new(template: FullBlockTemplate) -> Self {
+        Self { template }
+    }
     /// Returns the template ID.
     pub fn template_id(&self) -> OLBlockId {
         self.template.template_id()
@@ -115,13 +118,13 @@ impl BlockSigningDuty {
             ))
         }
     }
-
-    pub(crate) fn new(template: FullBlockTemplate) -> Self {
-        Self { template }
-    }
 }
 
 impl CheckpointSigningDuty {
+    pub fn new(checkpoint: CheckpointPayload) -> Self {
+        Self { checkpoint }
+    }
+
     /// Returns the checkpoint epoch.
     pub fn epoch(&self) -> u32 {
         self.checkpoint.new_tip().epoch
