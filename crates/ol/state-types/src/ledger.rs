@@ -2,9 +2,15 @@
 //!
 //! This uses the "transitional" types described in the OL STF spec.
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, SYSTEM_RESERVED_ACCTS};
+use strata_acct_types::{
+    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
+};
+use strata_ol_params::GenesisAccountsParams;
 
-use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
+use crate::ssz_generated::ssz::state::{
+    OLAccountState, OLAccountTypeState, OLSnarkAccountState, TsnlAccountEntry,
+    TsnlLedgerAccountsTable,
+};
 
 impl TsnlLedgerAccountsTable {
     /// Creates a new empty table.
@@ -15,6 +21,27 @@ impl TsnlLedgerAccountsTable {
             accounts: Vec::new().into(),
             serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize].into(),
         }
+    }
+
+    /// Creates a new table populated with genesis accounts from params.
+    ///
+    /// Accounts are inserted in sorted `AccountId` order (guaranteed by
+    /// `BTreeMap`) and assigned sequential serials starting at
+    /// `SYSTEM_RESERVED_ACCTS` (128).
+    pub fn from_genesis_params(params: &GenesisAccountsParams) -> AcctResult<Self> {
+        let mut table = Self::new_empty();
+        for (id, acct_params) in &params.accounts {
+            let serial = table.next_avail_serial();
+            let snark_state = OLSnarkAccountState::new_fresh(
+                acct_params.predicate.clone(),
+                acct_params.inner_state,
+            );
+            let balance = BitcoinAmount::from_sat(acct_params.balance);
+            let acct_state =
+                OLAccountState::new(serial, balance, OLAccountTypeState::Snark(snark_state));
+            table.create_account(*id, acct_state)?;
+        }
+        Ok(table)
     }
 
     pub(crate) fn next_avail_serial(&self) -> AccountSerial {

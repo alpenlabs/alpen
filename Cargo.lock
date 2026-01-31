@@ -15028,6 +15028,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
+ "strata-ol-params",
  "strata-predicate",
  "strata-snark-acct-types",
  "strata-test-utils-ssz",
