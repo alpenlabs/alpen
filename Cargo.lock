@@ -14988,6 +14988,12 @@ dependencies = [
 [[package]]
 name = "strata-ol-params"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strata-identifiers",
+ "strata-predicate",
+]
 
 [[package]]
 name = "strata-ol-state-support-types"
