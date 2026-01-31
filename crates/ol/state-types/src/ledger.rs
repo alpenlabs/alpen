@@ -5,7 +5,7 @@
 use strata_acct_types::{
     AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
 };
-use strata_ol_params::GenesisAccountsParams;
+use strata_ol_params::OLParams;
 
 use crate::ssz_generated::ssz::state::{
     OLAccountState, OLAccountTypeState, OLSnarkAccountState, TsnlAccountEntry,
@@ -24,11 +24,7 @@ impl TsnlLedgerAccountsTable {
     }
 
     /// Creates a new table populated with genesis accounts from params.
-    ///
-    /// Accounts are inserted in sorted `AccountId` order (guaranteed by
-    /// `BTreeMap`) and assigned sequential serials starting at
-    /// `SYSTEM_RESERVED_ACCTS` (128).
-    pub fn from_genesis_params(params: &GenesisAccountsParams) -> AcctResult<Self> {
+    pub fn from_genesis_params(params: &OLParams) -> AcctResult<Self> {
         let mut table = Self::new_empty();
         for (id, acct_params) in &params.accounts {
             let serial = table.next_avail_serial();
