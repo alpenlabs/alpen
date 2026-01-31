@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   extract-rust-version:
     name: Extract Rust toolchain version
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       rust-version: ${{ steps.extract.outputs.rust-version }}
     steps:
@@ -26,7 +26,7 @@ jobs:
 
   lint:
     name: Lint test files
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
 
     steps:
@@ -51,138 +51,10 @@ jobs:
         working-directory: functional-tests
         run: uv run ruff check
 
-  # Discover tests dynamically for CI matrix generation
-  discover-tests:
-    name: Discover tests
-    if: github.ref != 'refs/heads/main'
-    runs-on: ubuntu-latest
-    outputs:
-      tests: ${{ steps.discover.outputs.tests }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
-        with:
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
-        with:
-          working-directory: functional-tests
-          activate-environment: true
-          enable-cache: true
-          cache-suffix: "functional-tests"
-
-      - name: Discover tests
-        id: discover
-        working-directory: functional-tests
-        run: |
-          tests=$(uv run python entry.py --list-tests)
-          echo "tests=$tests" >> "$GITHUB_OUTPUT"
-
-  # Parallel tests for PRs - fast feedback without coverage
-  run-parallel:
-    name: Test ${{ matrix.test }}
-    if: github.ref != 'refs/heads/main'
-    runs-on: ubuntu-latest
-    needs: [extract-rust-version, lint, discover-tests]
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        test: ${{ fromJson(needs.discover-tests.outputs.tests) }}
-    env:
-      NO_COLOR: "1"
-      LOG_LEVEL: "info"
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v5
-        with:
-          persist-credentials: false
-
-      - name: Cleanup Space
-        uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
-        with:
-          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
-        with:
-          # All parallel jobs share the same cache to maximize hits
-          shared-key: functional-tests-pr
-          # Only save cache from one job to avoid 68 jobs fighting over saves
-          # 'client_status' is one of the fastest and simplest tests, less likely to fail
-          # so it's a good choice for saving cache.
-          save-if: ${{ matrix.test == 'client_status' }}
-          cache-on-failure: true
-
-      - name: Build Cargo project
-        run: cargo build --locked -F debug-utils -F test-mode
-
-      - name: Install bitcoind
-        env:
-          BITCOIND_VERSION: "30.2"
-          BITCOIND_ARCH: "x86_64-linux-gnu"
-        run: |
-          curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
-          curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/SHA256SUMS"
-          sha256sum --ignore-missing --check SHA256SUMS
-          tar xzf "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
-          sudo install -m 0755 -t /usr/local/bin bitcoin-"$BITCOIND_VERSION"/bin/*
-          bitcoind --version
-          rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
-        with:
-          working-directory: functional-tests
-          activate-environment: true
-          enable-cache: true
-          cache-suffix: "functional-tests"
-
-      - name: Run functional test
-        env:
-          TEST_NAME: ${{ matrix.test }}
-        run: |
-          export PATH="${{ github.workspace }}/target/debug:$PATH"
-          which strata-client
-          cd functional-tests && uv run python entry.py -t "$TEST_NAME"
-
-      - name: Sanitize test name for artifact
-        if: failure()
-        id: sanitize
-        env:
-          TEST_NAME: ${{ matrix.test }}
-        run: |
-          set -euo pipefail
-          name="${TEST_NAME//\//-}"
-          printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
-
-      - name: Zip log files on failure
-        if: failure()
-        run: |
-          find functional-tests/_dd -type f -name "service.log" 2>/dev/null | zip -@ logs.zip || true
-          zip -r logs.zip functional-tests/_dd -i '*/logs/*.log' 2>/dev/null || true
-
-      - name: Upload logs as build artifact on failure
-        if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
-        with:
-          name: logs-${{ steps.sanitize.outputs.name }}
-          path: logs.zip
-          retention-days: 30
-          if-no-files-found: ignore
-          compression-level: 0
-          overwrite: true
-
   # Sequential tests with coverage for main branch
   run-with-coverage:
     name: Run functional tests with coverage
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [extract-rust-version, lint]
     timeout-minutes: 60
     env:
@@ -242,27 +114,11 @@ jobs:
           RUSTFLAGS: "-Cinstrument-coverage"
         run: cargo build --locked -F debug-utils -F test-mode
 
-      - name: Run functional tests (1)
-        id: funcTestsRun1
+      - name: Run functional tests
+        id: funcTestsRun
         continue-on-error: true
         env:
           NO_COLOR: "1"
-          LOG_LEVEL: "info"
-        run: |
-          NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
-          export PATH="$NEWPATH:$PATH"
-          which strata-client
-          cd functional-tests && uv run python entry.py
-
-      # Run again just to be sure as some tests are flaky, with more logging
-      - name: Run functional tests (2)
-        id: funcTestsRun2
-        if: steps.funcTestsRun1.outcome == 'failure'
-        continue-on-error: true
-        env:
-          RUST_LOG: "trace,sled=warn,hyper=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
-          NO_COLOR: "1"
-          RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
         run: |
           NEWPATH="${{ github.workspace }}/target/llvm-cov-target/debug"
@@ -288,7 +144,7 @@ jobs:
           path: lcov.functional.info
 
       - name: Zip log files on failure
-        if: steps.funcTestsRun2.outcome == 'failure'
+        if: steps.funcTestsRun.outcome == 'failure'
         # Create a zip archive (logs.zip) that includes only service.log files,
         # preserving the folder structure starting from functional-tests/_dd
         # NOTE: Entire _dd ends up hundreds of MBs, so keep only logs (still huge...).
@@ -299,7 +155,7 @@ jobs:
           zip -r logs.zip functional-tests/_dd -i '*/logs/*.log'
 
       - name: Upload logs as build artifact on failure
-        if: steps.funcTestsRun2.outcome == 'failure'
+        if: steps.funcTestsRun.outcome == 'failure'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
         with:
           name: fntest_dd
@@ -309,20 +165,20 @@ jobs:
           compression-level: 0 # already compressed
 
       - name: Fail job if functional tests fail
-        if: steps.funcTestsRun2.outcome == 'failure'
+        if: steps.funcTestsRun.outcome == 'failure'
         run: |
           echo "Functional tests failed"
           exit 1
 
   functional-tests-success:
     name: Check that all checks pass
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: always()
-    needs: [lint, discover-tests, run-parallel, run-with-coverage]
+    needs: [lint, run-with-coverage]
     timeout-minutes: 60
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          allowed-skips: discover-tests, run-parallel, run-with-coverage
+          allowed-skips: run-with-coverage
