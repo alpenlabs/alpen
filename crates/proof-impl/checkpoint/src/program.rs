@@ -1,14 +1,9 @@
-use std::{
-    panic::{catch_unwind, AssertUnwindSafe},
-    sync::Arc,
-};
-
 use strata_checkpoint_types::BatchTransition;
 use zkaleido::{
-    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
-    ZkVmInputResult, ZkVmProgram, ZkVmResult,
+    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmInputResult,
+    ZkVmProgram, ZkVmResult,
 };
-use zkaleido_native_adapter::{NativeHost, NativeMachine};
+use zkaleido_native_adapter::NativeHost;
 
 use crate::process_checkpoint_proof;
 
@@ -61,15 +56,9 @@ impl ZkVmProgram for CheckpointProgram {
 impl CheckpointProgram {
     pub fn native_host() -> NativeHost {
         const MOCK_CL_STF_VK: [u32; 8] = [0u32; 8];
-        NativeHost {
-            process_proof: Arc::new(Box::new(move |zkvm: &NativeMachine| {
-                catch_unwind(AssertUnwindSafe(|| {
-                    process_checkpoint_proof(zkvm, &MOCK_CL_STF_VK);
-                }))
-                .map_err(|_| ZkVmError::ExecutionError(Self::name()))?;
-                Ok(())
-            })),
-        }
+        NativeHost::new(move |zkvm| {
+            process_checkpoint_proof(zkvm, &MOCK_CL_STF_VK);
+        })
     }
 
     // Add this new convenience method
