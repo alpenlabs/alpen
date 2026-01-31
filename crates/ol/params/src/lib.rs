@@ -1,6 +1,16 @@
-//! OL genesis account parameters.
+//! OL genesis parameters.
 //!
-//! Provides JSON-serializable configuration for genesis OL accounts. At genesis
+//! Provides JSON-serializable configuration for OL genesis state, including
+//! genesis block header parameters and genesis account definitions.
+//!
+//! ## Header parameters
+//!
+//! [`GenesisHeaderParams`] configures the genesis block header. All fields
+//! default to zero values when omitted.
+//!
+//! ## Account parameters
+//!
+//! [`GenesisAccountsParams`] configures genesis OL accounts. At genesis
 //! construction time, each account entry is used to build an [`OLAccountState`]
 //! with auto-assigned serials starting at 128 (`SYSTEM_RESERVED_ACCTS`).
 //!
@@ -12,8 +22,53 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{AccountId, Buf32};
+use strata_identifiers::{AccountId, Buf32, Epoch};
 use strata_predicate::PredicateKey;
+
+/// Genesis block header parameters.
+///
+/// All fields have sensible defaults for a genesis block. If not provided,
+/// `timestamp` and `epoch` default to 0, while `parent_blkid`, `body_root`,
+/// and `logs_root` default to `Buf32::zero()`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenesisHeaderParams {
+    /// Block timestamp. Defaults to 0.
+    #[serde(default)]
+    pub timestamp: u64,
+
+    /// Epoch number. Defaults to 0.
+    #[serde(default)]
+    pub epoch: Epoch,
+
+    /// Parent block ID. Defaults to `Buf32::zero()`.
+    #[serde(default = "Buf32::zero")]
+    pub parent_blkid: Buf32,
+
+    /// Body root hash. Defaults to `Buf32::zero()`.
+    #[serde(default = "Buf32::zero")]
+    pub body_root: Buf32,
+
+    /// Logs root hash. Defaults to `Buf32::zero()`.
+    #[serde(default = "Buf32::zero")]
+    pub logs_root: Buf32,
+}
+
+impl GenesisHeaderParams {
+    /// Deserializes from a JSON string.
+    pub fn from_json(json: &str) -> serde_json::Result<Self> {
+        serde_json::from_str(json)
+    }
+
+    /// Serializes to a JSON string.
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
+    }
+
+    /// Serializes to a pretty-printed JSON string.
+    pub fn to_json_pretty(&self) -> serde_json::Result<String> {
+        serde_json::to_string_pretty(self)
+    }
+}
 
 /// Top-level OL genesis account parameters.
 ///
@@ -174,5 +229,68 @@ mod tests {
         for window in ids.windows(2) {
             assert!(window[0] < window[1], "accounts should be sorted by ID");
         }
+    }
+
+    #[test]
+    fn test_header_all_defaults() {
+        let json = r#"{}"#;
+        let params = GenesisHeaderParams::from_json(json).expect("parse failed");
+
+        assert_eq!(params.timestamp, 0);
+        assert_eq!(params.epoch, 0);
+        assert_eq!(params.parent_blkid, Buf32::zero());
+        assert_eq!(params.body_root, Buf32::zero());
+        assert_eq!(params.logs_root, Buf32::zero());
+    }
+
+    #[test]
+    fn test_header_explicit_values() {
+        let json = r#"{
+            "timestamp": 42,
+            "epoch": 7,
+            "parent_blkid": "0101010101010101010101010101010101010101010101010101010101010101",
+            "body_root": "0202020202020202020202020202020202020202020202020202020202020202",
+            "logs_root": "0303030303030303030303030303030303030303030303030303030303030303"
+        }"#;
+        let params = GenesisHeaderParams::from_json(json).expect("parse failed");
+
+        assert_eq!(params.timestamp, 42);
+        assert_eq!(params.epoch, 7);
+        assert_eq!(params.parent_blkid, Buf32::from([0x01; 32]));
+        assert_eq!(params.body_root, Buf32::from([0x02; 32]));
+        assert_eq!(params.logs_root, Buf32::from([0x03; 32]));
+    }
+
+    #[test]
+    fn test_header_partial_defaults() {
+        // Only provide timestamp; everything else defaults.
+        let json = r#"{ "timestamp": 100 }"#;
+        let params = GenesisHeaderParams::from_json(json).expect("parse failed");
+
+        assert_eq!(params.timestamp, 100);
+        assert_eq!(params.epoch, 0);
+        assert_eq!(params.parent_blkid, Buf32::zero());
+        assert_eq!(params.body_root, Buf32::zero());
+        assert_eq!(params.logs_root, Buf32::zero());
+    }
+
+    #[test]
+    fn test_header_json_roundtrip() {
+        let json = r#"{
+            "timestamp": 10,
+            "epoch": 3,
+            "parent_blkid": "abababababababababababababababababababababababababababababababab",
+            "body_root": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "logs_root": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+        }"#;
+        let params = GenesisHeaderParams::from_json(json).expect("parse failed");
+        let serialized = params.to_json().expect("serialization failed");
+        let decoded = GenesisHeaderParams::from_json(&serialized).expect("deserialization failed");
+
+        assert_eq!(params.timestamp, decoded.timestamp);
+        assert_eq!(params.epoch, decoded.epoch);
+        assert_eq!(params.parent_blkid, decoded.parent_blkid);
+        assert_eq!(params.body_root, decoded.body_root);
+        assert_eq!(params.logs_root, decoded.logs_root);
     }
 }
