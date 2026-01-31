@@ -2,9 +2,7 @@
 //!
 //! This uses the "transitional" types described in the OL STF spec.
 
-use strata_acct_types::{
-    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
-};
+use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, SYSTEM_RESERVED_ACCTS};
 use strata_ol_params::OLParams;
 
 use crate::ssz_generated::ssz::state::{
@@ -32,9 +30,11 @@ impl TsnlLedgerAccountsTable {
                 acct_params.predicate.clone(),
                 acct_params.inner_state,
             );
-            let balance = BitcoinAmount::from_sat(acct_params.balance);
-            let acct_state =
-                OLAccountState::new(serial, balance, OLAccountTypeState::Snark(snark_state));
+            let acct_state = OLAccountState::new(
+                serial,
+                acct_params.balance,
+                OLAccountTypeState::Snark(snark_state),
+            );
             table.create_account(*id, acct_state)?;
         }
         Ok(table)

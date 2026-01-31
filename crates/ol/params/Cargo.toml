@@ -7,9 +7,11 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-serde.workspace = true
+strata-btc-types.workspace = true
 strata-identifiers.workspace = true
 strata-predicate.workspace = true
+
+serde.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -45,6 +45,7 @@ pub struct OLParams {
 
 #[cfg(test)]
 mod tests {
+    use strata_btc_types::BitcoinAmount;
     use strata_identifiers::Buf32;
     use strata_predicate::PredicateKey;
 
@@ -61,7 +62,7 @@ mod tests {
             AccountParams {
                 predicate: PredicateKey::always_accept(),
                 inner_state: Buf32::zero(),
-                balance: 1000,
+                balance: BitcoinAmount::from_sat(1000),
             },
         );
 
@@ -70,7 +71,7 @@ mod tests {
             AccountParams {
                 predicate: PredicateKey::always_accept(),
                 inner_state: Buf32::from([0xab; 32]),
-                balance: 0,
+                balance: BitcoinAmount::ZERO,
             },
         );
 
@@ -117,8 +118,8 @@ mod tests {
         let id1 = AccountId::from([1u8; 32]);
         let id2 = AccountId::from([2u8; 32]);
 
-        assert_eq!(params.accounts[&id1].balance, 500);
-        assert_eq!(params.accounts[&id2].balance, 0);
+        assert_eq!(params.accounts[&id1].balance, BitcoinAmount::from_sat(500));
+        assert_eq!(params.accounts[&id2].balance, BitcoinAmount::ZERO);
     }
 
     #[test]
