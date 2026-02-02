@@ -74,7 +74,9 @@ pub async fn withdraw(
     let bridge_out_amount = settings.params.deposit_amount;
     println!("Bridging out {} to {address}", bridge_out_amount);
 
-    let bosd: Descriptor = address.into();
+    let bosd: Descriptor = address
+        .try_into()
+        .user_error("Failed to convert address to BOSD descriptor")?;
 
     let tx = l2w
         .transaction_request()
