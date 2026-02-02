@@ -1,4 +1,7 @@
-//! Stores contexts that can be passed for initializing and running various strata services
+//! # Orchestration Layer (OL) node context
+//!
+//! This module provides the context for the Orchestration Layer (OL) node.
+
 use std::sync::Arc;
 
 use bitcoind_async_client::Client;

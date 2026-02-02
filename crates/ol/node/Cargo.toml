@@ -1,0 +1,27 @@
+[package]
+name = "strata-ol-node"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-checkpoint-types.workspace = true
+strata-config.workspace = true
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
+strata-params.workspace = true
+strata-primitives.workspace = true
+strata-status.workspace = true
+strata-storage.workspace = true
+strata-tasks.workspace = true
+
+anyhow.workspace = true
+bitcoind-async-client.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
