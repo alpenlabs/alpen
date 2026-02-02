@@ -62,8 +62,10 @@ impl RunContext {
 
 /// Sequencer-specific service handles.
 ///
-/// These handles are only present when running as a sequencer (not for fullnodes).
-#[expect(unused, reason = "will be used later")]
+/// Groups handles for services that only run on sequencer node: L1 broadcast,
+/// envelope signing, and block assembly. Stored as `Option` in [`ServiceHandles`]
+/// since fullnodes don't run these services.
+#[expect(unused, reason = "fields will be accessed when sequencer RPC is implemented")]
 pub(crate) struct SequencerServiceHandles {
     pub broadcast_handle: Arc<L1BroadcastHandle>,
     pub envelope_handle: Arc<EnvelopeHandle>,
