@@ -35,6 +35,11 @@ pub use strata_identifiers::MmrId;
     reason = "Some inner types don't have Debug implementation"
 )]
 pub struct NodeStorage {
+    /// Database backend for raw database access (needed for sequencer tasks)
+    db: Arc<SledBackend>,
+    /// Thread pool for blocking database operations
+    pool: threadpool::ThreadPool,
+
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
     l2_block_manager: Arc<L2BlockManager>,
@@ -57,6 +62,8 @@ pub struct NodeStorage {
 impl Clone for NodeStorage {
     fn clone(&self) -> Self {
         Self {
+            db: self.db.clone(),
+            pool: self.pool.clone(),
             asm_state_manager: self.asm_state_manager.clone(),
             l1_block_manager: self.l1_block_manager.clone(),
             l2_block_manager: self.l2_block_manager.clone(),
@@ -73,6 +80,16 @@ impl Clone for NodeStorage {
 }
 
 impl NodeStorage {
+    /// Returns the raw database backend for direct access to databases without managers.
+    pub fn db(&self) -> &Arc<SledBackend> {
+        &self.db
+    }
+
+    /// Returns the thread pool for blocking database operations.
+    pub fn pool(&self) -> &threadpool::ThreadPool {
+        &self.pool
+    }
+
     pub fn asm(&self) -> &Arc<AsmStateManager> {
         &self.asm_state_manager
     }
@@ -155,6 +172,8 @@ pub fn create_node_storage(
     let ol_checkpoint_manager = Arc::new(OLCheckpointManager::new(pool.clone(), ol_checkpoint_db));
 
     Ok(NodeStorage {
+        db,
+        pool,
         asm_state_manager: asm_manager,
         l1_block_manager,
         l2_block_manager,

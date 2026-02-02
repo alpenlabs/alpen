@@ -14833,12 +14833,10 @@ version = "0.1.0"
 dependencies = [
  "bitcoind-async-client",
  "strata-config",
- "strata-db-store-sled",
  "strata-params",
  "strata-status",
  "strata-storage",
  "strata-tasks",
- "threadpool",
  "tokio",
 ]
 

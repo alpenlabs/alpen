@@ -30,7 +30,7 @@ use crate::{
     context::check_and_init_genesis,
     helpers::generate_sequencer_address,
     rpc::OLRpcServer,
-    run_context::{RunContext, ServiceHandles},
+    run_context::{RunContext, SequencerServiceHandles, ServiceHandles},
 };
 
 /// Dependencies needed by the RPC server.
@@ -51,7 +51,12 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
     // Start Csm worker
     let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(&nodectx, asm_handle.monitor())?);
 
-    // Check and do genesis if not yet. This should be done after asm/csm and before mempool
+    // btcio reader task must start before genesis init because genesis requires ASM to
+    // have the genesis manifest which will be available only after btcio reader provides
+    // the L1 block to ASM.
+    start_btcio_reader(&nodectx, asm_handle.clone());
+
+    // Check and do genesis if not yet. This should be done after asm/csm/btcio and before mempool
     // because genesis requires asm to be working and mempool and other services expect genesis to
     // have happened.
     check_and_init_genesis(nodectx.storage().as_ref(), nodectx.params().as_ref())?;
@@ -62,23 +67,19 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
 
-    // Start btcio reader task (polls Bitcoin for new blocks and submits to ASM)
-    start_btcio_reader(&nodectx, asm_handle.clone());
-
     // Sequencer-specific tasks
-    let (broadcast_handle, envelope_handle, blockasm_handle) =
-        if nodectx.config().client.is_sequencer {
-            let broadcast_handle = Arc::new(start_broadcaster(&nodectx));
-            let envelope_handle = start_writer(&nodectx, broadcast_handle.clone())?;
-            let blockasm_handle = start_block_assembly(&nodectx, mempool_handle.clone())?;
-            (
-                Some(broadcast_handle),
-                Some(envelope_handle),
-                Some(blockasm_handle),
-            )
-        } else {
-            (None, None, None)
-        };
+    let sequencer_handles = if nodectx.config().client.is_sequencer {
+        let broadcast_handle = Arc::new(start_broadcaster(&nodectx));
+        let envelope_handle = start_writer(&nodectx, broadcast_handle.clone())?;
+        let blockasm_handle = start_block_assembly(&nodectx, mempool_handle.clone())?;
+        Some(SequencerServiceHandles {
+            broadcast_handle,
+            envelope_handle,
+            blockasm_handle,
+        })
+    } else {
+        None
+    };
 
     let fcm_ctx =
         FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());
@@ -95,9 +96,7 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
         mempool_handle,
         chain_worker_handle,
         fcm_handle,
-        broadcast_handle,
-        envelope_handle,
-        blockasm_handle,
+        sequencer_handles,
     );
 
     Ok(RunContext::from_node_ctx(nodectx, service_handles))
@@ -124,9 +123,9 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
 ///
 /// Manages L1 transaction broadcasting and tracks confirmation status.
 fn start_broadcaster(nodectx: &NodeContext) -> L1BroadcastHandle {
-    let broadcast_db = nodectx.db().broadcast_db();
+    let broadcast_db = nodectx.storage().db().broadcast_db();
     let broadcast_ctx = l1tx_broadcast::Context::new(broadcast_db);
-    let broadcast_ops = Arc::new(broadcast_ctx.into_ops(nodectx.pool().clone()));
+    let broadcast_ops = Arc::new(broadcast_ctx.into_ops(nodectx.storage().pool().clone()));
 
     spawn_broadcaster_task(
         nodectx.executor(),
@@ -149,7 +148,7 @@ fn start_writer(
         .handle()
         .block_on(generate_sequencer_address(nodectx.bitcoin_client()))?;
 
-    let writer_db = nodectx.db().writer_db();
+    let writer_db = nodectx.storage().db().writer_db();
 
     start_envelope_task(
         nodectx.executor(),
@@ -159,7 +158,7 @@ fn start_writer(
         sequencer_address,
         writer_db,
         nodectx.status_channel().as_ref().clone(),
-        nodectx.pool().clone(),
+        nodectx.storage().pool().clone(),
         broadcast_handle,
     )
 }

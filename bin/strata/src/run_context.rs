@@ -60,6 +60,16 @@ impl RunContext {
     }
 }
 
+/// Sequencer-specific service handles.
+///
+/// These handles are only present when running as a sequencer (not for fullnodes).
+#[expect(unused, reason = "will be used later")]
+pub(crate) struct SequencerServiceHandles {
+    pub broadcast_handle: Arc<L1BroadcastHandle>,
+    pub envelope_handle: Arc<EnvelopeHandle>,
+    pub blockasm_handle: BlockasmHandle,
+}
+
 #[expect(unused, reason = "will be used later")]
 pub(crate) struct ServiceHandles {
     asm_handle: Arc<AsmWorkerHandle>,
@@ -67,26 +77,18 @@ pub(crate) struct ServiceHandles {
     mempool_handle: Arc<MempoolHandle>,
     chain_worker_handle: Arc<ChainWorkerHandle>,
     fcm_handle: Arc<FcmServiceHandle>,
-    // Sequencer-specific handles (None for fullnodes)
-    broadcast_handle: Option<Arc<L1BroadcastHandle>>,
-    envelope_handle: Option<Arc<EnvelopeHandle>>,
-    blockasm_handle: Option<BlockasmHandle>,
+    /// Sequencer-specific handles (None for fullnodes)
+    sequencer_handles: Option<SequencerServiceHandles>,
 }
 
 impl ServiceHandles {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Service handles aggregates all service handles"
-    )]
     pub(crate) fn new(
         asm_handle: Arc<AsmWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
-        broadcast_handle: Option<Arc<L1BroadcastHandle>>,
-        envelope_handle: Option<Arc<EnvelopeHandle>>,
-        blockasm_handle: Option<BlockasmHandle>,
+        sequencer_handles: Option<SequencerServiceHandles>,
     ) -> Self {
         Self {
             asm_handle,
@@ -94,9 +96,7 @@ impl ServiceHandles {
             mempool_handle,
             chain_worker_handle,
             fcm_handle,
-            broadcast_handle,
-            envelope_handle,
-            blockasm_handle,
+            sequencer_handles,
         }
     }
 }

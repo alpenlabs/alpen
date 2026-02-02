@@ -5,14 +5,12 @@ edition = "2024"
 
 [dependencies]
 strata-config.workspace = true
-strata-db-store-sled.workspace = true
 strata-params.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-tasks.workspace = true
 
 bitcoind-async-client.workspace = true
-threadpool.workspace = true
 tokio.workspace = true
 
 [lints]
