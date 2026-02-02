@@ -3,7 +3,7 @@ use strata_btc_types::BitcoinAmount;
 use strata_crypto::EvenPublicKey;
 
 /// Configuration for the BridgeV1 subprotocol.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BridgeV1Config {
     /// Initial operator MuSig2 public keys for the bridge
     pub operators: Vec<EvenPublicKey>,

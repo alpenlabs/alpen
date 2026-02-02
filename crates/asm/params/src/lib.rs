@@ -1,9 +1,5 @@
-mod admin;
-mod bridge;
-mod checkpoint;
 mod params;
+mod subprotocols;
 
-pub use admin::{AdministrationSubprotoParams, Role};
-pub use bridge::BridgeV1Config;
-pub use checkpoint::CheckpointConfig;
 pub use params::AsmParams;
+pub use subprotocols::{AdministrationSubprotoParams, BridgeV1Config, CheckpointConfig, Role};
