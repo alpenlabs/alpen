@@ -3,11 +3,13 @@
 use std::sync::Arc;
 
 use strata_asm_worker::AsmWorkerHandle;
+use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
 use strata_consensus_logic::FcmServiceHandle;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
+use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
@@ -58,6 +60,21 @@ impl RunContext {
     }
 }
 
+/// Sequencer-specific service handles.
+///
+/// Groups handles for services that only run on sequencer node: L1 broadcast,
+/// envelope signing, and block assembly. Stored as `Option` in [`ServiceHandles`]
+/// since fullnodes don't run these services.
+#[expect(
+    unused,
+    reason = "fields will be accessed when sequencer RPC is implemented"
+)]
+pub(crate) struct SequencerServiceHandles {
+    pub broadcast_handle: Arc<L1BroadcastHandle>,
+    pub envelope_handle: Arc<EnvelopeHandle>,
+    pub blockasm_handle: BlockasmHandle,
+}
+
 #[expect(unused, reason = "will be used later")]
 pub(crate) struct ServiceHandles {
     asm_handle: Arc<AsmWorkerHandle>,
@@ -65,6 +82,8 @@ pub(crate) struct ServiceHandles {
     mempool_handle: Arc<MempoolHandle>,
     chain_worker_handle: Arc<ChainWorkerHandle>,
     fcm_handle: Arc<FcmServiceHandle>,
+    /// Sequencer-specific handles (None for fullnodes)
+    sequencer_handles: Option<SequencerServiceHandles>,
 }
 
 impl ServiceHandles {
@@ -74,6 +93,7 @@ impl ServiceHandles {
         mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
+        sequencer_handles: Option<SequencerServiceHandles>,
     ) -> Self {
         Self {
             asm_handle,
@@ -81,6 +101,7 @@ impl ServiceHandles {
             mempool_handle,
             chain_worker_handle,
             fcm_handle,
+            sequencer_handles,
         }
     }
 }

@@ -78,6 +78,11 @@ class RelayerConfig:
 
 
 @dataclass
+class SequencerConfig:
+    max_txs_per_block: int = field(default=100)
+
+
+@dataclass
 class StrataConfig:
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
@@ -85,7 +90,10 @@ class StrataConfig:
     sync: SyncConfig = field(default_factory=SyncConfig)
     exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
+    sequencer: SequencerConfig | None = field(default=None)
 
     def as_toml_string(self) -> str:
         d = asdict(self)
+        # Remove None values (optional configs)
+        d = {k: v for k, v in d.items() if v is not None}
         return toml.dumps(d)

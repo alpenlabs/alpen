@@ -27,8 +27,7 @@ pub(crate) fn init_storage(config: &Config) -> Result<Arc<NodeStorage>, InitErro
         .map_err(|e| InitError::StorageCreation(e.to_string()))?;
     let pool = threadpool::ThreadPool::with_name("strata-pool".to_owned(), 8);
     let storage = Arc::new(
-        create_node_storage(db, pool.clone())
-            .map_err(|e| InitError::StorageCreation(e.to_string()))?,
+        create_node_storage(db, pool).map_err(|e| InitError::StorageCreation(e.to_string()))?,
     );
     Ok(storage)
 }
