@@ -2814,9 +2814,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin-bosd"
-version = "0.4.2"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea193f1edc6035cd266213fe573828a44e4ac36892f3661bd640eb5241e0450"
+checksum = "94fb19ad225b5555a3c99796fe9c5d14b18eb0130eee5c39875bb642f173be6f"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -2888,15 +2888,15 @@ dependencies = [
 
 [[package]]
 name = "bitcoind-async-client"
-version = "0.8.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fb42c12f538927ccce999e0227b1ac1b911065d2d1086f6b7451f1e217c8c32"
+checksum = "a8728da20687a48d63ba5b2ae5de20bdb73c2c6a037eab3c336755370d39a13a"
 dependencies = [
  "base64 0.22.1",
  "bitcoin",
+ "bitreq",
  "corepc-types",
  "hex-conservative",
- "reqwest 0.12.28",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
@@ -2918,6 +2918,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "bitreq"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bf88316bfce42d7db313826acfa4325857c085e26f163c3e8c1cfb38fef4007"
+dependencies = [
+ "rustls 0.21.12",
+ "rustls-webpki 0.101.7",
+ "tokio",
+ "tokio-rustls 0.24.1",
+ "webpki-roots 0.25.4",
 ]
 
 [[package]]
@@ -4151,7 +4164,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.114",
 ]
 
 [[package]]
