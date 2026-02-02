@@ -13816,6 +13816,7 @@ dependencies = [
  "strata-btc-types",
  "strata-crypto",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-predicate",
 ]
 
