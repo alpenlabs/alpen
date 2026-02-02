@@ -97,7 +97,6 @@ members = [
   "crates/simple-ee",
   "crates/snark-acct-sys",
   "crates/snark-acct-types",
-  "crates/snark-acct-sys",
   "crates/state",
   "crates/status",
   "crates/storage",
