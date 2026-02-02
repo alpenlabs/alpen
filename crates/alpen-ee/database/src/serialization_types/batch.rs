@@ -4,14 +4,13 @@ use alpen_ee_common::{
     Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, L1DaBlockRef, ProofId,
 };
 use bitcoin::{hashes::Hash as _, Txid, Wtxid};
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_acct_types::Hash;
 use strata_identifiers::L1BlockCommitment;
 
 /// Database representation of a (Txid, Wtxid) pair.
 ///
 /// Uses named fields to avoid confusion between the two identically-typed 32-byte arrays.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBTxidPair {
     txid: [u8; 32],
     wtxid: [u8; 32],
@@ -28,7 +27,7 @@ impl DBTxidPair {
 }
 
 /// Database representation of a BatchId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBBatchId {
     prev_block: [u8; 32],
     last_block: [u8; 32],
@@ -50,7 +49,7 @@ impl From<DBBatchId> for BatchId {
 }
 
 /// Database representation of a Batch.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBBatch {
     idx: u64,
     prev_block: [u8; 32],
@@ -96,7 +95,7 @@ impl TryFrom<DBBatch> for Batch {
 }
 
 /// Database representation of L1DaBlockRef.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBL1DaBlockRef {
     /// L1BlockCommitment serialized via its Borsh impl.
     block: L1BlockCommitment,
@@ -137,7 +136,7 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
 }
 
 /// Database representation of BatchStatus.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) enum DBBatchStatus {
     Genesis,
     Sealed,
@@ -195,7 +194,7 @@ impl From<DBBatchStatus> for BatchStatus {
 }
 
 /// Database representation of a Batch with its status, stored together.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBBatchWithStatus {
     batch: DBBatch,
     status: DBBatchStatus,
@@ -217,7 +216,7 @@ impl DBBatchWithStatus {
 }
 
 /// Database representation of a ChunkId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBChunkId {
     prev_block: [u8; 32],
     last_block: [u8; 32],
@@ -239,7 +238,7 @@ impl From<DBChunkId> for ChunkId {
 }
 
 /// Database representation of a Chunk.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBChunk {
     idx: u64,
     prev_block: [u8; 32],
@@ -271,7 +270,7 @@ impl From<DBChunk> for Chunk {
 }
 
 /// Database representation of ChunkStatus.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) enum DBChunkStatus {
     ProvingNotStarted,
     ProofPending(String),
@@ -299,7 +298,7 @@ impl From<DBChunkStatus> for ChunkStatus {
 }
 
 /// Database representation of a Chunk with its status, stored together.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBChunkWithStatus {
     chunk: DBChunk,
     status: DBChunkStatus,

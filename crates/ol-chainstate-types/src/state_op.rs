@@ -16,7 +16,16 @@ use strata_state::prelude::StateQueue;
 use crate::{Chainstate, ChainstateEntry};
 
 /// Collection of writes we're making to the state.
-#[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    BorshDeserialize,
+    BorshSerialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct WriteBatch {
     /// Full "toplevel" state.
     new_toplevel_state: Chainstate,
@@ -205,7 +214,16 @@ impl StateCache {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    BorshDeserialize,
+    BorshSerialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct WriteBatchEntry {
     wb: WriteBatch,
     blockid: L2BlockId,

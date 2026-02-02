@@ -2,10 +2,61 @@ use std::{io, ops::AddAssign};
 
 use bitcoin::Work;
 use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BtcWork(Work);
+/// Serializer for [`Work`] as bytes for rkyv.
+struct WorkAsBytes;
+
+impl ArchiveWith<Work> for WorkAsBytes {
+    type Archived = Archived<[u8; 32]>;
+    type Resolver = Resolver<[u8; 32]>;
+
+    fn resolve_with(field: &Work, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.to_le_bytes(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Work, S> for WorkAsBytes
+where
+    S: Fallible + ?Sized,
+    [u8; 32]: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Work, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_le_bytes(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<[u8; 32]>, Work, D> for WorkAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<[u8; 32]>: rkyv::Deserialize<[u8; 32], D>,
+{
+    fn deserialize_with(
+        field: &Archived<[u8; 32]>,
+        deserializer: &mut D,
+    ) -> Result<Work, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(Work::from_le_bytes(bytes))
+    }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct BtcWork(#[rkyv(with = WorkAsBytes)] Work);
 
 impl Default for BtcWork {
     fn default() -> Self {

@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 arbitrary = { workspace = true, optional = true }
 borsh.workspace = true
+rkyv.workspace = true
 serde.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true

@@ -12,5 +12,6 @@ strata-identifiers.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
+rkyv.workspace = true
 serde.workspace = true
 zkaleido.workspace = true

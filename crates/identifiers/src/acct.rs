@@ -35,6 +35,9 @@ type RawAccountId = [u8; ACCT_ID_LEN];
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 
@@ -106,6 +109,9 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
     Encode,
     BorshSerialize,
     BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct AccountSerial(RawAccountSerial);
 
@@ -175,6 +181,9 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
     Arbitrary,
     BorshSerialize,
     BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
 

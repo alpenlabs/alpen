@@ -237,7 +237,16 @@ pub fn find_peak_for_pos(pos: u64, max_size: u64) -> Result<u64, MmrError> {
 }
 
 /// Metadata for an MMR instance
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct MmrMetadata {
     /// Number of leaves.
     pub num_leaves: u64,

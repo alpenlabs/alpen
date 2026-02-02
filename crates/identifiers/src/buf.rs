@@ -28,7 +28,18 @@ use crate::macros::internal;
 ///
 /// assert_eq!(buf, Buf20::from([0; 20]));
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Buf20(pub [u8; 20]);
 internal::impl_buf_common!(Buf20, 20);
 internal::impl_buf_serde!(Buf20, 20);
@@ -62,7 +73,20 @@ impl Zeroize for Buf20 {
 ///
 /// assert_eq!(buf, Buf32::from([0; 32]));
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Encode,
+    Decode,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 #[repr(transparent)]
 pub struct Buf32(pub [u8; 32]);
 internal::impl_buf_common!(Buf32, 32);
@@ -220,7 +244,20 @@ impl Zeroize for Buf32 {
 ///
 /// assert_eq!(buf, Buf64::from([0; 64]));
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Encode,
+    Decode,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Buf64(pub [u8; 64]);
 internal::impl_buf_common!(Buf64, 64);
 internal::impl_buf_serde!(Buf64, 64);

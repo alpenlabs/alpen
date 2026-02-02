@@ -14,7 +14,18 @@ pub const MEDIAN_TIMESTAMP_INDEX: usize = TIMESTAMPS_FOR_MEDIAN / 2;
 ///
 /// The median is computed using all timestamps in the buffer.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Arbitrary,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Arbitrary,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct TimestampStore {
     /// The array that holds exactly `TIMESTAMPS_FOR_MEDIAN` timestamps.

@@ -22,6 +22,9 @@ use strata_identifiers::{
     BorshSerialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct EpochSummary {
     /// The epoch number.
@@ -126,7 +129,18 @@ impl EpochSummary {
 /// Contains metadata describing a batch checkpoint, including the L1 and L2 height ranges
 /// it covers and the final L2 block ID in that range.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct BatchInfo {
     /// Checkpoint epoch

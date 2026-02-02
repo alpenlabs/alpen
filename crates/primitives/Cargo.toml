@@ -21,6 +21,7 @@ bitcoin-bosd = { workspace = true, features = [
 ] }
 borsh.workspace = true
 hex.workspace = true
+rkyv.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

@@ -1,13 +1,12 @@
-use borsh::{BorshDeserialize, to_vec};
 use ssz::{Decode, Encode};
 use strata_db_types::traits::BlockStatus;
 use strata_identifiers::OLBlockId;
 use strata_ol_chain_types_new::OLBlock;
-use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
+use typed_sled::codec::{CodecError, ValueCodec};
 
 use crate::{
     define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
-    impl_borsh_value_codec,
+    impl_rkyv_key_codec,
 };
 
 define_table_without_codec!(
@@ -15,16 +14,8 @@ define_table_without_codec!(
     (OLBlockSchema) OLBlockId => OLBlock
 );
 
-// OLBlockId uses default Borsh codec
-impl KeyCodec<OLBlockSchema> for OLBlockId {
-    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
-        to_vec(self).map_err(Into::into)
-    }
-
-    fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
-        BorshDeserialize::deserialize_reader(&mut &data[..]).map_err(Into::into)
-    }
-}
+// OLBlockId uses the default rkyv codec
+impl_rkyv_key_codec!(OLBlockSchema, OLBlockId);
 
 define_table_with_default_codec!(
     /// A table to store OL Block status. Maps block ID to BlockStatus

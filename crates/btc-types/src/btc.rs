@@ -249,6 +249,9 @@ impl BorshDeserialize for BitcoinAddress {
     Serialize,
     Encode,
     Decode,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct BitcoinAmount(u64);
 

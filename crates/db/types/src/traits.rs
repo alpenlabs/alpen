@@ -172,7 +172,19 @@ pub trait L2BlockDatabase: Send + Sync + 'static {
 
 /// Gets the status of a block.
 #[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize, Serialize,
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub enum BlockStatus {
     /// Block's validity hasn't been checked yet.

@@ -25,7 +25,18 @@ pub trait L2Header {
 
 /// Block header that forms the chain we use to reach consensus.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct L2BlockHeader {
     /// Slot the block was proposed for.
@@ -165,7 +176,18 @@ fn fill_sighash_buf(tmplt: &L2BlockHeader, buf: &mut [u8]) -> Result<(), io::Err
 
 /// Block header that forms the chain we use to reach consensus.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct SignedL2BlockHeader {
     pub(crate) header: L2BlockHeader,

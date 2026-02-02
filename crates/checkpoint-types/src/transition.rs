@@ -15,6 +15,9 @@ use strata_identifiers::{Buf32, Epoch};
     BorshSerialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct BatchTransition {
     /// Epoch
@@ -48,6 +51,9 @@ pub struct BatchTransition {
     BorshSerialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct ChainstateRootTransition {
     /// Chainstate root prior to execution of the batch.

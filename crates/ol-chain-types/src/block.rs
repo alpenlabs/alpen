@@ -1,14 +1,77 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archived, Place, Resolver,
+};
 use serde::{Deserialize, Serialize};
+use ssz::{decode::Decode, encode::Encode};
 use strata_asm_common::AsmManifest;
 use strata_primitives::prelude::*;
 use strata_state::exec_update::ExecUpdate;
 
+/// Serializer for [`Vec<AsmManifest>`] as [`Vec<u8>`] for rkyv.
+struct AsmManifestsAsBytes;
+
+impl ArchiveWith<Vec<AsmManifest>> for AsmManifestsAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(
+        field: &Vec<AsmManifest>,
+        resolver: Self::Resolver,
+        out: Place<Self::Archived>,
+    ) {
+        let bytes = field.as_ssz_bytes();
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Vec<AsmManifest>, S> for AsmManifestsAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(
+        field: &Vec<AsmManifest>,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        let bytes = field.as_ssz_bytes();
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, Vec<AsmManifest>, D> for AsmManifestsAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<Vec<AsmManifest>, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(Vec::<AsmManifest>::from_ssz_bytes(&bytes).expect("valid ASM manifest bytes"))
+    }
+}
+
 use crate::header::{L2BlockHeader, SignedL2BlockHeader};
 
 /// Full contents of the bare L2 block.
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct L2Block {
     /// Header that links the block into the L2 block chain and carries the
     /// block's credential from a sequencer.
@@ -64,7 +127,18 @@ impl<'a> Arbitrary<'a> for L2Block {
 
 /// Contains the additional payloads within the L2 block.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct L2BlockBody {
     l1_segment: L1Segment,
@@ -90,7 +164,19 @@ impl L2BlockBody {
 
 /// Container for [`AsmManifest`]s that we've observed from the L1, if there
 /// are any.
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct L1Segment {
     /// New L1 block height.  This should correspond with the last manifest in
     /// the new_manifests, or the current chainstate height if it's not being
@@ -102,6 +188,7 @@ pub struct L1Segment {
 
     /// New [`AsmManifest`]s that we've seen from L1 that we didn't see in the previous
     /// L2 block.
+    #[rkyv(with = AsmManifestsAsBytes)]
     new_manifests: Vec<AsmManifest>,
 }
 
@@ -154,7 +241,18 @@ impl L1Segment {
 /// Right now this just contains a single execution update since we only have a
 /// single execution environment in our execution layer.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct ExecSegment {
     /// Update payload for the single execution environment.
@@ -175,7 +273,18 @@ impl ExecSegment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshSerialize,
+    BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct L2BlockAccessory {
     exec_payload: Vec<u8>,
     gas_used: u64,
@@ -198,7 +307,18 @@ impl L2BlockAccessory {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    Arbitrary,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct L2BlockBundle {
     block: L2Block,
     accessory: L2BlockAccessory,

@@ -9,7 +9,9 @@ workspace = true
 [dependencies]
 bitcoin.workspace = true
 borsh.workspace = true
+rkyv.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-types.workspace = true
 strata-btc-types.workspace = true

@@ -21,6 +21,9 @@ use crate::{EvmEeBlockCommitment, L2BlockCommitment};
     BorshDeserialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub enum ProofContext {
     /// Identifier for the EVM Execution Environment (EE) blocks used in generating the State
@@ -53,6 +56,9 @@ pub enum ProofContext {
     BorshDeserialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub enum ProofZkVm {
     SP1,
@@ -74,6 +80,9 @@ pub enum ProofZkVm {
     BorshDeserialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct ProofKey {
     /// The unique identifier for the proof type and its context.

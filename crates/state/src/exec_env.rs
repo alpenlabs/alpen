@@ -8,7 +8,17 @@ use strata_primitives::buf::Buf32;
 
 use crate::{exec_update, forced_inclusion, state_queue::StateQueue};
 
-#[derive(Debug, Clone, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    BorshDeserialize,
+    BorshSerialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct ExecEnvState {
     /// The last processed exec update, which we've checked to be valid.  We may
     /// not have seen its DA blobs on the L1 yet.

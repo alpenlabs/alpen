@@ -28,7 +28,9 @@ arbitrary.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
 parking_lot = { workspace = true, optional = true }
+rkyv.workspace = true
 serde.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 typed-sled.workspace = true
 

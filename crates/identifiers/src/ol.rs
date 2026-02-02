@@ -27,6 +27,9 @@ pub type Epoch = u32;
     BorshDeserialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]
@@ -153,6 +156,9 @@ pub type L2BlockCommitment = OLBlockCommitment;
     BorshDeserialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]

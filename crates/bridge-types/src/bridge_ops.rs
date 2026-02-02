@@ -1,17 +1,73 @@
 //! Types for managing pending bridging operations in the CL state.
 
+use std::str::FromStr;
+
 use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archived, Place, Resolver,
+};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::SubjectId;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
 
+/// Serializer for [`Descriptor`] as string for rkyv.
+struct DescriptorAsString;
+
+impl ArchiveWith<Descriptor> for DescriptorAsString {
+    type Archived = Archived<String>;
+    type Resolver = Resolver<String>;
+
+    fn resolve_with(field: &Descriptor, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.to_string(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Descriptor, S> for DescriptorAsString
+where
+    S: Fallible + ?Sized,
+    String: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Descriptor, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_string(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<String>, Descriptor, D> for DescriptorAsString
+where
+    D: Fallible + ?Sized,
+    Archived<String>: rkyv::Deserialize<String, D>,
+{
+    fn deserialize_with(
+        field: &Archived<String>,
+        deserializer: &mut D,
+    ) -> Result<Descriptor, D::Error> {
+        let desc = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(Descriptor::from_str(&desc).expect("stored descriptor should be valid"))
+    }
+}
+
 /// Describes an intent to withdraw that hasn't been dispatched yet.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct WithdrawalIntent {
     /// Quantity of L1 asset, for Bitcoin this is sats.
     amt: BitcoinAmount,
 
     /// Destination [`Descriptor`] for the withdrawal
+    #[rkyv(with = DescriptorAsString)]
     destination: Descriptor,
 
     /// withdrawal request transaction id
@@ -45,7 +101,19 @@ impl WithdrawalIntent {
 }
 
 /// Set of withdrawals that are assigned to a deposit bridge utxo.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct WithdrawalBatch {
     /// A series of [WithdrawalIntent]'s who sum does not exceed withdrawal denomination.
     intents: Vec<WithdrawalIntent>,
@@ -71,7 +139,17 @@ impl WithdrawalBatch {
 }
 
 /// Describes a deposit data to be processed by an EE.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshDeserialize,
+    BorshSerialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct DepositIntent {
     /// Quantity in the L1 asset, for Bitcoin this is sats.
     amt: BitcoinAmount,

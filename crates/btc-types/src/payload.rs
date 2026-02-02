@@ -7,6 +7,11 @@ use std::io;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize, de};
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::TagData;
@@ -28,6 +33,9 @@ use strata_l1_txfmt::TagData;
     TryFromPrimitive,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
@@ -59,6 +67,9 @@ impl<'a> Arbitrary<'a> for PayloadDest {
     BorshSerialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct BlobSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -100,6 +111,9 @@ impl BlobSpec {
     BorshSerialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct PayloadSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -126,10 +140,62 @@ impl PayloadSpec {
     }
 }
 
+/// Serializer for [`TagData`] as bytes for rkyv.
+struct TagDataAsBytes;
+
+impl ArchiveWith<TagData> for TagDataAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &TagData, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let mut bytes = Vec::with_capacity(2 + field.aux_data().len());
+        bytes.push(field.subproto_id());
+        bytes.push(field.tx_type());
+        bytes.extend_from_slice(field.aux_data());
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<TagData, S> for TagDataAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &TagData, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let mut bytes = Vec::with_capacity(2 + field.aux_data().len());
+        bytes.push(field.subproto_id());
+        bytes.push(field.tx_type());
+        bytes.extend_from_slice(field.aux_data());
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, TagData, D> for TagDataAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<TagData, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        let (subproto_id, rest) = bytes
+            .split_first()
+            .expect("stored TagData should include subproto_id");
+        let (tx_type, aux_data) = rest
+            .split_first()
+            .expect("stored TagData should include tx_type");
+        Ok(TagData::new(*subproto_id, *tx_type, aux_data.to_vec())
+            .expect("stored TagData should be valid"))
+    }
+}
+
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct L1Payload {
     data: Vec<Vec<u8>>,
+    #[rkyv(with = TagDataAsBytes)]
     tag: TagData,
 }
 
@@ -248,7 +314,18 @@ impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
 /// about it.
 ///
 /// These are never stored on-chain.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshSerialize,
+    BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 // TODO: rename this to L1PayloadIntent and remove the dest field
 pub struct PayloadIntent {
     /// The destination for this payload.

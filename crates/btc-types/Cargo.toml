@@ -20,6 +20,7 @@ bitcoin-bosd = { workspace = true, features = ["address"] }
 borsh.workspace = true
 num_enum.workspace = true
 rand.workspace = true
+rkyv.workspace = true
 secp256k1 = { workspace = true, features = ["global-context"] }
 serde.workspace = true
 thiserror.workspace = true

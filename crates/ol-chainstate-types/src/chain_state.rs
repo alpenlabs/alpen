@@ -21,7 +21,17 @@ use crate::{genesis::GenesisStateData, l1_view::L1ViewState};
 /// pre-state and a block.
 ///
 /// This corresponds to the beacon chain state.
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Chainstate {
     /// The slot that contained the block that produced this chainstate.
     pub(crate) cur_slot: u64,
@@ -152,7 +162,16 @@ impl Chainstate {
 // TODO: FIXME: Note that this is used as a temporary solution for the state root calculation
 // It should be replaced once we swap out Chainstate's type definitions with SSZ type definitions
 // which defines all of this more rigorously
-#[derive(Debug, BorshSerialize, BorshDeserialize, Clone, Copy)]
+#[derive(
+    Debug,
+    BorshSerialize,
+    BorshDeserialize,
+    Clone,
+    Copy,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct HashedChainState {
     pub prev_block: Buf32,
     pub cur_epoch: Epoch,

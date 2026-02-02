@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::buf::Buf32;
 
 /// Structure for `ExecUpdate.input.extra_payload` for EVM EL
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, BorshSerialize, BorshDeserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct EVMExtraPayload {
     block_hash: [u8; 32],
 }
@@ -46,6 +48,9 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     BorshSerialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct ExecBlockCommitment {
     slot: u64,

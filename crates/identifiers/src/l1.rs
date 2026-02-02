@@ -9,6 +9,12 @@ pub(crate) use bitcoin::{BlockHash, absolute};
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
+#[cfg(feature = "bitcoin")]
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "bitcoin")]
 use serde::{Deserializer, Serializer, de, ser};
@@ -33,6 +39,53 @@ pub type BitcoinBlockHeight = u64;
 /// L1 block height (as a simple u32)
 pub type L1Height = u32;
 
+/// Serializer for [`absolute::Height`] as [`u32`] for rkyv.
+#[cfg(feature = "bitcoin")]
+pub(crate) struct HeightAsU32;
+
+#[cfg(feature = "bitcoin")]
+impl ArchiveWith<absolute::Height> for HeightAsU32 {
+    type Archived = Archived<u32>;
+    type Resolver = Resolver<u32>;
+
+    fn resolve_with(
+        field: &absolute::Height,
+        resolver: Self::Resolver,
+        out: Place<Self::Archived>,
+    ) {
+        rkyv::Archive::resolve(&field.to_consensus_u32(), resolver, out);
+    }
+}
+
+#[cfg(feature = "bitcoin")]
+impl<S> SerializeWith<absolute::Height, S> for HeightAsU32
+where
+    S: Fallible + ?Sized,
+    u32: rkyv::Serialize<S>,
+{
+    fn serialize_with(
+        field: &absolute::Height,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_consensus_u32(), serializer)
+    }
+}
+
+#[cfg(feature = "bitcoin")]
+impl<D> DeserializeWith<Archived<u32>, absolute::Height, D> for HeightAsU32
+where
+    D: Fallible + ?Sized,
+    Archived<u32>: rkyv::Deserialize<u32, D>,
+{
+    fn deserialize_with(
+        field: &Archived<u32>,
+        deserializer: &mut D,
+    ) -> Result<absolute::Height, D::Error> {
+        let height = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(absolute::Height::from_consensus(height).expect("stored block height is valid"))
+    }
+}
+
 /// ID of an L1 block, usually the hash of its header.
 #[derive(
     Copy,
@@ -48,6 +101,9 @@ pub type L1Height = u32;
     BorshDeserialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]
@@ -120,6 +176,9 @@ impl From<L1BlockId> for BlockHash {
     BorshDeserialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]
@@ -136,8 +195,21 @@ crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
 /// When bitcoin feature is enabled, uses absolute::Height internally.
 /// When disabled, the generated SSZ type (with u32) is used instead.
 #[cfg(feature = "bitcoin")]
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Debug,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct L1BlockCommitment {
+    #[rkyv(with = HeightAsU32)]
     height: absolute::Height,
     blkid: L1BlockId,
 }

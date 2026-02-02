@@ -1,5 +1,4 @@
 use alpen_ee_common::ExecBlockRecord;
-use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::{Decode, Encode};
 use strata_acct_types::{BitcoinAmount, Hash, MsgPayload};
 use strata_ee_acct_types::EeAccountState;
@@ -9,7 +8,7 @@ use strata_snark_acct_types::MessageEntry;
 
 use super::account_state::DBEeAccountState;
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBExecBlockRecord {
     pub(crate) blocknum: u64,
     parent_blockhash: Hash,
@@ -67,7 +66,7 @@ impl TryFrom<DBExecBlockRecord> for ExecBlockRecord {
     }
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 struct DBMessageEntry {
     source: [u8; 32],
     incl_epoch: u32,
