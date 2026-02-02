@@ -2,12 +2,16 @@ use serde::{Deserialize, Serialize, de::Error};
 use strata_btc_types::GenesisL1View;
 use strata_l1_txfmt::MagicBytes;
 
+use crate::subprotocols::SubprotocolInstance;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsmParams {
     #[serde(with = "serde_magic_bytes")]
     magic: MagicBytes,
 
     l1_view: GenesisL1View,
+
+    subprotocols: Vec<SubprotocolInstance>,
 }
 
 /// Serialize/deserialize [`MagicBytes`] using its Display/FromStr implementation.
