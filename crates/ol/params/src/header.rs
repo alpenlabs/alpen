@@ -1,7 +1,7 @@
 //! Genesis block header parameters.
 
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{Buf32, Epoch};
+use strata_identifiers::{Buf32, Epoch, OLBlockId};
 
 /// Genesis block header parameters.
 ///
@@ -14,13 +14,17 @@ pub struct HeaderParams {
     #[serde(default)]
     pub timestamp: u64,
 
+    /// Slot. Defaults to 0.
+    #[serde(default)]
+    pub slot: u64,
+
     /// Epoch number. Defaults to 0.
     #[serde(default)]
     pub epoch: Epoch,
 
-    /// Parent block ID. Defaults to `Buf32::zero()`.
-    #[serde(default = "Buf32::zero")]
-    pub parent_blkid: Buf32,
+    /// Parent block ID. Defaults to `OLBlockId::null()`.
+    #[serde(default = "OLBlockId::null")]
+    pub parent_blkid: OLBlockId,
 
     /// Body root hash. Defaults to `Buf32::zero()`.
     #[serde(default = "Buf32::zero")]
@@ -42,7 +46,7 @@ mod tests {
 
         assert_eq!(params.timestamp, 0);
         assert_eq!(params.epoch, 0);
-        assert_eq!(params.parent_blkid, Buf32::zero());
+        assert_eq!(params.parent_blkid, OLBlockId::null());
         assert_eq!(params.body_root, Buf32::zero());
         assert_eq!(params.logs_root, Buf32::zero());
     }
@@ -60,7 +64,10 @@ mod tests {
 
         assert_eq!(params.timestamp, 42);
         assert_eq!(params.epoch, 7);
-        assert_eq!(params.parent_blkid, Buf32::from([0x01; 32]));
+        assert_eq!(
+            params.parent_blkid,
+            OLBlockId::from(Buf32::from([0x01; 32]))
+        );
         assert_eq!(params.body_root, Buf32::from([0x02; 32]));
         assert_eq!(params.logs_root, Buf32::from([0x03; 32]));
     }
@@ -72,7 +79,7 @@ mod tests {
 
         assert_eq!(params.timestamp, 100);
         assert_eq!(params.epoch, 0);
-        assert_eq!(params.parent_blkid, Buf32::zero());
+        assert_eq!(params.parent_blkid, OLBlockId::null());
         assert_eq!(params.body_root, Buf32::zero());
         assert_eq!(params.logs_root, Buf32::zero());
     }

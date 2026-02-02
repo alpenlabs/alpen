@@ -2,7 +2,9 @@
 //!
 //! This uses the "transitional" types described in the OL STF spec.
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, SYSTEM_RESERVED_ACCTS};
+use strata_acct_types::{
+    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
+};
 use strata_ol_params::OLParams;
 
 use crate::ssz_generated::ssz::state::{
@@ -114,6 +116,16 @@ impl TsnlLedgerAccountsTable {
     /// Gets the account ID corresponding to a serial.
     pub(crate) fn get_serial_acct_id(&self, serial: AccountSerial) -> Option<&AccountId> {
         self.serials.get(*serial.inner() as usize)
+    }
+
+    /// Calculates the total funds across all accounts in the ledger.
+    pub(crate) fn calculate_total_funds(&self) -> BitcoinAmount {
+        self.accounts
+            .iter()
+            .fold(BitcoinAmount::ZERO, |acc, entry| {
+                acc.checked_add(entry.state.balance)
+                    .expect("ol/state: total funds overflow")
+            })
     }
 }
 

@@ -22,13 +22,12 @@
 mod account;
 mod header;
 
-pub use account::AccountParams;
-pub use header::HeaderParams;
-
 use std::collections::BTreeMap;
 
+pub use account::AccountParams;
+pub use header::HeaderParams;
 use serde::{Deserialize, Serialize};
-use strata_identifiers::AccountId;
+use strata_identifiers::{AccountId, EpochCommitment};
 
 /// Top-level OL genesis parameters.
 ///
@@ -41,6 +40,20 @@ pub struct OLParams {
 
     /// Genesis accounts keyed by account ID.
     pub accounts: BTreeMap<AccountId, AccountParams>,
+}
+
+impl OLParams {
+    /// Builds an [`EpochCommitment`] from the genesis header parameters.
+    ///
+    /// The genesis header's epoch, slot, and parent block ID are treated as a
+    /// checkpointed epoch, serving as the initial verified commitment.
+    pub fn checkpointed_epoch(&self) -> EpochCommitment {
+        EpochCommitment::new(
+            self.header.epoch,
+            self.header.slot,
+            self.header.parent_blkid,
+        )
+    }
 }
 
 #[cfg(test)]

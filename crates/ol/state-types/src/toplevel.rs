@@ -10,6 +10,7 @@ use strata_identifiers::{
 };
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
+use strata_ol_params::OLParams;
 
 use crate::{
     IStateBatchApplicable, WriteBatch,
@@ -36,6 +37,33 @@ impl OLState {
             global: GlobalState::new(0),
             ledger: TsnlLedgerAccountsTable::new_empty(),
         }
+    }
+
+    /// Creates initial OL state from genesis parameters.
+    pub fn from_genesis_params(params: &OLParams) -> AcctResult<Self> {
+        let last_l1_block = L1BlockCommitment::new(
+            absolute::Height::from_consensus(0).unwrap(),
+            L1BlockId::from(Buf32::zero()),
+        );
+        let checkpointed_epoch = params.checkpointed_epoch();
+        let manifests_mmr = Mmr64::from_generic(&CompactMmr64::new(64));
+
+        let ledger = TsnlLedgerAccountsTable::from_genesis_params(params)?;
+        let total_ledger_funds = ledger.calculate_total_funds();
+
+        let global = GlobalState::new(params.header.slot);
+        let epoch = EpochalState::new(
+            total_ledger_funds,
+            params.header.epoch,
+            last_l1_block,
+            checkpointed_epoch,
+            manifests_mmr,
+        );
+        Ok(Self {
+            epoch,
+            global,
+            ledger,
+        })
     }
 
     /// Create a state with specified epoch and slot for testing.
