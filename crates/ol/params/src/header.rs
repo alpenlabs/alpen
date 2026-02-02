@@ -1,5 +1,7 @@
 //! Header parameters for the parent of the genesis block.
 
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{Buf32, Epoch, OLBlockId};
 
@@ -10,6 +12,7 @@ use strata_identifiers::{Buf32, Epoch, OLBlockId};
 /// `timestamp`, `slot`, and `epoch` default to 0, while `parent_blkid`,
 /// `body_root`, and `logs_root` default to their zero/null values.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct HeaderParams {
     /// Block timestamp. Defaults to 0.
     #[serde(default)]

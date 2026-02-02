@@ -9,6 +9,8 @@ mod header;
 use std::collections::BTreeMap;
 
 pub use account::AccountParams;
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 pub use header::HeaderParams;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
@@ -18,6 +20,7 @@ use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 /// Combines header parameters and genesis account definitions into a single
 /// configuration structure.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Header parameters for the parent of the genesis block.
     pub header: HeaderParams,
