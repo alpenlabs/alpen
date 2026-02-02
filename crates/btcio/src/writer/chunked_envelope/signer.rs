@@ -22,13 +22,10 @@ use strata_db_types::types::{
 use strata_primitives::buf::Buf32;
 use tracing::*;
 
-use super::builder::build_chunked_envelope_txs;
+use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
 use crate::{
     broadcaster::L1BroadcastHandle,
-    writer::{
-        builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
-        context::WriterContext,
-    },
+    writer::builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
 };
 
 /// Builds and signs a chunked envelope's commit + N reveal transactions.
@@ -39,7 +36,7 @@ use crate::{
 pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     entry: &ChunkedEnvelopeEntry,
     broadcast_handle: &L1BroadcastHandle,
-    ctx: Arc<WriterContext<R>>,
+    ctx: Arc<ChunkedWriterContext<R>>,
 ) -> Result<ChunkedEnvelopeEntry, EnvelopeError> {
     trace!(
         chunk_count = entry.chunk_data.len(),

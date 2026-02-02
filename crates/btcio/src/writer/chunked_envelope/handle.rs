@@ -3,7 +3,7 @@
 //! Polls entries by sequential index and advances them through the status
 //! lifecycle: Unsigned → Unpublished → Published → Confirmed → Finalized.
 
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use bitcoin::Address;
 use bitcoind_async_client::{
@@ -11,22 +11,14 @@ use bitcoind_async_client::{
     Client,
 };
 use strata_config::btcio::WriterConfig;
-use strata_db_types::{
-    traits::L1ChunkedEnvelopeDatabase,
-    types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxStatus},
-};
+use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxStatus};
 use strata_params::Params;
-use strata_status::StatusChannel;
-use strata_storage::ops::chunked_envelope::{ChunkedEnvelopeOps, Context};
-use strata_tasks::TaskExecutor;
+use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
 use tokio::time::interval;
 use tracing::*;
 
-use super::signer::sign_chunked_envelope;
-use crate::{
-    broadcaster::L1BroadcastHandle,
-    writer::{builder::EnvelopeError, context::WriterContext},
-};
+use super::{context::ChunkedWriterContext, signer::sign_chunked_envelope};
+use crate::{broadcaster::L1BroadcastHandle, writer::builder::EnvelopeError};
 
 /// Handle for submitting chunked envelope entries.
 #[expect(
@@ -38,7 +30,7 @@ pub struct ChunkedEnvelopeHandle {
 }
 
 impl ChunkedEnvelopeHandle {
-    pub(crate) fn new(ops: Arc<ChunkedEnvelopeOps>) -> Self {
+    pub fn new(ops: Arc<ChunkedEnvelopeOps>) -> Self {
         Self { ops }
     }
 
@@ -66,36 +58,35 @@ impl ChunkedEnvelopeHandle {
     }
 }
 
-/// Spawns the lifecycle driver and returns a [`ChunkedEnvelopeHandle`].
-#[expect(clippy::too_many_arguments, reason = "used for starting envelope task")]
-pub fn start_chunked_envelope_task<D: L1ChunkedEnvelopeDatabase>(
-    executor: &TaskExecutor,
+/// Creates the chunked envelope lifecycle driver
+///
+/// Returns a `(handle, future)` pair. The caller is responsible for spawning the
+/// future on whatever executor it uses (e.g. alpen ee `task_executor`).
+pub fn create_chunked_envelope_task(
     bitcoin_client: Arc<Client>,
     config: Arc<WriterConfig>,
     params: Arc<Params>,
     sequencer_address: Address,
-    db: Arc<D>,
-    status_channel: StatusChannel,
-    pool: threadpool::ThreadPool,
+    ops: Arc<ChunkedEnvelopeOps>,
     broadcast_handle: Arc<L1BroadcastHandle>,
-) -> anyhow::Result<Arc<ChunkedEnvelopeHandle>> {
-    let ops = Arc::new(Context::new(db).into_ops(pool));
+) -> anyhow::Result<(Arc<ChunkedEnvelopeHandle>, impl Future<Output = ()>)> {
     let start_idx = find_first_pending_idx(ops.as_ref())?;
     let handle = Arc::new(ChunkedEnvelopeHandle::new(ops.clone()));
 
-    let ctx = Arc::new(WriterContext::new(
+    let ctx = Arc::new(ChunkedWriterContext::new(
         params,
         config,
         sequencer_address,
         bitcoin_client,
-        status_channel,
     ));
 
-    executor.spawn_critical_async("btcio::chunked_envelope_watcher", async move {
-        watcher_task(start_idx, ctx, ops, broadcast_handle).await
-    });
+    let task = async move {
+        if let Err(e) = watcher_task(start_idx, ctx, ops, broadcast_handle).await {
+            error!(%e, "chunked envelope watcher exited with error");
+        }
+    };
 
-    Ok(handle)
+    Ok((handle, task))
 }
 
 /// Scans backwards to find the earliest non-finalized entry index.
@@ -116,7 +107,7 @@ fn find_first_pending_idx(ops: &ChunkedEnvelopeOps) -> anyhow::Result<u64> {
 /// Polls entries and drives them through signing, broadcast, and confirmation.
 async fn watcher_task<R: Reader + Signer + Wallet>(
     start_idx: u64,
-    ctx: Arc<WriterContext<R>>,
+    ctx: Arc<ChunkedWriterContext<R>>,
     ops: Arc<ChunkedEnvelopeOps>,
     broadcast_handle: Arc<L1BroadcastHandle>,
 ) -> anyhow::Result<()> {

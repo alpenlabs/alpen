@@ -2,7 +2,8 @@
 //! transactions, each carrying opaque witness data.
 
 pub(crate) mod builder;
+mod context;
+mod handle;
 mod signer;
-mod task;
 
-pub use task::{start_chunked_envelope_task, ChunkedEnvelopeHandle};
+pub use handle::{create_chunked_envelope_task, ChunkedEnvelopeHandle};

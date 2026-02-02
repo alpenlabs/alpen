@@ -1,4 +1,4 @@
-use std::{str, sync::Arc};
+use std::{future::Future, str, sync::Arc};
 
 use bitcoind_async_client::traits::{Broadcaster, Reader, Signer, Wallet};
 use hex::encode_to_slice;
@@ -102,4 +102,35 @@ where
         .map_err(Into::into)
     });
     L1BroadcastHandle::new(broadcast_entry_tx, broadcast_ops)
+}
+
+/// Creates the broadcaster task.
+///
+/// Returns a `(handle, future)` pair. The caller is responsible for spawning the
+/// future on whatever executor it uses (e.g. alpen ee `task_executor`).
+pub fn create_broadcaster_task<T>(
+    l1_rpc_client: Arc<T>,
+    broadcast_ops: Arc<BroadcastDbOps>,
+    params: Arc<Params>,
+    broadcast_poll_interval: u64,
+) -> (L1BroadcastHandle, impl Future<Output = ()>)
+where
+    T: Broadcaster + Wallet + Send + Sync + 'static,
+{
+    let (broadcast_entry_tx, broadcast_entry_rx) = mpsc::channel::<(u64, L1TxEntry)>(64);
+    let ops = broadcast_ops.clone();
+    let task = async move {
+        if let Err(e) = broadcaster_task(
+            l1_rpc_client,
+            ops,
+            broadcast_entry_rx,
+            params,
+            broadcast_poll_interval,
+        )
+        .await
+        {
+            error!(%e, "broadcaster task exited with error");
+        }
+    };
+    (L1BroadcastHandle::new(broadcast_entry_tx, broadcast_ops), task)
 }
