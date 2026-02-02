@@ -11,6 +11,7 @@ from common.config.config import (
     ReaderConfig,
     RelayerConfig,
     RethELConfig,
+    SequencerConfig,
     StrataConfig,
     SyncConfig,
     WriterConfig,
@@ -43,6 +44,7 @@ __all__ = [
     "ExecConfig",
     "RethELConfig",
     "RelayerConfig",
+    "SequencerConfig",
     "SyncConfig",
     # constants.py
     "ServiceType",

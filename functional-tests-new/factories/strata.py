@@ -8,7 +8,14 @@ from pathlib import Path
 
 import flexitest
 
-from common.config import BitcoindConfig, ClientConfig, RollupParams, ServiceType, StrataConfig
+from common.config import (
+    BitcoindConfig,
+    ClientConfig,
+    RollupParams,
+    SequencerConfig,
+    ServiceType,
+    StrataConfig,
+)
 from common.config.params import GenesisL1View
 from common.services import StrataProps, StrataService
 
@@ -58,7 +65,8 @@ class StrataFactory(flexitest.Factory):
 
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
-        config = StrataConfig(bitcoind=bconfig, client=client_config)
+        sequencer_config = SequencerConfig() if is_sequencer else None
+        config = StrataConfig(bitcoind=bconfig, client=client_config, sequencer=sequencer_config)
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
