@@ -113,7 +113,7 @@ pub fn create_broadcaster_task<T>(
     broadcast_ops: Arc<BroadcastDbOps>,
     params: Arc<Params>,
     broadcast_poll_interval: u64,
-) -> (L1BroadcastHandle, impl Future<Output = ()>)
+) -> (Arc<L1BroadcastHandle>, impl Future<Output = ()>)
 where
     T: Broadcaster + Wallet + Send + Sync + 'static,
 {
@@ -132,5 +132,8 @@ where
             error!(%e, "broadcaster task exited with error");
         }
     };
-    (L1BroadcastHandle::new(broadcast_entry_tx, broadcast_ops), task)
+    (
+        Arc::new(L1BroadcastHandle::new(broadcast_entry_tx, broadcast_ops)),
+        task,
+    )
 }

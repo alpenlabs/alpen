@@ -15,7 +15,12 @@ sequencer = [
   "dep:alloy-eips",
   "dep:alloy-rpc-types-engine",
   "dep:bitcoin",
+  "dep:bitcoind-async-client",
   "dep:reth-payload-builder",
+  "dep:serde_json",
+  "dep:strata-btcio",
+  "dep:strata-config",
+  "dep:strata-params",
 ]
 
 [[bin]]
@@ -32,23 +37,32 @@ alpen-ee-exec-chain = { workspace = true, optional = true }
 alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
+alpen-reth-db.workspace = true
 alpen-reth-evm = { workspace = true, optional = true }
+alpen-reth-exex.workspace = true
 alpen-reth-node.workspace = true
+alpen-reth-statediff.workspace = true
 strata-acct-types.workspace = true
+strata-btcio = { workspace = true, optional = true }
+strata-codec.workspace = true
+strata-config = { workspace = true, optional = true }
+strata-db-types.workspace = true
 strata-common = { workspace = true, features = ["async"] }
 strata-identifiers.workspace = true
+strata-params = { workspace = true, optional = true }
 strata-primitives.workspace = true
 strata-rpc-api-new = { workspace = true, features = ["client"] }
 strata-rpc-types-new.workspace = true
 strata-snark-acct-types.workspace = true
-
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
 bitcoin = { workspace = true, optional = true }
+bitcoind-async-client = { workspace = true, optional = true }
 clap.workspace = true
 eyre.workspace = true
+hex.workspace = true
 jsonrpsee = { workspace = true, features = ["http-client"] }
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true
@@ -62,7 +76,9 @@ reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-provider.workspace = true
+serde_json = { workspace = true, optional = true }
 ssz.workspace = true
+threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
