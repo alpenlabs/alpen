@@ -50,7 +50,11 @@ pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
     let idx = db.put_tx_entry(txid, txentry.clone()).unwrap();
 
     let mut updated_txentry = txentry;
-    updated_txentry.status = L1TxStatus::Finalized { confirmations: 1 };
+    updated_txentry.status = L1TxStatus::Finalized {
+        confirmations: 1,
+        block_hash: Buf32::zero(),
+        block_height: 100,
+    };
 
     db.put_tx_entry_by_idx(idx.unwrap(), updated_txentry.clone())
         .unwrap();

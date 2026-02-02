@@ -98,6 +98,7 @@ mod test {
     use bitcoin::{consensus, Transaction};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
+    use strata_primitives::buf::Buf32;
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;
@@ -125,13 +126,21 @@ mod test {
             .await
             .unwrap();
 
-        let e2 = gen_entry_with_status(L1TxStatus::Confirmed { confirmations: 1 });
+        let e2 = gen_entry_with_status(L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        });
         let i2 = ops
             .put_tx_entry_async([2; 32].into(), e2.clone())
             .await
             .unwrap();
 
-        let e3 = gen_entry_with_status(L1TxStatus::Finalized { confirmations: 1 });
+        let e3 = gen_entry_with_status(L1TxStatus::Finalized {
+            confirmations: 1,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        });
         let i3 = ops
             .put_tx_entry_async([3; 32].into(), e3.clone())
             .await

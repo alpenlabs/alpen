@@ -6,6 +6,7 @@ use strata_db_store_sled::{
 };
 use strata_db_types::{traits::DatabaseBackend, types::L1TxEntry};
 use strata_storage::ops::{
+    chunked_envelope::{ChunkedEnvelopeOps, Context as CContext},
     l1tx_broadcast::Context as BContext,
     writer::{Context, EnvelopeDataOps},
 };
@@ -18,6 +19,14 @@ pub(crate) fn get_envelope_ops() -> Arc<EnvelopeDataOps> {
     let pool = threadpool::Builder::new().num_threads(2).build();
     let db = get_test_sled_backend().writer_db();
     let ops = Context::new(db).into_ops(pool);
+    Arc::new(ops)
+}
+
+/// Returns [`Arc`] of [`ChunkedEnvelopeOps`] for testing.
+pub(crate) fn get_chunked_envelope_ops() -> Arc<ChunkedEnvelopeOps> {
+    let pool = threadpool::Builder::new().num_threads(2).build();
+    let db = get_test_sled_backend().chunked_envelope_db();
+    let ops = CContext::new(db).into_ops(pool);
     Arc::new(ops)
 }
 

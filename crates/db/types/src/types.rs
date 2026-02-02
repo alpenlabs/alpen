@@ -231,13 +231,23 @@ pub enum L1TxStatus {
     /// The transaction is published
     Published,
 
-    /// The transaction is included in L1 and has `u64` confirmations
-    // FIXME this doesn't make sense to be "confirmations"
-    Confirmed { confirmations: u64 },
+    /// The transaction is included in L1 with the given number of confirmations.
+    ///
+    /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
+    Confirmed {
+        confirmations: u64,
+        block_hash: Buf32,
+        block_height: u64,
+    },
 
-    /// The transaction is finalized in L1 and has `u64` confirmations
-    // FIXME this doesn't make sense to be "confirmations"
-    Finalized { confirmations: u64 },
+    /// The transaction is finalized in L1 with the given number of confirmations.
+    ///
+    /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
+    Finalized {
+        confirmations: u64,
+        block_hash: Buf32,
+        block_height: u64,
+    },
 
     /// The transaction is not included in L1 because it's inputs were invalid
     InvalidInputs,
@@ -464,12 +474,20 @@ mod tests {
             (L1TxStatus::Unpublished, r#"{"status":"Unpublished"}"#),
             (L1TxStatus::Published, r#"{"status":"Published"}"#),
             (
-                L1TxStatus::Confirmed { confirmations: 10 },
-                r#"{"status":"Confirmed","confirmations":10}"#,
+                L1TxStatus::Confirmed {
+                    confirmations: 10,
+                    block_hash: Buf32::zero(),
+                    block_height: 42,
+                },
+                r#"{"status":"Confirmed","confirmations":10,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
             (
-                L1TxStatus::Finalized { confirmations: 100 },
-                r#"{"status":"Finalized","confirmations":100}"#,
+                L1TxStatus::Finalized {
+                    confirmations: 100,
+                    block_hash: Buf32::zero(),
+                    block_height: 42,
+                },
+                r#"{"status":"Finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
             (L1TxStatus::InvalidInputs, r#"{"status":"InvalidInputs"}"#),
         ];
