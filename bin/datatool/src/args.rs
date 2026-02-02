@@ -163,11 +163,7 @@ pub(crate) struct SubcParams {
     )]
     pub(crate) genesis_l1_height: Option<u64>,
 
-    #[argh(
-        option,
-        description = "block time in seconds (default 15)",
-        short = 't'
-    )]
+    #[argh(option, description = "block time in seconds (default 5)", short = 't')]
     pub(crate) block_time: Option<u64>,
 
     #[argh(option, description = "epoch duration in slots (default 64)")]
