@@ -25,7 +25,9 @@ def run_dbtool_command(datadir: str, subcommand: str, *args) -> tuple[int, str, 
     cmd = ["strata-dbtool", "-d", datadir, subcommand] + list(args)
     print(f"Running command: {' '.join(cmd)}")
 
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.path.dirname(datadir))
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=os.path.dirname(datadir), timeout=60
+    )
 
     if result.stdout:
         print(f"Stdout: {result.stdout}")
