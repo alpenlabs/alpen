@@ -1,13 +1,14 @@
-//! Genesis block header parameters.
+//! Header parameters for the parent of the genesis block.
 
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{Buf32, Epoch, OLBlockId};
 
-/// Genesis block header parameters.
+/// Header parameters for the parent of the genesis block.
 ///
-/// All fields have sensible defaults for a genesis block. If not provided,
-/// `timestamp` and `epoch` default to 0, while `parent_blkid`, `body_root`,
-/// and `logs_root` default to `Buf32::zero()`.
+/// These describe the block immediately preceding genesis, not the genesis
+/// block itself. All fields have sensible defaults. If not provided,
+/// `timestamp`, `slot`, and `epoch` default to 0, while `parent_blkid`,
+/// `body_root`, and `logs_root` default to their zero/null values.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HeaderParams {
     /// Block timestamp. Defaults to 0.

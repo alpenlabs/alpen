@@ -1,24 +1,8 @@
 //! OL genesis parameters.
 //!
 //! Provides JSON-serializable configuration for OL genesis state, including
-//! genesis block header parameters and genesis account definitions.
-//!
-//! ## Header parameters
-//!
-//! [`HeaderParams`] configures the genesis block header. All fields
-//! default to zero values when omitted.
-//!
-//! ## Account parameters
-//!
-//! [`AccountParams`] configures individual genesis OL accounts. At genesis
-//! construction time, each account entry is used to build an [`OLAccountState`]
-//! with auto-assigned serials starting at 128 (`SYSTEM_RESERVED_ACCTS`).
-//!
-//! Currently only **snark accounts** are supported. Empty accounts are not
-//! supported in genesis configuration.
-//!
-//! [`OLAccountState`]: https://docs.rs/strata-ol-state-types
-
+//! genesis block header parameters, genesis account definitions, and the
+//! initial L1 block commitment.
 mod account;
 mod header;
 
@@ -35,7 +19,7 @@ use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 /// configuration structure.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OLParams {
-    /// Genesis block header parameters.
+    /// Header parameters for the parent of the genesis block.
     pub header: HeaderParams,
 
     /// Genesis accounts keyed by account ID.
