@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use strata_identifiers::{L1Height, OLBlockId};
 use strata_predicate::PredicateKey;
 
 /// Checkpoint subprotocol configuration.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointConfig {
     /// Predicate for sequencer signature verification.
     pub sequencer_predicate: PredicateKey,
