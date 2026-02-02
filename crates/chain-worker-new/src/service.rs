@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 use strata_identifiers::OLBlockCommitment;
-use strata_node_context::NodeContext;
+use strata_ol_node::context::NodeContext;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{Response, Service, ServiceBuilder, SyncService};
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_csm_worker::CsmWorkerStatus;
-use strata_node_context::NodeContext;
+use strata_ol_node::context::NodeContext;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
