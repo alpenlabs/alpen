@@ -13809,6 +13809,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-params"
+version = "0.1.0"
+
+[[package]]
 name = "strata-asm-proto-administration"
 version = "0.1.0"
 dependencies = [
