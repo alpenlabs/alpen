@@ -13811,6 +13811,10 @@ dependencies = [
 [[package]]
 name = "strata-asm-params"
 version = "0.1.0"
+dependencies = [
+ "strata-identifiers",
+ "strata-predicate",
+]
 
 [[package]]
 name = "strata-asm-proto-administration"
