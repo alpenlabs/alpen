@@ -2,13 +2,14 @@ use std::{error, fmt::Debug};
 
 use alloy_eips::eip7685::Requests;
 use alloy_primitives::{B256, U256};
+use alloy_rlp::Decodable;
 use alloy_rpc_types_engine::PayloadId;
 use alpen_reth_node::{AlpenBuiltPayload, WithdrawalIntent};
 use bincode::{deserialize, serialize};
 use reth_ethereum_engine_primitives::{BlobSidecars, EthBuiltPayload};
-use reth_ethereum_primitives::EthPrimitives;
+use reth_ethereum_primitives::{Block, EthPrimitives};
 use reth_node_builder::{BuiltPayload, NodePrimitives};
-use reth_primitives_traits::SealedBlock;
+use reth_primitives_traits::{Block as BlockTrait, SealedBlock};
 use serde::{Deserialize, Serialize};
 use strata_acct_types::Hash;
 use thiserror::Error;
@@ -38,6 +39,8 @@ pub enum AlpenEnginePayloadError {
     BlobSidecarsNotEmpty(B256),
     #[error(transparent)]
     Serialization(#[from] bincode::Error),
+    #[error("RLP decoding failed: {0}")]
+    RlpDecode(#[from] alloy_rlp::Error),
 }
 
 impl EnginePayload for AlpenBuiltPayload {
@@ -62,15 +65,22 @@ impl EnginePayload for AlpenBuiltPayload {
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let serializable = deserialize::<SerializablePayload>(bytes)?;
-        Ok(serializable.into())
+        serializable.try_into()
     }
 }
 
-/// Internal representation of a payload for serialization.
+/// Internal representation of a payload for bincode serialization.
+///
+/// The block is stored as RLP-encoded bytes because `SealedBlock`'s serde
+/// implementation uses iterators that bincode cannot serialize when the
+/// block contains transactions.
 #[derive(Debug, Serialize, Deserialize)]
 struct SerializablePayload {
     payload_id: PayloadId,
-    block: SealedBlock<<EthPrimitives as NodePrimitives>::Block>,
+    /// RLP-encoded block bytes.
+    block_rlp: Vec<u8>,
+    /// Block hash (used to re-seal the block on deserialization).
+    block_hash: B256,
     fees: U256,
     requests: Option<Requests>,
     withdrawal_intents: Vec<WithdrawalIntent>,
@@ -88,9 +98,15 @@ impl TryFrom<AlpenBuiltPayload> for SerializablePayload {
             return Err(AlpenEnginePayloadError::BlobSidecarsNotEmpty(blockhash));
         }
 
+        // RLP encode the block for bincode serialization
+        let sealed_block = eth_built_payload.block();
+        let block_hash = sealed_block.hash();
+        let block_rlp = alloy_rlp::encode(sealed_block.clone_block());
+
         Ok(SerializablePayload {
             payload_id: eth_built_payload.id(),
-            block: eth_built_payload.block().clone(),
+            block_rlp,
+            block_hash,
             fees: eth_built_payload.fees(),
             requests: eth_built_payload.requests().clone(),
             withdrawal_intents,
@@ -98,18 +114,30 @@ impl TryFrom<AlpenBuiltPayload> for SerializablePayload {
     }
 }
 
-impl From<SerializablePayload> for AlpenBuiltPayload {
-    fn from(value: SerializablePayload) -> Self {
+impl TryFrom<SerializablePayload> for AlpenBuiltPayload {
+    type Error = AlpenEnginePayloadError;
+
+    fn try_from(value: SerializablePayload) -> Result<Self, Self::Error> {
         let SerializablePayload {
             payload_id,
-            block,
+            block_rlp,
+            block_hash,
             fees,
             requests,
             withdrawal_intents,
         } = value;
 
-        let eth_built_payload = EthBuiltPayload::new(payload_id, block.into(), fees, requests);
+        // Decode the RLP-encoded block and seal it with the stored hash
+        let block = Block::decode(&mut block_rlp.as_slice())?;
+        let sealed_block: SealedBlock<<EthPrimitives as NodePrimitives>::Block> =
+            block.seal_unchecked(block_hash);
 
-        AlpenBuiltPayload::new(eth_built_payload, withdrawal_intents)
+        let eth_built_payload =
+            EthBuiltPayload::new(payload_id, sealed_block.into(), fees, requests);
+
+        Ok(AlpenBuiltPayload::new(
+            eth_built_payload,
+            withdrawal_intents,
+        ))
     }
 }
