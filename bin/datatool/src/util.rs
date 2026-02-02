@@ -51,6 +51,12 @@ const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;
 /// The default recovery delay to use in params.
 const DEFAULT_RECOVERY_DELAY: u32 = 1_008;
 
+/// The default block time in seconds to use in params.
+const DEFAULT_BLOCK_TIME_SEC: u64 = 5;
+
+/// The default epoch slots to use in params.
+const DEFAULT_EPOCH_SLOTS: u32 = 64;
+
 /// Resolves a [`Network`] from a string.
 ///
 /// Priority:
@@ -295,9 +301,8 @@ fn exec_genparams(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
         magic,
         bitcoin_network: ctx.bitcoin_network,
         genesis_l1_view,
-        // TODO make these consts
-        block_time_sec: cmd.block_time.unwrap_or(15),
-        epoch_slots: cmd.epoch_slots.unwrap_or(64),
+        block_time_sec: cmd.block_time.unwrap_or(DEFAULT_BLOCK_TIME_SEC),
+        epoch_slots: cmd.epoch_slots.unwrap_or(DEFAULT_EPOCH_SLOTS),
         seqkey,
         opkeys,
         checkpoint_predicate: rollup_vk,
