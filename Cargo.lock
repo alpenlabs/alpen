@@ -14976,12 +14976,25 @@ dependencies = [
 name = "strata-ol-node"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bitcoind-async-client",
+ "strata-checkpoint-types",
  "strata-config",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-chain-types-new",
+ "strata-ol-state-types",
+ "strata-ol-stf",
  "strata-params",
+ "strata-primitives",
  "strata-status",
+ "strata-storage",
  "strata-tasks",
  "tokio",
+ "tracing",
+]
+
 [[package]]
 name = "strata-ol-state-support-types"
 version = "0.1.0"

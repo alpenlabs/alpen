@@ -5,3 +5,4 @@
 //! core components such as storage, task execution, configuration, and external clients (e.g.,
 //! Bitcoin).
 pub mod context;
+pub mod genesis;
