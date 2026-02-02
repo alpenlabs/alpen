@@ -66,7 +66,7 @@ impl RunContext {
 /// envelope signing, and block assembly. Stored as `Option` in [`ServiceHandles`]
 /// since fullnodes don't run these services.
 #[expect(
-    unused, 
+    unused,
     reason = "fields will be accessed when sequencer RPC is implemented"
 )]
 pub(crate) struct SequencerServiceHandles {
