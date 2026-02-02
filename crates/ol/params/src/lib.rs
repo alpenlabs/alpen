@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 pub use account::AccountParams;
 pub use header::HeaderParams;
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{AccountId, EpochCommitment};
+use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 
 /// Top-level OL genesis parameters.
 ///
@@ -40,6 +40,9 @@ pub struct OLParams {
 
     /// Genesis accounts keyed by account ID.
     pub accounts: BTreeMap<AccountId, AccountParams>,
+
+    /// Last L1 block known at genesis time, treated as the initial verified L1 tip.
+    pub last_l1_block: L1BlockCommitment,
 }
 
 impl OLParams {
@@ -91,6 +94,7 @@ mod tests {
         OLParams {
             header: serde_json::from_str("{}").unwrap(),
             accounts,
+            last_l1_block: L1BlockCommitment::default(),
         }
     }
 
@@ -122,6 +126,10 @@ mod tests {
                     "predicate": "AlwaysAccept",
                     "inner_state": "abababababababababababababababababababababababababababababababab"
                 }
+            },
+            "last_l1_block": {
+                "height": 0,
+                "blkid": "0000000000000000000000000000000000000000000000000000000000000000"
             }
         }"#;
 
@@ -137,7 +145,14 @@ mod tests {
 
     #[test]
     fn test_empty_accounts_map() {
-        let json = r#"{ "header": {}, "accounts": {} }"#;
+        let json = r#"{
+            "header": {},
+            "accounts": {},
+            "last_l1_block": {
+                "height": 0,
+                "blkid": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+        }"#;
         let params = serde_json::from_str::<OLParams>(json).expect("parse failed");
         assert!(params.accounts.is_empty());
     }
@@ -151,6 +166,10 @@ mod tests {
                 "0101010101010101010101010101010101010101010101010101010101010101": {
                     "predicate": "AlwaysAccept"
                 }
+            },
+            "last_l1_block": {
+                "height": 0,
+                "blkid": "0000000000000000000000000000000000000000000000000000000000000000"
             }
         }"#;
 
