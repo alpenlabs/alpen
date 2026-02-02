@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use argh::from_env;
 use strata_common::logging;
 use strata_db_types as _;
-use strata_node_context::NodeContext;
+use strata_ol_node::context::NodeContext;
 use tokio::runtime::{self, Handle};
 use tracing::info;
 
@@ -21,7 +21,6 @@ mod args;
 mod config;
 mod context;
 mod errors;
-mod genesis;
 mod init_db;
 mod rpc;
 mod run_context;

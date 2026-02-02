@@ -1,4 +1,9 @@
-//! Node context initialization and configuration loading.
+//! Provides functions and orchestration for initializing the Strata node context.
+//!
+//! Handles loading and validation of configuration files, rollup and network parameters,
+//! database and storage initialization, Bitcoin RPC client setup, and status channel creation.
+//! This layer ensures all core node components are correctly configured before services are
+//! started.
 
 use std::{fs, path::Path, sync::Arc};
 
@@ -7,7 +12,7 @@ use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
-use strata_node_context::NodeContext;
+use strata_ol_node::{context::NodeContext, genesis::init_ol_genesis};
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
@@ -15,7 +20,7 @@ use strata_storage::{NodeStorage, create_node_storage};
 use tokio::runtime::Handle;
 use tracing::warn;
 
-use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
+use crate::{args::*, config::*, errors::*, init_db};
 
 /// Load config early for logging initialization
 pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {

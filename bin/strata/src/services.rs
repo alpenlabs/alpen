@@ -10,8 +10,8 @@ use strata_consensus_logic::{
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
 use strata_identifiers::OLBlockCommitment;
-use strata_node_context::NodeContext;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_ol_node::context::NodeContext;
 use strata_rpc_api_new::OLClientRpcServer;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
