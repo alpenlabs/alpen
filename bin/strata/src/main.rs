@@ -24,6 +24,8 @@ mod helpers;
 mod init_db;
 mod rpc;
 mod run_context;
+#[cfg(feature = "sequencer")]
+mod sequencer;
 mod services;
 
 fn main() -> Result<()> {
