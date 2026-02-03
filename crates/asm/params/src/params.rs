@@ -4,17 +4,26 @@ use strata_l1_txfmt::MagicBytes;
 
 use crate::subprotocols::SubprotocolInstance;
 
+/// Top-level parameters for an ASM instance.
+///
+/// Combines the SPS-50 magic bytes used to tag L1 transactions, the genesis
+/// L1 view that bootstraps header verification, and the set of active
+/// subprotocol configurations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsmParams {
+    /// SPS-50 magic bytes that identify protocol transactions on L1.
     #[serde(with = "serde_magic_bytes")]
-    magic: MagicBytes,
+    pub magic: MagicBytes,
 
-    l1_view: GenesisL1View,
+    /// Genesis L1 view used to bootstrap PoW header verification.
+    pub l1_view: GenesisL1View,
 
-    subprotocols: Vec<SubprotocolInstance>,
+    /// Ordered list of subprotocol configurations active in this ASM.
+    pub subprotocols: Vec<SubprotocolInstance>,
 }
 
-/// Serialize/deserialize [`MagicBytes`] using its Display/FromStr implementation.
+/// Serialize/deserialize [`MagicBytes`] as a human-readable string using its
+/// Display/FromStr implementation.
 mod serde_magic_bytes {
     use std::str::FromStr;
 
