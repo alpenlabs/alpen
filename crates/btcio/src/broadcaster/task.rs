@@ -4,6 +4,7 @@ use bitcoin::{hashes::Hash, Txid};
 use bitcoind_async_client::traits::{Broadcaster, Wallet};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_params::Params;
+use strata_primitives::buf::Buf32;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
 use tokio::{sync::mpsc::Receiver, time::interval};
 use tracing::*;
@@ -111,7 +112,7 @@ async fn process_entry(
 ) -> BroadcasterResult<Option<L1TxStatus>> {
     match txentry.status {
         L1TxStatus::Unpublished => publish_tx(rpc_client, txentry).await.map(Some),
-        L1TxStatus::Published | L1TxStatus::Confirmed { confirmations: _ } => {
+        L1TxStatus::Published | L1TxStatus::Confirmed { .. } => {
             check_tx_confirmations(rpc_client, txentry, txid, params)
                 .await
                 .map(Some)
@@ -140,12 +141,30 @@ async fn check_tx_confirmations(
             // So set it to Unpublished.
             (0, _) => Ok(L1TxStatus::Unpublished),
 
-            (confirmations, _) if confirmations >= reorg_safe_depth => Ok(L1TxStatus::Finalized {
-                confirmations: confirmations as u64,
-            }),
-            (confirmations, _) => Ok(L1TxStatus::Confirmed {
-                confirmations: confirmations as u64,
-            }),
+            (confirmations, _) => {
+                let block_hash: Buf32 = info
+                    .block_hash
+                    .expect("confirmed tx must have block_hash")
+                    .into();
+                let block_height = info
+                    .block_height
+                    .expect("confirmed tx must have block_height")
+                    as u64;
+
+                if confirmations >= reorg_safe_depth {
+                    Ok(L1TxStatus::Finalized {
+                        confirmations: confirmations as u64,
+                        block_hash,
+                        block_height,
+                    })
+                } else {
+                    Ok(L1TxStatus::Confirmed {
+                        confirmations: confirmations as u64,
+                        block_hash,
+                        block_height,
+                    })
+                }
+            }
         },
         Err(e) => {
             // If for some reasons tx is not found even if it was already
@@ -187,6 +206,7 @@ mod test {
     use bitcoin::{consensus, Transaction};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::traits::DatabaseBackend;
+    use strata_primitives::buf::Buf32;
     use strata_storage::ops::l1tx_broadcast::Context;
     use strata_test_utils_l2::gen_params;
 
@@ -272,7 +292,9 @@ mod test {
         assert_eq!(
             res,
             Some(L1TxStatus::Confirmed {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if 0 < confirmations < finality_depth"
         );
@@ -287,7 +309,9 @@ mod test {
         assert_eq!(
             res,
             Some(L1TxStatus::Finalized {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if confirmations >= finality_depth"
         );
@@ -296,7 +320,11 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_confirmed_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Confirmed { confirmations: 1 });
+        let e = gen_entry_with_status(L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        });
 
         // Add tx to db
         ops.put_tx_entry_async([1; 32].into(), e.clone())
@@ -329,7 +357,9 @@ mod test {
         assert_eq!(
             res,
             Some(L1TxStatus::Confirmed {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if 0 < confirmations < finality_depth"
         );
@@ -344,7 +374,9 @@ mod test {
         assert_eq!(
             res,
             Some(L1TxStatus::Finalized {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if confirmations >= finality_depth"
         );
@@ -354,7 +386,11 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_finalized_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Finalized { confirmations: 1 });
+        let e = gen_entry_with_status(L1TxStatus::Finalized {
+            confirmations: 1,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        });
 
         // Add tx to db
         ops.put_tx_entry_async([1; 32].into(), e.clone())
@@ -474,7 +510,9 @@ mod test {
                 .map(|e| e.item().status.clone())
                 .unwrap(),
             L1TxStatus::Finalized {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             },
             "published tx should be finalized"
         );

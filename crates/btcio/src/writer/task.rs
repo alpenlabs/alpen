@@ -333,6 +333,7 @@ fn determine_payload_next_status(
 
 #[cfg(test)]
 mod test {
+    use strata_primitives::buf::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -384,13 +385,21 @@ mod test {
         assert_eq!(next, L1BundleStatus::Unpublished);
 
         // When both are Finalized
-        let fin = L1TxStatus::Finalized { confirmations: 5 };
+        let fin = L1TxStatus::Finalized {
+            confirmations: 5,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        };
         let (commit_status, reveal_status) = (fin.clone(), fin);
         let next = determine_payload_next_status(&commit_status, &reveal_status);
         assert_eq!(next, L1BundleStatus::Finalized);
 
         // When both are Confirmed
-        let conf = L1TxStatus::Confirmed { confirmations: 5 };
+        let conf = L1TxStatus::Confirmed {
+            confirmations: 5,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        };
         let (commit_status, reveal_status) = (conf.clone(), conf.clone());
         let next = determine_payload_next_status(&commit_status, &reveal_status);
         assert_eq!(next, L1BundleStatus::Confirmed);
