@@ -11,12 +11,12 @@ mod cache;
 mod duty;
 mod error;
 mod extraction;
-mod template;
+mod template_manager;
 mod types;
 
 pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry};
 pub use error::Error;
 pub use extraction::extract_duties;
 pub use strata_ol_block_assembly::BlockasmHandle;
-pub use template::TemplateManager;
+pub use template_manager::TemplateManager;
 pub use types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate, BlockTemplateExt};
