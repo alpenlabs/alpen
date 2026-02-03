@@ -65,13 +65,13 @@ impl TemplateManager {
         // Get parent block to fetch its slot for BlockCommitment
         let parent_block = self
             .storage
-            .l2()
-            .get_block_data_async(&parent_block_id)
+            .ol_block()
+            .get_block_data_async(parent_block_id)
             .await
             .map_err(Error::Database)?
             .ok_or(Error::UnknownBlock(parent_block_id))?;
 
-        let parent_slot = parent_block.header().header().slot();
+        let parent_slot = parent_block.header().slot();
 
         // Create BlockGenerationConfig with proper commitment
         let config =
