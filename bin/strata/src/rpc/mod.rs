@@ -12,8 +12,8 @@ use node_rpc::*;
 use seq_rpc::*;
 use strata_btcio::writer::EnvelopeHandle;
 use strata_ol_mempool::MempoolHandle;
-use strata_rpc_api_new::{OLClientRpcServer, OLSequencerRpcServer};
-use strata_sequencer_new::{BlockasmHandle, TemplateManager};
+use strata_ol_rpc_api::{OLClientRpcServer, OLSequencerRpcServer};
+use strata_ol_sequencer::{BlockasmHandle, TemplateManager};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 

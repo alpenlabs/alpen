@@ -12,8 +12,8 @@ use strata_common::{
     ws_client::{ManagedWsClient, WsClientConfig},
 };
 use strata_identifiers::{AccountId, Epoch};
-use strata_rpc_api_new::OLClientRpcClient;
-use strata_rpc_types_new::{
+use strata_ol_rpc_api::OLClientRpcClient;
+use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
     RpcTransactionPayload,
 };

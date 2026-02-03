@@ -3,7 +3,7 @@ use ssz::{Decode, Encode};
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_ol_block_assembly::FullBlockTemplate;
 use strata_ol_chain_types_new::{OLBlockBody, OLBlockHeader};
-use strata_sequencer_new::{BlockSigningDuty, CheckpointSigningDuty, Duty};
+use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

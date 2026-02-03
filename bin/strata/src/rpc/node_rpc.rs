@@ -8,12 +8,12 @@ use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, O
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolTransaction};
-use strata_primitives::HexBytes;
-use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
-use strata_rpc_types_new::{
+use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
+use strata_ol_rpc_types::{
     OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
     RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
 };
+use strata_primitives::HexBytes;
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;

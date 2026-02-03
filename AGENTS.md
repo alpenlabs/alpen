@@ -269,7 +269,7 @@ Custom Reth node components.
 | `reth/primitives` | Reth primitive type bindings |
 | `reth/witness` | Witness and tracing helpers |
 
-### RPC (`crates/rpc/`, `crates/rpc-new/`)
+### RPC (`crates/rpc/`, `crates/ol/rpc/`)
 
 RPC APIs, types, and helpers.
 
@@ -278,8 +278,8 @@ RPC APIs, types, and helpers.
 | `rpc/utils` | RPC helper utilities |
 | `rpc/bridge-api` | Bridge RPC API definitions |
 | `rpc/prover-client-api` | Prover client RPC API definitions |
-| `rpc-new/api` | New RPC API surface |
-| `rpc-new/types` | New RPC type definitions |
+| `ol/rpc/api` | New RPC API surface |
+| `ol/rpc/types` | New RPC type definitions |
 
 ### Service Crates
 

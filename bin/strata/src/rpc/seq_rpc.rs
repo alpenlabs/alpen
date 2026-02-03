@@ -12,10 +12,10 @@ use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::OLCheckpointStatus;
 use strata_identifiers::{Epoch, OLBlockId};
 use strata_l1_txfmt::TagData;
+use strata_ol_rpc_api::OLSequencerRpcServer;
+use strata_ol_rpc_types::RpcDuty;
+use strata_ol_sequencer::{BlockCompletionData, TemplateManager, extract_duties};
 use strata_primitives::{Buf64, HexBytes64};
-use strata_rpc_api_new::OLSequencerRpcServer;
-use strata_rpc_types_new::RpcDuty;
-use strata_sequencer_new::{BlockCompletionData, TemplateManager, extract_duties};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 

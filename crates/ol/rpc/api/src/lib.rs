@@ -2,9 +2,9 @@
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use strata_identifiers::{AccountId, Epoch, OLBlockId, OLTxId};
+use strata_ol_rpc_types::*;
+use strata_ol_sequencer::BlockCompletionData;
 use strata_primitives::{HexBytes, HexBytes64};
-use strata_rpc_types_new::*;
-use strata_sequencer_new::BlockCompletionData;
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]

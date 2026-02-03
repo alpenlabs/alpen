@@ -1,4 +1,4 @@
-//! Types for sequencer-new, reusing types from block-assembly crate.
+//! Types for ol-sequencer, reusing types from block-assembly crate.
 
 // Re-export the block-assembly types
 pub use strata_ol_block_assembly::{
