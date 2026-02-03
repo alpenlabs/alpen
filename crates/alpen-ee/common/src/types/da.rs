@@ -133,8 +133,8 @@ fn decode_da_chunk(data: &[u8]) -> Result<(DaChunkHeader, &[u8]), CodecError> {
 
 /// Splits a blob into encoded DA chunks ready for envelope inscription.
 ///
-/// Each returned `Vec<u8>` contains a serialized [`DaChunkHeader`] followed
-/// by the chunk payload — the format expected by [`decode_da_chunk`].
+/// Each returned `Vec<u8>` contains a serialized `DaChunkHeader` followed
+/// by the chunk payload — the format expected by `decode_da_chunk`.
 ///
 /// # Panics
 ///
