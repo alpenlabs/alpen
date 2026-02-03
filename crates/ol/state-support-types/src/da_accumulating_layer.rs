@@ -41,7 +41,7 @@ pub enum DaAccumulationError {
 
     /// Account state missing when assembling diffs.
     #[error("da accumulator missing account {0}")]
-    MissingAccount(AccountId),
+    MissingAccountState(AccountId),
 
     /// Missing pre-state snapshot for a touched account.
     #[error("da accumulator missing pre-state {0}")]
@@ -384,8 +384,8 @@ impl EpochDaAccumulator {
             }
             let state_ref = state
                 .get_account_state(entry.account_id)
-                .map_err(|_| DaAccumulationError::MissingAccount(entry.account_id))?
-                .ok_or(DaAccumulationError::MissingAccount(entry.account_id))?;
+                .map_err(|_| DaAccumulationError::MissingAccountState(entry.account_id))?
+                .ok_or(DaAccumulationError::MissingAccountState(entry.account_id))?;
             let init = account_init_from_state(state_ref);
             if let AccountTypeInit::Snark(init) = &init.type_state {
                 let vk_len = init.update_vk.as_slice().len();
