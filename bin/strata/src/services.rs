@@ -25,8 +25,7 @@ use strata_storage::ops::l1tx_broadcast;
 
 use crate::{
     context::check_and_init_genesis,
-    helpers::{generate_sequencer_address, params_to_btcio_params},
-    rpc::OLRpcServer,
+    helpers::{generate_sequencer_address, rollup_to_btcio_params},
     run_context::{RunContext, SequencerServiceHandles, ServiceHandles},
 };
 
@@ -99,7 +98,7 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
             nodectx.bitcoin_client().clone(),
             nodectx.storage().clone(),
             Arc::new(nodectx.config().btcio.reader.clone()),
-            params_to_btcio_params(nodectx.params()),
+            rollup_to_btcio_params(nodectx.params().rollup()),
             nodectx.status_channel().as_ref().clone(),
             asm_handle,
         ),
@@ -118,7 +117,7 @@ fn start_broadcaster(nodectx: &NodeContext) -> L1BroadcastHandle {
         nodectx.executor(),
         nodectx.bitcoin_client().clone(),
         broadcast_ops,
-        params_to_btcio_params(nodectx.params()),
+        rollup_to_btcio_params(nodectx.params().rollup()),
         nodectx.config().btcio.broadcaster.poll_interval_ms,
     )
 }
@@ -141,7 +140,7 @@ fn start_writer(
         nodectx.executor(),
         nodectx.bitcoin_client().clone(),
         Arc::new(nodectx.config().btcio.writer.clone()),
-        params_to_btcio_params(nodectx.params()),
+        rollup_to_btcio_params(nodectx.params().rollup()),
         sequencer_address,
         writer_db,
         nodectx.status_channel().as_ref().clone(),

@@ -202,9 +202,8 @@ pub(crate) async fn generate_sequencer_address(
     })
 }
 
-/// Converts [`Params`] to [`BtcioParams`] for use by btcio components.
-pub(crate) fn params_to_btcio_params(params: &Params) -> BtcioParams {
-    let rollup = params.rollup();
+/// Converts [`RollupParams`] to [`BtcioParams`] for use by btcio components.
+pub(crate) fn rollup_to_btcio_params(rollup: &RollupParams) -> BtcioParams {
     BtcioParams::new(
         rollup.l1_reorg_safe_depth,
         rollup.magic_bytes,

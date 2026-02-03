@@ -132,7 +132,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     if config.client.is_sequencer {
         // If we're a sequencer, start the sequencer db and duties task.
         let broadcast_database = database.broadcast_db();
-        let btcio_params = params_to_btcio_params(&params);
+        let btcio_params = rollup_to_btcio_params(params.rollup());
         let broadcast_handle = start_broadcaster_tasks(
             broadcast_database,
             ctx.pool.clone(),
@@ -355,7 +355,7 @@ fn start_core_tasks(
     // ASM processes L1 blocks from the bitcoin reader.
     // CSM listens to ASM logs (via the service framework listener pattern).
     // Start the L1 tasks to get that going.
-    let btcio_params = params_to_btcio_params(&params);
+    let btcio_params = rollup_to_btcio_params(params.rollup());
     executor.spawn_critical_async(
         "bitcoin_data_reader_task",
         bitcoin_data_reader_task(
@@ -407,14 +407,14 @@ fn start_sequencer_tasks(
         BITCOIN_POLL_INTERVAL,
     ))?;
 
-    let btcio_config = Arc::new(config.btcio.clone());
+    let btcio_cfg = Arc::new(config.btcio.clone());
 
     // Start envelope tasks
-    let btcio_params = params_to_btcio_params(&params);
+    let btcio_params = rollup_to_btcio_params(params.rollup());
     let envelope_handle = start_envelope_task(
         executor,
         bitcoin_client,
-        Arc::new(btcio_config.writer.clone()),
+        Arc::new(btcio_cfg.writer.clone()),
         btcio_params,
         sequencer_bitcoin_address,
         writer_db,

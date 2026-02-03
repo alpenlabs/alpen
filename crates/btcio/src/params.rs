@@ -5,8 +5,10 @@
 
 use strata_l1_txfmt::MagicBytes;
 
-// This struct contains only the parameters that btcio actually needs,
-// allowing btcio to be used without depending on the full rollup params.
+/// Parameters required by btcio components for L1 interaction.
+///
+/// Contains the minimal set of rollup parameters needed by btcio to correctly
+/// interact with Bitcoin L1. This decouples btcio from the full rollup params.
 #[derive(Debug, Clone, Copy)]
 pub struct BtcioParams {
     /// L1 reorg safe depth (number of confirmations needed for finality).
