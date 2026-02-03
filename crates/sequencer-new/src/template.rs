@@ -27,7 +27,7 @@ pub struct TemplateManager {
     cache: Arc<Mutex<TemplateCache>>,
 
     /// Block assembly service handle.
-    block_assembly: BlockasmHandle,
+    block_assembly: Arc<BlockasmHandle>,
 
     /// Storage for fetching parent block slots.
     storage: Arc<NodeStorage>,
@@ -35,7 +35,11 @@ pub struct TemplateManager {
 
 impl TemplateManager {
     /// Creates a new template manager.
-    pub fn new(block_assembly: BlockasmHandle, storage: Arc<NodeStorage>, ttl: Duration) -> Self {
+    pub fn new(
+        block_assembly: Arc<BlockasmHandle>,
+        storage: Arc<NodeStorage>,
+        ttl: Duration,
+    ) -> Self {
         Self {
             cache: Arc::new(Mutex::new(TemplateCache::new(ttl))),
             block_assembly,

@@ -44,12 +44,6 @@ pub(crate) struct OLRpcServer {
 
     /// Mempool handle for transaction submission.
     mempool_handle: Arc<MempoolHandle>,
-
-    /// Block template manager.
-    template_manager: Arc<TemplateManager>,
-
-    /// Envelope Handle for managing bitcoin payloads
-    envelope_handle: Arc<EnvelopeHandle>,
 }
 
 impl OLRpcServer {
@@ -58,15 +52,11 @@ impl OLRpcServer {
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
         mempool_handle: Arc<MempoolHandle>,
-        template_manager: Arc<TemplateManager>,
-        envelope_handle: Arc<EnvelopeHandle>,
     ) -> Self {
         Self {
             storage,
             status_channel,
             mempool_handle,
-            template_manager,
-            envelope_handle,
         }
     }
 
@@ -499,13 +489,37 @@ impl OLFullNodeRpcServer for OLRpcServer {
     }
 }
 
+/// Rpc handler for sequencer.
+pub(crate) struct OLSeqRpcServer {
+    storage: Arc<NodeStorage>,
+    status_channel: Arc<StatusChannel>,
+    template_manager: Arc<TemplateManager>,
+    envelope_handle: Arc<EnvelopeHandle>,
+}
+
+impl OLSeqRpcServer {
+    pub(crate) fn new(
+        storage: Arc<NodeStorage>,
+        status_channel: Arc<StatusChannel>,
+        template_manager: Arc<TemplateManager>,
+        envelope_handle: Arc<EnvelopeHandle>,
+    ) -> Self {
+        Self {
+            storage,
+            status_channel,
+            template_manager,
+            envelope_handle,
+        }
+    }
+}
+
 #[async_trait]
-impl OLSequencerRpcServer for OLRpcServer {
+impl OLSequencerRpcServer for OLSeqRpcServer {
     async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcDuty>> {
         let Some(tip_blkid) = self
             .status_channel
             .get_ol_sync_status()
-            .map(|s| s.tip_blkid().clone())
+            .map(|s| *s.tip_blkid())
         else {
             // If there is no tip then there's definitely no checkpoint to sign, so return empty
             // duties.

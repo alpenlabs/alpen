@@ -17,7 +17,7 @@ use crate::{
     command::BlockasmCommand,
     error::BlockAssemblyError,
     state::BlockasmServiceState,
-    types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate},
+    types::{BlockCompletionData, BlockGenerationConfig},
 };
 
 /// OL block assembly service that processes commands.

@@ -1,6 +1,6 @@
 //! Service spawning and lifecycle management.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
@@ -22,14 +22,15 @@ use strata_ol_block_assembly::{
     BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
 };
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
-use strata_rpc_api_new::OLClientRpcServer;
+use strata_rpc_api_new::{OLClientRpcServer, OLSequencerRpcServer};
+use strata_sequencer_new::TemplateManager;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, ops::l1tx_broadcast};
 
 use crate::{
     context::check_and_init_genesis,
     helpers::generate_sequencer_address,
-    rpc::OLRpcServer,
+    rpc::{OLRpcServer, OLSeqRpcServer},
     run_context::{RunContext, SequencerServiceHandles, ServiceHandles},
 };
 
@@ -41,6 +42,30 @@ struct RpcDeps {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     mempool_handle: Arc<MempoolHandle>,
+    seq_deps: Option<SeqRpcDeps>,
+}
+
+/// Dependencies required for sequencer specific rpc endpoints
+struct SeqRpcDeps {
+    blockasm_handle: Arc<BlockasmHandle>,
+    envelope_handle: Arc<EnvelopeHandle>,
+}
+
+impl SeqRpcDeps {
+    fn new(blockasm_handle: Arc<BlockasmHandle>, envelope_handle: Arc<EnvelopeHandle>) -> Self {
+        Self {
+            blockasm_handle,
+            envelope_handle,
+        }
+    }
+
+    fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
+        &self.blockasm_handle
+    }
+
+    fn envelope_handle(&self) -> &Arc<EnvelopeHandle> {
+        &self.envelope_handle
+    }
 }
 
 /// Just simply starts services. This can later be extended to service registry pattern.
@@ -71,12 +96,12 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
     let sequencer_handles = if nodectx.config().client.is_sequencer {
         let broadcast_handle = Arc::new(start_broadcaster(&nodectx));
         let envelope_handle = start_writer(&nodectx, broadcast_handle.clone())?;
-        let blockasm_handle = start_block_assembly(&nodectx, mempool_handle.clone())?;
-        Some(SequencerServiceHandles {
+        let blockasm_handle = Arc::new(start_block_assembly(&nodectx, mempool_handle.clone())?);
+        Some(SequencerServiceHandles::new(
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
-        })
+        ))
     } else {
         None
     };
@@ -244,6 +269,10 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
         mempool_handle: runctx.mempool_handle().clone(),
+        seq_deps: runctx
+            .sequencer_handles()
+            .as_ref()
+            .map(|s| SeqRpcDeps::new(s.blockasm_handle().clone(), s.envelope_handle().clone())),
     };
 
     runctx
@@ -262,12 +291,35 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     });
 
     // Create and register OL RPC server
-    // TODO: pass envelope handler and block template manager(from sequencer-new).
-    let ol_rpc_server = OLRpcServer::new(deps.storage, deps.status_channel, deps.mempool_handle);
+    let ol_rpc_server = OLRpcServer::new(
+        deps.storage.clone(),
+        deps.status_channel.clone(),
+        deps.mempool_handle,
+    );
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
         .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))?;
+
+    // Create sequencer rpc handler if sequencer
+    if let Some(seq_deps) = deps.seq_deps {
+        let block_template_cache_ttl = Duration::from_millis(60000); // One minute
+        let tmp_mgr = TemplateManager::new(
+            seq_deps.blockasm_handle().clone(),
+            deps.storage.clone(),
+            block_template_cache_ttl,
+        );
+        let ol_seq_server = OLSeqRpcServer::new(
+            deps.storage.clone(),
+            deps.status_channel.clone(),
+            tmp_mgr.into(),
+            seq_deps.envelope_handle().clone(),
+        );
+        let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_server);
+        module
+            .merge(ol_seq_module)
+            .map_err(|e| anyhow!("Failed to merge OL sequencer RPC module: {}", e))?;
+    }
 
     let addr = format!("{}:{}", deps.rpc_host, deps.rpc_port);
     let rpc_server = ServerBuilder::new()

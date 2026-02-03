@@ -58,6 +58,10 @@ impl RunContext {
     pub(crate) fn executor(&self) -> &Arc<TaskExecutor> {
         self.common.executor()
     }
+
+    pub(crate) fn sequencer_handles(&self) -> &Option<SequencerServiceHandles> {
+        &self.service_handles.sequencer_handles
+    }
 }
 
 /// Sequencer-specific service handles.
@@ -65,14 +69,33 @@ impl RunContext {
 /// Groups handles for services that only run on sequencer node: L1 broadcast,
 /// envelope signing, and block assembly. Stored as `Option` in [`ServiceHandles`]
 /// since fullnodes don't run these services.
-#[expect(
-    unused,
-    reason = "fields will be accessed when sequencer RPC is implemented"
-)]
 pub(crate) struct SequencerServiceHandles {
-    pub broadcast_handle: Arc<L1BroadcastHandle>,
-    pub envelope_handle: Arc<EnvelopeHandle>,
-    pub blockasm_handle: BlockasmHandle,
+    #[expect(unused, reason = "will be used")]
+    broadcast_handle: Arc<L1BroadcastHandle>,
+    envelope_handle: Arc<EnvelopeHandle>,
+    blockasm_handle: Arc<BlockasmHandle>,
+}
+
+impl SequencerServiceHandles {
+    pub(crate) fn new(
+        broadcast_handle: Arc<L1BroadcastHandle>,
+        envelope_handle: Arc<EnvelopeHandle>,
+        blockasm_handle: Arc<BlockasmHandle>,
+    ) -> Self {
+        Self {
+            broadcast_handle,
+            envelope_handle,
+            blockasm_handle,
+        }
+    }
+
+    pub(crate) fn envelope_handle(&self) -> &Arc<EnvelopeHandle> {
+        &self.envelope_handle
+    }
+
+    pub(crate) fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
+        &self.blockasm_handle
+    }
 }
 
 #[expect(unused, reason = "will be used later")]
