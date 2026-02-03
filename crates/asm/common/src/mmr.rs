@@ -1,8 +1,13 @@
 //! History accumulator for ASM.
 
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize};
 use strata_asm_manifest_types::{AsmManifest, Hash32};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, decode_buf_exact, encode_to_vec};
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher, error::MerkleError};
 
 /// Capacity of the ASM MMR as a power of 2.
@@ -40,13 +45,68 @@ pub type AsmMerkleProof = MerkleProof<Hash32>;
 /// accumulator.add_leaf(hash2)?; // MMR index 1 → L1 block height 800002
 /// accumulator.add_leaf(hash3)?; // MMR index 2 → L1 block height 800003
 /// ```
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct AsmHistoryAccumulatorState {
     /// MMR accumulator for [`AsmManifest`]
+    #[rkyv(with = CompactMmr64AsBytes)]
     manifest_mmr: CompactMmr64<Hash32>,
     /// Height offset for mapping MMR indices to L1 block heights.
     /// Equal to `genesis_height + 1` since manifests start after genesis.
     offset: u64,
+}
+
+/// Serializer for [`CompactMmr64<Hash32>`] as bytes for rkyv.
+struct CompactMmr64AsBytes;
+
+impl ArchiveWith<CompactMmr64<Hash32>> for CompactMmr64AsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(
+        field: &CompactMmr64<Hash32>,
+        resolver: Self::Resolver,
+        out: Place<Self::Archived>,
+    ) {
+        let bytes = encode_to_vec(field).expect("codec should serialize compact mmr");
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<CompactMmr64<Hash32>, S> for CompactMmr64AsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(
+        field: &CompactMmr64<Hash32>,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        let bytes = encode_to_vec(field).expect("codec should serialize compact mmr");
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, CompactMmr64<Hash32>, D> for CompactMmr64AsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<CompactMmr64<Hash32>, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(decode_buf_exact(&bytes).expect("codec should deserialize compact mmr"))
+    }
 }
 
 impl AsmHistoryAccumulatorState {

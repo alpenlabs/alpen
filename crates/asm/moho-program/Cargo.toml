@@ -8,6 +8,8 @@ workspace = true
 
 [dependencies]
 bitcoin.workspace = true
+rkyv.workspace = true
+
 moho-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true

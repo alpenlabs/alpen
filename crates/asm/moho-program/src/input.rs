@@ -1,5 +1,14 @@
-use bitcoin::{Block, hashes::Hash};
+use bitcoin::{
+    Block,
+    consensus::{deserialize, serialize},
+    hashes::Hash,
+};
 use moho_types::StateReference;
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use strata_asm_common::AuxData;
 
 /// Private input to process the next state.
@@ -48,5 +57,43 @@ impl AsmStepInput {
 }
 
 /// A wrapper around Bitcoin's `Block`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct L1Block(pub Block);
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct L1Block(#[rkyv(with = BlockAsBytes)] pub Block);
+
+/// Serializer for [`Block`] as bytes for rkyv.
+struct BlockAsBytes;
+
+impl ArchiveWith<Block> for BlockAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &Block, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let bytes = serialize(field);
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Block, S> for BlockAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Block, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let bytes = serialize(field);
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, Block, D> for BlockAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<Block, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(deserialize(&bytes).expect("stored block should decode"))
+    }
+}

@@ -110,7 +110,16 @@ impl RollupParams {
 }
 
 /// Describes how we decide to wait for proofs for checkpoints to generate.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ProofPublishMode {
     /// Timeout in secs after which a blank proof is generated.

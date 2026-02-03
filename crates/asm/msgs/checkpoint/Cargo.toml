@@ -7,6 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+rkyv.workspace = true
 
 strata-asm-common.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true

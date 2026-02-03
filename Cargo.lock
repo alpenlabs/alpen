@@ -13841,6 +13841,7 @@ dependencies = [
 name = "strata-asm-checkpoint-msgs"
 version = "0.1.0"
 dependencies = [
+ "rkyv",
  "strata-asm-common",
  "strata-asm-proto-checkpoint-txs",
  "strata-predicate",
@@ -13909,6 +13910,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "moho-types",
+ "rkyv",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-spec",
@@ -15281,6 +15283,7 @@ name = "strata-params"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "rkyv",
  "serde",
  "strata-btc-types",
  "strata-identifiers",
