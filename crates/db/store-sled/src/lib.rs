@@ -4,6 +4,7 @@ pub mod asm;
 pub mod broadcaster;
 pub mod chain_state;
 pub mod checkpoint;
+pub mod chunked_envelope;
 pub mod client_state;
 mod config;
 pub mod global_mmr;
@@ -29,6 +30,7 @@ pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
+use chunked_envelope::db::L1ChunkedEnvelopeDBSled;
 use client_state::db::ClientStateDBSled;
 pub use config::SledDbConfig;
 pub use global_mmr::GlobalMmrDb;
@@ -43,8 +45,8 @@ use strata_db_types::{
     chainstate::ChainstateDatabase,
     traits::{
         AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend, L1BroadcastDatabase,
-        L1Database, L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase,
-        OLCheckpointDatabase, OLStateDatabase, ProofDatabase,
+        L1ChunkedEnvelopeDatabase, L1Database, L1WriterDatabase, L2BlockDatabase, MempoolDatabase,
+        OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase, ProofDatabase,
     },
 };
 use typed_sled::SledDb;
@@ -84,6 +86,7 @@ pub struct SledBackend {
     writer_db: Arc<L1WriterDBSled>,
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
+    chunked_envelope_db: Arc<L1ChunkedEnvelopeDBSled>,
     global_mmr_db: Arc<GlobalMmrDb>,
     mempool_db: Arc<MempoolDBSled>,
 }
@@ -106,7 +109,9 @@ impl SledBackend {
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
         let global_mmr_db = Arc::new(GlobalMmrDb::new(db_ref.clone(), config_ref.clone())?);
-        let broadcast_db = Arc::new(L1BroadcastDBSled::new(sled_db.clone(), config_ref.clone())?);
+        let broadcast_db = Arc::new(L1BroadcastDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let chunked_envelope_db =
+            Arc::new(L1ChunkedEnvelopeDBSled::new(db_ref.clone(), config_ref.clone())?);
         let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
@@ -121,6 +126,7 @@ impl SledBackend {
             writer_db,
             prover_db,
             broadcast_db,
+            chunked_envelope_db,
             global_mmr_db,
             mempool_db,
         })
@@ -174,6 +180,10 @@ impl DatabaseBackend for SledBackend {
 
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase> {
         self.broadcast_db.clone()
+    }
+
+    fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase> {
+        self.chunked_envelope_db.clone()
     }
 
     fn mempool_db(&self) -> Arc<impl MempoolDatabase> {

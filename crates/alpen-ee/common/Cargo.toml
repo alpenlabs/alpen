@@ -13,6 +13,8 @@ test-utils = ["dep:mockall"]
 [dependencies]
 alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
+strata-codec.workspace = true
+strata-crypto.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
