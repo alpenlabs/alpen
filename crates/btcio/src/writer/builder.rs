@@ -32,7 +32,7 @@ use thiserror::Error;
 
 use super::context::WriterContext;
 
-const BITCOIN_DUST_LIMIT: u64 = 546;
+pub(crate) const BITCOIN_DUST_LIMIT: u64 = 546;
 
 /// Config for creating envelope transactions.
 #[derive(Debug, Clone)]
@@ -207,7 +207,7 @@ pub fn create_envelope_transactions(
     Ok((unsigned_commit_tx, reveal_tx))
 }
 
-fn get_size(
+pub(crate) fn get_size(
     inputs: &[TxIn],
     outputs: &[TxOut],
     script: Option<&ScriptBuf>,
@@ -241,7 +241,7 @@ fn get_size(
 }
 
 /// Choose utxos almost naively.
-fn choose_utxos(
+pub(crate) fn choose_utxos(
     utxos: &[ListUnspentItem],
     amount: u64,
 ) -> Result<(Vec<ListUnspentItem>, u64), EnvelopeError> {
@@ -448,7 +448,7 @@ pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
     Ok(UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)?)
 }
 
-fn calculate_commit_output_value(
+pub(crate) fn calculate_commit_output_value(
     recipient: &Address,
     reveal_value: u64,
     fee_rate: u64,
@@ -479,7 +479,7 @@ fn calculate_commit_output_value(
         + reveal_value
 }
 
-fn sign_reveal_transaction(
+pub(crate) fn sign_reveal_transaction(
     reveal_tx: &mut Transaction,
     output_to_reveal: &TxOut,
     reveal_script: &script::ScriptBuf,
