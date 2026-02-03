@@ -274,15 +274,15 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 # strata-common
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
-], tag = "v0.1.0-alpha-rc4" }
-strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
+], tag = "v0.1.0-alpha-rc5" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
+strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
+strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
+strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
+strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
+strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc5" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
@@ -484,13 +484,13 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.3" }
-ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.3" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.3" }
-ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.3" }
-ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.3" }
-tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.3" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.3" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
 
 # This is needed for custom build of SP1
 [profile.release.build-override]

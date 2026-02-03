@@ -8,6 +8,8 @@ mod log;
 mod manifest;
 mod payloads;
 
+use rkyv as _; // rkyv is used in the SSZ schemas
+
 // Include generated SSZ types
 #[allow(
     clippy::all,
