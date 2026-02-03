@@ -25,6 +25,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-test-utils-ssz.workspace = true
