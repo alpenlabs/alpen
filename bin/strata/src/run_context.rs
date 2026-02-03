@@ -27,6 +27,7 @@ pub(crate) struct RunContext {
 
 #[expect(unused, reason = "will be used later")]
 impl RunContext {
+    /// Creates a new [`RunContext`] instance from a [`NodeContext`] and [`ServiceHandles`].
     pub(crate) fn from_node_ctx(ctx: NodeContext, service_handles: ServiceHandles) -> Self {
         let (task_manager, common) = ctx.into_parts();
         Self {
@@ -36,26 +37,32 @@ impl RunContext {
         }
     }
 
+    /// Returns the config.
     pub(crate) fn config(&self) -> &Config {
         self.common.config()
     }
 
+    /// Returns the params.
     pub(crate) fn params(&self) -> &Arc<Params> {
         self.common.params()
     }
 
+    /// Returns the storage.
     pub(crate) fn storage(&self) -> &Arc<NodeStorage> {
         self.common.storage()
     }
 
+    /// Returns the status channel.
     pub(crate) fn status_channel(&self) -> &Arc<StatusChannel> {
         self.common.status_channel()
     }
 
+    /// Returns the mempool handle.
     pub(crate) fn mempool_handle(&self) -> &Arc<MempoolHandle> {
         &self.service_handles.mempool_handle
     }
 
+    /// Returns the executor.
     pub(crate) fn executor(&self) -> &Arc<TaskExecutor> {
         self.common.executor()
     }
@@ -71,13 +78,19 @@ impl RunContext {
 /// envelope signing, and block assembly. Stored as `Option` in [`ServiceHandles`]
 /// since fullnodes don't run these services.
 pub(crate) struct SequencerServiceHandles {
+    /// Handle for broadcasting L1 transactions using [`strata_btcio`].
     #[expect(unused, reason = "will be used")]
     broadcast_handle: Arc<L1BroadcastHandle>,
+
+    /// Handle for submitting on-chain transactions using [`strata_btcio`].
     envelope_handle: Arc<EnvelopeHandle>,
-    blockasm_handle: Arc<BlockasmHandle>,
+
+    /// Handle for managing block templates.
+    template_manager: Arc<TemplateManager>,
 }
 
 impl SequencerServiceHandles {
+    /// Creates a new [`SequencerServiceHandles`] instance.
     pub(crate) fn new(
         broadcast_handle: Arc<L1BroadcastHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
@@ -90,6 +103,7 @@ impl SequencerServiceHandles {
         }
     }
 
+    /// Returns the envelope handle for submitting on-chain transactions using [`strata_btcio`].
     pub(crate) fn envelope_handle(&self) -> &Arc<EnvelopeHandle> {
         &self.envelope_handle
     }
@@ -99,19 +113,33 @@ impl SequencerServiceHandles {
     }
 }
 
+/// Handles for all services.
 #[expect(unused, reason = "will be used later")]
 pub(crate) struct ServiceHandles {
+    /// Handle for the ASM worker.
     asm_handle: Arc<AsmWorkerHandle>,
+
+    /// Handle for the CSM worker.
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
+
+    /// Handle for the mempool.
     mempool_handle: Arc<MempoolHandle>,
+
+    /// Handle for the chain worker.
     chain_worker_handle: Arc<ChainWorkerHandle>,
+
+    /// Handle for the checkpoint worker.
     checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
+
+    /// Handle for the FCM service.
     fcm_handle: Arc<FcmServiceHandle>,
+
     /// Sequencer-specific handles (None for fullnodes)
     sequencer_handles: Option<SequencerServiceHandles>,
 }
 
 impl ServiceHandles {
+    /// Creates a new [`ServiceHandles`] instance.
     pub(crate) fn new(
         asm_handle: Arc<AsmWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
