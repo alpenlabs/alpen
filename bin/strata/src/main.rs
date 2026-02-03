@@ -46,6 +46,15 @@ fn main() -> Result<()> {
     // Initialize logging
     init_logging(rt.handle(), &config);
 
+    // Validate sequencer flag is enabled if sequencer feature is enabled
+    if args.sequencer && !cfg!(feature = "sequencer") {
+        return Err(anyhow!(
+            "Sequencer flag enabled but binary built without `sequencer` feature"
+        ));
+    }
+
+    let signer_args = args.clone();
+
     // Validate params, configs and create node context.
     let nodectx = init_node_context(args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
@@ -58,6 +67,12 @@ fn main() -> Result<()> {
 
     // Start RPC.
     start_rpc(&runctx)?;
+
+    // Start sequencer signer if sequencer feature is enabled
+    #[cfg(feature = "sequencer")]
+    if runctx.config().client.is_sequencer {
+        sequencer::start_sequencer_signer(&runctx, &signer_args)?;
+    }
 
     // Monitor tasks.
     runctx.task_manager.start_signal_listeners();
