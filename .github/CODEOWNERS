@@ -18,7 +18,7 @@ flake.lock @alpenlabs/ci
 # Note that the globbing here is to future-proof against new crates
 /crates/ @alpenlabs/rust # fallback catch all
 /crates/acct-types/ @alpenlabs/chain-protocol @alpenlabs/chain-core
-/crates/asm*/ @alpenlabs/chain-protocol 
+/crates/asm*/ @alpenlabs/chain-protocol
 /crates/btc*/ @alpenlabs/chain-protocol
 /crates/chain*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
 /crates/common/ @alpenlabs/rust
@@ -57,6 +57,7 @@ bin/alpen-*/ @alpenlabs/bin @alpenlabs/chain-core
 bin/datatool/ @alpenlabs/bin @alpenlabs/chain-core
 bin/prover*/ @alpenlabs/bin @alpenlabs/chain-protocol
 bin/strata-*/ @alpenlabs/bin @alpenlabs/chain-core
+bin/strata/ @alpenlabs/bin @alpenlabs/chain-core
 
 # Functional tests
 functional-tests/ @alpenlabs/python # catch all

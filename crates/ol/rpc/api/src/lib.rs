@@ -2,8 +2,9 @@
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use strata_identifiers::{AccountId, Epoch, OLBlockId, OLTxId};
-use strata_primitives::HexBytes;
-use strata_rpc_types_new::*;
+use strata_ol_rpc_types::*;
+use strata_ol_sequencer::BlockCompletionData;
+use strata_primitives::{HexBytes, HexBytes64};
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
@@ -67,4 +68,24 @@ pub trait OLFullNodeRpc {
     /// Get serialized block for a given block id.
     #[method(name = "getRawBlockById")]
     async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes>;
+}
+
+/// OL RPC methods served by sequencer node for sequencer signer.
+#[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
+#[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
+pub trait OLSequencerRpc {
+    /// Serve duties for sequencer
+    #[method(name = "strataadmin_getSequencerDuties")]
+    async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcDuty>>;
+
+    /// Complete block template
+    #[method(name = "strataadmin_completeBlockTemplate")]
+    async fn complete_block_template(
+        &self,
+        template_id: OLBlockId,
+        completion: BlockCompletionData,
+    ) -> RpcResult<OLBlockId>;
+
+    #[method(name = "strataadmin_completeCheckpointSignature")]
+    async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()>;
 }

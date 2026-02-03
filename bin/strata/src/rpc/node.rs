@@ -1,30 +1,27 @@
-//! OL RPC server implementation.
-
-use std::{fmt::Display, sync::Arc};
+//! OL RPC server implementation for a strata node.
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use jsonrpsee::{
-    core::RpcResult,
-    types::{
-        ErrorObjectOwned,
-        error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
-    },
-};
+use jsonrpsee::core::RpcResult;
 use ssz::Encode;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
-use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
-use strata_primitives::HexBytes;
-use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
-use strata_rpc_types_new::{
+use strata_ol_mempool::{MempoolHandle, OLMempoolTransaction};
+use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
+use strata_ol_rpc_types::{
     OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
     RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
 };
+use strata_primitives::HexBytes;
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::error;
+
+use crate::rpc::errors::{
+    db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
+};
 
 /// OL RPC server implementation.
 pub(crate) struct OLRpcServer {
@@ -478,62 +475,5 @@ impl OLFullNodeRpcServer for OLRpcServer {
             .await
             .map(|b| HexBytes(b.as_ssz_bytes()))?;
         Ok(raw_blk)
-    }
-}
-
-// === RPC Error Helpers ===
-
-/// Custom error code for mempool capacity-related errors.
-const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
-
-/// Creates an RPC error for database failures.
-fn db_error(e: impl Display) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(
-        INTERNAL_ERROR_CODE,
-        format!("Database error: {e}"),
-        None::<()>,
-    )
-}
-
-/// Creates an RPC error for resource not found.
-fn not_found_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
-}
-
-/// Creates an RPC error for internal failures.
-fn internal_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, msg.into(), None::<()>)
-}
-
-/// Creates an RPC error for invalid parameters.
-fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
-}
-
-/// Maps mempool errors to RPC errors with appropriate error codes.
-fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
-    match &err {
-        // Capacity-related errors
-        OLMempoolError::MempoolFull { .. } | OLMempoolError::MempoolByteLimitExceeded { .. } => {
-            ErrorObjectOwned::owned(MEMPOOL_CAPACITY_ERROR_CODE, err.to_string(), None::<()>)
-        }
-        // Validation errors that are user's fault
-        OLMempoolError::AccountDoesNotExist { .. }
-        | OLMempoolError::AccountTypeMismatch { .. }
-        | OLMempoolError::TransactionTooLarge { .. }
-        | OLMempoolError::TransactionExpired { .. }
-        | OLMempoolError::TransactionNotMature { .. }
-        | OLMempoolError::UsedSequenceNumber { .. }
-        | OLMempoolError::SequenceNumberGap { .. } => invalid_params_error(err.to_string()),
-        // Internal errors
-        OLMempoolError::AccountStateAccess(_)
-        | OLMempoolError::TransactionNotFound(_)
-        | OLMempoolError::Database(_)
-        | OLMempoolError::Serialization(_)
-        | OLMempoolError::ServiceClosed(_)
-        | OLMempoolError::StateProvider(_) => {
-            error!(?err, "Internal mempool error");
-            internal_error(err.to_string())
-        }
     }
 }

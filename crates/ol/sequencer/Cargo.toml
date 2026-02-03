@@ -1,0 +1,27 @@
+[package]
+name = "strata-ol-sequencer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strata-asm-manifest-types.workspace = true
+strata-chainexec.workspace = true
+strata-chaintsn.workspace = true
+strata-checkpoint-types-ssz.workspace = true
+strata-crypto.workspace = true
+strata-csm-types.workspace = true
+strata-db-types.workspace = true
+strata-ol-block-assembly.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-msg-types.workspace = true
+strata-ol-state-types.workspace = true
+strata-params.workspace = true
+strata-primitives.workspace = true
+strata-status.workspace = true
+strata-storage.workspace = true
+
+serde.workspace = true
+ssz.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true

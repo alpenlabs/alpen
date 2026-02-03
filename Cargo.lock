@@ -1089,9 +1089,9 @@ dependencies = [
  "strata-acct-types",
  "strata-common",
  "strata-identifiers",
+ "strata-ol-rpc-api",
+ "strata-ol-rpc-types",
  "strata-primitives",
- "strata-rpc-api-new",
- "strata-rpc-types-new",
  "strata-snark-acct-types",
  "tokio",
  "tracing",
@@ -13649,28 +13649,33 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "ssz",
+ "strata-asm-proto-checkpoint-txs",
  "strata-asm-worker",
  "strata-btcio",
  "strata-chain-worker-new",
+ "strata-checkpoint-types-ssz",
  "strata-common",
  "strata-config",
  "strata-consensus-logic",
+ "strata-crypto",
  "strata-csm-types",
  "strata-csm-worker",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-node-context",
  "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
+ "strata-ol-rpc-api",
+ "strata-ol-rpc-types",
+ "strata-ol-sequencer",
  "strata-ol-state-types",
  "strata-ol-stf",
  "strata-params",
  "strata-primitives",
- "strata-rpc-api-new",
- "strata-rpc-types-new",
  "strata-service",
  "strata-snark-acct-types",
  "strata-status",
@@ -15017,6 +15022,63 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-rpc-api"
+version = "0.1.0"
+dependencies = [
+ "jsonrpsee",
+ "strata-identifiers",
+ "strata-ol-rpc-types",
+ "strata-ol-sequencer",
+ "strata-primitives",
+]
+
+[[package]]
+name = "strata-ol-rpc-types"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "ssz",
+ "strata-acct-types",
+ "strata-checkpoint-types-ssz",
+ "strata-identifiers",
+ "strata-ol-block-assembly",
+ "strata-ol-chain-types-new",
+ "strata-ol-mempool",
+ "strata-ol-sequencer",
+ "strata-primitives",
+ "strata-snark-acct-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-ol-sequencer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "ssz",
+ "strata-asm-manifest-types",
+ "strata-chainexec",
+ "strata-chaintsn",
+ "strata-checkpoint-types-ssz",
+ "strata-crypto",
+ "strata-csm-types",
+ "strata-db-types",
+ "strata-ol-block-assembly",
+ "strata-ol-chain-types-new",
+ "strata-ol-msg-types",
+ "strata-ol-state-types",
+ "strata-params",
+ "strata-primitives",
+ "strata-status",
+ "strata-storage",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
@@ -15323,16 +15385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-rpc-api-new"
-version = "0.1.0"
-dependencies = [
- "jsonrpsee",
- "strata-identifiers",
- "strata-primitives",
- "strata-rpc-types-new",
-]
-
-[[package]]
 name = "strata-rpc-types"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15348,23 +15400,6 @@ dependencies = [
  "strata-db-types",
  "strata-ol-chain-types",
  "strata-primitives",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-rpc-types-new"
-version = "0.1.0"
-dependencies = [
- "hex",
- "serde",
- "serde_json",
- "ssz",
- "strata-acct-types",
- "strata-identifiers",
- "strata-ol-chain-types-new",
- "strata-ol-mempool",
- "strata-primitives",
- "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
 
