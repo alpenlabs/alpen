@@ -50,7 +50,7 @@ impl CheckpointSidecar {
 
         let ol_logs_len = ol_logs.len() as u64;
         let ol_logs =
-            VariableList::new(ol_logs).map_err(|_| CheckpointPayloadError::OlLogsTooLarge {
+            VariableList::new(ol_logs).map_err(|_| CheckpointPayloadError::OLLogsTooLarge {
                 provided: ol_logs_len,
                 max: MAX_OL_LOGS_PER_CHECKPOINT,
             })?;
@@ -77,19 +77,19 @@ fn validate_ol_logs_payloads(ol_logs: &[OLLog]) -> Result<(), CheckpointPayloadE
     for log in ol_logs {
         let payload_len = log.payload().len() as u64;
         if payload_len > MAX_LOG_PAYLOAD_BYTES as u64 {
-            return Err(CheckpointPayloadError::OlLogPayloadTooLarge {
+            return Err(CheckpointPayloadError::OLLogPayloadTooLarge {
                 provided: payload_len,
                 max: MAX_LOG_PAYLOAD_BYTES as u64,
             });
         }
         total_payload = total_payload.checked_add(payload_len).ok_or(
-            CheckpointPayloadError::OlLogsTotalPayloadTooLarge {
+            CheckpointPayloadError::OLLogsTotalPayloadTooLarge {
                 provided: u64::MAX,
                 max: MAX_TOTAL_LOG_PAYLOAD_BYTES as u64,
             },
         )?;
         if total_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES as u64 {
-            return Err(CheckpointPayloadError::OlLogsTotalPayloadTooLarge {
+            return Err(CheckpointPayloadError::OLLogsTotalPayloadTooLarge {
                 provided: total_payload,
                 max: MAX_TOTAL_LOG_PAYLOAD_BYTES as u64,
             });
@@ -160,7 +160,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(CheckpointPayloadError::OlLogPayloadTooLarge { .. })
+            Err(CheckpointPayloadError::OLLogPayloadTooLarge { .. })
         ));
     }
 
@@ -178,7 +178,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(CheckpointPayloadError::OlLogsTotalPayloadTooLarge { .. })
+            Err(CheckpointPayloadError::OLLogsTotalPayloadTooLarge { .. })
         ));
     }
 }
