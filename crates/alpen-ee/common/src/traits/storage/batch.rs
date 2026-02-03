@@ -217,14 +217,15 @@ pub mod tests {
     }
 
     fn create_test_batch_u64(idx: u64) -> Batch {
-        let prev_block = create_test_hash_u64(idx.saturating_sub(1));
-        let last_block = create_test_hash_u64(idx);
+        let prev_block = create_test_hash_u64(idx);
+        let last_block = create_test_hash_u64(idx + 1);
         Batch::new(idx, prev_block, last_block, idx * 10, Vec::new()).unwrap()
     }
 
     fn create_test_chunk_u64(idx: u64) -> Chunk {
-        let prev_block = create_test_hash_u64(idx.saturating_sub(1));
-        let last_block = create_test_hash_u64(idx);
+        let (prev_val, last_val) = if idx == 0 { (0, 1) } else { (idx - 1, idx) };
+        let prev_block = create_test_hash_u64(prev_val);
+        let last_block = create_test_hash_u64(last_val);
         Chunk::new(idx, prev_block, last_block, Vec::new())
     }
 

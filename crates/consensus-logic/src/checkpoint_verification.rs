@@ -88,12 +88,13 @@ pub fn verify_proof(
 
     // Do the public parameters check
     let expected_public_output = *checkpoint.batch_transition();
-    let actual_public_output: BatchTransition = unsafe {
-        rkyv::from_bytes_unchecked::<BatchTransition, RkyvError>(
-            proof_receipt.public_values().as_bytes(),
-        )
+    let public_values = proof_receipt.public_values().as_bytes();
+    if public_values.is_empty() {
+        return Err(CheckpointError::MalformedTransition);
     }
-    .map_err(|_| CheckpointError::MalformedTransition)?;
+    let actual_public_output: BatchTransition =
+        rkyv::from_bytes::<BatchTransition, RkyvError>(public_values)
+            .map_err(|_| CheckpointError::MalformedTransition)?;
 
     if expected_public_output != actual_public_output {
         dbg!(actual_public_output, expected_public_output);

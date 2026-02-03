@@ -45,9 +45,9 @@ impl ArbitraryGenerator {
     /// # Returns
     ///
     /// An arbitrary instance of type `T`.
-    pub fn generate<'a, T>(&'a mut self) -> T
+    pub fn generate<T>(&mut self) -> T
     where
-        T: Arbitrary<'a> + Clone,
+        T: for<'a> Arbitrary<'a> + Clone,
     {
         self.generate_with_rng::<T, OsRng>(&mut OsRng)
     }
@@ -62,13 +62,26 @@ impl ArbitraryGenerator {
     /// # Returns
     ///
     /// An arbitrary instance of type `T`.
-    pub fn generate_with_rng<'a, T, R>(&'a mut self, rng: &mut R) -> T
+    pub fn generate_with_rng<T, R>(&mut self, rng: &mut R) -> T
     where
-        T: Arbitrary<'a> + Clone,
+        T: for<'a> Arbitrary<'a> + Clone,
         R: CryptoRngCore,
     {
-        rng.fill_bytes(&mut self.buf);
-        let mut u = Unstructured::new(&self.buf);
-        T::arbitrary(&mut u).expect("Failed to generate arbitrary instance")
+        const MAX_ATTEMPTS: usize = 16;
+        let mut last_error = None;
+
+        for _ in 0..MAX_ATTEMPTS {
+            rng.fill_bytes(&mut self.buf);
+            let mut u = Unstructured::new(&self.buf);
+            match T::arbitrary(&mut u) {
+                Ok(value) => return value,
+                Err(err) => last_error = Some(err),
+            }
+        }
+
+        let error_msg = last_error
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "unknown error".to_string());
+        panic!("Failed to generate arbitrary instance: {error_msg}");
     }
 }

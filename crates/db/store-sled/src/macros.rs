@@ -390,7 +390,12 @@ macro_rules! impl_rkyv_key_codec {
             fn decode_key(
                 data: &[u8],
             ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                ::rkyv::from_bytes::<$key, ::rkyv::rancor::Error>(data).map_err(|err| {
+                let mut aligned =
+                    ::rkyv::util::AlignedVec::<{ ::std::mem::align_of::<$key>() }>::with_capacity(
+                        data.len(),
+                    );
+                aligned.extend_from_slice(data);
+                ::rkyv::from_bytes::<$key, ::rkyv::rancor::Error>(&aligned).map_err(|err| {
                     ::typed_sled::codec::CodecError::SerializationFailed {
                         schema: $table_name::tree_name(),
                         source: err.into(),
@@ -419,12 +424,66 @@ macro_rules! impl_rkyv_value_codec {
             fn decode_value(
                 data: &[u8],
             ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                ::rkyv::from_bytes::<$value, ::rkyv::rancor::Error>(data).map_err(|err| {
+                let mut aligned =
+                    ::rkyv::util::AlignedVec::<{ ::std::mem::align_of::<$value>() }>::with_capacity(
+                        data.len(),
+                    );
+                aligned.extend_from_slice(data);
+                ::rkyv::from_bytes::<$value, ::rkyv::rancor::Error>(&aligned).map_err(|err| {
                     ::typed_sled::codec::CodecError::SerializationFailed {
                         schema: $table_name::tree_name(),
                         source: err.into(),
                     }
                 })
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_bytes_value_codec {
+    ($table_name:ident) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for ::std::vec::Vec<u8> {
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(self.clone())
+            }
+
+            fn decode_value(
+                data: &[u8],
+            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
+                Ok(data.to_vec())
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_integer_value_codec {
+    ($table_name:ident, $int:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $int {
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(self.to_be_bytes().into())
+            }
+
+            fn decode_value(
+                buf: &[u8],
+            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
+                const SIZE: usize = ::std::mem::size_of::<$int>();
+                if buf.len() != SIZE {
+                    return Err(::typed_sled::codec::CodecError::Other(format!(
+                        "invalid value length in '{}' (expected {} bytes, got {})",
+                        $table_name::tree_name(),
+                        SIZE,
+                        buf.len()
+                    )));
+                }
+                let mut bytes = [0u8; SIZE];
+                bytes.copy_from_slice(buf);
+                Ok(<$int>::from_be_bytes(bytes))
             }
         }
     };
