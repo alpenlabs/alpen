@@ -13,6 +13,7 @@ pub(crate) struct EnvArgs {
 }
 
 impl EnvArgs {
+    /// Loads environment variables that should override the config.
     pub(crate) fn from_env() -> Self {
         // Here we load particular env vars that should probably override the config.
         Self {}
