@@ -12,7 +12,11 @@ use crate::types::BlockTemplateExt;
 ///
 /// This replaces the old worker's HashMap that never cleaned up templates.
 /// Templates automatically expire after a TTL and are cleaned up during insertions.
+///
+/// Templates are keyed by parent block ID for O(1) lookup performance.
+/// Only one template per parent is maintained (newer replaces older).
 pub struct TemplateCache {
+    /// Templates keyed by parent block ID for efficient lookup.
     templates: HashMap<OLBlockId, CachedTemplate>,
     ttl: Duration,
 }
@@ -32,38 +36,31 @@ impl TemplateCache {
     }
 
     /// Inserts a template into the cache.
+    ///
+    /// Templates are keyed by their parent block ID. If a template for the same
+    /// parent already exists, it will be replaced with the newer one.
     pub fn insert(&mut self, template: FullBlockTemplate) {
-        let id = template.template_id();
+        let parent_id = template.parent();
         self.templates.insert(
-            id,
+            parent_id,
             CachedTemplate {
                 template,
                 created_at: Instant::now(),
             },
         );
-        eprintln!("inserted templates {:?}", self.templates.len());
 
         // Clean up expired entries while we're here
         self.cleanup_expired();
     }
 
     /// Gets a template by parent block ID if it exists and hasn't expired.
+    ///
+    /// This is now an O(1) operation since templates are keyed by parent ID.
     pub fn get_by_parent(&mut self, parent_id: &OLBlockId) -> Option<FullBlockTemplate> {
-        // Find template with matching parent
-        let template = self
-            .templates
-            .values()
-            .find(|cached| {
-                cached.template.parent() == *parent_id && cached.created_at.elapsed() < self.ttl
-            })
-            .map(|cached| cached.template.clone());
-
-        template
-    }
-
-    /// Removes and returns a template if it exists.
-    pub fn remove(&mut self, id: &OLBlockId) -> Option<FullBlockTemplate> {
-        self.templates.remove(id).map(|cached| cached.template)
+        self.templates
+            .get(parent_id)
+            .filter(|cached| cached.created_at.elapsed() < self.ttl)
+            .map(|cached| cached.template.clone())
     }
 
     /// Removes expired templates from the cache.
@@ -87,9 +84,13 @@ mod tests {
     use super::*;
 
     fn create_test_template(parent_id: OLBlockId) -> FullBlockTemplate {
+        create_test_template_with_ts(parent_id, 1000)
+    }
+
+    fn create_test_template_with_ts(parent_id: OLBlockId, ts: u64) -> FullBlockTemplate {
         let header = OLBlockHeader {
             parent_blkid: parent_id,
-            timestamp: 1000,
+            timestamp: ts,
             slot: 1,
             epoch: 0,
             flags: BlockFlags::from(0),
@@ -165,25 +166,6 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_template() {
-        let mut cache = TemplateCache::new(Duration::from_secs(60));
-        let parent_id = OLBlockId::from(Buf32([1u8; 32]));
-        let template = create_test_template(parent_id);
-        let template_id = template.template_id();
-
-        cache.insert(template.clone());
-        assert_eq!(cache.len(), 1);
-
-        let removed = cache.remove(&template_id);
-        eprintln!("{:?}", removed);
-        assert!(removed.is_some());
-        assert_eq!(cache.len(), 0);
-
-        // Should not find it anymore
-        assert!(cache.get_by_parent(&parent_id).is_none());
-    }
-
-    #[test]
     fn test_multiple_templates_different_parents() {
         let mut cache = TemplateCache::new(Duration::from_secs(60));
 
@@ -208,6 +190,30 @@ mod tests {
         // Non-existent parent should return None
         let parent3 = OLBlockId::from(Buf32([5u8; 32]));
         assert!(cache.get_by_parent(&parent3).is_none());
+    }
+
+    #[test]
+    fn test_newer_template_replaces_older_for_same_parent() {
+        let mut cache = TemplateCache::new(Duration::from_secs(60));
+        let parent_id = OLBlockId::from(Buf32([1u8; 32]));
+
+        // Create first template with specific timestamp
+        let template1 = create_test_template_with_ts(parent_id, 1000);
+
+        cache.insert(template1.clone());
+        assert_eq!(cache.len(), 1);
+
+        // Create second template for same parent with different timestamp
+        let template2 = create_test_template_with_ts(parent_id, 2000);
+
+        cache.insert(template2.clone());
+
+        // Should still only have 1 template (newer replaced older)
+        assert_eq!(cache.len(), 1);
+
+        // Should retrieve the newer template
+        let retrieved = cache.get_by_parent(&parent_id).unwrap();
+        assert_eq!(retrieved.header().timestamp(), 2000);
     }
 
     #[test]

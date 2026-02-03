@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RpcDuty {
     SignBlock(RpcBlockSigningDuty),
-    SignCheckpiont(RpcCheckpointSigningDuty),
+    SignCheckpoint(RpcCheckpointSigningDuty),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,7 +38,7 @@ impl From<Duty> for RpcDuty {
             }
             Duty::SignCheckpoint(c) => {
                 let checkpoint = c.checkpoint().as_ssz_bytes();
-                RpcDuty::SignCheckpiont(RpcCheckpointSigningDuty { checkpoint })
+                RpcDuty::SignCheckpoint(RpcCheckpointSigningDuty { checkpoint })
             }
         }
     }
@@ -79,7 +79,7 @@ impl TryFrom<RpcDuty> for Duty {
                 let duty = BlockSigningDuty { template };
                 Ok(Duty::SignBlock(duty))
             }
-            RpcDuty::SignCheckpiont(rpc_checkpoint_duty) => {
+            RpcDuty::SignCheckpoint(rpc_checkpoint_duty) => {
                 let checkpoint = CheckpointPayload::from_ssz_bytes(&rpc_checkpoint_duty.checkpoint)
                     .map_err(|e| RpcDutyConversionError::CheckpointDecodeError(e.to_string()))?;
 

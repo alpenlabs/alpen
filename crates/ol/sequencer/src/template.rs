@@ -104,16 +104,6 @@ impl TemplateManager {
         template_id: OLBlockId,
         signature: Buf64,
     ) -> Result<OLBlock, Error> {
-        // Clean up expired templates when completing
-        {
-            let mut cache = self.cache.lock().await;
-            cache.cleanup_expired();
-
-            // Remove from cache if present (whether we use it or not)
-            cache.remove(&template_id);
-        }
-
-        // Create completion data
         let completion = BlockCompletionData::from_signature(signature);
 
         // Complete using block-assembly service
