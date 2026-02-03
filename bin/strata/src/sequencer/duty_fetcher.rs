@@ -19,8 +19,19 @@ pub(crate) async fn duty_fetcher_worker(
     let mut interval = interval(poll_interval);
     'top: loop {
         interval.tick().await;
-        let Some(tip_blkid) = status_channel.get_ol_sync_status().map(|s| *s.tip_blkid()) else {
-            continue;
+        let tip_blkid = match status_channel.get_ol_sync_status().map(|s| *s.tip_blkid()) {
+            Some(tip) => tip,
+            None => match storage.ol_block().get_canonical_block_at_async(0).await {
+                Ok(Some(commitment)) => *commitment.blkid(),
+                Ok(None) => {
+                    warn!("duty_fetcher_worker: genesis block not found yet");
+                    continue;
+                }
+                Err(err) => {
+                    error!("duty_fetcher_worker: failed to load genesis block: {err}");
+                    continue;
+                }
+            },
         };
 
         let duties =

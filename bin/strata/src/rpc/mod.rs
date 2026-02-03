@@ -11,9 +11,9 @@ use node::*;
 #[cfg(feature = "sequencer")]
 use strata_btcio::writer::EnvelopeHandle;
 use strata_ol_mempool::MempoolHandle;
-use strata_ol_rpc_api::OLClientRpcServer;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
+use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 #[cfg(feature = "sequencer")]
 use strata_ol_sequencer::TemplateManager;
 use strata_status::StatusChannel;
@@ -102,16 +102,27 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         Ok::<u32, ErrorObjectOwned>(1)
     });
 
-    // Create and register OL RPC server
+    // Create and register OL client RPC server
     let ol_rpc_server = OLRpcServer::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
-        deps.mempool_handle,
+        deps.mempool_handle.clone(),
     );
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
         .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))?;
+
+    // Create and register OL fullnode RPC server
+    let ol_fullnode_server = OLRpcServer::new(
+        deps.storage.clone(),
+        deps.status_channel.clone(),
+        deps.mempool_handle.clone(),
+    );
+    let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_server);
+    module
+        .merge(ol_fullnode_module)
+        .map_err(|e| anyhow!("Failed to merge OL fullnode RPC module: {}", e))?;
 
     // Create sequencer rpc handler if running as sequencer
     #[cfg(feature = "sequencer")]
