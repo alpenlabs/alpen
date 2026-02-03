@@ -1,15 +1,19 @@
-//! Compressed ECDSA public key type with Borsh serialization.
+//! Compressed ECDSA public key type with rkyv serialization.
 
-use std::{io, ops::Deref};
+use std::ops::Deref;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archived, Place, Resolver,
+};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
-/// This is a thin wrapper around `secp256k1::PublicKey` that adds Borsh
+/// This is a thin wrapper around `secp256k1::PublicKey` that adds rkyv
 /// serialization support. Unlike `EvenPublicKey`, this type does not
 /// enforce even parity - it accepts any valid compressed public key.
 ///
@@ -20,8 +24,43 @@ use serde::{Deserialize, Serialize};
 ///
 /// Serializes the key as a 33-byte compressed point where the first byte
 /// indicates the y-coordinate parity (0x02 for even, 0x03 for odd).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CompressedPublicKey(PublicKey);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct CompressedPublicKey(#[rkyv(with = PublicKeyAsBytes)] PublicKey);
+
+struct PublicKeyAsBytes;
+
+impl ArchiveWith<PublicKey> for PublicKeyAsBytes {
+    type Archived = Archived<[u8; 33]>;
+    type Resolver = Resolver<[u8; 33]>;
+
+    fn resolve_with(field: &PublicKey, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.serialize(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<PublicKey, S> for PublicKeyAsBytes
+where
+    S: Fallible + ?Sized,
+    [u8; 33]: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &PublicKey, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.serialize(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<[u8; 33]>, PublicKey, D> for PublicKeyAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<[u8; 33]>: rkyv::Deserialize<[u8; 33], D>,
+{
+    fn deserialize_with(
+        field: &Archived<[u8; 33]>,
+        deserializer: &mut D,
+    ) -> Result<PublicKey, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(PublicKey::from_slice(&bytes).expect("stored public key should decode"))
+    }
+}
 
 impl CompressedPublicKey {
     /// Create a new `CompressedPublicKey` from a byte slice.
@@ -89,23 +128,6 @@ impl<'a> Arbitrary<'a> for CompressedPublicKey {
     }
 }
 
-impl BorshSerialize for CompressedPublicKey {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        let bytes = self.0.serialize();
-        writer.write_all(&bytes)
-    }
-}
-
-impl BorshDeserialize for CompressedPublicKey {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let mut buf = [0u8; 33];
-        reader.read_exact(&mut buf)?;
-        let pk = PublicKey::from_slice(&buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(Self(pk))
-    }
-}
-
 impl Serialize for CompressedPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -133,6 +155,8 @@ impl<'de> Deserialize<'de> for CompressedPublicKey {
 
 #[cfg(test)]
 mod tests {
+    use rkyv::rancor::Error as RkyvError;
+
     use super::*;
 
     #[test]
@@ -152,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compressed_pubkey_borsh_roundtrip() {
+    fn test_compressed_pubkey_rkyv_roundtrip() {
         use secp256k1::{Secp256k1, SecretKey};
         let secp = Secp256k1::new();
         let sk = SecretKey::from_slice(&[0x02; 32]).unwrap();
@@ -160,10 +184,9 @@ mod tests {
 
         let compressed = CompressedPublicKey::from(pk);
 
-        // Borsh roundtrip
-        let encoded = borsh::to_vec(&compressed).unwrap();
-        assert_eq!(encoded.len(), 33);
-        let decoded: CompressedPublicKey = borsh::from_slice(&encoded).unwrap();
+        let encoded = rkyv::to_bytes::<RkyvError>(&compressed).unwrap();
+        let decoded: CompressedPublicKey =
+            rkyv::from_bytes::<CompressedPublicKey, RkyvError>(&encoded).unwrap();
         assert_eq!(compressed, decoded);
     }
 

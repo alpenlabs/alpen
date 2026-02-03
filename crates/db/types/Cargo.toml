@@ -26,7 +26,6 @@ zkaleido.workspace = true
 anyhow.workspace = true
 arbitrary.workspace = true
 bitcoin.workspace = true
-borsh.workspace = true
 parking_lot = { workspace = true, optional = true }
 rkyv.workspace = true
 serde.workspace = true

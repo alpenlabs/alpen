@@ -16,6 +16,6 @@ strata-primitives.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
-borsh.workspace = true
+rkyv.workspace = true
 
 [dev-dependencies]

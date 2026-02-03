@@ -1,19 +1,17 @@
 // FIXME: Duplicated from https://github.com/alpenlabs/moho/blob/main/crates/runtime-interface/src/traits.rs for faster code iteration
 //! Traits used to describe an inner state transition.
 //!
-//! This module is using borsh as a transitive measure.
-
-use borsh::{BorshDeserialize, BorshSerialize};
+//! This module avoids forcing a serialization format on implementations.
 use moho_types::{ExportState, InnerStateCommitment, StateReference};
 use strata_predicate::PredicateKey;
 
 /// Trait implementation for the Moho program.
 pub trait MohoProgram {
     /// The inner state.
-    type State: BorshDeserialize + BorshSerialize;
+    type State;
 
     /// Private input to process the next state.
-    type StepInput: BorshDeserialize + BorshSerialize;
+    type StepInput;
 
     /// The specification type that defines program behavior and configuration.
     type Spec;

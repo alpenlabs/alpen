@@ -39,7 +39,6 @@
 //! and should not be included in non-testing runtime builds.
 
 // Silence unused dependency warnings for these crates
-use borsh as _;
 use serde as _;
 use strata_asm_logs as _;
 use strata_primitives as _;

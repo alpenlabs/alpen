@@ -24,6 +24,6 @@ strata-test-utils.workspace = true
 strata-test-utils-btc.workspace = true
 
 bitcoin = { workspace = true, features = ["rand-std"] }
-borsh.workspace = true
 k256.workspace = true
 rand.workspace = true
+rkyv.workspace = true

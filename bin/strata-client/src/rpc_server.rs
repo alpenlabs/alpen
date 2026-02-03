@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
 use futures::{future, TryFutureExt};
 use jsonrpsee::core::RpcResult;
+use rkyv::rancor::Error as RkyvError;
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
@@ -386,8 +387,9 @@ impl StrataApiServer for StrataRpcImpl {
             .ok_or(Error::MissingChainstate(blkid))?
             .into_toplevel();
 
-        let raw_chs = borsh::to_vec(&chs)
-            .map_err(|_| Error::Other("failed to serialize chainstate".to_string()))?;
+        let raw_chs = rkyv::to_bytes::<RkyvError>(&chs)
+            .map_err(|_| Error::Other("failed to serialize chainstate".to_string()))?
+            .into_vec();
         Ok(raw_chs)
     }
 
@@ -406,9 +408,10 @@ impl StrataApiServer for StrataRpcImpl {
             .ok_or(Error::MissingChainstate(parent))?
             .into_toplevel();
 
-        let cl_block_witness = (chain_state, l2_blk_bundle.block());
-        let raw_cl_block_witness = borsh::to_vec(&cl_block_witness)
-            .map_err(|_| Error::Other("Failed to get raw cl block witness".to_string()))?;
+        let cl_block_witness = (chain_state, l2_blk_bundle.block().clone());
+        let raw_cl_block_witness = rkyv::to_bytes::<RkyvError>(&cl_block_witness)
+            .map_err(|_| Error::Other("Failed to get raw cl block witness".to_string()))?
+            .into_vec();
 
         Ok(raw_cl_block_witness)
     }
@@ -503,8 +506,8 @@ impl StrataApiServer for StrataRpcImpl {
             .filter_map(|blk| blk.ok().flatten())
             .collect::<Vec<_>>();
 
-        borsh::to_vec(&blocks)
-            .map(HexBytes)
+        rkyv::to_bytes::<RkyvError>(&blocks)
+            .map(|bytes| HexBytes(bytes.into_vec()))
             .map_err(to_jsonrpsee_error("failed to serialize"))
     }
 
@@ -516,8 +519,8 @@ impl StrataApiServer for StrataRpcImpl {
             .await
             .map_err(Error::Db)?
             .map(|block| {
-                borsh::to_vec(&block)
-                    .map(HexBytes)
+                rkyv::to_bytes::<RkyvError>(&block)
+                    .map(|bytes| HexBytes(bytes.into_vec()))
                     .map_err(to_jsonrpsee_error("failed to serialize"))
             })
             .transpose()?;
@@ -914,7 +917,9 @@ impl StrataSequencerApiServer for SequencerServerImpl {
         )
         .map_err(|e| Error::Other(e.to_string()))?;
         let payload = L1Payload::new(
-            vec![borsh::to_vec(&signed_checkpoint).map_err(|e| Error::Other(e.to_string()))?],
+            vec![rkyv::to_bytes::<RkyvError>(&signed_checkpoint)
+                .map(|bytes| bytes.into_vec())
+                .map_err(|e| Error::Other(e.to_string()))?],
             checkpoint_tag,
         );
         let sighash = signed_checkpoint.checkpoint().hash();

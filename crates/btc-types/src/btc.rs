@@ -1,6 +1,5 @@
 use std::{
     fmt::{self, Debug, Display},
-    io::{self, Read, Write},
     mem, ops, str,
 };
 
@@ -18,8 +17,12 @@ use bitcoin::{
     transaction::Version,
 };
 use bitcoin_bosd::Descriptor;
-use borsh::{BorshDeserialize, BorshSerialize};
 use rand::rngs::OsRng;
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use secp256k1::SECP256K1;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use ssz_derive::{Decode, Encode};
@@ -29,6 +32,149 @@ use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
 use crate::ParseError;
 
 const HASH_SIZE: usize = 32;
+
+/// Serializer for [`Txid`] as bytes for rkyv.
+struct TxidAsBytes;
+
+impl ArchiveWith<Txid> for TxidAsBytes {
+    type Archived = Archived<[u8; 32]>;
+    type Resolver = Resolver<[u8; 32]>;
+
+    fn resolve_with(field: &Txid, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.to_byte_array(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Txid, S> for TxidAsBytes
+where
+    S: Fallible + ?Sized,
+    [u8; 32]: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Txid, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_byte_array(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<[u8; 32]>, Txid, D> for TxidAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<[u8; 32]>: rkyv::Deserialize<[u8; 32], D>,
+{
+    fn deserialize_with(
+        field: &Archived<[u8; 32]>,
+        deserializer: &mut D,
+    ) -> Result<Txid, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(Txid::from_byte_array(bytes))
+    }
+}
+
+/// Serializer for [`TxOut`] as bytes for rkyv.
+struct TxOutAsBytes;
+
+impl ArchiveWith<TxOut> for TxOutAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &TxOut, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let bytes = serialize(field);
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<TxOut, S> for TxOutAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &TxOut, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let bytes = serialize(field);
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, TxOut, D> for TxOutAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<TxOut, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(deserialize(&bytes).expect("stored TxOut should decode"))
+    }
+}
+
+/// Serializer for [`ScriptBuf`] as bytes for rkyv.
+struct ScriptBufAsBytes;
+
+impl ArchiveWith<ScriptBuf> for ScriptBufAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &ScriptBuf, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.to_bytes(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<ScriptBuf, S> for ScriptBufAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &ScriptBuf, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_bytes(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, ScriptBuf, D> for ScriptBufAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<ScriptBuf, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(ScriptBuf::from_bytes(bytes))
+    }
+}
+
+/// Serializer for [`Psbt`] as bytes for rkyv.
+struct PsbtAsBytes;
+
+impl ArchiveWith<Psbt> for PsbtAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &Psbt, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.serialize(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Psbt, S> for PsbtAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Psbt, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.serialize(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, Psbt, D> for PsbtAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(field: &Archived<Vec<u8>>, deserializer: &mut D) -> Result<Psbt, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(Psbt::deserialize(&bytes).expect("stored Psbt should decode"))
+    }
+}
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -47,35 +193,6 @@ impl BitcoinOutPoint {
 
     pub fn outpoint(&self) -> &OutPoint {
         &self.0
-    }
-}
-
-// Implement BorshSerialize for the BitcoinOutPoint wrapper.
-impl BorshSerialize for BitcoinOutPoint {
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
-        // Serialize the transaction ID as bytes
-        writer.write_all(&self.0.txid[..])?;
-
-        // Serialize the output index as a little-endian 4-byte integer
-        writer.write_all(&self.0.vout.to_le_bytes())?;
-        Ok(())
-    }
-}
-
-// Implement BorshDeserialize for the BitcoinOutPoint wrapper.
-impl BorshDeserialize for BitcoinOutPoint {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
-        // Read 32 bytes for the transaction ID
-        let mut txid_bytes = [0u8; HASH_SIZE];
-        reader.read_exact(&mut txid_bytes)?;
-        let txid = bitcoin::Txid::from_slice(&txid_bytes).expect("should be a valid txid (hash)");
-
-        // Read 4 bytes for the output index
-        let mut vout_bytes = [0u8; 4];
-        reader.read_exact(&mut vout_bytes)?;
-        let vout = u32::from_le_bytes(vout_bytes);
-
-        Ok(BitcoinOutPoint(OutPoint { txid, vout }))
     }
 }
 
@@ -98,7 +215,7 @@ impl<'a> Arbitrary<'a> for BitcoinOutPoint {
 /// A wrapper around the [`bitcoin::Address<NetworkChecked>`] type.
 ///
 /// It's created in order to implement some useful traits on it such as
-/// [`serde::Deserialize`], [`borsh::BorshSerialize`] and [`borsh::BorshDeserialize`].
+/// [`serde::Serialize`] and [serde::Deserialize`].
 // TODO: implement [`arbitrary::Arbitrary`]?
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitcoinAddress {
@@ -177,66 +294,11 @@ impl<'de> Deserialize<'de> for BitcoinAddress {
     }
 }
 
-impl BorshSerialize for BitcoinAddress {
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
-        let address_string = self.address.to_string();
-
-        BorshSerialize::serialize(address_string.as_str(), writer)?;
-
-        let network_byte = match self.network {
-            Network::Bitcoin => 0u8,
-            Network::Testnet => 1u8,
-            Network::Signet => 2u8,
-            Network::Regtest => 3u8,
-            other => unreachable!("should handle new variant: {}", other),
-        };
-
-        BorshSerialize::serialize(&network_byte, writer)?;
-
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for BitcoinAddress {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
-        let address_str = String::deserialize_reader(reader)?;
-
-        let network_byte = u8::deserialize_reader(reader)?;
-        let network = match network_byte {
-            0u8 => Network::Bitcoin,
-            1u8 => Network::Testnet,
-            2u8 => Network::Signet,
-            3u8 => Network::Regtest,
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Invalid network byte: {network_byte}"),
-                ));
-            }
-        };
-
-        let address = address_str
-            .parse::<Address<NetworkUnchecked>>()
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid bitcoin address"))?
-            .require_network(network)
-            .map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "address invalid for given network",
-                )
-            })?;
-
-        Ok(BitcoinAddress { address, network })
-    }
-}
-
 /// A wrapper for bitcoin amount in sats similar to the implementation in [`bitcoin::Amount`].
 ///
-/// NOTE: This wrapper has been created so that we can implement `Borsh*` traits on it.
+/// NOTE: This wrapper exists to add convenience trait impls.
 #[derive(
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Clone,
     Copy,
     Debug,
@@ -412,9 +474,18 @@ impl BitcoinAmount {
     }
 }
 
-/// [Borsh](borsh)-friendly Bitcoin [`Psbt`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BitcoinPsbt(Psbt);
+/// rkyv-friendly Bitcoin [`Psbt`].
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct BitcoinPsbt(#[rkyv(with = PsbtAsBytes)] Psbt);
 
 impl BitcoinPsbt {
     pub fn inner(&self) -> &Psbt {
@@ -435,32 +506,6 @@ impl From<Psbt> for BitcoinPsbt {
 impl From<BitcoinPsbt> for Psbt {
     fn from(value: BitcoinPsbt) -> Self {
         value.0
-    }
-}
-
-impl BorshSerialize for BitcoinPsbt {
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize the PSBT using bitcoin's built-in serialization
-        let psbt_bytes = self.0.serialize();
-        // First, write the length of the serialized PSBT (as u32)
-        BorshSerialize::serialize(&(psbt_bytes.len() as u32), writer)?;
-        // Then, write the actual serialized PSBT bytes
-        writer.write_all(&psbt_bytes)?;
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for BitcoinPsbt {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-        // First, read the length of the PSBT (as u32)
-        let len = u32::deserialize_reader(reader)? as usize;
-        // Then, create a buffer to hold the PSBT bytes and read them
-        let mut psbt_bytes = vec![0u8; len];
-        reader.read_exact(&mut psbt_bytes)?;
-        // Use the bitcoin crate's deserialize method to create a Psbt from the bytes
-        let psbt = Psbt::deserialize(&psbt_bytes)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid PSBT data"))?;
-        Ok(BitcoinPsbt(psbt))
     }
 }
 
@@ -495,9 +540,19 @@ impl<'a> Arbitrary<'a> for BitcoinPsbt {
     }
 }
 
-/// [Borsh](borsh)-friendly Bitcoin [`Txid`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BitcoinTxid(Txid);
+/// rkyv-friendly Bitcoin [`Txid`].
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct BitcoinTxid(#[rkyv(with = TxidAsBytes)] Txid);
 
 impl From<Txid> for BitcoinTxid {
     fn from(value: Txid) -> Self {
@@ -532,39 +587,6 @@ impl BitcoinTxid {
     }
 }
 
-impl BorshSerialize for BitcoinTxid {
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize the txid using bitcoin's built-in serialization
-        let txid_bytes = self.0.to_byte_array();
-        // First, write the length of the serialized txid (as u32)
-        BorshSerialize::serialize(&(32_u32), writer)?;
-        // Then, write the actual serialized PSBT bytes
-        writer.write_all(&txid_bytes)?;
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for BitcoinTxid {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-        // First, read the length tag
-        let len = u32::deserialize_reader(reader)? as usize;
-
-        if len != HASH_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid Txid size, expected: {HASH_SIZE}, got: {len}"),
-            ));
-        }
-
-        // First, create a buffer to hold the txid bytes and read them
-        let mut txid_bytes = [0u8; HASH_SIZE];
-        reader.read_exact(&mut txid_bytes)?;
-        // Use the bitcoin crate's deserialize method to create a Psbt from the bytes
-        let txid = Txid::from_byte_array(txid_bytes);
-        Ok(BitcoinTxid(txid))
-    }
-}
-
 impl<'a> Arbitrary<'a> for BitcoinTxid {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let value = Buf32::arbitrary(u)?;
@@ -575,8 +597,18 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 }
 
 /// A wrapper around [`bitcoin::TxOut`] that implements some additional traits.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BitcoinTxOut(TxOut);
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct BitcoinTxOut(#[rkyv(with = TxOutAsBytes)] TxOut);
 
 impl BitcoinTxOut {
     pub fn inner(&self) -> &TxOut {
@@ -593,40 +625,6 @@ impl From<TxOut> for BitcoinTxOut {
 impl From<BitcoinTxOut> for TxOut {
     fn from(value: BitcoinTxOut) -> Self {
         value.0
-    }
-}
-
-// Implement BorshSerialize for BitcoinTxOut
-impl BorshSerialize for BitcoinTxOut {
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize the value (u64)
-        BorshSerialize::serialize(&self.0.value.to_sat(), writer)?;
-
-        // Serialize the script_pubkey (ScriptBuf)
-        let script_bytes = self.0.script_pubkey.to_bytes();
-        BorshSerialize::serialize(&(script_bytes.len() as u64), writer)?;
-        writer.write_all(&script_bytes)?;
-
-        Ok(())
-    }
-}
-
-// Implement BorshDeserialize for BitcoinTxOut
-impl BorshDeserialize for BitcoinTxOut {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize the value (u64)
-        let value = u64::deserialize_reader(reader)?;
-
-        // Deserialize the script_pubkey (ScriptBuf)
-        let script_len = u64::deserialize_reader(reader)? as usize;
-        let mut script_bytes = vec![0u8; script_len];
-        reader.read_exact(&mut script_bytes)?;
-        let script_pubkey = ScriptBuf::from(script_bytes);
-
-        Ok(BitcoinTxOut(TxOut {
-            value: Amount::from_sat(value),
-            script_pubkey,
-        }))
     }
 }
 
@@ -666,71 +664,6 @@ pub enum TaprootSpendPath {
         script_buf: ScriptBuf,
         control_block: ControlBlock,
     },
-}
-
-impl BorshSerialize for TaprootSpendPath {
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        match self {
-            TaprootSpendPath::Key => {
-                // Variant index for Keypath is 0
-                BorshSerialize::serialize(&0u32, writer)?;
-            }
-            TaprootSpendPath::Script {
-                script_buf,
-                control_block,
-            } => {
-                // Variant index for ScriptPath is 1
-                BorshSerialize::serialize(&1u32, writer)?;
-
-                // Serialize the ScriptBuf
-                let script_bytes = script_buf.to_bytes();
-                BorshSerialize::serialize(&(script_bytes.len() as u64), writer)?;
-                writer.write_all(&script_bytes)?;
-
-                // Serialize the ControlBlock using bitcoin's serialize method
-                let control_block_bytes = control_block.serialize();
-                BorshSerialize::serialize(&(control_block_bytes.len() as u64), writer)?;
-                writer.write_all(&control_block_bytes)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-// Implement BorshDeserialize for TaprootSpendInfo
-impl BorshDeserialize for TaprootSpendPath {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize the variant index
-        let variant: u32 = BorshDeserialize::deserialize_reader(reader)?;
-        match variant {
-            0 => Ok(TaprootSpendPath::Key),
-            1 => {
-                // Deserialize the ScriptBuf
-                let script_len = u64::deserialize_reader(reader)? as usize;
-                let mut script_bytes = vec![0u8; script_len];
-                reader.read_exact(&mut script_bytes)?;
-                let script_buf = ScriptBuf::from(script_bytes);
-
-                // Deserialize the ControlBlock
-                let control_block_len = u64::deserialize_reader(reader)? as usize;
-                let mut control_block_bytes = vec![0u8; control_block_len];
-                reader.read_exact(&mut control_block_bytes)?;
-                let control_block: ControlBlock = ControlBlock::decode(&control_block_bytes[..])
-                    .map_err(|_| {
-                        io::Error::new(io::ErrorKind::InvalidData, "Invalid ControlBlock")
-                    })?;
-
-                Ok(TaprootSpendPath::Script {
-                    script_buf,
-                    control_block,
-                })
-            }
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Unknown variant for TaprootSpendInfo",
-            )),
-        }
-    }
 }
 
 // Implement Arbitrary for TaprootSpendInfo
@@ -798,7 +731,16 @@ impl<'a> Arbitrary<'a> for TaprootSpendPath {
 
 /// A wrapper around [`Buf32`] for XOnly Schnorr taproot pubkeys.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct BitcoinXOnlyPublicKey(Buf32);
 
@@ -878,7 +820,17 @@ impl TryFrom<BitcoinXOnlyPublicKey> for Descriptor {
 
 /// Represents a raw, byte-encoded Bitcoin transaction with custom [`Arbitrary`] support.
 /// Provides conversions (via [`TryFrom`]) to and from [`Transaction`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct RawBitcoinTx(Vec<u8>);
 
 impl RawBitcoinTx {
@@ -969,8 +921,20 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct BitcoinScriptBuf(ScriptBuf);
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+pub struct BitcoinScriptBuf(#[rkyv(with = ScriptBufAsBytes)] ScriptBuf);
 
 impl BitcoinScriptBuf {
     pub fn inner(&self) -> &ScriptBuf {
@@ -981,28 +945,6 @@ impl BitcoinScriptBuf {
 impl From<ScriptBuf> for BitcoinScriptBuf {
     fn from(value: ScriptBuf) -> Self {
         Self(value)
-    }
-}
-
-// Implement BorshSerialize for BitcoinScriptBuf
-impl BorshSerialize for BitcoinScriptBuf {
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        let script_bytes = self.0.to_bytes();
-        BorshSerialize::serialize(&(script_bytes.len() as u32), writer)?;
-        writer.write_all(&script_bytes)?;
-        Ok(())
-    }
-}
-
-// Implement BorshDeserialize for BitcoinScriptBuf
-impl BorshDeserialize for BitcoinScriptBuf {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let script_len = u32::deserialize_reader(reader)? as usize;
-        let mut script_bytes = vec![0u8; script_len];
-        reader.read_exact(&mut script_bytes)?;
-        let script_pubkey = ScriptBuf::from(script_bytes);
-
-        Ok(BitcoinScriptBuf(script_pubkey))
     }
 }
 
@@ -1019,21 +961,19 @@ impl<'a> Arbitrary<'a> for BitcoinScriptBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use arbitrary::{Arbitrary, Unstructured};
     use bitcoin::{
         Address, Amount, Network, ScriptBuf, TapNodeHash, Transaction, TxOut, XOnlyPublicKey,
-        hashes::Hash,
         key::Keypair,
         opcodes::{self, all::OP_CHECKSIG},
         script::Builder,
-        secp256k1::{Parity, SECP256K1, SecretKey},
-        taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootMerkleBranch},
+        secp256k1::{SECP256K1, SecretKey},
+        taproot::TaprootBuilder,
     };
     use bitcoin_bosd::DescriptorType;
     use proptest::prelude::*;
     use rand::{Rng, rngs::OsRng};
+    use rkyv::rancor::Error as RkyvError;
     use ssz::{Decode, Encode};
     use strata_identifiers::Buf32;
     use strata_test_utils::ArbitraryGenerator;
@@ -1041,9 +981,9 @@ mod tests {
 
     use super::{
         BitcoinAddress, BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
-        BitcoinXOnlyPublicKey, BorshDeserialize, BorshSerialize, RawBitcoinTx,
+        BitcoinXOnlyPublicKey, RawBitcoinTx,
     };
-    use crate::{BitcoinPsbt, ParseError, TaprootSpendPath};
+    use crate::{BitcoinPsbt, ParseError};
 
     #[test]
     fn test_parse_bitcoin_address_network() {
@@ -1107,94 +1047,6 @@ mod tests {
         assert_eq!(
             bitcoin_addr, deserialized_bitcoind_addr,
             "original and serialized addresses must be the same"
-        );
-    }
-
-    #[test]
-    fn borsh_serialization_of_bitcoin_address_works() {
-        let mainnet_addr = "bc1qpaj2e2ccwqvyzvsfhcyktulrjkkd28fg75wjuc";
-        let network = Network::Bitcoin;
-        let original_addr: BitcoinAddress =
-            BitcoinAddress::parse(mainnet_addr, network).expect("should be a valid address");
-
-        let mut serialized_addr: Vec<u8> = vec![];
-        original_addr
-            .serialize(&mut serialized_addr)
-            .expect("borsh serialization of bitcoin address must work");
-
-        let deserialized = BitcoinAddress::try_from_slice(&serialized_addr);
-        assert!(
-            deserialized.is_ok(),
-            "deserialization of bitcoin address should work but got: {:?}",
-            deserialized.unwrap_err()
-        );
-
-        assert_eq!(
-            deserialized.unwrap(),
-            original_addr,
-            "original address and deserialized address must be the same",
-        );
-    }
-
-    #[test]
-    fn test_borsh_serialization_of_multiple_addresses() {
-        // Sample Bitcoin addresses
-        let addresses = [
-            "1BoatSLRHtKNngkdXEeobR76b53LETtpyT",
-            "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
-            "bc1qpaj2e2ccwqvyzvsfhcyktulrjkkd28fg75wjuc",
-        ];
-
-        let network = Network::Bitcoin;
-
-        // Convert strings to BitcoinAddress instances
-        let bitcoin_addresses: Vec<BitcoinAddress> = addresses
-            .iter()
-            .map(|s| {
-                BitcoinAddress::parse(s, network)
-                    .unwrap_or_else(|_e| panic!("random address {s} should be valid on: {network}"))
-            })
-            .collect();
-
-        // Serialize the vector of BitcoinAddress instances
-        let mut serialized = Vec::new();
-        bitcoin_addresses
-            .serialize(&mut serialized)
-            .expect("serialization should work");
-
-        // Attempt to deserialize back into a vector of BitcoinAddress instances
-        let deserialized: Vec<BitcoinAddress> =
-            Vec::try_from_slice(&serialized).expect("Deserialization failed");
-
-        // Check that the deserialized addresses match the original
-        assert_eq!(bitcoin_addresses, deserialized);
-    }
-
-    #[test]
-    fn test_borsh_serialization_of_address_in_struct() {
-        #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-        struct Test {
-            address: BitcoinAddress,
-            other: u32,
-        }
-
-        let sample_addr = "bc1qpaj2e2ccwqvyzvsfhcyktulrjkkd28fg75wjuc";
-        let network = Network::Bitcoin;
-        let original = Test {
-            other: 1,
-            address: BitcoinAddress::parse(sample_addr, network).expect("should be valid address"),
-        };
-
-        let mut serialized = vec![];
-        original
-            .serialize(&mut serialized)
-            .expect("should be able to serialize");
-
-        let deserialized: Test = Test::try_from_slice(&serialized).expect("should deserialize");
-
-        assert_eq!(
-            deserialized, original,
-            "deserialized and original structs with address should be the same"
         );
     }
 
@@ -1287,135 +1139,12 @@ mod tests {
         let mut unstructured = Unstructured::new(&random_data[..]);
         let bitcoin_psbt: BitcoinPsbt = BitcoinPsbt::arbitrary(&mut unstructured).unwrap();
 
-        // Serialize the struct
-        let mut serialized = vec![];
-        bitcoin_psbt
-            .serialize(&mut serialized)
-            .expect("Serialization failed");
-
-        // Deserialize the struct
-        let deserialized: BitcoinPsbt =
-            BitcoinPsbt::deserialize(&mut &serialized[..]).expect("Deserialization failed");
+        let serialized = rkyv::to_bytes::<RkyvError>(&bitcoin_psbt).expect("Serialization failed");
+        let deserialized: BitcoinPsbt = rkyv::from_bytes::<BitcoinPsbt, RkyvError>(&serialized)
+            .expect("Deserialization failed");
 
         // Ensure the deserialized PSBT matches the original
         assert_eq!(bitcoin_psbt.0, deserialized.0);
-    }
-
-    #[test]
-    fn test_borsh_serialize_deserialize_keypath() {
-        let original = TaprootSpendPath::Key;
-
-        let mut serialized = vec![];
-        BorshSerialize::serialize(&original, &mut serialized).expect("borsh serialization");
-
-        let mut cursor = Cursor::new(serialized);
-        let deserialized =
-            TaprootSpendPath::deserialize_reader(&mut cursor).expect("borsh deserialization");
-
-        match deserialized {
-            TaprootSpendPath::Key => (),
-            _ => panic!("Deserialized variant does not match original"),
-        }
-    }
-
-    #[test]
-    fn test_borsh_serialize_deserialize_scriptpath() {
-        // Create a sample ScriptBuf
-        let script_bytes = vec![0x51, 0x21, 0xFF]; // Example script
-        let script_buf = ScriptBuf::from(script_bytes.clone());
-
-        // Create a sample ControlBlock
-        let leaf_version = LeafVersion::TapScript;
-        let output_key_parity = Parity::Even;
-
-        // Generate a random internal key
-        let secret_key = SecretKey::new(&mut OsRng);
-        let keypair = Keypair::from_secret_key(SECP256K1, &secret_key);
-        let (internal_key, _) = XOnlyPublicKey::from_keypair(&keypair);
-
-        // Create dummy TapNodeHash entries
-        let tapnode_hashes = [TapNodeHash::from_byte_array([0u8; 32]); 10];
-
-        let merkle_branch = TaprootMerkleBranch::from(tapnode_hashes);
-
-        let control_block = ControlBlock {
-            leaf_version,
-            output_key_parity,
-            internal_key,
-            merkle_branch,
-        };
-
-        let original = TaprootSpendPath::Script {
-            script_buf: script_buf.clone(),
-            control_block: control_block.clone(),
-        };
-
-        let mut serialized = vec![];
-        BorshSerialize::serialize(&original, &mut serialized).expect("borsh serialization");
-
-        let mut cursor = Cursor::new(serialized);
-        let deserialized =
-            TaprootSpendPath::deserialize_reader(&mut cursor).expect("borsh deserialization");
-
-        match deserialized {
-            TaprootSpendPath::Script {
-                script_buf: deserialized_script_buf,
-                control_block: deserialized_control_block,
-            } => {
-                assert_eq!(script_buf, deserialized_script_buf, "ScriptBuf mismatch");
-
-                // Compare ControlBlock fields
-                assert_eq!(
-                    control_block.leaf_version, deserialized_control_block.leaf_version,
-                    "LeafVersion mismatch"
-                );
-                assert_eq!(
-                    control_block.output_key_parity, deserialized_control_block.output_key_parity,
-                    "OutputKeyParity mismatch"
-                );
-                assert_eq!(
-                    control_block.internal_key, deserialized_control_block.internal_key,
-                    "InternalKey mismatch"
-                );
-                assert_eq!(
-                    control_block.merkle_branch, deserialized_control_block.merkle_branch,
-                    "MerkleBranch mismatch"
-                );
-            }
-            _ => panic!("Deserialized variant does not match original"),
-        }
-    }
-
-    #[test]
-    fn test_arbitrary_borsh_roundtrip() {
-        // Generate arbitrary TaprootSpendInfo
-        let data = vec![0u8; 1024];
-        let mut u = Unstructured::new(&data);
-
-        let original = TaprootSpendPath::arbitrary(&mut u).expect("Arbitrary generation failed");
-
-        // Serialize
-        let mut serialized = vec![];
-        BorshSerialize::serialize(&original, &mut serialized).expect("borsh serialization");
-
-        // Deserialize
-        let mut cursor = Cursor::new(&serialized);
-        let deserialized =
-            TaprootSpendPath::deserialize_reader(&mut cursor).expect("borsh deserialization");
-
-        // Assert equality by serializing both and comparing bytes
-        let mut original_serialized = vec![];
-        BorshSerialize::serialize(&original, &mut original_serialized)
-            .expect("borsh serialization");
-
-        let mut deserialized_serialized = vec![];
-        BorshSerialize::serialize(&deserialized, &mut deserialized_serialized)
-            .expect("borsh serialization of deserialized");
-
-        assert_eq!(
-            original_serialized, deserialized_serialized,
-            "Original and deserialized serialized data do not match"
-        );
     }
 
     #[test]
@@ -1431,19 +1160,12 @@ mod tests {
 
         let bitcoin_tx_out = BitcoinTxOut(tx_out);
 
-        // Serialize the BitcoinTxOut struct
-        let mut serialized = vec![];
-        bitcoin_tx_out
-            .serialize(&mut serialized)
-            .expect("Serialization failed");
+        let serialized =
+            rkyv::to_bytes::<RkyvError>(&bitcoin_tx_out).expect("Serialization failed");
+        let deserialized: BitcoinTxOut = rkyv::from_bytes::<BitcoinTxOut, RkyvError>(&serialized)
+            .expect("Deserialization failed");
 
-        // Deserialize the BitcoinTxOut struct
-        let deserialized: BitcoinTxOut =
-            BitcoinTxOut::deserialize(&mut &serialized[..]).expect("Deserialization failed");
-
-        // Ensure the deserialized BitcoinTxOut matches the original
-        assert_eq!(bitcoin_tx_out.0.value, deserialized.0.value);
-        assert_eq!(bitcoin_tx_out.0.script_pubkey, deserialized.0.script_pubkey);
+        assert_eq!(bitcoin_tx_out, deserialized);
     }
 
     fn get_random_pubkey_from_slice(buf: &[u8]) -> XOnlyPublicKey {
@@ -1460,8 +1182,8 @@ mod tests {
         let txid: BitcoinTxid = generator.generate();
 
         let serialized_txid =
-            borsh::to_vec::<BitcoinTxid>(&txid).expect("should be able to serialize BitcoinTxid");
-        let deserialized_txid = borsh::from_slice::<BitcoinTxid>(&serialized_txid)
+            rkyv::to_bytes::<RkyvError>(&txid).expect("should be able to serialize BitcoinTxid");
+        let deserialized_txid = rkyv::from_bytes::<BitcoinTxid, RkyvError>(&serialized_txid)
             .expect("should be able to deserialize BitcoinTxid");
 
         assert_eq!(
@@ -1497,9 +1219,9 @@ mod tests {
         let mut generator = ArbitraryGenerator::new();
         let scriptbuf: BitcoinScriptBuf = generator.generate();
 
-        let serialized_scriptbuf = borsh::to_vec(&scriptbuf).unwrap();
+        let serialized_scriptbuf = rkyv::to_bytes::<RkyvError>(&scriptbuf).unwrap();
         let deserialized_scriptbuf: BitcoinScriptBuf =
-            borsh::from_slice(&serialized_scriptbuf).unwrap();
+            rkyv::from_bytes::<BitcoinScriptBuf, RkyvError>(&serialized_scriptbuf).unwrap();
 
         assert_eq!(
             scriptbuf.0, deserialized_scriptbuf.0,
@@ -1508,9 +1230,9 @@ mod tests {
 
         // Test with an empty script
         let scriptbuf: BitcoinScriptBuf = BitcoinScriptBuf(ScriptBuf::new());
-        let serialized_scriptbuf = borsh::to_vec(&scriptbuf).unwrap();
+        let serialized_scriptbuf = rkyv::to_bytes::<RkyvError>(&scriptbuf).unwrap();
         let deserialized_scriptbuf: BitcoinScriptBuf =
-            borsh::from_slice(&serialized_scriptbuf).unwrap();
+            rkyv::from_bytes::<BitcoinScriptBuf, RkyvError>(&serialized_scriptbuf).unwrap();
 
         assert_eq!(
             scriptbuf.0, deserialized_scriptbuf.0,
@@ -1522,9 +1244,9 @@ mod tests {
 
         let scriptbuf: BitcoinScriptBuf = BitcoinScriptBuf(script);
 
-        let serialized_scriptbuf = borsh::to_vec(&scriptbuf).unwrap();
+        let serialized_scriptbuf = rkyv::to_bytes::<RkyvError>(&scriptbuf).unwrap();
         let deserialized_scriptbuf: BitcoinScriptBuf =
-            borsh::from_slice(&serialized_scriptbuf).unwrap();
+            rkyv::from_bytes::<BitcoinScriptBuf, RkyvError>(&serialized_scriptbuf).unwrap();
 
         assert_eq!(
             scriptbuf.0, deserialized_scriptbuf.0,

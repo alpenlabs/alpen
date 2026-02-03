@@ -47,7 +47,7 @@ impl WitnessProvider for WitnessDB {
         let raw = self.witness_tree.get(&block_hash)?;
 
         let parsed: Option<EvmBlockStfInput> = raw
-            .map(|bytes| bincode::deserialize(&bytes))
+            .map(|bytes| serde_json::from_slice(&bytes))
             .transpose()
             .map_err(|err| DbError::CodecError(err.to_string()))?;
 
@@ -62,7 +62,7 @@ impl WitnessProvider for WitnessDB {
 impl WitnessStore for WitnessDB {
     fn put_block_witness(&self, block_hash: B256, witness: &EvmBlockStfInput) -> DbResult<()> {
         let serialized =
-            bincode::serialize(witness).map_err(|err| DbError::Other(err.to_string()))?;
+            serde_json::to_vec(witness).map_err(|err| DbError::Other(err.to_string()))?;
 
         Ok(self.witness_tree.insert(&block_hash, &serialized)?)
     }
@@ -77,7 +77,7 @@ impl StateDiffProvider for WitnessDB {
         let raw = self.state_diff_tree.get(&block_hash)?;
 
         let parsed: Option<BlockStateChanges> = raw
-            .map(|bytes| bincode::deserialize(&bytes))
+            .map(|bytes| serde_json::from_slice(&bytes))
             .transpose()
             .map_err(|err| DbError::CodecError(err.to_string()))?;
 
@@ -108,7 +108,7 @@ impl StateDiffStore for WitnessDB {
         (&self.block_hash_by_number_tree, &self.state_diff_tree)
             .transaction(|(bht, sdt)| -> ConflictableTransactionResult<(), Error> {
                 bht.insert(&block_number, &block_hash.to_vec())?;
-                let serialized = match bincode::serialize(state_diff) {
+                let serialized = match serde_json::to_vec(state_diff) {
                     Ok(data) => data,
                     Err(err) => {
                         return Err(ConflictableTransactionError::Abort(

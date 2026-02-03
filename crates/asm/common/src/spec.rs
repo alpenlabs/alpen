@@ -1,6 +1,6 @@
 use strata_l1_txfmt::MagicBytes;
 
-use crate::Subprotocol;
+use crate::{StateDeserializer, Subprotocol};
 
 /// Specification for a concrete ASM instantiation describing the subprotocols we
 /// want to invoke and in what order.
@@ -25,7 +25,9 @@ pub trait AsmSpec {
 pub trait Loader {
     /// Invoked by the ASM spec to perform logic to load the subprotocol for
     /// execution in this ASM invocation.
-    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params);
+    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params)
+    where
+        rkyv::Archived<S::State>: rkyv::Deserialize<S::State, StateDeserializer>;
 }
 
 /// Impl of a subprotocol execution stage.

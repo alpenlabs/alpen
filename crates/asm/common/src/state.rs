@@ -1,51 +1,72 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use rkyv::{
     Archived, Place, Resolver,
-    rancor::Fallible,
+    api::high::{HighDeserializer, HighSerializer},
+    rancor::{Error as RkyvError, Fallible},
+    ser::allocator::ArenaHandle,
+    util::AlignedVec,
     with::{ArchiveWith, DeserializeWith, SerializeWith},
 };
 use serde::{Deserialize, Serialize};
 use strata_asm_types::HeaderVerificationState;
+use strata_codec::{decode_buf_exact, encode_to_vec};
 
 use crate::{AsmError, AsmHistoryAccumulatorState, Mismatched, Subprotocol, SubprotocolId};
 
-/// Serializer for any type that implements [`Serialize`] as JSON bytes for rkyv.
-struct SerdeJsonBytes;
+/// Serializer for any type that implements [`Serialize`] as codec bytes for rkyv.
+pub type StateSerializer<'a> = HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>;
 
-impl<T> ArchiveWith<T> for SerdeJsonBytes
-where
-    T: Serialize,
-{
+/// Serializer for any type that implements [`Deserialize`] as codec bytes for rkyv.
+pub type StateDeserializer = HighDeserializer<RkyvError>;
+
+/// Trait for types that can be serialized and deserialized as state for rkyv.
+pub trait RkyvState: rkyv::Archive + for<'a> rkyv::Serialize<StateSerializer<'a>> + Sized {}
+
+impl<T> RkyvState for T where T: rkyv::Archive + for<'a> rkyv::Serialize<StateSerializer<'a>> + Sized
+{}
+
+/// Serializer for ASM history accumulator as codec bytes for rkyv.
+struct AsmHistoryAccumulatorAsBytes;
+
+impl ArchiveWith<AsmHistoryAccumulatorState> for AsmHistoryAccumulatorAsBytes {
     type Archived = Archived<Vec<u8>>;
     type Resolver = Resolver<Vec<u8>>;
 
-    fn resolve_with(field: &T, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        let bytes = serde_json::to_vec(field).expect("serde_json should serialize ASM accumulator");
+    fn resolve_with(
+        field: &AsmHistoryAccumulatorState,
+        resolver: Self::Resolver,
+        out: Place<Self::Archived>,
+    ) {
+        let bytes = encode_to_vec(field).expect("codec should serialize ASM history accumulator");
         rkyv::Archive::resolve(&bytes, resolver, out);
     }
 }
 
-impl<T, S> SerializeWith<T, S> for SerdeJsonBytes
+impl<S> SerializeWith<AsmHistoryAccumulatorState, S> for AsmHistoryAccumulatorAsBytes
 where
-    T: Serialize,
     S: Fallible + ?Sized,
     Vec<u8>: rkyv::Serialize<S>,
 {
-    fn serialize_with(field: &T, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let bytes = serde_json::to_vec(field).expect("serde_json should serialize ASM accumulator");
+    fn serialize_with(
+        field: &AsmHistoryAccumulatorState,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        let bytes = encode_to_vec(field).expect("codec should serialize ASM history accumulator");
         rkyv::Serialize::serialize(&bytes, serializer)
     }
 }
 
-impl<T, D> DeserializeWith<Archived<Vec<u8>>, T, D> for SerdeJsonBytes
+impl<D> DeserializeWith<Archived<Vec<u8>>, AsmHistoryAccumulatorState, D>
+    for AsmHistoryAccumulatorAsBytes
 where
-    for<'de> T: Deserialize<'de>,
     D: Fallible + ?Sized,
     Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
 {
-    fn deserialize_with(field: &Archived<Vec<u8>>, deserializer: &mut D) -> Result<T, D::Error> {
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<AsmHistoryAccumulatorState, D::Error> {
         let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(serde_json::from_slice(&bytes).expect("serde_json should deserialize ASM accumulator"))
+        Ok(decode_buf_exact(&bytes).expect("codec should deserialize ASM history accumulator"))
     }
 }
 
@@ -62,8 +83,6 @@ where
     Clone,
     Debug,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -91,8 +110,6 @@ impl AnchorState {
     Clone,
     Debug,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -108,7 +125,7 @@ pub struct ChainViewState {
     ///
     /// Each leaf represents the root hash of an [`AsmManifest`](crate::AsmManifest) for the
     /// corresponding block, enabling efficient historical proofs of ASM state transitions.
-    #[rkyv(with = SerdeJsonBytes)]
+    #[rkyv(with = AsmHistoryAccumulatorAsBytes)]
     pub history_accumulator: AsmHistoryAccumulatorState,
 }
 
@@ -121,14 +138,12 @@ impl ChainViewState {
 
 /// Holds the off‐chain serialized state for a single subprotocol section within the ASM.
 ///
-/// Each `SectionState` pairs the subprotocol’s unique ID with its current serialized state,
+/// Each [`SectionState`] pairs the subprotocol’s unique ID with its current serialized state,
 /// allowing the ASM to apply the appropriate state transition logic for that subprotocol.
 #[derive(
     Clone,
     Debug,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -152,14 +167,22 @@ impl SectionState {
     }
 
     /// Constructs an instance by serializing a subprotocol state.
-    pub fn from_state<S: Subprotocol>(state: &S::State) -> Self {
-        let mut buf = Vec::new();
-        <S::State as BorshSerialize>::serialize(state, &mut buf).expect("asm: serialize");
-        Self::new(S::ID, buf)
+    pub fn from_state<S: Subprotocol>(state: &S::State) -> Self
+    where
+        S::State: rkyv::Archive + for<'a> rkyv::Serialize<StateSerializer<'a>>,
+    {
+        let bytes = rkyv::to_bytes::<RkyvError>(state)
+            .map_err(|err| AsmError::Serialization(S::ID, err))
+            .expect("asm: serialize");
+        Self::new(S::ID, bytes.as_ref().to_vec())
     }
 
     /// Tries to deserialize the section data as a particular subprotocol's state.
-    pub fn try_to_state<S: Subprotocol>(&self) -> Result<S::State, AsmError> {
+    pub fn try_to_state<S: Subprotocol>(&self) -> Result<S::State, AsmError>
+    where
+        S::State: rkyv::Archive,
+        rkyv::Archived<S::State>: rkyv::Deserialize<S::State, StateDeserializer>,
+    {
         if S::ID != self.id {
             return Err(Mismatched {
                 expected: S::ID,
@@ -168,7 +191,8 @@ impl SectionState {
             .into());
         }
 
-        <S::State as BorshDeserialize>::try_from_slice(&self.data)
+        // SAFETY: The serialized section bytes are produced internally by rkyv and are trusted.
+        unsafe { rkyv::from_bytes_unchecked::<S::State, RkyvError>(&self.data) }
             .map_err(|e| AsmError::Deserialization(self.id, e))
     }
 }

@@ -12,8 +12,8 @@ strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
-bincode.workspace = true
 revm-primitives.workspace = true
+serde_json.workspace = true
 sled.workspace = true
 typed-sled.workspace = true
 

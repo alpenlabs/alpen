@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use zkaleido::{ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
+use rkyv::rancor::Error as RkyvError;
+use zkaleido::{
+    DataFormatError, ProofType, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
+};
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
 use crate::{
@@ -44,7 +47,11 @@ impl ZkVmProgram for EvmEeProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        H::extract_borsh_public_output(public_values)
+        rkyv::from_bytes::<Self::Output, RkyvError>(public_values.as_bytes()).map_err(
+            |err: RkyvError| ZkVmError::OutputExtractionError {
+                source: DataFormatError::Other(err.to_string()),
+            },
+        )
     }
 }
 

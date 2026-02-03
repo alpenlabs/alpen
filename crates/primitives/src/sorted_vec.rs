@@ -1,6 +1,9 @@
-use std::{cmp::Ordering, io, mem};
+use std::{cmp::Ordering, mem};
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    rancor::{Fallible, Source},
+    Archive, Deserialize, DeserializeUnsized, Serialize,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -15,7 +18,7 @@ pub enum Error {
 /// A vector wrapper that ensures the elements are sorted.
 ///
 /// This *CAN* have duplicate entries.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize)]
 pub struct SortedVec<T> {
     // Since it can have duplicate entries, we can't make it a wrapper around
     // `FlatTable`.
@@ -185,10 +188,18 @@ impl<T: Ord> TryFrom<Vec<T>> for SortedVec<T> {
 
 /// Extra implementation logic that ensures that the deserialized vec is
 /// sorted.  Does not sort it itself, instead it errors.
-impl<T: Ord + BorshDeserialize> BorshDeserialize for SortedVec<T> {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let vec = <Vec<T> as BorshDeserialize>::deserialize_reader(reader)?;
-        Self::try_from(vec).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "vec unsorted"))
+impl<T, D> Deserialize<SortedVec<T>, D> for ArchivedSortedVec<T>
+where
+    T: Archive + Ord,
+    rkyv::Archived<T>: Deserialize<T, D>,
+    D: Fallible + ?Sized,
+    D::Error: Source,
+    [T::Archived]: DeserializeUnsized<[T], D>,
+{
+    fn deserialize(&self, deserializer: &mut D) -> Result<SortedVec<T>, D::Error> {
+        let mut inner: Vec<T> = self.inner.deserialize(deserializer)?;
+        inner.sort();
+        Ok(SortedVec::new_unchecked(inner))
     }
 }
 
@@ -254,7 +265,7 @@ fn check_table_vec<T: TableEntry>(v: &[T]) -> TableState {
 }
 
 /// A flat lookup table.  This is an intrusive collection.
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FlatTable<T: TableEntry> {
     inner: Vec<T>,
 }
@@ -426,15 +437,6 @@ impl<T: TableEntry> TryFrom<Vec<T>> for FlatTable<T> {
 
 /// Extra implementation logic that ensures that the deserialized vec is
 /// sorted and has no duplicates.  Does not sort it itself, instead it errors.
-impl<T: TableEntry + BorshDeserialize> BorshDeserialize for FlatTable<T> {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let vec = <Vec<T> as BorshDeserialize>::deserialize_reader(reader)?;
-        Self::try_from(vec).map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, "vec unsorted or has duplicates")
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

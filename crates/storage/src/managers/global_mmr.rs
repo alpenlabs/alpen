@@ -1,6 +1,12 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    api::high::{HighDeserializer, HighSerializer},
+    rancor::Error as RkyvError,
+    ser::allocator::ArenaHandle,
+    util::AlignedVec,
+    Archive, Archived, Deserialize, Serialize,
+};
 use strata_db_types::{
     mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm},
     traits::GlobalMmrDatabase,
@@ -49,7 +55,8 @@ impl GlobalMmrManager {
     /// providing type-safe access to the original data.
     pub fn get_data_handle<T>(&self, mmr_id: MmrId) -> TypedMmrHandle<T, Sha256Hasher>
     where
-        T: BorshSerialize + BorshDeserialize,
+        T: Archive + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>>,
+        Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
     {
         TypedMmrHandle {
             handle: self.get_handle(mmr_id),
@@ -62,7 +69,8 @@ impl GlobalMmrManager {
     /// Allows using a different hasher than the default Sha256Hasher.
     pub fn get_data_handle_with_hasher<T, H>(&self, mmr_id: MmrId) -> TypedMmrHandle<T, H>
     where
-        T: BorshSerialize + BorshDeserialize,
+        T: Archive + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>>,
+        Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
         H: MerkleHasher<Hash = [u8; 32]>,
     {
         TypedMmrHandle {
@@ -170,14 +178,17 @@ pub struct TypedMmrHandle<T, H = Sha256Hasher> {
 
 impl<T, H> TypedMmrHandle<T, H>
 where
-    T: BorshSerialize + BorshDeserialize,
+    T: Archive + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>>,
+    Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
     H: MerkleHasher<Hash = [u8; 32]>,
 {
     /// Append data to the MMR (blocking version)
     ///
     /// Atomically stores both the MMR hash and the original data.
     pub fn append_blocking(&self, data: &T) -> DbResult<u64> {
-        let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
+        let bytes = rkyv::to_bytes::<RkyvError>(data)
+            .map_err(|e| DbError::CodecError(e.to_string()))?
+            .into_vec();
         let hash = H::hash_leaf(&bytes).into();
 
         self.handle.ops.append_leaf_with_preimage_blocking(
@@ -191,7 +202,9 @@ where
     ///
     /// Atomically stores both the MMR hash and the original data.
     pub async fn append(&self, data: &T) -> DbResult<u64> {
-        let bytes = borsh::to_vec(data).map_err(|e| DbError::CodecError(e.to_string()))?;
+        let bytes = rkyv::to_bytes::<RkyvError>(data)
+            .map_err(|e| DbError::CodecError(e.to_string()))?
+            .into_vec();
         let hash = H::hash_leaf(&bytes).into();
 
         self.handle
@@ -215,7 +228,8 @@ where
                 ))
             })?;
 
-        borsh::from_slice(&bytes).map_err(|e| DbError::CodecError(e.to_string()))
+        unsafe { rkyv::from_bytes_unchecked::<T, RkyvError>(&bytes) }
+            .map_err(|e| DbError::CodecError(e.to_string()))
     }
 
     /// Get data by leaf index (async version)
@@ -234,7 +248,8 @@ where
                 ))
             })?;
 
-        borsh::from_slice(&bytes).map_err(|e| DbError::CodecError(e.to_string()))
+        unsafe { rkyv::from_bytes_unchecked::<T, RkyvError>(&bytes) }
+            .map_err(|e| DbError::CodecError(e.to_string()))
     }
 
     /// Get the underlying hash-only handle

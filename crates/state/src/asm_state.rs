@@ -1,6 +1,5 @@
 //! State bookkeeping necessary for ASM to run.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use rkyv::{
     rancor::Fallible,
     with::{ArchiveWith, DeserializeWith, SerializeWith},
@@ -60,8 +59,6 @@ where
     Debug,
     Clone,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,

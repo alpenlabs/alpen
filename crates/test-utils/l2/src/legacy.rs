@@ -6,8 +6,8 @@ use bitcoin::{
     secp256k1::{SecretKey, SECP256K1},
     Amount, XOnlyPublicKey,
 };
-use borsh::to_vec;
 use rand::{rngs::StdRng, SeedableRng};
+use rkyv::rancor::Error as RkyvError;
 use strata_checkpoint_types::{Checkpoint, CheckpointSidecar, SignedCheckpoint};
 use strata_consensus_logic::genesis::make_l2_genesis;
 use strata_crypto::EvenSecretKey;
@@ -158,7 +158,11 @@ pub fn get_test_signed_checkpoint() -> SignedCheckpoint {
             ArbitraryGenerator::new().generate(),
             ArbitraryGenerator::new().generate(),
             ArbitraryGenerator::new().generate(),
-            CheckpointSidecar::new(to_vec(&chstate).unwrap()),
+            CheckpointSidecar::new(
+                rkyv::to_bytes::<RkyvError>(&chstate)
+                    .expect("serialize chainstate")
+                    .into_vec(),
+            ),
         ),
         ArbitraryGenerator::new().generate(),
     )

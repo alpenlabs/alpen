@@ -5,7 +5,6 @@
 use core::fmt;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition};
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId};
@@ -23,8 +22,6 @@ use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1Blo
     Eq,
     PartialEq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -107,8 +104,6 @@ impl CheckpointState {
     Eq,
     PartialEq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -145,8 +140,6 @@ impl CheckpointL1Ref {
     Eq,
     PartialEq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,

@@ -2,7 +2,6 @@
 //! environment's state.  For now the EVM EL is the only execution environment.
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_csm_types::BlobSpec;
@@ -18,8 +17,6 @@ use crate::prelude::StateQueue;
     Eq,
     PartialEq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -57,8 +54,6 @@ impl ExecUpdate {
     Debug,
     Eq,
     PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -139,8 +134,6 @@ impl UpdateInput {
     Debug,
     Eq,
     PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -197,8 +190,6 @@ impl UpdateOutput {
     Eq,
     PartialEq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -238,8 +229,6 @@ pub fn construct_ops_from_deposit_intents(
     Eq,
     PartialEq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,

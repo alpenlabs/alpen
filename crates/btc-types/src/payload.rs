@@ -2,10 +2,7 @@
 //!
 //! These types don't care about the *purpose* of the payloads, we only care about what's in them.
 
-use std::io;
-
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use rkyv::{
     Archived, Place, Resolver,
@@ -27,8 +24,6 @@ use strata_l1_txfmt::TagData;
     Ord,
     PartialOrd,
     Hash,
-    BorshDeserialize,
-    BorshSerialize,
     IntoPrimitive,
     TryFromPrimitive,
     Serialize,
@@ -37,7 +32,6 @@ use strata_l1_txfmt::TagData;
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum PayloadDest {
     /// If we expect the DA to be on the L1 chain that we settle to. This is
@@ -63,8 +57,6 @@ impl<'a> Arbitrary<'a> for PayloadDest {
     PartialEq,
     Hash,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -107,8 +99,6 @@ impl BlobSpec {
     PartialEq,
     Hash,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -213,41 +203,6 @@ impl L1Payload {
     }
 }
 
-impl BorshSerialize for L1Payload {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize payload Vec<Vec<u8>>
-        BorshSerialize::serialize(&self.data, writer)?;
-
-        // Serialize TagData fields
-        BorshSerialize::serialize(&self.tag.subproto_id(), writer)?;
-        BorshSerialize::serialize(&self.tag.tx_type(), writer)?;
-        BorshSerialize::serialize(&self.tag.aux_data().to_vec(), writer)?;
-
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for L1Payload {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize payload Vec<Vec<u8>>
-        let data = Vec::<Vec<u8>>::deserialize_reader(reader)?;
-
-        // Deserialize TagData fields
-        let subproto_id = u8::deserialize_reader(reader)?;
-        let tx_type = u8::deserialize_reader(reader)?;
-        let aux_data = Vec::<u8>::deserialize_reader(reader)?;
-
-        let tag = TagData::new(subproto_id, tx_type, aux_data).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid TagData: {}", e),
-            )
-        })?;
-
-        Ok(Self { data, tag })
-    }
-}
-
 // REVIEW: serde serialize/deserialize is only needed for the strata-dbtool
 impl Serialize for L1Payload {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -315,16 +270,7 @@ impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
 ///
 /// These are never stored on-chain.
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
 // TODO: rename this to L1PayloadIntent and remove the dest field
 pub struct PayloadIntent {
@@ -373,15 +319,16 @@ impl PayloadIntent {
 
 #[cfg(test)]
 mod tests {
+    use rkyv::rancor::Error as RkyvError;
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::payload::L1Payload;
 
     #[test]
-    fn test_l1_payload_borsh_roundtrip() {
+    fn test_l1_payload_rkyv_roundtrip() {
         let l1_payload: L1Payload = ArbitraryGenerator::new().generate();
-        let buf = borsh::to_vec(&l1_payload).unwrap();
-        let res: L1Payload = borsh::from_slice(&buf).unwrap();
+        let buf = rkyv::to_bytes::<RkyvError>(&l1_payload).unwrap();
+        let res: L1Payload = rkyv::from_bytes::<L1Payload, RkyvError>(&buf).unwrap();
         assert_eq!(res, l1_payload);
     }
 

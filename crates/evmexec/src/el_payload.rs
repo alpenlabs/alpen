@@ -1,6 +1,5 @@
 use alloy_rpc_types::engine::ExecutionPayloadV1;
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use reth_primitives::{Block, TransactionSigned};
 use revm_primitives::{FixedBytes, B256};
 use strata_primitives::{
@@ -10,7 +9,7 @@ use strata_primitives::{
 use strata_state::exec_update::{Op, UpdateInput};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct ElPayload {
     /// The parent hash of the block.
     pub parent_hash: Buf32,

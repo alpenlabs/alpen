@@ -6,12 +6,11 @@
 
 use std::any::Any;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef,
-    VerifiedAuxData, msg::InterprotoMsg,
+    AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, InterprotoMsg, RkyvState,
+    SectionState, TxInputRef, VerifiedAuxData,
 };
 
 /// Trait for defining subprotocol behavior within the ASM framework.
@@ -77,7 +76,7 @@ pub trait Subprotocol: 'static {
     type Params;
 
     /// State type serialized into the ASM state structure.
-    type State: Any + BorshDeserialize + BorshSerialize;
+    type State: Any + RkyvState;
 
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + InterprotoMsg + Any;

@@ -1,4 +1,3 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_crypto::threshold_signature::ThresholdConfig;
 use strata_primitives::roles::Role;
 
@@ -9,7 +8,7 @@ use strata_primitives::roles::Role;
 /// provided when constructing this struct. However, it does NOT prevent logical errors
 /// like using the same config for multiple roles or mismatched role-field assignments.
 /// The benefit is avoiding missing fields at compile-time rather than runtime validation.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct AdministrationSubprotoParams {
     /// ThresholdConfig for [StrataAdministrator](Role::StrataAdministrator).
     pub strata_administrator: ThresholdConfig,

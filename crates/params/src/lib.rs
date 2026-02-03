@@ -1,7 +1,6 @@
 //! Global consensus parameters for the rollup.
 
 use bitcoin::{Amount, Network, XOnlyPublicKey};
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::GenesisL1View;
 use strata_identifiers::{Buf32, CredRule};
@@ -111,7 +110,7 @@ impl RollupParams {
 }
 
 /// Describes how we decide to wait for proofs for checkpoints to generate.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProofPublishMode {
     /// Timeout in secs after which a blank proof is generated.

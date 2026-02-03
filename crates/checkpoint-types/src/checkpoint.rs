@@ -1,7 +1,6 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use rkyv::{
-    rancor::Fallible,
+    rancor::{Error as RkyvError, Fallible},
     with::{ArchiveWith, DeserializeWith, SerializeWith},
     Archived, Place, Resolver,
 };
@@ -55,8 +54,6 @@ where
     PartialEq,
     Eq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -80,8 +77,6 @@ pub struct CheckpointCommitment {
     PartialEq,
     Eq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -143,8 +138,11 @@ impl Checkpoint {
     pub fn construct_receipt(&self) -> ProofReceipt {
         let proof = self.proof().clone();
         let output = self.batch_transition();
-        let public_values =
-            PublicValues::new(borsh::to_vec(&output).expect("checkpoint: proof output"));
+        let public_values = PublicValues::new(
+            rkyv::to_bytes::<RkyvError>(output)
+                .expect("checkpoint: proof output")
+                .into_vec(),
+        );
         ProofReceipt::new(proof, public_values)
     }
 
@@ -152,10 +150,10 @@ impl Checkpoint {
         // FIXME make this more structured and use incremental hashing
 
         let mut buf = vec![];
-        let batch_serialized = borsh::to_vec(&self.commitment.batch_info)
+        let batch_serialized = rkyv::to_bytes::<RkyvError>(&self.commitment.batch_info)
             .expect("could not serialize checkpoint info");
 
-        buf.extend(&batch_serialized);
+        buf.extend(batch_serialized.as_ref());
         buf.extend(self.proof.as_bytes());
 
         hash::raw(&buf)
@@ -172,8 +170,6 @@ impl Checkpoint {
     PartialEq,
     Eq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -199,8 +195,6 @@ impl CheckpointSidecar {
 #[derive(
     Clone,
     Debug,
-    BorshDeserialize,
-    BorshSerialize,
     Arbitrary,
     PartialEq,
     Eq,
@@ -241,8 +235,6 @@ impl From<SignedCheckpoint> for Checkpoint {
     PartialEq,
     Eq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -266,8 +258,6 @@ impl CommitmentInfo {
     PartialEq,
     Eq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,

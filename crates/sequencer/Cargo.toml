@@ -30,7 +30,7 @@ strata-storage.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true
-borsh.workspace = true
+rkyv.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

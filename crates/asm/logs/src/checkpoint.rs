@@ -1,27 +1,26 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
 use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
 use strata_codec::Codec;
-use strata_codec_utils::CodecBorsh;
+use strata_codec_utils::CodecRkyv;
 use strata_msg_fmt::TypeId;
 use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
 
 use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE;
 
 /// Details for a checkpoint update event.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Codec)]
+#[derive(Debug, Clone, Codec)]
 pub struct CheckpointUpdate {
     /// Commitment to the epoch terminal block.
     epoch_commitment: EpochCommitment,
 
     /// Metadata describing the checkpoint batch.
-    batch_info: CodecBorsh<BatchInfo>,
+    batch_info: CodecRkyv<BatchInfo>,
 
     /// Chainstate transition committed by the checkpoint proof.
-    chainstate_transition: CodecBorsh<ChainstateRootTransition>,
+    chainstate_transition: CodecRkyv<ChainstateRootTransition>,
 
     /// Hash of the L1 transaction that carried the checkpoint proof.
-    checkpoint_txid: CodecBorsh<BitcoinTxid>,
+    checkpoint_txid: CodecRkyv<BitcoinTxid>,
 }
 
 impl CheckpointUpdate {
@@ -34,9 +33,9 @@ impl CheckpointUpdate {
     ) -> Self {
         Self {
             epoch_commitment,
-            batch_info: CodecBorsh::new(batch_info),
-            chainstate_transition: CodecBorsh::new(chainstate_transition),
-            checkpoint_txid: CodecBorsh::new(checkpoint_txid),
+            batch_info: CodecRkyv::new(batch_info),
+            chainstate_transition: CodecRkyv::new(chainstate_transition),
+            checkpoint_txid: CodecRkyv::new(checkpoint_txid),
         }
     }
 

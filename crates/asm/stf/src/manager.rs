@@ -4,7 +4,8 @@ use std::{any::Any, collections::BTreeMap, marker};
 
 use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, InterprotoMsg, Loader, MsgRelayer,
-    SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    SectionState, StateDeserializer, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData,
 };
 
 /// Wrapper around the common subprotocol interface that handles the common
@@ -257,7 +258,10 @@ impl<'c> AnchorStateLoader<'c> {
 }
 
 impl<'c> Loader for AnchorStateLoader<'c> {
-    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params) {
+    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params)
+    where
+        rkyv::Archived<S::State>: rkyv::Deserialize<S::State, StateDeserializer>,
+    {
         // Load or create the subprotocol state.
         // OPTIMIZE: Linear scan is done every time to find the section
         let state = match self.anchor.find_section(S::ID) {

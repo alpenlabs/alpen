@@ -1,53 +1,79 @@
-use rkyv::{
-    Archive, Archived, Deserialize, Place, Resolver, Serialize,
-    rancor::Fallible,
-    with::{ArchiveWith, DeserializeWith, SerializeWith},
-};
+use anyhow::{Error as AnyhowError, anyhow};
+use rkyv::{Archive, Deserialize, Serialize, rancor::Error as RkyvError};
 use strata_paas::TaskStatus;
 use strata_primitives::proof::{ProofContext, ProofKey};
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
-use zkaleido::ProofReceiptWithMetadata;
+use zkaleido::{Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues, ZkVm};
 
 use crate::{
     define_table_with_default_codec, define_table_with_seek_key_codec, define_table_without_codec,
     macros::lexicographic::{LexicographicKey, decode_key, encode_key},
 };
 
-/// Serializer for [`TaskStatus`] as JSON bytes for rkyv.
-struct TaskStatusAsJson;
+/// Serializer for [`ProofReceiptWithMetadata`] as bytes for rkyv.
+#[derive(Archive, Serialize, Deserialize)]
+struct ProofReceiptWithMetadataRkyv {
+    receipt: ProofReceiptRkyv,
+    metadata: ProofMetadataRkyv,
+}
 
-impl ArchiveWith<TaskStatus> for TaskStatusAsJson {
-    type Archived = Archived<Vec<u8>>;
-    type Resolver = Resolver<Vec<u8>>;
+/// Serializer for [`ProofReceipt`] as bytes for rkyv.
+#[derive(Archive, Serialize, Deserialize)]
+struct ProofReceiptRkyv {
+    proof: Vec<u8>,
+    public_values: Vec<u8>,
+}
 
-    fn resolve_with(field: &TaskStatus, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        let bytes = serde_json::to_vec(field).expect("serialize TaskStatus");
-        rkyv::Archive::resolve(&bytes, resolver, out);
+/// Serializer for [`ProofMetadata`] as bytes for rkyv.
+#[derive(Archive, Serialize, Deserialize)]
+struct ProofMetadataRkyv {
+    zkvm: u8,
+    version: String,
+}
+
+impl From<&ProofReceiptWithMetadata> for ProofReceiptWithMetadataRkyv {
+    fn from(value: &ProofReceiptWithMetadata) -> Self {
+        Self {
+            receipt: ProofReceiptRkyv {
+                proof: value.receipt().proof().as_bytes().to_vec(),
+                public_values: value.receipt().public_values().as_bytes().to_vec(),
+            },
+            metadata: ProofMetadataRkyv {
+                zkvm: zkvm_to_tag(*value.metadata().zkvm()),
+                version: value.metadata().version().to_string(),
+            },
+        }
     }
 }
 
-impl<S> SerializeWith<TaskStatus, S> for TaskStatusAsJson
-where
-    S: Fallible + ?Sized,
-    Vec<u8>: rkyv::Serialize<S>,
-{
-    fn serialize_with(field: &TaskStatus, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let bytes = serde_json::to_vec(field).expect("serialize TaskStatus");
-        rkyv::Serialize::serialize(&bytes, serializer)
+impl TryFrom<ProofReceiptWithMetadataRkyv> for ProofReceiptWithMetadata {
+    type Error = anyhow::Error;
+
+    fn try_from(value: ProofReceiptWithMetadataRkyv) -> Result<Self, Self::Error> {
+        let zkvm = zkvm_from_tag(value.metadata.zkvm)?;
+        let receipt = ProofReceipt::new(
+            Proof::new(value.receipt.proof),
+            PublicValues::new(value.receipt.public_values),
+        );
+        let metadata = ProofMetadata::new(zkvm, value.metadata.version);
+        Ok(ProofReceiptWithMetadata::new(receipt, metadata))
     }
 }
 
-impl<D> DeserializeWith<Archived<Vec<u8>>, TaskStatus, D> for TaskStatusAsJson
-where
-    D: Fallible + ?Sized,
-    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
-{
-    fn deserialize_with(
-        field: &Archived<Vec<u8>>,
-        deserializer: &mut D,
-    ) -> Result<TaskStatus, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(serde_json::from_slice(&bytes).expect("deserialize TaskStatus"))
+fn zkvm_to_tag(zkvm: ZkVm) -> u8 {
+    match zkvm {
+        ZkVm::SP1 => 0,
+        ZkVm::Risc0 => 1,
+        ZkVm::Native => 2,
+    }
+}
+
+fn zkvm_from_tag(tag: u8) -> Result<ZkVm, anyhow::Error> {
+    match tag {
+        0 => Ok(ZkVm::SP1),
+        1 => Ok(ZkVm::Risc0),
+        2 => Ok(ZkVm::Native),
+        _ => Err(anyhow!("unknown zkvm tag {tag}")),
     }
 }
 
@@ -71,17 +97,29 @@ impl KeyCodec<ProofSchema> for ProofKey {
 
 impl ValueCodec<ProofSchema> for ProofReceiptWithMetadata {
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
-        serde_json::to_vec(self).map_err(|err| CodecError::SerializationFailed {
-            schema: ProofSchema::tree_name(),
-            source: err.into(),
-        })
+        let wrapper = ProofReceiptWithMetadataRkyv::from(self);
+        rkyv::to_bytes::<RkyvError>(&wrapper)
+            .map(|bytes| bytes.as_ref().to_vec())
+            .map_err(|err| CodecError::SerializationFailed {
+                schema: ProofSchema::tree_name(),
+                source: err.into(),
+            })
     }
 
     fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
-        serde_json::from_slice(data).map_err(|err| CodecError::SerializationFailed {
-            schema: ProofSchema::tree_name(),
-            source: err.into(),
-        })
+        let wrapper =
+            rkyv::from_bytes::<ProofReceiptWithMetadataRkyv, RkyvError>(data).map_err(|err| {
+                CodecError::SerializationFailed {
+                    schema: ProofSchema::tree_name(),
+                    source: err.into(),
+                }
+            })?;
+        wrapper
+            .try_into()
+            .map_err(|err: AnyhowError| CodecError::SerializationFailed {
+                schema: ProofSchema::tree_name(),
+                source: err.into(),
+            })
     }
 }
 
@@ -125,7 +163,6 @@ impl LexicographicKey for SerializableTaskId {
 pub struct SerializableTaskRecord {
     pub task_id: SerializableTaskId,
     pub uuid: String,
-    #[rkyv(with = TaskStatusAsJson)]
     pub status: TaskStatus,
     pub created_at_secs: u64,
     pub updated_at_secs: u64,

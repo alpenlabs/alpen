@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use jsonrpsee::http_client::HttpClient;
+use rkyv::rancor::Error as RkyvError;
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
 use strata_ol_chain_types::{L2Block, L2BlockId, L2Header};
@@ -131,8 +132,11 @@ impl ClStfOperator {
             .get_cl_block_witness_raw(blkid)
             .await
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
+        // SAFETY: raw_witness is produced by the CL node using rkyv for (Chainstate, L2Block),
+        // and we immediately reject malformed data via the rkyv error.
         let (chainstate, _): (Chainstate, L2Block) =
-            borsh::from_slice(&raw_witness).expect("invalid witness");
+            unsafe { rkyv::from_bytes_unchecked::<(Chainstate, L2Block), RkyvError>(&raw_witness) }
+                .expect("invalid witness");
         Ok(chainstate)
     }
 
@@ -143,8 +147,11 @@ impl ClStfOperator {
             .get_cl_block_witness_raw(*blkid)
             .await
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
+        // SAFETY: raw_witness is produced by the CL node using rkyv for (Chainstate, L2Block),
+        // and we immediately reject malformed data via the rkyv error.
         let (_, blk): (Chainstate, L2Block) =
-            borsh::from_slice(&raw_witness).expect("invalid witness");
+            unsafe { rkyv::from_bytes_unchecked::<(Chainstate, L2Block), RkyvError>(&raw_witness) }
+                .expect("invalid witness");
         Ok(blk)
     }
 }

@@ -27,7 +27,7 @@ define_table_with_integer_key!(
     (OLBlockHeightSchema) u64 => Vec<OLBlockId>
 );
 
-// OLBlock is SSZ-generated, so we use SSZ serialization instead of Borsh
+// OLBlock is SSZ-generated, so we use SSZ serialization.
 impl ValueCodec<OLBlockSchema> for OLBlock {
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.as_ssz_bytes())

@@ -1,8 +1,7 @@
 //! Schnorr signature signing and verification.
 
-use std::{io, ops::Deref};
+use std::ops::Deref;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
 use secp256k1::{
     schnorr::Signature, Keypair, Message, Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1,
@@ -137,22 +136,6 @@ impl TryFrom<Buf32> for EvenPublicKey {
 
     fn try_from(value: Buf32) -> Result<Self, Self::Error> {
         let x_only = XOnlyPublicKey::from_slice(value.as_ref())?;
-        Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even).into())
-    }
-}
-
-impl BorshSerialize for EvenPublicKey {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        let x_only = self.0.x_only_public_key().0;
-        BorshSerialize::serialize(&Buf32::from(x_only.serialize()), writer)
-    }
-}
-
-impl BorshDeserialize for EvenPublicKey {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let buf = Buf32::deserialize_reader(reader)?;
-        let x_only = XOnlyPublicKey::from_slice(buf.as_ref())
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even).into())
     }
 }

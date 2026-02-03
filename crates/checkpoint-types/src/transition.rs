@@ -1,5 +1,4 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{Buf32, Epoch};
 
@@ -11,8 +10,6 @@ use strata_identifiers::{Buf32, Epoch};
     Eq,
     PartialEq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -47,8 +44,6 @@ pub struct BatchTransition {
     Eq,
     PartialEq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,

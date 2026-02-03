@@ -17,8 +17,8 @@ strata-status.workspace = true
 strata-storage.workspace = true
 
 async-trait.workspace = true
-borsh.workspace = true
 futures.workspace = true
+rkyv.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -1,9 +1,7 @@
 //! Impl blocks for checkpoint payload types.
 
 use ssz_types::VariableList;
-use strata_identifiers::{
-    Buf64, Epoch, OLBlockCommitment, impl_borsh_via_ssz, impl_borsh_via_ssz_fixed,
-};
+use strata_identifiers::{Buf64, Epoch, OLBlockCommitment};
 use strata_ol_chain_types_new::OLLog;
 
 use crate::{
@@ -29,8 +27,6 @@ impl CheckpointTip {
         &self.l2_commitment
     }
 }
-
-impl_borsh_via_ssz_fixed!(CheckpointTip);
 
 impl CheckpointSidecar {
     pub fn new(
@@ -129,8 +125,6 @@ impl CheckpointPayload {
         &self.proof
     }
 }
-
-impl_borsh_via_ssz!(CheckpointPayload);
 
 impl SignedCheckpointPayload {
     pub fn new(inner: CheckpointPayload, signature: Buf64) -> Self {

@@ -11,6 +11,7 @@ use alloy_rpc_types::{
 use alpen_reth_evm::{address_to_subject, constants::COINBASE_ADDRESS, subject_to_address};
 use alpen_reth_node::AlpenPayloadAttributes;
 use revm_primitives::B256;
+use rkyv::rancor::Error as RkyvError;
 use strata_bridge_types::WithdrawalIntent;
 use strata_db_types::DbError;
 use strata_eectl::{
@@ -198,7 +199,9 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
 
         let execution_payload_data = ExecPayloadData::new(
             ExecUpdate::new(update_input, update_output),
-            borsh::to_vec(&el_payload).unwrap(),
+            rkyv::to_bytes::<RkyvError>(&el_payload)
+                .expect("el payload rkyv serialization")
+                .into_vec(),
             ops,
         );
 
@@ -209,7 +212,11 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
     }
 
     async fn submit_new_payload(&self, payload: ExecPayloadData) -> EngineResult<BlockStatus> {
-        let Ok(el_payload) = borsh::from_slice::<ElPayload>(payload.accessory_data()) else {
+        // SAFETY: accessory_data is built from our rkyv serializer when assembling payloads, and
+        // we treat any decode failure as invalid input.
+        let Ok(el_payload) = (unsafe {
+            rkyv::from_bytes_unchecked::<ElPayload, RkyvError>(payload.accessory_data())
+        }) else {
             // In particular, this happens if we try to call it with for genesis block.
             warn!("submit_new_payload called with malformed block accessory, this might be a bug");
             return Ok(BlockStatus::Invalid);
@@ -576,7 +583,12 @@ mod tests {
 
         let mut arb = strata_test_utils::ArbitraryGenerator::new();
         let l2block: L2Block = arb.generate();
-        let accessory = L2BlockAccessory::new(borsh::to_vec(&el_payload).unwrap(), 0);
+        let accessory = L2BlockAccessory::new(
+            rkyv::to_bytes::<RkyvError>(&el_payload)
+                .expect("el payload rkyv serialization")
+                .into_vec(),
+            0,
+        );
         let l2block_bundle = L2BlockBundle::new(l2block, accessory);
 
         let evm_l2_block = EVML2Block::try_extract(&l2block_bundle).unwrap();
@@ -643,7 +655,9 @@ mod tests {
             block_hash: Default::default(),
             transactions: Default::default(),
         };
-        let accessory_data = borsh::to_vec(&el_payload).unwrap();
+        let accessory_data = rkyv::to_bytes::<RkyvError>(&el_payload)
+            .expect("el payload rkyv serialization")
+            .into_vec();
 
         let update_input = make_update_input_from_payload_and_ops(el_payload, &[]).unwrap();
         let update_output = UpdateOutput::new_from_state(Buf32::zero());

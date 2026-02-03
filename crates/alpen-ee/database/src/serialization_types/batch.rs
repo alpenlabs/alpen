@@ -97,7 +97,7 @@ impl TryFrom<DBBatch> for Batch {
 /// Database representation of L1DaBlockRef.
 #[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(crate) struct DBL1DaBlockRef {
-    /// L1BlockCommitment serialized via its Borsh impl.
+    /// L1BlockCommitment serialized via rkyv.
     block: L1BlockCommitment,
     /// Transactions as (txid, wtxid) pairs, stored as raw bytes.
     txns: Vec<DBTxidPair>,

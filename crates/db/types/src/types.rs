@@ -7,9 +7,8 @@ use bitcoin::{
     consensus::{self, deserialize, serialize},
     Transaction,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use rkyv::{
-    rancor::Fallible,
+    rancor::{Error as RkyvError, Fallible},
     with::{ArchiveWith, DeserializeWith, SerializeWith},
     Archive as RkyvArchive, Archived, Deserialize as RkyvDeserialize, Place, Resolver,
     Serialize as RkyvSerialize,
@@ -25,17 +24,7 @@ use strata_primitives::buf::Buf32;
 use zkaleido::Proof;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct IntentEntry {
     pub intent: PayloadIntent,
     pub status: IntentStatus,
@@ -63,17 +52,7 @@ impl IntentEntry {
 
 /// Status of Intent indicating various stages of being bundled to L1 transaction.
 /// Unbundled Intents are collected and bundled to create [`BundledPayloadEntry`].
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum IntentStatus {
     // It is not bundled yet, and thus will be collected and processed by bundler.
     Unbundled,
@@ -82,16 +61,7 @@ pub enum IntentStatus {
 }
 
 /// Represents data for a payload we're still planning to post to L1.
-#[derive(
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Clone, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct BundledPayloadEntry {
     pub payload: L1Payload,
     pub commit_txid: Buf32,
@@ -188,8 +158,6 @@ impl fmt::Display for BundledPayloadEntry {
     Debug,
     Clone,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Arbitrary,
     Serialize,
     Deserialize,
@@ -225,8 +193,6 @@ pub enum L1BundleStatus {
     Debug,
     Clone,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Arbitrary,
     Serialize,
     Deserialize,
@@ -280,8 +246,6 @@ impl L1TxEntry {
     Debug,
     Clone,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Arbitrary,
     Serialize,
     Deserialize,
@@ -310,17 +274,7 @@ pub enum L1TxStatus {
 }
 
 /// Entry corresponding to a BatchCommitment
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct CheckpointEntry {
     /// The batch checkpoint containing metadata, state transitions, and proof data.
     pub checkpoint: Checkpoint,
@@ -355,8 +309,11 @@ impl CheckpointEntry {
         transition: BatchTransition,
         chainstate: &Chainstate,
     ) -> Self {
-        let sidecar =
-            CheckpointSidecar::new(borsh::to_vec(chainstate).expect("serialize chainstate"));
+        let sidecar = CheckpointSidecar::new(
+            rkyv::to_bytes::<RkyvError>(chainstate)
+                .expect("serialize chainstate")
+                .into_vec(),
+        );
         let checkpoint = Checkpoint::new(info, transition, Proof::default(), sidecar);
         Self::new(
             checkpoint,
@@ -378,16 +335,7 @@ impl From<CheckpointEntry> for Checkpoint {
 
 /// Status of the commmitment
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
-    Serialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
+    Debug, Clone, PartialEq, Arbitrary, Serialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
 pub enum CheckpointProvingStatus {
     /// Proof has not been created for this checkpoint
@@ -397,16 +345,7 @@ pub enum CheckpointProvingStatus {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
-    Serialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
+    Debug, Clone, PartialEq, Arbitrary, Serialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
 pub enum CheckpointConfStatus {
     /// Pending to be posted on L1
@@ -489,16 +428,7 @@ where
 }
 
 /// Entry for an OL checkpoint.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct OLCheckpointEntry {
     /// The checkpoint payload to be posted to L1.
     #[rkyv(with = CheckpointPayloadAsBytes)]
@@ -519,17 +449,7 @@ impl OLCheckpointEntry {
 }
 
 /// Signing status of an OL checkpoint.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Serialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Serialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum OLCheckpointStatus {
     /// Not signed yet.
     Unsigned,

@@ -3,14 +3,14 @@ use std::{
     sync::Arc,
 };
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::rancor::Error as RkyvError;
 use strata_ol_chain_types::{L2Block, L2BlockHeader};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::RollupParams;
 use strata_primitives::buf::Buf32;
 use zkaleido::{
-    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
-    ZkVmInputResult, ZkVmProgram, ZkVmResult,
+    AggregationInput, DataFormatError, ProofReceiptWithMetadata, PublicValues, VerifyingKey,
+    ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -25,7 +25,7 @@ pub struct ClStfInput {
     pub evm_ee_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ClStfOutput {
     pub epoch: u64,
     pub initial_chainstate_root: Buf32,
@@ -53,9 +53,21 @@ impl ZkVmProgram for ClStfProgram {
     {
         let mut input_builder = B::new();
         input_builder.write_serde(&input.rollup_params)?;
-        input_builder.write_borsh(&input.parent_header)?;
-        input_builder.write_borsh(&input.chainstate)?;
-        input_builder.write_borsh(&input.l2_blocks)?;
+        let parent_header_bytes =
+            rkyv::to_bytes::<RkyvError>(&input.parent_header).map_err(|err| {
+                zkaleido::ZkVmInputError::DataFormat(DataFormatError::Other(err.to_string()))
+            })?;
+        input_builder.write_buf(parent_header_bytes.as_ref())?;
+
+        let chainstate_bytes = rkyv::to_bytes::<RkyvError>(&input.chainstate).map_err(|err| {
+            zkaleido::ZkVmInputError::DataFormat(DataFormatError::Other(err.to_string()))
+        })?;
+        input_builder.write_buf(chainstate_bytes.as_ref())?;
+
+        let l2_blocks_bytes = rkyv::to_bytes::<RkyvError>(&input.l2_blocks).map_err(|err| {
+            zkaleido::ZkVmInputError::DataFormat(DataFormatError::Other(err.to_string()))
+        })?;
+        input_builder.write_buf(l2_blocks_bytes.as_ref())?;
 
         let (proof, vk) = input.evm_ee_proof_with_vk.clone();
         input_builder.write_proof(&AggregationInput::new(proof, vk))?;
@@ -67,7 +79,11 @@ impl ZkVmProgram for ClStfProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        H::extract_borsh_public_output(public_values)
+        rkyv::from_bytes::<Self::Output, RkyvError>(public_values.as_bytes()).map_err(
+            |err: RkyvError| ZkVmError::OutputExtractionError {
+                source: DataFormatError::Other(err.to_string()),
+            },
+        )
     }
 }
 

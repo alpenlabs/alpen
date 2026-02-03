@@ -93,9 +93,6 @@ impl AsmLogEntry {
     }
 }
 
-// Borsh implementations are a shim over SSZ with length-prefixing to support nested structs
-strata_identifiers::impl_borsh_via_ssz!(AsmLogEntry);
-
 // Manual Arbitrary implementation for testing/benchmarking
 #[cfg(feature = "arbitrary")]
 impl<'a> Arbitrary<'a> for AsmLogEntry {

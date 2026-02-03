@@ -1,6 +1,5 @@
 use std::fmt::{self, Display};
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 use crate::{EvmEeBlockCommitment, L2BlockCommitment};
@@ -17,8 +16,6 @@ use crate::{EvmEeBlockCommitment, L2BlockCommitment};
     PartialEq,
     Eq,
     Hash,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -52,8 +49,6 @@ pub enum ProofContext {
     PartialEq,
     Eq,
     Hash,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -76,8 +71,6 @@ pub enum ProofZkVm {
     PartialEq,
     Eq,
     Hash,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,

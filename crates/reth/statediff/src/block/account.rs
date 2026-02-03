@@ -54,8 +54,8 @@ mod tests {
             code_hash: B256::from([0x11u8; 32]),
         };
 
-        let encoded = bincode::serialize(&state).unwrap();
-        let decoded: AccountSnapshot = bincode::deserialize(&encoded).unwrap();
+        let encoded = serde_json::to_vec(&state).unwrap();
+        let decoded: AccountSnapshot = serde_json::from_slice(&encoded).unwrap();
 
         assert_eq!(decoded, state);
     }
@@ -71,8 +71,8 @@ mod tests {
             }),
         };
 
-        let encoded = bincode::serialize(&change).unwrap();
-        let decoded: BlockAccountChange = bincode::deserialize(&encoded).unwrap();
+        let encoded = serde_json::to_vec(&change).unwrap();
+        let decoded: BlockAccountChange = serde_json::from_slice(&encoded).unwrap();
 
         assert_eq!(decoded, change);
     }
@@ -88,8 +88,8 @@ mod tests {
             current: None,
         };
 
-        let encoded = bincode::serialize(&change).unwrap();
-        let decoded: BlockAccountChange = bincode::deserialize(&encoded).unwrap();
+        let encoded = serde_json::to_vec(&change).unwrap();
+        let decoded: BlockAccountChange = serde_json::from_slice(&encoded).unwrap();
 
         assert_eq!(decoded, change);
     }

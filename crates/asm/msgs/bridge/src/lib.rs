@@ -4,14 +4,54 @@
 //! payload so other subprotocols can dispatch withdrawals without pulling in the
 //! bridge implementation crate.
 
-use std::any::Any;
+use std::{any::Any, str::FromStr};
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
+
+/// Serializer for [`Descriptor`] as string for rkyv.
+struct DescriptorAsString;
+
+impl ArchiveWith<Descriptor> for DescriptorAsString {
+    type Archived = Archived<String>;
+    type Resolver = Resolver<String>;
+
+    fn resolve_with(field: &Descriptor, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.to_string(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Descriptor, S> for DescriptorAsString
+where
+    S: Fallible + ?Sized,
+    String: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Descriptor, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_string(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<String>, Descriptor, D> for DescriptorAsString
+where
+    D: Fallible + ?Sized,
+    Archived<String>: rkyv::Deserialize<String, D>,
+{
+    fn deserialize_with(
+        field: &Archived<String>,
+        deserializer: &mut D,
+    ) -> Result<Descriptor, D::Error> {
+        let desc = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(Descriptor::from_str(&desc).expect("stored descriptor should be valid"))
+    }
+}
 
 /// Bitcoin output specification for a withdrawal operation.
 ///
@@ -24,10 +64,20 @@ use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 /// The destination uses Bitcoin Output Script Descriptors (BOSD), which provide
 /// a standardized way to specify Bitcoin addresses and locking conditions.
 #[derive(
-    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    Arbitrary,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct WithdrawOutput {
     /// Bitcoin Output Script Descriptor specifying the destination address.
+    #[rkyv(with = DescriptorAsString)]
     pub destination: Descriptor,
 
     /// Amount to withdraw (in satoshis).
@@ -55,7 +105,7 @@ impl WithdrawOutput {
 ///
 /// This enum represents all possible message types that the bridge subprotocol can
 /// receive from other subprotocols in the ASM.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BridgeIncomingMsg {
     /// Emitted after a checkpoint proof has been validated. Contains the withdrawal command
     /// specifying the destination descriptor and amount to be withdrawn.

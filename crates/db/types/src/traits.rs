@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_acct_types::CompactMmr64;
 use strata_asm_common::AsmManifest;
@@ -179,8 +178,6 @@ pub trait L2BlockDatabase: Send + Sync + 'static {
     PartialEq,
     Ord,
     PartialOrd,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     rkyv::Archive,
     rkyv::Serialize,

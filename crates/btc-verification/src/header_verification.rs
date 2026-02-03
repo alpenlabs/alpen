@@ -4,7 +4,6 @@ use arbitrary::Arbitrary;
 use bitcoin::{
     BlockHash, CompactTarget, Network, absolute, block::Header, hashes::Hash, params::Params,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use rkyv::{
     Archived, Place, Resolver,
     rancor::Fallible,
@@ -12,7 +11,7 @@ use rkyv::{
 };
 use serde::{Deserialize, Serialize};
 use strata_btc_types::{BtcParams, GenesisL1View};
-use strata_crypto::hash::compute_borsh_hash;
+use strata_crypto::hash::compute_rkyv_hash;
 use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
 use thiserror::Error;
 
@@ -137,8 +136,6 @@ where
     Eq,
     Default,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -298,7 +295,7 @@ impl HeaderVerificationState {
 
     /// Calculate the hash of the verification state
     pub fn compute_hash(&self) -> Result<Buf32, L1VerificationError> {
-        Ok(compute_borsh_hash(&self))
+        Ok(compute_rkyv_hash(self))
     }
 
     /// Gets the next block target (for testing)
@@ -340,8 +337,8 @@ pub fn get_relative_difficulty_adjustment_height(idx: u64, start: u64, params: &
 mod tests {
 
     use bitcoin::{BlockHash, CompactTarget, hashes::Hash, params::MAINNET};
-    use borsh::{BorshDeserialize, BorshSerialize};
     use rand::{Rng, rngs::OsRng};
+    use rkyv::rancor::Error as RkyvError;
     use strata_test_utils_btc::segment::BtcChainSegment;
 
     use crate::*;
@@ -1046,11 +1043,11 @@ mod tests {
     //
     // HeaderVerificationState must be deterministically serializable for consensus.
     // The state hash provides a cryptographic commitment to the verification state,
-    // ensuring all nodes agree on the current chain validation state. Uses Borsh
+    // ensuring all nodes agree on the current chain validation state. Uses rkyv
     // serialization for canonical binary representation.
     //
     // References:
-    // - Borsh Specification: https://borsh.io/
+    // - rkyv documentation: https://rkyv.org/
     // - Consensus Requirements: https://developer.bitcoin.org/devguide/block_chain.html#consensus-rule-changes
     // - Serialization in Bitcoin: https://en.bitcoin.it/wiki/Protocol_documentation#Common_structures
     // ========================================================================
@@ -1099,14 +1096,10 @@ mod tests {
         let height = 40_100;
         let original_state = chain.get_verification_state(height).unwrap();
 
-        // Serialize
-        let mut buffer = Vec::new();
-        original_state
-            .serialize(&mut buffer)
-            .expect("Serialization should succeed");
+        let buffer =
+            rkyv::to_bytes::<RkyvError>(&original_state).expect("Serialization should succeed");
 
-        // Deserialize
-        let deserialized_state = HeaderVerificationState::deserialize(&mut &buffer[..])
+        let deserialized_state = rkyv::from_bytes::<HeaderVerificationState, RkyvError>(&buffer)
             .expect("Deserialization should succeed");
 
         // Hashes should match

@@ -7,7 +7,11 @@ use std::{
 };
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archived, Place, Resolver,
+};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -23,11 +27,12 @@ pub const MAX_SIGNERS: usize = 256;
 /// Defines who can sign (`keys`) and how many must sign (`threshold`).
 /// The threshold is stored as `NonZero<u8>` to enforce at the type level
 /// that it can never be zero.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ThresholdConfig {
     /// Public keys of all authorized signers.
     keys: Vec<CompressedPublicKey>,
     /// Minimum number of signatures required (always >= 1).
+    #[rkyv(with = NonZeroU8AsU8)]
     threshold: NonZero<u8>,
 }
 
@@ -152,11 +157,48 @@ impl Hash for CompressedPublicKey {
 }
 
 /// Represents a change to the threshold configuration.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct ThresholdConfigUpdate {
     add_members: Vec<CompressedPublicKey>,
     remove_members: Vec<CompressedPublicKey>,
+    #[rkyv(with = NonZeroU8AsU8)]
     new_threshold: NonZero<u8>,
+}
+
+/// Serializer for [`NonZero<u8>`] as [`u8`] for rkyv.
+struct NonZeroU8AsU8;
+
+impl ArchiveWith<NonZero<u8>> for NonZeroU8AsU8 {
+    type Archived = Archived<u8>;
+    type Resolver = Resolver<u8>;
+
+    fn resolve_with(field: &NonZero<u8>, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.get(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<NonZero<u8>, S> for NonZeroU8AsU8
+where
+    S: Fallible + ?Sized,
+    u8: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &NonZero<u8>, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.get(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<u8>, NonZero<u8>, D> for NonZeroU8AsU8
+where
+    D: Fallible + ?Sized,
+    Archived<u8>: rkyv::Deserialize<u8, D>,
+{
+    fn deserialize_with(
+        field: &Archived<u8>,
+        deserializer: &mut D,
+    ) -> Result<NonZero<u8>, D::Error> {
+        let value = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(NonZero::new(value).expect("stored non-zero threshold must be non-zero"))
+    }
 }
 
 impl ThresholdConfigUpdate {
@@ -219,6 +261,7 @@ impl<'a> Arbitrary<'a> for ThresholdConfigUpdate {
 
 #[cfg(test)]
 mod tests {
+    use rkyv::rancor::Error as RkyvError;
     use secp256k1::{Secp256k1, SecretKey};
 
     use super::*;
@@ -279,12 +322,13 @@ mod tests {
     }
 
     #[test]
-    fn test_config_borsh_roundtrip() {
+    fn test_config_rkyv_roundtrip() {
         let keys = vec![make_key(1), make_key(2)];
         let config = ThresholdConfig::try_new(keys, NonZero::new(2).unwrap()).unwrap();
 
-        let encoded = borsh::to_vec(&config).unwrap();
-        let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();
+        let encoded = rkyv::to_bytes::<RkyvError>(&config).unwrap();
+        let decoded: ThresholdConfig =
+            rkyv::from_bytes::<ThresholdConfig, RkyvError>(&encoded).unwrap();
 
         assert_eq!(config, decoded);
     }

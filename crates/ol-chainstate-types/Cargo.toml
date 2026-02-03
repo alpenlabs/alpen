@@ -14,5 +14,4 @@ strata-primitives.workspace = true
 strata-state.workspace = true
 
 arbitrary.workspace = true
-borsh.workspace = true
 rkyv.workspace = true

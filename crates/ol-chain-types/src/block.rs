@@ -1,5 +1,4 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use rkyv::{
     rancor::Fallible,
     with::{ArchiveWith, DeserializeWith, SerializeWith},
@@ -64,8 +63,6 @@ use crate::header::{L2BlockHeader, SignedL2BlockHeader};
     Debug,
     Eq,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -132,8 +129,6 @@ impl<'a> Arbitrary<'a> for L2Block {
     Eq,
     PartialEq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -169,8 +164,6 @@ impl L2BlockBody {
     Debug,
     Eq,
     PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -246,8 +239,6 @@ impl L1Segment {
     Eq,
     PartialEq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -274,16 +265,7 @@ impl ExecSegment {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
 pub struct L2BlockAccessory {
     exec_payload: Vec<u8>,
@@ -308,16 +290,7 @@ impl L2BlockAccessory {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Arbitrary,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
 pub struct L2BlockBundle {
     block: L2Block,

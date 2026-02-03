@@ -75,8 +75,9 @@ impl<P: ProgramType> TaskId<P> {
     Eq,
     Serialize,
     Deserialize,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub enum TaskStatus {
     /// Task is waiting to be assigned to a worker

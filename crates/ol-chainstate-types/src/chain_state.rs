@@ -1,9 +1,8 @@
 // use std::ops::Deref;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::WithdrawalIntent;
-use strata_crypto::hash::compute_borsh_hash;
+use strata_crypto::hash::compute_rkyv_hash;
 use strata_identifiers::Epoch;
 use strata_primitives::{
     buf::Buf32,
@@ -21,17 +20,7 @@ use crate::{genesis::GenesisStateData, l1_view::L1ViewState};
 /// pre-state and a block.
 ///
 /// This corresponds to the beacon chain state.
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Chainstate {
     /// The slot that contained the block that produced this chainstate.
     pub(crate) cur_slot: u64,
@@ -126,14 +115,14 @@ impl Chainstate {
         // FIXME this is all broken because we're doing this badly, the real
         // solution is to use SSZ for all of this
         let hashed_state = HashedChainState {
-            prev_block: compute_borsh_hash(&self.prev_block),
+            prev_block: compute_rkyv_hash(&self.prev_block),
             cur_epoch: self.cur_epoch,
-            prev_epoch: compute_borsh_hash(&self.prev_epoch),
-            l1_state_hash: compute_borsh_hash(&self.l1_state),
-            pending_withdraws_hash: compute_borsh_hash(&self.pending_withdraws),
-            exec_env_hash: compute_borsh_hash(&self.exec_env_state),
+            prev_epoch: compute_rkyv_hash(&self.prev_epoch),
+            l1_state_hash: compute_rkyv_hash(&self.l1_state),
+            pending_withdraws_hash: compute_rkyv_hash(&self.pending_withdraws),
+            exec_env_hash: compute_rkyv_hash(&self.exec_env_state),
         };
-        compute_borsh_hash(&hashed_state)
+        compute_rkyv_hash(&hashed_state)
     }
 
     pub fn exec_env_state(&self) -> &ExecEnvState {
@@ -162,16 +151,7 @@ impl Chainstate {
 // TODO: FIXME: Note that this is used as a temporary solution for the state root calculation
 // It should be replaced once we swap out Chainstate's type definitions with SSZ type definitions
 // which defines all of this more rigorously
-#[derive(
-    Debug,
-    BorshSerialize,
-    BorshDeserialize,
-    Clone,
-    Copy,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct HashedChainState {
     pub prev_block: Buf32,
     pub cur_epoch: Epoch,

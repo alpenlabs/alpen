@@ -1,5 +1,4 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::TIMESTAMPS_FOR_MEDIAN;
 
@@ -20,8 +19,6 @@ pub const MEDIAN_TIMESTAMP_INDEX: usize = TIMESTAMPS_FOR_MEDIAN / 2;
     Eq,
     Serialize,
     Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
     Arbitrary,
     rkyv::Archive,
     rkyv::Serialize,

@@ -1,6 +1,6 @@
 //! MMR (Merkle Mountain Range) identifier types.
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::rancor::Error as RkyvError;
 
 use crate::AccountId;
 
@@ -10,18 +10,7 @@ pub type RawMmrId = Vec<u8>;
 ///
 /// Each variant represents a different MMR type, with optional scoping
 /// within that type (e.g., per-account MMRs).
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    BorshSerialize,
-    BorshDeserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum MmrId {
     /// ASM manifest MMR (singleton, no account scope)
     Asm,
@@ -32,9 +21,10 @@ pub enum MmrId {
 impl MmrId {
     /// Serialize MmrId to bytes for use as database key
     ///
-    /// Uses bincode with big-endian encoding to ensure lexicographical order because this will be
-    /// used in the db key.
+    /// Uses rkyv for deterministic encoding.
     pub fn to_bytes(&self) -> Vec<u8> {
-        borsh::to_vec(&self).expect("MmrId serialization should not fail")
+        rkyv::to_bytes::<RkyvError>(self)
+            .expect("MmrId serialization should not fail")
+            .into_vec()
     }
 }

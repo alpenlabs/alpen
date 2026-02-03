@@ -13,7 +13,6 @@ strata-identifiers.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
-borsh.workspace = true
 rkyv.workspace = true
 serde.workspace = true
 

@@ -3,10 +3,11 @@ use std::{
     sync::Arc,
 };
 
+use rkyv::rancor::Error as RkyvError;
 use strata_checkpoint_types::BatchTransition;
 use zkaleido::{
-    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmError,
-    ZkVmInputResult, ZkVmProgram, ZkVmResult,
+    AggregationInput, DataFormatError, ProofReceiptWithMetadata, PublicValues, VerifyingKey,
+    ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
 };
 use zkaleido_native_adapter::{NativeHost, NativeMachine};
 
@@ -54,7 +55,11 @@ impl ZkVmProgram for CheckpointProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        H::extract_borsh_public_output(public_values)
+        rkyv::from_bytes::<Self::Output, RkyvError>(public_values.as_bytes()).map_err(
+            |err: RkyvError| ZkVmError::OutputExtractionError {
+                source: DataFormatError::Other(err.to_string()),
+            },
+        )
     }
 }
 

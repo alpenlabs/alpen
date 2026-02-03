@@ -128,8 +128,8 @@ mod tests {
 
         diff.deployed_code_hashes.push(B256::from([0x33u8; 32]));
 
-        let encoded = bincode::serialize(&diff).unwrap();
-        let decoded: BlockStateChanges = bincode::deserialize(&encoded).unwrap();
+        let encoded = serde_json::to_vec(&diff).unwrap();
+        let decoded: BlockStateChanges = serde_json::from_slice(&encoded).unwrap();
 
         assert_eq!(decoded.accounts.len(), 1);
         assert_eq!(decoded.storage.len(), 1);

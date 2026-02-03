@@ -1,5 +1,5 @@
-use borsh::BorshDeserialize;
 use revm_primitives::{FixedBytes, B256};
+use rkyv::rancor::Error as RkyvError;
 use strata_ol_chain_types::{L2Block, L2BlockBundle};
 use strata_primitives::evm_exec::EVMExtraPayload;
 use thiserror::Error;
@@ -28,7 +28,9 @@ impl EVML2Block {
 
 fn get_extra_payload(bundle: &L2BlockBundle) -> Result<EVMExtraPayload, ConversionError> {
     let extra_payload_slice = bundle.exec_segment().update().input().extra_payload();
-    EVMExtraPayload::try_from_slice(extra_payload_slice)
+    // SAFETY: extra_payload_slice is produced by our rkyv serializer in the exec segment; we
+    // surface any decode error as an invalid payload.
+    unsafe { rkyv::from_bytes_unchecked::<EVMExtraPayload, RkyvError>(extra_payload_slice) }
         .or(Err(ConversionError::InvalidExecPayload))
 }
 

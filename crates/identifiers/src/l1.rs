@@ -6,7 +6,6 @@ use arbitrary::{Arbitrary, Result as ArbitraryResult, Unstructured};
 // Re-export bitcoin types for internal use
 #[cfg(feature = "bitcoin")]
 pub(crate) use bitcoin::{BlockHash, absolute};
-use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
 #[cfg(feature = "bitcoin")]
@@ -97,8 +96,6 @@ where
     Hash,
     Default,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -172,8 +169,6 @@ impl From<L1BlockId> for BlockHash {
     Hash,
     Default,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -302,9 +297,6 @@ impl<'a> view::DecodeView<'a> for L1BlockCommitment {
     }
 }
 
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
-
 impl Codec for L1BlockCommitment {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode height as u64 for consistency
@@ -395,7 +387,7 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
                 Ok(L1BlockCommitment { height, blkid })
             }
 
-            // Support tuple format (bincode, compact binary formats)
+            // Support tuple format (compact binary formats)
             fn visit_seq<A>(self, mut seq: A) -> Result<L1BlockCommitment, A::Error>
             where
                 A: de::SeqAccess<'de>,
@@ -416,11 +408,11 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
         }
 
         // For human-readable formats (JSON), use deserialize_any to support both struct and tuple
-        // For binary formats (bincode), use deserialize_tuple for backward compatibility
+        // For binary formats, use deserialize_tuple for backward compatibility
         if deserializer.is_human_readable() {
             deserializer.deserialize_any(L1BlockCommitmentVisitor)
         } else {
-            // Bincode doesn't support deserialize_any, so we use deserialize_tuple
+            // Binary formats may not support deserialize_any, so use deserialize_tuple
             deserializer.deserialize_tuple(2, L1BlockCommitmentVisitor)
         }
     }

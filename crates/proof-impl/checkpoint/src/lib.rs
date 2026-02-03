@@ -2,6 +2,7 @@
 //! Proof. It ensures that the previous batch proof was correctly settled on the L1
 //! chain and that all L1-L2 transactions were processed.
 
+use rkyv::rancor::Error as RkyvError;
 use strata_checkpoint_types::{BatchTransition, ChainstateRootTransition};
 use strata_proofimpl_cl_stf::program::ClStfOutput;
 use zkaleido::ZkVmEnv;
@@ -12,15 +13,26 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
     let batches_count: usize = zkvm.read_serde();
     assert!(batches_count > 0);
 
+    let first_output_buf = zkvm.read_verified_buf(cl_stf_vk);
     let ClStfOutput {
         epoch,
         initial_chainstate_root,
         mut final_chainstate_root,
-    } = zkvm.read_verified_borsh(cl_stf_vk);
+    } = {
+        // SAFETY: first_output_buf is read via `read_verified_buf` with the CL STF verifying key,
+        // so it must be the exact rkyv output produced by the guest program.
+        unsafe { rkyv::from_bytes_unchecked::<ClStfOutput, RkyvError>(&first_output_buf) }
+    }
+    .expect("rkyv deserialization failed");
 
     // Starting with 1 since we have already read the first CL STF output
     for _ in 1..batches_count {
-        let cl_stf_output: ClStfOutput = zkvm.read_verified_borsh(cl_stf_vk);
+        let cl_stf_output_buf = zkvm.read_verified_buf(cl_stf_vk);
+        // SAFETY: cl_stf_output_buf is verified against the CL STF VK, so the bytes are trusted
+        // rkyv output from the guest program.
+        let cl_stf_output: ClStfOutput =
+            unsafe { rkyv::from_bytes_unchecked::<ClStfOutput, RkyvError>(&cl_stf_output_buf) }
+                .expect("rkyv deserialization failed");
 
         assert_eq!(
             cl_stf_output.initial_chainstate_root, final_chainstate_root,
@@ -45,5 +57,6 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
         chainstate_transition,
     };
 
-    zkvm.commit_borsh(&output);
+    let output_bytes = rkyv::to_bytes::<RkyvError>(&output).expect("rkyv serialization failed");
+    zkvm.commit_buf(output_bytes.as_ref());
 }

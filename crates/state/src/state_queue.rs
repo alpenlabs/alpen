@@ -1,4 +1,4 @@
-//! Generic queue type used in CL state, serializable with Borsh.
+//! Generic queue type used in CL state, serializable with rkyv.
 //!
 //! There's a few different types of entries in CL state that represent "queues"
 //! of data that we push things into, have monotonic indexes, and pull out.
@@ -9,7 +9,6 @@
 use std::mem;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -18,8 +17,6 @@ use serde::{Deserialize, Serialize};
     Eq,
     PartialEq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,

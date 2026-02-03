@@ -2,7 +2,6 @@
 
 use std::str::FromStr;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use rkyv::{
     rancor::Fallible,
     with::{ArchiveWith, DeserializeWith, SerializeWith},
@@ -54,8 +53,6 @@ where
     Debug,
     Eq,
     PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -106,8 +103,6 @@ impl WithdrawalIntent {
     Debug,
     Eq,
     PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
     rkyv::Archive,
@@ -139,17 +134,7 @@ impl WithdrawalBatch {
 }
 
 /// Describes a deposit data to be processed by an EE.
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct DepositIntent {
     /// Quantity in the L1 asset, for Bitcoin this is sats.
     amt: BitcoinAmount,

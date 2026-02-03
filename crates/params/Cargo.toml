@@ -13,6 +13,5 @@ strata-l1-txfmt.workspace = true
 strata-predicate.workspace = true
 
 bitcoin.workspace = true
-borsh.workspace = true
 serde.workspace = true
 thiserror.workspace = true

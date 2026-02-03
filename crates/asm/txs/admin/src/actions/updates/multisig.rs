@@ -1,5 +1,4 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 use strata_primitives::roles::Role;
 
@@ -7,7 +6,9 @@ use strata_primitives::roles::Role;
 /// - adds new members
 /// - removes old members
 /// - updates the threshold
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct MultisigUpdate {
     config: ThresholdConfigUpdate,
     role: Role,

@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 arbitrary.workspace = true
-borsh.workspace = true
+rkyv.workspace = true
 serde.workspace = true
 
 strata-asm-common.workspace = true

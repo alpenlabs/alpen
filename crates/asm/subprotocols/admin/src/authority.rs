@@ -1,4 +1,3 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::MultisigAction;
 use strata_crypto::threshold_signature::{
     SignatureSet, ThresholdConfig, ThresholdSignatureError, verify_threshold_signatures,
@@ -7,7 +6,7 @@ use strata_primitives::roles::Role;
 
 /// Manages threshold signature operations for a given role and key set, with replay protection via
 /// a sequence number.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct MultisigAuthority {
     /// The role of this threshold signature authority.
     role: Role,

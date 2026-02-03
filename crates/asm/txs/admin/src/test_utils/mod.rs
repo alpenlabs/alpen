@@ -13,6 +13,7 @@ use bitcoin::{
     transaction::Version,
 };
 use rand::{RngCore, rngs::OsRng};
+use rkyv::rancor::Error as RkyvError;
 use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
@@ -96,7 +97,10 @@ pub fn create_test_admin_tx(
 
     // Create the signed payload (action + signatures) for the envelope
     let signed_payload = SignedPayload::new(action.clone(), signature_set);
-    let envelope_payload = borsh::to_vec(&signed_payload).expect("borsh serialization failed");
+    let envelope_payload = rkyv::to_bytes::<RkyvError>(&signed_payload)
+        .expect("rkyv serialization failed")
+        .as_ref()
+        .to_vec();
 
     // Create the minimal SPS-50 tag for OP_RETURN (no aux data needed)
     // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE]

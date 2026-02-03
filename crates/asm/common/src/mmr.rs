@@ -1,8 +1,8 @@
 //! History accumulator for ASM.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_manifest_types::{AsmManifest, Hash32};
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher, error::MerkleError};
 
 /// Capacity of the ASM MMR as a power of 2.
@@ -40,7 +40,7 @@ pub type AsmMerkleProof = MerkleProof<Hash32>;
 /// accumulator.add_leaf(hash2)?; // MMR index 1 → L1 block height 800002
 /// accumulator.add_leaf(hash3)?; // MMR index 2 → L1 block height 800003
 /// ```
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AsmHistoryAccumulatorState {
     /// MMR accumulator for [`AsmManifest`]
     manifest_mmr: CompactMmr64<Hash32>,
@@ -93,5 +93,22 @@ impl AsmHistoryAccumulatorState {
     pub fn add_manifest(&mut self, manifest: &AsmManifest) -> Result<(), MerkleError> {
         let leaf_hash = manifest.compute_hash();
         self.add_manifest_leaf(leaf_hash)
+    }
+}
+
+impl Codec for AsmHistoryAccumulatorState {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.manifest_mmr.encode(enc)?;
+        self.offset.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let manifest_mmr = CompactMmr64::<Hash32>::decode(dec)?;
+        let offset = u64::decode(dec)?;
+        Ok(Self {
+            manifest_mmr,
+            offset,
+        })
     }
 }

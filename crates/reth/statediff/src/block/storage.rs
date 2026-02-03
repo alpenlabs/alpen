@@ -34,8 +34,8 @@ mod tests {
         diff.slots
             .insert(U256::from(2), (U256::from(50), U256::from(0)));
 
-        let encoded = bincode::serialize(&diff).unwrap();
-        let decoded: BlockStorageDiff = bincode::deserialize(&encoded).unwrap();
+        let encoded = serde_json::to_vec(&diff).unwrap();
+        let decoded: BlockStorageDiff = serde_json::from_slice(&encoded).unwrap();
 
         assert_eq!(decoded, diff);
     }

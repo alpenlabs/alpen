@@ -22,7 +22,6 @@ alloy-eips.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types-engine.workspace = true
 async-trait.workspace = true
-bincode.workspace = true
 bitcoin.workspace = true
 eyre.workspace = true
 mockall = { workspace = true, optional = true }
@@ -31,6 +30,7 @@ reth-ethereum-primitives.workspace = true
 reth-node-builder.workspace = true
 reth-primitives-traits.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

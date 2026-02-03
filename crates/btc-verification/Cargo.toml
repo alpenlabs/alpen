@@ -10,7 +10,6 @@ strata-identifiers = { workspace = true, features = ["bitcoin"] }
 
 arbitrary.workspace = true
 bitcoin.workspace = true
-borsh.workspace = true
 rkyv.workspace = true
 serde.workspace = true
 thiserror.workspace = true

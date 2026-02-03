@@ -12,3 +12,4 @@ strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 
 bitcoin.workspace = true
+rkyv.workspace = true

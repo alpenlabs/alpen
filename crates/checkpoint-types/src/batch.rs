@@ -1,7 +1,6 @@
 use std::fmt;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment, L2BlockId, Slot,
@@ -18,8 +17,6 @@ use strata_identifiers::{
     PartialEq,
     Eq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,
@@ -134,8 +131,6 @@ impl EpochSummary {
     Eq,
     PartialEq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,

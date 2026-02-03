@@ -1,13 +1,11 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::rancor::Error as RkyvError;
 use serde::{Deserialize, Serialize};
 
 use crate::buf::Buf32;
 
 /// Structure for `ExecUpdate.input.extra_payload` for EVM EL
-#[derive(
-    Debug, BorshSerialize, BorshDeserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
-)]
+#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct EVMExtraPayload {
     block_hash: [u8; 32],
 }
@@ -27,7 +25,9 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     let extra_payload = EVMExtraPayload {
         block_hash: *block_hash.as_ref(),
     };
-    borsh::to_vec(&extra_payload).expect("extra_payload vec")
+    rkyv::to_bytes::<RkyvError>(&extra_payload)
+        .expect("extra_payload vec")
+        .into_vec()
 }
 
 /// Commitment to an execution block, containing slot and block ID.
@@ -44,8 +44,6 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     PartialOrd,
     Hash,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
     rkyv::Archive,

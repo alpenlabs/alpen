@@ -1,6 +1,5 @@
 use std::mem::take;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 use strata_primitives::roles::Role;
@@ -12,7 +11,7 @@ use crate::{
 
 /// Holds the state for the Administration Subprotocol, including the various
 /// multisignature authorities and any actions still pending execution.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct AdministrationSubprotoState {
     /// List of configurations for multisignature authorities.
     /// Each entry specifies who the signers are and how many signatures

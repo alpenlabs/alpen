@@ -1,4 +1,5 @@
 use bitcoin::ScriptBuf;
+use rkyv::rancor::Error as RkyvError;
 use strata_asm_common::TxInputRef;
 use strata_bridge_types::WithdrawalIntent;
 use strata_checkpoint_types::{Checkpoint, SignedCheckpoint};
@@ -30,8 +31,11 @@ pub fn extract_signed_checkpoint_from_envelope(
 
     let payload = parse_envelope_payload(&payload_script)?;
 
+    // SAFETY: payload is an owned buffer extracted from the checkpoint envelope and is expected
+    // to be produced by our rkyv serializer; we fail fast on malformed data.
     let checkpoint: SignedCheckpoint =
-        borsh::from_slice(&payload).map_err(CheckpointTxError::Deserialization)?;
+        unsafe { rkyv::from_bytes_unchecked::<SignedCheckpoint, RkyvError>(&payload) }
+            .map_err(CheckpointTxError::Deserialization)?;
 
     Ok(checkpoint)
 }
@@ -41,8 +45,11 @@ pub fn extract_withdrawal_messages(
     checkpoint: &Checkpoint,
 ) -> CheckpointTxResult<Vec<WithdrawalIntent>> {
     let sidecar = checkpoint.sidecar();
+    // SAFETY: sidecar.chainstate() returns bytes serialized by our checkpoint builder; the buffer
+    // is immutable here and we treat any decode error as a validation failure.
     let chain_state: Chainstate =
-        borsh::from_slice(sidecar.chainstate()).map_err(CheckpointTxError::Deserialization)?;
+        unsafe { rkyv::from_bytes_unchecked::<Chainstate, RkyvError>(sidecar.chainstate()) }
+            .map_err(CheckpointTxError::Deserialization)?;
 
     Ok(chain_state.pending_withdraws().entries().to_vec())
 }

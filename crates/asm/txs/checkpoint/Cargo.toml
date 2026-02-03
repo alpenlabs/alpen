@@ -16,5 +16,5 @@ strata-l1-envelope-fmt.workspace = true
 strata-ol-chainstate-types.workspace = true
 
 bitcoin.workspace = true
-borsh.workspace = true
+rkyv.workspace = true
 thiserror.workspace = true

@@ -20,7 +20,6 @@ strata-primitives.workspace = true
 anyhow.workspace = true
 arbitrary.workspace = true
 async-trait.workspace = true
-borsh.workspace = true
 rkyv.workspace = true
 serde.workspace = true
 ssz.workspace = true

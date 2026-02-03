@@ -17,7 +17,6 @@ tree_hash_derive.workspace = true
 
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
-borsh.workspace = true
 const-hex = "1.14"
 hex.workspace = true
 int-enum.workspace = true
@@ -34,7 +33,6 @@ ssz_codegen.workspace = true
 strata-test-utils-ssz.workspace = true
 
 bitcoin.workspace = true
-bincode.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
 

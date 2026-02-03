@@ -14,7 +14,7 @@ pub(crate) struct DBExecBlockRecord {
     parent_blockhash: Hash,
     timestamp_ms: u64,
     ol_block: OLBlockCommitment,
-    /// ExecBlockPackage serialized using SSZ, then wrapped in a Vec<u8> for Borsh
+    /// ExecBlockPackage serialized using SSZ, then stored as raw bytes.
     package_ssz: Vec<u8>,
     account_state: DBEeAccountState,
     next_inbox_msg_idx: u64,

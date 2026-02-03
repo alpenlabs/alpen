@@ -4,7 +4,6 @@
 //! decide to expand the chain state in the future such that we can't keep it
 //! entire in memory.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_identifiers::{AccountSerial, Epoch};
 use strata_primitives::{
@@ -16,16 +15,7 @@ use strata_state::prelude::StateQueue;
 use crate::{Chainstate, ChainstateEntry};
 
 /// Collection of writes we're making to the state.
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct WriteBatch {
     /// Full "toplevel" state.
     new_toplevel_state: Chainstate,
@@ -214,16 +204,7 @@ impl StateCache {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    BorshDeserialize,
-    BorshSerialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-)]
+#[derive(Clone, Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct WriteBatchEntry {
     wb: WriteBatch,
     blockid: L2BlockId,

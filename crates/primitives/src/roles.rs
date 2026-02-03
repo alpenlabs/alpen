@@ -1,5 +1,4 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 
 /// Roles with authority in the administration subprotocol.
 #[repr(u8)]
@@ -13,10 +12,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
     PartialOrd,
     Hash,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
-#[borsh(use_discriminant = false)]
 pub enum Role {
     /// The multisig authority that has exclusive ability to:
     /// 1. update (add/remove) bridge signers
@@ -33,7 +32,9 @@ pub enum Role {
     StrataSequencerManager,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub enum ProofType {
     Asm,
     OLStf,

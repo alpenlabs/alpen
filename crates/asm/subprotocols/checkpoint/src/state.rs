@@ -1,7 +1,96 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
+use ssz::{Decode, Encode};
 use strata_checkpoint_types_ssz::CheckpointTip;
 use strata_identifiers::{L1Height, L2BlockCommitment, OLBlockId};
-use strata_predicate::PredicateKey;
+use strata_predicate::{PredicateKey, PredicateKeyBuf};
+
+/// Serializer for [`PredicateKey`] as bytes for rkyv.
+struct PredicateKeyAsBytes;
+
+impl ArchiveWith<PredicateKey> for PredicateKeyAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &PredicateKey, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let bytes = field.as_buf_ref().to_bytes();
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<PredicateKey, S> for PredicateKeyAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(
+        field: &PredicateKey,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        let bytes = field.as_buf_ref().to_bytes();
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, PredicateKey, D> for PredicateKeyAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<PredicateKey, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(PredicateKeyBuf::try_from(bytes.as_slice())
+            .expect("stored predicate key bytes should be valid")
+            .to_owned())
+    }
+}
+
+/// Serializer for [`CheckpointTip`] as bytes for rkyv.
+struct CheckpointTipAsBytes;
+
+impl ArchiveWith<CheckpointTip> for CheckpointTipAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &CheckpointTip, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let bytes = field.as_ssz_bytes();
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<CheckpointTip, S> for CheckpointTipAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(
+        field: &CheckpointTip,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        let bytes = field.as_ssz_bytes();
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, CheckpointTip, D> for CheckpointTipAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<CheckpointTip, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(CheckpointTip::from_ssz_bytes(&bytes).expect("valid CheckpointTip bytes"))
+    }
+}
 
 /// Checkpoint subprotocol configuration.
 #[derive(Clone, Debug, PartialEq)]
@@ -17,18 +106,21 @@ pub struct CheckpointConfig {
 }
 
 /// Checkpoint subprotocol state.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct CheckpointState {
     /// Predicate for sequencer signature verification.
     /// Updated via `UpdateSequencerKey` message from admin subprotocol.
+    #[rkyv(with = PredicateKeyAsBytes)]
     pub sequencer_predicate: PredicateKey,
 
     /// Predicate for checkpoint ZK proof verification.
     /// Updated via `UpdateCheckpointPredicate` message from admin subprotocol.
+    #[rkyv(with = PredicateKeyAsBytes)]
     pub checkpoint_predicate: PredicateKey,
 
     /// Last verified checkpoint tip position.
     /// Tracks the OL state that has been proven and verified by ASM.
+    #[rkyv(with = CheckpointTipAsBytes)]
     pub verified_tip: CheckpointTip,
 }
 
