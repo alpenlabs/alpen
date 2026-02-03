@@ -1,15 +1,15 @@
 //! OL RPC server implementation.
 
 mod errors;
-mod node_rpc;
-mod seq_rpc;
+mod node;
+mod sequencer;
 
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
-use node_rpc::*;
-use seq_rpc::*;
+use node::*;
+use sequencer::*;
 use strata_btcio::writer::EnvelopeHandle;
 use strata_ol_mempool::MempoolHandle;
 use strata_ol_rpc_api::{OLClientRpcServer, OLSequencerRpcServer};
