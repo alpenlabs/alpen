@@ -1094,6 +1094,7 @@ dependencies = [
  "strata-ol-rpc-types",
  "strata-primitives",
  "strata-snark-acct-types",
+ "threadpool",
  "tokio",
  "tracing",
 ]
