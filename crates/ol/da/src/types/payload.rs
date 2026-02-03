@@ -310,9 +310,20 @@ fn apply_snark_diff<T: IAccountStateMut>(
 
 #[cfg(test)]
 mod tests {
+    use strata_acct_types::{AccountId, BitcoinAmount, Hash};
     use strata_codec::encode_to_vec;
+    use strata_da_framework::{DaCounter, DaLinacc, DaRegister, DaWrite, counter_schemes};
+    use strata_identifiers::AccountSerial;
+    use strata_ledger_types::{AccountTypeState, NewAccountData};
+    use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
+    use strata_predicate::PredicateKey;
 
     use super::*;
+    use crate::{AccountDiffEntry, DaProofStateDiff, NewAccountEntry, U16LenList};
+
+    fn test_account_id(seed: u8) -> AccountId {
+        AccountId::from([seed; 32])
+    }
 
     #[test]
     fn test_payload_encodes_state_diff_only() {
@@ -321,5 +332,132 @@ mod tests {
         let payload_bytes = encode_to_vec(&payload).expect("encode payload");
 
         assert_eq!(payload_bytes, diff_bytes);
+    }
+
+    #[test]
+    fn test_validate_ledger_entries_rejects_duplicate_new_ids() {
+        let account_id = test_account_id(1);
+        let init = AccountInit::new(BitcoinAmount::from_sat(1), AccountTypeInit::Empty);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            LedgerDiff::new(
+                U16LenList::new(vec![
+                    NewAccountEntry::new(account_id, init.clone()),
+                    NewAccountEntry::new(account_id, init),
+                ]),
+                U16LenList::new(Vec::new()),
+            ),
+        );
+
+        let result = validate_ledger_entries(AccountSerial::from(1u32), &diff);
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff("duplicate new account id"))
+        ));
+    }
+
+    #[test]
+    fn test_ol_state_diff_poll_context_rejects_existing_new_account() {
+        let mut state = OLState::new_genesis();
+        let account_id = test_account_id(2);
+        let new_acct = NewAccountData::<OLAccountState>::new(
+            BitcoinAmount::from_sat(10),
+            AccountTypeState::Empty,
+        );
+        state
+            .create_new_account(account_id, new_acct)
+            .expect("create account");
+
+        let init = AccountInit::new(BitcoinAmount::from_sat(1), AccountTypeInit::Empty);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            LedgerDiff::new(
+                U16LenList::new(vec![NewAccountEntry::new(account_id, init)]),
+                U16LenList::new(Vec::new()),
+            ),
+        );
+
+        let ol_diff = OLStateDiff::<OLState>::from(diff);
+        let result = DaWrite::poll_context(&ol_diff, &state, &());
+
+        assert!(matches!(
+            result,
+            Err(DaError::InvalidLedgerDiff("new account already exists"))
+        ));
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_updates_balance() {
+        let mut state = OLState::new_genesis();
+        let account_id = test_account_id(3);
+        let new_acct = NewAccountData::<OLAccountState>::new(
+            BitcoinAmount::from_sat(1_000),
+            AccountTypeState::Empty,
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create account");
+
+        let account_diff = AccountDiff::new(
+            DaRegister::new_set(BitcoinAmount::from_sat(2_000)),
+            SnarkAccountDiff::default(),
+        );
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            LedgerDiff::new(
+                U16LenList::new(Vec::new()),
+                U16LenList::new(vec![AccountDiffEntry::new(serial, account_diff)]),
+            ),
+        );
+
+        let ol_diff = OLStateDiff::<OLState>::from(diff);
+        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply diff");
+
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(2_000));
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_snark_seqno() {
+        let mut state = OLState::new_genesis();
+        let account_id = test_account_id(4);
+        let snark_state = OLSnarkAccountState::new_fresh(
+            PredicateKey::always_accept(),
+            Hash::from([0x11u8; 32]),
+        );
+        let new_acct = NewAccountData::<OLAccountState>::new(
+            BitcoinAmount::from_sat(500),
+            AccountTypeState::Snark(snark_state),
+        );
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create snark account");
+
+        let snark_diff = SnarkAccountDiff::new(
+            DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
+            DaProofStateDiff::default(),
+            DaLinacc::new(),
+        );
+        let account_diff = AccountDiff::new(DaRegister::new_unset(), snark_diff);
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            LedgerDiff::new(
+                U16LenList::new(Vec::new()),
+                U16LenList::new(vec![AccountDiffEntry::new(serial, account_diff)]),
+            ),
+        );
+
+        let ol_diff = OLStateDiff::<OLState>::from(diff);
+        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply snark diff");
+
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        let snark = account.as_snark_account().expect("snark account");
+        assert_eq!(*snark.seqno().inner(), 1);
     }
 }
