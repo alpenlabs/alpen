@@ -1,3 +1,5 @@
+#[cfg(feature = "arbitrary")]
+use arbitrary::{Arbitrary, Unstructured};
 use serde::{Deserialize, Serialize, de::Error};
 use strata_btc_types::GenesisL1View;
 use strata_l1_txfmt::MagicBytes;
@@ -38,5 +40,33 @@ mod serde_magic_bytes {
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<MagicBytes, D::Error> {
         let s = String::deserialize(d)?;
         MagicBytes::from_str(&s).map_err(D::Error::custom)
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> Arbitrary<'a> for AsmParams {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        use strata_btc_types::TIMESTAMPS_FOR_MEDIAN;
+        use strata_identifiers::L1BlockCommitment;
+
+        use crate::subprotocols::{AdministrationSubprotoParams, BridgeV1Config, CheckpointConfig};
+
+        let blk = L1BlockCommitment::arbitrary(u)?;
+        let l1_view = GenesisL1View {
+            blk,
+            next_target: u.arbitrary()?,
+            epoch_start_timestamp: u.arbitrary()?,
+            last_11_timestamps: u.arbitrary::<[u32; TIMESTAMPS_FOR_MEDIAN]>()?,
+        };
+
+        Ok(Self {
+            magic: MagicBytes::new(*b"ALPN"),
+            l1_view,
+            subprotocols: vec![
+                SubprotocolInstance::Admin(AdministrationSubprotoParams::arbitrary(u)?),
+                SubprotocolInstance::Checkpoint(CheckpointConfig::arbitrary(u)?),
+                SubprotocolInstance::Bridge(BridgeV1Config::arbitrary(u)?),
+            ],
+        })
     }
 }

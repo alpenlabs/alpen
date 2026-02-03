@@ -13812,6 +13812,7 @@ dependencies = [
 name = "strata-asm-params"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "serde",
  "strata-btc-types",
  "strata-crypto",
