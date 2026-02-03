@@ -1301,6 +1301,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-reth-statediff",
  "revm-primitives",
+ "rkyv",
  "serde",
  "serde_json",
  "sled",
