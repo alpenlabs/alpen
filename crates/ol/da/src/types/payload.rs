@@ -424,10 +424,8 @@ mod tests {
     fn test_ol_state_diff_apply_snark_seqno() {
         let mut state = OLState::new_genesis();
         let account_id = test_account_id(4);
-        let snark_state = OLSnarkAccountState::new_fresh(
-            PredicateKey::always_accept(),
-            Hash::from([0x11u8; 32]),
-        );
+        let snark_state =
+            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::from([0x11u8; 32]));
         let new_acct = NewAccountData::<OLAccountState>::new(
             BitcoinAmount::from_sat(500),
             AccountTypeState::Snark(snark_state),
