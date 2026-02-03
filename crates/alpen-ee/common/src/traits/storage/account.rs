@@ -102,6 +102,12 @@ macro_rules! storage_tests {
             let storage = $setup_expr;
             $crate::storage_test_fns::test_sequential_writes_and_retrieval(&storage).await;
         }
+
+        #[tokio::test]
+        async fn test_sequential_epochs_over_256() {
+            let storage = $setup_expr;
+            $crate::storage_test_fns::test_sequential_epochs_over_256(&storage).await;
+        }
     };
 }
 
@@ -118,6 +124,13 @@ pub mod tests {
         bytes[31] = value;
         // ensure null block is not created
         bytes[0] = 1;
+        OLBlockId::from(Buf32::new(bytes))
+    }
+
+    fn create_test_block_id_u64(value: u64) -> OLBlockId {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 1;
+        bytes[24..].copy_from_slice(&value.to_be_bytes());
         OLBlockId::from(Buf32::new(bytes))
     }
 
@@ -344,5 +357,24 @@ pub mod tests {
             best.epoch_commitment().epoch(),
             start_epoch + num_epochs - 1
         );
+    }
+
+    pub async fn test_sequential_epochs_over_256(storage: &impl Storage) {
+        let max_epoch = 300u32;
+        let base_slot = 100u64;
+
+        for epoch in 1..=max_epoch {
+            let slot = base_slot + epoch as u64;
+            let block_id = create_test_block_id_u64(epoch as u64);
+            let ol_epoch = EpochCommitment::new(epoch, slot, block_id);
+            let ee_account_state = create_test_ee_account_state();
+            storage
+                .store_ee_account_state(&ol_epoch, &ee_account_state)
+                .await
+                .unwrap();
+        }
+
+        let best = storage.best_ee_account_state().await.unwrap().unwrap();
+        assert_eq!(best.epoch_commitment().epoch(), max_epoch);
     }
 }

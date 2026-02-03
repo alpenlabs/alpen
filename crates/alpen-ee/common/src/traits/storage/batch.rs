@@ -131,6 +131,12 @@ macro_rules! batch_storage_tests {
         }
 
         #[tokio::test]
+        async fn test_batch_ordering_over_256() {
+            let storage = $setup_expr;
+            $crate::batch_storage_test_fns::test_batch_ordering_over_256(&storage).await;
+        }
+
+        #[tokio::test]
         async fn test_save_next_chunk() {
             let storage = $setup_expr;
             $crate::batch_storage_test_fns::test_save_next_chunk(&storage).await;
@@ -146,6 +152,12 @@ macro_rules! batch_storage_tests {
         async fn test_revert_chunks() {
             let storage = $setup_expr;
             $crate::batch_storage_test_fns::test_revert_chunks(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_chunk_ordering_over_256() {
+            let storage = $setup_expr;
+            $crate::batch_storage_test_fns::test_chunk_ordering_over_256(&storage).await;
         }
 
         #[tokio::test]
@@ -177,6 +189,13 @@ pub mod tests {
         Hash::from(Buf32::new(bytes))
     }
 
+    fn create_test_hash_u64(value: u64) -> Hash {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 1; // ensure non-zero
+        bytes[24..].copy_from_slice(&value.to_be_bytes());
+        Hash::from(Buf32::new(bytes))
+    }
+
     /// Create a genesis batch for testing.
     pub fn create_test_genesis_batch() -> Batch {
         let genesis_hash = create_test_hash(1);
@@ -194,6 +213,18 @@ pub mod tests {
     pub fn create_test_chunk(idx: u64, prev_block_val: u8, last_block_val: u8) -> Chunk {
         let prev_block = create_test_hash(prev_block_val);
         let last_block = create_test_hash(last_block_val);
+        Chunk::new(idx, prev_block, last_block, Vec::new())
+    }
+
+    fn create_test_batch_u64(idx: u64) -> Batch {
+        let prev_block = create_test_hash_u64(idx.saturating_sub(1));
+        let last_block = create_test_hash_u64(idx);
+        Batch::new(idx, prev_block, last_block, idx * 10, Vec::new()).unwrap()
+    }
+
+    fn create_test_chunk_u64(idx: u64) -> Chunk {
+        let prev_block = create_test_hash_u64(idx.saturating_sub(1));
+        let last_block = create_test_hash_u64(idx);
         Chunk::new(idx, prev_block, last_block, Vec::new())
     }
 
@@ -352,6 +383,20 @@ pub mod tests {
         assert_eq!(latest.idx(), 1);
     }
 
+    pub async fn test_batch_ordering_over_256(storage: &impl BatchStorage) {
+        let genesis_batch = create_test_genesis_batch();
+        storage.save_genesis_batch(genesis_batch).await.unwrap();
+
+        let max_idx = 300u64;
+        for idx in 1..=max_idx {
+            let batch = create_test_batch_u64(idx);
+            storage.save_next_batch(batch).await.unwrap();
+        }
+
+        let (latest, _) = storage.get_latest_batch().await.unwrap().unwrap();
+        assert_eq!(latest.idx(), max_idx);
+    }
+
     /// Test saving chunks.
     pub async fn test_save_next_chunk(storage: &impl BatchStorage) {
         let chunk0 = create_test_chunk(0, 0, 1);
@@ -406,6 +451,17 @@ pub mod tests {
         // Latest should be at idx 1
         let (latest, _) = storage.get_latest_chunk().await.unwrap().unwrap();
         assert_eq!(latest.idx(), 1);
+    }
+
+    pub async fn test_chunk_ordering_over_256(storage: &impl BatchStorage) {
+        let max_idx = 300u64;
+        for idx in 0..=max_idx {
+            let chunk = create_test_chunk_u64(idx);
+            storage.save_next_chunk(chunk).await.unwrap();
+        }
+
+        let (latest, _) = storage.get_latest_chunk().await.unwrap().unwrap();
+        assert_eq!(latest.idx(), max_idx);
     }
 
     /// Test batch-chunk association.
