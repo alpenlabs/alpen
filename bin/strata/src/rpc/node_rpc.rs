@@ -1,38 +1,27 @@
-//! OL RPC server implementation.
-
-use std::{fmt::Display, sync::Arc};
+//! OL RPC server implementation for a strata node.
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use jsonrpsee::{
-    core::RpcResult,
-    types::{
-        ErrorObjectOwned,
-        error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
-    },
-};
+use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
-use strata_btcio::writer::EnvelopeHandle;
-use strata_checkpoint_types_ssz::SignedCheckpointPayload;
-use strata_crypto::hash;
-use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
-use strata_db_types::types::OLCheckpointStatus;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_l1_txfmt::TagData;
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
-use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolTransaction};
-use strata_primitives::{Buf64, HexBytes, HexBytes64};
-use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer, OLSequencerRpcServer};
+use strata_ol_mempool::{MempoolHandle, OLMempoolTransaction};
+use strata_primitives::HexBytes;
+use strata_rpc_api_new::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_rpc_types_new::{
-    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry, RpcDuty,
+    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
     RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
 };
-use strata_sequencer_new::{BlockCompletionData, TemplateManager, extract_duties};
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::error;
+
+use crate::rpc::errors::{
+    db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
+};
 
 /// OL RPC server implementation.
 pub(crate) struct OLRpcServer {
@@ -486,156 +475,5 @@ impl OLFullNodeRpcServer for OLRpcServer {
             .await
             .map(|b| HexBytes(b.as_ssz_bytes()))?;
         Ok(raw_blk)
-    }
-}
-
-/// Rpc handler for sequencer.
-pub(crate) struct OLSeqRpcServer {
-    storage: Arc<NodeStorage>,
-    status_channel: Arc<StatusChannel>,
-    template_manager: Arc<TemplateManager>,
-    envelope_handle: Arc<EnvelopeHandle>,
-}
-
-impl OLSeqRpcServer {
-    pub(crate) fn new(
-        storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
-        template_manager: Arc<TemplateManager>,
-        envelope_handle: Arc<EnvelopeHandle>,
-    ) -> Self {
-        Self {
-            storage,
-            status_channel,
-            template_manager,
-            envelope_handle,
-        }
-    }
-}
-
-#[async_trait]
-impl OLSequencerRpcServer for OLSeqRpcServer {
-    async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcDuty>> {
-        let Some(tip_blkid) = self
-            .status_channel
-            .get_ol_sync_status()
-            .map(|s| *s.tip_blkid())
-        else {
-            // If there is no tip then there's definitely no checkpoint to sign, so return empty
-            // duties.
-            return Ok(vec![]);
-        };
-        let duties = extract_duties(
-            self.template_manager.as_ref(),
-            tip_blkid,
-            self.storage.as_ref(),
-        )
-        .await
-        .map_err(db_error)?
-        .into_iter()
-        .map(RpcDuty::from)
-        .collect();
-        Ok(duties)
-    }
-    async fn complete_block_template(
-        &self,
-        template_id: OLBlockId,
-        completion: BlockCompletionData,
-    ) -> RpcResult<OLBlockId> {
-        self.template_manager
-            .complete_template(template_id, *completion.signature())
-            .await
-            .map_err(|e| internal_error(e.to_string()))?;
-        Ok(template_id)
-    }
-
-    async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()> {
-        let db = self.storage.ol_checkpoint();
-        let Some(entry) = db.get_checkpoint_async(epoch).await.map_err(db_error)? else {
-            return Err(not_found_error(format!(
-                "checkpoint {epoch} not found in db"
-            )));
-        };
-        // Assumes that checkpoint db contains only proven checkpoints
-        if entry.status == OLCheckpointStatus::Unsigned {
-            let signed_checkpoint = SignedCheckpointPayload::new(entry.checkpoint, Buf64(sig.0));
-            // TODO: verify sig
-            let checkpoint_tag = TagData::new(
-                CHECKPOINT_V0_SUBPROTOCOL_ID,
-                OL_STF_CHECKPOINT_TX_TYPE,
-                vec![],
-            )
-            .map_err(|e| internal_error(e.to_string()))?;
-            let payload = L1Payload::new(vec![signed_checkpoint.as_ssz_bytes()], checkpoint_tag);
-            // TODO: compute sighash correctly. It should be the same as the sequencer signer uses
-            // to sign the checkpoint and to verify
-            let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
-
-            let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
-
-            self.envelope_handle
-                .submit_intent_async(payload_intent)
-                .await
-                .map_err(|e| internal_error(e.to_string()))?;
-        }
-        // If already signed, then fine, return
-        Ok(())
-    }
-}
-
-// === RPC Error Helpers ===
-
-/// Custom error code for mempool capacity-related errors.
-const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
-
-/// Creates an RPC error for database failures.
-fn db_error(e: impl Display) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(
-        INTERNAL_ERROR_CODE,
-        format!("Database error: {e}"),
-        None::<()>,
-    )
-}
-
-/// Creates an RPC error for resource not found.
-fn not_found_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
-}
-
-/// Creates an RPC error for internal failures.
-fn internal_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INTERNAL_ERROR_CODE, msg.into(), None::<()>)
-}
-
-/// Creates an RPC error for invalid parameters.
-fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
-}
-
-/// Maps mempool errors to RPC errors with appropriate error codes.
-fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
-    match &err {
-        // Capacity-related errors
-        OLMempoolError::MempoolFull { .. } | OLMempoolError::MempoolByteLimitExceeded { .. } => {
-            ErrorObjectOwned::owned(MEMPOOL_CAPACITY_ERROR_CODE, err.to_string(), None::<()>)
-        }
-        // Validation errors that are user's fault
-        OLMempoolError::AccountDoesNotExist { .. }
-        | OLMempoolError::AccountTypeMismatch { .. }
-        | OLMempoolError::TransactionTooLarge { .. }
-        | OLMempoolError::TransactionExpired { .. }
-        | OLMempoolError::TransactionNotMature { .. }
-        | OLMempoolError::UsedSequenceNumber { .. }
-        | OLMempoolError::SequenceNumberGap { .. } => invalid_params_error(err.to_string()),
-        // Internal errors
-        OLMempoolError::AccountStateAccess(_)
-        | OLMempoolError::TransactionNotFound(_)
-        | OLMempoolError::Database(_)
-        | OLMempoolError::Serialization(_)
-        | OLMempoolError::ServiceClosed(_)
-        | OLMempoolError::StateProvider(_) => {
-            error!(?err, "Internal mempool error");
-            internal_error(err.to_string())
-        }
     }
 }

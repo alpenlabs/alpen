@@ -11,10 +11,8 @@ use tokio::runtime::{self, Handle};
 use tracing::info;
 
 use crate::{
-    args::Args,
-    context::init_node_context,
-    errors::InitError,
-    services::{start_rpc, start_strata_services},
+    args::Args, context::init_node_context, errors::InitError, rpc::start_rpc,
+    services::start_strata_services,
 };
 
 mod args;
