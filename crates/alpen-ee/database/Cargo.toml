@@ -17,6 +17,7 @@ strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 strata-storage.workspace = true
 strata-storage-common.workspace = true
+strata-storage.workspace = true
 
 async-trait.workspace = true
 borsh.workspace = true
