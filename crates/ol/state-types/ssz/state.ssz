@@ -6,8 +6,6 @@ import strata_snark_acct_types
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
-### Max VK bytes encoded with a u16 length prefix (65_535 bytes).
-MAX_VK_BYTES = 65535
 
 ### Top-level OL state
 class OLState(Container):
