@@ -12,7 +12,7 @@ strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
-strata-identifiers.workspace = true
+strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-chainstate-types.workspace = true
@@ -35,6 +35,7 @@ proptest.workspace = true
 strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
 strata-db-tests.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 sled = "0.34.7"
 
 [lints]
