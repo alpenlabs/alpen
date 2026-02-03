@@ -1,5 +1,5 @@
 #[cfg(feature = "arbitrary")]
-use arbitrary::{Arbitrary, Unstructured};
+use arbitrary::Arbitrary;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{L1Height, OLBlockId};
 use strata_predicate::PredicateKey;

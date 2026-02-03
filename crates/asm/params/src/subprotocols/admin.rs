@@ -1,5 +1,5 @@
 #[cfg(feature = "arbitrary")]
-use arbitrary::{Arbitrary, Unstructured};
+use arbitrary::Arbitrary;
 use serde::{Deserialize, Serialize};
 use strata_crypto::threshold_signature::ThresholdConfig;
 
