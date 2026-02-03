@@ -15019,7 +15019,7 @@ dependencies = [
  "strata-btc-types",
  "strata-identifiers",
  "strata-predicate",
- ]
+]
 
 [[package]]
 name = "strata-ol-rpc-api"
