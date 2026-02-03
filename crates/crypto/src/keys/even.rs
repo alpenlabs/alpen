@@ -8,6 +8,7 @@ use std::{
     ops::Deref,
 };
 
+use arbitrary::{Arbitrary, Unstructured};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
 use secp256k1::{Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
@@ -157,6 +158,16 @@ impl<'de> Deserialize<'de> for EvenPublicKey {
             ));
         }
         Ok(EvenPublicKey(pk))
+    }
+}
+
+impl<'a> Arbitrary<'a> for EvenPublicKey {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate arbitrary bytes and try to create a valid secret key
+        let sk_bytes: [u8; 32] = u.arbitrary()?;
+        let sk = SecretKey::from_slice(&sk_bytes).map_err(|_| arbitrary::Error::IncorrectFormat)?;
+        let pk = PublicKey::from_secret_key(SECP256K1, &sk);
+        Ok(EvenPublicKey::from(pk))
     }
 }
 
