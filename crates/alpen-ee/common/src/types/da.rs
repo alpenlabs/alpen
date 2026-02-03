@@ -93,9 +93,7 @@ fn blob_hash(blob: &[u8]) -> BlobHash {
 /// Panics if `blob` is empty.
 fn split_blob(blob: &[u8]) -> Vec<Vec<u8>> {
     assert!(!blob.is_empty(), "cannot split an empty blob");
-    blob.chunks(MAX_CHUNK_PAYLOAD)
-        .map(|c| c.to_vec())
-        .collect()
+    blob.chunks(MAX_CHUNK_PAYLOAD).map(|c| c.to_vec()).collect()
 }
 
 /// Reassembles a blob from ordered chunk payloads and verifies integrity.

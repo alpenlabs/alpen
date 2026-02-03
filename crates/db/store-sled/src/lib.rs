@@ -110,8 +110,10 @@ impl SledBackend {
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
         let global_mmr_db = Arc::new(GlobalMmrDb::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(db_ref.clone(), config_ref.clone())?);
-        let chunked_envelope_db =
-            Arc::new(L1ChunkedEnvelopeDBSled::new(db_ref.clone(), config_ref.clone())?);
+        let chunked_envelope_db = Arc::new(L1ChunkedEnvelopeDBSled::new(
+            db_ref.clone(),
+            config_ref.clone(),
+        )?);
         let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config)?);
         Ok(Self {
             asm_db,
