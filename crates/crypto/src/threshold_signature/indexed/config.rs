@@ -32,6 +32,23 @@ pub struct ThresholdConfig {
     threshold: NonZero<u8>,
 }
 
+impl<'a> Arbitrary<'a> for ThresholdConfig {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate 1-4 keys for reasonable test sizes
+        let num_keys: usize = u.int_in_range(1..=4)?;
+        let keys: Vec<CompressedPublicKey> = (0..num_keys)
+            .map(|_| CompressedPublicKey::arbitrary(u))
+            .collect::<arbitrary::Result<_>>()?;
+
+        // Generate a valid threshold (1 to keys.len())
+        let max_threshold = keys.len().clamp(1, 255);
+        let threshold_u8 = u.int_in_range(1..=(max_threshold as u8))?;
+        let threshold = NonZero::new(threshold_u8).expect("threshold is always >= 1");
+
+        Ok(Self { keys, threshold })
+    }
+}
+
 impl ThresholdConfig {
     /// Create a new threshold configuration.
     ///
