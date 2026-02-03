@@ -1,19 +1,14 @@
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
-use threadpool::ThreadPool;
+pub use sleddb::EeDatabases;
 
-use crate::{sleddb::EeNodeDBSled, storage::EeNodeStorage};
+use crate::sleddb;
 
-type DatabaseImpl = EeNodeDBSled;
-
-fn init_db(datadir: &Path, db_retry_count: u16) -> eyre::Result<Arc<DatabaseImpl>> {
-    super::sleddb::init_db(datadir, db_retry_count)
-}
-
-/// Initializes database storage for Alpen EE.
-pub fn init_db_storage(datadir: &Path, db_retry_count: u16) -> eyre::Result<EeNodeStorage> {
-    let db = init_db(datadir, db_retry_count)?;
-
-    let pool = ThreadPool::new(4);
-    Ok(EeNodeStorage::new(pool, db))
+/// Opens a single sled instance at `<datadir>/sled` and returns all raw
+/// database types.
+///
+/// Callers wrap individual DBs in ops/managers/threadpools as needed. This
+/// keeps DB initialization separate from the ops layer.
+pub fn init_db_storage(datadir: &Path, db_retry_count: u16) -> eyre::Result<EeDatabases> {
+    sleddb::init_database(datadir, db_retry_count)
 }

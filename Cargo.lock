@@ -1174,6 +1174,7 @@ dependencies = [
  "strata-ee-chain-types",
  "strata-identifiers",
  "strata-snark-acct-types",
+ "strata-storage",
  "strata-storage-common",
  "thiserror 2.0.18",
  "threadpool",
