@@ -1,6 +1,7 @@
 pub mod asm;
 pub mod chainstate;
 pub mod checkpoint;
+pub mod chunked_envelope;
 pub mod client_state;
 pub mod global_mmr;
 pub mod l1;

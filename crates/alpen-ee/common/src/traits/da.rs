@@ -37,3 +37,15 @@ pub trait BatchDaProvider: Send + Sync {
     /// block references, not yet requested, or has permanently failed.
     async fn check_da_status(&self, batch_id: BatchId) -> eyre::Result<DaStatus>;
 }
+
+/// Provides the encoded DA blob bytes for a batch.
+///
+/// Separates blob preparation (fetching state diffs, aggregating, encoding)
+/// from blob publication (chunking, posting to Bitcoin, tracking).
+#[cfg_attr(feature = "test-utils", mockall::automock)]
+pub trait DaBlobProvider: Send + Sync {
+    /// Returns the strata-codec encoded `BatchStateDiff` bytes for the given batch.
+    ///
+    /// Returns `None` if the batch has no state diffs.
+    fn get_blob(&self, batch_id: BatchId) -> eyre::Result<Option<Vec<u8>>>;
+}

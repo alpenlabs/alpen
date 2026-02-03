@@ -1,12 +1,15 @@
 //! Common traits and types for Alpen execution environment components.
 
+#[cfg(test)]
+use mockall as _;
+
 mod traits;
 mod types;
 mod utils;
 
 #[cfg(feature = "test-utils")]
 pub use traits::{
-    da::MockBatchDaProvider,
+    da::{MockBatchDaProvider, MockDaBlobProvider},
     ol_client::{MockOLClient, MockSequencerOLClient},
     prover::MockBatchProver,
     storage::{
@@ -15,7 +18,7 @@ pub use traits::{
     },
 };
 pub use traits::{
-    da::{BatchDaProvider, DaStatus},
+    da::{BatchDaProvider, DaBlobProvider, DaStatus},
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
@@ -33,6 +36,7 @@ pub use types::{
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     consensus_heads::ConsensusHeads,
+    da::{prepare_da_chunks, reassemble_from_da_chunks},
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     ol_account_epoch_summary::OLEpochSummary,

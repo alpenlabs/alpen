@@ -387,6 +387,84 @@ pub enum OLCheckpointStatus {
     Signed(L1PayloadIntentIndex),
 }
 
+/// A chunked envelope entry representing a commit tx funding N reveal txs.
+///
+/// Used for posting large DA blobs that exceed single-transaction limits.
+/// Each reveal contains a chunk of the original blob with header metadata
+/// for reassembly.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct ChunkedEnvelopeEntry {
+    /// Opaque witness data per reveal, ordered by output index.
+    pub chunk_data: Vec<Vec<u8>>,
+    /// OP_RETURN tag magic bytes.
+    pub magic_bytes: [u8; 4],
+    /// Wtxid of the last reveal in the preceding envelope, or zero for the first.
+    pub prev_tail_wtxid: Buf32,
+    /// Commit transaction ID. Zero if unsigned.
+    pub commit_txid: Buf32,
+    /// Per-reveal metadata, ordered by output index. Empty if unsigned.
+    pub reveals: Vec<RevealTxMeta>,
+    /// Lifecycle status.
+    pub status: ChunkedEnvelopeStatus,
+}
+
+impl ChunkedEnvelopeEntry {
+    /// Creates a new unsigned entry with no transaction metadata.
+    ///
+    /// Transaction IDs and reveal metadata are populated after signing.
+    pub fn new_unsigned(
+        chunk_data: Vec<Vec<u8>>,
+        magic_bytes: [u8; 4],
+        prev_tail_wtxid: Buf32,
+    ) -> Self {
+        Self {
+            chunk_data,
+            magic_bytes,
+            prev_tail_wtxid,
+            commit_txid: Buf32::zero(),
+            reveals: Vec::new(),
+            status: ChunkedEnvelopeStatus::Unsigned,
+        }
+    }
+
+    /// Returns the wtxid of the last reveal, or [`prev_tail_wtxid`](Self::prev_tail_wtxid) if
+    /// unsigned.
+    pub fn tail_wtxid(&self) -> Buf32 {
+        self.reveals
+            .last()
+            .map(|r| r.wtxid)
+            .unwrap_or(self.prev_tail_wtxid)
+    }
+}
+
+/// Metadata for a single reveal transaction within a chunked envelope.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct RevealTxMeta {
+    /// Output index in the commit tx that this reveal spends.
+    pub vout_index: u32,
+    /// Reveal transaction ID.
+    pub txid: Buf32,
+    /// Reveal witness transaction ID.
+    pub wtxid: Buf32,
+}
+
+/// Lifecycle status of a chunked envelope.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
+pub enum ChunkedEnvelopeStatus {
+    /// Chunk data prepared, transactions not yet created.
+    Unsigned,
+    /// Transactions signed, waiting to be broadcast.
+    Unpublished,
+    /// Transactions broadcast to the mempool.
+    Published,
+    /// Transactions confirmed with sufficient depth.
+    Confirmed,
+    /// Fully finalized on L1.
+    Finalized,
+    /// Input UTXOs were spent; needs fresh signing.
+    NeedsResign,
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json;

@@ -1137,6 +1137,8 @@ dependencies = [
  "reth-primitives-traits",
  "serde",
  "strata-acct-types",
+ "strata-codec",
+ "strata-crypto",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
