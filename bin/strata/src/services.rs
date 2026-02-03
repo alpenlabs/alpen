@@ -1,6 +1,8 @@
 //! Service spawning and lifecycle management.
 
 use std::sync::Arc;
+#[cfg(feature = "sequencer")]
+use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use strata_btcio::{
@@ -9,6 +11,7 @@ use strata_btcio::{
     writer::{EnvelopeHandle, start_envelope_task},
 };
 use strata_chain_worker_new::start_chain_worker_service_from_ctx;
+#[cfg(feature = "sequencer")]
 use strata_config::EpochSealingConfig;
 use strata_consensus_logic::{
     FcmContext, start_fcm_service,
@@ -17,11 +20,14 @@ use strata_consensus_logic::{
 use strata_db_types::traits::DatabaseBackend;
 use strata_identifiers::OLBlockCommitment;
 use strata_node_context::NodeContext;
+#[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::{
     BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
 };
 use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+#[cfg(feature = "sequencer")]
+use strata_ol_sequencer::TemplateManager;
 use strata_storage::ops::l1tx_broadcast;
 
 use crate::{
@@ -63,15 +69,21 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
             .launch(nodectx.executor())?,
     );
 
-    // Sequencer-specific tasks
+    // Sequencer-specific tasks (only started when is_sequencer=true)
+    #[cfg(feature = "sequencer")]
     let sequencer_handles = if nodectx.config().client.is_sequencer {
         let broadcast_handle = Arc::new(start_broadcaster(&nodectx));
         let envelope_handle = start_writer(&nodectx, broadcast_handle.clone())?;
         let blockasm_handle = Arc::new(start_block_assembly(&nodectx, mempool_handle.clone())?);
+        let template_manager = Arc::new(TemplateManager::new(
+            blockasm_handle,
+            nodectx.storage().clone(),
+            Duration::from_millis(60_000), // 60 seconds
+        ));
         Some(SequencerServiceHandles::new(
             broadcast_handle,
             envelope_handle,
-            blockasm_handle,
+            template_manager,
         ))
     } else {
         None
@@ -93,6 +105,7 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
         chain_worker_handle,
         checkpoint_handle,
         fcm_handle,
+        #[cfg(feature = "sequencer")]
         sequencer_handles,
     );
 
@@ -163,6 +176,7 @@ fn start_writer(
 /// Starts the OL block assembly service (sequencer-specific).
 ///
 /// Assembles OL blocks from mempool transactions.
+#[cfg(feature = "sequencer")]
 fn start_block_assembly(
     nodectx: &NodeContext,
     mempool_handle: Arc<MempoolHandle>,
