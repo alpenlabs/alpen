@@ -13,4 +13,8 @@ strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-predicate.workspace = true
 
+arbitrary = { workspace = true, optional = true }
 serde.workspace = true
+
+[features]
+arbitrary = ["dep:arbitrary", "strata-predicate/arbitrary"]
