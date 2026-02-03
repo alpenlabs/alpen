@@ -9,7 +9,6 @@ use bitcoin::{params, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use strata_asm_types::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
 use strata_config::btcio::ReaderConfig;
-use strata_params::Params;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
     l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1BlockId},
@@ -24,6 +23,7 @@ use super::event::L1Event;
 use crate::{
     reader::{event::BlockData, handler::handle_bitcoin_event, state::ReaderState},
     status::{apply_status_updates, L1StatusUpdate},
+    BtcioParams,
 };
 
 /// Context that encapsulates common items needed for L1 reader.
@@ -37,8 +37,8 @@ pub(crate) struct ReaderContext<R: Reader> {
     /// Config
     pub config: Arc<ReaderConfig>,
 
-    /// Params
-    pub params: Arc<Params>,
+    /// Btcio params
+    pub btcio_params: BtcioParams,
 
     /// Status transmitter
     pub status_channel: StatusChannel,
@@ -49,20 +49,18 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     client: Arc<impl Reader>,
     storage: Arc<NodeStorage>,
     config: Arc<ReaderConfig>,
-    params: Arc<Params>,
+    btcio_params: BtcioParams,
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block = calculate_target_next_block(
-        storage.l1().as_ref(),
-        params.rollup().genesis_l1_view.height_u64(),
-    )?;
+    let target_next_block =
+        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height())?;
 
     let ctx = ReaderContext {
         client,
         storage,
         config,
-        params,
+        btcio_params,
         status_channel,
     };
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
@@ -147,9 +145,9 @@ async fn init_reader_state<R: Reader>(
     debug!(%target_next_block, "initializing reader state");
     let mut init_queue = VecDeque::new();
 
-    let lookback = ctx.params.rollup().l1_reorg_safe_depth as usize * 2;
+    let lookback = ctx.btcio_params.l1_reorg_safe_depth() as usize * 2;
     let client = ctx.client.as_ref();
-    let genesis_height = ctx.params.rollup().genesis_l1_view.height_u64();
+    let genesis_height = ctx.btcio_params.genesis_l1_height();
     let pre_genesis = genesis_height.saturating_sub(1);
     let target = target_next_block as i64;
 

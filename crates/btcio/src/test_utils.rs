@@ -526,11 +526,11 @@ pub(crate) mod test_context {
 
     use bitcoin::{Address, Network};
     use strata_config::btcio::WriterConfig;
+    use strata_l1_txfmt::MagicBytes;
     use strata_status::StatusChannel;
     use strata_test_utils::ArbitraryGenerator;
-    use strata_test_utils_l2::gen_params;
 
-    use crate::{test_utils::TestBitcoinClient, writer::context::WriterContext};
+    use crate::{test_utils::TestBitcoinClient, writer::context::WriterContext, BtcioParams};
 
     pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
         let client = Arc::new(TestBitcoinClient::new(1));
@@ -547,8 +547,12 @@ pub(crate) mod test_context {
             None,
             None,
         );
-        let params = Arc::new(gen_params());
-        let ctx = WriterContext::new(params, cfg, addr, client, status_channel);
+        let btcio_params = BtcioParams::new(
+            6,                         // l1_reorg_safe_depth
+            MagicBytes::new(*b"ALPN"), // magic_bytes
+            0,                         // genesis_l1_height
+        );
+        let ctx = WriterContext::new(btcio_params, cfg, addr, client, status_channel);
         Arc::new(ctx)
     }
 }

@@ -6,7 +6,6 @@ use strata_db_types::{
     types::{L1TxEntry, L1TxStatus},
     DbResult,
 };
-use strata_params::Params;
 use strata_primitives::buf::Buf32;
 use strata_storage::BroadcastDbOps;
 use strata_tasks::TaskExecutor;
@@ -14,6 +13,7 @@ use tokio::sync::mpsc;
 use tracing::*;
 
 use super::task::broadcaster_task;
+use crate::BtcioParams;
 
 #[expect(
     missing_debug_implementations,
@@ -82,7 +82,7 @@ pub fn spawn_broadcaster_task<T>(
     executor: &TaskExecutor,
     l1_rpc_client: Arc<T>,
     broadcast_ops: Arc<BroadcastDbOps>,
-    params: Arc<Params>,
+    btcio_params: BtcioParams,
     broadcast_poll_interval: u64,
 ) -> L1BroadcastHandle
 where
@@ -95,7 +95,7 @@ where
             l1_rpc_client,
             ops,
             broadcast_entry_rx,
-            params,
+            &btcio_params,
             broadcast_poll_interval,
         )
         .await
@@ -111,7 +111,7 @@ where
 pub fn create_broadcaster_task<T>(
     l1_rpc_client: Arc<T>,
     broadcast_ops: Arc<BroadcastDbOps>,
-    params: Arc<Params>,
+    btcio_params: BtcioParams,
     broadcast_poll_interval: u64,
 ) -> (Arc<L1BroadcastHandle>, impl Future<Output = ()>)
 where
@@ -124,7 +124,7 @@ where
             l1_rpc_client,
             ops,
             broadcast_entry_rx,
-            params,
+            &btcio_params,
             broadcast_poll_interval,
         )
         .await

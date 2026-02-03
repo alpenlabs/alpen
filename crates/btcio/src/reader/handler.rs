@@ -44,13 +44,15 @@ async fn handle_blockdata<R: Reader>(
     _epoch: Epoch,
 ) -> anyhow::Result<Option<L1BlockCommitment>> {
     let ReaderContext {
-        params, storage, ..
+        btcio_params,
+        storage,
+        ..
     } = ctx;
 
     let height = blockdata.block_num();
 
     // Bail out fast if we don't have to care.
-    let genesis = params.rollup().genesis_l1_view.height_u64();
+    let genesis = btcio_params.genesis_l1_height();
     if height < genesis {
         warn!(%height, %genesis, "ignoring BlockData for block before genesis");
         return Ok(Option::None);

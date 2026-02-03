@@ -1,5 +1,5 @@
 use core::result::Result::Ok;
-use std::{cmp::Reverse, sync::Arc};
+use std::cmp::Reverse;
 
 use anyhow::anyhow;
 use bitcoin::{
@@ -27,8 +27,7 @@ use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeePolicy;
 use strata_csm_types::L1Payload;
 use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
-use strata_l1_txfmt::{self, ParseConfig, TxFmtError};
-use strata_params::Params;
+use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
 use thiserror::Error;
 
 use super::context::WriterContext;
@@ -38,7 +37,8 @@ const BITCOIN_DUST_LIMIT: u64 = 546;
 /// Config for creating envelope transactions.
 #[derive(Debug, Clone)]
 pub struct EnvelopeConfig {
-    pub params: Arc<Params>,
+    /// Magic bytes for OP_RETURN tags in L1 transactions.
+    pub magic_bytes: MagicBytes,
     /// Address to send change and reveal output to
     pub sequencer_address: Address,
     /// Amount to send to reveal address.
@@ -55,14 +55,14 @@ pub struct EnvelopeConfig {
 
 impl EnvelopeConfig {
     pub fn new(
-        params: Arc<Params>,
+        magic_bytes: MagicBytes,
         sequencer_address: Address,
         network: Network,
         fee_rate: u64,
         reveal_amount: u64,
     ) -> Self {
         Self {
-            params,
+            magic_bytes,
             sequencer_address,
             reveal_amount,
             fee_rate,
@@ -113,7 +113,7 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         FeePolicy::Fixed(val) => val,
     };
     let env_config = EnvelopeConfig::new(
-        ctx.params.clone(),
+        ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
         network,
         fee_rate,
@@ -136,8 +136,8 @@ pub fn create_envelope_transactions(
         .add_envelopes(payload.data())?
         .build()?;
 
-    let tag_script = ParseConfig::new(env_config.params.rollup().magic_bytes)
-        .encode_script_buf(&payload.tag().as_ref())?;
+    let tag_script =
+        ParseConfig::new(env_config.magic_bytes).encode_script_buf(&payload.tag().as_ref())?;
 
     // Create spend info for tapscript
     let taproot_spend_info = TaprootBuilder::new()
@@ -541,11 +541,11 @@ mod tests {
 
     use bitcoin::{
         absolute::LockTime, script, secp256k1::constants::SCHNORR_SIGNATURE_SIZE,
-        taproot::ControlBlock, transaction::Version, Address, OutPoint, ScriptBuf, Sequence,
-        SignedAmount, Transaction, TxIn, TxOut, Witness,
+        taproot::ControlBlock, transaction::Version, Address, Network, OutPoint, ScriptBuf,
+        Sequence, SignedAmount, Transaction, TxIn, TxOut, Witness,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
-    use strata_l1_txfmt::{TagData, TagDataRef};
+    use strata_l1_txfmt::{MagicBytes, TagData, TagDataRef};
 
     use super::*;
     use crate::{
@@ -754,7 +754,7 @@ mod tests {
         let payload = L1Payload::new(vec![vec![0u8; 150]], tag);
 
         let env_config = EnvelopeConfig::new(
-            ctx.params.clone(),
+            MagicBytes::new(*b"ALPN"),
             ctx.sequencer_address.clone(),
             Network::Regtest,
             1000,
