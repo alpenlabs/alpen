@@ -7,16 +7,6 @@ mod traits;
 mod types;
 mod utils;
 
-#[cfg(feature = "test-utils")]
-pub use traits::{
-    da::{MockBatchDaProvider, MockDaBlobProvider},
-    ol_client::{MockOLClient, MockSequencerOLClient},
-    prover::MockBatchProver,
-    storage::{
-        batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
-        InMemoryStorage, MockBatchStorage, MockExecBlockStorage, MockStorage,
-    },
-};
 pub use traits::{
     da::{BatchDaProvider, DaBlobProvider, DaStatus},
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
@@ -29,6 +19,16 @@ pub use traits::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
         require_latest_batch, BatchStorage, ExecBlockStorage, OLBlockOrEpoch, Storage,
         StorageError,
+    },
+};
+#[cfg(feature = "test-utils")]
+pub use traits::{
+    da::{MockBatchDaProvider, MockDaBlobProvider},
+    ol_client::{MockOLClient, MockSequencerOLClient},
+    prover::MockBatchProver,
+    storage::{
+        batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
+        InMemoryStorage, MockBatchStorage, MockExecBlockStorage, MockStorage,
     },
 };
 pub use types::{

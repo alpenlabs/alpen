@@ -1,6 +1,8 @@
 //! Builds chunked envelope transactions: one commit tx with N P2TR outputs,
 //! each spent by an independent reveal tx carrying opaque witness data.
 
+use core::slice;
+
 use anyhow::anyhow;
 use bitcoin::{
     absolute::LockTime,
@@ -14,7 +16,6 @@ use bitcoin::{
     Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
-use core::slice;
 use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
 use strata_primitives::buf::Buf32;
 

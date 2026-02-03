@@ -4,6 +4,10 @@ use eyre::{eyre, Context, Result};
 use strata_db_store_sled::{
     broadcaster::db::L1BroadcastDBSled, chunked_envelope::L1ChunkedEnvelopeDBSled, SledDbConfig,
 };
+/// Re-export ops types for callers.
+pub use strata_storage::ops::{
+    chunked_envelope::ChunkedEnvelopeOps, l1tx_broadcast::BroadcastDbOps,
+};
 use strata_storage::ops::{
     chunked_envelope::Context as ChunkedEnvelopeContext,
     l1tx_broadcast::Context as BroadcastContext,
@@ -12,11 +16,6 @@ use threadpool::ThreadPool;
 use typed_sled::SledDb;
 
 use crate::{sleddb::EeNodeDBSled, storage::EeNodeStorage};
-
-/// Re-export ops types for callers.
-pub use strata_storage::ops::{
-    chunked_envelope::ChunkedEnvelopeOps, l1tx_broadcast::BroadcastDbOps,
-};
 
 /// Container for all EE database instances.
 ///
