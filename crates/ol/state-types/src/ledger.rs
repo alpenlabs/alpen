@@ -2,9 +2,15 @@
 //!
 //! This uses the "transitional" types described in the OL STF spec.
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, SYSTEM_RESERVED_ACCTS};
+use strata_acct_types::{
+    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
+};
+use strata_ol_params::AccountParams;
 
-use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
+use crate::ssz_generated::ssz::state::{
+    OLAccountState, OLAccountTypeState, OLSnarkAccountState, TsnlAccountEntry,
+    TsnlLedgerAccountsTable,
+};
 
 impl TsnlLedgerAccountsTable {
     /// Creates a new empty table.
@@ -15,6 +21,27 @@ impl TsnlLedgerAccountsTable {
             accounts: Vec::new().into(),
             serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize].into(),
         }
+    }
+
+    /// Creates a new table populated with genesis accounts from params.
+    pub fn from_genesis_account_params<'a>(
+        accounts: impl IntoIterator<Item = (&'a AccountId, &'a AccountParams)>,
+    ) -> AcctResult<Self> {
+        let mut table = Self::new_empty();
+        for (id, acct_params) in accounts {
+            let serial = table.next_avail_serial();
+            let snark_state = OLSnarkAccountState::new_fresh(
+                acct_params.predicate.clone(),
+                acct_params.inner_state,
+            );
+            let acct_state = OLAccountState::new(
+                serial,
+                acct_params.balance,
+                OLAccountTypeState::Snark(snark_state),
+            );
+            table.create_account(*id, acct_state)?;
+        }
+        Ok(table)
     }
 
     pub(crate) fn next_avail_serial(&self) -> AccountSerial {
@@ -91,6 +118,16 @@ impl TsnlLedgerAccountsTable {
     /// Gets the account ID corresponding to a serial.
     pub(crate) fn get_serial_acct_id(&self, serial: AccountSerial) -> Option<&AccountId> {
         self.serials.get(*serial.inner() as usize)
+    }
+
+    /// Calculates the total funds across all accounts in the ledger.
+    pub(crate) fn calculate_total_funds(&self) -> BitcoinAmount {
+        self.accounts
+            .iter()
+            .fold(BitcoinAmount::ZERO, |acc, entry| {
+                acc.checked_add(entry.state.balance)
+                    .expect("ol/state: total funds overflow")
+            })
     }
 }
 

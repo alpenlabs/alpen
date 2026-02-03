@@ -15001,6 +15001,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-params"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "serde",
+ "serde_json",
+ "strata-btc-types",
+ "strata-identifiers",
+ "strata-predicate",
+]
+
+[[package]]
 name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
@@ -15033,6 +15045,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
+ "strata-ol-params",
  "strata-predicate",
  "strata-snark-acct-types",
  "strata-test-utils-ssz",

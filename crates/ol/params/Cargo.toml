@@ -1,0 +1,21 @@
+[package]
+name = "strata-ol-params"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-btc-types.workspace = true
+strata-identifiers.workspace = true
+strata-predicate.workspace = true
+
+arbitrary = { workspace = true, optional = true }
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+arbitrary = ["dep:arbitrary", "strata-predicate/arbitrary"]

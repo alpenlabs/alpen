@@ -28,6 +28,7 @@ type RawAccountId = [u8; ACCT_ID_LEN];
     Ord,
     PartialOrd,
     Hash,
+    Arbitrary,
     Decode,
     Encode,
     Serialize,
