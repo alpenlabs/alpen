@@ -44,7 +44,7 @@ impl OLState {
         let checkpointed_epoch = params.checkpointed_epoch();
         let manifests_mmr = Mmr64::from_generic(&CompactMmr64::new(64));
 
-        let ledger = TsnlLedgerAccountsTable::from_genesis_params(params)?;
+        let ledger = TsnlLedgerAccountsTable::from_genesis_account_params(&params.accounts)?;
         let total_ledger_funds = ledger.calculate_total_funds();
 
         let global = GlobalState::new(params.header.slot);
