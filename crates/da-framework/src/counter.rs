@@ -89,6 +89,8 @@ impl<S: CounterScheme> DaWrite for DaCounter<S> {
 
     type Context = ();
 
+    type Error = crate::DaError;
+
     fn is_default(&self) -> bool {
         !self.is_changed()
     }
@@ -97,7 +99,7 @@ impl<S: CounterScheme> DaWrite for DaCounter<S> {
         &self,
         target: &mut Self::Target,
         _context: &Self::Context,
-    ) -> Result<(), crate::DaError> {
+    ) -> Result<(), Self::Error> {
         if let Self::Changed(v) = self {
             S::update(target, v);
         }

@@ -3,16 +3,29 @@
 //! These tests verify that multiple wrapper layers can be composed together
 //! and work correctly.
 
-use strata_acct_types::BitcoinAmount;
-use strata_asm_manifest_types::AsmManifest;
-use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
-use strata_ledger_types::{
-    AccountTypeState, Coin, IAccountState, IAccountStateMut, ISnarkAccountState,
-    ISnarkAccountStateMut, IStateAccessor, NewAccountData,
-};
-use strata_ol_state_types::{OLState, WriteBatch};
+use std::collections::{BTreeMap, VecDeque};
 
-use crate::{BatchDiffState, IndexerState, WriteTrackingState, test_utils::*};
+use strata_acct_types::{
+    AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload,
+};
+use strata_asm_manifest_types::AsmManifest;
+use strata_da_framework::decode_buf_exact;
+use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, WtxidsRoot};
+use strata_ledger_types::{
+    AccountTypeState, AccountTypeStateRef, Coin, IAccountState, IAccountStateConstructible,
+    IAccountStateMut, ISnarkAccountState, ISnarkAccountStateConstructible, ISnarkAccountStateMut,
+    IStateAccessor, NewAccountData,
+};
+use strata_merkle::CompactMmr64;
+use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
+use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
+use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
+use strata_snark_acct_types::{MessageEntry, Seqno};
+
+use crate::{
+    BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,
+    test_utils::*,
+};
 
 // =============================================================================
 // IndexerState over WriteTrackingState tests
@@ -23,7 +36,7 @@ use crate::{BatchDiffState, IndexerState, WriteTrackingState, test_utils::*};
 fn test_indexer_over_write_tracking_basic() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     // Create the layer stack: IndexerState<WriteTrackingState<&OLState>>
     let batch = WriteBatch::new_from_state(&base_state);
@@ -32,7 +45,7 @@ fn test_indexer_over_write_tracking_basic() {
 
     // Verify we can read through both layers
     let account = indexer.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(1_000));
 }
 
 /// Test inbox message tracking through both layers.
@@ -40,14 +53,14 @@ fn test_indexer_over_write_tracking_basic() {
 fn test_combined_inbox_message_tracking() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
 
     // Insert an inbox message through the combined stack
-    let msg = test_message_entry(50, 0, 2000);
+    let msg = test_message_entry(50, 0, 2_000);
     indexer
         .update_account(account_id, |acct| {
             acct.as_snark_account_mut()
@@ -108,7 +121,7 @@ fn test_combined_manifest_tracking() {
 fn test_combined_balance_modification() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
@@ -128,11 +141,11 @@ fn test_combined_balance_modification() {
 
     // Verify the account is in the batch with updated balance
     let batch_account = batch.ledger().get_account(&account_id).unwrap();
-    assert_eq!(batch_account.balance(), BitcoinAmount::from_sat(1500));
+    assert_eq!(batch_account.balance(), BitcoinAmount::from_sat(1_500));
 
     // Verify base state is unchanged
     let base_account = base_state.get_account_state(account_id).unwrap().unwrap();
-    assert_eq!(base_account.balance(), BitcoinAmount::from_sat(1000));
+    assert_eq!(base_account.balance(), BitcoinAmount::from_sat(1_000));
 }
 
 /// Test account creation through combined layers.
@@ -147,7 +160,7 @@ fn test_combined_account_creation() {
     let account_id = test_account_id(1);
     let snark_state = test_snark_account_state(1);
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(5000),
+        BitcoinAmount::from_sat(5_000),
         AccountTypeState::Snark(snark_state),
     );
 
@@ -157,7 +170,7 @@ fn test_combined_account_creation() {
     assert!(indexer.check_account_exists(account_id).unwrap());
     let account = indexer.get_account_state(account_id).unwrap().unwrap();
     assert_eq!(account.serial(), serial);
-    assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+    assert_eq!(account.balance(), BitcoinAmount::from_sat(5_000));
 
     // Extract and verify it's in the batch
     let (tracking, _) = indexer.into_parts();
@@ -197,7 +210,7 @@ fn test_combined_multiple_operations() {
 
     // Setup base state with one account
     let (base_state, _) =
-        setup_state_with_snark_account(account_id_1, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id_1, 1, BitcoinAmount::from_sat(1_000));
 
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
@@ -206,13 +219,13 @@ fn test_combined_multiple_operations() {
     // Create a new account
     let snark_state_2 = test_snark_account_state(2);
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(2000),
+        BitcoinAmount::from_sat(2_000),
         AccountTypeState::Snark(snark_state_2),
     );
     indexer.create_new_account(account_id_2, new_acct).unwrap();
 
     // Insert messages to both accounts
-    let msg1 = test_message_entry(10, 0, 1000);
+    let msg1 = test_message_entry(10, 0, 1_000);
     indexer
         .update_account(account_id_1, |acct| {
             acct.as_snark_account_mut()
@@ -222,7 +235,7 @@ fn test_combined_multiple_operations() {
         .unwrap()
         .unwrap();
 
-    let msg2 = test_message_entry(20, 0, 2000);
+    let msg2 = test_message_entry(20, 0, 2_000);
     indexer
         .update_account(account_id_2, |acct| {
             acct.as_snark_account_mut()
@@ -394,7 +407,7 @@ fn test_write_tracking_over_batch_diff_global_epochal_setters() {
 fn test_write_tracking_over_batch_diff_inbox_message() {
     let account_id = test_account_id(1);
     let (base_state, _serial) =
-        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
 
     // Create BatchDiffState with empty batches
     let pending_batches: Vec<WriteBatch<_>> = vec![];
@@ -436,6 +449,672 @@ fn test_write_tracking_over_batch_diff_inbox_message() {
             .num_entries(),
         0
     );
+}
+
+// =============================================================================
+// DaAccumulatingState tests
+// =============================================================================
+
+fn build_simple_blob() -> Vec<u8> {
+    let account_id = test_account_id(1);
+    let (mut state, _) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let source_account_id = test_account_id(7);
+    state
+        .create_new_account(
+            source_account_id,
+            NewAccountData::new(
+                BitcoinAmount::from_sat(0),
+                AccountTypeState::Snark(test_snark_account_state(2)),
+            ),
+        )
+        .unwrap();
+    let mut da_state = DaAccumulatingState::new(state);
+
+    da_state.set_cur_slot(10);
+
+    let msg = test_message_entry(7, 0, 2000);
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+            acct.add_balance(coin);
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg.clone())
+        })
+        .unwrap()
+        .unwrap();
+
+    da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob")
+}
+
+#[derive(Clone, Debug)]
+struct TestSnarkState {
+    update_vk: PredicateKey,
+    inner_state_root: Hash,
+    seqno: Seqno,
+    inbox_mmr: Mmr64,
+}
+
+impl TestSnarkState {
+    fn new(update_vk: Vec<u8>) -> Self {
+        let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
+        let inbox_mmr = Mmr64::from_generic(&generic_mmr);
+        let update_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk);
+        Self {
+            update_vk,
+            inner_state_root: Hash::from([0u8; 32]),
+            seqno: Seqno::zero(),
+            inbox_mmr,
+        }
+    }
+}
+
+impl ISnarkAccountState for TestSnarkState {
+    fn update_vk(&self) -> &PredicateKey {
+        &self.update_vk
+    }
+
+    fn seqno(&self) -> Seqno {
+        self.seqno
+    }
+
+    fn inner_state_root(&self) -> Hash {
+        self.inner_state_root
+    }
+
+    fn inbox_mmr(&self) -> &Mmr64 {
+        &self.inbox_mmr
+    }
+
+    fn next_inbox_msg_idx(&self) -> u64 {
+        0
+    }
+}
+
+impl ISnarkAccountStateMut for TestSnarkState {
+    fn set_proof_state_directly(&mut self, state: Hash, _next_read_idx: u64, seqno: Seqno) {
+        self.inner_state_root = state;
+        self.seqno = seqno;
+    }
+
+    fn update_inner_state(
+        &mut self,
+        inner_state: Hash,
+        next_read_idx: u64,
+        seqno: Seqno,
+        _extra_data: &[u8],
+    ) -> strata_acct_types::AcctResult<()> {
+        self.set_proof_state_directly(inner_state, next_read_idx, seqno);
+        Ok(())
+    }
+
+    fn insert_inbox_message(&mut self, _entry: MessageEntry) -> strata_acct_types::AcctResult<()> {
+        Ok(())
+    }
+}
+
+impl ISnarkAccountStateConstructible for TestSnarkState {
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
+        let generic_mmr = CompactMmr64::<[u8; 32]>::new(64);
+        let inbox_mmr = Mmr64::from_generic(&generic_mmr);
+        Self {
+            update_vk,
+            inner_state_root: initial_state_root,
+            seqno: Seqno::zero(),
+            inbox_mmr,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct TestAccountState {
+    serial: AccountSerial,
+    balance: BitcoinAmount,
+    ty: AccountTypeId,
+    snark: Option<TestSnarkState>,
+}
+
+impl IAccountState for TestAccountState {
+    type SnarkAccountState = TestSnarkState;
+
+    fn serial(&self) -> AccountSerial {
+        self.serial
+    }
+
+    fn balance(&self) -> BitcoinAmount {
+        self.balance
+    }
+
+    fn ty(&self) -> AccountTypeId {
+        self.ty
+    }
+
+    fn type_state(&self) -> AccountTypeStateRef<'_, Self> {
+        match self.snark.as_ref() {
+            Some(snark) => AccountTypeStateRef::Snark(snark),
+            None => AccountTypeStateRef::Empty,
+        }
+    }
+
+    fn as_snark_account(&self) -> strata_acct_types::AcctResult<&Self::SnarkAccountState> {
+        self.snark
+            .as_ref()
+            .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
+    }
+}
+
+impl IAccountStateMut for TestAccountState {
+    type SnarkAccountStateMut = TestSnarkState;
+
+    fn add_balance(&mut self, coin: Coin) {
+        let new_balance = self.balance.to_sat() + coin.amt().to_sat();
+        self.balance = BitcoinAmount::from_sat(new_balance);
+        coin.safely_consume_unchecked();
+    }
+
+    fn take_balance(&mut self, _amt: BitcoinAmount) -> strata_acct_types::AcctResult<Coin> {
+        Err(AcctError::Unsupported)
+    }
+
+    fn as_snark_account_mut(
+        &mut self,
+    ) -> strata_acct_types::AcctResult<&mut Self::SnarkAccountStateMut> {
+        self.snark
+            .as_mut()
+            .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
+    }
+}
+
+impl IAccountStateConstructible for TestAccountState {
+    fn new_with_serial(new_acct_data: NewAccountData<Self>, serial: AccountSerial) -> Self {
+        let balance = new_acct_data.initial_balance();
+        let (ty, snark) = match new_acct_data.into_type_state() {
+            AccountTypeState::Empty => (AccountTypeId::Empty, None),
+            AccountTypeState::Snark(snark_state) => (AccountTypeId::Snark, Some(snark_state)),
+        };
+        Self {
+            serial,
+            balance,
+            ty,
+            snark,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TestState {
+    accounts: BTreeMap<AccountId, TestAccountState>,
+    next_serial: AccountSerial,
+    serial_overrides: VecDeque<AccountSerial>,
+    cur_slot: u64,
+    cur_epoch: u32,
+    last_l1_blkid: L1BlockId,
+    last_l1_height: L1Height,
+    asm_recorded_epoch: EpochCommitment,
+    total_ledger_balance: BitcoinAmount,
+}
+
+impl TestState {
+    fn new_with_serials(serials: Vec<AccountSerial>) -> Self {
+        Self {
+            accounts: BTreeMap::new(),
+            next_serial: AccountSerial::one(),
+            serial_overrides: VecDeque::from(serials),
+            cur_slot: 0,
+            cur_epoch: 0,
+            last_l1_blkid: L1BlockId::from(Buf32::zero()),
+            last_l1_height: L1Height::from(0u32),
+            asm_recorded_epoch: EpochCommitment::null(),
+            total_ledger_balance: BitcoinAmount::ZERO,
+        }
+    }
+}
+
+impl IStateAccessor for TestState {
+    type AccountState = TestAccountState;
+    type AccountStateMut = TestAccountState;
+
+    fn cur_slot(&self) -> u64 {
+        self.cur_slot
+    }
+
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.cur_slot = slot;
+    }
+
+    fn cur_epoch(&self) -> u32 {
+        self.cur_epoch
+    }
+
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.cur_epoch = epoch;
+    }
+
+    fn last_l1_blkid(&self) -> &L1BlockId {
+        &self.last_l1_blkid
+    }
+
+    fn last_l1_height(&self) -> L1Height {
+        self.last_l1_height
+    }
+
+    fn append_manifest(&mut self, _height: L1Height, _mf: strata_asm_manifest_types::AsmManifest) {}
+
+    fn asm_recorded_epoch(&self) -> &EpochCommitment {
+        &self.asm_recorded_epoch
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.asm_recorded_epoch = epoch;
+    }
+
+    fn total_ledger_balance(&self) -> BitcoinAmount {
+        self.total_ledger_balance
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.total_ledger_balance = amt;
+    }
+
+    fn check_account_exists(&self, id: AccountId) -> strata_acct_types::AcctResult<bool> {
+        Ok(self.accounts.contains_key(&id))
+    }
+
+    fn get_account_state(
+        &self,
+        id: AccountId,
+    ) -> strata_acct_types::AcctResult<Option<&Self::AccountState>> {
+        Ok(self.accounts.get(&id))
+    }
+
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> strata_acct_types::AcctResult<R>
+    where
+        F: FnOnce(&mut Self::AccountStateMut) -> R,
+    {
+        let acct = self
+            .accounts
+            .get_mut(&id)
+            .ok_or(AcctError::UpdateNonexistentAccount(id))?;
+        Ok(f(acct))
+    }
+
+    fn create_new_account(
+        &mut self,
+        id: AccountId,
+        new_acct_data: NewAccountData<Self::AccountState>,
+    ) -> strata_acct_types::AcctResult<AccountSerial> {
+        if self.accounts.contains_key(&id) {
+            return Err(AcctError::CreateExistingAccount(id));
+        }
+
+        let serial = if let Some(serial) = self.serial_overrides.pop_front() {
+            serial
+        } else {
+            let serial = self.next_serial;
+            self.next_serial = self.next_serial.incr();
+            serial
+        };
+
+        let acct = TestAccountState::new_with_serial(new_acct_data, serial);
+        self.accounts.insert(id, acct);
+        Ok(serial)
+    }
+
+    fn find_account_id_by_serial(
+        &self,
+        serial: AccountSerial,
+    ) -> strata_acct_types::AcctResult<Option<AccountId>> {
+        Ok(self
+            .accounts
+            .iter()
+            .find_map(|(id, acct)| (acct.serial == serial).then_some(*id)))
+    }
+
+    fn next_account_serial(&self) -> AccountSerial {
+        self.next_serial
+    }
+
+    fn compute_state_root(&self) -> strata_acct_types::AcctResult<Buf32> {
+        Ok(Buf32::zero())
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        todo!()
+    }
+}
+
+#[test]
+fn test_da_blob_deterministic() {
+    let blob1 = build_simple_blob();
+    let blob2 = build_simple_blob();
+    assert_eq!(blob1, blob2);
+}
+
+#[test]
+fn test_account_diffs_ordered_by_serial() {
+    let mut state = OLState::new_genesis();
+    let account_id_1 = test_account_id(1);
+    let account_id_2 = test_account_id(2);
+
+    let snark_state_1 = test_snark_account_state(1);
+    let snark_state_2 = test_snark_account_state(2);
+    state
+        .create_new_account(
+            account_id_1,
+            NewAccountData::new(
+                BitcoinAmount::from_sat(1000),
+                AccountTypeState::Snark(snark_state_1),
+            ),
+        )
+        .unwrap();
+    state
+        .create_new_account(
+            account_id_2,
+            NewAccountData::new(
+                BitcoinAmount::from_sat(2000),
+                AccountTypeState::Snark(snark_state_2),
+            ),
+        )
+        .unwrap();
+
+    let mut da_state = DaAccumulatingState::new(state);
+
+    // Update higher serial first, then lower serial.
+    da_state
+        .update_account(account_id_2, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+    da_state
+        .update_account(account_id_1, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(75));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let diffs = blob.state_diff.ledger.account_diffs.entries();
+    assert!(
+        diffs
+            .windows(2)
+            .all(|w| w[0].account_serial <= w[1].account_serial)
+    );
+}
+
+#[test]
+fn test_new_account_post_state_encoded() {
+    let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
+    let account_id = test_account_id(9);
+    let update_vk = vec![7u8; 4];
+    let snark_state = TestSnarkState::new(update_vk.clone());
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(100),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
+
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(50));
+            acct.add_balance(coin);
+            acct.as_snark_account_mut()
+                .unwrap()
+                .set_proof_state_directly(test_hash(9), 0, Seqno::new(1));
+        })
+        .unwrap();
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let new_accounts = blob.state_diff.ledger.new_accounts.entries();
+    assert_eq!(new_accounts.len(), 1);
+    let entry = &new_accounts[0];
+    assert_eq!(entry.account_id, account_id);
+    assert_eq!(entry.init.balance, BitcoinAmount::from_sat(150));
+    match &entry.init.type_state {
+        AccountTypeInit::Snark(init) => {
+            assert_eq!(init.initial_state_root, test_hash(9));
+            // The VK is stored with the predicate type ID prefix, so we need to compare
+            // with the full predicate key bytes (type ID + raw VK bytes)
+            let expected_vk = PredicateKey::new(PredicateTypeId::AlwaysAccept, update_vk.clone());
+            assert_eq!(
+                init.update_vk.as_slice(),
+                expected_vk.as_buf_ref().to_bytes()
+            );
+        }
+        _ => panic!("expected snark account init"),
+    }
+    let diffs = blob.state_diff.ledger.account_diffs.entries();
+    assert!(diffs.is_empty());
+}
+
+#[test]
+fn test_new_account_vk_persisted_from_ol_state() {
+    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    let account_id = test_account_id(10);
+    let snark_state = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(4));
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(100),
+        AccountTypeState::Snark(snark_state.clone()),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let new_accounts = blob.state_diff.ledger.new_accounts.entries();
+    assert_eq!(new_accounts.len(), 1);
+    match &new_accounts[0].init.type_state {
+        AccountTypeInit::Snark(init) => {
+            assert_eq!(
+                init.update_vk.as_slice(),
+                snark_state.update_vk().as_buf_ref().to_bytes()
+            );
+        }
+        _ => panic!("expected snark account init"),
+    }
+}
+
+#[test]
+fn test_take_resets_accumulator() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    // Finalize once after making changes.
+    da_state
+        .update_account(account_id, |acct| {
+            let coin = Coin::new_unchecked(BitcoinAmount::from_sat(123));
+            acct.add_balance(coin);
+        })
+        .unwrap();
+    da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+
+    // Finalize again without any new changes.
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    assert!(blob.state_diff.ledger.account_diffs.entries().is_empty());
+}
+
+#[test]
+fn test_da_blob_size_limit() {
+    // Test that the DA blob size limit is enforced by creating many accounts
+    // with large VK data to exceed the limit.
+    let mut test_state = TestState::new_with_serials(vec![]);
+    test_state.next_serial = AccountSerial::one();
+
+    let mut da_state = DaAccumulatingState::new(test_state);
+
+    // Create many accounts with moderately sized VKs to approach the limit
+    let vk_data = vec![0u8; 1024]; // 1KB VK per account
+    for i in 0..=255 {
+        let account_id = test_account_id(i);
+        let snark_state = TestSnarkState::new(vk_data.clone());
+        let new_acct = NewAccountData::new(
+            BitcoinAmount::from_sat(0),
+            AccountTypeState::Snark(snark_state),
+        );
+        if da_state.create_new_account(account_id, new_acct).is_err() {
+            break;
+        }
+    }
+
+    // Try to finalize - should fail with PayloadTooLarge
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(
+        matches!(result, Err(DaAccumulationError::PayloadTooLarge { .. })),
+        "expected DA blob size limit error"
+    );
+}
+
+#[test]
+fn test_vk_size_truncates_to_predicate_limit() {
+    let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
+    let account_id = test_account_id(1);
+    let oversized_vk_len = MAX_CONDITION_LEN as usize + 10;
+    let snark_state = TestSnarkState::new(vec![0u8; oversized_vk_len]);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(0),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let new_accounts = blob.state_diff.ledger.new_accounts.entries();
+    assert_eq!(new_accounts.len(), 1);
+    match &new_accounts[0].init.type_state {
+        AccountTypeInit::Snark(init) => {
+            assert_eq!(
+                init.update_vk.as_slice().len(),
+                MAX_CONDITION_LEN as usize + 1
+            );
+        }
+        _ => panic!("expected snark account init"),
+    }
+}
+
+#[test]
+fn test_message_source_missing_is_rejected() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    let payload = MsgPayload::new(BitcoinAmount::from_sat(0), vec![0u8; 4]);
+    let missing_source = test_account_id(99);
+    let msg = MessageEntry::new(missing_source, 0, payload);
+    da_state
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg)
+        })
+        .unwrap()
+        .unwrap();
+
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(matches!(
+        result,
+        Err(DaAccumulationError::MessageSourceMissing(id)) if id == missing_source
+    ));
+}
+
+#[test]
+fn test_message_payload_size_limit() {
+    let account_id = test_account_id(1);
+    let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let mut da_state = DaAccumulatingState::new(state);
+
+    let payload = MsgPayload::new(
+        BitcoinAmount::from_sat(0),
+        vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
+    );
+    let msg = MessageEntry::new(test_account_id(2), 0, payload);
+    da_state
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg)
+        })
+        .unwrap()
+        .unwrap();
+
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(matches!(
+        result,
+        Err(DaAccumulationError::MessagePayloadTooLarge { .. })
+    ));
+}
+
+#[test]
+fn test_early_serial_gap_detection() {
+    let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![
+        AccountSerial::new(1),
+        AccountSerial::new(3),
+    ]));
+    let account_id_1 = test_account_id(1);
+    let account_id_2 = test_account_id(2);
+    let snark_state = TestSnarkState::new(vec![]);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(0),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state
+        .create_new_account(account_id_1, new_acct.clone())
+        .unwrap();
+    da_state.create_new_account(account_id_2, new_acct).unwrap();
+
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(matches!(
+        result,
+        Err(DaAccumulationError::NewAccountSerialGap(_, _))
+    ));
+}
+
+#[test]
+fn test_expected_first_serial_mismatch() {
+    let mut da_state =
+        DaAccumulatingState::new(TestState::new_with_serials(vec![AccountSerial::new(5)]));
+    let account_id = test_account_id(1);
+    let snark_state = TestSnarkState::new(vec![]);
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from_sat(0),
+        AccountTypeState::Snark(snark_state),
+    );
+    da_state.create_new_account(account_id, new_acct).unwrap();
+
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(matches!(
+        result,
+        Err(DaAccumulationError::NewAccountSerialGap(_, _))
+    ));
 }
 
 /// Test reading account from pending batch through WriteTrackingState over BatchDiffState.

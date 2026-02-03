@@ -28,6 +28,10 @@ impl ExecOutputBuffer {
         logs.extend(iter);
     }
 
+    pub fn snapshot_logs(&self) -> Vec<OLLog> {
+        self.logs.borrow().clone()
+    }
+
     pub fn into_logs(self) -> Vec<OLLog> {
         self.logs.into_inner()
     }

@@ -1,14 +1,16 @@
 //! Test utilities and proptest strategies for checkpoint types.
 
 use proptest::prelude::*;
-use strata_identifiers::test_utils::{
-    buf64_strategy, epoch_strategy, fixed_bytes_32_strategy, ol_block_commitment_strategy,
+use strata_identifiers::{
+    AccountSerial,
+    test_utils::{
+        buf64_strategy, epoch_strategy, fixed_bytes_32_strategy, ol_block_commitment_strategy,
+    },
 };
-use strata_ol_chain_types_new::test_utils::ol_log_strategy;
 
 use crate::{
     CheckpointClaim, CheckpointPayload, CheckpointSidecar, CheckpointTip, L2BlockRange,
-    SignedCheckpointPayload,
+    MAX_LOG_PAYLOAD_BYTES, SignedCheckpointPayload,
 };
 
 /// Strategy for generating random [`CheckpointTip`] values.
@@ -35,7 +37,14 @@ fn proof_strategy() -> impl Strategy<Value = Vec<u8>> {
 
 /// Strategy for generating random OL logs of varying sizes.
 fn ol_logs_strategy() -> impl Strategy<Value = Vec<crate::OLLog>> {
-    prop::collection::vec(ol_log_strategy(), 0..10)
+    prop::collection::vec(
+        (
+            any::<u32>().prop_map(AccountSerial::from),
+            prop::collection::vec(any::<u8>(), 0..=MAX_LOG_PAYLOAD_BYTES),
+        )
+            .prop_map(|(account_serial, payload)| crate::OLLog::new(account_serial, payload)),
+        0..10,
+    )
 }
 
 /// Strategy for generating random [`CheckpointSidecar`] values.

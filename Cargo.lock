@@ -14952,8 +14952,12 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-codec",
+ "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-ol-state-types",
+ "strata-predicate",
+ "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
 
@@ -15018,11 +15022,16 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
+ "strata-checkpoint-types-ssz",
+ "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
+ "strata-merkle",
+ "strata-ol-da",
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-types",
+ "thiserror 2.0.18",
  "tracing",
 ]
 

@@ -102,12 +102,4 @@ pub trait IStateAccessor {
     /// Computes the full state root, using whatever things we've updated.
     // TODO maybe don't use `AcctResult`, actually convert all/most of these to use a new error type
     fn compute_state_root(&self) -> AcctResult<Buf32>;
-
-    /// Records a withdrawal intent for inclusion in the next checkpoint.
-    /// This is a temporary hack to bridge OL execution and legacy chainstate.
-    // TODO: remove ASAP
-    fn record_withdrawal_intent(&mut self, _amt: u64, _dest: Vec<u8>) {
-        // Default implementation does nothing - only implementations that manage
-        // the legacy chainstate need to implement this
-    }
 }

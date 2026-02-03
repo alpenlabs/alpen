@@ -80,6 +80,8 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
 
     type Context = ();
 
+    type Error = crate::DaError;
+
     fn is_default(&self) -> bool {
         self.tail.is_empty() && self.incr_front == 0
     }
@@ -88,7 +90,7 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
         &self,
         target: &mut Self::Target,
         _context: &Self::Context,
-    ) -> Result<(), crate::DaError> {
+    ) -> Result<(), Self::Error> {
         target.insert_entries(&self.tail);
         if self.incr_front > 0 {
             target.increment_front(self.incr_front);
@@ -240,11 +242,12 @@ impl<Q: DaQueueTarget> DaQueueBuilder<Q> {
 
     /// Returns the count of new entries we added that would be consumed.
     fn consumed_new_entries(&self) -> usize {
-        // FIXME this doesn't account for bounds checks
         let new_front = self.new_front_pos as i64;
         let orig_next = self.original_next_pos as i64;
-        let overrun = new_front - orig_next;
-        (overrun as usize).clamp(0, usize::MAX)
+        if new_front <= orig_next {
+            return 0;
+        }
+        (new_front - orig_next) as usize
     }
 }
 
@@ -648,6 +651,21 @@ mod tests {
         // Cannot increment past all entries
         assert!(!builder.add_front_incr(1));
         assert_eq!(builder.new_front_pos, 5);
+    }
+
+    #[test]
+    fn test_queue_builder_increment_base_only_into_write() {
+        let source = MockQueue {
+            front: 5,
+            next: 7,
+            entries: vec![1, 2],
+        };
+        let mut builder = DaQueueBuilder::from_source(source);
+        assert!(builder.add_front_incr(1));
+
+        let write = builder.into_write().expect("test: into_write");
+        assert_eq!(write.incr_front, 1);
+        assert!(write.tail.is_empty());
     }
 
     #[test]
