@@ -236,7 +236,7 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
     // about it, at least until it gets reorged out by another block being
     // finalized.
     let bc = OLBlockCommitment::new(bundle.header().slot(), *blkid);
-    let exec_ok = match fcm_state.ctx().chain_worker().try_exec_block_blocking(bc) {
+    let exec_ok = match fcm_state.ctx().chain_worker().try_exec_block(bc).await {
         Ok(()) => true,
         Err(err) => {
             // TODO(STR-2141): Need some way to distinguish an invalid block from a exec failure
@@ -246,9 +246,13 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
     };
 
     if exec_ok {
-        blk_db.set_block_status_blocking(*blkid, BlockStatus::Valid)?;
+        blk_db
+            .set_block_status_async(*blkid, BlockStatus::Valid)
+            .await?;
     } else {
-        blk_db.set_block_status_blocking(*blkid, BlockStatus::Invalid)?;
+        blk_db
+            .set_block_status_async(*blkid, BlockStatus::Invalid)
+            .await?;
         return Ok(false);
     }
 
@@ -267,16 +271,17 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
     }
 
     // Now decide what the new tip should be and figure out how to get there.
-    let best_block = pick_best_block(
-        &cur_tip,
-        fcm_state.chain_tracker().chain_tips_iter(),
-        blk_db.as_ref(),
-    )?;
+    let tips: Vec<OLBlockId> = fcm_state
+        .chain_tracker()
+        .chain_tips_iter()
+        .copied()
+        .collect();
+    let best_block = pick_best_block_async(&cur_tip, &tips, blk_db.as_ref()).await?;
 
     // TODO make configurable
     let depth = 100;
 
-    let tip_update = compute_tip_update(&cur_tip, best_block, depth, fcm_state.chain_tracker())?;
+    let tip_update = compute_tip_update(&cur_tip, &best_block, depth, fcm_state.chain_tracker())?;
     let Some(tip_update) = tip_update else {
         // In this case there's no change.
         return Ok(true);
@@ -372,33 +377,35 @@ pub fn check_ol_block_proposal_valid(
     Ok(())
 }
 
-fn pick_best_block<'t>(
-    cur_tip: &'t OLBlockId,
-    tips_iter: impl Iterator<Item = &'t OLBlockId>,
+async fn pick_best_block_async(
+    cur_tip: &OLBlockId,
+    tips: &[OLBlockId],
     ol_block_mgr: &OLBlockManager,
-) -> Result<&'t OLBlockId, Error> {
-    let mut best_tip = cur_tip;
+) -> Result<OLBlockId, Error> {
+    let mut best_tip = *cur_tip;
     let mut best_block = ol_block_mgr
-        .get_block_data_blocking(*best_tip)?
-        .ok_or(Error::MissingL2Block(*best_tip))?;
+        .get_block_data_async(best_tip)
+        .await?
+        .ok_or(Error::MissingL2Block(best_tip))?;
 
     // The implementation of this will only switch to a new tip if it's a higher
     // height than our current tip.  We'll make this more sophisticated in the
     // future if we have a more sophisticated consensus protocol.
-    for other_tip in tips_iter {
+    for other_tip in tips {
         if other_tip == cur_tip {
             continue;
         }
 
         let other_block = ol_block_mgr
-            .get_block_data_blocking(*other_tip)?
+            .get_block_data_async(*other_tip)
+            .await?
             .ok_or(Error::MissingL2Block(*other_tip))?;
 
         let best_header = best_block.header();
         let other_header = other_block.header();
 
         if other_header.slot() > best_header.slot() {
-            best_tip = other_tip;
+            best_tip = *other_tip;
             best_block = other_block;
         }
     }
@@ -483,7 +490,8 @@ async fn revert_ol_state_to_block(
     let blkid = *block.blkid();
     let db = fcm_state.ctx().storage().ol_state();
     let new_state = db
-        .get_toplevel_ol_state_blocking(*block)?
+        .get_toplevel_ol_state_async(*block)
+        .await?
         .ok_or(Error::MissingBlockChainstate(blkid))?;
     let _ = fcm_state.update_tip_block(*block, new_state).await;
 
