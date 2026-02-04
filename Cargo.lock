@@ -14969,6 +14969,7 @@ dependencies = [
 name = "strata-ol-genesis"
 version = "0.1.0"
 dependencies = [
+ "strata-checkpoint-types",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-ol-chain-types-new",

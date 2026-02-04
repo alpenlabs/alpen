@@ -29,6 +29,7 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
         ol_state,
         ol_block,
         commitment,
+        epoch_summary,
     } = build_genesis_artifacts(params)?;
     let genesis_blkid = *commitment.blkid();
 
@@ -41,6 +42,10 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
     storage
         .ol_state()
         .put_toplevel_ol_state_blocking(commitment, ol_state)?;
+
+    storage
+        .ol_checkpoint()
+        .insert_epoch_summary_blocking(epoch_summary)?;
 
     info!(%genesis_blkid, slot = 0, "OL genesis initialization complete");
     Ok(commitment)
