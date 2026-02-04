@@ -1,0 +1,18 @@
+[package]
+name = "strata-ol-genesis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
+strata-params.workspace = true
+strata-primitives.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
