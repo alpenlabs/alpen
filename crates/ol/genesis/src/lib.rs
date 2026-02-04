@@ -2,7 +2,8 @@
 
 use std::result::Result as StdResult;
 
-use strata_identifiers::{Buf64, OLBlockCommitment};
+use strata_checkpoint_types::EpochSummary;
+use strata_identifiers::{Buf64, L1BlockCommitment, OLBlockCommitment};
 use strata_ledger_types::AsmManifest;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_state_types::OLState;
@@ -19,10 +20,15 @@ use tracing::{info, instrument};
 pub struct GenesisArtifacts {
     /// The initial OL state.
     pub ol_state: OLState,
+
     /// The genesis OL block.
     pub ol_block: OLBlock,
+
     /// The commitment to the genesis OL block.
     pub commitment: OLBlockCommitment,
+
+    /// The epoch 0 summary for initializing checkpoint tracking.
+    pub epoch_summary: EpochSummary,
 }
 
 /// Errors returned while building OL genesis artifacts.
@@ -31,6 +37,10 @@ pub enum GenesisError {
     /// The OL STF execution failed.
     #[error("OL STF execution failed")]
     StfExecution(#[from] ExecError),
+
+    /// The genesis L1 height is invalid.
+    #[error("invalid genesis L1 height {height}")]
+    InvalidGenesisL1Height { height: u64 },
 }
 
 pub type Result<T> = StdResult<T, GenesisError>;
@@ -49,7 +59,7 @@ pub fn default_genesis_manifest(params: &Params) -> AsmManifest {
     )
 }
 
-/// Construct genesis state + block artifacts, using a supplied manifest.
+/// Construct genesis state + block artifacts using a supplied manifest.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
 pub fn build_genesis_artifacts_with_manifest(
     params: &Params,
@@ -79,6 +89,19 @@ pub fn build_genesis_artifacts_with_manifest(
     let ol_block = OLBlock::new(signed_header, genesis_block.body().clone());
     let genesis_blkid = genesis_block.header().compute_blkid();
     let commitment = OLBlockCommitment::new(0, genesis_blkid);
+    let genesis_l1_commitment =
+        L1BlockCommitment::from_height_u64(genesis_l1.height_u64(), genesis_l1.blkid()).ok_or(
+            GenesisError::InvalidGenesisL1Height {
+                height: genesis_l1.height_u64(),
+            },
+        )?;
+    let epoch_summary = EpochSummary::new(
+        0,
+        commitment,
+        OLBlockCommitment::null(),
+        genesis_l1_commitment,
+        *genesis_block.header().state_root(),
+    );
 
     info!(%genesis_blkid, slot = 0, "OL genesis build complete");
 
@@ -86,6 +109,7 @@ pub fn build_genesis_artifacts_with_manifest(
         ol_state,
         ol_block,
         commitment,
+        epoch_summary,
     })
 }
 
