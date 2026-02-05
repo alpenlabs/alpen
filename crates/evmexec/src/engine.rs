@@ -212,11 +212,8 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
     }
 
     async fn submit_new_payload(&self, payload: ExecPayloadData) -> EngineResult<BlockStatus> {
-        // SAFETY: accessory_data is built from our rkyv serializer when assembling payloads, and
-        // we treat any decode failure as invalid input.
-        let Ok(el_payload) = (unsafe {
-            rkyv::from_bytes_unchecked::<ElPayload, RkyvError>(payload.accessory_data())
-        }) else {
+        let Ok(el_payload) = rkyv::from_bytes::<ElPayload, RkyvError>(payload.accessory_data())
+        else {
             // In particular, this happens if we try to call it with for genesis block.
             warn!("submit_new_payload called with malformed block accessory, this might be a bug");
             return Ok(BlockStatus::Invalid);

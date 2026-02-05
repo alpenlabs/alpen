@@ -7,6 +7,7 @@ use program::ClStfOutput;
 use rkyv::rancor::Error as RkyvError;
 use strata_chainexec::{ChainExecutor, MemExecContext};
 use strata_chaintsn::context::L2HeaderAndParent;
+use strata_codec_utils::decode_rkyv;
 use strata_ol_chain_types::{
     check_block_credential, validate_block_structure, ExecSegment, L2Block, L2BlockHeader, L2Header,
 };
@@ -21,17 +22,11 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
     // 2. Read the parent header which we consider valid and the initial chainstate from which we
     //    start the transition
     let parent_header_buf = zkvm.read_buf();
-    // SAFETY: parent_header_buf is provided by the host and expected to be a valid rkyv
-    // serialization of L2BlockHeader; we abort on any decode error.
     let mut parent_header: L2BlockHeader =
-        unsafe { rkyv::from_bytes_unchecked::<L2BlockHeader, RkyvError>(&parent_header_buf) }
-            .expect("rkyv deserialization failed");
+        decode_rkyv(&parent_header_buf).expect("rkyv deserialization failed");
     let initial_chainstate_buf = zkvm.read_buf();
-    // SAFETY: initial_chainstate_buf is provided by the host and must match the rkyv schema for
-    // Chainstate; malformed data is rejected.
     let initial_chainstate: Chainstate =
-        unsafe { rkyv::from_bytes_unchecked::<Chainstate, RkyvError>(&initial_chainstate_buf) }
-            .expect("rkyv deserialization failed");
+        decode_rkyv(&initial_chainstate_buf).expect("rkyv deserialization failed");
     let mut ctx = MemExecContext::default();
     ctx.put_chainstate(parent_header.get_blockid(), initial_chainstate.clone());
 
@@ -40,11 +35,7 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
 
     // 3. Read L2 blocks and parent header
     let l2_blocks_buf = zkvm.read_buf();
-    // SAFETY: l2_blocks_buf is provided by the host and must be valid rkyv for Vec<L2Block>;
-    // malformed data triggers an error.
-    let l2_blocks: Vec<L2Block> =
-        unsafe { rkyv::from_bytes_unchecked::<Vec<L2Block>, RkyvError>(&l2_blocks_buf) }
-            .expect("rkyv deserialization failed");
+    let l2_blocks: Vec<L2Block> = decode_rkyv(&l2_blocks_buf).expect("rkyv deserialization failed");
     assert!(!l2_blocks.is_empty(), "At least one L2 block is required");
 
     // 4. Read the verified exec segments
@@ -52,11 +43,8 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
     // Right now, each L2 block must contain exactly one ExecSegment, but this may change in the
     // future
     let exec_segments_buf = zkvm.read_verified_buf(el_vkey);
-    // SAFETY: exec_segments_buf comes from read_verified_buf using the EE STF VK, so the bytes
-    // are trusted rkyv output from the guest program.
     let exec_segments: Vec<ExecSegment> =
-        unsafe { rkyv::from_bytes_unchecked::<Vec<ExecSegment>, RkyvError>(&exec_segments_buf) }
-            .expect("rkyv deserialization failed");
+        decode_rkyv(&exec_segments_buf).expect("rkyv deserialization failed");
     assert_eq!(
         l2_blocks.len(),
         exec_segments.len(),

@@ -228,8 +228,7 @@ where
                 ))
             })?;
 
-        unsafe { rkyv::from_bytes_unchecked::<T, RkyvError>(&bytes) }
-            .map_err(|e| DbError::CodecError(e.to_string()))
+        rkyv::from_bytes::<T, RkyvError>(&bytes).map_err(|e| DbError::CodecError(e.to_string()))
     }
 
     /// Get data by leaf index (async version)
@@ -248,8 +247,7 @@ where
                 ))
             })?;
 
-        unsafe { rkyv::from_bytes_unchecked::<T, RkyvError>(&bytes) }
-            .map_err(|e| DbError::CodecError(e.to_string()))
+        rkyv::from_bytes::<T, RkyvError>(&bytes).map_err(|e| DbError::CodecError(e.to_string()))
     }
 
     /// Get the underlying hash-only handle

@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 strata-common.workspace = true
+strata-codec-utils.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-ol-chain-types.workspace = true

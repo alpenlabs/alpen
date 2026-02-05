@@ -28,10 +28,8 @@ impl EVML2Block {
 
 fn get_extra_payload(bundle: &L2BlockBundle) -> Result<EVMExtraPayload, ConversionError> {
     let extra_payload_slice = bundle.exec_segment().update().input().extra_payload();
-    // SAFETY: extra_payload_slice is produced by our rkyv serializer in the exec segment; we
-    // surface any decode error as an invalid payload.
-    unsafe { rkyv::from_bytes_unchecked::<EVMExtraPayload, RkyvError>(extra_payload_slice) }
-        .or(Err(ConversionError::InvalidExecPayload))
+    rkyv::from_bytes::<EVMExtraPayload, RkyvError>(extra_payload_slice)
+        .map_err(|_| ConversionError::InvalidExecPayload)
 }
 
 pub(crate) fn evm_block_hash(bundle: &L2BlockBundle) -> Result<B256, ConversionError> {

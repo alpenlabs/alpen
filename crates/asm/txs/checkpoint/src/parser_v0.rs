@@ -31,11 +31,8 @@ pub fn extract_signed_checkpoint_from_envelope(
 
     let payload = parse_envelope_payload(&payload_script)?;
 
-    // SAFETY: payload is an owned buffer extracted from the checkpoint envelope and is expected
-    // to be produced by our rkyv serializer; we fail fast on malformed data.
-    let checkpoint: SignedCheckpoint =
-        unsafe { rkyv::from_bytes_unchecked::<SignedCheckpoint, RkyvError>(&payload) }
-            .map_err(CheckpointTxError::Deserialization)?;
+    let checkpoint: SignedCheckpoint = rkyv::from_bytes::<SignedCheckpoint, RkyvError>(&payload)
+        .map_err(CheckpointTxError::Deserialization)?;
 
     Ok(checkpoint)
 }
@@ -45,11 +42,8 @@ pub fn extract_withdrawal_messages(
     checkpoint: &Checkpoint,
 ) -> CheckpointTxResult<Vec<WithdrawalIntent>> {
     let sidecar = checkpoint.sidecar();
-    // SAFETY: sidecar.chainstate() returns bytes serialized by our checkpoint builder; the buffer
-    // is immutable here and we treat any decode error as a validation failure.
-    let chain_state: Chainstate =
-        unsafe { rkyv::from_bytes_unchecked::<Chainstate, RkyvError>(sidecar.chainstate()) }
-            .map_err(CheckpointTxError::Deserialization)?;
+    let chain_state: Chainstate = rkyv::from_bytes::<Chainstate, RkyvError>(sidecar.chainstate())
+        .map_err(CheckpointTxError::Deserialization)?;
 
     Ok(chain_state.pending_withdraws().entries().to_vec())
 }

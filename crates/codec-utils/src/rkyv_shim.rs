@@ -9,6 +9,14 @@ use rkyv::{
 };
 use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 
+pub fn decode_rkyv<T>(bytes: &[u8]) -> Result<T, RkyvError>
+where
+    T: Archive,
+    Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
+{
+    rkyv::from_bytes::<T, RkyvError>(bytes)
+}
+
 /// Wraps an rkyv type so that it can be transparently [`Codec`]ed.
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CodecRkyv<T>(pub T);
@@ -41,9 +49,7 @@ where
         let mut buffer = vec![0u8; len_usize];
         dec.read_buf(&mut buffer)?;
 
-        // SAFETY: The buffer was produced by rkyv in encode().
-        let inner = unsafe { rkyv::from_bytes_unchecked::<T, RkyvError>(&buffer) }
-            .map_err(|_| CodecError::MalformedField("rkyv"))?;
+        let inner = decode_rkyv::<T>(&buffer).map_err(|_| CodecError::MalformedField("rkyv"))?;
 
         Ok(Self(inner))
     }

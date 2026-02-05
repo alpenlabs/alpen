@@ -1,5 +1,10 @@
 //! Shim for encoding SSZ types with the [`Codec`] trait.
 
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
@@ -53,6 +58,45 @@ impl<T: Decode + Encode> Codec for CodecSsz<T> {
         enc.write_buf(&bytes)?;
 
         Ok(())
+    }
+}
+
+pub struct SszAsBytes;
+
+impl<T> ArchiveWith<T> for SszAsBytes
+where
+    T: Decode + Encode,
+{
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &T, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let bytes = field.as_ssz_bytes();
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<T, S> SerializeWith<T, S> for SszAsBytes
+where
+    T: Decode + Encode,
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &T, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let bytes = field.as_ssz_bytes();
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<T, D> DeserializeWith<Archived<Vec<u8>>, T, D> for SszAsBytes
+where
+    T: Decode + Encode,
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(field: &Archived<Vec<u8>>, deserializer: &mut D) -> Result<T, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(T::from_ssz_bytes(&bytes).expect("valid SSZ bytes"))
     }
 }
 

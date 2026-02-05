@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use jsonrpsee::http_client::HttpClient;
-use rkyv::rancor::Error as RkyvError;
+use strata_codec_utils::decode_rkyv;
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
-use strata_ol_chain_types::{L2Block, L2BlockId, L2Header};
+use strata_ol_chain_types::{ClBlockWitness, L2Block, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::RollupParams;
 use strata_primitives::{
@@ -127,32 +127,24 @@ impl ClStfOperator {
         &self,
         blkid: L2BlockId,
     ) -> Result<Chainstate, ProvingTaskError> {
-        let raw_witness: Vec<u8> = self
+        let raw_witness = self
             .cl_client
             .get_cl_block_witness_raw(blkid)
             .await
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
-        // SAFETY: raw_witness is produced by the CL node using rkyv for (Chainstate, L2Block),
-        // and we immediately reject malformed data via the rkyv error.
-        let (chainstate, _): (Chainstate, L2Block) =
-            unsafe { rkyv::from_bytes_unchecked::<(Chainstate, L2Block), RkyvError>(&raw_witness) }
-                .expect("invalid witness");
-        Ok(chainstate)
+        let witness = decode_rkyv::<ClBlockWitness>(&raw_witness)?;
+        Ok(witness.chainstate)
     }
 
     /// Retrieves the L2 block for the given block ID.
     pub(crate) async fn get_block(&self, blkid: &L2BlockId) -> Result<L2Block, ProvingTaskError> {
-        let raw_witness: Vec<u8> = self
+        let raw_witness = self
             .cl_client
             .get_cl_block_witness_raw(*blkid)
             .await
             .map_err(|e| ProvingTaskError::RpcError(e.to_string()))?;
-        // SAFETY: raw_witness is produced by the CL node using rkyv for (Chainstate, L2Block),
-        // and we immediately reject malformed data via the rkyv error.
-        let (_, blk): (Chainstate, L2Block) =
-            unsafe { rkyv::from_bytes_unchecked::<(Chainstate, L2Block), RkyvError>(&raw_witness) }
-                .expect("invalid witness");
-        Ok(blk)
+        let witness = decode_rkyv::<ClBlockWitness>(&raw_witness)?;
+        Ok(witness.block)
     }
 }
 

@@ -18,20 +18,14 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
         epoch,
         initial_chainstate_root,
         mut final_chainstate_root,
-    } = {
-        // SAFETY: first_output_buf is read via `read_verified_buf` with the CL STF verifying key,
-        // so it must be the exact rkyv output produced by the guest program.
-        unsafe { rkyv::from_bytes_unchecked::<ClStfOutput, RkyvError>(&first_output_buf) }
-    }
-    .expect("rkyv deserialization failed");
+    } = rkyv::from_bytes::<ClStfOutput, RkyvError>(&first_output_buf)
+        .expect("rkyv deserialization failed");
 
     // Starting with 1 since we have already read the first CL STF output
     for _ in 1..batches_count {
         let cl_stf_output_buf = zkvm.read_verified_buf(cl_stf_vk);
-        // SAFETY: cl_stf_output_buf is verified against the CL STF VK, so the bytes are trusted
-        // rkyv output from the guest program.
         let cl_stf_output: ClStfOutput =
-            unsafe { rkyv::from_bytes_unchecked::<ClStfOutput, RkyvError>(&cl_stf_output_buf) }
+            rkyv::from_bytes::<ClStfOutput, RkyvError>(&cl_stf_output_buf)
                 .expect("rkyv deserialization failed");
 
         assert_eq!(

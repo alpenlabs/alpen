@@ -191,8 +191,7 @@ impl SectionState {
             .into());
         }
 
-        // SAFETY: The serialized section bytes are produced internally by rkyv and are trusted.
-        unsafe { rkyv::from_bytes_unchecked::<S::State, RkyvError>(&self.data) }
+        rkyv::from_bytes::<S::State, RkyvError>(&self.data)
             .map_err(|e| AsmError::Deserialization(self.id, e))
     }
 }

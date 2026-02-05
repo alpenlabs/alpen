@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
+strata-codec-utils.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-params.workspace = true
