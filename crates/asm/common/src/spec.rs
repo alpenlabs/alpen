@@ -1,3 +1,4 @@
+use rkyv::{api::high::HighValidator, bytecheck::CheckBytes, rancor::Error as RkyvError};
 use strata_l1_txfmt::MagicBytes;
 
 use crate::{StateDeserializer, Subprotocol};
@@ -27,6 +28,7 @@ pub trait Loader {
     /// execution in this ASM invocation.
     fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params)
     where
+        rkyv::Archived<S::State>: for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
         rkyv::Archived<S::State>: rkyv::Deserialize<S::State, StateDeserializer>;
 }
 

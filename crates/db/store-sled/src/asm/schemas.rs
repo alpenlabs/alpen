@@ -5,7 +5,7 @@ use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
 
 use crate::{
     define_table_with_seek_key_codec, define_table_without_codec,
-    macros::lexicographic::{decode_key, encode_key},
+    lexicographic::{decode_key, encode_key},
 };
 
 // ASM state per block schema and corresponding codecs implementation.

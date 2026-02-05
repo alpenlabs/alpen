@@ -16,13 +16,13 @@ strata-bridge-types.workspace = true
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
+strata-codec-utils.workspace = true
 
 anyhow.workspace = true
 arbitrary.workspace = true
 async-trait.workspace = true
 rkyv.workspace = true
 serde.workspace = true
-ssz.workspace = true
 
 [features]
 test_utils = []

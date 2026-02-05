@@ -15,6 +15,8 @@ use secp256k1::{Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
 use serde::{de::Error as DeError, Deserialize, Serialize};
 use strata_identifiers::Buf32;
 
+use crate::keys::impl_public_key_as_bytes;
+
 /// Represents a secret key whose x-only public key has even parity.
 ///
 /// Converting from a [`SecretKey`] negates the key when its x-only public key has odd parity,
@@ -60,44 +62,18 @@ impl From<EvenSecretKey> for SecretKey {
 )]
 pub struct EvenPublicKey(#[rkyv(with = EvenPublicKeyAsBytes)] PublicKey);
 
-/// Serializer for [`PublicKey`] as bytes for rkyv.
-struct EvenPublicKeyAsBytes;
-
-impl ArchiveWith<PublicKey> for EvenPublicKeyAsBytes {
-    type Archived = Archived<[u8; 32]>;
-    type Resolver = Resolver<[u8; 32]>;
-
-    fn resolve_with(field: &PublicKey, resolver: Self::Resolver, out: Place<Self::Archived>) {
+impl_public_key_as_bytes!(
+    EvenPublicKeyAsBytes,
+    [u8; 32],
+    |field: &PublicKey| {
         let x_only = field.x_only_public_key().0;
-        rkyv::Archive::resolve(&x_only.serialize(), resolver, out);
+        x_only.serialize()
+    },
+    |bytes| {
+        let x_only = XOnlyPublicKey::from_slice(bytes).expect("stored public key should decode");
+        PublicKey::from_x_only_public_key(x_only, Parity::Even)
     }
-}
-
-impl<S> SerializeWith<PublicKey, S> for EvenPublicKeyAsBytes
-where
-    S: Fallible + ?Sized,
-    [u8; 32]: rkyv::Serialize<S>,
-{
-    fn serialize_with(field: &PublicKey, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let x_only = field.x_only_public_key().0;
-        rkyv::Serialize::serialize(&x_only.serialize(), serializer)
-    }
-}
-
-impl<D> DeserializeWith<Archived<[u8; 32]>, PublicKey, D> for EvenPublicKeyAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<[u8; 32]>: rkyv::Deserialize<[u8; 32], D>,
-{
-    fn deserialize_with(
-        field: &Archived<[u8; 32]>,
-        deserializer: &mut D,
-    ) -> Result<PublicKey, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        let x_only = XOnlyPublicKey::from_slice(&bytes).expect("stored public key should decode");
-        Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even))
-    }
-}
+);
 
 impl Deref for EvenPublicKey {
     type Target = PublicKey;

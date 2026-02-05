@@ -9,6 +9,8 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-crypto.workspace = true
+strata-codec-utils.workspace = true
+strata-ol-chainstate-types.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
@@ -16,7 +18,6 @@ strata-state.workspace = true
 arbitrary.workspace = true
 rkyv.workspace = true
 serde.workspace = true
-ssz.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

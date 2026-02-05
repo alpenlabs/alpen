@@ -1,14 +1,13 @@
 use rkyv::{
-    Archived, Place, Resolver,
-    api::high::{HighDeserializer, HighSerializer},
-    rancor::{Error as RkyvError, Fallible},
+    api::high::{HighDeserializer, HighSerializer, HighValidator},
+    bytecheck::CheckBytes,
+    rancor::Error as RkyvError,
     ser::allocator::ArenaHandle,
     util::AlignedVec,
-    with::{ArchiveWith, DeserializeWith, SerializeWith},
 };
 use serde::{Deserialize, Serialize};
 use strata_asm_types::HeaderVerificationState;
-use strata_codec::{decode_buf_exact, encode_to_vec};
+use strata_codec_utils::SszAsBytes;
 
 use crate::{AsmError, AsmHistoryAccumulatorState, Mismatched, Subprotocol, SubprotocolId};
 
@@ -23,52 +22,6 @@ pub trait RkyvState: rkyv::Archive + for<'a> rkyv::Serialize<StateSerializer<'a>
 
 impl<T> RkyvState for T where T: rkyv::Archive + for<'a> rkyv::Serialize<StateSerializer<'a>> + Sized
 {}
-
-/// Serializer for ASM history accumulator as codec bytes for rkyv.
-struct AsmHistoryAccumulatorAsBytes;
-
-impl ArchiveWith<AsmHistoryAccumulatorState> for AsmHistoryAccumulatorAsBytes {
-    type Archived = Archived<Vec<u8>>;
-    type Resolver = Resolver<Vec<u8>>;
-
-    fn resolve_with(
-        field: &AsmHistoryAccumulatorState,
-        resolver: Self::Resolver,
-        out: Place<Self::Archived>,
-    ) {
-        let bytes = encode_to_vec(field).expect("codec should serialize ASM history accumulator");
-        rkyv::Archive::resolve(&bytes, resolver, out);
-    }
-}
-
-impl<S> SerializeWith<AsmHistoryAccumulatorState, S> for AsmHistoryAccumulatorAsBytes
-where
-    S: Fallible + ?Sized,
-    Vec<u8>: rkyv::Serialize<S>,
-{
-    fn serialize_with(
-        field: &AsmHistoryAccumulatorState,
-        serializer: &mut S,
-    ) -> Result<Self::Resolver, S::Error> {
-        let bytes = encode_to_vec(field).expect("codec should serialize ASM history accumulator");
-        rkyv::Serialize::serialize(&bytes, serializer)
-    }
-}
-
-impl<D> DeserializeWith<Archived<Vec<u8>>, AsmHistoryAccumulatorState, D>
-    for AsmHistoryAccumulatorAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
-{
-    fn deserialize_with(
-        field: &Archived<Vec<u8>>,
-        deserializer: &mut D,
-    ) -> Result<AsmHistoryAccumulatorState, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(decode_buf_exact(&bytes).expect("codec should deserialize ASM history accumulator"))
-    }
-}
 
 /// Anchor state for the Anchor State Machine (ASM), the core of the Strata protocol.
 ///
@@ -125,7 +78,7 @@ pub struct ChainViewState {
     ///
     /// Each leaf represents the root hash of an [`AsmManifest`](crate::AsmManifest) for the
     /// corresponding block, enabling efficient historical proofs of ASM state transitions.
-    #[rkyv(with = AsmHistoryAccumulatorAsBytes)]
+    #[rkyv(with = SszAsBytes)]
     pub history_accumulator: AsmHistoryAccumulatorState,
 }
 
@@ -181,6 +134,7 @@ impl SectionState {
     pub fn try_to_state<S: Subprotocol>(&self) -> Result<S::State, AsmError>
     where
         S::State: rkyv::Archive,
+        rkyv::Archived<S::State>: for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
         rkyv::Archived<S::State>: rkyv::Deserialize<S::State, StateDeserializer>,
     {
         if S::ID != self.id {

@@ -61,6 +61,7 @@ impl<T: Decode + Encode> Codec for CodecSsz<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct SszAsBytes;
 
 impl<T> ArchiveWith<T> for SszAsBytes

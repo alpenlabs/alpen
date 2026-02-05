@@ -197,9 +197,8 @@ where
     [T::Archived]: DeserializeUnsized<[T], D>,
 {
     fn deserialize(&self, deserializer: &mut D) -> Result<SortedVec<T>, D::Error> {
-        let mut inner: Vec<T> = self.inner.deserialize(deserializer)?;
-        inner.sort();
-        Ok(SortedVec::new_unchecked(inner))
+        let inner: Vec<T> = self.inner.deserialize(deserializer)?;
+        SortedVec::try_from(inner).map_err(D::Error::new)
     }
 }
 
@@ -435,8 +434,6 @@ impl<T: TableEntry> TryFrom<Vec<T>> for FlatTable<T> {
     }
 }
 
-/// Extra implementation logic that ensures that the deserialized vec is
-/// sorted and has no duplicates.  Does not sort it itself, instead it errors.
 #[cfg(test)]
 mod tests {
     use super::*;

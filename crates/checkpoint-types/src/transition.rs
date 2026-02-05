@@ -1,5 +1,6 @@
 use arbitrary::Arbitrary;
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use strata_identifiers::{Buf32, Epoch};
 
 /// Contains transition information in a batch checkpoint, verified by the proof
@@ -15,6 +16,8 @@ use strata_identifiers::{Buf32, Epoch};
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct BatchTransition {
     /// Epoch
@@ -49,6 +52,8 @@ pub struct BatchTransition {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ChainstateRootTransition {
     /// Chainstate root prior to execution of the batch.

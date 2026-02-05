@@ -112,77 +112,43 @@ impl ProofDatabase for ProofDBSled {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::proof_db_tests;
+    use strata_db_tests::{proof_db_tests, proof_tests::ProofDatabaseOrdering};
     use strata_paas::TaskStatus;
-    use strata_primitives::proof::{ProofContext, ProofZkVm};
-    use zkaleido::{Proof, ProofMetadata, ProofReceipt, PublicValues, ZkVm};
+    use strata_primitives::proof::{ProofContext, ProofKey};
+    use zkaleido::ProofReceiptWithMetadata;
 
     use super::*;
     use crate::sled_db_test_setup;
 
-    sled_db_test_setup!(ProofDBSled, proof_db_tests);
+    impl ProofDatabaseOrdering for ProofDBSled {
+        type TaskId = SerializableTaskId;
+        type TaskRecord = SerializableTaskRecord;
 
-    fn test_proof_receipt() -> ProofReceiptWithMetadata {
-        let proof = Proof::default();
-        let public_values = PublicValues::default();
-        let receipt = ProofReceipt::new(proof, public_values);
-        let metadata = ProofMetadata::new(ZkVm::Native, "0.1".to_string());
-        ProofReceiptWithMetadata::new(receipt, metadata)
-    }
-
-    #[test]
-    fn test_proof_tree_ordering_over_256() {
-        let db = setup_db();
-        let max_height = 300u64;
-
-        for height in 0..=max_height {
-            let context = ProofContext::Checkpoint(height);
-            let key = ProofKey::new(context, ProofZkVm::Native);
-            db.put_proof(key, test_proof_receipt())
-                .expect("insert proof");
+        fn iter_proofs(&self) -> Vec<(ProofKey, ProofReceiptWithMetadata)> {
+            self.proof_tree.iter().filter_map(|res| res.ok()).collect()
         }
 
-        let entries: Vec<(ProofKey, ProofReceiptWithMetadata)> =
-            db.proof_tree.iter().filter_map(|res| res.ok()).collect();
-        assert_eq!(entries.len(), (max_height + 1) as usize);
-
-        let last_key = entries.last().unwrap().0;
-        match last_key.context() {
-            ProofContext::Checkpoint(height) => assert_eq!(*height, max_height),
-            _ => panic!("unexpected proof context"),
-        }
-    }
-
-    #[test]
-    fn test_proof_deps_ordering_over_256() {
-        let db = setup_db();
-        let max_height = 300u64;
-
-        for height in 0..=max_height {
-            let context = ProofContext::Checkpoint(height);
-            db.put_proof_deps(context, vec![]).expect("insert deps");
+        fn iter_proof_deps(&self) -> Vec<(ProofContext, Vec<ProofContext>)> {
+            self.proof_deps_tree
+                .iter()
+                .filter_map(|res| res.ok())
+                .collect()
         }
 
-        let entries: Vec<(ProofContext, Vec<ProofContext>)> = db
-            .proof_deps_tree
-            .iter()
-            .filter_map(|res| res.ok())
-            .collect();
-        assert_eq!(entries.len(), (max_height + 1) as usize);
-
-        let last_context = entries.last().unwrap().0;
-        match last_context {
-            ProofContext::Checkpoint(height) => assert_eq!(height, max_height),
-            _ => panic!("unexpected proof context"),
+        fn insert_task(
+            &self,
+            task_id: &Self::TaskId,
+            record: &Self::TaskRecord,
+        ) -> Result<(), String> {
+            self.insert_task(task_id, record)
+                .map_err(|err| err.to_string())
         }
-    }
 
-    #[test]
-    fn test_paas_task_ordering_over_256() {
-        let db = setup_db();
-        let max_height = 300u64;
+        fn list_all_tasks(&self) -> Vec<(Self::TaskId, Self::TaskRecord)> {
+            self.list_all_tasks()
+        }
 
-        for height in 0..=max_height {
+        fn make_task(&self, height: u64) -> (Self::TaskId, Self::TaskRecord) {
             let task_id = SerializableTaskId {
                 program: ProofContext::Checkpoint(height),
                 backend: 0,
@@ -194,16 +160,9 @@ mod tests {
                 created_at_secs: height,
                 updated_at_secs: height,
             };
-            db.insert_task(&task_id, &record).expect("insert task");
-        }
-
-        let tasks = db.list_all_tasks();
-        assert_eq!(tasks.len(), (max_height + 1) as usize);
-
-        let last_task_id = &tasks.last().unwrap().0;
-        match last_task_id.program {
-            ProofContext::Checkpoint(height) => assert_eq!(height, max_height),
-            _ => panic!("unexpected task context"),
+            (task_id, record)
         }
     }
+
+    sled_db_test_setup!(ProofDBSled, proof_db_tests);
 }

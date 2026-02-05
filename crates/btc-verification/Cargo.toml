@@ -12,6 +12,7 @@ arbitrary.workspace = true
 bitcoin.workspace = true
 rkyv.workspace = true
 serde.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

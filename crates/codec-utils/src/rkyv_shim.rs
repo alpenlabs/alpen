@@ -2,7 +2,8 @@
 
 use rkyv::{
     Archive, Archived, Deserialize, Serialize,
-    api::high::{HighDeserializer, HighSerializer},
+    api::high::{HighDeserializer, HighSerializer, HighValidator},
+    bytecheck::CheckBytes,
     rancor::Error as RkyvError,
     ser::allocator::ArenaHandle,
     util::AlignedVec,
@@ -12,7 +13,8 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 pub fn decode_rkyv<T>(bytes: &[u8]) -> Result<T, RkyvError>
 where
     T: Archive,
-    Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
+    Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>
+        + for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
 {
     rkyv::from_bytes::<T, RkyvError>(bytes)
 }
@@ -38,7 +40,8 @@ impl<T> CodecRkyv<T> {
 impl<T> Codec for CodecRkyv<T>
 where
     T: Archive + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>>,
-    Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
+    Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>
+        + for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
 {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         // Read a varint describing the length of the buffer.

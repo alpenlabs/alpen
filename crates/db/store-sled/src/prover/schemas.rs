@@ -7,7 +7,7 @@ use zkaleido::{Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, Pub
 
 use crate::{
     define_table_with_default_codec, define_table_with_seek_key_codec, define_table_without_codec,
-    macros::lexicographic::{LexicographicKey, decode_key, encode_key},
+    lexicographic::{LexicographicKey, decode_key, encode_key},
 };
 
 /// Serializer for [`ProofReceiptWithMetadata`] as bytes for rkyv.

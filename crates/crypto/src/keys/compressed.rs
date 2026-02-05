@@ -11,6 +11,8 @@ use rkyv::{
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 
+use crate::keys::impl_public_key_as_bytes;
+
 /// A compressed secp256k1 public key (33 bytes).
 ///
 /// This is a thin wrapper around `secp256k1::PublicKey` that adds rkyv
@@ -27,40 +29,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct CompressedPublicKey(#[rkyv(with = PublicKeyAsBytes)] PublicKey);
 
-struct PublicKeyAsBytes;
-
-impl ArchiveWith<PublicKey> for PublicKeyAsBytes {
-    type Archived = Archived<[u8; 33]>;
-    type Resolver = Resolver<[u8; 33]>;
-
-    fn resolve_with(field: &PublicKey, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        rkyv::Archive::resolve(&field.serialize(), resolver, out);
-    }
-}
-
-impl<S> SerializeWith<PublicKey, S> for PublicKeyAsBytes
-where
-    S: Fallible + ?Sized,
-    [u8; 33]: rkyv::Serialize<S>,
-{
-    fn serialize_with(field: &PublicKey, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        rkyv::Serialize::serialize(&field.serialize(), serializer)
-    }
-}
-
-impl<D> DeserializeWith<Archived<[u8; 33]>, PublicKey, D> for PublicKeyAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<[u8; 33]>: rkyv::Deserialize<[u8; 33], D>,
-{
-    fn deserialize_with(
-        field: &Archived<[u8; 33]>,
-        deserializer: &mut D,
-    ) -> Result<PublicKey, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(PublicKey::from_slice(&bytes).expect("stored public key should decode"))
-    }
-}
+impl_public_key_as_bytes!(
+    PublicKeyAsBytes,
+    [u8; 33],
+    |field: &PublicKey| field.serialize(),
+    |bytes| PublicKey::from_slice(bytes).expect("stored public key should decode")
+);
 
 impl CompressedPublicKey {
     /// Create a new `CompressedPublicKey` from a byte slice.

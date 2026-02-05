@@ -13,4 +13,6 @@ strata-identifiers.workspace = true
 arbitrary.workspace = true
 rkyv.workspace = true
 serde.workspace = true
+ssz.workspace = true
+ssz_derive.workspace = true
 zkaleido.workspace = true

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use strata_db_types::traits::ProofDatabase;
 use strata_primitives::{
     buf::Buf32,
@@ -6,6 +8,17 @@ use strata_primitives::{
     proof::{ProofContext, ProofKey, ProofZkVm},
 };
 use zkaleido::{Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues, ZkVm};
+
+pub trait ProofDatabaseOrdering: ProofDatabase {
+    type TaskId: Clone + PartialEq;
+    type TaskRecord: Clone;
+
+    fn iter_proofs(&self) -> Vec<(ProofKey, ProofReceiptWithMetadata)>;
+    fn iter_proof_deps(&self) -> Vec<(ProofContext, Vec<ProofContext>)>;
+    fn insert_task(&self, task_id: &Self::TaskId, record: &Self::TaskRecord) -> Result<(), String>;
+    fn list_all_tasks(&self) -> Vec<(Self::TaskId, Self::TaskRecord)>;
+    fn make_task(&self, height: u64) -> (Self::TaskId, Self::TaskRecord);
+}
 
 pub fn test_insert_new_proof(db: &impl ProofDatabase) {
     let (proof_key, proof) = generate_proof();
@@ -85,6 +98,63 @@ pub fn test_get_nonexistent_proof_deps(db: &impl ProofDatabase) {
     );
 }
 
+pub fn test_proof_tree_ordering_over_256<DB: ProofDatabaseOrdering>(db: &DB) {
+    let max_height = 300u64;
+
+    for height in 0..=max_height {
+        let context = ProofContext::Checkpoint(height);
+        let key = ProofKey::new(context, ProofZkVm::Native);
+        db.put_proof(key, test_proof_receipt())
+            .expect("insert proof");
+    }
+
+    let entries = db.iter_proofs();
+    assert_eq!(entries.len(), (max_height + 1) as usize);
+
+    let last_key = entries.last().unwrap().0;
+    match last_key.context() {
+        ProofContext::Checkpoint(height) => assert_eq!(*height, max_height),
+        _ => panic!("unexpected proof context"),
+    }
+}
+
+pub fn test_proof_deps_ordering_over_256<DB: ProofDatabaseOrdering>(db: &DB) {
+    let max_height = 300u64;
+
+    for height in 0..=max_height {
+        let context = ProofContext::Checkpoint(height);
+        db.put_proof_deps(context, vec![]).expect("insert deps");
+    }
+
+    let entries = db.iter_proof_deps();
+    assert_eq!(entries.len(), (max_height + 1) as usize);
+
+    let last_context = entries.last().unwrap().0;
+    match last_context {
+        ProofContext::Checkpoint(height) => assert_eq!(height, max_height),
+        _ => panic!("unexpected proof context"),
+    }
+}
+
+pub fn test_paas_task_ordering_over_256<DB: ProofDatabaseOrdering>(db: &DB)
+where
+    DB::TaskId: Debug,
+{
+    let max_height = 300u64;
+
+    for height in 0..=max_height {
+        let (task_id, record) = db.make_task(height);
+        db.insert_task(&task_id, &record).expect("insert task");
+    }
+
+    let tasks = db.list_all_tasks();
+    assert_eq!(tasks.len(), (max_height + 1) as usize);
+
+    let (expected_task_id, _) = db.make_task(max_height);
+    let last_task_id = &tasks.last().unwrap().0;
+    assert_eq!(&expected_task_id, last_task_id);
+}
+
 // Helper functions
 fn generate_proof() -> (ProofKey, ProofReceiptWithMetadata) {
     let proof_context = ProofContext::ClStf(L2BlockCommitment::null(), L2BlockCommitment::null());
@@ -118,6 +188,14 @@ fn generate_proof_context_with_deps() -> (ProofContext, Vec<ProofContext>) {
     let deps = vec![ProofContext::EvmEeStf(evm_commitment_1, evm_commitment_2)];
 
     (main_context, deps)
+}
+
+fn test_proof_receipt() -> ProofReceiptWithMetadata {
+    let proof = Proof::default();
+    let public_values = PublicValues::default();
+    let receipt = ProofReceipt::new(proof, public_values);
+    let metadata = ProofMetadata::new(ZkVm::Native, "0.1".to_string());
+    ProofReceiptWithMetadata::new(receipt, metadata)
 }
 
 #[macro_export]
@@ -157,6 +235,24 @@ macro_rules! proof_db_tests {
         fn test_get_nonexistent_proof_deps() {
             let db = $setup_expr;
             $crate::proof_tests::test_get_nonexistent_proof_deps(&db);
+        }
+
+        #[test]
+        fn test_proof_tree_ordering_over_256() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_proof_tree_ordering_over_256(&db);
+        }
+
+        #[test]
+        fn test_proof_deps_ordering_over_256() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_proof_deps_ordering_over_256(&db);
+        }
+
+        #[test]
+        fn test_paas_task_ordering_over_256() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_paas_task_ordering_over_256(&db);
         }
     };
 }

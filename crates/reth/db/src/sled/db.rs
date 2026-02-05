@@ -12,57 +12,58 @@ use crate::{
     errors::DbError, DbResult, StateDiffProvider, StateDiffStore, WitnessProvider, WitnessStore,
 };
 
-/// Serializer for [`Address`] as bytes for rkyv.
-#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct AddressBytes([u8; 20]);
+macro_rules! impl_rkyv_bytes_wrapper {
+    ($name:ident, $inner:ty, $array:ty, $to_bytes:expr, $from_bytes:expr) => {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+        )]
+        struct $name($array);
 
-impl From<Address> for AddressBytes {
-    fn from(value: Address) -> Self {
+        impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
+                Self(($to_bytes)(value))
+            }
+        }
+
+        impl From<$name> for $inner {
+            fn from(value: $name) -> Self {
+                ($from_bytes)(value.0)
+            }
+        }
+    };
+}
+
+impl_rkyv_bytes_wrapper!(
+    AddressBytes,
+    Address,
+    [u8; 20],
+    |value: Address| {
         let mut bytes = [0u8; 20];
         bytes.copy_from_slice(value.as_slice());
-        Self(bytes)
-    }
-}
+        bytes
+    },
+    Address::from
+);
 
-impl From<AddressBytes> for Address {
-    fn from(value: AddressBytes) -> Self {
-        Address::from(value.0)
-    }
-}
-
-/// Serializer for [`B256`] as bytes for rkyv.
-#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct B256Bytes([u8; 32]);
-
-impl From<B256> for B256Bytes {
-    fn from(value: B256) -> Self {
+impl_rkyv_bytes_wrapper!(
+    B256Bytes,
+    B256,
+    [u8; 32],
+    |value: B256| {
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(value.as_slice());
-        Self(bytes)
-    }
-}
+        bytes
+    },
+    B256::from
+);
 
-impl From<B256Bytes> for B256 {
-    fn from(value: B256Bytes) -> Self {
-        B256::from(value.0)
-    }
-}
-
-/// Serializer for [`U256`] as bytes for rkyv.
-#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct U256Bytes([u8; 32]);
-
-impl From<U256> for U256Bytes {
-    fn from(value: U256) -> Self {
-        Self(value.to_be_bytes())
-    }
-}
-
-impl From<U256Bytes> for U256 {
-    fn from(value: U256Bytes) -> Self {
-        U256::from_be_bytes(value.0)
-    }
-}
+impl_rkyv_bytes_wrapper!(
+    U256Bytes,
+    U256,
+    [u8; 32],
+    |value: U256| value.to_be_bytes(),
+    U256::from_be_bytes
+);
 
 /// Serializer for [`alpen_reth_statediff::AccountSnapshot`] as bytes for rkyv.
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]

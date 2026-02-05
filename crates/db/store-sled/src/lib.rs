@@ -11,6 +11,7 @@ mod init;
 mod instrumentation;
 pub mod l1;
 pub mod l2;
+pub mod lexicographic;
 pub mod macros;
 pub mod mempool;
 pub mod ol;

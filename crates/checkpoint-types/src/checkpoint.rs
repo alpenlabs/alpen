@@ -5,6 +5,8 @@ use rkyv::{
     Archived, Place, Resolver,
 };
 use serde::{Deserialize, Serialize};
+use ssz::Encode;
+use ssz_derive::{Decode, Encode};
 use strata_crypto::{hash, schnorr::verify_schnorr_sig};
 use strata_identifiers::{Buf32, Buf64, CredRule};
 use zkaleido::{Proof, ProofReceipt, PublicValues};
@@ -59,6 +61,8 @@ where
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct CheckpointCommitment {
     /// Information regarding the current batches of l1 and l2 blocks along with epoch.
@@ -150,10 +154,7 @@ impl Checkpoint {
         // FIXME make this more structured and use incremental hashing
 
         let mut buf = vec![];
-        let batch_serialized = rkyv::to_bytes::<RkyvError>(&self.commitment.batch_info)
-            .expect("could not serialize checkpoint info");
-
-        buf.extend(batch_serialized.as_ref());
+        buf.extend(self.commitment.batch_info.as_ssz_bytes());
         buf.extend(self.proof.as_bytes());
 
         hash::raw(&buf)
@@ -161,6 +162,57 @@ impl Checkpoint {
 
     pub fn sidecar(&self) -> &CheckpointSidecar {
         &self.sidecar
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+struct CheckpointSsz {
+    commitment: CheckpointCommitment,
+    proof: Vec<u8>,
+    sidecar: CheckpointSidecar,
+}
+
+impl From<&Checkpoint> for CheckpointSsz {
+    fn from(checkpoint: &Checkpoint) -> Self {
+        Self {
+            commitment: checkpoint.commitment.clone(),
+            proof: checkpoint.proof.as_bytes().to_vec(),
+            sidecar: checkpoint.sidecar.clone(),
+        }
+    }
+}
+
+impl From<CheckpointSsz> for Checkpoint {
+    fn from(value: CheckpointSsz) -> Self {
+        Self {
+            commitment: value.commitment,
+            proof: Proof::new(value.proof),
+            sidecar: value.sidecar,
+        }
+    }
+}
+
+impl ssz::Encode for Checkpoint {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        CheckpointSsz::from(self).ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        CheckpointSsz::from(self).ssz_bytes_len()
+    }
+}
+
+impl ssz::Decode for Checkpoint {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        Ok(CheckpointSsz::from_ssz_bytes(bytes)?.into())
     }
 }
 
@@ -175,6 +227,8 @@ impl Checkpoint {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct CheckpointSidecar {
     /// Chainstate at the end of this checkpoint's epoch.

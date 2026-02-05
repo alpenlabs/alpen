@@ -1,59 +1,9 @@
 use arbitrary::Arbitrary;
-use rkyv::{
-    rancor::Fallible,
-    with::{ArchiveWith, DeserializeWith, SerializeWith},
-    Archived, Place, Resolver,
-};
 use serde::{Deserialize, Serialize};
-use ssz::{decode::Decode, encode::Encode};
 use strata_asm_common::AsmManifest;
+use strata_codec_utils::SszAsBytes;
 use strata_primitives::prelude::*;
 use strata_state::exec_update::ExecUpdate;
-
-/// Serializer for [`Vec<AsmManifest>`] as [`Vec<u8>`] for rkyv.
-struct AsmManifestsAsBytes;
-
-impl ArchiveWith<Vec<AsmManifest>> for AsmManifestsAsBytes {
-    type Archived = Archived<Vec<u8>>;
-    type Resolver = Resolver<Vec<u8>>;
-
-    fn resolve_with(
-        field: &Vec<AsmManifest>,
-        resolver: Self::Resolver,
-        out: Place<Self::Archived>,
-    ) {
-        let bytes = field.as_ssz_bytes();
-        rkyv::Archive::resolve(&bytes, resolver, out);
-    }
-}
-
-impl<S> SerializeWith<Vec<AsmManifest>, S> for AsmManifestsAsBytes
-where
-    S: Fallible + ?Sized,
-    Vec<u8>: rkyv::Serialize<S>,
-{
-    fn serialize_with(
-        field: &Vec<AsmManifest>,
-        serializer: &mut S,
-    ) -> Result<Self::Resolver, S::Error> {
-        let bytes = field.as_ssz_bytes();
-        rkyv::Serialize::serialize(&bytes, serializer)
-    }
-}
-
-impl<D> DeserializeWith<Archived<Vec<u8>>, Vec<AsmManifest>, D> for AsmManifestsAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
-{
-    fn deserialize_with(
-        field: &Archived<Vec<u8>>,
-        deserializer: &mut D,
-    ) -> Result<Vec<AsmManifest>, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(Vec::<AsmManifest>::from_ssz_bytes(&bytes).expect("valid ASM manifest bytes"))
-    }
-}
 
 use crate::header::{L2BlockHeader, SignedL2BlockHeader};
 
@@ -181,7 +131,7 @@ pub struct L1Segment {
 
     /// New [`AsmManifest`]s that we've seen from L1 that we didn't see in the previous
     /// L2 block.
-    #[rkyv(with = AsmManifestsAsBytes)]
+    #[rkyv(with = SszAsBytes)]
     new_manifests: Vec<AsmManifest>,
 }
 

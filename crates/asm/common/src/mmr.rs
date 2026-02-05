@@ -6,6 +6,8 @@ use rkyv::{
     with::{ArchiveWith, DeserializeWith, SerializeWith},
 };
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as SszDecode, Encode as SszEncode};
 use strata_asm_manifest_types::{AsmManifest, Hash32};
 use strata_codec::{Codec, CodecError, Decoder, Encoder, decode_buf_exact, encode_to_vec};
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher, error::MerkleError};
@@ -106,6 +108,53 @@ where
     ) -> Result<CompactMmr64<Hash32>, D::Error> {
         let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
         Ok(decode_buf_exact(&bytes).expect("codec should deserialize compact mmr"))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, SszEncode, SszDecode)]
+struct AsmHistoryAccumulatorSsz {
+    manifest_mmr: Vec<u8>,
+    offset: u64,
+}
+
+impl Encode for AsmHistoryAccumulatorState {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        let bytes = encode_to_vec(&self.manifest_mmr).expect("codec should serialize compact mmr");
+        AsmHistoryAccumulatorSsz {
+            manifest_mmr: bytes,
+            offset: self.offset,
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        let bytes = encode_to_vec(&self.manifest_mmr).expect("codec should serialize compact mmr");
+        AsmHistoryAccumulatorSsz {
+            manifest_mmr: bytes,
+            offset: self.offset,
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for AsmHistoryAccumulatorState {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let decoded = AsmHistoryAccumulatorSsz::from_ssz_bytes(bytes)?;
+        let manifest_mmr = decode_buf_exact(&decoded.manifest_mmr).map_err(|err| {
+            DecodeError::BytesInvalid(format!("invalid compact mmr bytes: {err}"))
+        })?;
+        Ok(Self {
+            manifest_mmr,
+            offset: decoded.offset,
+        })
     }
 }
 

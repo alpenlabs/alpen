@@ -21,7 +21,7 @@ use strata_db_types::types::{
     CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus,
 };
 use strata_l1_txfmt::TagData;
-use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
+use strata_ol_chain_types::{ClBlockWitness, L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::Params;
 use strata_primitives::{
@@ -408,7 +408,7 @@ impl StrataApiServer for StrataRpcImpl {
             .ok_or(Error::MissingChainstate(parent))?
             .into_toplevel();
 
-        let cl_block_witness = (chain_state, l2_blk_bundle.block().clone());
+        let cl_block_witness = ClBlockWitness::new(chain_state, l2_blk_bundle.block().clone());
         let raw_cl_block_witness = rkyv::to_bytes::<RkyvError>(&cl_block_witness)
             .map_err(|_| Error::Other("Failed to get raw cl block witness".to_string()))?
             .into_vec();

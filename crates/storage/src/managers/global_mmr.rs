@@ -1,7 +1,8 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use rkyv::{
-    api::high::{HighDeserializer, HighSerializer},
+    api::high::{HighDeserializer, HighSerializer, HighValidator},
+    bytecheck::CheckBytes,
     rancor::Error as RkyvError,
     ser::allocator::ArenaHandle,
     util::AlignedVec,
@@ -56,6 +57,7 @@ impl GlobalMmrManager {
     pub fn get_data_handle<T>(&self, mmr_id: MmrId) -> TypedMmrHandle<T, Sha256Hasher>
     where
         T: Archive + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>>,
+        Archived<T>: for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
         Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
     {
         TypedMmrHandle {
@@ -70,6 +72,7 @@ impl GlobalMmrManager {
     pub fn get_data_handle_with_hasher<T, H>(&self, mmr_id: MmrId) -> TypedMmrHandle<T, H>
     where
         T: Archive + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>>,
+        Archived<T>: for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
         Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
         H: MerkleHasher<Hash = [u8; 32]>,
     {
@@ -179,6 +182,7 @@ pub struct TypedMmrHandle<T, H = Sha256Hasher> {
 impl<T, H> TypedMmrHandle<T, H>
 where
     T: Archive + for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>>,
+    Archived<T>: for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
     Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>,
     H: MerkleHasher<Hash = [u8; 32]>,
 {

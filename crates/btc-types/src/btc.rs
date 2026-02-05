@@ -33,148 +33,114 @@ use crate::ParseError;
 
 const HASH_SIZE: usize = 32;
 
-/// Serializer for [`Txid`] as bytes for rkyv.
-struct TxidAsBytes;
+macro_rules! impl_rkyv_bytes_via_array {
+    ($name:ident, $ty:ty, $array:ty, $to_bytes:expr, $from_bytes:expr) => {
+        struct $name;
 
-impl ArchiveWith<Txid> for TxidAsBytes {
-    type Archived = Archived<[u8; 32]>;
-    type Resolver = Resolver<[u8; 32]>;
+        impl ArchiveWith<$ty> for $name {
+            type Archived = Archived<$array>;
+            type Resolver = Resolver<$array>;
 
-    fn resolve_with(field: &Txid, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        rkyv::Archive::resolve(&field.to_byte_array(), resolver, out);
-    }
+            fn resolve_with(field: &$ty, resolver: Self::Resolver, out: Place<Self::Archived>) {
+                rkyv::Archive::resolve(&($to_bytes)(field), resolver, out);
+            }
+        }
+
+        impl<S> SerializeWith<$ty, S> for $name
+        where
+            S: Fallible + ?Sized,
+            $array: rkyv::Serialize<S>,
+        {
+            fn serialize_with(field: &$ty, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+                rkyv::Serialize::serialize(&($to_bytes)(field), serializer)
+            }
+        }
+
+        impl<D> DeserializeWith<Archived<$array>, $ty, D> for $name
+        where
+            D: Fallible + ?Sized,
+            Archived<$array>: rkyv::Deserialize<$array, D>,
+        {
+            fn deserialize_with(
+                field: &Archived<$array>,
+                deserializer: &mut D,
+            ) -> Result<$ty, D::Error> {
+                let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+                Ok(($from_bytes)(bytes))
+            }
+        }
+    };
 }
 
-impl<S> SerializeWith<Txid, S> for TxidAsBytes
-where
-    S: Fallible + ?Sized,
-    [u8; 32]: rkyv::Serialize<S>,
-{
-    fn serialize_with(field: &Txid, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        rkyv::Serialize::serialize(&field.to_byte_array(), serializer)
-    }
+macro_rules! impl_rkyv_bytes_via_vec {
+    ($name:ident, $ty:ty, $to_bytes:expr, $from_bytes:expr) => {
+        struct $name;
+
+        impl ArchiveWith<$ty> for $name {
+            type Archived = Archived<Vec<u8>>;
+            type Resolver = Resolver<Vec<u8>>;
+
+            fn resolve_with(field: &$ty, resolver: Self::Resolver, out: Place<Self::Archived>) {
+                let bytes = ($to_bytes)(field);
+                rkyv::Archive::resolve(&bytes, resolver, out);
+            }
+        }
+
+        impl<S> SerializeWith<$ty, S> for $name
+        where
+            S: Fallible + ?Sized,
+            Vec<u8>: rkyv::Serialize<S>,
+        {
+            fn serialize_with(field: &$ty, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+                let bytes = ($to_bytes)(field);
+                rkyv::Serialize::serialize(&bytes, serializer)
+            }
+        }
+
+        impl<D> DeserializeWith<Archived<Vec<u8>>, $ty, D> for $name
+        where
+            D: Fallible + ?Sized,
+            Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+        {
+            fn deserialize_with(
+                field: &Archived<Vec<u8>>,
+                deserializer: &mut D,
+            ) -> Result<$ty, D::Error> {
+                let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+                Ok(($from_bytes)(bytes.as_slice()))
+            }
+        }
+    };
 }
 
-impl<D> DeserializeWith<Archived<[u8; 32]>, Txid, D> for TxidAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<[u8; 32]>: rkyv::Deserialize<[u8; 32], D>,
-{
-    fn deserialize_with(
-        field: &Archived<[u8; 32]>,
-        deserializer: &mut D,
-    ) -> Result<Txid, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(Txid::from_byte_array(bytes))
-    }
-}
+impl_rkyv_bytes_via_array!(
+    TxidAsBytes,
+    Txid,
+    [u8; 32],
+    |value: &Txid| value.to_byte_array(),
+    Txid::from_byte_array
+);
 
-/// Serializer for [`TxOut`] as bytes for rkyv.
-struct TxOutAsBytes;
+impl_rkyv_bytes_via_vec!(
+    TxOutAsBytes,
+    TxOut,
+    |value: &TxOut| serialize(value),
+    |bytes| deserialize(bytes).expect("stored TxOut should decode")
+);
 
-impl ArchiveWith<TxOut> for TxOutAsBytes {
-    type Archived = Archived<Vec<u8>>;
-    type Resolver = Resolver<Vec<u8>>;
+impl_rkyv_bytes_via_vec!(
+    ScriptBufAsBytes,
+    ScriptBuf,
+    |value: &ScriptBuf| value.to_bytes(),
+    |bytes: &[u8]| ScriptBuf::from_bytes(bytes.to_vec())
+);
 
-    fn resolve_with(field: &TxOut, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        let bytes = serialize(field);
-        rkyv::Archive::resolve(&bytes, resolver, out);
-    }
-}
-
-impl<S> SerializeWith<TxOut, S> for TxOutAsBytes
-where
-    S: Fallible + ?Sized,
-    Vec<u8>: rkyv::Serialize<S>,
-{
-    fn serialize_with(field: &TxOut, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        let bytes = serialize(field);
-        rkyv::Serialize::serialize(&bytes, serializer)
-    }
-}
-
-impl<D> DeserializeWith<Archived<Vec<u8>>, TxOut, D> for TxOutAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
-{
-    fn deserialize_with(
-        field: &Archived<Vec<u8>>,
-        deserializer: &mut D,
-    ) -> Result<TxOut, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(deserialize(&bytes).expect("stored TxOut should decode"))
-    }
-}
-
-/// Serializer for [`ScriptBuf`] as bytes for rkyv.
-struct ScriptBufAsBytes;
-
-impl ArchiveWith<ScriptBuf> for ScriptBufAsBytes {
-    type Archived = Archived<Vec<u8>>;
-    type Resolver = Resolver<Vec<u8>>;
-
-    fn resolve_with(field: &ScriptBuf, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        rkyv::Archive::resolve(&field.to_bytes(), resolver, out);
-    }
-}
-
-impl<S> SerializeWith<ScriptBuf, S> for ScriptBufAsBytes
-where
-    S: Fallible + ?Sized,
-    Vec<u8>: rkyv::Serialize<S>,
-{
-    fn serialize_with(field: &ScriptBuf, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        rkyv::Serialize::serialize(&field.to_bytes(), serializer)
-    }
-}
-
-impl<D> DeserializeWith<Archived<Vec<u8>>, ScriptBuf, D> for ScriptBufAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
-{
-    fn deserialize_with(
-        field: &Archived<Vec<u8>>,
-        deserializer: &mut D,
-    ) -> Result<ScriptBuf, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(ScriptBuf::from_bytes(bytes))
-    }
-}
-
-/// Serializer for [`Psbt`] as bytes for rkyv.
-struct PsbtAsBytes;
-
-impl ArchiveWith<Psbt> for PsbtAsBytes {
-    type Archived = Archived<Vec<u8>>;
-    type Resolver = Resolver<Vec<u8>>;
-
-    fn resolve_with(field: &Psbt, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        rkyv::Archive::resolve(&field.serialize(), resolver, out);
-    }
-}
-
-impl<S> SerializeWith<Psbt, S> for PsbtAsBytes
-where
-    S: Fallible + ?Sized,
-    Vec<u8>: rkyv::Serialize<S>,
-{
-    fn serialize_with(field: &Psbt, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        rkyv::Serialize::serialize(&field.serialize(), serializer)
-    }
-}
-
-impl<D> DeserializeWith<Archived<Vec<u8>>, Psbt, D> for PsbtAsBytes
-where
-    D: Fallible + ?Sized,
-    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
-{
-    fn deserialize_with(field: &Archived<Vec<u8>>, deserializer: &mut D) -> Result<Psbt, D::Error> {
-        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(Psbt::deserialize(&bytes).expect("stored Psbt should decode"))
-    }
-}
+impl_rkyv_bytes_via_vec!(
+    PsbtAsBytes,
+    Psbt,
+    |value: &Psbt| value.serialize(),
+    |bytes| Psbt::deserialize(bytes).expect("stored Psbt should decode")
+);
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]

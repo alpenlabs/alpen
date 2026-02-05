@@ -4,7 +4,11 @@
 //! payload so other subprotocols can dispatch withdrawals without pulling in the
 //! bridge implementation crate.
 
-use std::{any::Any, str::FromStr};
+use std::{
+    any::Any,
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
 use arbitrary::Arbitrary;
 use rkyv::{
@@ -17,39 +21,44 @@ use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
-/// Serializer for [`Descriptor`] as string for rkyv.
-struct DescriptorAsString;
+/// Serializer for types that round-trip through Display/FromStr.
+struct DisplayFromStr;
 
-impl ArchiveWith<Descriptor> for DescriptorAsString {
+impl<T> ArchiveWith<T> for DisplayFromStr
+where
+    T: Display + FromStr,
+    T::Err: Display + Debug,
+{
     type Archived = Archived<String>;
     type Resolver = Resolver<String>;
 
-    fn resolve_with(field: &Descriptor, resolver: Self::Resolver, out: Place<Self::Archived>) {
+    fn resolve_with(field: &T, resolver: Self::Resolver, out: Place<Self::Archived>) {
         rkyv::Archive::resolve(&field.to_string(), resolver, out);
     }
 }
 
-impl<S> SerializeWith<Descriptor, S> for DescriptorAsString
+impl<T, S> SerializeWith<T, S> for DisplayFromStr
 where
+    T: Display + FromStr,
+    T::Err: Display + Debug,
     S: Fallible + ?Sized,
     String: rkyv::Serialize<S>,
 {
-    fn serialize_with(field: &Descriptor, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+    fn serialize_with(field: &T, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
         rkyv::Serialize::serialize(&field.to_string(), serializer)
     }
 }
 
-impl<D> DeserializeWith<Archived<String>, Descriptor, D> for DescriptorAsString
+impl<T, D> DeserializeWith<Archived<String>, T, D> for DisplayFromStr
 where
+    T: Display + FromStr,
+    T::Err: Display + Debug,
     D: Fallible + ?Sized,
     Archived<String>: rkyv::Deserialize<String, D>,
 {
-    fn deserialize_with(
-        field: &Archived<String>,
-        deserializer: &mut D,
-    ) -> Result<Descriptor, D::Error> {
+    fn deserialize_with(field: &Archived<String>, deserializer: &mut D) -> Result<T, D::Error> {
         let desc = rkyv::Deserialize::deserialize(field, deserializer)?;
-        Ok(Descriptor::from_str(&desc).expect("stored descriptor should be valid"))
+        Ok(T::from_str(&desc).expect("stored string should be valid"))
     }
 }
 
@@ -77,7 +86,7 @@ where
 )]
 pub struct WithdrawOutput {
     /// Bitcoin Output Script Descriptor specifying the destination address.
-    #[rkyv(with = DescriptorAsString)]
+    #[rkyv(with = DisplayFromStr)]
     pub destination: Descriptor,
 
     /// Amount to withdraw (in satoshis).

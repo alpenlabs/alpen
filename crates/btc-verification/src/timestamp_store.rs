@@ -1,5 +1,6 @@
 use arbitrary::Arbitrary;
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
 use strata_btc_types::TIMESTAMPS_FOR_MEDIAN;
 
 /// The middle index for selecting the median timestamp.
@@ -28,7 +29,64 @@ pub struct TimestampStore {
     /// The array that holds exactly `TIMESTAMPS_FOR_MEDIAN` timestamps.
     buffer: [u32; TIMESTAMPS_FOR_MEDIAN],
     /// The index in the buffer where the next timestamp will be inserted.
-    head: usize,
+    head: u8,
+}
+
+impl Encode for TimestampStore {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        TIMESTAMPS_FOR_MEDIAN * 4 + 1
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        for timestamp in self.buffer {
+            timestamp.ssz_append(buf);
+        }
+        self.head.ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        TIMESTAMPS_FOR_MEDIAN * 4 + 1
+    }
+}
+
+impl Decode for TimestampStore {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        TIMESTAMPS_FOR_MEDIAN * 4 + 1
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        if bytes.len() != TIMESTAMPS_FOR_MEDIAN * 4 + 1 {
+            return Err(DecodeError::InvalidByteLength {
+                len: bytes.len(),
+                expected: TIMESTAMPS_FOR_MEDIAN * 4 + 1,
+            });
+        }
+
+        let mut offset = 0;
+        let mut buffer = [0u32; TIMESTAMPS_FOR_MEDIAN];
+        for timestamp in &mut buffer {
+            let next = offset + 4;
+            *timestamp = u32::from_ssz_bytes(&bytes[offset..next])?;
+            offset = next;
+        }
+
+        let head = u8::from_ssz_bytes(&bytes[offset..offset + 1])?;
+        if head as usize >= TIMESTAMPS_FOR_MEDIAN {
+            return Err(DecodeError::BytesInvalid(format!(
+                "invalid timestamp store head: {head}"
+            )));
+        }
+
+        Ok(Self { buffer, head })
+    }
 }
 
 impl Default for TimestampStore {
@@ -54,8 +112,9 @@ impl TimestampStore {
     /// Inserts a new timestamp into the buffer, overwriting the oldest timestamp.
     /// After insertion, the `head` is advanced in a circular manner.
     pub fn insert(&mut self, timestamp: u32) {
-        self.buffer[self.head] = timestamp;
-        self.head = (self.head + 1) % TIMESTAMPS_FOR_MEDIAN;
+        let head_index = self.head as usize;
+        self.buffer[head_index] = timestamp;
+        self.head = ((head_index + 1) % TIMESTAMPS_FOR_MEDIAN) as u8;
     }
 
     /// Computes and returns the median timestamp from all timestamps in the buffer.
