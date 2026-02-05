@@ -6,11 +6,14 @@ use anyhow::{Result, anyhow};
 use strata_db_types::traits::BlockStatus;
 use strata_identifiers::OLBlockCommitment;
 use strata_ledger_types::AsmManifest;
-use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts};
+use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts_with_manifest};
 use strata_params::Params;
 use strata_primitives::L1BlockId;
 use strata_storage::NodeStorage;
 use tracing::{info, instrument};
+
+const GENESIS_MANIFEST_MAX_ATTEMPTS: u32 = 60;
+const GENESIS_MANIFEST_WAIT_INTERVAL_MS: u64 = 1_000;
 
 /// Initialize the OL genesis block and state for a fresh database.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
@@ -18,19 +21,21 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
     info!("initializing OL genesis block and state");
 
     // Wait for ASM manifest for genesis to be available.
-    //
-    // TODO: do this when btcio service is ready because otherwise asm won't get inputs(l1 block
-    // commitments) to process.
-    //
-    // let genesis_manifest =
-    //     wait_for_genesis_manifest(storage, &genesis_l1.blkid(), MAX_ATTEMPTS, WAIT_INTERVAL_MS)?;
-
     let GenesisArtifacts {
         ol_state,
         ol_block,
         commitment,
         epoch_summary,
-    } = build_genesis_artifacts(params)?;
+    } = {
+        let genesis_l1 = &params.rollup().genesis_l1_view;
+        let genesis_manifest = wait_for_genesis_manifest(
+            storage,
+            &genesis_l1.blkid(),
+            GENESIS_MANIFEST_MAX_ATTEMPTS,
+            GENESIS_MANIFEST_WAIT_INTERVAL_MS,
+        )?;
+        build_genesis_artifacts_with_manifest(params, genesis_manifest)?
+    };
     let genesis_blkid = *commitment.blkid();
 
     storage.ol_block().put_block_data_blocking(ol_block)?;
@@ -53,10 +58,6 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
 
 /// Wait for the genesis block manifest to be available in the database.
 /// Retries periodically until the manifest is found or max attempts is reached.
-#[expect(
-    unused,
-    reason = "will be used after btc reader and asm read blocks from l1"
-)]
 fn wait_for_genesis_manifest(
     storage: &NodeStorage,
     block_id: &L1BlockId,
@@ -87,9 +88,8 @@ fn wait_for_genesis_manifest(
         sleep(Duration::from_millis(wait_interval_ms));
     }
 
+    let total_wait_ms = max_attempts as u64 * wait_interval_ms;
     Err(anyhow!(
-        "Block manifest {} not found after {} seconds",
-        block_id,
-        max_attempts
+        "Block manifest {block_id} not found after {total_wait_ms} ms",
     ))
 }
