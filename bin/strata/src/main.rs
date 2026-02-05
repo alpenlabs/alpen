@@ -53,10 +53,8 @@ fn main() -> Result<()> {
         ));
     }
 
-    let signer_args = args.clone();
-
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(args, config.clone(), rt.handle().clone())
+    let nodectx = init_node_context(&args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     // Check for db consistency, external rpc clients reachable, etc.
@@ -71,7 +69,7 @@ fn main() -> Result<()> {
     // Start sequencer signer if sequencer feature is enabled
     #[cfg(feature = "sequencer")]
     if runctx.config().client.is_sequencer {
-        sequencer::start_sequencer_signer(&runctx, &signer_args)?;
+        sequencer::start_sequencer_signer(&runctx, &args)?;
     }
 
     // Monitor tasks.
