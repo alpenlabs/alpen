@@ -68,6 +68,11 @@ impl RunContext {
         self.common.executor()
     }
 
+    /// Returns the task manager.
+    pub(crate) fn task_manager(&self) -> &TaskManager {
+        &self.task_manager
+    }
+
     #[cfg(feature = "sequencer")]
     /// Returns the sequencer handles if running as a sequencer.
     pub(crate) fn sequencer_handles(&self) -> Option<&SequencerServiceHandles> {

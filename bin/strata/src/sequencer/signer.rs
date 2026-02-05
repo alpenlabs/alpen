@@ -60,7 +60,7 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
             runctx.storage().clone(),
             runctx.fcm_handle().clone(),
             duty_rx,
-            runctx.task_manager.handle().clone(),
+            runctx.task_manager().handle().clone(),
             sequencer_key.sk,
         ),
     );
