@@ -181,7 +181,7 @@ impl<'a> Arbitrary<'a> for BitcoinOutPoint {
 /// A wrapper around the [`bitcoin::Address<NetworkChecked>`] type.
 ///
 /// It's created in order to implement some useful traits on it such as
-/// [`serde::Serialize`] and [serde::Deserialize`].
+/// [`serde::Serialize`] and [`serde::Deserialize`].
 // TODO: implement [`arbitrary::Arbitrary`]?
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitcoinAddress {
