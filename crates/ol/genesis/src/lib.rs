@@ -2,18 +2,26 @@
 
 use std::result::Result as StdResult;
 
+use strata_acct_types::{AcctError, BitcoinAmount};
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{Buf64, L1BlockCommitment, OLBlockCommitment};
+use strata_identifiers::{AccountId, Buf32, Buf64, L1BlockCommitment, OLBlockCommitment};
 use strata_ledger_types::AsmManifest;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
+use strata_ol_params::{AccountParams, OLParams};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
 };
 use strata_params::Params;
-use strata_primitives::Buf32;
+use strata_predicate::PredicateKey;
 use thiserror::Error;
 use tracing::{info, instrument};
+
+/// 32-byte representation of the [`AccountId`] for the Alpen EE account.
+// TODO: this should be decided by the product team if they want to have
+//       a special number for the account id. The only restriction is that
+//       it should not be a special account id, i.e. in the range of 0-127.
+pub const ALPEN_EE_ACCOUNT_ID_BYTES: [u8; 32] = [1; 32];
 
 /// In-memory artifacts created during OL genesis construction.
 #[derive(Debug)]
@@ -41,6 +49,10 @@ pub enum GenesisError {
     /// The genesis L1 height is invalid.
     #[error("invalid genesis L1 height {height}")]
     InvalidGenesisL1Height { height: u64 },
+
+    /// Failed to construct the genesis OL state.
+    #[error("failed to construct OL genesis state")]
+    GenesisState(#[from] AcctError),
 }
 
 pub type Result<T> = StdResult<T, GenesisError>;
@@ -52,8 +64,7 @@ pub fn default_genesis_manifest(params: &Params) -> AsmManifest {
     AsmManifest::new(
         genesis_l1.height_u64(),
         genesis_l1.blkid(),
-        // TODO: Properly fetch manifest from db and populate this, btc reader should read L1 and
-        // send events/msgs to asm worker for this to be correctly done.
+        // Placeholder manifest root for non-ASM genesis (tests/fallback paths).
         Buf32::zero().into(),
         vec![],
     )
@@ -67,9 +78,21 @@ pub fn build_genesis_artifacts_with_manifest(
 ) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
-    // Create initial OL state (uses genesis defaults).
-    // TODO: initialize with a Snark EE account for Alpen. Possibly with rollup params.
-    let mut ol_state = OLState::new_genesis();
+    let mut ol_params = OLParams::default();
+
+    let alpen_ed_account = AccountId::new(ALPEN_EE_ACCOUNT_ID_BYTES);
+    let alpen_ed_state_root = params.rollup().evm_genesis_block_state_root;
+    ol_params
+        .accounts
+        .entry(alpen_ed_account)
+        .or_insert_with(|| AccountParams {
+            predicate: PredicateKey::always_accept(),
+            inner_state: alpen_ed_state_root,
+            balance: BitcoinAmount::ZERO,
+        });
+
+    // Create initial OL state (uses genesis params).
+    let mut ol_state = OLState::from_genesis_params(&ol_params)?;
 
     // Create genesis block info.
     let genesis_l1 = &params.rollup().genesis_l1_view;
