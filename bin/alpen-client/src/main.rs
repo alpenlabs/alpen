@@ -98,7 +98,7 @@ fn main() {
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
             let params = AlpenEeParams::new(
-                AccountId::new([0; 32]), // TODO: correct values
+                AccountId::special(0x11),
                 genesis_info.blockhash(),
                 genesis_info.stateroot(),
                 genesis_info.blocknum(),
