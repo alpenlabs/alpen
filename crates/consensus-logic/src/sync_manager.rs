@@ -104,7 +104,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         asm_handle,
         asm_storage,
         asm_params,
-        bitcoin_client,
+        bitcoin_client.clone(),
     )?);
 
     // Launch CSM listener service that listens to ASM status updates
@@ -117,6 +117,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         executor,
         csm_params,
         csm_storage,
+        bitcoin_client.clone(),
         csm_st_ch.into(),
         csm_asm_monitor,
     )?;
@@ -156,6 +157,7 @@ pub fn spawn_csm_listener_with_ctx(
         nodectx.executor(),
         nodectx.params().clone(),
         nodectx.storage().clone(),
+        nodectx.bitcoin_client().clone(),
         nodectx.status_channel().clone(),
         asm_monitor,
     )
@@ -165,11 +167,18 @@ fn spawn_csm_listener(
     executor: &TaskExecutor,
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
+    bitcoin_client: Arc<Client>,
     status_channel: Arc<StatusChannel>,
     asm_monitor: &ServiceMonitor<AsmWorkerStatus>,
 ) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
     // Create CSM worker state.
-    let csm_state = CsmWorkerState::new(params, storage.clone(), status_channel.clone())?;
+    let csm_state = CsmWorkerState::new(
+        params,
+        storage.clone(),
+        executor.handle().clone(),
+        bitcoin_client,
+        status_channel.clone(),
+    )?;
 
     // Get the starting block from CSM's last processed block
     // If CSM hasn't processed any blocks yet, we get the latest ASM state from storage
