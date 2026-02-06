@@ -41,7 +41,7 @@ class StrataFactory(flexitest.Factory):
                 "-f",
                 str(path),
             ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True)
             if res.returncode != 0:
                 details = res.stderr.strip() or res.stdout.strip()
                 raise RuntimeError(f"Failed to generate sequencer key: {details}")
