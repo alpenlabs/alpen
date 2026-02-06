@@ -15,6 +15,11 @@ strata-common.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-da.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
@@ -22,12 +27,20 @@ strata-status.workspace = true
 strata-storage.workspace = true
 
 anyhow.workspace = true
+bitcoind-async-client.workspace = true
 serde.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
+strata-asm-manifest-types.workspace = true
+strata-asm-proto-checkpoint-txs.workspace = true
+strata-codec.workspace = true
+strata-ol-da = { workspace = true, features = ["test-utils"] }
+ssz.workspace = true
+
 bitcoin.workspace = true
 threadpool.workspace = true
 serde_json.workspace = true

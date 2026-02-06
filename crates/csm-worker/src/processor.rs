@@ -2,18 +2,27 @@
 
 use std::sync::Arc;
 
+use anyhow::{Context, anyhow, bail};
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
-use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
+use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
 use strata_identifiers::Epoch;
+use strata_ledger_types::IStateAccessor;
+use strata_ol_chain_types_new::OLL1ManifestContainer;
+use strata_ol_da::{DecodedCheckpointDa, apply_da_payload, decode_checkpoint_da_blob};
+use strata_ol_state_types::OLState;
+use strata_ol_stf::{BasicExecContext, BlockInfo, ExecOutputBuffer, process_block_manifests};
 use strata_primitives::prelude::*;
 use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
 
+/// Dispatches an ASM log to checkpoint processing when the log type is supported.
+///
+/// Unsupported or typeless logs are ignored without mutating CSM state.
 pub(crate) fn process_log(
     state: &mut CsmWorkerState,
     log: &AsmLogEntry,
@@ -23,7 +32,7 @@ pub(crate) fn process_log(
         Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
             let ckpt_upd = log
                 .try_into_log()
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
+                .map_err(|e| anyhow!("Failed to deserialize CheckpointUpdate: {e}"))?;
 
             return process_checkpoint_log(state, &ckpt_upd, asm_block);
         }
@@ -51,6 +60,10 @@ fn process_checkpoint_log(
         checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
         "CSM is processing checkpoint update from ASM log"
     );
+
+    // Apply and verify DA first so the worker fails closed: if fetching/decoding/state-root checks
+    // fail, this handler does not persist checkpoint-inclusion metadata or advance client state.
+    apply_checkpoint_da_update(state, checkpoint_update)?;
 
     // Create L1 checkpoint reference from the log data
     let l1_reference = CheckpointL1Ref::new(
@@ -83,6 +96,200 @@ fn process_checkpoint_log(
 
     // Track the last processed epoch
     state.last_processed_epoch = Some(epoch);
+
+    Ok(())
+}
+
+/// Fetches, decodes, validates, applies, and persists OL DA for one checkpoint update.
+///
+/// This routine reconstructs the checkpoint preseal transition from L1 data and validates it
+/// against ASM-provided commitments before any checkpoint inclusion metadata is written:
+///
+/// 1. Fetches the checkpoint transaction from the configured Bitcoin client tx provider.
+/// 2. Decodes and validates the checkpoint DA payload from the sidecar.
+/// 3. Resolves checkpoint pre-state and verifies the pre-state root.
+/// 4. Applies DA payload, then applies L1-derived epoch sealing updates.
+/// 5. Verifies the post-state root and persists the resulting OL state snapshot.
+fn apply_checkpoint_da_update(
+    state: &mut CsmWorkerState,
+    checkpoint_update: &CheckpointUpdate,
+) -> anyhow::Result<()> {
+    let raw_tx = state
+        .get_bitcoin_tx(checkpoint_update.checkpoint_txid())
+        .with_context(|| {
+            format!(
+                "failed to fetch checkpoint transaction {:?}",
+                checkpoint_update.checkpoint_txid()
+            )
+        })?;
+
+    let decoded = decode_checkpoint_da_blob(&raw_tx, state._params.rollup().magic_bytes)
+        .context("failed to decode checkpoint DA payload from L1 transaction")?;
+
+    validate_checkpoint_payload_tip(checkpoint_update, &decoded)?;
+
+    let (pre_state_commitment, mut pre_state) =
+        resolve_pre_state_for_checkpoint(state, checkpoint_update)
+            .context("failed to resolve checkpoint pre-state")?;
+    let pre_root = pre_state
+        .compute_state_root()
+        .context("failed to compute pre-state root")?;
+    if pre_root != checkpoint_update.chainstate_transition().pre_state_root {
+        bail!(
+            "pre-state root mismatch for epoch {}: expected {}, got {} (pre-state commitment: {})",
+            checkpoint_update.batch_info().epoch(),
+            checkpoint_update.chainstate_transition().pre_state_root,
+            pre_root,
+            pre_state_commitment
+        );
+    }
+
+    apply_da_payload(&mut pre_state, decoded.da_payload)
+        .context("failed to apply OL DA payload")?;
+    apply_epoch_sealing_updates(
+        &state.storage,
+        checkpoint_update.batch_info(),
+        &mut pre_state,
+    )
+    .context("failed to apply epoch sealing updates from ASM manifests")?;
+
+    let post_root = pre_state
+        .compute_state_root()
+        .context("failed to compute post-state root")?;
+    if post_root != checkpoint_update.chainstate_transition().post_state_root {
+        bail!(
+            "post-state root mismatch for epoch {}: expected {}, got {}",
+            checkpoint_update.batch_info().epoch(),
+            checkpoint_update.chainstate_transition().post_state_root,
+            post_root
+        );
+    }
+
+    let terminal_commitment = *decoded.signed_checkpoint.inner().new_tip().l2_commitment();
+    state
+        .storage
+        .ol_state()
+        .put_toplevel_ol_state_blocking(terminal_commitment, pre_state)
+        .with_context(|| {
+            format!(
+                "failed to persist OL state for checkpoint terminal commitment {}",
+                terminal_commitment
+            )
+        })?;
+
+    Ok(())
+}
+
+/// Validates that the decoded checkpoint payload tip matches ASM checkpoint update metadata.
+fn validate_checkpoint_payload_tip(
+    checkpoint_update: &CheckpointUpdate,
+    decoded: &DecodedCheckpointDa,
+) -> anyhow::Result<()> {
+    let payload_tip = decoded.signed_checkpoint.inner().new_tip();
+    let expected_batch = checkpoint_update.batch_info();
+    let expected_l1_height = expected_batch.final_l1_block().height_u32();
+    let expected_l2_commitment = expected_batch.final_l2_block();
+
+    if payload_tip.epoch != expected_batch.epoch() {
+        bail!(
+            "checkpoint epoch mismatch: payload={} asm_log={}",
+            payload_tip.epoch,
+            expected_batch.epoch()
+        );
+    }
+
+    if payload_tip.l1_height() != expected_l1_height {
+        bail!(
+            "checkpoint L1 height mismatch: payload={} asm_log={}",
+            payload_tip.l1_height(),
+            expected_l1_height
+        );
+    }
+
+    if payload_tip.l2_commitment() != expected_l2_commitment {
+        bail!(
+            "checkpoint L2 commitment mismatch: payload={} asm_log={}",
+            payload_tip.l2_commitment(),
+            expected_l2_commitment
+        );
+    }
+
+    Ok(())
+}
+
+/// Resolves the checkpoint pre-state snapshot used for DA application.
+///
+/// For epochs greater than zero, this prefers the previous epoch terminal checkpoint state.
+/// If unavailable, it falls back to the latest persisted OL state snapshot.
+fn resolve_pre_state_for_checkpoint(
+    state: &CsmWorkerState,
+    checkpoint_update: &CheckpointUpdate,
+) -> anyhow::Result<(OLBlockCommitment, OLState)> {
+    let epoch = checkpoint_update.batch_info().epoch();
+    if epoch > 0 {
+        let prev_epoch = (epoch - 1) as u64;
+        if let Some(prev_checkpoint) = state
+            .storage
+            .checkpoint()
+            .get_checkpoint_blocking(prev_epoch)?
+        {
+            let prev_terminal = *prev_checkpoint.checkpoint.batch_info().final_l2_block();
+            let prev_state = state
+                .storage
+                .ol_state()
+                .get_toplevel_ol_state_blocking(prev_terminal)?
+                .ok_or_else(|| {
+                    anyhow!(
+                        "missing OL state snapshot for previous terminal commitment {}",
+                        prev_terminal
+                    )
+                })?;
+            return Ok((prev_terminal, prev_state.as_ref().clone()));
+        }
+    }
+
+    let (commitment, state_snapshot) = state
+        .storage
+        .ol_state()
+        .get_latest_toplevel_ol_state_blocking()?
+        .ok_or_else(|| anyhow!("missing OL state snapshot for checkpoint DA pre-state"))?;
+    Ok((commitment, state_snapshot.as_ref().clone()))
+}
+
+/// Applies deterministic L1-derived epoch sealing updates from ASM manifests to OL state.
+fn apply_epoch_sealing_updates(
+    storage: &Arc<strata_storage::NodeStorage>,
+    batch_info: &BatchInfo,
+    ol_state: &mut OLState,
+) -> anyhow::Result<()> {
+    let start_height = batch_info.l1_range.0.height_u64();
+    let end_height = batch_info.l1_range.1.height_u64();
+    if end_height < start_height {
+        bail!(
+            "invalid L1 range in checkpoint batch info: start={} end={}",
+            start_height,
+            end_height
+        );
+    }
+
+    let mut manifests = Vec::new();
+    for height in start_height..=end_height {
+        let manifest = storage
+            .l1()
+            .get_block_manifest_at_height(height)?
+            .ok_or_else(|| anyhow!("missing ASM manifest at L1 height {}", height))?;
+        manifests.push(manifest);
+    }
+
+    let manifest_container = OLL1ManifestContainer::new(manifests)
+        .context("failed to construct OL manifest container")?;
+
+    let terminal_block = batch_info.final_l2_block();
+    let block_info = BlockInfo::new(0, terminal_block.slot(), batch_info.epoch());
+    let output_buffer = ExecOutputBuffer::new_empty();
+    let basic_context = BasicExecContext::new(block_info, &output_buffer);
+    process_block_manifests(ol_state, &manifest_container, &basic_context)
+        .context("manifest processing failed")?;
 
     Ok(())
 }
@@ -188,16 +395,28 @@ mod tests {
     use std::sync::Arc;
 
     use bitcoin::absolute::Height;
+    use ssz::Encode;
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+    use strata_asm_manifest_types::AsmManifest;
+    use strata_asm_proto_checkpoint_txs::{
+        CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
+    };
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_identifiers::WtxidsRoot;
+    use strata_ledger_types::IStateAccessor;
+    use strata_ol_da::{
+        OLDaPayloadV1, StateDiff, apply_da_payload,
+        test_utils::{make_checkpoint_tx, make_signed_checkpoint_payload},
+    };
+    use strata_ol_state_types::OLState;
     use strata_params::{Params, RollupParams, SyncParams};
     use strata_primitives::{
         buf::Buf32,
         epoch::EpochCommitment,
-        l1::BitcoinTxid,
+        l1::{BitcoinTxid, RawBitcoinTx},
         l2::{L2BlockCommitment, L2BlockId},
         prelude::*,
     };
@@ -205,13 +424,11 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::process_log;
+    use super::{apply_epoch_sealing_updates, process_log};
     use crate::state::CsmWorkerState;
 
-    /// Helper to create a test CSM worker state
+    /// Creates a test state for CSM worker.
     fn create_test_state() -> (CsmWorkerState, Arc<strata_storage::NodeStorage>) {
-        // rollup params (taken from a fntests run).
-        // Don't we have some util fn for such?
         let params_json = r#"{
             "magic_bytes": "ALPN",
             "block_time": 1000,
@@ -254,26 +471,21 @@ mod tests {
         let rollup_params: RollupParams =
             serde_json::from_str(params_json).expect("Failed to parse test params");
 
-        let params = Params {
+        let params = Arc::new(Params {
             rollup: rollup_params,
             run: SyncParams {
                 l1_follow_distance: 10,
                 client_checkpoint_interval: 100,
                 l2_blocks_fetch_limit: 1000,
             },
-        };
-        let params = Arc::new(params);
+        });
 
-        // Create an in-memory database for testing
         let db = get_test_sled_backend();
         let pool = threadpool::ThreadPool::new(4);
-
         let storage = Arc::new(create_node_storage(db, pool).expect("Failed to create storage"));
 
-        // Initialize with empty client state
         let initial_state = ClientState::new(None, None);
         let initial_block = L1BlockCommitment::new(Height::ZERO, L1BlockId::default());
-
         storage
             .client_state()
             .put_update_blocking(
@@ -282,7 +494,12 @@ mod tests {
             )
             .expect("Failed to initialize client state");
 
-        // Create status channel with proper arguments
+        let genesis_commitment = OLBlockCommitment::new(0, L2BlockId::from(Buf32::from([9u8; 32])));
+        storage
+            .ol_state()
+            .put_toplevel_ol_state_blocking(genesis_commitment, OLState::new_genesis())
+            .expect("Failed to initialize OL genesis state");
+
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = StatusChannel::new(
             arbgen.generate(),
@@ -292,22 +509,23 @@ mod tests {
             None,
         );
 
-        let state =
-            CsmWorkerState::new(params.clone(), storage.clone(), status_channel.into()).unwrap();
+        let state = CsmWorkerState::new_for_tests(params, storage.clone(), status_channel.into())
+            .expect("create csm state");
 
         (state, storage)
     }
 
-    /// Helper to create an unknown log type entry
+    /// Creates a log with an unknown type.
     fn create_unknown_log_type() -> AsmLogEntry {
         AsmLogEntry::from_msg(999, vec![1, 2, 3, 4]).expect("Failed to create log")
     }
 
-    /// Helper to create a log entry without a type
+    /// Creates a log with no type.
     fn create_typeless_log() -> AsmLogEntry {
         AsmLogEntry::from_raw(vec![5, 6, 7, 8])
     }
 
+    /// Tests that `process_log` handles unknown log types.
     #[test]
     fn test_process_log_with_unknown_log_type() {
         let (mut state, _) = create_test_state();
@@ -315,15 +533,12 @@ mod tests {
             L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
 
         let log = create_unknown_log_type();
-
-        // Should succeed but do nothing
         let result = process_log(&mut state, &log, &asm_block);
         assert!(result.is_ok(), "process_log should handle unknown types");
-
-        // State should not be updated
         assert_eq!(state.last_processed_epoch, None);
     }
 
+    /// Tests that `process_log` handles typeless logs.
     #[test]
     fn test_process_log_with_no_log_type() {
         let (mut state, _) = create_test_state();
@@ -331,15 +546,12 @@ mod tests {
             L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
 
         let log = create_typeless_log();
-
-        // Should succeed but do nothing
         let result = process_log(&mut state, &log, &asm_block);
         assert!(result.is_ok(), "process_log should handle typeless logs");
-
-        // State should not be updated
         assert_eq!(state.last_processed_epoch, None);
     }
 
+    /// Tests that `process_log` handles invalid checkpoint data.
     #[test]
     fn test_process_log_with_invalid_checkpoint_data() {
         let (mut state, _) = create_test_state();
@@ -347,11 +559,9 @@ mod tests {
             L1BlockCommitment::new(Height::from_consensus(100).unwrap(), L1BlockId::default());
         state.last_asm_block = Some(asm_block);
 
-        // Create a log with checkpoint type but invalid data
         let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, vec![1, 2, 3])
             .expect("Failed to create log");
 
-        // Should fail with deserialization error
         let result = process_log(&mut state, &invalid_log, &asm_block);
         assert!(
             result.is_err(),
@@ -359,31 +569,36 @@ mod tests {
         );
         assert!(
             result
-                .unwrap_err()
+                .expect_err("invalid checkpoint data should error")
                 .to_string()
                 .contains("Failed to deserialize CheckpointUpdate"),
             "Error should mention deserialization failure"
         );
     }
 
+    /// Tests that `process_log` handles sequential checkpoint logs.
     #[test]
     fn test_process_sequential_checkpoint_logs_happy_path() {
+        let secret_key = Buf32::from([1u8; 32]);
         let (mut state, storage) = create_test_state();
-
-        // Create 3 sequential checkpoints with increasing epochs
         let mut arbgen = ArbitraryGenerator::new();
 
+        let mut prev_terminal = storage
+            .ol_state()
+            .get_latest_toplevel_ol_state_blocking()
+            .expect("read latest ol state")
+            .expect("genesis ol state must exist")
+            .0;
+
         for epoch in 1u32..=3u32 {
-            // Create L1 block commitment for this checkpoint
             let asm_block = L1BlockCommitment::new(
                 Height::from_consensus(100 + epoch).unwrap(),
                 arbgen.generate(),
             );
             state.last_asm_block = Some(asm_block);
 
-            // Create L2 block range
             let l2_start = L2BlockCommitment::new(
-                ((epoch - 1) * 10) as u64,
+                ((epoch - 1) * 10 + 1) as u64,
                 L2BlockId::from(Buf32::from([epoch as u8; 32])),
             );
             let l2_end = L2BlockCommitment::new(
@@ -391,43 +606,67 @@ mod tests {
                 L2BlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
             );
 
-            // Create L1 block range
-            let l1_start = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch - 1).unwrap(),
-                arbgen.generate(),
-            );
-            let l1_end = L1BlockCommitment::new(
-                Height::from_consensus(90 + epoch).unwrap(),
-                arbgen.generate(),
-            );
+            let l1_height = 100 + epoch as u64;
+            let l1_blkid = L1BlockId::from(Buf32::from([epoch as u8; 32]));
+            seed_manifest(&storage, l1_height, l1_blkid);
+            let l1_comm =
+                L1BlockCommitment::new(Height::from_consensus(l1_height as u32).unwrap(), l1_blkid);
 
-            // Create batch info
-            let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (l2_start, l2_end));
+            let batch_info = BatchInfo::new(epoch, (l1_comm, l1_comm), (l2_start, l2_end));
 
-            // Create epoch commitment
-            let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
+            let mut expected_state = storage
+                .ol_state()
+                .get_toplevel_ol_state_blocking(prev_terminal)
+                .expect("read pre-state")
+                .expect("pre-state must exist")
+                .as_ref()
+                .clone();
+            let pre_root = expected_state
+                .compute_state_root()
+                .expect("compute pre-state root");
+            apply_da_payload(
+                &mut expected_state,
+                OLDaPayloadV1::new(StateDiff::default()),
+            )
+            .expect("apply da payload");
+            apply_epoch_sealing_updates(&storage, &batch_info, &mut expected_state)
+                .expect("apply epoch sealing");
+            let post_root = expected_state
+                .compute_state_root()
+                .expect("compute post-state root");
 
-            // Create chainstate transition
             let chainstate_transition = ChainstateRootTransition {
-                pre_state_root: Buf32::from([0u8; 32]),
-                post_state_root: Buf32::from([epoch as u8; 32]),
+                pre_state_root: pre_root,
+                post_state_root: post_root,
             };
 
-            // Create checkpoint txid
             let checkpoint_txid: BitcoinTxid = arbgen.generate();
+            let signed_checkpoint = make_signed_checkpoint_payload(
+                epoch,
+                l1_height as u32,
+                l2_end,
+                strata_codec::encode_to_vec(&OLDaPayloadV1::new(StateDiff::default()))
+                    .expect("encode da payload"),
+                secret_key,
+            );
+            state.insert_checkpoint_tx_fixture(
+                checkpoint_txid.clone(),
+                RawBitcoinTx::from(make_checkpoint_tx(
+                    &signed_checkpoint.as_ssz_bytes(),
+                    CHECKPOINT_V0_SUBPROTOCOL_ID,
+                    OL_STF_CHECKPOINT_TX_TYPE,
+                    secret_key,
+                )),
+            );
 
-            // Create CheckpointUpdate
             let checkpoint_update = CheckpointUpdate::new(
-                epoch_commitment,
+                EpochCommitment::from_terminal(epoch, l2_end),
                 batch_info,
                 chainstate_transition,
                 checkpoint_txid,
             );
 
-            // Create log entry
             let log = AsmLogEntry::from_log(&checkpoint_update).expect("make log");
-
-            // Process the log
             let result = process_log(&mut state, &log, &asm_block);
             assert!(
                 result.is_ok(),
@@ -436,7 +675,6 @@ mod tests {
                 result
             );
 
-            // Verify state was updated
             assert_eq!(
                 state.last_processed_epoch,
                 Some(epoch),
@@ -444,7 +682,6 @@ mod tests {
                 epoch
             );
 
-            // Verify checkpoint was stored in database
             let stored_checkpoint = storage
                 .checkpoint()
                 .get_checkpoint_blocking(epoch as u64)
@@ -455,33 +692,34 @@ mod tests {
                 epoch
             );
 
-            // Verify client state was updated
-            let current_client_state = state.cur_state.as_ref();
-            let last_checkpoint = current_client_state.get_last_checkpoint();
-            assert!(
-                last_checkpoint.is_some(),
-                "Client state should have a last checkpoint after epoch {}",
-                epoch
-            );
+            let persisted_state = storage
+                .ol_state()
+                .get_toplevel_ol_state_blocking(l2_end)
+                .expect("read persisted state")
+                .expect("persisted state should exist");
             assert_eq!(
-                last_checkpoint.unwrap().batch_info.epoch(),
-                epoch,
-                "Last checkpoint in client state should be for epoch {}",
+                persisted_state
+                    .compute_state_root()
+                    .expect("compute persisted state root"),
+                post_root,
+                "Persisted state root should match checkpoint post root for epoch {}",
                 epoch
             );
-        }
 
-        // After processing 3 checkpoints, verify we have all of them in the database
-        for epoch in 1u32..=3u32 {
-            let stored_checkpoint = storage
-                .checkpoint()
-                .get_checkpoint_blocking(epoch as u64)
-                .expect("Failed to query checkpoint database");
-            assert!(
-                stored_checkpoint.is_some(),
-                "Checkpoint for epoch {} should still be in database",
-                epoch
-            );
+            prev_terminal = l2_end;
         }
+    }
+
+    /// Seeds a manifest into the storage.
+    fn seed_manifest(storage: &Arc<strata_storage::NodeStorage>, height: u64, blkid: L1BlockId) {
+        let manifest = AsmManifest::new(height, blkid, WtxidsRoot::from(Buf32::zero()), vec![]);
+        storage
+            .l1()
+            .put_block_data(manifest)
+            .expect("store manifest");
+        storage
+            .l1()
+            .extend_canonical_chain(&blkid, height)
+            .expect("extend canonical chain");
     }
 }
