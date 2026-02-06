@@ -12,7 +12,7 @@ use crate::{
 
 /// Serializer for [`ProofReceiptWithMetadata`] as bytes for rkyv.
 #[derive(Archive, Serialize, Deserialize)]
-struct ProofReceiptWithMetadataRkyv {
+struct ProofReceiptMetadataRkyv {
     receipt: ProofReceiptRkyv,
     metadata: ProofMetadataRkyv,
 }
@@ -31,7 +31,7 @@ struct ProofMetadataRkyv {
     version: String,
 }
 
-impl From<&ProofReceiptWithMetadata> for ProofReceiptWithMetadataRkyv {
+impl From<&ProofReceiptWithMetadata> for ProofReceiptMetadataRkyv {
     fn from(value: &ProofReceiptWithMetadata) -> Self {
         Self {
             receipt: ProofReceiptRkyv {
@@ -46,10 +46,10 @@ impl From<&ProofReceiptWithMetadata> for ProofReceiptWithMetadataRkyv {
     }
 }
 
-impl TryFrom<ProofReceiptWithMetadataRkyv> for ProofReceiptWithMetadata {
+impl TryFrom<ProofReceiptMetadataRkyv> for ProofReceiptWithMetadata {
     type Error = anyhow::Error;
 
-    fn try_from(value: ProofReceiptWithMetadataRkyv) -> Result<Self, Self::Error> {
+    fn try_from(value: ProofReceiptMetadataRkyv) -> Result<Self, Self::Error> {
         let zkvm = zkvm_from_tag(value.metadata.zkvm)?;
         let receipt = ProofReceipt::new(
             Proof::new(value.receipt.proof),
@@ -97,7 +97,7 @@ impl KeyCodec<ProofSchema> for ProofKey {
 
 impl ValueCodec<ProofSchema> for ProofReceiptWithMetadata {
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
-        let wrapper = ProofReceiptWithMetadataRkyv::from(self);
+        let wrapper = ProofReceiptMetadataRkyv::from(self);
         rkyv::to_bytes::<RkyvError>(&wrapper)
             .map(|bytes| bytes.as_ref().to_vec())
             .map_err(|err| CodecError::SerializationFailed {
@@ -108,7 +108,7 @@ impl ValueCodec<ProofSchema> for ProofReceiptWithMetadata {
 
     fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
         let wrapper =
-            rkyv::from_bytes::<ProofReceiptWithMetadataRkyv, RkyvError>(data).map_err(|err| {
+            rkyv::from_bytes::<ProofReceiptMetadataRkyv, RkyvError>(data).map_err(|err| {
                 CodecError::SerializationFailed {
                     schema: ProofSchema::tree_name(),
                     source: err.into(),
