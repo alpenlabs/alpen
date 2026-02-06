@@ -4,6 +4,7 @@
 
 use rkyv::rancor::Error as RkyvError;
 use strata_checkpoint_types::{BatchTransition, ChainstateRootTransition};
+use strata_codec_utils::decode_rkyv;
 use strata_proofimpl_cl_stf::program::ClStfOutput;
 use zkaleido::ZkVmEnv;
 
@@ -18,15 +19,13 @@ pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv, cl_stf_vk: &[u32; 8]) {
         epoch,
         initial_chainstate_root,
         mut final_chainstate_root,
-    } = rkyv::from_bytes::<ClStfOutput, RkyvError>(&first_output_buf)
-        .expect("rkyv deserialization failed");
+    } = decode_rkyv::<ClStfOutput>(&first_output_buf).expect("rkyv deserialization failed");
 
     // Starting with 1 since we have already read the first CL STF output
     for _ in 1..batches_count {
         let cl_stf_output_buf = zkvm.read_verified_buf(cl_stf_vk);
         let cl_stf_output: ClStfOutput =
-            rkyv::from_bytes::<ClStfOutput, RkyvError>(&cl_stf_output_buf)
-                .expect("rkyv deserialization failed");
+            decode_rkyv::<ClStfOutput>(&cl_stf_output_buf).expect("rkyv deserialization failed");
 
         assert_eq!(
             cl_stf_output.initial_chainstate_root, final_chainstate_root,

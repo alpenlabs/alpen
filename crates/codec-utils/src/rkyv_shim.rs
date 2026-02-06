@@ -16,7 +16,11 @@ where
     Archived<T>: Deserialize<T, HighDeserializer<RkyvError>>
         + for<'a> CheckBytes<HighValidator<'a, RkyvError>>,
 {
-    rkyv::from_bytes::<T, RkyvError>(bytes)
+    // rkyv requires aligned input buffers; copy into AlignedVec to decode safely even when the
+    // source slice is unaligned (e.g. zkVM input buffers).
+    let mut aligned = AlignedVec::<16>::with_capacity(bytes.len());
+    aligned.extend_from_slice(bytes);
+    rkyv::from_bytes::<T, RkyvError>(&aligned)
 }
 
 /// Wraps an rkyv type so that it can be transparently [`Codec`]ed.
@@ -115,5 +119,18 @@ mod tests {
         let decoded: CodecRkyv<Vec<u32>> = decode_buf_exact(&encoded).expect("Failed to decode");
 
         assert_eq!(decoded.inner(), &original);
+    }
+
+    #[test]
+    fn test_decode_rkyv_unaligned_buffer() {
+        let original = TestStruct { a: 42, b: 1337 };
+        let encoded = rkyv::to_bytes::<RkyvError>(&original).expect("Failed to encode");
+
+        // Force a misaligned view of the encoded payload.
+        let mut prefixed = vec![0u8; encoded.len() + 1];
+        prefixed[1..].copy_from_slice(encoded.as_ref());
+
+        let decoded: TestStruct = decode_rkyv(&prefixed[1..]).expect("Failed to decode");
+        assert_eq!(decoded, original);
     }
 }

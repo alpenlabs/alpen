@@ -15441,6 +15441,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "rkyv",
  "strata-checkpoint-types",
+ "strata-codec-utils",
  "strata-proofimpl-cl-stf",
  "zkaleido",
  "zkaleido-native-adapter",
@@ -15501,6 +15502,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-bridge-types",
+ "strata-codec-utils",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",

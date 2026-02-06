@@ -4,6 +4,7 @@ use std::{
 };
 
 use rkyv::rancor::Error as RkyvError;
+use strata_codec_utils::decode_rkyv;
 use strata_ol_chain_types::{L2Block, L2BlockHeader};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::RollupParams;
@@ -79,11 +80,11 @@ impl ZkVmProgram for ClStfProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        rkyv::from_bytes::<Self::Output, RkyvError>(public_values.as_bytes()).map_err(
-            |err: RkyvError| ZkVmError::OutputExtractionError {
+        decode_rkyv(public_values.as_bytes()).map_err(|err: RkyvError| {
+            ZkVmError::OutputExtractionError {
                 source: DataFormatError::Other(err.to_string()),
-            },
-        )
+            }
+        })
     }
 }
 

@@ -5,6 +5,7 @@ use std::{
 
 use rkyv::rancor::Error as RkyvError;
 use strata_checkpoint_types::BatchTransition;
+use strata_codec_utils::decode_rkyv;
 use zkaleido::{
     AggregationInput, DataFormatError, ProofReceiptWithMetadata, PublicValues, VerifyingKey,
     ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
@@ -55,11 +56,11 @@ impl ZkVmProgram for CheckpointProgram {
     where
         H: zkaleido::ZkVmHost,
     {
-        rkyv::from_bytes::<Self::Output, RkyvError>(public_values.as_bytes()).map_err(
-            |err: RkyvError| ZkVmError::OutputExtractionError {
+        decode_rkyv(public_values.as_bytes()).map_err(|err: RkyvError| {
+            ZkVmError::OutputExtractionError {
                 source: DataFormatError::Other(err.to_string()),
-            },
-        )
+            }
+        })
     }
 }
 
