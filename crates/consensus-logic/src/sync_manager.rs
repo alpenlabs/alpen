@@ -74,6 +74,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     bitcoin_client: Arc<Client>,
     engine: Arc<E>,
     params: Arc<Params>,
+    legacy_mode: bool,
     status_channel: StatusChannel,
 ) -> anyhow::Result<SyncManager> {
     // Create channels.
@@ -118,6 +119,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         csm_params,
         csm_storage,
         bitcoin_client.clone(),
+        legacy_mode,
         csm_st_ch.into(),
         csm_asm_monitor,
     )?;
@@ -158,6 +160,7 @@ pub fn spawn_csm_listener_with_ctx(
         nodectx.params().clone(),
         nodectx.storage().clone(),
         nodectx.bitcoin_client().clone(),
+        false,
         nodectx.status_channel().clone(),
         asm_monitor,
     )
@@ -168,6 +171,7 @@ fn spawn_csm_listener(
     params: Arc<Params>,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
+    legacy_mode: bool,
     status_channel: Arc<StatusChannel>,
     asm_monitor: &ServiceMonitor<AsmWorkerStatus>,
 ) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
@@ -177,6 +181,7 @@ fn spawn_csm_listener(
         storage.clone(),
         executor.handle().clone(),
         bitcoin_client,
+        legacy_mode,
         status_channel.clone(),
     )?;
 

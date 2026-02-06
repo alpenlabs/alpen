@@ -49,6 +49,10 @@ pub struct CsmWorkerState {
     /// Bitcoin reader client shared with BTCIO reader task.
     pub(crate) bitcoin_client: Option<Arc<BitcoinClient>>,
 
+    /// Enables resolving checkpoint pre-state from legacy `l2` block storage.
+    // TODO: remove this once we delete the "old" code and functional tests
+    pub(crate) use_legacy_l2_pre_state: bool,
+
     #[cfg(test)]
     /// Test-only raw tx fixtures keyed by txid.
     pub(crate) checkpoint_txs: Mutex<Vec<(BitcoinTxid, RawBitcoinTx)>>,
@@ -64,6 +68,8 @@ impl CsmWorkerState {
         storage: Arc<NodeStorage>,
         runtime_handle: Handle,
         bitcoin_client: Arc<BitcoinClient>,
+        // TODO: remove this once we delete the "old" code and functional tests
+        use_legacy_l2_pre_state: bool,
         status_channel: Arc<StatusChannel>,
     ) -> anyhow::Result<Self> {
         // Load the most recent client state from storage
@@ -80,6 +86,8 @@ impl CsmWorkerState {
             last_processed_epoch: None,
             runtime_handle: Some(runtime_handle),
             bitcoin_client: Some(bitcoin_client),
+            // TODO: remove this once we delete the "old" code and functional tests
+            use_legacy_l2_pre_state,
             #[cfg(test)]
             checkpoint_txs: Mutex::new(Vec::new()),
             status_channel,
@@ -107,6 +115,8 @@ impl CsmWorkerState {
             last_processed_epoch: None,
             runtime_handle: None,
             bitcoin_client: None,
+            // TODO: remove this once we delete the "old" code and functional tests
+            use_legacy_l2_pre_state: false,
             checkpoint_txs: Mutex::new(Vec::new()),
             status_channel,
         })

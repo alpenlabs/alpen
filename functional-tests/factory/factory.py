@@ -118,6 +118,7 @@ class StrataFactory(flexitest.Factory):
             "--rollup-params", rollup_params_file,
             "--rpc-host", rpc_host,
             "--rpc-port", str(rpc_port),
+            "--legacy",
 
             "--sequencer"
         ]
@@ -260,6 +261,7 @@ class FullNodeFactory(flexitest.Factory):
             "--rollup-params", rollup_params_file,
             "--rpc-host", rpc_host,
             "--rpc-port", str(rpc_port),
+            "--legacy",
         ]
         # fmt: on
 

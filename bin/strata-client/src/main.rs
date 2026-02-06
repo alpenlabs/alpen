@@ -24,7 +24,6 @@ use strata_consensus_logic::{
     genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
 };
-use strata_db_store_sled::SledBackend;
 use strata_db_types::{
     traits::{DatabaseBackend, L1BroadcastDatabase, L1WriterDatabase},
     DbError,
@@ -121,9 +120,10 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         pool,
         &config,
         params.clone(),
-        database.clone(),
         storage.clone(),
         bitcoin_client,
+        // TODO: remove this once we delete the "old" code and functional tests
+        args.legacy,
     )?;
 
     let mut methods = jsonrpsee::Methods::new();
@@ -214,7 +214,6 @@ fn init_logging(rt: &Handle, config: &Config) {
 )]
 pub struct CoreContext {
     pub runtime: Handle,
-    pub database: Arc<SledBackend>,
     pub storage: Arc<NodeStorage>,
     pub pool: threadpool::ThreadPool,
     pub params: Arc<Params>,
@@ -318,9 +317,10 @@ fn start_core_tasks(
     pool: threadpool::ThreadPool,
     config: &Config,
     params: Arc<Params>,
-    database: Arc<SledBackend>,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
+    // TODO: remove this once we delete the "old" code and functional tests
+    legacy_mode: bool,
 ) -> anyhow::Result<CoreContext> {
     let runtime = executor.handle().clone();
 
@@ -346,6 +346,8 @@ fn start_core_tasks(
         bitcoin_client.clone(),
         engine.clone(),
         params.clone(),
+        // TODO: remove this once we delete the "old" code and functional tests
+        legacy_mode,
         status_channel.clone(),
     )?
     .into();
@@ -367,7 +369,6 @@ fn start_core_tasks(
 
     Ok(CoreContext {
         runtime,
-        database,
         storage,
         pool,
         params,

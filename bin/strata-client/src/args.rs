@@ -56,6 +56,11 @@ pub(crate) struct Args {
     #[argh(option, description = "rpc port")]
     pub rpc_port: Option<u16>,
 
+    /// Enables legacy sync mode for old functional-test compatibility.
+    // TODO: remove this once we delete the "old" code and functional tests
+    #[argh(switch, description = "enable legacy sync mode")]
+    pub legacy: bool,
+
     /// Other generic overrides to the config toml.
     /// Will be used, for example, as `-o btcio.reader.client_poll_dur_ms=1000 -o exec.reth.rpc_url=http://reth`
     #[argh(option, short = 'o', description = "generic config overrides")]
@@ -203,6 +208,7 @@ mod test {
             rollup_params: None,
             rpc_host: None,
             rpc_port: None,
+            legacy: false,
             overrides: vec![
                 "btcio.reader.client_poll_dur_ms=50".to_string(),
                 "sync.l1_follow_distance=30".to_string(),

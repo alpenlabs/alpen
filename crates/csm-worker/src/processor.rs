@@ -61,9 +61,19 @@ fn process_checkpoint_log(
         "CSM is processing checkpoint update from ASM log"
     );
 
-    // Apply and verify DA first so the worker fails closed: if fetching/decoding/state-root checks
-    // fail, this handler does not persist checkpoint-inclusion metadata or advance client state.
-    apply_checkpoint_da_update(state, checkpoint_update)?;
+    if state.use_legacy_l2_pre_state {
+        // Keep legacy sync behavior unchanged for old functional tests and old sync consumers:
+        // process checkpoint metadata/finalization without consuming checkpoint DA.
+        debug!(
+            %epoch,
+            "legacy mode enabled, skipping checkpoint DA application"
+        );
+    } else {
+        // Apply and verify DA first so the worker fails closed: if fetching/decoding/state-root
+        // checks fail, this handler does not persist checkpoint-inclusion metadata or advance
+        // client state.
+        apply_checkpoint_da_update(state, checkpoint_update)?;
+    }
 
     // Create L1 checkpoint reference from the log data
     let l1_reference = CheckpointL1Ref::new(
@@ -219,12 +229,69 @@ fn validate_checkpoint_payload_tip(
 
 /// Resolves the checkpoint pre-state snapshot used for DA application.
 ///
-/// For epochs greater than zero, this prefers the previous epoch terminal checkpoint state.
-/// If unavailable, it falls back to the latest persisted OL state snapshot.
+/// The pre-state is derived from the parent of `batch_info.l2_range.0`.
+///
+/// In default mode this resolves strictly from the `ol_block` store. In legacy mode this first
+/// tries legacy `l2` resolution and then falls back to legacy snapshot lookup behavior for
+/// compatibility with old sync paths.
 fn resolve_pre_state_for_checkpoint(
     state: &CsmWorkerState,
     checkpoint_update: &CheckpointUpdate,
 ) -> anyhow::Result<(OLBlockCommitment, OLState)> {
+    if state.use_legacy_l2_pre_state {
+        return resolve_pre_state_for_checkpoint_legacy(state, checkpoint_update);
+    }
+
+    let l2_start = checkpoint_update.batch_info().l2_range.0;
+    let pre_state_commitment = resolve_pre_state_commitment_from_ol_block(state, l2_start)?;
+    let pre_state = state
+        .storage
+        .ol_state()
+        .get_toplevel_ol_state_blocking(pre_state_commitment)?
+        .ok_or_else(|| {
+            anyhow!(
+                "missing OL state snapshot for checkpoint pre-state commitment {pre_state_commitment}"
+            )
+        })?;
+    Ok((pre_state_commitment, pre_state.as_ref().clone()))
+}
+
+/// Resolves checkpoint pre-state in legacy mode with compatibility fallbacks.
+///
+/// This tries strict `l2`-derived parent resolution first. If the derived commitment cannot be
+/// mapped to an OL snapshot, it falls back to previous-checkpoint terminal state, then latest OL
+/// snapshot.
+// TODO: remove this once we delete the "old" code and functional tests
+fn resolve_pre_state_for_checkpoint_legacy(
+    state: &CsmWorkerState,
+    checkpoint_update: &CheckpointUpdate,
+) -> anyhow::Result<(OLBlockCommitment, OLState)> {
+    let l2_start = checkpoint_update.batch_info().l2_range.0;
+
+    match resolve_pre_state_commitment_from_legacy_l2(state, l2_start) {
+        Ok(pre_state_commitment) => {
+            if let Some(pre_state) = state
+                .storage
+                .ol_state()
+                .get_toplevel_ol_state_blocking(pre_state_commitment)?
+            {
+                return Ok((pre_state_commitment, pre_state.as_ref().clone()));
+            }
+            warn!(
+                %pre_state_commitment,
+                %l2_start,
+                "legacy l2-derived pre-state commitment missing in OL snapshots; falling back"
+            );
+        }
+        Err(error) => {
+            warn!(
+                %l2_start,
+                ?error,
+                "failed to resolve legacy l2-derived pre-state; falling back"
+            );
+        }
+    }
+
     let epoch = checkpoint_update.batch_info().epoch();
     if epoch > 0 {
         let prev_epoch = (epoch - 1) as u64;
@@ -234,17 +301,18 @@ fn resolve_pre_state_for_checkpoint(
             .get_checkpoint_blocking(prev_epoch)?
         {
             let prev_terminal = *prev_checkpoint.checkpoint.batch_info().final_l2_block();
-            let prev_state = state
+            if let Some(prev_state) = state
                 .storage
                 .ol_state()
                 .get_toplevel_ol_state_blocking(prev_terminal)?
-                .ok_or_else(|| {
-                    anyhow!(
-                        "missing OL state snapshot for previous terminal commitment {}",
-                        prev_terminal
-                    )
-                })?;
-            return Ok((prev_terminal, prev_state.as_ref().clone()));
+            {
+                return Ok((prev_terminal, prev_state.as_ref().clone()));
+            }
+            warn!(
+                %prev_terminal,
+                prev_epoch,
+                "legacy previous-checkpoint pre-state missing; falling back to latest snapshot"
+            );
         }
     }
 
@@ -253,7 +321,76 @@ fn resolve_pre_state_for_checkpoint(
         .ol_state()
         .get_latest_toplevel_ol_state_blocking()?
         .ok_or_else(|| anyhow!("missing OL state snapshot for checkpoint DA pre-state"))?;
+
     Ok((commitment, state_snapshot.as_ref().clone()))
+}
+
+/// Resolves pre-state commitment from the legacy `l2` block store.
+// TODO: remove this once we delete the "old" code and functional tests
+fn resolve_pre_state_commitment_from_legacy_l2(
+    state: &CsmWorkerState,
+    l2_start: OLBlockCommitment,
+) -> anyhow::Result<OLBlockCommitment> {
+    let bundle = state
+        .storage
+        .l2()
+        .get_block_data_blocking(l2_start.blkid())?
+        .ok_or_else(|| {
+            anyhow!(
+                "missing checkpoint L2 start block in legacy l2 store for commitment {}",
+                l2_start
+            )
+        })?;
+    let header = bundle.block().header().header();
+    if header.slot() != l2_start.slot() {
+        bail!(
+            "checkpoint L2 start slot mismatch (legacy l2 store): batch_info={} block_header={}",
+            l2_start.slot(),
+            header.slot()
+        );
+    }
+
+    let pre_state_slot = resolve_pre_state_slot(l2_start)?;
+    Ok(OLBlockCommitment::new(pre_state_slot, header.prev_block()))
+}
+
+/// Resolves pre-state commitment from the new `ol_block` block store.
+fn resolve_pre_state_commitment_from_ol_block(
+    state: &CsmWorkerState,
+    l2_start: OLBlockCommitment,
+) -> anyhow::Result<OLBlockCommitment> {
+    let block = state
+        .storage
+        .ol_block()
+        .get_block_data_blocking(*l2_start.blkid())?
+        .ok_or_else(|| {
+            anyhow!(
+                "missing checkpoint L2 start block in ol_block store for commitment {}",
+                l2_start
+            )
+        })?;
+    let header = block.header();
+    if header.slot() != l2_start.slot() {
+        bail!(
+            "checkpoint L2 start slot mismatch (ol_block store): batch_info={} block_header={}",
+            l2_start.slot(),
+            header.slot()
+        );
+    }
+
+    let pre_state_slot = resolve_pre_state_slot(l2_start)?;
+    Ok(OLBlockCommitment::new(
+        pre_state_slot,
+        *header.parent_blkid(),
+    ))
+}
+
+/// Resolves the pre-state slot from the checkpoint range start slot.
+fn resolve_pre_state_slot(l2_start: OLBlockCommitment) -> anyhow::Result<u64> {
+    l2_start
+        .slot()
+        .checked_sub(1)
+        .ok_or_else(|| anyhow!("invalid checkpoint L2 start slot 0 for pre-state resolution"))
 }
 
 /// Applies deterministic L1-derived epoch sealing updates from ASM manifests to OL state.
@@ -407,6 +544,9 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::WtxidsRoot;
     use strata_ledger_types::IStateAccessor;
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    };
     use strata_ol_da::{
         OLDaPayloadV1, StateDiff, apply_da_payload,
         test_utils::{make_checkpoint_tx, make_signed_checkpoint_payload},
@@ -414,7 +554,7 @@ mod tests {
     use strata_ol_state_types::OLState;
     use strata_params::{Params, RollupParams, SyncParams};
     use strata_primitives::{
-        buf::Buf32,
+        buf::{Buf32, Buf64},
         epoch::EpochCommitment,
         l1::{BitcoinTxid, RawBitcoinTx},
         l2::{L2BlockCommitment, L2BlockId},
@@ -597,9 +737,11 @@ mod tests {
             );
             state.last_asm_block = Some(asm_block);
 
-            let l2_start = L2BlockCommitment::new(
+            let l2_start = seed_ol_block(
+                &storage,
                 ((epoch - 1) * 10 + 1) as u64,
-                L2BlockId::from(Buf32::from([epoch as u8; 32])),
+                epoch,
+                *prev_terminal.blkid(),
             );
             let l2_end = L2BlockCommitment::new(
                 (epoch * 10) as u64,
@@ -721,5 +863,34 @@ mod tests {
             .l1()
             .extend_canonical_chain(&blkid, height)
             .expect("extend canonical chain");
+    }
+
+    /// Seeds the first OL block in a checkpoint range and returns its commitment.
+    fn seed_ol_block(
+        storage: &Arc<strata_storage::NodeStorage>,
+        slot: u64,
+        epoch: u32,
+        parent_blkid: L2BlockId,
+    ) -> L2BlockCommitment {
+        let header = OLBlockHeader::new(
+            0,
+            BlockFlags::zero(),
+            slot,
+            epoch,
+            parent_blkid,
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("construct tx segment"));
+        let block = OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body);
+        let commitment = block.header().compute_block_commitment();
+
+        storage
+            .ol_block()
+            .put_block_data_blocking(block)
+            .expect("store OL block");
+
+        commitment
     }
 }
