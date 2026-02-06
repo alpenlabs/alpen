@@ -111,11 +111,29 @@ pub fn create_test_admin_tx(
     create_reveal_transaction_stub(envelope_payload, tagged_payload)
 }
 
+/// Creates a test reveal transaction with the provided envelope payload and output tag script.
+///
+/// This helper is intended for cross-crate tests that need to construct a synthetic
+/// SPS-50-tagged reveal transaction without duplicating witness/script boilerplate.
+pub fn create_test_reveal_tx(envelope_payload: Vec<u8>, tag_script: ScriptBuf) -> Transaction {
+    create_reveal_transaction_with_tag_script(envelope_payload, tag_script)
+}
+
 /// Creates a stub reveal transaction containing the envelope script.
 /// This is a simplified implementation for testing purposes.
 fn create_reveal_transaction_stub(
     envelope_payload: Vec<u8>,
     sps50_tagged_payload: Vec<u8>,
+) -> Transaction {
+    create_reveal_transaction_with_tag_script(
+        envelope_payload,
+        ScriptBuf::new_op_return(PushBytesBuf::try_from(sps50_tagged_payload).unwrap()),
+    )
+}
+
+fn create_reveal_transaction_with_tag_script(
+    envelope_payload: Vec<u8>,
+    tag_script: ScriptBuf,
 ) -> Transaction {
     // Create commit key
     let mut rand_bytes = [0; 32];
@@ -155,9 +173,7 @@ fn create_reveal_transaction_stub(
         }],
         output: vec![TxOut {
             value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return(
-                PushBytesBuf::try_from(sps50_tagged_payload).unwrap(),
-            ),
+            script_pubkey: tag_script,
         }],
     }
 }

@@ -14955,10 +14955,18 @@ dependencies = [
 name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
+ "ssz",
  "strata-acct-types",
+ "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-admin",
+ "strata-btc-types",
+ "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-da-framework",
  "strata-identifiers",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-ol-state-types",
  "strata-predicate",
