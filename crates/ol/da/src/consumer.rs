@@ -122,32 +122,37 @@ fn checkpoint_payload_script(tx: &Transaction) -> DaConsumerResult<ScriptBuf> {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::Transaction;
     use ssz::Encode;
-    use strata_asm_txs_admin::test_utils::create_test_reveal_tx;
-    use strata_checkpoint_types_ssz::{CheckpointPayload, CheckpointSidecar, CheckpointTip};
     use strata_da_framework::{DaCounter, counter_schemes::CtrU64ByU16};
-    use strata_identifiers::{Buf32, Buf64, OLBlockCommitment, OLBlockId};
-    use strata_l1_txfmt::TagDataRef;
+    use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
     use strata_ledger_types::IStateAccessor;
     use strata_ol_state_types::OLState;
 
     use super::*;
-    use crate::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
-
-    const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
+    use crate::{
+        GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff,
+        test_utils::{TEST_MAGIC_BYTES, make_checkpoint_tx, make_signed_checkpoint_payload},
+    };
 
     #[test]
     fn test_decode_checkpoint_da_blob_works() {
+        let secret_key = Buf32::from([1u8; 32]);
         let state_diff = StateDiff::default();
         let da_payload = OLDaPayloadV1::new(state_diff);
         let da_payload_bytes = strata_codec::encode_to_vec(&da_payload).expect("encode da payload");
-        let signed_checkpoint = make_signed_checkpoint_with_state_diff(da_payload_bytes);
+        let signed_checkpoint = make_signed_checkpoint_payload(
+            1,
+            101,
+            OLBlockCommitment::new(5, OLBlockId::from(Buf32::from([7u8; 32]))),
+            da_payload_bytes,
+            secret_key,
+        );
 
         let tx = make_checkpoint_tx(
             &signed_checkpoint.as_ssz_bytes(),
             CHECKPOINT_V0_SUBPROTOCOL_ID,
             OL_STF_CHECKPOINT_TX_TYPE,
+            secret_key,
         );
 
         let decoded = decode_checkpoint_da_blob(&RawBitcoinTx::from(tx), TEST_MAGIC_BYTES)
@@ -171,11 +176,19 @@ mod tests {
 
     #[test]
     fn test_decode_checkpoint_da_blob_rejects_wrong_tag() {
-        let signed_checkpoint = make_signed_checkpoint_with_state_diff(vec![]);
+        let secret_key = Buf32::from([1u8; 32]);
+        let signed_checkpoint = make_signed_checkpoint_payload(
+            1,
+            101,
+            OLBlockCommitment::new(5, OLBlockId::from(Buf32::from([7u8; 32]))),
+            vec![],
+            secret_key,
+        );
         let tx = make_checkpoint_tx(
             &signed_checkpoint.as_ssz_bytes(),
             CHECKPOINT_V0_SUBPROTOCOL_ID,
             OL_STF_CHECKPOINT_TX_TYPE + 1,
+            secret_key,
         );
 
         let err = decode_checkpoint_da_blob(&RawBitcoinTx::from(tx), TEST_MAGIC_BYTES)
@@ -198,24 +211,5 @@ mod tests {
 
         apply_state_diff(&mut state, state_diff).expect("apply state diff");
         assert_eq!(state.cur_slot(), 2);
-    }
-
-    fn make_signed_checkpoint_with_state_diff(state_diff: Vec<u8>) -> SignedCheckpointPayload {
-        let tip = CheckpointTip::new(
-            1,
-            101,
-            OLBlockCommitment::new(5, OLBlockId::from(Buf32::from([7u8; 32]))),
-        );
-        let sidecar = CheckpointSidecar::new(state_diff, vec![]).expect("make sidecar");
-        let payload = CheckpointPayload::new(tip, sidecar, vec![]).expect("make payload");
-        SignedCheckpointPayload::new(payload, Buf64::zero())
-    }
-
-    fn make_checkpoint_tx(payload: &[u8], subprotocol: u8, tx_type: u8) -> Transaction {
-        let tag_data = TagDataRef::new(subprotocol, tx_type, &[]).expect("build tag");
-        let tag_script = ParseConfig::new(TEST_MAGIC_BYTES)
-            .encode_script_buf(&tag_data)
-            .expect("encode tag script");
-        create_test_reveal_tx(payload.to_vec(), tag_script)
     }
 }

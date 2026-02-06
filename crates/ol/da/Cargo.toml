@@ -10,6 +10,7 @@ strata-asm-proto-checkpoint-txs.workspace = true
 strata-btc-types.workspace = true
 strata-checkpoint-types-ssz.workspace = true
 strata-codec.workspace = true
+strata-crypto = { workspace = true, optional = true }
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true
 strata-l1-envelope-fmt.workspace = true
@@ -25,5 +26,8 @@ thiserror.workspace = true
 workspace = true
 
 [dev-dependencies]
-strata-asm-txs-admin = { workspace = true, features = ["test-utils"] }
+strata-crypto.workspace = true
 strata-ol-state-types.workspace = true
+
+[features]
+test-utils = ["dep:strata-crypto"]

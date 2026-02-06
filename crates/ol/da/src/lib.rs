@@ -12,3 +12,6 @@ pub use consumer::*;
 pub use errors::*;
 pub use traits::*;
 pub use types::*;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
