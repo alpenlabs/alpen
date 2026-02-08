@@ -1,8 +1,8 @@
 //! Builder for constructing BatchStateDiff from multiple block diffs.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Bytes, U256};
 use revm_primitives::{Address, B256};
 
 use super::{AccountChange, AccountDiff, BatchStateDiff, StorageDiff};
@@ -90,8 +90,8 @@ pub struct BatchBuilder {
     /// Storage states: address -> slot -> tracked value.
     storage: BTreeMap<Address, BTreeMap<U256, TrackedState<U256>>>,
 
-    /// Deployed contract code hashes (deduplicated).
-    deployed_code_hashes: BTreeSet<B256>,
+    /// Deployed contract bytecodes keyed by code hash (deduplicated).
+    deployed_bytecodes: BTreeMap<B256, Bytes>,
 }
 
 impl BatchBuilder {
@@ -127,9 +127,13 @@ impl BatchBuilder {
             }
         }
 
-        // Collect deployed contract code hashes (BTreeSet handles deduplication)
-        self.deployed_code_hashes
-            .extend(&block_diff.deployed_code_hashes);
+        // Collect deployed contract bytecodes (BTreeMap handles deduplication by hash)
+        self.deployed_bytecodes.extend(
+            block_diff
+                .deployed_bytecodes
+                .iter()
+                .map(|(k, v)| (*k, v.clone())),
+        );
     }
 
     /// Builds the final [`BatchStateDiff`] for DA.
@@ -189,7 +193,7 @@ impl BatchBuilder {
             }
         }
 
-        result.deployed_code_hashes = self.deployed_code_hashes.into_iter().collect();
+        result.deployed_bytecodes = self.deployed_bytecodes;
         result
     }
 }
@@ -359,21 +363,23 @@ mod tests {
     }
 
     #[test]
-    fn test_code_hash_deduplication() {
+    fn test_bytecode_deduplication() {
         let hash = B256::from([0x11u8; 32]);
+        let bytecode = Bytes::from_static(&[0x60, 0x80, 0x60, 0x40]);
 
         let mut block1 = BlockStateChanges::new();
-        block1.deployed_code_hashes.push(hash);
+        block1.deployed_bytecodes.insert(hash, bytecode.clone());
 
         let mut block2 = BlockStateChanges::new();
-        block2.deployed_code_hashes.push(hash); // Same hash
+        block2.deployed_bytecodes.insert(hash, bytecode); // Same hash
 
         let mut builder = BatchBuilder::new();
         builder.apply_block(&block1);
         builder.apply_block(&block2);
         let diff = builder.build();
 
-        // Should be deduplicated
-        assert_eq!(diff.deployed_code_hashes.len(), 1);
+        // Should be deduplicated by hash
+        assert_eq!(diff.deployed_bytecodes.len(), 1);
+        assert!(diff.deployed_bytecodes.contains_key(&hash));
     }
 }
