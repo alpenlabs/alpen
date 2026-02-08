@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::{BatchId, L1DaBlockRef};
+use crate::{BatchId, DaBlob, L1DaBlockRef};
 
 #[derive(Debug)]
 pub enum DaStatus {
@@ -38,14 +38,23 @@ pub trait BatchDaProvider: Send + Sync {
     async fn check_da_status(&self, batch_id: BatchId) -> eyre::Result<DaStatus>;
 }
 
-/// Provides the encoded DA blob bytes for a batch.
+/// Provides the DA blob for a batch.
 ///
-/// Separates blob preparation (fetching state diffs, aggregating, encoding)
-/// from blob publication (chunking, posting to Bitcoin, tracking).
+/// Separates blob preparation (fetching state diffs, aggregating)
+/// from blob publication (encoding, chunking, posting to Bitcoin, tracking).
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 pub trait DaBlobProvider: Send + Sync {
-    /// Returns the strata-codec encoded `BatchStateDiff` bytes for the given batch.
+    /// Returns the [`DaBlob`] for the given batch.
     ///
-    /// Returns `None` if the batch has no state diffs.
-    fn get_blob(&self, batch_id: BatchId) -> eyre::Result<Option<Vec<u8>>>;
+    /// The blob contains batch metadata and the aggregated state diff.
+    /// Even batches with no state changes return a blob (with empty state diff)
+    /// to ensure L1 chain continuity.
+    fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob>;
+
+    /// Returns `true` if state diffs are ready for all blocks in the given batch.
+    ///
+    /// Used by the batch lifecycle to ensure state diffs have been written
+    /// by the Reth exex before attempting to post DA. This prevents race
+    /// conditions where DA posting is attempted before state diffs are ready.
+    fn are_state_diffs_ready(&self, batch_id: BatchId) -> eyre::Result<bool>;
 }
