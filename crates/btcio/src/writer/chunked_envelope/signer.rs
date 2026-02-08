@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use bitcoin::hashes::Hash;
+use bitcoin::{consensus::encode::serialize as btc_serialize, hashes::Hash};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::FeePolicy;
 use strata_db_types::types::{
@@ -31,9 +31,12 @@ use crate::{
 
 /// Builds and signs a chunked envelope's commit + N reveal transactions.
 ///
-/// The commit tx is signed via wallet RPC. All transactions are inserted into
-/// the broadcast database. Returns the updated entry with status
-/// [`Unpublished`](ChunkedEnvelopeStatus::Unpublished).
+/// The commit tx is signed via wallet RPC and stored in the broadcast database.
+/// Reveal txs are signed and stored in the entry's `reveals` field (with raw bytes),
+/// but are NOT added to the broadcast DB yet. The watcher will add them after
+/// the commit tx is published, preventing `InvalidInputs` errors.
+///
+/// Returns the updated entry with status [`Unpublished`](ChunkedEnvelopeStatus::Unpublished).
 pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     entry: &ChunkedEnvelopeEntry,
     broadcast_handle: &L1BroadcastHandle,
@@ -92,29 +95,34 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         .tx;
     let commit_txid: Buf32 = signed_commit.compute_txid().into();
 
-    // Store commit and all reveals in broadcast DB. Not atomic — the watcher
-    // handles partial state by falling back to re-signing.
+    // Store ONLY the commit tx in broadcast DB. Reveals will be added after
+    // commit is published to prevent InvalidInputs errors.
     broadcast_handle
         .put_tx_entry(commit_txid, L1TxEntry::from_tx(&signed_commit))
         .await
         .map_err(|e| EnvelopeError::Other(e.into()))?;
 
+    // Store reveal metadata and raw bytes locally. They'll be added to broadcast
+    // DB by the watcher after commit is published.
     let mut reveals = Vec::with_capacity(built.reveal_txs.len());
     for (i, reveal_tx) in built.reveal_txs.iter().enumerate() {
         let txid: Buf32 = reveal_tx.compute_txid().into();
         let wtxid: Buf32 = reveal_tx.compute_wtxid().as_byte_array().into();
-
-        broadcast_handle
-            .put_tx_entry(txid, L1TxEntry::from_tx(reveal_tx))
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        let tx_bytes = btc_serialize(reveal_tx);
 
         reveals.push(RevealTxMeta {
             vout_index: i as u32,
             txid,
             wtxid,
+            tx_bytes,
         });
     }
+
+    debug!(
+        commit_txid = %commit_txid,
+        reveal_count = reveals.len(),
+        "signed chunked envelope, commit stored, reveals pending"
+    );
 
     let mut updated = entry.clone();
     updated.commit_txid = commit_txid;
