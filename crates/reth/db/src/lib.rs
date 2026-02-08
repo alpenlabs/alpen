@@ -57,4 +57,3 @@ pub trait EeDaContext {
     /// Marks the given code hashes as published. Idempotent.
     fn mark_code_hashes_published(&self, code_hashes: &[B256]) -> DbResult<()>;
 }
-

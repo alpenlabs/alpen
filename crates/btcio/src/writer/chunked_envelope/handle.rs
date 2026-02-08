@@ -210,9 +210,7 @@ async fn check_commit_and_broadcast_reveals(
     };
 
     match commit.status {
-        L1TxStatus::InvalidInputs => {
-            Ok(ChunkedEnvelopeStatus::NeedsResign)
-        }
+        L1TxStatus::InvalidInputs => Ok(ChunkedEnvelopeStatus::NeedsResign),
         L1TxStatus::Unpublished => {
             // Commit not yet published, keep waiting.
             Ok(ChunkedEnvelopeStatus::Unpublished)
@@ -228,9 +226,8 @@ async fn check_commit_and_broadcast_reveals(
             // First, deserialize all reveal transactions
             let mut reveal_txs = Vec::with_capacity(entry.reveals.len());
             for reveal in &entry.reveals {
-                let tx: bitcoin::Transaction =
-                    btc_deserialize(&reveal.tx_bytes)
-                        .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
+                let tx: bitcoin::Transaction = btc_deserialize(&reveal.tx_bytes)
+                    .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
                 reveal_txs.push((reveal.txid, tx));
             }
 
