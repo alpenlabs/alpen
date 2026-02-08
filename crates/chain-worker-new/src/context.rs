@@ -14,7 +14,7 @@ use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{CheckpointDbManager, OLBlockManager, OLStateManager};
+use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateManager};
 use tokio::runtime::Handle;
 use tracing::warn;
 
@@ -41,7 +41,7 @@ pub struct ChainWorkerContextImpl {
     ol_state_mgr: Arc<OLStateManager>,
 
     /// Manager for checkpoint and epoch summary data.
-    checkpoint_mgr: Arc<CheckpointDbManager>,
+    ol_checkpoint_mgr: Arc<OLCheckpointManager>,
 
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
@@ -59,7 +59,7 @@ impl ChainWorkerContextImpl {
         Self {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
-            checkpoint_mgr: nodectx.storage().checkpoint().clone(),
+            ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             status_channel: nodectx.status_channel().clone(),
             params: nodectx.params().clone(),
             handle: nodectx.executor().handle().clone(),
@@ -169,12 +169,13 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
-        self.checkpoint_mgr.insert_epoch_summary_blocking(summary)?;
+        self.ol_checkpoint_mgr
+            .insert_epoch_summary_blocking(summary)?;
         Ok(())
     }
 
     fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
-        self.checkpoint_mgr
+        self.ol_checkpoint_mgr
             .get_epoch_summary_blocking(*epoch)?
             .ok_or(WorkerError::MissingEpochSummary(*epoch))
     }
@@ -182,13 +183,16 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {
         // Get all epoch commitments for this epoch index
         let epoch_commitments = self
-            .checkpoint_mgr
+            .ol_checkpoint_mgr
             .get_epoch_commitments_at_blocking(epoch as u64)?;
 
         // Fetch the summary for each commitment
         let mut summaries = Vec::with_capacity(epoch_commitments.len());
         for commitment in epoch_commitments {
-            if let Some(summary) = self.checkpoint_mgr.get_epoch_summary_blocking(commitment)? {
+            if let Some(summary) = self
+                .ol_checkpoint_mgr
+                .get_epoch_summary_blocking(commitment)?
+            {
                 summaries.push(summary);
             }
         }

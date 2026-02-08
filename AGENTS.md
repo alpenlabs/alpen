@@ -616,6 +616,9 @@ uv run python entry.py
 - `factories/` - Service factories (Bitcoin, Strata)
 - `tests/` - Test files
 
+If the functional tests fail, you can find the logs in the `_dd` directory inside the functional tests directory.
+The datadir will be the outputted by the test framework and will be named after the test run.
+
 ### Functional Tests (Legacy)
 
 Located in `functional-tests/`. Uses `uv` for dependency management.
@@ -632,6 +635,9 @@ cd functional-tests
 # Start test environment
 ./run_test.sh -e basic
 ```
+
+If the functional tests fail, you can find the logs in the `_dd` directory inside the functional tests directory.
+The datadir will be the outputted by the test framework and will be named after the test run.
 
 ### Prover Tests
 

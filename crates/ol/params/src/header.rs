@@ -39,6 +39,19 @@ pub struct HeaderParams {
     pub logs_root: Buf32,
 }
 
+impl Default for HeaderParams {
+    fn default() -> Self {
+        Self {
+            timestamp: 0,
+            slot: 0,
+            epoch: 0,
+            parent_blkid: OLBlockId::null(),
+            body_root: Buf32::zero(),
+            logs_root: Buf32::zero(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

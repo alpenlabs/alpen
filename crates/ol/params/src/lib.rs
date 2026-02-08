@@ -19,16 +19,19 @@ use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 ///
 /// Combines header parameters and genesis account definitions into a single
 /// configuration structure.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Header parameters for the parent of the genesis block.
+    #[serde(default)]
     pub header: HeaderParams,
 
     /// Genesis accounts keyed by account ID.
+    #[serde(default)]
     pub accounts: BTreeMap<AccountId, AccountParams>,
 
     /// Last L1 block known at genesis time, treated as the initial verified L1 tip.
+    #[serde(default)]
     pub last_l1_block: L1BlockCommitment,
 }
 
