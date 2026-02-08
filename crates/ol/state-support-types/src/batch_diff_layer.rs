@@ -215,14 +215,12 @@ mod tests {
     use strata_ledger_types::{AccountTypeState, IAccountState, IStateAccessor, NewAccountData};
     use strata_ol_params::OLParams;
     use strata_ol_state_types::OLState;
-    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::test_utils::*;
 
     fn new_ol_state_at(epoch: Epoch, slot: Slot) -> OLState {
-        let last_l1_block: L1BlockCommitment = ArbitraryGenerator::new().generate();
-        let mut params = OLParams::new_empty(last_l1_block);
+        let mut params = OLParams::new_empty(L1BlockCommitment::default());
         params.header.slot = slot;
         params.header.epoch = epoch;
         OLState::from_genesis_params(&params).expect("failed to create OLState from genesis params")
@@ -278,7 +276,7 @@ mod tests {
     #[test]
     fn test_read_from_single_batch() {
         let account_id = test_account_id(1);
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
 
         // Create a batch with an account
         let mut batch = WriteBatch::new_from_state(&base_state);
@@ -304,7 +302,7 @@ mod tests {
     #[test]
     fn test_check_account_exists_in_batch() {
         let account_id = test_account_id(1);
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
 
         let mut batch = WriteBatch::new_from_state(&base_state);
         let snark_state = test_snark_account_state(1);
@@ -345,7 +343,7 @@ mod tests {
     #[test]
     fn test_read_from_batch_stack_last_shadows() {
         let account_id = test_account_id(1);
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
 
         // First batch: account with 1000 sats
         let mut batch1 = WriteBatch::new_from_state(&base_state);
@@ -384,7 +382,7 @@ mod tests {
     fn test_read_falls_through_to_earlier_batch() {
         let account_id_1 = test_account_id(1);
         let account_id_2 = test_account_id(2);
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
 
         // First batch: account 1
         let mut batch1 = WriteBatch::new_from_state(&base_state);
@@ -461,7 +459,7 @@ mod tests {
     #[test]
     fn test_find_serial_in_batch_stack() {
         let account_id = test_account_id(1);
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
 
         let mut batch = WriteBatch::new_from_state(&base_state);
         let snark_state = test_snark_account_state(1);
@@ -500,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_create_account_returns_unsupported() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let batches: Vec<WriteBatch<_>> = vec![];
         let mut diff_state = BatchDiffState::new(&base_state, &batches);
 
@@ -517,7 +515,7 @@ mod tests {
 
     #[test]
     fn test_compute_state_root_returns_unsupported() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let batches: Vec<WriteBatch<_>> = vec![];
         let diff_state = BatchDiffState::new(&base_state, &batches);
 
@@ -531,7 +529,7 @@ mod tests {
 
     #[test]
     fn test_epochal_state_from_top_batch() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
 
         let mut batch = WriteBatch::new_from_state(&base_state);
         batch
@@ -549,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_last_l1_blkid_from_batch() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let batch = WriteBatch::new_from_state(&base_state);
 
         let batches = vec![batch];

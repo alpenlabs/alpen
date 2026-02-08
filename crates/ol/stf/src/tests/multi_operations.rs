@@ -13,15 +13,15 @@ use crate::{
     BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID,
     errors::ExecError,
     test_utils::{
-        SnarkUpdateBuilder, create_empty_account, execute_tx_in_block, get_test_proof,
-        get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
-        setup_genesis_with_snark_account, test_account_id,
+        SnarkUpdateBuilder, create_empty_account, create_test_genesis_state, execute_tx_in_block,
+        get_test_proof, get_test_recipient_account_id, get_test_snark_account_id,
+        get_test_state_root, setup_genesis_with_snark_account, test_account_id,
     },
 };
 
 #[test]
 fn test_snark_update_multiple_transfers() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient1_id = test_account_id(200);
     let recipient2_id = test_account_id(201);
@@ -90,7 +90,7 @@ fn test_snark_update_multiple_transfers() {
 
 #[test]
 fn test_snark_update_multiple_output_messages() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
 
     // Setup: genesis with snark account
@@ -149,7 +149,7 @@ fn test_snark_update_multiple_output_messages() {
 
 #[test]
 fn test_snark_update_transfers_and_messages_combined() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -211,7 +211,7 @@ fn test_snark_update_transfers_and_messages_combined() {
 
 #[test]
 fn test_snark_update_partial_balance_multiple_outputs() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient1_id = test_account_id(200);
     let recipient2_id = test_account_id(201);
