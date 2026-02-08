@@ -446,16 +446,34 @@ pub struct RevealTxMeta {
     pub txid: Buf32,
     /// Reveal witness transaction ID.
     pub wtxid: Buf32,
+    /// Raw signed reveal transaction bytes (consensus-encoded).
+    /// Stored here until the commit is published, then added to broadcast DB.
+    pub tx_bytes: Vec<u8>,
 }
 
 /// Lifecycle status of a chunked envelope.
+///
+/// The lifecycle ensures reveals are not broadcast before their parent commit tx
+/// is accepted into the mempool. This prevents `InvalidInputs` errors when the
+/// commit's outputs aren't yet spendable.
+///
+/// ```text
+/// Unsigned → Unpublished → CommitPublished → Published → Confirmed → Finalized
+///                 ↓              ↓
+///            NeedsResign    NeedsResign
+/// ```
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
 pub enum ChunkedEnvelopeStatus {
     /// Chunk data prepared, transactions not yet created.
     Unsigned,
-    /// Transactions signed, waiting to be broadcast.
+    /// Commit tx signed and stored in broadcast DB. Reveals are signed but held
+    /// locally until commit is published to ensure they don't fail with
+    /// `InvalidInputs` due to the commit outputs not yet being spendable.
     Unpublished,
-    /// Transactions broadcast to the mempool.
+    /// Commit tx is published/confirmed. Reveals are now stored in broadcast DB
+    /// and waiting to be published.
+    CommitPublished,
+    /// All transactions (commit + reveals) broadcast to the mempool.
     Published,
     /// Transactions confirmed with sufficient depth.
     Confirmed,

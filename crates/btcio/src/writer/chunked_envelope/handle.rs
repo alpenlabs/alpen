@@ -1,17 +1,21 @@
 //! Chunked envelope handle and lifecycle driver.
 //!
 //! Polls entries by sequential index and advances them through the status
-//! lifecycle: Unsigned → Unpublished → Published → Confirmed → Finalized.
+//! lifecycle: Unsigned → Unpublished → CommitPublished → Published → Confirmed → Finalized.
+//!
+//! The `CommitPublished` intermediate state ensures reveal txs are broadcast directly
+//! (all at once) when the commit tx is published. This ensures all reveals are submitted
+//! together and prevents race conditions with the broadcaster's polling loop.
 
 use std::{future::Future, sync::Arc, time::Duration};
 
-use bitcoin::Address;
+use bitcoin::{consensus::encode::deserialize as btc_deserialize, Address};
 use bitcoind_async_client::{
-    traits::{Reader, Signer, Wallet},
+    traits::{Broadcaster, Reader, Signer, Wallet},
     Client,
 };
 use strata_config::btcio::WriterConfig;
-use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxStatus};
+use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxStatus};
 use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
 use tokio::time::interval;
 use tracing::*;
@@ -104,7 +108,15 @@ fn find_first_pending_idx(ops: &ChunkedEnvelopeOps) -> anyhow::Result<u64> {
 }
 
 /// Polls entries and drives them through signing, broadcast, and confirmation.
-async fn watcher_task<R: Reader + Signer + Wallet>(
+///
+/// The lifecycle is:
+/// 1. `Unsigned`/`NeedsResign` → sign commit+reveals, store commit in broadcast DB → `Unpublished`
+/// 2. `Unpublished` → wait for commit to be published, then broadcast ALL reveals together →
+///    `CommitPublished`
+/// 3. `CommitPublished` → wait for all reveals to be published → `Published`
+/// 4. `Published` → wait for confirmation → `Confirmed`
+/// 5. `Confirmed` → wait for finalization → `Finalized`
+async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     start_idx: u64,
     ctx: Arc<ChunkedWriterContext<R>>,
     ops: Arc<ChunkedEnvelopeOps>,
@@ -145,10 +157,27 @@ async fn watcher_task<R: Reader + Signer + Wallet>(
                 curr += 1;
             }
 
-            ChunkedEnvelopeStatus::Unpublished
+            ChunkedEnvelopeStatus::Unpublished => {
+                // Check if commit is published. If so, broadcast ALL reveals together.
+                let new_status = check_commit_and_broadcast_reveals(
+                    &entry,
+                    &broadcast_handle,
+                    ctx.client.as_ref(),
+                )
+                .await?;
+                if new_status != entry.status {
+                    debug!(?new_status, "status changed");
+                    let mut updated = entry.clone();
+                    updated.status = new_status.clone();
+                    ops.put_chunked_envelope_entry_async(curr, updated).await?;
+                }
+            }
+
+            ChunkedEnvelopeStatus::CommitPublished
             | ChunkedEnvelopeStatus::Published
             | ChunkedEnvelopeStatus::Confirmed => {
-                let new_status = check_broadcast_status(&entry, &broadcast_handle).await?;
+                // Reveals are in broadcast DB, check their status.
+                let new_status = check_full_broadcast_status(&entry, &broadcast_handle).await?;
                 if new_status != entry.status {
                     debug!(?new_status, "status changed");
                     let mut updated = entry.clone();
@@ -163,10 +192,87 @@ async fn watcher_task<R: Reader + Signer + Wallet>(
     }
 }
 
-/// Checks the broadcast database for commit + all reveal tx statuses and
-/// returns the aggregate. The least-progressed transaction determines the
-/// overall envelope status.
-async fn check_broadcast_status(
+/// Checks commit tx status and broadcasts ALL reveals together once commit is published.
+///
+/// Called when status is `Unpublished`. Returns:
+/// - `CommitPublished` if commit is published and reveals are broadcast and stored in DB
+/// - `NeedsResign` if commit has invalid inputs or any reveal fails to broadcast
+/// - `Unsigned` if commit is missing
+/// - `Unpublished` if commit is still unpublished (waiting)
+async fn check_commit_and_broadcast_reveals(
+    entry: &ChunkedEnvelopeEntry,
+    bcast: &L1BroadcastHandle,
+    client: &impl Broadcaster,
+) -> anyhow::Result<ChunkedEnvelopeStatus> {
+    let Some(commit) = bcast.get_tx_entry_by_id_async(entry.commit_txid).await? else {
+        warn!("commit tx missing from broadcast db, will re-sign");
+        return Ok(ChunkedEnvelopeStatus::Unsigned);
+    };
+
+    match commit.status {
+        L1TxStatus::InvalidInputs => {
+            Ok(ChunkedEnvelopeStatus::NeedsResign)
+        }
+        L1TxStatus::Unpublished => {
+            // Commit not yet published, keep waiting.
+            Ok(ChunkedEnvelopeStatus::Unpublished)
+        }
+        L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => {
+            // Commit is published! Broadcast ALL reveals together.
+            info!(
+                commit_txid = %entry.commit_txid,
+                reveal_count = entry.reveals.len(),
+                "commit published, broadcasting all reveals together"
+            );
+
+            // First, deserialize all reveal transactions
+            let mut reveal_txs = Vec::with_capacity(entry.reveals.len());
+            for reveal in &entry.reveals {
+                let tx: bitcoin::Transaction =
+                    btc_deserialize(&reveal.tx_bytes)
+                        .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
+                reveal_txs.push((reveal.txid, tx));
+            }
+
+            // Broadcast all reveals together
+            for (txid, tx) in &reveal_txs {
+                match client.send_raw_transaction(tx).await {
+                    Ok(_) => {
+                        info!(%txid, "reveal tx broadcast successfully");
+                    }
+                    Err(e) if e.is_missing_or_invalid_input() => {
+                        // This shouldn't happen since commit is published, but handle gracefully
+                        warn!(%txid, ?e, "reveal tx has invalid inputs, will re-sign");
+                        return Ok(ChunkedEnvelopeStatus::NeedsResign);
+                    }
+                    Err(e) => {
+                        // Other errors - could be "already in mempool" which is fine,
+                        // or network errors. Log and continue - we'll verify status later.
+                        debug!(%txid, ?e, "broadcast returned error (may already be in mempool)");
+                    }
+                }
+            }
+
+            // All reveals broadcast successfully, now store them in broadcast DB for tracking
+            for (txid, tx) in reveal_txs {
+                let mut tx_entry = L1TxEntry::from_tx(&tx);
+                tx_entry.status = L1TxStatus::Published;
+                bcast
+                    .put_tx_entry(txid, tx_entry)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
+            }
+
+            Ok(ChunkedEnvelopeStatus::CommitPublished)
+        }
+    }
+}
+
+/// Checks broadcast status of commit + all reveals (after reveals are in broadcast DB).
+///
+/// Called when status is `CommitPublished`, `Published`, or `Confirmed`.
+/// The least-progressed transaction determines the overall envelope status.
+async fn check_full_broadcast_status(
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
@@ -181,10 +287,13 @@ async fn check_broadcast_status(
     let mut min_progress = commit.status;
     for reveal in &entry.reveals {
         let Some(rtx) = bcast.get_tx_entry_by_id_async(reveal.txid).await? else {
-            warn!(txid = %reveal.txid, "reveal tx missing, will re-sign");
+            warn!(txid = %reveal.txid, "reveal tx missing from broadcast db, will re-sign");
             return Ok(ChunkedEnvelopeStatus::Unsigned);
         };
         if rtx.status == L1TxStatus::InvalidInputs {
+            // This shouldn't happen if we waited for commit to be published first,
+            // but handle it gracefully by re-signing.
+            warn!(txid = %reveal.txid, "reveal has InvalidInputs despite commit being published");
             return Ok(ChunkedEnvelopeStatus::NeedsResign);
         }
         if is_less_progressed(&rtx.status, &min_progress) {
@@ -218,12 +327,16 @@ fn is_less_progressed(a: &L1TxStatus, b: &L1TxStatus) -> bool {
 
 /// Maps a broadcast-layer [`L1TxStatus`] to the corresponding [`ChunkedEnvelopeStatus`].
 ///
+/// Called after reveals are in broadcast DB (from `CommitPublished` state onwards).
+/// Returns `CommitPublished` for `Unpublished` to avoid regressing the envelope status.
 /// `InvalidInputs` is excluded — the caller must handle it separately since it
 /// maps to [`ChunkedEnvelopeStatus::NeedsResign`], which has no `L1TxStatus`
 /// counterpart.
 fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
     match s {
-        L1TxStatus::Unpublished => ChunkedEnvelopeStatus::Unpublished,
+        // Reveals may still be unpublished even though they're in broadcast DB.
+        // Stay at CommitPublished until all are Published.
+        L1TxStatus::Unpublished => ChunkedEnvelopeStatus::CommitPublished,
         L1TxStatus::Published => ChunkedEnvelopeStatus::Published,
         L1TxStatus::Confirmed { .. } => ChunkedEnvelopeStatus::Confirmed,
         L1TxStatus::Finalized { .. } => ChunkedEnvelopeStatus::Finalized,
@@ -316,9 +429,11 @@ mod tests {
 
     #[test]
     fn test_to_envelope_status_mapping() {
+        // Unpublished maps to CommitPublished (to avoid regressing the envelope status
+        // after reveals are stored in broadcast DB).
         assert_eq!(
             to_envelope_status(&L1TxStatus::Unpublished),
-            ChunkedEnvelopeStatus::Unpublished,
+            ChunkedEnvelopeStatus::CommitPublished,
         );
         assert_eq!(
             to_envelope_status(&L1TxStatus::Published),
@@ -344,10 +459,10 @@ mod tests {
 
     #[test]
     fn test_least_progressed_determines_aggregate() {
-        // All unpublished → Unpublished.
+        // All unpublished → CommitPublished (waiting for reveals to be published).
         assert_eq!(
             to_envelope_status(&L1TxStatus::Unpublished),
-            ChunkedEnvelopeStatus::Unpublished,
+            ChunkedEnvelopeStatus::CommitPublished,
         );
 
         // All finalized → Finalized.
