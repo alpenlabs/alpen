@@ -14,7 +14,6 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
-strata-params.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-status.workspace = true
@@ -39,5 +38,4 @@ strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true
-strata-test-utils-l2.workspace = true
 strata-test-utils-btcio.workspace = true

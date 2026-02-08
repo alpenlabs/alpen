@@ -3,14 +3,15 @@ use std::sync::Arc;
 use bitcoin::Address;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
-use strata_params::Params;
 use strata_status::StatusChannel;
+
+use crate::BtcioParams;
 
 /// All the items that writer tasks need as context.
 #[derive(Debug, Clone)]
 pub(crate) struct WriterContext<R: Reader + Signer + Wallet> {
-    /// Params for rollup.
-    pub params: Arc<Params>,
+    /// Btcio required parameters
+    pub btcio_params: BtcioParams,
 
     /// Btcio specific configuration.
     pub config: Arc<WriterConfig>,
@@ -27,14 +28,14 @@ pub(crate) struct WriterContext<R: Reader + Signer + Wallet> {
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
     pub(crate) fn new(
-        params: Arc<Params>,
+        btcio_params: BtcioParams,
         config: Arc<WriterConfig>,
         sequencer_address: Address,
         client: Arc<R>,
         status_channel: StatusChannel,
     ) -> Self {
         Self {
-            params,
+            btcio_params,
             config,
             sequencer_address,
             client,

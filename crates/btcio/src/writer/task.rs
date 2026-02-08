@@ -11,7 +11,6 @@ use strata_db_types::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry, L1BundleStatus, L1TxStatus},
 };
-use strata_params::Params;
 use strata_status::StatusChannel;
 use strata_storage::ops::writer::{Context, EnvelopeDataOps};
 use strata_tasks::TaskExecutor;
@@ -28,6 +27,7 @@ use crate::{
     writer::{
         builder::EnvelopeError, context::WriterContext, signer::create_and_sign_payload_envelopes,
     },
+    BtcioParams,
 };
 
 /// A handle to the Envelope task.
@@ -120,7 +120,7 @@ pub fn start_envelope_task<D: L1WriterDatabase + Send + Sync + 'static>(
     executor: &TaskExecutor,
     bitcoin_client: Arc<Client>,
     config: Arc<WriterConfig>,
-    params: Arc<Params>,
+    btcio_params: BtcioParams,
     sequencer_address: Address,
     db: Arc<D>,
     status_channel: StatusChannel,
@@ -133,7 +133,7 @@ pub fn start_envelope_task<D: L1WriterDatabase + Send + Sync + 'static>(
 
     let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
     let ctx = Arc::new(WriterContext::new(
-        params,
+        btcio_params,
         config.clone(),
         sequencer_address,
         bitcoin_client,
@@ -333,6 +333,7 @@ fn determine_payload_next_status(
 
 #[cfg(test)]
 mod test {
+    use strata_primitives::buf::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -384,13 +385,21 @@ mod test {
         assert_eq!(next, L1BundleStatus::Unpublished);
 
         // When both are Finalized
-        let fin = L1TxStatus::Finalized { confirmations: 5 };
+        let fin = L1TxStatus::Finalized {
+            confirmations: 5,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        };
         let (commit_status, reveal_status) = (fin.clone(), fin);
         let next = determine_payload_next_status(&commit_status, &reveal_status);
         assert_eq!(next, L1BundleStatus::Finalized);
 
         // When both are Confirmed
-        let conf = L1TxStatus::Confirmed { confirmations: 5 };
+        let conf = L1TxStatus::Confirmed {
+            confirmations: 5,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        };
         let (commit_status, reveal_status) = (conf.clone(), conf.clone());
         let next = determine_payload_next_status(&commit_status, &reveal_status);
         assert_eq!(next, L1BundleStatus::Confirmed);

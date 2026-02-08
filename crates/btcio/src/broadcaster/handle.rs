@@ -1,4 +1,4 @@
-use std::{str, sync::Arc};
+use std::{future::Future, str, sync::Arc};
 
 use bitcoind_async_client::traits::{Broadcaster, Reader, Signer, Wallet};
 use hex::encode_to_slice;
@@ -6,7 +6,6 @@ use strata_db_types::{
     types::{L1TxEntry, L1TxStatus},
     DbResult,
 };
-use strata_params::Params;
 use strata_primitives::buf::Buf32;
 use strata_storage::BroadcastDbOps;
 use strata_tasks::TaskExecutor;
@@ -14,6 +13,7 @@ use tokio::sync::mpsc;
 use tracing::*;
 
 use super::task::broadcaster_task;
+use crate::BtcioParams;
 
 #[expect(
     missing_debug_implementations,
@@ -82,7 +82,7 @@ pub fn spawn_broadcaster_task<T>(
     executor: &TaskExecutor,
     l1_rpc_client: Arc<T>,
     broadcast_ops: Arc<BroadcastDbOps>,
-    params: Arc<Params>,
+    btcio_params: BtcioParams,
     broadcast_poll_interval: u64,
 ) -> L1BroadcastHandle
 where
@@ -95,11 +95,45 @@ where
             l1_rpc_client,
             ops,
             broadcast_entry_rx,
-            params,
+            &btcio_params,
             broadcast_poll_interval,
         )
         .await
         .map_err(Into::into)
     });
     L1BroadcastHandle::new(broadcast_entry_tx, broadcast_ops)
+}
+
+/// Creates the broadcaster task.
+///
+/// Returns a `(handle, future)` pair. The caller is responsible for spawning the
+/// future on whatever executor it uses (e.g. alpen ee `task_executor`).
+pub fn create_broadcaster_task<T>(
+    l1_rpc_client: Arc<T>,
+    broadcast_ops: Arc<BroadcastDbOps>,
+    btcio_params: BtcioParams,
+    broadcast_poll_interval: u64,
+) -> (Arc<L1BroadcastHandle>, impl Future<Output = ()>)
+where
+    T: Broadcaster + Wallet + Send + Sync + 'static,
+{
+    let (broadcast_entry_tx, broadcast_entry_rx) = mpsc::channel::<(u64, L1TxEntry)>(64);
+    let ops = broadcast_ops.clone();
+    let task = async move {
+        if let Err(e) = broadcaster_task(
+            l1_rpc_client,
+            ops,
+            broadcast_entry_rx,
+            &btcio_params,
+            broadcast_poll_interval,
+        )
+        .await
+        {
+            error!(%e, "broadcaster task exited with error");
+        }
+    };
+    (
+        Arc::new(L1BroadcastHandle::new(broadcast_entry_tx, broadcast_ops)),
+        task,
+    )
 }

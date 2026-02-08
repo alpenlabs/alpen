@@ -3,14 +3,17 @@ use std::{sync::Arc, time::Duration};
 use bitcoin::{hashes::Hash, Txid};
 use bitcoind_async_client::traits::{Broadcaster, Wallet};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
-use strata_params::Params;
+use strata_primitives::buf::Buf32;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
 use tokio::{sync::mpsc::Receiver, time::interval};
 use tracing::*;
 
-use crate::broadcaster::{
-    error::{BroadcasterError, BroadcasterResult},
-    state::{BroadcasterState, IndexedEntry},
+use crate::{
+    broadcaster::{
+        error::{BroadcasterError, BroadcasterResult},
+        state::{BroadcasterState, IndexedEntry},
+    },
+    BtcioParams,
 };
 
 /// Broadcasts the next blob to be sent
@@ -18,7 +21,7 @@ pub async fn broadcaster_task(
     rpc_client: Arc<impl Broadcaster + Wallet>,
     ops: Arc<l1tx_broadcast::BroadcastDbOps>,
     mut entry_receiver: Receiver<(u64, L1TxEntry)>,
-    params: Arc<Params>,
+    params: &BtcioParams,
     broadcast_poll_interval: u64,
 ) -> BroadcasterResult<()> {
     info!("Starting Broadcaster task");
@@ -46,7 +49,7 @@ pub async fn broadcaster_task(
             state.unfinalized_entries.iter(),
             ops.clone(),
             rpc_client.as_ref(),
-            params.as_ref(),
+            params,
         )
         .await
         .inspect_err(|e| {
@@ -69,7 +72,7 @@ async fn process_unfinalized_entries(
     unfinalized_entries: impl Iterator<Item = &IndexedEntry>,
     ops: Arc<BroadcastDbOps>,
     rpc_client: &(impl Broadcaster + Wallet),
-    params: &Params,
+    params: &BtcioParams,
 ) -> BroadcasterResult<Vec<IndexedEntry>> {
     let mut updated_entries = Vec::new();
 
@@ -107,11 +110,11 @@ async fn process_entry(
     rpc_client: &(impl Broadcaster + Wallet),
     txentry: &L1TxEntry,
     txid: &Txid,
-    params: &Params,
+    params: &BtcioParams,
 ) -> BroadcasterResult<Option<L1TxStatus>> {
     match txentry.status {
         L1TxStatus::Unpublished => publish_tx(rpc_client, txentry).await.map(Some),
-        L1TxStatus::Published | L1TxStatus::Confirmed { confirmations: _ } => {
+        L1TxStatus::Published | L1TxStatus::Confirmed { .. } => {
             check_tx_confirmations(rpc_client, txentry, txid, params)
                 .await
                 .map(Some)
@@ -125,12 +128,14 @@ async fn check_tx_confirmations(
     rpc_client: &impl Wallet,
     txentry: &L1TxEntry,
     txid: &Txid,
-    params: &Params,
+    params: &BtcioParams,
 ) -> BroadcasterResult<L1TxStatus> {
     let txinfo_res = rpc_client.get_transaction(txid).await;
     debug!(?txentry.status, ?txinfo_res, "check get transaction");
 
-    let reorg_safe_depth = params.rollup().l1_reorg_safe_depth.into();
+    let reorg_safe_depth = params.l1_reorg_safe_depth();
+
+    let reorg_safe_depth: i64 = reorg_safe_depth.into();
     match txinfo_res {
         Ok(info) => match (info.confirmations, &txentry.status) {
             // If it was published and still 0 confirmations, set it to published
@@ -140,12 +145,29 @@ async fn check_tx_confirmations(
             // So set it to Unpublished.
             (0, _) => Ok(L1TxStatus::Unpublished),
 
-            (confirmations, _) if confirmations >= reorg_safe_depth => Ok(L1TxStatus::Finalized {
-                confirmations: confirmations as u64,
-            }),
-            (confirmations, _) => Ok(L1TxStatus::Confirmed {
-                confirmations: confirmations as u64,
-            }),
+            (confirmations, _) => {
+                let block_hash: Buf32 = info
+                    .block_hash
+                    .expect("confirmed tx must have block_hash")
+                    .into();
+                let block_height =
+                    info.block_height
+                        .expect("confirmed tx must have block_height") as u64;
+
+                if confirmations >= reorg_safe_depth {
+                    Ok(L1TxStatus::Finalized {
+                        confirmations: confirmations as u64,
+                        block_hash,
+                        block_height,
+                    })
+                } else {
+                    Ok(L1TxStatus::Confirmed {
+                        confirmations: confirmations as u64,
+                        block_hash,
+                        block_height,
+                    })
+                }
+            }
         },
         Err(e) => {
             // If for some reasons tx is not found even if it was already
@@ -187,8 +209,9 @@ mod test {
     use bitcoin::{consensus, Transaction};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::traits::DatabaseBackend;
+    use strata_l1_txfmt::MagicBytes;
+    use strata_primitives::buf::Buf32;
     use strata_storage::ops::l1tx_broadcast::Context;
-    use strata_test_utils_l2::gen_params;
 
     use super::*;
     use crate::test_utils::{TestBitcoinClient, SOME_TX};
@@ -207,14 +230,19 @@ mod test {
         entry
     }
 
-    fn get_params() -> Arc<Params> {
-        Arc::new(gen_params())
+    fn get_test_btcio_params() -> BtcioParams {
+        BtcioParams::new(
+            6,                         // l1_reorg_safe_depth
+            MagicBytes::new(*b"ALPN"), // magic_bytes
+            0,                         // genesis_l1_height
+        )
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_unpublished_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::Unpublished);
+        let btcio_params = get_test_btcio_params();
 
         // Add tx to db
         ops.put_tx_entry_async([1; 32].into(), e.clone())
@@ -226,7 +254,7 @@ mod test {
         let cl = Arc::new(client);
 
         let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
-        let res = process_entry(cl.as_ref(), &e, &txid, get_params().as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
@@ -240,6 +268,8 @@ mod test {
     async fn test_handle_published_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+        let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
         // Add tx to db
         ops.put_tx_entry_async([1; 32].into(), e.clone())
@@ -249,10 +279,9 @@ mod test {
         // This client will return confirmations to be 0
         let client = TestBitcoinClient::new(0);
         let cl = Arc::new(client);
-        let params = get_params();
 
         let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
@@ -261,18 +290,19 @@ mod test {
             "Status should not change if no confirmations for a published tx"
         );
 
-        let reorg_depth: u64 = params.rollup().l1_reorg_safe_depth.into();
         // This client will return confirmations to be finality_depth - 1
         let client = TestBitcoinClient::new(reorg_depth - 1);
         let cl = Arc::new(client);
 
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
             res,
             Some(L1TxStatus::Confirmed {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if 0 < confirmations < finality_depth"
         );
@@ -281,13 +311,15 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
             res,
             Some(L1TxStatus::Finalized {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if confirmations >= finality_depth"
         );
@@ -296,7 +328,13 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_confirmed_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Confirmed { confirmations: 1 });
+        let e = gen_entry_with_status(L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        });
+        let btcio_params = get_test_btcio_params();
+        let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
         // Add tx to db
         ops.put_tx_entry_async([1; 32].into(), e.clone())
@@ -307,9 +345,8 @@ mod test {
         let client = TestBitcoinClient::new(0);
         let cl = Arc::new(client);
 
-        let params = get_params();
         let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
@@ -318,18 +355,19 @@ mod test {
             "Status should revert to reorged if previously confirmed tx has 0 confirmations"
         );
 
-        let reorg_depth = params.rollup().l1_reorg_safe_depth as u64;
         // This client will return confirmations to be finality_depth - 1
         let client = TestBitcoinClient::new(reorg_depth - 1);
         let cl = Arc::new(client);
 
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
             res,
             Some(L1TxStatus::Confirmed {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if 0 < confirmations < finality_depth"
         );
@@ -338,13 +376,15 @@ mod test {
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
             res,
             Some(L1TxStatus::Finalized {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             }),
             "Status should be confirmed if confirmations >= finality_depth"
         );
@@ -354,21 +394,25 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_finalized_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Finalized { confirmations: 1 });
+        let e = gen_entry_with_status(L1TxStatus::Finalized {
+            confirmations: 1,
+            block_hash: Buf32::zero(),
+            block_height: 100,
+        });
+        let btcio_params = get_test_btcio_params();
+        let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
         // Add tx to db
         ops.put_tx_entry_async([1; 32].into(), e.clone())
             .await
             .unwrap();
 
-        let params = get_params();
-        let reorg_depth = params.rollup().l1_reorg_safe_depth as u64;
         // This client will return confirmations to be Finality depth
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
         let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
@@ -381,7 +425,7 @@ mod test {
         let client = TestBitcoinClient::new(0);
         let cl = Arc::new(client);
 
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
@@ -394,20 +438,20 @@ mod test {
     async fn test_handle_excluded_entry() {
         let ops = get_ops();
         let e = gen_entry_with_status(L1TxStatus::InvalidInputs);
+        let btcio_params = get_test_btcio_params();
+        let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
         // Add tx to db
         ops.put_tx_entry_async([1; 32].into(), e.clone())
             .await
             .unwrap();
 
-        let params = get_params();
-        let reorg_depth = params.rollup().l1_reorg_safe_depth as u64;
         // This client will return confirmations to be Finality depth
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
 
         let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
@@ -420,7 +464,7 @@ mod test {
         let client = TestBitcoinClient::new(0);
         let cl = Arc::new(client);
 
-        let res = process_entry(cl.as_ref(), &e, &txid, params.as_ref())
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
             .await
             .unwrap();
         assert_eq!(
@@ -432,6 +476,9 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_process_unfinalized_entries() {
         let ops = get_ops();
+        let btcio_params = get_test_btcio_params();
+        let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
+
         // Add a couple of txs
         let e1 = gen_entry_with_status(L1TxStatus::Unpublished);
         let i1 = ops.put_tx_entry_async([1; 32].into(), e1).await.unwrap();
@@ -443,8 +490,6 @@ mod test {
 
         let state = BroadcasterState::initialize(&ops).await.unwrap();
 
-        let params = get_params();
-        let reorg_depth = params.rollup().l1_reorg_safe_depth as u64;
         // This client will make the published tx finalized
         let client = TestBitcoinClient::new(reorg_depth);
         let cl = Arc::new(client);
@@ -453,7 +498,7 @@ mod test {
             state.unfinalized_entries.iter(),
             ops,
             cl.as_ref(),
-            params.as_ref(),
+            &btcio_params,
         )
         .await
         .unwrap();
@@ -474,7 +519,9 @@ mod test {
                 .map(|e| e.item().status.clone())
                 .unwrap(),
             L1TxStatus::Finalized {
-                confirmations: cl.confs
+                confirmations: cl.confs,
+                block_hash: Buf32::zero(),
+                block_height: 100,
             },
             "published tx should be finalized"
         );

@@ -14,6 +14,7 @@ use strata_btcio::{
     broadcaster::{spawn_broadcaster_task, L1BroadcastHandle},
     reader::query::bitcoin_data_reader_task,
     writer::start_envelope_task,
+    BtcioParams,
 };
 use strata_common::{
     logging,
@@ -131,12 +132,13 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     if config.client.is_sequencer {
         // If we're a sequencer, start the sequencer db and duties task.
         let broadcast_database = database.broadcast_db();
+        let btcio_params = rollup_to_btcio_params(params.rollup());
         let broadcast_handle = start_broadcaster_tasks(
             broadcast_database,
             ctx.pool.clone(),
             &executor,
             ctx.bitcoin_client.clone(),
-            params.clone(),
+            btcio_params,
             config.btcio.broadcaster.poll_interval_ms,
         );
         let writer_db = DatabaseBackend::writer_db(database.as_ref());
@@ -353,13 +355,14 @@ fn start_core_tasks(
     // ASM processes L1 blocks from the bitcoin reader.
     // CSM listens to ASM logs (via the service framework listener pattern).
     // Start the L1 tasks to get that going.
+    let btcio_params = rollup_to_btcio_params(params.rollup());
     executor.spawn_critical_async(
         "bitcoin_data_reader_task",
         bitcoin_data_reader_task(
             bitcoin_client.clone(),
             storage.clone(),
             Arc::new(config.btcio.reader.clone()),
-            sync_manager.get_params(),
+            btcio_params,
             status_channel.clone(),
             sync_manager.get_asm_ctl(),
         ),
@@ -404,14 +407,15 @@ fn start_sequencer_tasks(
         BITCOIN_POLL_INTERVAL,
     ))?;
 
-    let btcio_config = Arc::new(config.btcio.clone());
+    let btcio_cfg = Arc::new(config.btcio.clone());
 
     // Start envelope tasks
+    let btcio_params = rollup_to_btcio_params(params.rollup());
     let envelope_handle = start_envelope_task(
         executor,
         bitcoin_client,
-        Arc::new(btcio_config.writer.clone()),
-        params.clone(),
+        Arc::new(btcio_cfg.writer.clone()),
+        btcio_params,
         sequencer_bitcoin_address,
         writer_db,
         status_channel.clone(),
@@ -466,7 +470,7 @@ fn start_broadcaster_tasks(
     pool: threadpool::ThreadPool,
     executor: &TaskExecutor,
     bitcoin_client: Arc<Client>,
-    params: Arc<Params>,
+    btcio_params: BtcioParams,
     broadcast_poll_interval: u64,
 ) -> Arc<L1BroadcastHandle> {
     // Set up L1 broadcaster.
@@ -477,7 +481,7 @@ fn start_broadcaster_tasks(
         executor,
         bitcoin_client.clone(),
         broadcast_ops,
-        params,
+        btcio_params,
         broadcast_poll_interval,
     );
     Arc::new(broadcast_handle)

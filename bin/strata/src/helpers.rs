@@ -5,6 +5,8 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use bitcoin::Address;
 use bitcoind_async_client::{Client, traits::Wallet};
+use strata_btcio::BtcioParams;
+use strata_params::RollupParams;
 use tokio::time;
 use tracing::warn;
 
@@ -35,4 +37,13 @@ pub(crate) async fn generate_sequencer_address(bitcoin_client: &Client) -> Resul
             anyhow::Error::from(client_error).context("failed to generate address")
         }
     })
+}
+
+/// Converts [`RollupParams`] to [`BtcioParams`] for use by btcio components.
+pub(crate) fn rollup_to_btcio_params(rollup: &RollupParams) -> BtcioParams {
+    BtcioParams::new(
+        rollup.l1_reorg_safe_depth,
+        rollup.magic_bytes,
+        rollup.genesis_l1_view.height_u64(),
+    )
 }

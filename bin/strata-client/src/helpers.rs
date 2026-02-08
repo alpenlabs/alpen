@@ -4,6 +4,7 @@ use alloy_rpc_types::engine::JwtSecret;
 use bitcoin::{Address, Network};
 use bitcoind_async_client::{traits::Wallet, Auth, Client};
 use format_serde_error::SerdeError;
+use strata_btcio::BtcioParams;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::L1Status;
 use strata_evmexec::{engine::RpcExecEngineCtl, fetch_init_fork_choice_state, EngineRpcClient};
@@ -199,4 +200,13 @@ pub(crate) async fn generate_sequencer_address(
             anyhow::Error::from(client_error).context("failed to generate address")
         }
     })
+}
+
+/// Converts [`RollupParams`] to [`BtcioParams`] for use by btcio components.
+pub(crate) fn rollup_to_btcio_params(rollup: &RollupParams) -> BtcioParams {
+    BtcioParams::new(
+        rollup.l1_reorg_safe_depth,
+        rollup.magic_bytes,
+        rollup.genesis_l1_view.height_u64(),
+    )
 }
