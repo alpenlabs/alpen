@@ -111,6 +111,7 @@ Examples:
     )
     return parser.parse_args(argv[1:])
 
+
 def normalize_test_names(raw_tests: list[str]) -> frozenset[str]:
     """
     Normalize CLI test selectors.

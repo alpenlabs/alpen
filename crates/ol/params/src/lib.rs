@@ -23,6 +23,7 @@ use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Header parameters for the parent of the genesis block.
+    #[serde(default)]
     pub header: HeaderParams,
 
     /// Genesis accounts keyed by account ID.
