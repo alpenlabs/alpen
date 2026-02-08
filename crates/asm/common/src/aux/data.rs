@@ -4,7 +4,6 @@
 //! the pre-processing phase, along with the response structures returned
 //! to subprotocols after verification.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_manifest_types::Hash32;
 use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
 
@@ -14,7 +13,7 @@ use crate::AsmMerkleProof;
 ///
 /// During pre-processing, subprotocols declare what auxiliary data they need.
 /// External workers fulfill that before the main processing phase.
-#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct AuxRequests {
     /// Requested manifest hash height ranges.
     pub(crate) manifest_hashes: Vec<ManifestHashRange>,
@@ -39,7 +38,7 @@ impl AuxRequests {
 ///
 /// Contains unverified Bitcoin transactions and manifest hashes returned by external workers.
 /// This data must be validated before use during the main processing phase.
-#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct AuxData {
     /// Manifest hashes with their MMR proofs (unverified)
     manifest_hashes: Vec<VerifiableManifestHash>,
@@ -73,7 +72,7 @@ impl AuxData {
 /// Manifest hash height range (inclusive).
 ///
 /// Represents a range of L1 block heights for which manifest hashes are requested.
-#[derive(Debug, Clone, Copy, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy)]
 pub struct ManifestHashRange {
     /// Start height (inclusive)
     pub(crate) start_height: u64,
@@ -108,7 +107,7 @@ impl ManifestHashRange {
 ///
 /// This is unverified data - the proof must be verified against a trusted compact MMR
 /// before the hash can be considered valid.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone)]
 pub struct VerifiableManifestHash {
     /// The hash of an [`AsmManifest`](crate::AsmManifest)
     hash: Hash32,

@@ -89,7 +89,7 @@ pub trait StrataApi {
     #[method(name = "syncStatus")]
     async fn sync_status(&self) -> RpcResult<RpcSyncStatus>;
 
-    /// Get blocks in range as raw bytes of borsh serialized `Vec<L2BlockBundle>`.
+    /// Get blocks in range as raw bytes of rkyv serialized `Vec<L2BlockBundle>`.
     /// `start_height` and `end_height` are inclusive.
     #[method(name = "getRawBundles")]
     async fn get_raw_bundles(&self, start_height: u64, end_height: u64) -> RpcResult<HexBytes>;

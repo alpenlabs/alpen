@@ -1,6 +1,12 @@
-use borsh::BorshSerialize;
+use rkyv::{
+    api::high::HighSerializer, rancor::Error as RkyvError, ser::allocator::ArenaHandle,
+    util::AlignedVec, Archive, Serialize,
+};
 use sha2::{Digest, Sha256};
 use strata_identifiers::Buf32;
+
+/// Serializer for any type that implements [`Serialize`] as bytes for rkyv.
+type HashSerializer<'a> = HighSerializer<AlignedVec, ArenaHandle<'a>, RkyvError>;
 
 /// Direct untagged hash.
 pub fn raw(buf: &[u8]) -> Buf32 {
@@ -19,12 +25,14 @@ pub fn sha256_iter<'a>(bufs: impl IntoIterator<Item = &'a [u8]>) -> Buf32 {
     Buf32::from(<[u8; 32]>::from(hasher.finalize()))
 }
 
-pub fn compute_borsh_hash<T: BorshSerialize>(v: &T) -> Buf32 {
-    let mut hasher = Sha256::new();
-    v.serialize(&mut hasher).expect("Serialization failed");
-    let result = hasher.finalize();
-    let arr: [u8; 32] = result.into();
-    Buf32::from(arr)
+/// Computes a SHA-256 hash over the serialized bytes of a type using rkyv.
+pub fn compute_rkyv_hash<T>(v: &T) -> Buf32
+where
+    T: Archive,
+    for<'a> T: Serialize<HashSerializer<'a>>,
+{
+    let bytes = rkyv::to_bytes::<RkyvError>(v).expect("rkyv serialization failed");
+    Buf32::from(<[u8; 32]>::from(Sha256::digest(bytes.as_ref())))
 }
 
 /// Implements a double SHA256 (`Sha256d`) hashing function using [RustCrypto's SHA-2 crate](https://github.com/RustCrypto/hashes/tree/master/sha2).

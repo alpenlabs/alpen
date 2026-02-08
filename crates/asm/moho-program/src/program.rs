@@ -4,7 +4,7 @@ use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, compute_asm_transition, group_txs_by_subprotocol};
-use strata_crypto::hash::compute_borsh_hash;
+use strata_crypto::hash::compute_rkyv_hash;
 use strata_predicate::PredicateKey;
 use strata_primitives::Buf32;
 
@@ -31,7 +31,7 @@ impl MohoProgram for AsmStfProgram {
     }
 
     fn compute_state_commitment(state: &AnchorState) -> InnerStateCommitment {
-        InnerStateCommitment::new(compute_borsh_hash(state).into())
+        InnerStateCommitment::new(compute_rkyv_hash(state).into())
     }
 
     fn process_transition(

@@ -17,6 +17,7 @@
 use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
 use bitcoin::{secp256k1::SecretKey, BlockHash};
+use rkyv::rancor::Error as RkyvError;
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
@@ -135,8 +136,9 @@ impl AdminContext {
     fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
         let sighash = action.compute_sighash(seqno);
         let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        let payload = borsh::to_vec(&SignedPayload::new(action.clone(), sig_set))
-            .expect("serialization should succeed");
+        let payload = rkyv::to_bytes::<RkyvError>(&SignedPayload::new(action.clone(), sig_set))
+            .expect("serialization should succeed")
+            .into_vec();
         (payload, action.tx_type())
     }
 }

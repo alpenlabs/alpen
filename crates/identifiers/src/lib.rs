@@ -14,6 +14,8 @@ mod l1;
 mod mmr;
 mod ol;
 
+use rkyv as _; // rkyv is used in the SSZ schemas
+
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 

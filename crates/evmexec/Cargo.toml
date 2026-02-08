@@ -23,17 +23,13 @@ alloy-eips.workspace = true
 alloy-rpc-types.workspace = true
 anyhow.workspace = true
 arbitrary.workspace = true
-borsh.workspace = true
 jsonrpsee = { workspace = true, features = ["jsonrpsee-http-client"] }
 jsonrpsee-http-client.workspace = true
-reth-primitives = { workspace = true, features = [
-  "alloy-compat",
-  "serde-bincode-compat",
-  "std",
-] }
+reth-primitives = { workspace = true, features = ["alloy-compat", "std"] }
 reth-rpc-api.workspace = true
 reth-rpc-layer.workspace = true
 revm-primitives.workspace = true
+rkyv.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tower.workspace = true

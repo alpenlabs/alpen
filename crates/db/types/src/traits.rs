@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_acct_types::CompactMmr64;
 use strata_asm_common::AsmManifest;
@@ -172,7 +171,17 @@ pub trait L2BlockDatabase: Send + Sync + 'static {
 
 /// Gets the status of a block.
 #[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, BorshSerialize, BorshDeserialize, Serialize,
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub enum BlockStatus {
     /// Block's validity hasn't been checked yet.

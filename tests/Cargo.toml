@@ -29,10 +29,10 @@ strata-test-utils-l2.workspace = true
 anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh.workspace = true
 corepc-node.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+rkyv.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

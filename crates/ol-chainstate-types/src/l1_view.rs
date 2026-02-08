@@ -1,11 +1,12 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_identifiers::L1BlockCommitment;
 use strata_primitives::l1::L1BlockId;
 
 /// Describes state relating to the CL's view of L1.  Updated by entries in the
 /// L1 segment of CL blocks.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Arbitrary)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct L1ViewState {
     /// The actual first block we ever looked at.
     pub(crate) genesis_height: u64,

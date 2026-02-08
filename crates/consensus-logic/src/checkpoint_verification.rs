@@ -1,5 +1,6 @@
 //! General handling around checkpoint verification.
 
+use rkyv::rancor::Error as RkyvError;
 use strata_chaintsn::transition::verify_checkpoint_proof;
 use strata_checkpoint_types::{BatchTransition, Checkpoint};
 use strata_csm_types::L1Checkpoint;
@@ -87,8 +88,12 @@ pub fn verify_proof(
 
     // Do the public parameters check
     let expected_public_output = *checkpoint.batch_transition();
+    let public_values = proof_receipt.public_values().as_bytes();
+    if public_values.is_empty() {
+        return Err(CheckpointError::MalformedTransition);
+    }
     let actual_public_output: BatchTransition =
-        borsh::from_slice(proof_receipt.public_values().as_bytes())
+        rkyv::from_bytes::<BatchTransition, RkyvError>(public_values)
             .map_err(|_| CheckpointError::MalformedTransition)?;
 
     if expected_public_output != actual_public_output {
@@ -103,6 +108,7 @@ pub fn verify_proof(
 
 #[cfg(test)]
 mod tests {
+    use rkyv::rancor::Error as RkyvError;
     use strata_params::ProofPublishMode;
     use strata_predicate::PredicateKey;
     use strata_test_utils_l2::{gen_params, get_test_signed_checkpoint};
@@ -140,7 +146,9 @@ mod tests {
         rollup_params.checkpoint_predicate = PredicateKey::always_accept();
 
         let public_values = checkpoint.batch_transition();
-        let encoded_public_values = borsh::to_vec(public_values).unwrap();
+        let encoded_public_values = rkyv::to_bytes::<RkyvError>(public_values)
+            .expect("rkyv serialization failed")
+            .into_vec();
 
         // Create a proof receipt with an empty proof and non-empty public values
         let proof_receipt =
@@ -167,7 +175,9 @@ mod tests {
         );
 
         let public_values = checkpoint.batch_transition();
-        let encoded_public_values = borsh::to_vec(public_values).unwrap();
+        let encoded_public_values = rkyv::to_bytes::<RkyvError>(public_values)
+            .expect("rkyv serialization failed")
+            .into_vec();
 
         // Create a proof receipt with an empty proof and non-empty public values
         let proof_receipt =
@@ -196,7 +206,9 @@ mod tests {
         );
 
         let public_values = checkpoint.batch_transition();
-        let encoded_public_values = borsh::to_vec(public_values).unwrap();
+        let encoded_public_values = rkyv::to_bytes::<RkyvError>(public_values)
+            .expect("rkyv serialization failed")
+            .into_vec();
 
         // Create a proof receipt with an empty proof and non-empty public values
         let proof_receipt =

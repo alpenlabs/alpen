@@ -8,7 +8,6 @@ pub mod harness;
 // This centralized list prevents each test file from needing duplicate suppressions
 use anyhow as _;
 use bitcoind_async_client as _;
-use borsh as _;
 use corepc_node as _;
 use rand as _;
 use rand_chacha as _;

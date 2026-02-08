@@ -18,7 +18,6 @@ tree_hash_derive.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-new.workspace = true
 
-borsh.workspace = true
 proptest = { optional = true, workspace = true }
 serde.workspace = true
 thiserror.workspace = true

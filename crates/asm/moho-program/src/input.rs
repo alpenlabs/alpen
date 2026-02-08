@@ -1,18 +1,20 @@
-use std::io::{self, Read, Write};
-
 use bitcoin::{
     Block,
     consensus::{deserialize, serialize},
     hashes::Hash,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use strata_asm_common::AuxData;
 
 /// Private input to process the next state.
 ///
 /// This includes all the L1
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug)]
 pub struct AsmStepInput {
     /// The full Bitcoin L1 block
     pub block: L1Block,
@@ -54,55 +56,44 @@ impl AsmStepInput {
     }
 }
 
-/// A wrapper around Bitcoin's `Block` to provide Borsh (de)serialization.
-#[derive(Debug, Clone, PartialEq)]
-pub struct L1Block(pub Block);
+/// A wrapper around Bitcoin's `Block`.
+#[derive(Debug, Clone, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct L1Block(#[rkyv(with = BlockAsBytes)] pub Block);
 
-impl BorshSerialize for L1Block {
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
-        // Serialize the inner Bitcoin block via consensus encoding
-        let serialized_block = serialize(&self.0);
-        let len = serialized_block.len() as u32;
-        // Write length prefix (little-endian)
-        writer.write_all(&len.to_le_bytes())?;
-        // Write block bytes
-        writer.write_all(&serialized_block)?;
-        Ok(())
+/// Serializer for [`Block`] as bytes for rkyv.
+struct BlockAsBytes;
+
+impl ArchiveWith<Block> for BlockAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &Block, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let bytes = serialize(field);
+        rkyv::Archive::resolve(&bytes, resolver, out);
     }
 }
 
-impl BorshDeserialize for L1Block {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
-        // Read the length prefix
-        let mut len_bytes = [0u8; 4];
-        reader.read_exact(&mut len_bytes)?;
-        let len = u32::from_le_bytes(len_bytes) as usize;
-
-        // Read the serialized block data
-        let mut buf = vec![0u8; len];
-        reader.read_exact(&mut buf)?;
-
-        // Deserialize into a Bitcoin block via consensus rules
-        let block = deserialize(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(L1Block(block))
+impl<S> SerializeWith<Block, S> for BlockAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Block, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let bytes = serialize(field);
+        rkyv::Serialize::serialize(&bytes, serializer)
     }
 }
 
-#[cfg(test)]
-mod tests {
-
-    use strata_test_utils_btc::segment::BtcChainSegment;
-
-    use super::*;
-
-    #[test]
-    fn test_borsh_roundtrip() {
-        let block = BtcChainSegment::load_full_block();
-        let l1_block = L1Block(block);
-
-        let borsh_serialized = borsh::to_vec(&l1_block).unwrap();
-        let borsh_deserialized: L1Block = borsh::from_slice(&borsh_serialized).unwrap();
-
-        assert_eq!(l1_block, borsh_deserialized);
+impl<D> DeserializeWith<Archived<Vec<u8>>, Block, D> for BlockAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<Block, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(deserialize(&bytes).expect("stored block should decode"))
     }
 }

@@ -1,4 +1,4 @@
-use borsh::io::Error as BorshIoError;
+use rkyv::rancor::Error as RkyvError;
 use ssz::DecodeError;
 use strata_l1_envelope_fmt::errors::EnvelopeParseError;
 use thiserror::Error;
@@ -24,7 +24,7 @@ pub enum CheckpointTxError {
 
     /// Failed to deserialize data embedded inside the envelope.
     #[error("failed to deserialize checkpoint payload")]
-    Deserialization(#[source] BorshIoError),
+    Deserialization(#[source] RkyvError),
 
     /// Failed to deserialize SSZ checkpoint payload.
     #[error("failed to deserialize checkpoint payload: {0:?}")]

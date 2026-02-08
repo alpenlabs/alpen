@@ -1,8 +1,8 @@
 use std::fmt;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment, L2BlockId, Slot,
 };
@@ -18,10 +18,13 @@ use strata_identifiers::{
     PartialEq,
     Eq,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct EpochSummary {
     /// The epoch number.
@@ -126,7 +129,16 @@ impl EpochSummary {
 /// Contains metadata describing a batch checkpoint, including the L1 and L2 height ranges
 /// it covers and the final L2 block ID in that range.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct BatchInfo {
     /// Checkpoint epoch
@@ -137,6 +149,77 @@ pub struct BatchInfo {
 
     /// L2 block range(inclusive) the checkpoint covers
     pub l2_range: (L2BlockCommitment, L2BlockCommitment),
+}
+
+impl ssz::Encode for BatchInfo {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Epoch as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L1BlockCommitment as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L2BlockCommitment as ssz::Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.epoch.ssz_append(buf);
+        self.l1_range.0.ssz_append(buf);
+        self.l1_range.1.ssz_append(buf);
+        self.l2_range.0.ssz_append(buf);
+        self.l2_range.1.ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Epoch as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L1BlockCommitment as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L2BlockCommitment as ssz::Encode>::ssz_fixed_len()
+    }
+}
+
+impl ssz::Decode for BatchInfo {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Epoch as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L1BlockCommitment as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L2BlockCommitment as ssz::Encode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        let fixed_len = <Epoch as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L1BlockCommitment as ssz::Encode>::ssz_fixed_len()
+            + 2 * <L2BlockCommitment as ssz::Encode>::ssz_fixed_len();
+        if bytes.len() != fixed_len {
+            return Err(ssz::DecodeError::InvalidByteLength {
+                len: bytes.len(),
+                expected: fixed_len,
+            });
+        }
+
+        let epoch_len = <Epoch as ssz::Encode>::ssz_fixed_len();
+        let l1_len = <L1BlockCommitment as ssz::Encode>::ssz_fixed_len();
+        let l2_len = <L2BlockCommitment as ssz::Encode>::ssz_fixed_len();
+
+        let mut offset = 0;
+        let epoch = Epoch::from_ssz_bytes(&bytes[offset..offset + epoch_len])?;
+        offset += epoch_len;
+        let l1_start = L1BlockCommitment::from_ssz_bytes(&bytes[offset..offset + l1_len])?;
+        offset += l1_len;
+        let l1_end = L1BlockCommitment::from_ssz_bytes(&bytes[offset..offset + l1_len])?;
+        offset += l1_len;
+        let l2_start = L2BlockCommitment::from_ssz_bytes(&bytes[offset..offset + l2_len])?;
+        offset += l2_len;
+        let l2_end = L2BlockCommitment::from_ssz_bytes(&bytes[offset..offset + l2_len])?;
+
+        Ok(Self {
+            epoch,
+            l1_range: (l1_start, l1_end),
+            l2_range: (l2_start, l2_end),
+        })
+    }
 }
 
 impl fmt::Display for BatchInfo {

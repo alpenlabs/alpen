@@ -2,11 +2,13 @@
 //!
 //! These types don't care about the *purpose* of the payloads, we only care about what's in them.
 
-use std::io;
-
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize, de};
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::TagData;
@@ -22,14 +24,14 @@ use strata_l1_txfmt::TagData;
     Ord,
     PartialOrd,
     Hash,
-    BorshDeserialize,
-    BorshSerialize,
     IntoPrimitive,
     TryFromPrimitive,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
-#[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum PayloadDest {
     /// If we expect the DA to be on the L1 chain that we settle to. This is
@@ -55,10 +57,11 @@ impl<'a> Arbitrary<'a> for PayloadDest {
     PartialEq,
     Hash,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct BlobSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -96,10 +99,11 @@ impl BlobSpec {
     PartialEq,
     Hash,
     Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct PayloadSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -126,10 +130,62 @@ impl PayloadSpec {
     }
 }
 
+/// Serializer for [`TagData`] as bytes for rkyv.
+struct TagDataAsBytes;
+
+impl ArchiveWith<TagData> for TagDataAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &TagData, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let mut bytes = Vec::with_capacity(2 + field.aux_data().len());
+        bytes.push(field.subproto_id());
+        bytes.push(field.tx_type());
+        bytes.extend_from_slice(field.aux_data());
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<TagData, S> for TagDataAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &TagData, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let mut bytes = Vec::with_capacity(2 + field.aux_data().len());
+        bytes.push(field.subproto_id());
+        bytes.push(field.tx_type());
+        bytes.extend_from_slice(field.aux_data());
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, TagData, D> for TagDataAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<TagData, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        let (subproto_id, rest) = bytes
+            .split_first()
+            .expect("stored TagData should include subproto_id");
+        let (tx_type, aux_data) = rest
+            .split_first()
+            .expect("stored TagData should include tx_type");
+        Ok(TagData::new(*subproto_id, *tx_type, aux_data.to_vec())
+            .expect("stored TagData should be valid"))
+    }
+}
+
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct L1Payload {
     data: Vec<Vec<u8>>,
+    #[rkyv(with = TagDataAsBytes)]
     tag: TagData,
 }
 
@@ -144,41 +200,6 @@ impl L1Payload {
 
     pub fn tag(&self) -> &TagData {
         &self.tag
-    }
-}
-
-impl BorshSerialize for L1Payload {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize payload Vec<Vec<u8>>
-        BorshSerialize::serialize(&self.data, writer)?;
-
-        // Serialize TagData fields
-        BorshSerialize::serialize(&self.tag.subproto_id(), writer)?;
-        BorshSerialize::serialize(&self.tag.tx_type(), writer)?;
-        BorshSerialize::serialize(&self.tag.aux_data().to_vec(), writer)?;
-
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for L1Payload {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize payload Vec<Vec<u8>>
-        let data = Vec::<Vec<u8>>::deserialize_reader(reader)?;
-
-        // Deserialize TagData fields
-        let subproto_id = u8::deserialize_reader(reader)?;
-        let tx_type = u8::deserialize_reader(reader)?;
-        let aux_data = Vec::<u8>::deserialize_reader(reader)?;
-
-        let tag = TagData::new(subproto_id, tx_type, aux_data).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid TagData: {}", e),
-            )
-        })?;
-
-        Ok(Self { data, tag })
     }
 }
 
@@ -248,7 +269,9 @@ impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
 /// about it.
 ///
 /// These are never stored on-chain.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 // TODO: rename this to L1PayloadIntent and remove the dest field
 pub struct PayloadIntent {
     /// The destination for this payload.
@@ -296,15 +319,16 @@ impl PayloadIntent {
 
 #[cfg(test)]
 mod tests {
+    use rkyv::rancor::Error as RkyvError;
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::payload::L1Payload;
 
     #[test]
-    fn test_l1_payload_borsh_roundtrip() {
+    fn test_l1_payload_rkyv_roundtrip() {
         let l1_payload: L1Payload = ArbitraryGenerator::new().generate();
-        let buf = borsh::to_vec(&l1_payload).unwrap();
-        let res: L1Payload = borsh::from_slice(&buf).unwrap();
+        let buf = rkyv::to_bytes::<RkyvError>(&l1_payload).unwrap();
+        let res: L1Payload = rkyv::from_bytes::<L1Payload, RkyvError>(&buf).unwrap();
         assert_eq!(res, l1_payload);
     }
 

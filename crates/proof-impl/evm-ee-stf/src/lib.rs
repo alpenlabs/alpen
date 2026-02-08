@@ -6,6 +6,7 @@ pub mod program;
 pub mod utils;
 
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
+use rkyv::rancor::Error as RkyvError;
 use rsp_client_executor::io::EthClientExecutorInput;
 use utils::generate_exec_update;
 use zkaleido::ZkVmEnv;
@@ -33,7 +34,9 @@ pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
         exec_updates.push(generate_exec_update(&output));
     }
 
-    zkvm.commit_borsh(&exec_updates);
+    let exec_update_bytes =
+        rkyv::to_bytes::<RkyvError>(&exec_updates).expect("rkyv serialization failed");
+    zkvm.commit_buf(exec_update_bytes.as_ref());
 }
 
 #[cfg(test)]
@@ -65,8 +68,8 @@ mod tests {
         // Checks that serialization and deserialization actually works.
         let test_data = get_mock_data();
 
-        let s = bincode::serialize(&test_data.witness).unwrap();
-        let d: EvmBlockStfInput = bincode::deserialize(&s[..]).unwrap();
+        let s = serde_json::to_vec(&test_data.witness).expect("serialize witness");
+        let d: EvmBlockStfInput = serde_json::from_slice(&s).expect("deserialize witness");
         assert_eq!(d, test_data.witness);
     }
 

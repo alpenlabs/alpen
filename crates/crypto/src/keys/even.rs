@@ -3,16 +3,19 @@
 //! This module provides key types that guarantee even parity for the x-only public key,
 //! which is required for BIP340 Schnorr signatures and taproot.
 
-use std::{
-    io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write},
-    ops::Deref,
-};
+use std::ops::Deref;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
+use rkyv::{
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archived, Place, Resolver,
+};
 use secp256k1::{Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
 use serde::{de::Error as DeError, Deserialize, Serialize};
 use strata_identifiers::Buf32;
+
+use crate::keys::impl_public_key_as_bytes;
 
 /// Represents a secret key whose x-only public key has even parity.
 ///
@@ -54,8 +57,23 @@ impl From<EvenSecretKey> for SecretKey {
 ///
 /// Converting from a [`PublicKey`] negates the key when its x-only public key has odd parity,
 /// so the resulting [`EvenPublicKey`] always yields even parity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EvenPublicKey(PublicKey);
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
+pub struct EvenPublicKey(#[rkyv(with = EvenPublicKeyAsBytes)] PublicKey);
+
+impl_public_key_as_bytes!(
+    EvenPublicKeyAsBytes,
+    [u8; 32],
+    |field: &PublicKey| {
+        let x_only = field.x_only_public_key().0;
+        x_only.serialize()
+    },
+    |bytes| {
+        let x_only = XOnlyPublicKey::from_slice(bytes).expect("stored public key should decode");
+        PublicKey::from_x_only_public_key(x_only, Parity::Even)
+    }
+);
 
 impl Deref for EvenPublicKey {
     type Target = PublicKey;
@@ -114,22 +132,6 @@ impl TryFrom<Buf32> for EvenPublicKey {
     }
 }
 
-impl BorshSerialize for EvenPublicKey {
-    fn serialize<W: Write>(&self, writer: &mut W) -> IoResult<()> {
-        let x_only = self.0.x_only_public_key().0;
-        BorshSerialize::serialize(&Buf32::from(x_only.serialize()), writer)
-    }
-}
-
-impl BorshDeserialize for EvenPublicKey {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> IoResult<Self> {
-        let buf = Buf32::deserialize_reader(reader)?;
-        let x_only = XOnlyPublicKey::from_slice(buf.as_ref())
-            .map_err(|e| IoError::new(ErrorKind::InvalidData, e))?;
-        Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even).into())
-    }
-}
-
 impl Serialize for EvenPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -173,7 +175,7 @@ pub fn even_kp((sk, pk): (SecretKey, PublicKey)) -> (EvenSecretKey, EvenPublicKe
 
 #[cfg(test)]
 mod tests {
-    use borsh::{from_slice, to_vec};
+    use rkyv::rancor::Error as RkyvError;
     use secp256k1::{Parity, PublicKey, SecretKey, SECP256K1};
     use strata_identifiers::Buf32;
 
@@ -222,12 +224,13 @@ mod tests {
     }
 
     #[test]
-    fn test_even_public_key_borsh_roundtrip() {
+    fn test_even_public_key_rkyv_roundtrip() {
         let (even_pk, _) = sample_public_keys();
         let even_pk = EvenPublicKey::from(even_pk);
 
-        let encoded = to_vec(&even_pk).expect("borsh encode");
-        let decoded: EvenPublicKey = from_slice(&encoded).expect("borsh decode");
+        let encoded = rkyv::to_bytes::<RkyvError>(&even_pk).expect("rkyv encode");
+        let decoded: EvenPublicKey =
+            rkyv::from_bytes::<EvenPublicKey, RkyvError>(&encoded).expect("rkyv decode");
 
         assert_eq!(even_pk, decoded);
     }

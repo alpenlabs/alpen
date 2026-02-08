@@ -4,8 +4,10 @@
 pub mod program;
 
 use program::ClStfOutput;
+use rkyv::rancor::Error as RkyvError;
 use strata_chainexec::{ChainExecutor, MemExecContext};
 use strata_chaintsn::context::L2HeaderAndParent;
+use strata_codec_utils::decode_rkyv;
 use strata_ol_chain_types::{
     check_block_credential, validate_block_structure, ExecSegment, L2Block, L2BlockHeader, L2Header,
 };
@@ -19,8 +21,12 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
 
     // 2. Read the parent header which we consider valid and the initial chainstate from which we
     //    start the transition
-    let mut parent_header: L2BlockHeader = zkvm.read_borsh();
-    let initial_chainstate: Chainstate = zkvm.read_borsh();
+    let parent_header_buf = zkvm.read_buf();
+    let mut parent_header: L2BlockHeader =
+        decode_rkyv(&parent_header_buf).expect("rkyv deserialization failed");
+    let initial_chainstate_buf = zkvm.read_buf();
+    let initial_chainstate: Chainstate =
+        decode_rkyv(&initial_chainstate_buf).expect("rkyv deserialization failed");
     let mut ctx = MemExecContext::default();
     ctx.put_chainstate(parent_header.get_blockid(), initial_chainstate.clone());
 
@@ -28,14 +34,17 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
     let mut final_chainstate_root = initial_chainstate_root;
 
     // 3. Read L2 blocks and parent header
-    let l2_blocks: Vec<L2Block> = zkvm.read_borsh();
+    let l2_blocks_buf = zkvm.read_buf();
+    let l2_blocks: Vec<L2Block> = decode_rkyv(&l2_blocks_buf).expect("rkyv deserialization failed");
     assert!(!l2_blocks.is_empty(), "At least one L2 block is required");
 
     // 4. Read the verified exec segments
     // This is the expected output of EVM EE STF Proof
     // Right now, each L2 block must contain exactly one ExecSegment, but this may change in the
     // future
-    let exec_segments: Vec<ExecSegment> = zkvm.read_verified_borsh(el_vkey);
+    let exec_segments_buf = zkvm.read_verified_buf(el_vkey);
+    let exec_segments: Vec<ExecSegment> =
+        decode_rkyv(&exec_segments_buf).expect("rkyv deserialization failed");
     assert_eq!(
         l2_blocks.len(),
         exec_segments.len(),
@@ -93,5 +102,6 @@ pub fn process_cl_stf(zkvm: &impl ZkVmEnv, el_vkey: &[u32; 8]) {
         final_chainstate_root,
     };
 
-    zkvm.commit_borsh(&output);
+    let output_bytes = rkyv::to_bytes::<RkyvError>(&output).expect("rkyv serialization failed");
+    zkvm.commit_buf(output_bytes.as_ref());
 }

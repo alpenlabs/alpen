@@ -1,3 +1,4 @@
+use rkyv::rancor::Error as RkyvError;
 use strata_crypto::{hash, verify_schnorr_sig};
 use strata_params::RollupParams;
 use strata_primitives::{
@@ -24,7 +25,8 @@ pub enum BlockCheckError {
 /// Validates the segments in the block body match the header.
 pub fn validate_block_structure(block: &L2Block) -> Result<(), BlockCheckError> {
     // Check if the l1_segment_hash matches between L2Block and L2BlockHeader
-    let l1seg_buf = borsh::to_vec(block.l1_segment()).expect("blockasm: enc l1 segment");
+    let l1seg_buf =
+        rkyv::to_bytes::<RkyvError>(block.l1_segment()).expect("blockasm: enc l1 segment");
     let l1_segment_hash = hash::raw(&l1seg_buf);
     if l1_segment_hash != *block.header().l1_payload_hash() {
         warn!("computed l1_segment_hash doesn't match between L2Block and L2BlockHeader");
@@ -32,7 +34,8 @@ pub fn validate_block_structure(block: &L2Block) -> Result<(), BlockCheckError> 
     }
 
     // Check if the exec_segment_hash matches between L2Block and L2BlockHeader
-    let eseg_buf = borsh::to_vec(block.exec_segment()).expect("blockasm: enc exec segment");
+    let eseg_buf =
+        rkyv::to_bytes::<RkyvError>(block.exec_segment()).expect("blockasm: enc exec segment");
     let exec_segment_hash = hash::raw(&eseg_buf);
     if exec_segment_hash != *block.header().exec_payload_hash() {
         warn!("computed exec_segment_hash doesn't match between L2Block and L2BlockHeader");

@@ -10,13 +10,14 @@ workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
 strata-bridge-types.workspace = true
+strata-codec-utils.workspace = true
 strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
-alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
+alloy-consensus = { workspace = true }
 alloy-eips.workspace = true
 reth-chainspec.workspace = true
 reth-evm-ethereum.workspace = true
@@ -27,10 +28,10 @@ reth-primitives-traits.workspace = true
 reth-trie.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
+rkyv.workspace = true
 rsp-client-executor.workspace = true
 serde.workspace = true
 
 
 [dev-dependencies]
-bincode.workspace = true
 serde_json.workspace = true

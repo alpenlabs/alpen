@@ -21,57 +21,41 @@ define_table_without_codec!(
 // Custom codec for B256 key using big-endian serialization for ordering
 impl KeyCodec<BlockWitnessSchema> for B256 {
     fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
-        use bincode::Options;
-
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .serialize(self)
-            .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockWitnessSchema",
-                source: err.into(),
-            })
+        Ok(self.as_slice().to_vec())
     }
 
     fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
-        use bincode::Options;
-
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .deserialize_from(&mut &data[..])
-            .map_err(|err| CodecError::SerializationFailed {
+        const SIZE: usize = 32;
+        if data.len() != SIZE {
+            return Err(CodecError::InvalidKeyLength {
                 schema: "BlockWitnessSchema",
-                source: err.into(),
-            })
+                expected: SIZE,
+                actual: data.len(),
+            });
+        }
+        let mut bytes = [0u8; SIZE];
+        bytes.copy_from_slice(data);
+        Ok(B256::from(bytes))
     }
 }
 
 impl KeyCodec<BlockStateChangesSchema> for B256 {
     fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
-        use bincode::Options;
-
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .serialize(self)
-            .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockStateChangesSchema",
-                source: err.into(),
-            })
+        Ok(self.as_slice().to_vec())
     }
 
     fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
-        use bincode::Options;
-
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .deserialize_from(&mut &data[..])
-            .map_err(|err| CodecError::SerializationFailed {
+        const SIZE: usize = 32;
+        if data.len() != SIZE {
+            return Err(CodecError::InvalidKeyLength {
                 schema: "BlockStateChangesSchema",
-                source: err.into(),
-            })
+                expected: SIZE,
+                actual: data.len(),
+            });
+        }
+        let mut bytes = [0u8; SIZE];
+        bytes.copy_from_slice(data);
+        Ok(B256::from(bytes))
     }
 }
 

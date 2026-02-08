@@ -8,7 +8,6 @@
 use std::cmp;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{l1::BitcoinAmount, sorted_vec::SortedVec};
 
@@ -39,7 +38,17 @@ use crate::{errors::DepositValidationError, state::bitmap::OperatorBitmap};
 /// formed the N/N multisig when this deposit was locked. Any one honest operator
 /// from this set can properly process user withdrawals. We store this historical
 /// set because the active operator set may change over time.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct DepositEntry {
     /// Unique deposit identifier assigned by the bridge and provided in the deposit transaction.
     deposit_idx: u32,
@@ -152,7 +161,7 @@ impl<'a> Arbitrary<'a> for DepositEntry {
 ///
 /// - Deposit indices are provided by the caller (from DepositInfo)
 /// - Out-of-order insertions are supported and maintain sorted order
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct DepositsTable {
     /// Vector of deposit entries, sorted by deposit index.
     ///

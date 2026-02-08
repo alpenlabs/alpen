@@ -28,21 +28,52 @@ macro_rules! define_table_without_codec {
 }
 
 #[macro_export]
-macro_rules! define_table_with_default_codec {
-    ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
-        define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
-
-        impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
-            fn encode_key(&self) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                ::borsh::to_vec(self).map_err(Into::into)
+macro_rules! impl_ssz_key_codec {
+    ($schema:ty, $key:ty) => {
+        impl ::typed_sled::codec::KeyCodec<$schema> for $key {
+            fn encode_key(&self) -> Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(<$key as ::ssz::Encode>::as_ssz_bytes(self))
             }
 
-            fn decode_key(data: &[u8]) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                ::borsh::BorshDeserialize::deserialize_reader(&mut &data[..]).map_err(Into::into)
+            fn decode_key(data: &[u8]) -> Result<Self, ::typed_sled::codec::CodecError> {
+                <$key as ::ssz::Decode>::from_ssz_bytes(data).map_err(|err| {
+                    ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: <$schema>::tree_name(),
+                        source: format!("SSZ decode error: {err:?}").into(),
+                    }
+                })
             }
         }
+    };
+}
 
-        impl_borsh_value_codec!($table_name, $value);
+#[macro_export]
+macro_rules! impl_ssz_value_codec {
+    ($schema:ty, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$schema> for $value {
+            fn encode_value(&self) -> Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(<$value as ::ssz::Encode>::as_ssz_bytes(self))
+            }
+
+            fn decode_value(data: &[u8]) -> Result<Self, ::typed_sled::codec::CodecError> {
+                <$value as ::ssz::Decode>::from_ssz_bytes(data).map_err(|err| {
+                    ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: <$schema>::tree_name(),
+                        source: format!("SSZ decode error: {err:?}").into(),
+                    }
+                })
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! define_table_with_default_codec {
+    ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
+        $crate::define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
+
+        $crate::impl_rkyv_key_codec!($table_name, $key);
+        $crate::impl_rkyv_value_codec!($table_name, $value);
     };
 }
 
@@ -53,9 +84,9 @@ macro_rules! define_table_with_default_codec {
 #[macro_export]
 macro_rules! define_table_with_integer_key {
     ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
-        define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
+        $crate::define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
 
-        impl_borsh_value_codec!($table_name, $value);
+        $crate::impl_rkyv_value_codec!($table_name, $value);
     };
 }
 
@@ -63,41 +94,21 @@ macro_rules! define_table_with_integer_key {
 ///
 /// It shall be used when your key type should be serialized lexicographically.
 ///
-/// Borsh serializes integers as little-endian, but lexicographic
-/// ordering requires big-endian for proper sorting, so we use [`bincode`]
-/// with the big-endian option here. This ensures consistent key ordering
-/// for range queries and seeks.
+/// Lexicographic ordering requires big-endian encoding for integer fields,
+/// so we use a dedicated key codec that writes fixed-width big-endian values
+/// and preserves ordering for range queries and seeks.
 #[macro_export]
 macro_rules! define_table_with_seek_key_codec {
     ($(#[$docs:meta])+ ($table_name:ident) $key:ty => $value:ty) => {
-        define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
+        $crate::define_table_without_codec!($(#[$docs])+ ( $table_name ) $key => $value);
 
         impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
             fn encode_key(&self) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                use ::anyhow::Context as _;
-                use ::bincode::Options as _;
-
-                let bincode_options = ::bincode::options()
-                    .with_fixint_encoding()
-                    .with_big_endian();
-
-                bincode_options.serialize(self).context("Failed to serialize key").map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
+                Ok($crate::lexicographic::encode_key(self))
             }
 
             fn decode_key(data: &[u8]) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                use ::anyhow::Context as _;
-                use ::bincode::Options as _;
-
-                let bincode_options = ::bincode::options()
-                    .with_fixint_encoding()
-                    .with_big_endian();
-
-                bincode_options.deserialize_from(&mut &data[..]).context("Failed to deserialize key").map_err(|err| {
+                $crate::lexicographic::decode_key(data).map_err(|err| {
                     ::typed_sled::codec::CodecError::SerializationFailed {
                         schema: $table_name::tree_name(),
                         source: err.into(),
@@ -106,77 +117,35 @@ macro_rules! define_table_with_seek_key_codec {
             }
         }
 
-        impl_borsh_value_codec!($table_name, $value);
+        $crate::impl_rkyv_value_codec!($table_name, $value);
     };
 }
 
-/// Variation of [`define_table_with_default_codec`].
-///
-/// It shall be used when your key type should be serialized lexicographically.
-///
-/// Borsh serializes integers as little-endian, but RocksDB uses lexicographic
-/// ordering which is only compatible with big-endian, so we use [`bincode`]
-/// with the big-endian option here.
+/// Implements the default rkyv key codec for a table.
 #[macro_export]
-macro_rules! impl_bincode_key_codec {
+macro_rules! impl_rkyv_key_codec {
     ($table_name:ident, $key:ty) => {
         impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
             fn encode_key(
                 &self,
             ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                use ::bincode::Options as _;
-
-                let bincode_options = ::bincode::options()
-                    .with_fixint_encoding()
-                    .with_big_endian();
-
-                bincode_options.serialize(self).map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
-
-            fn decode_key(
-                data: &[u8],
-            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                use ::bincode::Options as _;
-
-                let bincode_options = ::bincode::options()
-                    .with_fixint_encoding()
-                    .with_big_endian();
-
-                bincode_options
-                    .deserialize_from(&mut &data[..])
+                ::rkyv::to_bytes::<::rkyv::rancor::Error>(self)
+                    .map(|bytes| bytes.as_ref().to_vec())
                     .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
                         schema: $table_name::tree_name(),
                         source: err.into(),
                     })
             }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! impl_borsh_key_codec {
-    ($table_name:ident, $key:ty) => {
-        impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
-            fn encode_key(
-                &self,
-            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                ::borsh::to_vec(self).map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
-            }
 
             fn decode_key(
                 data: &[u8],
             ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                ::borsh::BorshDeserialize::deserialize_reader(&mut &data[..]).map_err(|err| {
+                let mut aligned =
+                    ::rkyv::util::AlignedVec::<{ ::std::mem::align_of::<$key>() }>::with_capacity(
+                        data.len(),
+                    );
+                aligned.extend_from_slice(data);
+                ::rkyv::from_bytes::<$key, ::rkyv::rancor::Error>(&aligned).map_err(|err| {
                     ::typed_sled::codec::CodecError::SerializationFailed {
                         schema: $table_name::tree_name(),
                         source: err.into(),
@@ -188,29 +157,83 @@ macro_rules! impl_borsh_key_codec {
 }
 
 #[macro_export]
-macro_rules! impl_borsh_value_codec {
+macro_rules! impl_rkyv_value_codec {
     ($table_name:ident, $value:ty) => {
         impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
             fn encode_value(
                 &self,
             ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
-                ::borsh::to_vec(self).map_err(|err| {
+                ::rkyv::to_bytes::<::rkyv::rancor::Error>(self)
+                    .map(|bytes| bytes.as_ref().to_vec())
+                    .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    })
+            }
+
+            fn decode_value(
+                data: &[u8],
+            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
+                let mut aligned =
+                    ::rkyv::util::AlignedVec::<{ ::std::mem::align_of::<$value>() }>::with_capacity(
+                        data.len(),
+                    );
+                aligned.extend_from_slice(data);
+                ::rkyv::from_bytes::<$value, ::rkyv::rancor::Error>(&aligned).map_err(|err| {
                     ::typed_sled::codec::CodecError::SerializationFailed {
                         schema: $table_name::tree_name(),
                         source: err.into(),
                     }
                 })
             }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_bytes_value_codec {
+    ($table_name:ident) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for ::std::vec::Vec<u8> {
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(self.clone())
+            }
 
             fn decode_value(
                 data: &[u8],
             ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
-                ::borsh::BorshDeserialize::deserialize_reader(&mut &data[..]).map_err(|err| {
-                    ::typed_sled::codec::CodecError::SerializationFailed {
-                        schema: $table_name::tree_name(),
-                        source: err.into(),
-                    }
-                })
+                Ok(data.to_vec())
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_integer_value_codec {
+    ($table_name:ident, $int:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $int {
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                Ok(self.to_be_bytes().into())
+            }
+
+            fn decode_value(
+                buf: &[u8],
+            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
+                const SIZE: usize = ::std::mem::size_of::<$int>();
+                if buf.len() != SIZE {
+                    return Err(::typed_sled::codec::CodecError::Other(format!(
+                        "invalid value length in '{}' (expected {} bytes, got {})",
+                        $table_name::tree_name(),
+                        SIZE,
+                        buf.len()
+                    )));
+                }
+                let mut bytes = [0u8; SIZE];
+                bytes.copy_from_slice(buf);
+                Ok(<$int>::from_be_bytes(bytes))
             }
         }
     };

@@ -150,10 +150,9 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         _commitment: OLBlockCommitment,
         writes: &IndexerWrites,
     ) -> WorkerResult<()> {
-        // TODO: IndexerWrites needs Borsh serialization before it can be stored.
-        // This requires adding BorshSerialize/BorshDeserialize to IndexerWrites
-        // and all its sub-types (InboxMessageWrite, ManifestWrite, SnarkAcctStateUpdate,
-        // etc.), which cascades to types in other crates that may not have Borsh.
+        // TODO: IndexerWrites needs serialization before it can be stored.
+        // This requires adding rkyv (or another deterministic format) support to IndexerWrites
+        // and all its sub-types (InboxMessageWrite, ManifestWrite, SnarkAcctStateUpdate, etc.).
         //
         // For now, we log a warning if there are writes to store but skip storage.
         // This should be addressed in a follow-up PR that adds serialization support.

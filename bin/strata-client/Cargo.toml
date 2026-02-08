@@ -47,10 +47,10 @@ argh.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh.workspace = true
 format_serde_error.workspace = true
 futures.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
+rkyv.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true

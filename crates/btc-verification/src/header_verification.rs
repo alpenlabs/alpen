@@ -4,10 +4,14 @@ use arbitrary::Arbitrary;
 use bitcoin::{
     BlockHash, CompactTarget, Network, absolute, block::Header, hashes::Hash, params::Params,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::{BtcParams, GenesisL1View};
-use strata_crypto::hash::compute_borsh_hash;
+use strata_crypto::hash::compute_rkyv_hash;
 use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
 use thiserror::Error;
 
@@ -53,6 +57,60 @@ pub enum L1VerificationError {
     Io(#[from] io::Error),
 }
 
+/// Serializer for [`BtcParams`] as network index for rkyv.
+struct BtcParamsAsNetwork;
+
+impl ArchiveWith<BtcParams> for BtcParamsAsNetwork {
+    type Archived = Archived<u8>;
+    type Resolver = Resolver<u8>;
+
+    fn resolve_with(field: &BtcParams, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let network_index = match field.inner().network {
+            Network::Bitcoin => 0u8,
+            Network::Testnet => 1u8,
+            Network::Signet => 2u8,
+            Network::Regtest => 3u8,
+            _ => 255u8,
+        };
+        rkyv::Archive::resolve(&network_index, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<BtcParams, S> for BtcParamsAsNetwork
+where
+    S: Fallible + ?Sized,
+    u8: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &BtcParams, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let network_index = match field.inner().network {
+            Network::Bitcoin => 0u8,
+            Network::Testnet => 1u8,
+            Network::Signet => 2u8,
+            Network::Regtest => 3u8,
+            _ => 255u8,
+        };
+        rkyv::Serialize::serialize(&network_index, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<u8>, BtcParams, D> for BtcParamsAsNetwork
+where
+    D: Fallible + ?Sized,
+    Archived<u8>: rkyv::Deserialize<u8, D>,
+{
+    fn deserialize_with(field: &Archived<u8>, deserializer: &mut D) -> Result<BtcParams, D::Error> {
+        let network_index = rkyv::Deserialize::deserialize(field, deserializer)?;
+        let network = match network_index {
+            0 => Network::Bitcoin,
+            1 => Network::Testnet,
+            2 => Network::Signet,
+            3 => Network::Regtest,
+            _ => Network::Bitcoin,
+        };
+        Ok(BtcParams::from(Params::from(network)))
+    }
+}
+
 /// A struct containing all necessary information for validating a Bitcoin block header.
 ///
 /// The validation process includes:
@@ -78,10 +136,11 @@ pub enum L1VerificationError {
     Eq,
     Default,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct HeaderVerificationState {
     /// Bitcoin network parameters used for header verification.
@@ -89,6 +148,7 @@ pub struct HeaderVerificationState {
     /// Contains network-specific configuration including difficulty adjustment intervals,
     /// target block spacing, and other consensus parameters required for validating block headers
     /// according to the Bitcoin protocol rules.
+    #[rkyv(with = BtcParamsAsNetwork)]
     params: BtcParams,
 
     /// Commitment to the last verified block, containing both its height and block hash.
@@ -235,7 +295,7 @@ impl HeaderVerificationState {
 
     /// Calculate the hash of the verification state
     pub fn compute_hash(&self) -> Result<Buf32, L1VerificationError> {
-        Ok(compute_borsh_hash(&self))
+        Ok(compute_rkyv_hash(self))
     }
 
     /// Gets the next block target (for testing)
@@ -277,8 +337,8 @@ pub fn get_relative_difficulty_adjustment_height(idx: u64, start: u64, params: &
 mod tests {
 
     use bitcoin::{BlockHash, CompactTarget, hashes::Hash, params::MAINNET};
-    use borsh::{BorshDeserialize, BorshSerialize};
     use rand::{Rng, rngs::OsRng};
+    use rkyv::rancor::Error as RkyvError;
     use strata_test_utils_btc::segment::BtcChainSegment;
 
     use crate::*;
@@ -983,11 +1043,11 @@ mod tests {
     //
     // HeaderVerificationState must be deterministically serializable for consensus.
     // The state hash provides a cryptographic commitment to the verification state,
-    // ensuring all nodes agree on the current chain validation state. Uses Borsh
+    // ensuring all nodes agree on the current chain validation state. Uses rkyv
     // serialization for canonical binary representation.
     //
     // References:
-    // - Borsh Specification: https://borsh.io/
+    // - rkyv documentation: https://rkyv.org/
     // - Consensus Requirements: https://developer.bitcoin.org/devguide/block_chain.html#consensus-rule-changes
     // - Serialization in Bitcoin: https://en.bitcoin.it/wiki/Protocol_documentation#Common_structures
     // ========================================================================
@@ -1036,14 +1096,10 @@ mod tests {
         let height = 40_100;
         let original_state = chain.get_verification_state(height).unwrap();
 
-        // Serialize
-        let mut buffer = Vec::new();
-        original_state
-            .serialize(&mut buffer)
-            .expect("Serialization should succeed");
+        let buffer =
+            rkyv::to_bytes::<RkyvError>(&original_state).expect("Serialization should succeed");
 
-        // Deserialize
-        let deserialized_state = HeaderVerificationState::deserialize(&mut &buffer[..])
+        let deserialized_state = rkyv::from_bytes::<HeaderVerificationState, RkyvError>(&buffer)
             .expect("Deserialization should succeed");
 
         // Hashes should match

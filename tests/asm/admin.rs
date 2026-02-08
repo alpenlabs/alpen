@@ -32,6 +32,7 @@ use harness::{
 };
 use integration_tests::harness;
 use rand::rngs::OsRng;
+use rkyv::rancor::Error as RkyvError;
 use strata_asm_txs_admin::{parser::SignedPayload, test_utils::create_signature_set};
 use strata_crypto::{
     keys::compressed::CompressedPublicKey,
@@ -312,7 +313,9 @@ async fn test_wrong_key_rejected() {
     let sighash = action.compute_sighash(0);
     let sig_set = create_signature_set(&[wrong_privkey], &[0u8], sighash);
     let signed = SignedPayload::new(action.clone(), sig_set);
-    let payload = borsh::to_vec(&signed).unwrap();
+    let payload = rkyv::to_bytes::<RkyvError>(&signed)
+        .expect("serialize signed payload")
+        .into_vec();
 
     let tx = harness
         .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, action.tx_type(), payload)
@@ -363,7 +366,9 @@ async fn test_corrupted_signature_rejected() {
 
     let corrupted_sig_set = SignatureSet::new(indexed_sigs).unwrap();
     let signed = SignedPayload::new(action.clone(), corrupted_sig_set);
-    let payload = borsh::to_vec(&signed).unwrap();
+    let payload = rkyv::to_bytes::<RkyvError>(&signed)
+        .expect("serialize signed payload")
+        .into_vec();
 
     let tx = harness
         .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, action.tx_type(), payload)

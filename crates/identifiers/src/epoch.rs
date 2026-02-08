@@ -114,9 +114,6 @@ impl fmt::Display for EpochCommitment {
     }
 }
 
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-crate::impl_borsh_via_ssz_fixed!(EpochCommitment);
-
 impl<'a> arbitrary::Arbitrary<'a> for EpochCommitment {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self {

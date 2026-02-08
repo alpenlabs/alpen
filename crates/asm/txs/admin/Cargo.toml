@@ -15,8 +15,8 @@ strata-primitives.workspace = true
 
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
-borsh.workspace = true
 rand = { workspace = true, optional = true }
+rkyv.workspace = true
 strata-l1-envelope-fmt.workspace = true
 thiserror.workspace = true
 

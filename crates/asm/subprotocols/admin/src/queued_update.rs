@@ -1,8 +1,9 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_txs_admin::actions::{UpdateAction, UpdateId};
 
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct QueuedUpdate {
     id: UpdateId,
     action: UpdateAction,

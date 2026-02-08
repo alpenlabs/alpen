@@ -1,7 +1,6 @@
 use std::{cmp, fmt, str};
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -23,10 +22,11 @@ pub type Epoch = u32;
     PartialOrd,
     Hash,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]
@@ -111,9 +111,6 @@ impl Codec for OLBlockCommitment {
     }
 }
 
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-crate::impl_borsh_via_ssz_fixed!(OLBlockCommitment);
-
 impl<'a> arbitrary::Arbitrary<'a> for OLBlockCommitment {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self {
@@ -149,10 +146,11 @@ pub type L2BlockCommitment = OLBlockCommitment;
     PartialOrd,
     Hash,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]

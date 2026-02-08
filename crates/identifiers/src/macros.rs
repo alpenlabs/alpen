@@ -225,24 +225,6 @@ pub(crate) mod internal {
                 }
             }
 
-            impl ::borsh::BorshSerialize for $name {
-                fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
-                    let bytes = self.0.as_ref();
-                    let _ = writer.write(bytes)?;
-                    Ok(())
-                }
-            }
-
-            impl ::borsh::BorshDeserialize for $name {
-                fn deserialize_reader<R: ::std::io::Read>(
-                    reader: &mut R,
-                ) -> ::std::io::Result<Self> {
-                    let mut array = [0u8; $len];
-                    reader.read_exact(&mut array)?;
-                    Ok(array.into())
-                }
-            }
-
             impl<'a> ::arbitrary::Arbitrary<'a> for $name {
                 fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
                     let mut array = [0u8; $len];
@@ -379,7 +361,7 @@ pub(crate) mod internal {
                         // Use with the _any, so serde can decide whether to visit seq, bytes or str.
                         deserializer.deserialize_any(BufVisitor)
                     } else {
-                        // Bincode does not support DeserializeAny, so deserializing with the _str.
+                        // Binary formats may not support DeserializeAny, so deserialize via string.
                         deserializer.deserialize_str(BufVisitor)
                     }
                 }
@@ -389,135 +371,6 @@ pub(crate) mod internal {
 
     pub(crate) use impl_buf_common;
     pub(crate) use impl_buf_serde;
-}
-
-/// Implements Borsh serialization as a shim over SSZ bytes with length-prefixing.
-///
-/// This macro generates BorshSerialize and BorshDeserialize implementations that:
-/// 1. Convert the type to/from SSZ bytes
-/// 2. Use length-prefixed encoding (u32 length followed by data) to support nested structs
-///
-/// This solves the issue where `read_to_end()` fails when types are embedded in other structs,
-/// because it consumes the entire remaining stream. The length-prefix approach reads exactly
-/// the number of bytes needed for this specific value.
-///
-/// # Requirements
-///
-/// The type must implement both `ssz::Encode` and `ssz::Decode` traits.
-///
-/// # Example
-///
-/// ```ignore
-/// use ssz_derive::{Decode, Encode};
-///
-/// #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
-/// pub struct MyType {
-///     field: u64,
-/// }
-///
-/// impl_borsh_via_ssz!(MyType);
-/// ```
-#[macro_export]
-macro_rules! impl_borsh_via_ssz {
-    ($type:ty) => {
-        impl ::borsh::BorshSerialize for $type {
-            fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
-                // Convert to SSZ bytes
-                let bytes = ::ssz::Encode::as_ssz_bytes(self);
-
-                // Write length as u32 (Borsh standard)
-                let len = bytes.len() as u32;
-                writer.write_all(&len.to_le_bytes())?;
-
-                // Write the SSZ bytes
-                writer.write_all(&bytes)?;
-
-                Ok(())
-            }
-        }
-
-        impl ::borsh::BorshDeserialize for $type {
-            fn deserialize_reader<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
-                // Read length as u32 (Borsh standard)
-                let mut len_bytes = [0u8; 4];
-                reader.read_exact(&mut len_bytes)?;
-                let len = u32::from_le_bytes(len_bytes) as usize;
-
-                // Read exactly len bytes
-                let mut buffer = vec![0u8; len];
-                reader.read_exact(&mut buffer)?;
-
-                // Decode from SSZ bytes
-                ::ssz::Decode::from_ssz_bytes(&buffer).map_err(|e| {
-                    ::std::io::Error::new(
-                        ::std::io::ErrorKind::InvalidData,
-                        format!("SSZ decode error: {:?}", e),
-                    )
-                })
-            }
-        }
-    };
-}
-
-/// Implements Borsh serialization as a shim over SSZ bytes for fixed-size types.
-///
-/// This macro generates BorshSerialize and BorshDeserialize implementations that:
-/// 1. Convert the type to/from SSZ bytes
-/// 2. Write/read SSZ bytes directly WITHOUT length-prefixing (for fixed-size types)
-///
-/// Use this macro for commitment types and other fixed-size SSZ containers where the size
-/// is always known. For variable-length types that may be nested, use `impl_borsh_via_ssz!`
-/// instead (which adds length-prefixing).
-///
-/// # Requirements
-///
-/// The type must:
-/// - Implement both `ssz::Encode` and `ssz::Decode` traits
-/// - Be a fixed-size SSZ container (ssz_fixed_len() returns true)
-///
-/// # Example
-///
-/// ```ignore
-/// use ssz_derive::{Decode, Encode};
-///
-/// #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
-/// pub struct OLBlockCommitment {
-///     slot: u64,
-///     blkid: OLBlockId,
-/// }
-///
-/// impl_borsh_via_ssz_fixed!(OLBlockCommitment);
-/// ```
-#[macro_export]
-macro_rules! impl_borsh_via_ssz_fixed {
-    ($type:ty) => {
-        impl ::borsh::BorshSerialize for $type {
-            fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
-                // Convert to SSZ bytes and write directly (no length prefix)
-                let ssz_bytes = ::ssz::Encode::as_ssz_bytes(self);
-                writer.write_all(&ssz_bytes)
-            }
-        }
-
-        impl ::borsh::BorshDeserialize for $type {
-            fn deserialize_reader<R: ::std::io::Read>(reader: &mut R) -> ::std::io::Result<Self> {
-                // Read exactly the SSZ fixed length
-                // This is critical: we must read exactly the fixed length, not all remaining bytes,
-                // because this type may be nested inside larger Borsh structures.
-                let ssz_fixed_len = <$type as ::ssz::Decode>::ssz_fixed_len();
-                let mut ssz_bytes = vec![0u8; ssz_fixed_len];
-                reader.read_exact(&mut ssz_bytes)?;
-
-                // Decode from SSZ bytes
-                ::ssz::Decode::from_ssz_bytes(&ssz_bytes).map_err(|e| {
-                    ::std::io::Error::new(
-                        ::std::io::ErrorKind::InvalidData,
-                        format!("SSZ decode error: {:?}", e),
-                    )
-                })
-            }
-        }
-    };
 }
 
 /// Generates SSZ trait implementations for transparent wrappers (generic version).
@@ -791,19 +644,6 @@ mod tests {
         assert_eq!(buf, TestBuf20(data));
     }
 
-    #[test]
-    fn test_bincode_roundtrip() {
-        let data = [9u8; 20];
-        let buf = TestBuf20(data);
-        // bincode is non-human-readable so our implementation will use deserialize_tuple.
-        let encoded = bincode::serialize(&buf).expect("bincode serialization failed");
-        let decoded: TestBuf20 =
-            bincode::deserialize(&encoded).expect("bincode deserialization failed");
-        assert_eq!(buf, decoded);
-    }
-
-    use std::io;
-
     // Test the SSZ transparent wrapper macros
     use ssz::{Decode, Encode};
     use ssz_derive::{Decode, Encode};
@@ -851,130 +691,5 @@ mod tests {
         // ToOwnedSsz should return a copy
         let owned = ToOwnedSsz::to_owned(&wrapper);
         assert_eq!(wrapper, owned);
-    }
-
-    // Test the Borsh-via-SSZ macro
-    #[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
-    struct TestBorshViaSsz {
-        value: u64,
-        data: Vec<u8>,
-    }
-
-    crate::impl_borsh_via_ssz!(TestBorshViaSsz);
-
-    #[test]
-    fn test_borsh_via_ssz_roundtrip() {
-        use borsh::{BorshDeserialize, BorshSerialize};
-
-        let original = TestBorshViaSsz {
-            value: 42,
-            data: vec![1, 2, 3, 4, 5],
-        };
-
-        // Test Borsh serialization roundtrip
-        let mut buffer = Vec::new();
-        original.serialize(&mut buffer).unwrap();
-
-        let decoded = TestBorshViaSsz::deserialize_reader(&mut buffer.as_slice()).unwrap();
-        assert_eq!(original, decoded);
-    }
-
-    #[test]
-    fn test_borsh_via_ssz_nested() {
-        use borsh::{BorshDeserialize, BorshSerialize};
-
-        // Test that our length-prefixed approach works when nested
-        #[derive(Clone, Debug, Eq, PartialEq)]
-        struct Container {
-            first: TestBorshViaSsz,
-            second: TestBorshViaSsz,
-        }
-
-        impl borsh::BorshSerialize for Container {
-            fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-                self.first.serialize(writer)?;
-                self.second.serialize(writer)?;
-                Ok(())
-            }
-        }
-
-        impl borsh::BorshDeserialize for Container {
-            fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-                let first = TestBorshViaSsz::deserialize_reader(reader)?;
-                let second = TestBorshViaSsz::deserialize_reader(reader)?;
-                Ok(Container { first, second })
-            }
-        }
-
-        let container = Container {
-            first: TestBorshViaSsz {
-                value: 100,
-                data: vec![1, 2, 3],
-            },
-            second: TestBorshViaSsz {
-                value: 200,
-                data: vec![4, 5, 6, 7],
-            },
-        };
-
-        // Serialize and deserialize
-        let mut buffer = Vec::new();
-        container.serialize(&mut buffer).unwrap();
-
-        let decoded = Container::deserialize_reader(&mut buffer.as_slice()).unwrap();
-        assert_eq!(container.first, decoded.first);
-        assert_eq!(container.second, decoded.second);
-    }
-
-    // Test the fixed-size Borsh-via-SSZ macro
-    #[test]
-    fn test_borsh_via_ssz_fixed() {
-        use borsh::{BorshDeserialize, BorshSerialize};
-
-        use crate::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
-
-        // Test OLBlockCommitment - should be 40 bytes, no length prefix
-        let commitment = OLBlockCommitment::new(12345, OLBlockId::from(Buf32::from([42u8; 32])));
-
-        let mut buffer = Vec::new();
-        commitment.serialize(&mut buffer).unwrap();
-
-        // Should be exactly 40 bytes (8 for slot + 32 for blkid), no length prefix
-        assert_eq!(buffer.len(), 40, "OLBlockCommitment should be 40 bytes");
-
-        // First 8 bytes should be the slot in little-endian
-        let slot_bytes = 12345u64.to_le_bytes();
-        assert_eq!(&buffer[0..8], &slot_bytes, "First 8 bytes should be slot");
-
-        // Next 32 bytes should be the blkid
-        assert_eq!(&buffer[8..40], &[42u8; 32], "Next 32 bytes should be blkid");
-
-        // Test deserialization
-        let decoded = OLBlockCommitment::deserialize_reader(&mut buffer.as_slice()).unwrap();
-        assert_eq!(decoded.slot(), 12345);
-        assert_eq!(decoded.blkid().as_ref(), &[42u8; 32]);
-
-        // Test EpochCommitment - should be 44 bytes, no length prefix
-        let epoch_commitment =
-            EpochCommitment::new(5, 100, OLBlockId::from(Buf32::from([99u8; 32])));
-
-        let mut buffer2 = Vec::new();
-        epoch_commitment.serialize(&mut buffer2).unwrap();
-
-        // Should be exactly 44 bytes (4 for epoch + 8 for slot + 32 for blkid), no length prefix
-        assert_eq!(buffer2.len(), 44, "EpochCommitment should be 44 bytes");
-
-        // Verify no length prefix by checking first 4 bytes are the epoch, not a length
-        let epoch_bytes = 5u32.to_le_bytes();
-        assert_eq!(
-            &buffer2[0..4],
-            &epoch_bytes,
-            "First 4 bytes should be epoch"
-        );
-
-        // Test deserialization
-        let decoded2 = EpochCommitment::deserialize_reader(&mut buffer2.as_slice()).unwrap();
-        assert_eq!(decoded2.epoch(), 5);
-        assert_eq!(decoded2.last_slot(), 100);
     }
 }

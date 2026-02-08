@@ -1,9 +1,10 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::buf::Buf32;
 
 /// An update to the public key of the sequencer.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct SequencerUpdate {
     pub_key: Buf32,
 }

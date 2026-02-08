@@ -5,7 +5,6 @@
 use core::fmt;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition};
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId};
@@ -23,10 +22,11 @@ use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1Blo
     Eq,
     PartialEq,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct ClientState {
     // Last *finalized* checkpoint.
@@ -100,7 +100,15 @@ impl CheckpointState {
 
 /// Represents a reference to a transaction in bitcoin. Redundantly puts block_height a well.
 #[derive(
-    Clone, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct CheckpointL1Ref {
     pub l1_commitment: L1BlockCommitment,
@@ -127,7 +135,16 @@ impl CheckpointL1Ref {
 }
 
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct L1Checkpoint {
     /// The inner checkpoint batch info.

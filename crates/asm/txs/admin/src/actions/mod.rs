@@ -1,6 +1,5 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
-use strata_crypto::hash::{compute_borsh_hash, raw};
+use strata_crypto::hash::{compute_rkyv_hash, raw};
 use strata_l1_txfmt::TxType;
 use strata_primitives::roles::{ProofType, Role};
 
@@ -20,7 +19,9 @@ use crate::constants::{
 pub type UpdateId = u32;
 
 /// A high‐level multisig operation that participants can propose.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub enum MultisigAction {
     /// Cancel a pending action.
     Cancel(CancelAction),
@@ -32,7 +33,7 @@ impl MultisigAction {
     /// Computes a signature hash for this multisig action.
     ///
     /// The hash is computed over the concatenation of:
-    /// - The action's Borsh hash (32 bytes)
+    /// - The action's rkyv hash (32 bytes)
     /// - The sequence number in big-endian format (8 bytes)
     ///
     /// # Arguments
@@ -41,7 +42,7 @@ impl MultisigAction {
     /// # Returns
     /// A 32-byte hash that can be used for signing
     pub fn compute_sighash(&self, seqno: u64) -> Buf32 {
-        let action_hash = compute_borsh_hash(self).0;
+        let action_hash = compute_rkyv_hash(self).0;
         let seqno_bytes = seqno.to_be_bytes();
         let mut data = [0u8; 40];
         data[..32].copy_from_slice(&action_hash);

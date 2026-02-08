@@ -18,8 +18,8 @@ strata-snark-acct-types.workspace = true
 strata-storage-common.workspace = true
 
 async-trait.workspace = true
-borsh.workspace = true
 eyre.workspace = true
+rkyv.workspace = true
 sled.workspace = true
 ssz.workspace = true
 thiserror.workspace = true

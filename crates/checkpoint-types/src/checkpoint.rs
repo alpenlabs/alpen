@@ -1,15 +1,68 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    rancor::{Error as RkyvError, Fallible},
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archived, Place, Resolver,
+};
 use serde::{Deserialize, Serialize};
+use ssz::Encode;
+use ssz_derive::{Decode, Encode};
 use strata_crypto::{hash, schnorr::verify_schnorr_sig};
 use strata_identifiers::{Buf32, Buf64, CredRule};
 use zkaleido::{Proof, ProofReceipt, PublicValues};
 
 use super::{batch::BatchInfo, transition::BatchTransition};
 
+/// Serializer for [`Proof`] as bytes for rkyv.
+struct ProofAsBytes;
+
+impl ArchiveWith<Proof> for ProofAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &Proof, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        rkyv::Archive::resolve(&field.as_bytes().to_vec(), resolver, out);
+    }
+}
+
+impl<S> SerializeWith<Proof, S> for ProofAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &Proof, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.as_bytes().to_vec(), serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, Proof, D> for ProofAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<Proof, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(Proof::new(bytes))
+    }
+}
+
 /// Consolidates all the information that the checkpoint is committing to, signing and proving.
 #[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Arbitrary,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct CheckpointCommitment {
     /// Information regarding the current batches of l1 and l2 blocks along with epoch.
@@ -23,13 +76,23 @@ pub struct CheckpointCommitment {
 /// This includes metadata about the batch, the state transitions, checkpoint base state,
 /// and the proof itself. The proof verifies that the `transition` is valid.
 #[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Arbitrary,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct Checkpoint {
     /// Data that this checkpoint is committing to
     commitment: CheckpointCommitment,
 
     /// Proof for this checkpoint obtained from prover manager.
+    #[rkyv(with = ProofAsBytes)]
     proof: Proof,
 
     /// Additional data we post along with the checkpoint for usability.
@@ -79,8 +142,11 @@ impl Checkpoint {
     pub fn construct_receipt(&self) -> ProofReceipt {
         let proof = self.proof().clone();
         let output = self.batch_transition();
-        let public_values =
-            PublicValues::new(borsh::to_vec(&output).expect("checkpoint: proof output"));
+        let public_values = PublicValues::new(
+            rkyv::to_bytes::<RkyvError>(output)
+                .expect("checkpoint: proof output")
+                .into_vec(),
+        );
         ProofReceipt::new(proof, public_values)
     }
 
@@ -88,10 +154,7 @@ impl Checkpoint {
         // FIXME make this more structured and use incremental hashing
 
         let mut buf = vec![];
-        let batch_serialized = borsh::to_vec(&self.commitment.batch_info)
-            .expect("could not serialize checkpoint info");
-
-        buf.extend(&batch_serialized);
+        buf.extend(self.commitment.batch_info.as_ssz_bytes());
         buf.extend(self.proof.as_bytes());
 
         hash::raw(&buf)
@@ -102,8 +165,70 @@ impl Checkpoint {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+struct CheckpointSsz {
+    commitment: CheckpointCommitment,
+    proof: Vec<u8>,
+    sidecar: CheckpointSidecar,
+}
+
+impl From<&Checkpoint> for CheckpointSsz {
+    fn from(checkpoint: &Checkpoint) -> Self {
+        Self {
+            commitment: checkpoint.commitment.clone(),
+            proof: checkpoint.proof.as_bytes().to_vec(),
+            sidecar: checkpoint.sidecar.clone(),
+        }
+    }
+}
+
+impl From<CheckpointSsz> for Checkpoint {
+    fn from(value: CheckpointSsz) -> Self {
+        Self {
+            commitment: value.commitment,
+            proof: Proof::new(value.proof),
+            sidecar: value.sidecar,
+        }
+    }
+}
+
+impl ssz::Encode for Checkpoint {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        CheckpointSsz::from(self).ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        CheckpointSsz::from(self).ssz_bytes_len()
+    }
+}
+
+impl ssz::Decode for Checkpoint {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        Ok(CheckpointSsz::from_ssz_bytes(bytes)?.into())
+    }
+}
+
 #[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Arbitrary,
+    Deserialize,
+    Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct CheckpointSidecar {
     /// Chainstate at the end of this checkpoint's epoch.
@@ -122,7 +247,16 @@ impl CheckpointSidecar {
 }
 
 #[derive(
-    Clone, Debug, BorshDeserialize, BorshSerialize, Arbitrary, PartialEq, Eq, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Arbitrary,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct SignedCheckpoint {
     inner: Checkpoint,
@@ -150,7 +284,16 @@ impl From<SignedCheckpoint> for Checkpoint {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct CommitmentInfo {
     pub blockhash: Buf32,
@@ -164,7 +307,16 @@ impl CommitmentInfo {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct L1CommittedCheckpoint {
     /// The actual `Checkpoint` data.

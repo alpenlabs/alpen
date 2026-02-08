@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-common = { workspace = true, optional = true }
+strata-codec-utils.workspace = true
 strata-consensus-logic.workspace = true
 strata-db-types.workspace = true
 strata-ol-chain-types.workspace = true
@@ -17,7 +18,6 @@ strata-status.workspace = true
 strata-storage.workspace = true
 
 async-trait.workspace = true
-borsh.workspace = true
 futures.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

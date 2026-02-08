@@ -1,11 +1,12 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_primitives::buf::Buf32;
 
 /// An update to the Bridge Operator Set:
 /// - removes the specified `remove_members`
 /// - adds the specified `add_members`
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct OperatorSetUpdate {
     add_members: Vec<Buf32>,
     remove_members: Vec<Buf32>,

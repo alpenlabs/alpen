@@ -22,7 +22,7 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-stf.workspace = true
 strata-predicate = { workspace = true, features = ["all"] }
 
-borsh.workspace = true
+rkyv.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

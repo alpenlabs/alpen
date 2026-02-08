@@ -5,7 +5,6 @@
 use std::cmp;
 
 use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
 use strata_btc_types::BitcoinScriptBuf;
@@ -27,7 +26,16 @@ use super::bitmap::OperatorBitmap;
 /// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
 /// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Hash, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct OperatorEntry {
     /// Global operator index.
@@ -104,7 +112,7 @@ pub(crate) fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptB
 /// can support at most `u32::MAX` (4,294,967,295) unique operator registrations over
 /// its entire lifetime. After reaching this limit, `next_idx` would overflow and the
 /// table cannot accept new registrations.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct OperatorTable {
     /// Next unassigned operator index for new registrations.
     next_idx: OperatorIdx,

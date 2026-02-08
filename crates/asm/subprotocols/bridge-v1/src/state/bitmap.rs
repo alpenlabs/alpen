@@ -3,11 +3,13 @@
 //! This module contains bitmap types and operations for efficiently tracking
 //! and filtering operators in various contexts.
 
-use std::io;
-
 use arbitrary::Arbitrary;
 use bitvec::prelude::*;
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
 
@@ -25,38 +27,74 @@ use crate::BitmapError;
 /// - **Operator Table**: Track which operators are in the current N/N multisig
 /// - **Deposit Entries**: Store historical notary operators for each deposit
 /// - **Assignment Creation**: Efficiently select operators for new tasks
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct OperatorBitmap {
     /// Bitmap where bit `i` is set if operator index `i` is active.
     /// Uses `BitVec<u8>` for dynamic sizing and memory efficiency.
+    #[rkyv(with = BitVecAsBytes)]
     pub(crate) bits: BitVec<u8>,
 }
 
-impl BorshSerialize for OperatorBitmap {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize as bytes: [length, data...]
-        let bytes = self.bits.as_raw_slice();
-        let bit_len = self.bits.len();
+/// Serializer for [`BitVec<u8>`] as bytes for rkyv.
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+struct BitVecBytes {
+    bit_len: usize,
+    bytes: Vec<u8>,
+}
 
-        // Serialize the bit length first
-        BorshSerialize::serialize(&bit_len, writer)?;
-        // Then serialize the byte data
-        BorshSerialize::serialize(&bytes, writer)
+/// Serializer for [`BitVec<u8>`] as bytes for rkyv.
+struct BitVecAsBytes;
+
+impl ArchiveWith<BitVec<u8>> for BitVecAsBytes {
+    type Archived = Archived<BitVecBytes>;
+    type Resolver = Resolver<BitVecBytes>;
+
+    fn resolve_with(field: &BitVec<u8>, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let payload = BitVecBytes {
+            bit_len: field.len(),
+            bytes: field.as_raw_slice().to_vec(),
+        };
+        rkyv::Archive::resolve(&payload, resolver, out);
     }
 }
 
-impl BorshDeserialize for OperatorBitmap {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize bit length first
-        let bit_len = usize::deserialize_reader(reader)?;
-        // Then deserialize the byte data
-        let bytes = Vec::<u8>::deserialize_reader(reader)?;
+impl<S> SerializeWith<BitVec<u8>, S> for BitVecAsBytes
+where
+    S: Fallible + ?Sized,
+    BitVecBytes: rkyv::Serialize<S>,
+{
+    fn serialize_with(field: &BitVec<u8>, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        let payload = BitVecBytes {
+            bit_len: field.len(),
+            bytes: field.as_raw_slice().to_vec(),
+        };
+        rkyv::Serialize::serialize(&payload, serializer)
+    }
+}
 
-        // Reconstruct BitVec from bytes and bit length
-        let mut bits = BitVec::from_vec(bytes);
-        bits.truncate(bit_len);
-
-        Ok(Self { bits })
+impl<D> DeserializeWith<Archived<BitVecBytes>, BitVec<u8>, D> for BitVecAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<BitVecBytes>: rkyv::Deserialize<BitVecBytes, D>,
+{
+    fn deserialize_with(
+        field: &Archived<BitVecBytes>,
+        deserializer: &mut D,
+    ) -> Result<BitVec<u8>, D::Error> {
+        let payload = rkyv::Deserialize::deserialize(field, deserializer)?;
+        let mut bits = BitVec::from_vec(payload.bytes);
+        bits.truncate(payload.bit_len);
+        Ok(bits)
     }
 }
 
@@ -200,6 +238,7 @@ impl<'a> Arbitrary<'a> for OperatorBitmap {
 
 #[cfg(test)]
 mod tests {
+    use rkyv::rancor::Error as RkyvError;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -304,8 +343,9 @@ mod tests {
     fn test_operator_bitmap_serialization_roundtrip() {
         let mut arb = ArbitraryGenerator::new();
         let bitmap: OperatorBitmap = arb.generate();
-        let serialized_bytes = borsh::to_vec(&bitmap).unwrap();
-        let deserialized_bitmap = borsh::from_slice(&serialized_bytes).unwrap();
+        let serialized_bytes = rkyv::to_bytes::<RkyvError>(&bitmap).unwrap();
+        let deserialized_bitmap =
+            rkyv::from_bytes::<OperatorBitmap, RkyvError>(&serialized_bytes).unwrap();
         assert_eq!(bitmap, deserialized_bitmap);
     }
 }

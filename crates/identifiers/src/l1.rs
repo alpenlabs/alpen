@@ -6,9 +6,14 @@ use arbitrary::{Arbitrary, Result as ArbitraryResult, Unstructured};
 // Re-export bitcoin types for internal use
 #[cfg(feature = "bitcoin")]
 pub(crate) use bitcoin::{BlockHash, absolute};
-use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use hex::encode_to_slice;
+#[cfg(feature = "bitcoin")]
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "bitcoin")]
 use serde::{Deserializer, Serializer, de, ser};
@@ -33,6 +38,53 @@ pub type BitcoinBlockHeight = u64;
 /// L1 block height (as a simple u32)
 pub type L1Height = u32;
 
+/// Serializer for [`absolute::Height`] as [`u32`] for rkyv.
+#[cfg(feature = "bitcoin")]
+pub(crate) struct HeightAsU32;
+
+#[cfg(feature = "bitcoin")]
+impl ArchiveWith<absolute::Height> for HeightAsU32 {
+    type Archived = Archived<u32>;
+    type Resolver = Resolver<u32>;
+
+    fn resolve_with(
+        field: &absolute::Height,
+        resolver: Self::Resolver,
+        out: Place<Self::Archived>,
+    ) {
+        rkyv::Archive::resolve(&field.to_consensus_u32(), resolver, out);
+    }
+}
+
+#[cfg(feature = "bitcoin")]
+impl<S> SerializeWith<absolute::Height, S> for HeightAsU32
+where
+    S: Fallible + ?Sized,
+    u32: rkyv::Serialize<S>,
+{
+    fn serialize_with(
+        field: &absolute::Height,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_consensus_u32(), serializer)
+    }
+}
+
+#[cfg(feature = "bitcoin")]
+impl<D> DeserializeWith<Archived<u32>, absolute::Height, D> for HeightAsU32
+where
+    D: Fallible + ?Sized,
+    Archived<u32>: rkyv::Deserialize<u32, D>,
+{
+    fn deserialize_with(
+        field: &Archived<u32>,
+        deserializer: &mut D,
+    ) -> Result<absolute::Height, D::Error> {
+        let height = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(absolute::Height::from_consensus(height).expect("stored block height is valid"))
+    }
+}
+
 /// ID of an L1 block, usually the hash of its header.
 #[derive(
     Copy,
@@ -44,10 +96,11 @@ pub type L1Height = u32;
     Hash,
     Default,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]
@@ -116,10 +169,11 @@ impl From<L1BlockId> for BlockHash {
     Hash,
     Default,
     Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Encode,
     Decode,
 )]
@@ -136,8 +190,21 @@ crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
 /// When bitcoin feature is enabled, uses absolute::Height internally.
 /// When disabled, the generated SSZ type (with u32) is used instead.
 #[cfg(feature = "bitcoin")]
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Debug,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct L1BlockCommitment {
+    #[rkyv(with = HeightAsU32)]
     height: absolute::Height,
     blkid: L1BlockId,
 }
@@ -230,9 +297,6 @@ impl<'a> view::DecodeView<'a> for L1BlockCommitment {
     }
 }
 
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
-
 impl Codec for L1BlockCommitment {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode height as u64 for consistency
@@ -323,7 +387,7 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
                 Ok(L1BlockCommitment { height, blkid })
             }
 
-            // Support tuple format (bincode, compact binary formats)
+            // Support tuple format (compact binary formats)
             fn visit_seq<A>(self, mut seq: A) -> Result<L1BlockCommitment, A::Error>
             where
                 A: de::SeqAccess<'de>,
@@ -344,11 +408,11 @@ impl<'de> Deserialize<'de> for L1BlockCommitment {
         }
 
         // For human-readable formats (JSON), use deserialize_any to support both struct and tuple
-        // For binary formats (bincode), use deserialize_tuple for backward compatibility
+        // For binary formats, use deserialize_tuple for backward compatibility
         if deserializer.is_human_readable() {
             deserializer.deserialize_any(L1BlockCommitmentVisitor)
         } else {
-            // Bincode doesn't support deserialize_any, so we use deserialize_tuple
+            // Binary formats may not support deserialize_any, so use deserialize_tuple
             deserializer.deserialize_tuple(2, L1BlockCommitmentVisitor)
         }
     }

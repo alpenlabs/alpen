@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use alpen_reth_statediff::BlockStateChanges;
-use revm_primitives::alloy_primitives::B256;
+use revm_primitives::{alloy_primitives::U256, Address, B256};
+use rkyv::rancor::Error as RkyvError;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
@@ -11,6 +12,202 @@ use crate::{
     errors::DbError, DbResult, StateDiffProvider, StateDiffStore, WitnessProvider, WitnessStore,
 };
 
+macro_rules! impl_rkyv_bytes_wrapper {
+    ($name:ident, $inner:ty, $array:ty, $to_bytes:expr, $from_bytes:expr) => {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+        )]
+        struct $name($array);
+
+        impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
+                Self(($to_bytes)(value))
+            }
+        }
+
+        impl From<$name> for $inner {
+            fn from(value: $name) -> Self {
+                ($from_bytes)(value.0)
+            }
+        }
+    };
+}
+
+impl_rkyv_bytes_wrapper!(
+    AddressBytes,
+    Address,
+    [u8; 20],
+    |value: Address| {
+        let mut bytes = [0u8; 20];
+        bytes.copy_from_slice(value.as_slice());
+        bytes
+    },
+    Address::from
+);
+
+impl_rkyv_bytes_wrapper!(
+    B256Bytes,
+    B256,
+    [u8; 32],
+    |value: B256| {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(value.as_slice());
+        bytes
+    },
+    B256::from
+);
+
+impl_rkyv_bytes_wrapper!(
+    U256Bytes,
+    U256,
+    [u8; 32],
+    |value: U256| value.to_be_bytes(),
+    U256::from_be_bytes
+);
+
+/// Serializer for [`alpen_reth_statediff::AccountSnapshot`] as bytes for rkyv.
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+struct AccountSnapshotRkyv {
+    balance: U256Bytes,
+    nonce: u64,
+    code_hash: B256Bytes,
+}
+
+impl From<&alpen_reth_statediff::AccountSnapshot> for AccountSnapshotRkyv {
+    fn from(value: &alpen_reth_statediff::AccountSnapshot) -> Self {
+        Self {
+            balance: value.balance.into(),
+            nonce: value.nonce,
+            code_hash: value.code_hash.into(),
+        }
+    }
+}
+
+impl From<AccountSnapshotRkyv> for alpen_reth_statediff::AccountSnapshot {
+    fn from(value: AccountSnapshotRkyv) -> Self {
+        Self {
+            balance: value.balance.into(),
+            nonce: value.nonce,
+            code_hash: value.code_hash.into(),
+        }
+    }
+}
+
+/// Serializer for [`alpen_reth_statediff::BlockAccountChange`] as bytes for rkyv.
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+struct BlockAccountChangeRkyv {
+    original: Option<AccountSnapshotRkyv>,
+    current: Option<AccountSnapshotRkyv>,
+}
+
+impl From<&alpen_reth_statediff::BlockAccountChange> for BlockAccountChangeRkyv {
+    fn from(value: &alpen_reth_statediff::BlockAccountChange) -> Self {
+        Self {
+            original: value.original.as_ref().map(AccountSnapshotRkyv::from),
+            current: value.current.as_ref().map(AccountSnapshotRkyv::from),
+        }
+    }
+}
+
+impl From<BlockAccountChangeRkyv> for alpen_reth_statediff::BlockAccountChange {
+    fn from(value: BlockAccountChangeRkyv) -> Self {
+        Self {
+            original: value.original.map(Into::into),
+            current: value.current.map(Into::into),
+        }
+    }
+}
+
+/// Serializer for [`alpen_reth_statediff::BlockStorageDiff`] as bytes for rkyv.
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+struct BlockStorageDiffRkyv {
+    slots: Vec<(U256Bytes, (U256Bytes, U256Bytes))>,
+}
+
+impl From<&alpen_reth_statediff::BlockStorageDiff> for BlockStorageDiffRkyv {
+    fn from(value: &alpen_reth_statediff::BlockStorageDiff) -> Self {
+        let slots = value
+            .slots
+            .iter()
+            .map(|(key, (original, current))| {
+                ((*key).into(), ((*original).into(), (*current).into()))
+            })
+            .collect();
+        Self { slots }
+    }
+}
+
+impl From<BlockStorageDiffRkyv> for alpen_reth_statediff::BlockStorageDiff {
+    fn from(value: BlockStorageDiffRkyv) -> Self {
+        let slots = value
+            .slots
+            .into_iter()
+            .map(|(key, (original, current))| (key.into(), (original.into(), current.into())))
+            .collect::<BTreeMap<_, _>>();
+        Self { slots }
+    }
+}
+
+/// Serializer for [`alpen_reth_statediff::BlockStateChanges`] as bytes for rkyv.
+#[derive(Debug, Clone, PartialEq, Eq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+struct BlockStateChangesRkyv {
+    accounts: Vec<(AddressBytes, BlockAccountChangeRkyv)>,
+    storage: Vec<(AddressBytes, BlockStorageDiffRkyv)>,
+    deployed_code_hashes: Vec<B256Bytes>,
+}
+
+impl From<&BlockStateChanges> for BlockStateChangesRkyv {
+    fn from(value: &BlockStateChanges) -> Self {
+        let accounts = value
+            .accounts
+            .iter()
+            .map(|(addr, change)| ((*addr).into(), change.into()))
+            .collect();
+        let storage = value
+            .storage
+            .iter()
+            .map(|(addr, diff)| ((*addr).into(), diff.into()))
+            .collect();
+        let deployed_code_hashes = value
+            .deployed_code_hashes
+            .iter()
+            .copied()
+            .map(Into::into)
+            .collect();
+        Self {
+            accounts,
+            storage,
+            deployed_code_hashes,
+        }
+    }
+}
+
+impl From<BlockStateChangesRkyv> for BlockStateChanges {
+    fn from(value: BlockStateChangesRkyv) -> Self {
+        let accounts = value
+            .accounts
+            .into_iter()
+            .map(|(addr, change)| (addr.into(), change.into()))
+            .collect::<BTreeMap<_, _>>();
+        let storage = value
+            .storage
+            .into_iter()
+            .map(|(addr, diff)| (addr.into(), diff.into()))
+            .collect::<BTreeMap<_, _>>();
+        let deployed_code_hashes = value
+            .deployed_code_hashes
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Self {
+            accounts,
+            storage,
+            deployed_code_hashes,
+        }
+    }
+}
+
+/// Database for storing witness data and state diffs.
 #[derive(Debug)]
 pub struct WitnessDB {
     witness_tree: SledTree<BlockWitnessSchema>,
@@ -47,7 +244,7 @@ impl WitnessProvider for WitnessDB {
         let raw = self.witness_tree.get(&block_hash)?;
 
         let parsed: Option<EvmBlockStfInput> = raw
-            .map(|bytes| bincode::deserialize(&bytes))
+            .map(|bytes| serde_json::from_slice(&bytes))
             .transpose()
             .map_err(|err| DbError::CodecError(err.to_string()))?;
 
@@ -62,7 +259,7 @@ impl WitnessProvider for WitnessDB {
 impl WitnessStore for WitnessDB {
     fn put_block_witness(&self, block_hash: B256, witness: &EvmBlockStfInput) -> DbResult<()> {
         let serialized =
-            bincode::serialize(witness).map_err(|err| DbError::Other(err.to_string()))?;
+            serde_json::to_vec(witness).map_err(|err| DbError::Other(err.to_string()))?;
 
         Ok(self.witness_tree.insert(&block_hash, &serialized)?)
     }
@@ -77,8 +274,9 @@ impl StateDiffProvider for WitnessDB {
         let raw = self.state_diff_tree.get(&block_hash)?;
 
         let parsed: Option<BlockStateChanges> = raw
-            .map(|bytes| bincode::deserialize(&bytes))
+            .map(|bytes| rkyv::from_bytes::<BlockStateChangesRkyv, RkyvError>(&bytes))
             .transpose()
+            .map(|value| value.map(Into::into))
             .map_err(|err| DbError::CodecError(err.to_string()))?;
 
         Ok(parsed)
@@ -108,15 +306,18 @@ impl StateDiffStore for WitnessDB {
         (&self.block_hash_by_number_tree, &self.state_diff_tree)
             .transaction(|(bht, sdt)| -> ConflictableTransactionResult<(), Error> {
                 bht.insert(&block_number, &block_hash.to_vec())?;
-                let serialized = match bincode::serialize(state_diff) {
-                    Ok(data) => data,
-                    Err(err) => {
-                        return Err(ConflictableTransactionError::Abort(
-                            sled::Error::Unsupported(format!("Serialization failed: {}", err))
-                                .into(),
-                        ))
-                    }
-                };
+                let serialized =
+                    match rkyv::to_bytes::<RkyvError>(&BlockStateChangesRkyv::from(state_diff))
+                        .map(|bytes| bytes.into_vec())
+                    {
+                        Ok(data) => data,
+                        Err(err) => {
+                            return Err(ConflictableTransactionError::Abort(
+                                sled::Error::Unsupported(format!("Serialization failed: {}", err))
+                                    .into(),
+                            ))
+                        }
+                    };
                 sdt.insert(&block_hash, &serialized)?;
                 Ok(())
             })

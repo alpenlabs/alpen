@@ -8,8 +8,8 @@ use cfg_if::cfg_if;
 
 cfg_if! {
     if #[cfg(all(feature = "sp1-dev", not(debug_assertions)))] {
-        use bincode::{deserialize, serialize};
         use cargo_metadata::MetadataCommand;
+        use serde_json::{from_slice, to_vec};
         use sha2::{Digest, Sha256};
         use sp1_helper::{build_program_with_args, BuildArgs};
         use sp1_sdk::{HashableKey, ProverClient, SP1VerifyingKey};
@@ -191,10 +191,10 @@ fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
         fs::write(&paths[1], elf_hash)
             .map_err(|e| format!("Failed to write ID file {}: {}", paths[1].display(), e))?;
 
-        fs::write(&paths[2], serialize(&vk).expect("VK serialization failed"))
+        fs::write(&paths[2], to_vec(&vk).expect("VK serialization failed"))
             .map_err(|e| format!("Failed to write VK file {}: {}", paths[2].display(), e))?;
 
-        fs::write(&paths[3], serialize(&pk).expect("PK serialization failed"))
+        fs::write(&paths[3], to_vec(&pk).expect("PK serialization failed"))
             .map_err(|e| format!("Failed to write PK file {}: {}", paths[3].display(), e))?;
 
         Ok(vk)
@@ -203,7 +203,7 @@ fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
         let serialized_vk = fs::read(&paths[2])
             .map_err(|e| format!("Failed to read VK file {}: {}", paths[2].display(), e))?;
         let vk: SP1VerifyingKey =
-            deserialize(&serialized_vk).map_err(|e| format!("VK deserialization failed: {}", e))?;
+            from_slice(&serialized_vk).map_err(|e| format!("VK deserialization failed: {}", e))?;
         Ok(vk)
     }
 }

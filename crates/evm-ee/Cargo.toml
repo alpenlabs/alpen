@@ -32,7 +32,7 @@ revm.workspace = true
 revm-primitives.workspace = true
 
 # Alloy for Ethereum types
-alloy-consensus = { workspace = true, features = ["serde-bincode-compat"] }
+alloy-consensus = { workspace = true }
 alloy-rlp.workspace = true
 
 # Serialization

@@ -1,7 +1,7 @@
 use strata_acct_types::Hash;
 use strata_db_store_sled::{
-    define_table_with_default_codec, define_table_without_codec, /* impl_bincode_key_codec, */
-    impl_borsh_value_codec,
+    define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
+    impl_bytes_value_codec, impl_integer_value_codec, impl_rkyv_key_codec,
 };
 
 use crate::serialization_types::{
@@ -9,12 +9,10 @@ use crate::serialization_types::{
     DBExecBlockRecord, DBOLBlockId,
 };
 
-define_table_without_codec!(
+define_table_with_integer_key!(
     /// store canonical final OL block id at OL epoch
     (OLBlockAtEpochSchema) u32 => DBOLBlockId
 );
-// impl_bincode_key_codec!(OLBlockAtEpochSchema, u32);
-impl_borsh_value_codec!(OLBlockAtEpochSchema, DBOLBlockId);
 
 define_table_with_default_codec!(
     /// EeAccountState at specific OL Block
@@ -26,46 +24,48 @@ define_table_with_default_codec!(
     (ExecBlockSchema) Hash => DBExecBlockRecord
 );
 
-define_table_without_codec!(
+define_table_with_integer_key!(
     /// All ExecBlocks by height
     (ExecBlocksAtHeightSchema) u64 => Vec<Hash>
 );
-impl_borsh_value_codec!(ExecBlocksAtHeightSchema, Vec<Hash>);
 
-define_table_without_codec!(
+define_table_with_integer_key!(
     /// Canonical finalized chain by height
     (ExecBlockFinalizedSchema) u64 => Hash
 );
-impl_borsh_value_codec!(ExecBlockFinalizedSchema, Hash);
 
-define_table_with_default_codec!(
+define_table_without_codec!(
     /// ExecBlock payloads
     (ExecBlockPayloadSchema) Hash => Vec<u8>
 );
+impl_rkyv_key_codec!(ExecBlockPayloadSchema, Hash);
+impl_bytes_value_codec!(ExecBlockPayloadSchema);
 
 // Batch storage schemas
 
-define_table_without_codec!(
+define_table_with_integer_key!(
     /// Batch by sequential idx -> (Batch, Status)
     (BatchByIdxSchema) u64 => DBBatchWithStatus
 );
-impl_borsh_value_codec!(BatchByIdxSchema, DBBatchWithStatus);
 
-define_table_with_default_codec!(
+define_table_without_codec!(
     /// BatchId -> idx lookup
     (BatchIdToIdxSchema) DBBatchId => u64
 );
+impl_rkyv_key_codec!(BatchIdToIdxSchema, DBBatchId);
+impl_integer_value_codec!(BatchIdToIdxSchema, u64);
 
-define_table_without_codec!(
+define_table_with_integer_key!(
     /// Chunk by sequential idx -> (Chunk, Status)
     (ChunkByIdxSchema) u64 => DBChunkWithStatus
 );
-impl_borsh_value_codec!(ChunkByIdxSchema, DBChunkWithStatus);
 
-define_table_with_default_codec!(
+define_table_without_codec!(
     /// ChunkId -> idx lookup
     (ChunkIdToIdxSchema) DBChunkId => u64
 );
+impl_rkyv_key_codec!(ChunkIdToIdxSchema, DBChunkId);
+impl_integer_value_codec!(ChunkIdToIdxSchema, u64);
 
 define_table_with_default_codec!(
     /// Batch-Chunk association

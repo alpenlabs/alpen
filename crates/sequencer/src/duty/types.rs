@@ -1,9 +1,8 @@
 //! Sequencer duties.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::Checkpoint;
-use strata_crypto::hash::compute_borsh_hash;
+use strata_crypto::hash::compute_rkyv_hash;
 use strata_identifiers::Epoch;
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::buf::Buf32;
@@ -32,7 +31,9 @@ pub enum Expiry {
 pub type DutyId = Buf32;
 
 /// Duties the sequencer might carry out.
-#[derive(Clone, Debug, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 #[expect(clippy::large_enum_variant, reason = "I don't want to box it")]
 pub enum Duty {
     /// Goal to sign a block.
@@ -55,14 +56,16 @@ impl Duty {
     pub fn generate_id(&self) -> Buf32 {
         match self {
             // We want Batch commitment duty to be unique by the checkpoint idx
-            Self::CommitBatch(duty) => compute_borsh_hash(&duty.0.batch_info().epoch()),
-            _ => compute_borsh_hash(self),
+            Self::CommitBatch(duty) => compute_rkyv_hash(&duty.0.batch_info().epoch()),
+            _ => compute_rkyv_hash(self),
         }
     }
 }
 
 /// Describes information associated with signing a block.
-#[derive(Clone, Debug, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct BlockSigningDuty {
     /// Slot to sign for.
     slot: u64,
@@ -103,7 +106,9 @@ impl BlockSigningDuty {
 /// This duty is created whenever a previous batch is found on L1 and verified.
 /// When this duty is created, in order to execute the duty, the sequencer looks for corresponding
 /// batch proof in the proof db.
-#[derive(Clone, Debug, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct CheckpointDuty(Checkpoint);
 
 impl CheckpointDuty {
@@ -124,14 +129,16 @@ impl CheckpointDuty {
 }
 
 /// Describes an identity that might be assigned duties.
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum Identity {
     /// Sequencer with an identity key.
     Sequencer(Buf32),
 }
 
 /// Sequencer key used for signing-related duties.
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize, Zeroize, ZeroizeOnDrop)]
+#[derive(
+    Clone, Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Zeroize, ZeroizeOnDrop,
+)]
 pub enum IdentityKey {
     /// Sequencer private key used for signing.
     Sequencer(Buf32),

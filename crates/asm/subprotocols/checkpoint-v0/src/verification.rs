@@ -7,6 +7,7 @@
 //! NOTE: Leverage the current proof/signature verification pipeline until the predicate framework
 //! lands
 
+use rkyv::rancor::Error as RkyvError;
 use strata_asm_common::logging;
 use strata_checkpoint_types::{
     BatchTransition, Checkpoint, SignedCheckpoint, verify_signed_checkpoint_sig,
@@ -73,7 +74,7 @@ fn verify_checkpoint_proof(
     let proof_receipt = checkpoint.construct_receipt();
     let expected_output = *checkpoint.batch_transition();
     let actual_output: BatchTransition =
-        borsh::from_slice(proof_receipt.public_values().as_bytes())
+        rkyv::from_bytes::<BatchTransition, RkyvError>(proof_receipt.public_values().as_bytes())
             .map_err(|_| CheckpointV0Error::SerializationError)?;
 
     if expected_output != actual_output {

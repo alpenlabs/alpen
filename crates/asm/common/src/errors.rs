@@ -1,5 +1,5 @@
-use borsh::io;
 // Re-export error types from manifest-types crate
+use rkyv::rancor::Error as RkyvError;
 pub use strata_asm_manifest_types::{AsmManifestError, AsmManifestResult, Mismatched};
 use strata_asm_types::L1VerificationError;
 use strata_l1_txfmt::SubprotocolId;
@@ -26,11 +26,11 @@ pub enum AsmError {
 
     /// Failed to deserialize the state of the given subprotocol.
     #[error("failed to deserialize subprotocol {0} state: {1}")]
-    Deserialization(SubprotocolId, #[source] io::Error),
+    Deserialization(SubprotocolId, #[source] RkyvError),
 
     /// Failed to serialize the state of the given subprotocol.
     #[error("failed to serialize subprotocol {0} state: {1}")]
-    Serialization(SubprotocolId, #[source] io::Error),
+    Serialization(SubprotocolId, #[source] RkyvError),
 
     /// L1Header do not follow consensus rules.
     #[error("L1Header do not follow consensus rules")]

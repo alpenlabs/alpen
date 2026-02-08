@@ -5,7 +5,6 @@
 //! when processing withdrawal requests from deposits.
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_bridge_types::OperatorIdx;
@@ -31,7 +30,16 @@ use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 /// - **Batching**: Support for multiple outputs in a single withdrawal command to enable efficient
 ///   processing of multiple withdrawals in one Bitcoin transaction
 #[derive(
-    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    Arbitrary,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct WithdrawalCommand {
     /// Bitcoin output to create in the withdrawal transaction.
@@ -88,7 +96,7 @@ impl WithdrawalCommand {
 /// - This data is stored in the MohoState and emitted as an ASM log via `NewExportEntry`.
 /// - The Bridge proof system consumes these entries to verify operators have correctly fulfilled
 ///   withdrawal obligations before allowing them to unlock deposit UTXOs.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Codec)]
+#[derive(Debug, Clone, PartialEq, Eq, Codec, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct OperatorClaimUnlock {
     /// The index of the deposit that was fulfilled.
     pub deposit_idx: u32,

@@ -112,10 +112,57 @@ impl ProofDatabase for ProofDBSled {
 #[cfg(feature = "test_utils")]
 #[cfg(test)]
 mod tests {
-    use strata_db_tests::proof_db_tests;
+    use strata_db_tests::{proof_db_tests, proof_tests::ProofDatabaseOrdering};
+    use strata_paas::TaskStatus;
+    use strata_primitives::proof::{ProofContext, ProofKey};
+    use zkaleido::ProofReceiptWithMetadata;
 
     use super::*;
     use crate::sled_db_test_setup;
+
+    impl ProofDatabaseOrdering for ProofDBSled {
+        type TaskId = SerializableTaskId;
+        type TaskRecord = SerializableTaskRecord;
+
+        fn iter_proofs(&self) -> Vec<(ProofKey, ProofReceiptWithMetadata)> {
+            self.proof_tree.iter().filter_map(|res| res.ok()).collect()
+        }
+
+        fn iter_proof_deps(&self) -> Vec<(ProofContext, Vec<ProofContext>)> {
+            self.proof_deps_tree
+                .iter()
+                .filter_map(|res| res.ok())
+                .collect()
+        }
+
+        fn insert_task(
+            &self,
+            task_id: &Self::TaskId,
+            record: &Self::TaskRecord,
+        ) -> Result<(), String> {
+            self.insert_task(task_id, record)
+                .map_err(|err| err.to_string())
+        }
+
+        fn list_all_tasks(&self) -> Vec<(Self::TaskId, Self::TaskRecord)> {
+            self.list_all_tasks()
+        }
+
+        fn make_task(&self, height: u64) -> (Self::TaskId, Self::TaskRecord) {
+            let task_id = SerializableTaskId {
+                program: ProofContext::Checkpoint(height),
+                backend: 0,
+            };
+            let record = SerializableTaskRecord {
+                task_id: task_id.clone(),
+                uuid: format!("task-{height}"),
+                status: TaskStatus::Pending,
+                created_at_secs: height,
+                updated_at_secs: height,
+            };
+            (task_id, record)
+        }
+    }
 
     sled_db_test_setup!(ProofDBSled, proof_db_tests);
 }

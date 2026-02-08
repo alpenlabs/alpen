@@ -1,7 +1,7 @@
 use std::io::{self, Cursor, Write};
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::rancor::Error as RkyvError;
 use serde::{Deserialize, Serialize};
 use strata_crypto::hash;
 use strata_primitives::{
@@ -25,7 +25,16 @@ pub trait L2Header {
 
 /// Block header that forms the chain we use to reach consensus.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct L2BlockHeader {
     /// Slot the block was proposed for.
@@ -66,9 +75,11 @@ impl L2BlockHeader {
         body: &L2BlockBody,
         state_root: Buf32,
     ) -> Self {
-        let l1seg_buf = borsh::to_vec(body.l1_segment()).expect("blockasm: enc l1 segment");
+        let l1seg_buf =
+            rkyv::to_bytes::<RkyvError>(body.l1_segment()).expect("blockasm: enc l1 segment");
         let l1_segment_hash = hash::raw(&l1seg_buf);
-        let eseg_buf = borsh::to_vec(body.exec_segment()).expect("blockasm: enc exec segment");
+        let eseg_buf =
+            rkyv::to_bytes::<RkyvError>(body.exec_segment()).expect("blockasm: enc exec segment");
         let exec_segment_hash = hash::raw(&eseg_buf);
         L2BlockHeader {
             slot,
@@ -165,7 +176,16 @@ fn fill_sighash_buf(tmplt: &L2BlockHeader, buf: &mut [u8]) -> Result<(), io::Err
 
 /// Block header that forms the chain we use to reach consensus.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct SignedL2BlockHeader {
     pub(crate) header: L2BlockHeader,

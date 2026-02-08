@@ -7,7 +7,6 @@
 use std::cmp::Ordering;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use rand_chacha::{
     ChaChaRng,
     rand_core::{RngCore, SeedableRng},
@@ -94,7 +93,16 @@ fn filter_eligible_operators(
 /// Each assignment represents a task, assigned to a specific operator to process
 /// a withdrawal of from a particular deposit UTXO.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct AssignmentEntry {
     /// Deposit entry that has been assigned
@@ -308,7 +316,7 @@ impl AssignmentEntry {
 /// - Looking up assignments by deposit index
 /// - Filtering assignments by operator or expiration status
 /// - Removing completed assignments
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct AssignmentTable {
     /// Vector of assignment entries, sorted by deposit index.
     ///

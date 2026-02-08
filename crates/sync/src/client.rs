@@ -1,6 +1,7 @@
 use std::cmp::min;
 
 use futures::stream::{self, Stream, StreamExt};
+use strata_codec_utils::decode_rkyv;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l2::L2BlockCommitment;
 use strata_rpc_api::StrataApiClient;
@@ -76,7 +77,8 @@ impl<RPC: StrataApiClient + Send + Sync> RpcSyncPeer<RPC> {
             .await
             .map_err(|e| ClientError::Network(e.to_string()))?;
 
-        borsh::from_slice(&bytes.0).map_err(|err| ClientError::Deserialization(err.to_string()))
+        decode_rkyv::<Vec<L2BlockBundle>>(&bytes.0)
+            .map_err(|err| ClientError::Deserialization(err.to_string()))
     }
 }
 
@@ -126,6 +128,8 @@ impl<RPC: StrataApiClient + Send + Sync> SyncClient for RpcSyncPeer<RPC> {
             .map_err(|e| ClientError::Network(e.to_string()))?
             .ok_or(ClientError::MissingBlock(*block_id))?;
 
-        borsh::from_slice(&bytes.0).map_err(|err| ClientError::Deserialization(err.to_string()))
+        decode_rkyv::<L2BlockBundle>(&bytes.0)
+            .map(Some)
+            .map_err(|err| ClientError::Deserialization(err.to_string()))
     }
 }

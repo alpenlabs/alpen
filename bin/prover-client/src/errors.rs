@@ -1,4 +1,4 @@
-use borsh::io;
+use rkyv::rancor::Error as RkyvError;
 use strata_db_types::DbError;
 use strata_primitives::proof::ProofKey;
 use thiserror::Error;
@@ -12,13 +12,9 @@ use thiserror::Error;
 /// it easier to diagnose and handle failures.
 #[derive(Error, Debug)]
 pub(crate) enum ProvingTaskError {
-    /// Occurs when the serialization of the EL block prover input fails.
-    #[error("Failed to serialize the EL block prover input")]
-    Serialization(#[from] bincode::Error),
-
-    /// Occurs when Borsh deserialization of the input fails.
-    #[error("Failed to borsh deserialize the input")]
-    BorshSerialization(#[from] io::Error),
+    /// Occurs when rkyv deserialization of the input fails.
+    #[error("Failed to rkyv deserialize the input")]
+    RkyvDeserialization(#[from] RkyvError),
 
     /// Occurs when a required dependency for a task does not exist.
     #[error("Dependency with ID {0:?} does not exist.")]

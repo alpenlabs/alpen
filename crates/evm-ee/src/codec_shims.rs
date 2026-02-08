@@ -4,7 +4,7 @@
 //! useful for variable-length fields in the EVM execution environment types.
 //!
 //! Also includes custom Codec implementations for external types (RSP and Reth) that don't
-//! have native Codec support, avoiding the use of unstable bincode serialization.
+//! have native Codec support, avoiding reliance on unstable binary formats.
 
 use std::collections::BTreeMap;
 

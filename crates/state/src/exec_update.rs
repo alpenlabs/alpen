@@ -2,7 +2,6 @@
 //! environment's state.  For now the EVM EL is the only execution environment.
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_csm_types::BlobSpec;
@@ -13,7 +12,16 @@ use crate::prelude::StateQueue;
 
 /// Full update payload containing inputs and outputs to an EE state update.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct ExecUpdate {
     /// Inputs used to construct the call to the EL executor, or provided to the
@@ -41,7 +49,17 @@ impl ExecUpdate {
 
 /// Contains the explicit inputs to the STF.  Implicit inputs are determined
 /// from the CL's exec env state.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct UpdateInput {
     /// Update index.  This is incremented exactly 1.  This is to handle the
     /// future possible cases where we skip CL blocks and provide a monotonic
@@ -111,7 +129,17 @@ impl UpdateInput {
 
 /// Conceptual "outputs" from the state transition.  This isn't stored in the
 /// state, but it's stored in the block.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct UpdateOutput {
     /// New state root for the update.  This is not just the inner EL payload,
     /// but also any extra bookkeeping we need across multiple.
@@ -157,7 +185,16 @@ impl UpdateOutput {
 /// producing.
 
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub enum Op {
     /// Deposit some amount.
@@ -187,7 +224,16 @@ pub fn construct_ops_from_deposit_intents(
 }
 
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
 )]
 pub struct ELDepositData {
     /// base index of applied deposit intent.

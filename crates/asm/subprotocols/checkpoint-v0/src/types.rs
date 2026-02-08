@@ -6,17 +6,64 @@
 //! NOTE: This is checkpoint v0 which focuses on feature parity with the current
 //! checkpoint system. Future versions will be fully SPS-62 compatible.
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{
+    Archived, Place, Resolver,
+    rancor::Fallible,
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+};
 use strata_checkpoint_types::Checkpoint;
 use strata_identifiers::Epoch;
-use strata_predicate::PredicateKey;
+use strata_predicate::{PredicateKey, PredicateKeyBuf};
 use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
+
+/// Serializer for [`PredicateKey`] as bytes for rkyv.
+struct PredicateKeyAsBytes;
+
+impl ArchiveWith<PredicateKey> for PredicateKeyAsBytes {
+    type Archived = Archived<Vec<u8>>;
+    type Resolver = Resolver<Vec<u8>>;
+
+    fn resolve_with(field: &PredicateKey, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        let bytes = field.as_buf_ref().to_bytes();
+        rkyv::Archive::resolve(&bytes, resolver, out);
+    }
+}
+
+impl<S> SerializeWith<PredicateKey, S> for PredicateKeyAsBytes
+where
+    S: Fallible + ?Sized,
+    Vec<u8>: rkyv::Serialize<S>,
+{
+    fn serialize_with(
+        field: &PredicateKey,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, S::Error> {
+        let bytes = field.as_buf_ref().to_bytes();
+        rkyv::Serialize::serialize(&bytes, serializer)
+    }
+}
+
+impl<D> DeserializeWith<Archived<Vec<u8>>, PredicateKey, D> for PredicateKeyAsBytes
+where
+    D: Fallible + ?Sized,
+    Archived<Vec<u8>>: rkyv::Deserialize<Vec<u8>, D>,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<u8>>,
+        deserializer: &mut D,
+    ) -> Result<PredicateKey, D::Error> {
+        let bytes = rkyv::Deserialize::deserialize(field, deserializer)?;
+        Ok(PredicateKeyBuf::try_from(bytes.as_slice())
+            .expect("stored predicate key bytes should be valid")
+            .to_owned())
+    }
+}
 
 /// Checkpoint verifier state for checkpoint v0
 ///
 /// NOTE: This maintains state similar to the current core subprotocol but
 /// simplified for checkpoint v0 compatibility
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct CheckpointV0VerifierState {
     /// The last verified checkpoint
     pub last_checkpoint: Option<Checkpoint>,
@@ -31,6 +78,7 @@ pub struct CheckpointV0VerifierState {
     pub cred_rule: CredRule,
 
     /// Predicate used to verify the validity of the checkpoint
+    #[rkyv(with = PredicateKeyAsBytes)]
     pub predicate: PredicateKey,
 }
 

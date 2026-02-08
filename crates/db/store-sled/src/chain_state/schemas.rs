@@ -1,11 +1,8 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use strata_db_types::chainstate::*;
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 
-use crate::{
-    define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
-    impl_borsh_value_codec,
-};
+use crate::{define_table_with_default_codec, define_table_with_integer_key};
 
 define_table_with_default_codec!(
     /// Table to store write batches.
@@ -18,7 +15,7 @@ define_table_with_integer_key!(
 );
 
 /// Describes the entry for a state in the database.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Archive, Serialize, Deserialize)]
 pub(crate) struct StateInstanceEntry {
     pub(crate) toplevel_state: Chainstate,
 }

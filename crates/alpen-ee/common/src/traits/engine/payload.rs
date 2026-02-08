@@ -4,7 +4,6 @@ use alloy_eips::eip7685::Requests;
 use alloy_primitives::{B256, U256};
 use alloy_rpc_types_engine::PayloadId;
 use alpen_reth_node::{AlpenBuiltPayload, WithdrawalIntent};
-use bincode::{deserialize, serialize};
 use reth_ethereum_engine_primitives::{BlobSidecars, EthBuiltPayload};
 use reth_ethereum_primitives::EthPrimitives;
 use reth_node_builder::{BuiltPayload, NodePrimitives};
@@ -37,7 +36,7 @@ pub enum AlpenEnginePayloadError {
     #[error("expected blob sidecars to be empty; blockhash: {0}")]
     BlobSidecarsNotEmpty(B256),
     #[error(transparent)]
-    Serialization(#[from] bincode::Error),
+    Serialization(#[from] serde_json::Error),
 }
 
 impl EnginePayload for AlpenBuiltPayload {
@@ -57,11 +56,11 @@ impl EnginePayload for AlpenBuiltPayload {
 
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
         let serializable = SerializablePayload::try_from(self.clone())?;
-        Ok(serialize(&serializable)?)
+        Ok(serde_json::to_vec(&serializable)?)
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let serializable = deserialize::<SerializablePayload>(bytes)?;
+        let serializable = serde_json::from_slice::<SerializablePayload>(bytes)?;
         Ok(serializable.into())
     }
 }
