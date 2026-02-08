@@ -13663,6 +13663,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
+ "strata-key-derivation",
  "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-node-context",
@@ -13686,6 +13687,7 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

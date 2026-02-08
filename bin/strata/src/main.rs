@@ -24,6 +24,8 @@ mod helpers;
 mod init_db;
 mod rpc;
 mod run_context;
+#[cfg(feature = "sequencer")]
+mod sequencer;
 mod services;
 
 fn main() -> Result<()> {
@@ -44,8 +46,15 @@ fn main() -> Result<()> {
     // Initialize logging
     init_logging(rt.handle(), &config);
 
+    // Validate sequencer flag is enabled if sequencer feature is enabled
+    if args.sequencer && !cfg!(feature = "sequencer") {
+        return Err(anyhow!(
+            "Sequencer flag enabled but binary built without `sequencer` feature"
+        ));
+    }
+
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(args, config.clone(), rt.handle().clone())
+    let nodectx = init_node_context(&args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     // Check for db consistency, external rpc clients reachable, etc.
@@ -56,6 +65,12 @@ fn main() -> Result<()> {
 
     // Start RPC.
     start_rpc(&runctx)?;
+
+    // Start sequencer signer if sequencer feature is enabled
+    #[cfg(feature = "sequencer")]
+    if runctx.config().client.is_sequencer {
+        sequencer::start_sequencer_signer(&runctx, &args)?;
+    }
 
     // Monitor tasks.
     runctx.task_manager.start_signal_listeners();

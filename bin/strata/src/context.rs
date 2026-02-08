@@ -34,13 +34,16 @@ pub(crate) fn init_storage(config: &Config) -> Result<Arc<NodeStorage>, InitErro
 
 /// Initialize runtime, database, bitcoin client, status channel etc.
 pub(crate) fn init_node_context(
-    args: Args,
+    args: &Args,
     config: Config,
     handle: Handle,
 ) -> Result<NodeContext, InitError> {
     // Validate params
-    let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
-    let params = resolve_and_validate_params(&params_path, &config)?;
+    let params_path = args
+        .rollup_params
+        .as_ref()
+        .ok_or(InitError::MissingRollupParams)?;
+    let params = resolve_and_validate_params(params_path, &config)?;
 
     // Init storage
     let storage = init_storage(&config)?;
