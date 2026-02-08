@@ -19,6 +19,8 @@ Clean, simple functional test suite for Strata.
 
 # Run specific test(s)
 ./run_tests.sh -t test_node_version
+./run_tests.sh -t tests/test_node_version.py
+./run_tests.sh tests/test_node_version.py
 ./run_tests.sh -t test_foo test_bar
 
 # Run test group (directory-based)
@@ -203,8 +205,10 @@ Tests can be filtered by name or group (directory structure):
 # Run all tests
 ./run_tests.sh
 
-# Run specific tests by name (without .py extension)
+# Run specific tests by name (basename; paths or positional are OK)
 ./run_tests.sh -t test_node_version
+./run_tests.sh -t tests/test_node_version.py
+./run_tests.sh tests/test_node_version.py
 ./run_tests.sh -t test_foo test_bar test_baz
 
 # Run tests by group (subdirectory under tests/)
