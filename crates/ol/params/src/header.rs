@@ -11,7 +11,7 @@ use strata_identifiers::{Buf32, Epoch, OLBlockId};
 /// block itself. All fields have sensible defaults. If not provided,
 /// `timestamp`, `slot`, and `epoch` default to 0, while `parent_blkid`,
 /// `body_root`, and `logs_root` default to their zero/null values.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct HeaderParams {
     /// Block timestamp. Defaults to 0.
@@ -37,19 +37,6 @@ pub struct HeaderParams {
     /// Logs root hash. Defaults to `Buf32::zero()`.
     #[serde(default = "Buf32::zero")]
     pub logs_root: Buf32,
-}
-
-impl Default for HeaderParams {
-    fn default() -> Self {
-        Self {
-            timestamp: 0,
-            slot: 0,
-            epoch: 0,
-            parent_blkid: OLBlockId::null(),
-            body_root: Buf32::zero(),
-            logs_root: Buf32::zero(),
-        }
-    }
 }
 
 #[cfg(test)]

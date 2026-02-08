@@ -36,6 +36,15 @@ pub struct OLParams {
 }
 
 impl OLParams {
+    /// Creates an [`OLParams`] with empty accounts and default header params.
+    pub fn new_empty(last_l1_block: L1BlockCommitment) -> Self {
+        Self {
+            header: HeaderParams::default(),
+            accounts: BTreeMap::new(),
+            last_l1_block,
+        }
+    }
+
     /// Builds an [`EpochCommitment`] from the genesis header parameters.
     ///
     /// The genesis header's epoch, slot, and parent block ID are treated as a

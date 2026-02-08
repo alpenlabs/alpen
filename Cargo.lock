@@ -15153,9 +15153,11 @@ dependencies = [
  "strata-ledger-types",
  "strata-merkle",
  "strata-ol-da",
+ "strata-ol-params",
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-types",
+ "strata-test-utils",
  "thiserror 2.0.18",
  "tracing",
 ]
