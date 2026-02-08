@@ -4,18 +4,30 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ssz.workspace = true
 strata-acct-types.workspace = true
+strata-asm-proto-checkpoint-txs.workspace = true
+strata-btc-types.workspace = true
+strata-checkpoint-types-ssz.workspace = true
 strata-codec.workspace = true
+strata-crypto = { workspace = true, optional = true }
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true
+strata-l1-envelope-fmt.workspace = true
+strata-l1-txfmt.workspace = true
 strata-ledger-types.workspace = true
 strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 
+bitcoin.workspace = true
 thiserror.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
+strata-crypto.workspace = true
 strata-ol-state-types.workspace = true
+
+[features]
+test-utils = ["dep:strata-crypto"]

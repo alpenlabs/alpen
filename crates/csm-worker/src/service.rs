@@ -1,5 +1,6 @@
 //! CSM worker service implementation.
 
+use anyhow::Context;
 use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
@@ -59,11 +60,11 @@ impl SyncService for CsmWorkerService {
         trace!(%logs_num, "CSM received logs from ASM status update.");
 
         // Process each checkpoint update log
+        // NOTE: `process_log` can only fail if a checkpoint update log is invalid.
+        //        All other logs are ignored but emit DEBUG and WARN logging messages.
         for log in logs {
-            if let Err(e) = process_log(state, log, &asm_block) {
-                error!(%asm_block, err = %e, "Failed to process ASM log");
-                // Continue processing other logs instead of failing completely
-            }
+            process_log(state, log, &asm_block)
+                .with_context(|| format!("failed to process ASM log at {asm_block}"))?;
         }
 
         trace!(%asm_block, "CSM successfully processed ASM logs.");

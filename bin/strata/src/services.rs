@@ -34,18 +34,19 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
 
-    // Start Csm worker
-    let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(&nodectx, asm_handle.monitor())?);
-
     // btcio reader task must start before genesis init because genesis requires ASM to
     // have the genesis manifest which will be available only after btcio reader provides
     // the L1 block to ASM.
     start_btcio_reader(&nodectx, asm_handle.clone());
 
-    // Check and do genesis if not yet. This should be done after asm/csm/btcio and before mempool
-    // because genesis requires asm to be working and mempool and other services expect genesis to
+    // Check and do genesis if not yet. This should be done after asm/btcio and before csm/mempool
+    // because genesis requires asm to be working and other services expect genesis to
     // have happened.
     check_and_init_genesis(nodectx.storage().as_ref(), nodectx.params().as_ref())?;
+
+    // Start Csm worker after genesis to avoid checkpoint DA processing before genesis OL state is
+    // initialized.
+    let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(&nodectx, asm_handle.monitor())?);
 
     // Start mempool service
     let mempool_handle = Arc::new(start_mempool(&nodectx)?);
