@@ -6,9 +6,12 @@ use sled::transaction::{ConflictableTransactionError, ConflictableTransactionRes
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
 use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
 
-use super::schema::{BlockHashByNumber, BlockStateChangesSchema, BlockWitnessSchema};
+use super::schema::{
+    BlockHashByNumber, BlockStateChangesSchema, BlockWitnessSchema, PublishedCodeHashSchema,
+};
 use crate::{
-    errors::DbError, DbResult, StateDiffProvider, StateDiffStore, WitnessProvider, WitnessStore,
+    errors::DbError, DbResult, EeDaContext, StateDiffProvider, StateDiffStore, WitnessProvider,
+    WitnessStore,
 };
 
 #[derive(Debug)]
@@ -129,6 +132,44 @@ impl StateDiffStore for WitnessDB {
     }
 }
 
+/// Persistent store for the EE DA context.
+///
+/// Tracks accumulated knowledge from prior DA publications (e.g. which
+/// contract bytecodes have already been published) so that future batches
+/// can avoid re-publishing the same data.
+#[derive(Debug, Clone)]
+pub struct EeDaContextDb {
+    published_code_hashes: SledTree<PublishedCodeHashSchema>,
+}
+
+impl EeDaContextDb {
+    pub fn new(db: Arc<SledDb>) -> Result<Self, Error> {
+        let published_code_hashes = db.get_tree::<PublishedCodeHashSchema>()?;
+        Ok(Self {
+            published_code_hashes,
+        })
+    }
+}
+
+impl EeDaContext for EeDaContextDb {
+    fn is_code_hash_published(&self, code_hash: &B256) -> DbResult<bool> {
+        let exists = self
+            .published_code_hashes
+            .get(code_hash)
+            .map_err(|e| DbError::Other(e.to_string()))?;
+        Ok(exists.is_some())
+    }
+
+    fn mark_code_hashes_published(&self, code_hashes: &[B256]) -> DbResult<()> {
+        for hash in code_hashes {
+            self.published_code_hashes
+                .insert(hash, &vec![])
+                .map_err(|e| DbError::Other(e.to_string()))?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
@@ -200,7 +241,7 @@ mod tests {
         BlockStateChanges {
             accounts,
             storage,
-            deployed_code_hashes: vec![],
+            deployed_bytecodes: BTreeMap::new(),
         }
     }
 
@@ -280,6 +321,49 @@ mod tests {
             received_state_diff.storage.len(),
             test_state_diff.storage.len()
         );
+    }
+
+    fn setup_da_context() -> EeDaContextDb {
+        let db = Arc::new(get_sled_tmp_instance());
+        EeDaContextDb::new(db).unwrap()
+    }
+
+    #[test]
+    fn unpublished_code_hash_returns_false() {
+        let ctx = setup_da_context();
+        let hash = B256::from([0x11u8; 32]);
+        assert!(!ctx.is_code_hash_published(&hash).unwrap());
+    }
+
+    #[test]
+    fn mark_and_query_published_code_hashes() {
+        let ctx = setup_da_context();
+        let hash_a = B256::from([0xAAu8; 32]);
+        let hash_b = B256::from([0xBBu8; 32]);
+        let hash_c = B256::from([0xCCu8; 32]);
+
+        ctx.mark_code_hashes_published(&[hash_a, hash_b]).unwrap();
+
+        assert!(ctx.is_code_hash_published(&hash_a).unwrap());
+        assert!(ctx.is_code_hash_published(&hash_b).unwrap());
+        assert!(!ctx.is_code_hash_published(&hash_c).unwrap());
+    }
+
+    #[test]
+    fn mark_published_is_idempotent() {
+        let ctx = setup_da_context();
+        let hash = B256::from([0x11u8; 32]);
+
+        ctx.mark_code_hashes_published(&[hash]).unwrap();
+        ctx.mark_code_hashes_published(&[hash]).unwrap();
+
+        assert!(ctx.is_code_hash_published(&hash).unwrap());
+    }
+
+    #[test]
+    fn mark_empty_slice_is_noop() {
+        let ctx = setup_da_context();
+        ctx.mark_code_hashes_published(&[]).unwrap();
     }
 
     #[test]
