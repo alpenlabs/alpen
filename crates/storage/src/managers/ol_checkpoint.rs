@@ -88,6 +88,28 @@ impl OLCheckpointManager {
         self.ops.get_epoch_commitments_at_blocking(epoch)
     }
 
+    /// Gets the canonical commitment for an epoch index, if any.
+    ///
+    /// Returns the first commitment for the epoch, which is treated as canonical.
+    pub async fn get_canonical_epoch_commitment_at_async(
+        &self,
+        epoch_index: u64,
+    ) -> DbResult<Option<EpochCommitment>> {
+        let commitments = self.get_epoch_commitments_at_async(epoch_index).await?;
+        Ok(commitments.first().copied())
+    }
+
+    /// Gets the canonical commitment for an epoch index, if any.
+    ///
+    /// Returns the first commitment for the epoch, which is treated as canonical.
+    pub fn get_canonical_epoch_commitment_at_blocking(
+        &self,
+        epoch_index: u64,
+    ) -> DbResult<Option<EpochCommitment>> {
+        let commitments = self.get_epoch_commitments_at_blocking(epoch_index)?;
+        Ok(commitments.first().copied())
+    }
+
     /// Gets the index of the last epoch that we have a summary for, if any.
     pub async fn get_last_summarized_epoch_async(&self) -> DbResult<Option<u64>> {
         self.ops.get_last_summarized_epoch_async().await

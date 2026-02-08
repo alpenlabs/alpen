@@ -13668,6 +13668,7 @@ dependencies = [
  "strata-node-context",
  "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
+ "strata-ol-checkpoint",
  "strata-ol-mempool",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
@@ -14947,6 +14948,30 @@ dependencies = [
  "strata-identifiers",
  "strata-primitives",
  "strata-state",
+]
+
+[[package]]
+name = "strata-ol-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "proptest",
+ "serde",
+ "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-node-context",
+ "strata-ol-chain-types-new",
+ "strata-primitives",
+ "strata-service",
+ "strata-storage",
+ "strata-tasks",
+ "thiserror 2.0.18",
+ "threadpool",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

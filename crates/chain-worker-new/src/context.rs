@@ -14,8 +14,8 @@ use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{CheckpointDbManager, OLBlockManager, OLStateManager};
-use tokio::runtime::Handle;
+use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateManager};
+use tokio::{runtime::Handle, sync::watch};
 use tracing::warn;
 
 use crate::{
@@ -41,10 +41,13 @@ pub struct ChainWorkerContextImpl {
     ol_state_mgr: Arc<OLStateManager>,
 
     /// Manager for checkpoint and epoch summary data.
-    checkpoint_mgr: Arc<CheckpointDbManager>,
+    checkpoint_mgr: Arc<OLCheckpointManager>,
 
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
+
+    /// Channel for emitting epoch summary events.
+    epoch_summary_tx: watch::Sender<Option<EpochCommitment>>,
 
     /// Rollup params
     params: Arc<Params>,
@@ -56,14 +59,20 @@ pub struct ChainWorkerContextImpl {
 impl ChainWorkerContextImpl {
     /// Creates a new context with the given storage managers.
     pub fn from_node_context(nodectx: &NodeContext) -> Self {
+        let (epoch_summary_tx, _) = watch::channel(None);
         Self {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
-            checkpoint_mgr: nodectx.storage().checkpoint().clone(),
+            checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             status_channel: nodectx.status_channel().clone(),
+            epoch_summary_tx,
             params: nodectx.params().clone(),
             handle: nodectx.executor().handle().clone(),
         }
+    }
+
+    pub fn epoch_summary_sender(&self) -> watch::Sender<Option<EpochCommitment>> {
+        self.epoch_summary_tx.clone()
     }
 
     pub fn status_channel(&self) -> &StatusChannel {
@@ -169,7 +178,9 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
+        let commitment = summary.get_epoch_commitment();
         self.checkpoint_mgr.insert_epoch_summary_blocking(summary)?;
+        let _ = self.epoch_summary_tx.send(Some(commitment));
         Ok(())
     }
 

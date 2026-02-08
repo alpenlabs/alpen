@@ -20,6 +20,7 @@ use strata_node_context::NodeContext;
 use strata_ol_block_assembly::{
     BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
 };
+use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_storage::ops::l1tx_broadcast;
 
@@ -53,6 +54,15 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
 
+    // Start OL checkpoint service
+    let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
+    let checkpoint_handle = Arc::new(
+        OLCheckpointBuilder::new()
+            .with_node_context(&nodectx)
+            .with_epoch_summary_receiver(epoch_summary_rx)
+            .launch(nodectx.executor())?,
+    );
+
     // Sequencer-specific tasks
     let sequencer_handles = if nodectx.config().client.is_sequencer {
         let broadcast_handle = Arc::new(start_broadcaster(&nodectx));
@@ -81,6 +91,7 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
         csm_monitor,
         mempool_handle,
         chain_worker_handle,
+        checkpoint_handle,
         fcm_handle,
         sequencer_handles,
     );
