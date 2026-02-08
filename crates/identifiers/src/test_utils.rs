@@ -5,6 +5,7 @@
 
 use proptest::prelude::*;
 use ssz_types::FixedBytes;
+use strata_codec::VARINT_MAX;
 
 use crate::{
     AccountId, AccountSerial, Buf32, Buf64, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId,
@@ -22,7 +23,8 @@ pub fn account_id_strategy() -> impl Strategy<Value = AccountId> {
 
 /// Strategy for generating random [`AccountSerial`] values.
 pub fn account_serial_strategy() -> impl Strategy<Value = AccountSerial> {
-    any::<u32>().prop_map(AccountSerial::from)
+    (0..=VARINT_MAX)
+        .prop_map(|value| AccountSerial::try_from(value).expect("serial is within varint bounds"))
 }
 
 // =============================================================================

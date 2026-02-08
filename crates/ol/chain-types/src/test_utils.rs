@@ -6,10 +6,10 @@
 #![allow(unreachable_pub, reason = "test utils module")]
 
 use proptest::prelude::*;
-use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, MsgPayload, RawMerkleProof};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, RawMerkleProof};
 use strata_identifiers::{
     Epoch, Slot,
-    test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy},
+    test_utils::{account_serial_strategy, buf32_strategy, buf64_strategy, ol_block_id_strategy},
 };
 use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, MmrEntryProof,
@@ -30,7 +30,7 @@ use crate::{
 /// Strategy for generating random [`OLLog`] values.
 pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
     (
-        any::<u32>().prop_map(AccountSerial::from),
+        account_serial_strategy(),
         prop::collection::vec(any::<u8>(), 0..1024),
     )
         .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload))

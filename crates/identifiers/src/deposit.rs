@@ -115,7 +115,7 @@ impl EncodedSerial {
     /// Returns [`DepositDescriptorError::SerialTooLarge`] if the serial exceeds
     /// the maximum 28-bit value [`MAX_SERIAL_VALUE`].
     fn from_account_serial(serial: AccountSerial) -> Result<Self, DepositDescriptorError> {
-        let value = *serial.inner();
+        let value = serial.value();
         let mut control = ControlByte::default();
 
         // Big-endian bytes: [msb, _, _, lsb]
@@ -166,6 +166,7 @@ impl EncodedSerial {
         u32_bytes[msb_index] |= msb_nibble;
 
         AccountSerial::new(u32::from_be_bytes(u32_bytes))
+            .expect("descriptor serial is always within varint bounds")
     }
 
     /// Returns the control byte.
@@ -230,7 +231,7 @@ impl DepositDescriptor {
         dest_acct_serial: AccountSerial,
         dest_subject: SubjectIdBytes,
     ) -> Result<Self, DepositDescriptorError> {
-        let value = *dest_acct_serial.inner();
+        let value = dest_acct_serial.value();
         if value > MAX_SERIAL_VALUE {
             return Err(DepositDescriptorError::SerialTooLarge(
                 value,
@@ -321,7 +322,7 @@ impl DepositDescriptor {
 impl<'a> Arbitrary<'a> for DepositDescriptor {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let serial = u.int_in_range(0..=MAX_SERIAL_VALUE)?;
-        let dest_acct_serial = AccountSerial::new(serial);
+        let dest_acct_serial = AccountSerial::new(serial).expect("serial is within varint bounds");
         let dest_subject = u.arbitrary()?;
         Ok(Self::new(dest_acct_serial, dest_subject)
             .expect("serial is within valid range by construction"))
@@ -348,7 +349,10 @@ mod tests {
             serial in 0..=MAX_SERIAL_VALUE,
             subject in subject_bytes(),
         ) {
-            let descriptor = DepositDescriptor::new(AccountSerial::new(serial), subject)
+            let descriptor = DepositDescriptor::new(
+                AccountSerial::new(serial).expect("serial is within varint bounds"),
+                subject,
+            )
                 .expect("serial is within valid range");
             let encoded = descriptor.encode_to_vec();
             let decoded = DepositDescriptor::decode_from_slice(&encoded).expect("decode should succeed");
@@ -357,7 +361,8 @@ mod tests {
 
         #[test]
         fn encoded_serial_roundtrip(serial in 0..=MAX_SERIAL_VALUE) {
-            let account_serial = AccountSerial::new(serial);
+            let account_serial =
+                AccountSerial::new(serial).expect("serial is within varint bounds");
             let encoded = EncodedSerial::from_account_serial(account_serial)
                 .expect("encoding should succeed");
             let decoded = encoded.to_account_serial();
@@ -369,7 +374,11 @@ mod tests {
     fn new_rejects_too_large_serial() {
         let subject = SubjectIdBytes::try_new(Vec::new()).expect("empty is valid");
         let serial = MAX_SERIAL_VALUE + 1;
-        let err = DepositDescriptor::new(AccountSerial::new(serial), subject).unwrap_err();
+        let err = DepositDescriptor::new(
+            AccountSerial::new(serial).expect("serial is within varint bounds"),
+            subject,
+        )
+        .unwrap_err();
         assert_eq!(
             err,
             DepositDescriptorError::SerialTooLarge(serial, MAX_SERIAL_VALUE)

@@ -1,10 +1,17 @@
-use std::{fmt, mem};
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    io::{self, Read, Write},
+    mem,
+};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
+use ssz::view;
 use ssz_derive::{Decode, Encode};
+use strata_codec::{Codec, CodecError, VARINT_MAX, Varint};
 use thiserror::Error;
 
 const ACCT_ID_LEN: usize = 32;
@@ -86,40 +93,44 @@ impl fmt::Display for AccountId {
 
 impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
 
-type RawAccountSerial = u32;
+type RawAccountSerial = Varint;
 
-/// Size of RawAccountSerial (u32) in bytes
-const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
+/// Size of AccountSerial's SSZ/Borsh representation (u32) in bytes.
+const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<u32>();
 
 /// Incrementally assigned account serial number.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Arbitrary,
-    Decode,
-    Encode,
-    BorshSerialize,
-    BorshDeserialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Codec)]
 pub struct AccountSerial(RawAccountSerial);
-
-impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
 
 impl AccountSerial {
     /// Returns the zero serial.
-    pub const fn zero() -> AccountSerial {
-        AccountSerial(0)
+    pub fn zero() -> AccountSerial {
+        AccountSerial::new(0).expect("acctsys: zero is within varint bounds")
     }
 
     /// Returns the one serial.
-    pub const fn one() -> AccountSerial {
-        AccountSerial(1)
+    pub fn one() -> AccountSerial {
+        AccountSerial::new(1).expect("acctsys: one is within varint bounds")
+    }
+
+    /// Creates a serial from a raw u32 value.
+    pub fn new(value: u32) -> Option<Self> {
+        RawAccountSerial::new(value).map(Self)
+    }
+
+    /// Returns the raw varint representation.
+    pub fn inner(&self) -> &RawAccountSerial {
+        &self.0
+    }
+
+    /// Consumes the serial and returns the raw varint representation.
+    pub fn into_inner(self) -> RawAccountSerial {
+        self.0
+    }
+
+    /// Returns the numeric serial value.
+    pub fn value(&self) -> u32 {
+        self.0.inner()
     }
 
     /// Creates a serial for one of the reserved accounts.
@@ -127,34 +138,168 @@ impl AccountSerial {
     /// # Panics
     ///
     /// If the ID provided is outside the valid range.
-    pub const fn reserved(b: u8) -> Self {
+    pub fn reserved(b: u8) -> Self {
+        let value = b as u32;
         assert!(
-            (b as RawAccountSerial) < SYSTEM_RESERVED_ACCTS,
+            value < SYSTEM_RESERVED_ACCTS,
             "acct: out of bounds reserved serial"
         );
-        Self(b as RawAccountSerial)
+        AccountSerial::new(value).expect("acct: reserved serial within varint bounds")
     }
 
     pub fn incr(self) -> AccountSerial {
-        if *self.inner() == RawAccountSerial::MAX {
+        if self.value() == VARINT_MAX {
             panic!("acctsys: reached max serial number");
         }
 
-        AccountSerial::new(self.inner() + 1)
+        AccountSerial::new(self.value() + 1).expect("acctsys: serial increment within bounds")
     }
 
     pub fn is_reserved(&self) -> bool {
-        self.0 < SYSTEM_RESERVED_ACCTS
+        self.value() < SYSTEM_RESERVED_ACCTS
     }
 }
 
 impl fmt::Display for AccountSerial {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "serial:{}", &self.0)
+        write!(f, "serial:{}", self.value())
     }
 }
 
-crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial, RAW_ACCOUNT_SERIAL_LEN);
+impl From<RawAccountSerial> for AccountSerial {
+    fn from(value: RawAccountSerial) -> AccountSerial {
+        AccountSerial(value)
+    }
+}
+
+impl From<AccountSerial> for RawAccountSerial {
+    fn from(value: AccountSerial) -> RawAccountSerial {
+        value.0
+    }
+}
+
+impl TryFrom<u32> for AccountSerial {
+    type Error = CodecError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        AccountSerial::new(value).ok_or(CodecError::OobInteger)
+    }
+}
+
+impl From<AccountSerial> for u32 {
+    fn from(value: AccountSerial) -> u32 {
+        value.value()
+    }
+}
+
+impl Hash for AccountSerial {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value().hash(state);
+    }
+}
+
+impl<'a> Arbitrary<'a> for AccountSerial {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let value = u.int_in_range(0..=VARINT_MAX)?;
+        Ok(AccountSerial::new(value).expect("acctsys: arbitrary serial within bounds"))
+    }
+}
+
+impl ssz::Encode for AccountSerial {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        RAW_ACCOUNT_SERIAL_LEN
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.value().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        Self::ssz_fixed_len()
+    }
+}
+
+impl ssz::Decode for AccountSerial {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        RAW_ACCOUNT_SERIAL_LEN
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        if bytes.len() != Self::ssz_fixed_len() {
+            return Err(ssz::DecodeError::InvalidByteLength {
+                len: bytes.len(),
+                expected: Self::ssz_fixed_len(),
+            });
+        }
+
+        let value = u32::from_ssz_bytes(bytes)?;
+        AccountSerial::new(value).ok_or_else(|| {
+            ssz::DecodeError::BytesInvalid(format!(
+                "account serial {value} exceeds varint max {VARINT_MAX}"
+            ))
+        })
+    }
+}
+
+impl<'a> view::DecodeView<'a> for AccountSerial {
+    fn from_ssz_bytes(bytes: &'a [u8]) -> Result<Self, ssz::DecodeError> {
+        <Self as ssz::Decode>::from_ssz_bytes(bytes)
+    }
+}
+
+impl view::SszTypeInfo for AccountSerial {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        RAW_ACCOUNT_SERIAL_LEN
+    }
+}
+
+impl<H: tree_hash::TreeHashDigest> tree_hash::TreeHash<H> for AccountSerial {
+    fn tree_hash_type() -> tree_hash::TreeHashType {
+        <u32 as tree_hash::TreeHash<H>>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
+        <u32 as tree_hash::TreeHash<H>>::tree_hash_packed_encoding(&self.value())
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <u32 as tree_hash::TreeHash<H>>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> H::Output {
+        <u32 as tree_hash::TreeHash<H>>::tree_hash_root(&self.value())
+    }
+}
+
+impl BorshSerialize for AccountSerial {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        BorshSerialize::serialize(&self.value(), writer)
+    }
+}
+
+impl BorshDeserialize for AccountSerial {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let value = u32::deserialize_reader(reader)?;
+        AccountSerial::new(value).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("account serial {value} exceeds varint max {VARINT_MAX}"),
+            )
+        })
+    }
+}
 
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 
@@ -299,6 +444,7 @@ impl fmt::Display for AccountTypeId {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
+    use strata_codec::VARINT_MAX;
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -322,17 +468,31 @@ mod tests {
     }
 
     mod account_serial {
+        use tree_hash::{Sha256Hasher, TreeHash};
+
         use super::*;
 
         ssz_proptest!(
             AccountSerial,
-            any::<u32>(),
-            transparent_wrapper_of(RawAccountSerial, new)
+            (0..=VARINT_MAX).prop_map(|value| {
+                AccountSerial::try_from(value).expect("serial is within varint bounds")
+            })
         );
+
+        proptest! {
+            #[test]
+            fn tree_hash_transparent(value in 0..=VARINT_MAX) {
+                let serial = AccountSerial::try_from(value)
+                    .expect("serial is within varint bounds");
+                let wrapper_hash = <AccountSerial as TreeHash<Sha256Hasher>>::tree_hash_root(&serial);
+                let inner_hash = <u32 as TreeHash<Sha256Hasher>>::tree_hash_root(&value);
+                prop_assert_eq!(wrapper_hash, inner_hash);
+            }
+        }
 
         #[test]
         fn test_zero_ssz() {
-            let zero = AccountSerial::new(0);
+            let zero = AccountSerial::new(0).expect("serial is within varint bounds");
             let encoded = zero.as_ssz_bytes();
             let decoded = AccountSerial::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(zero, decoded);
