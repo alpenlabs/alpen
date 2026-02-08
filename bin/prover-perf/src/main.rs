@@ -1,6 +1,6 @@
 //! Prover performance evaluation.
 
-use std::error::Error;
+use std::{error::Error, process};
 
 use sp1_sdk::utils::setup_logger;
 #[cfg(feature = "sp1")]
@@ -14,8 +14,7 @@ pub mod github;
 pub mod programs;
 
 use anyhow::Result;
-use args::EvalArgs;
-use clap::Parser;
+use args::{parse_programs, EvalArgs};
 use format::{format_header, format_results};
 use github::{format_github_message, post_to_github_pr};
 use zkaleido::PerformanceReport;
@@ -23,17 +22,21 @@ use zkaleido::PerformanceReport;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     setup_logger();
-    let args = EvalArgs::parse();
+    let args: EvalArgs = argh::from_env();
+
+    // Parse programs
+    let programs = parse_programs(&args.programs).unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        process::exit(1);
+    });
 
     let mut results_text = vec![format_header(&args)];
 
     #[cfg(feature = "sp1")]
     {
-        let sp1_reports = programs::run_sp1_programs(&args.programs);
+        let sp1_reports = programs::run_sp1_programs(&programs);
         results_text.push(format_results(&sp1_reports, "SP1".to_owned()));
         if !sp1_reports.iter().all(|r| r.success) {
-            use std::process;
-
             println!("Some SP1 programs failed. Please check the results below.");
             process::exit(1);
         }
