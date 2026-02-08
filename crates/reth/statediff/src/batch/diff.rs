@@ -73,8 +73,7 @@ impl Codec for BatchStateDiff {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let accounts = decode_map_with(dec, |k: CodecAddress| k.0, |v| v)?;
         let storage = decode_map_with(dec, |k: CodecAddress| k.0, |v| v)?;
-        let deployed_bytecodes =
-            decode_map_with(dec, |k: CodecB256| k.0, |v: CodecBytes| v.0)?;
+        let deployed_bytecodes = decode_map_with(dec, |k: CodecB256| k.0, |v: CodecBytes| v.0)?;
 
         Ok(Self {
             accounts,

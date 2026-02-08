@@ -219,7 +219,10 @@ fn reassemble_from_da_chunks(encoded_chunks: &[Vec<u8>]) -> Option<Vec<u8>> {
     if total_chunks as usize != decoded.len() {
         return None;
     }
-    if decoded[1..].iter().any(|(h, _)| h.total_chunks != total_chunks) {
+    if decoded[1..]
+        .iter()
+        .any(|(h, _)| h.total_chunks != total_chunks)
+    {
         return None;
     }
 
@@ -232,7 +235,10 @@ fn reassemble_from_da_chunks(encoded_chunks: &[Vec<u8>]) -> Option<Vec<u8>> {
     }
 
     // Concatenate payloads, compute hash, verify every chunk's claimed hash.
-    let blob: Vec<u8> = decoded.iter().flat_map(|(_, p)| p.iter().copied()).collect();
+    let blob: Vec<u8> = decoded
+        .iter()
+        .flat_map(|(_, p)| p.iter().copied())
+        .collect();
     let computed_hash = blob_hash(&blob);
     if decoded.iter().any(|(h, _)| h.blob_hash != computed_hash) {
         return None;
