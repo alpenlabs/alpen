@@ -1,0 +1,18 @@
+[package]
+name = "strata-ee-chunk-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-acct-types.workspace = true
+strata-codec.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-snark-acct-types.workspace = true
+
+rkyv.workspace = true
+rkyv_impl.workspace = true
+ssz.workspace = true
+
+[lints]
+workspace = true
