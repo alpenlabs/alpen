@@ -13807,6 +13807,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-params"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "serde",
+ "serde_json",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-predicate",
+]
+
+[[package]]
 name = "strata-asm-proto-administration"
 version = "0.1.0"
 dependencies = [

@@ -8,6 +8,7 @@ use std::{
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -23,12 +24,29 @@ pub const MAX_SIGNERS: usize = 256;
 /// Defines who can sign (`keys`) and how many must sign (`threshold`).
 /// The threshold is stored as `NonZero<u8>` to enforce at the type level
 /// that it can never be zero.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct ThresholdConfig {
     /// Public keys of all authorized signers.
     keys: Vec<CompressedPublicKey>,
     /// Minimum number of signatures required (always >= 1).
     threshold: NonZero<u8>,
+}
+
+impl<'a> Arbitrary<'a> for ThresholdConfig {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate 1-4 keys for reasonable test sizes
+        let num_keys: usize = u.int_in_range(1..=4)?;
+        let keys: Vec<CompressedPublicKey> = (0..num_keys)
+            .map(|_| CompressedPublicKey::arbitrary(u))
+            .collect::<arbitrary::Result<_>>()?;
+
+        // Generate a valid threshold (1 to keys.len())
+        let max_threshold = keys.len().clamp(1, 255);
+        let threshold_u8 = u.int_in_range(1..=(max_threshold as u8))?;
+        let threshold = NonZero::new(threshold_u8).expect("threshold is always >= 1");
+
+        Ok(Self { keys, threshold })
+    }
 }
 
 impl ThresholdConfig {

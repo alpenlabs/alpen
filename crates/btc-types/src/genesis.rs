@@ -5,7 +5,7 @@ use strata_identifiers::{L1BlockCommitment, L1BlockId};
 
 pub const TIMESTAMPS_FOR_MEDIAN: usize = 11;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct GenesisL1View {
     pub blk: L1BlockCommitment,
     pub next_target: u32,
