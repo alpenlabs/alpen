@@ -3,4 +3,4 @@ mod schema;
 
 pub const SLED_NAME: &str = "express-reth";
 
-pub use db::WitnessDB;
+pub use db::{EeDaContextDb, WitnessDB};
