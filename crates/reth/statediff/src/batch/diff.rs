@@ -2,9 +2,10 @@
 
 use std::collections::BTreeMap;
 
+use alloy_primitives::Bytes;
 use revm_primitives::{Address, B256};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
-use strata_da_framework::{decode_map_with, decode_vec_with, encode_map_with, encode_vec_with};
+use strata_da_framework::{decode_map_with, encode_map_with};
 
 use super::{AccountChange, StorageDiff};
 use crate::codec::{CodecAddress, CodecB256};
@@ -19,9 +20,9 @@ pub struct BatchStateDiff {
     pub accounts: BTreeMap<Address, AccountChange>,
     /// Storage slot changes per account, sorted by address.
     pub storage: BTreeMap<Address, StorageDiff>,
-    /// Code hashes of deployed contracts (deduplicated).
-    /// Full bytecode can be fetched from DB using these hashes.
-    pub deployed_code_hashes: Vec<B256>,
+    /// Deployed contract bytecodes keyed by code hash (deduplicated).
+    /// Full bytecode is included for DA reconstruction without DB access.
+    pub deployed_bytecodes: BTreeMap<B256, Bytes>,
 }
 
 impl BatchStateDiff {
@@ -31,7 +32,27 @@ impl BatchStateDiff {
 
     /// Returns true if the diff is empty.
     pub fn is_empty(&self) -> bool {
-        self.accounts.is_empty() && self.storage.is_empty() && self.deployed_code_hashes.is_empty()
+        self.accounts.is_empty() && self.storage.is_empty() && self.deployed_bytecodes.is_empty()
+    }
+}
+
+/// Wrapper for Bytes that implements Codec with length-prefixed encoding.
+#[derive(Clone, Debug)]
+struct CodecBytes(Bytes);
+
+impl Codec for CodecBytes {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode length as u32 varint, then raw bytes
+        (self.0.len() as u32).encode(enc)?;
+        enc.write_buf(&self.0)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let len = u32::decode(dec)? as usize;
+        let mut buf = vec![0u8; len];
+        dec.read_buf(&mut buf)?;
+        Ok(Self(Bytes::from(buf)))
     }
 }
 
@@ -39,19 +60,26 @@ impl Codec for BatchStateDiff {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         encode_map_with(&self.accounts, enc, |a| CodecAddress(*a), Clone::clone)?;
         encode_map_with(&self.storage, enc, |a| CodecAddress(*a), Clone::clone)?;
-        encode_vec_with(&self.deployed_code_hashes, enc, |h| CodecB256(*h))?;
+        // Encode bytecodes as map: hash -> bytes
+        encode_map_with(
+            &self.deployed_bytecodes,
+            enc,
+            |h| CodecB256(*h),
+            |b| CodecBytes(b.clone()),
+        )?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let accounts = decode_map_with(dec, |k: CodecAddress| k.0, |v| v)?;
         let storage = decode_map_with(dec, |k: CodecAddress| k.0, |v| v)?;
-        let deployed_code_hashes = decode_vec_with(dec, |h: CodecB256| h.0)?;
+        let deployed_bytecodes =
+            decode_map_with(dec, |k: CodecB256| k.0, |v: CodecBytes| v.0)?;
 
         Ok(Self {
             accounts,
             storage,
-            deployed_code_hashes,
+            deployed_bytecodes,
         })
     }
 }
@@ -83,16 +111,24 @@ mod tests {
         storage.set_slot(U256::from(1), U256::from(100));
         diff.storage.insert(Address::from([0x11u8; 20]), storage);
 
-        // Add deployed code hash
-        diff.deployed_code_hashes.push(B256::from([0x33u8; 32]));
+        // Add deployed bytecode
+        let bytecode = Bytes::from_static(&[0x60, 0x80, 0x60, 0x40, 0x52]); // Sample EVM bytecode
+        diff.deployed_bytecodes
+            .insert(B256::from([0x33u8; 32]), bytecode.clone());
 
         let encoded = encode_to_vec(&diff).unwrap();
         let decoded: BatchStateDiff = decode_buf_exact(&encoded).unwrap();
 
         assert_eq!(decoded.accounts.len(), 1);
         assert_eq!(decoded.storage.len(), 1);
-        assert_eq!(decoded.deployed_code_hashes.len(), 1);
-        assert_eq!(decoded.deployed_code_hashes[0], B256::from([0x33u8; 32]));
+        assert_eq!(decoded.deployed_bytecodes.len(), 1);
+        assert_eq!(
+            decoded
+                .deployed_bytecodes
+                .get(&B256::from([0x33u8; 32]))
+                .unwrap(),
+            &bytecode
+        );
     }
 
     #[test]
@@ -101,5 +137,21 @@ mod tests {
         let encoded = encode_to_vec(&diff).unwrap();
         // Should be minimal: 3 u32 counts (0, 0, 0) = 3 bytes minimum
         assert!(encoded.len() <= 12);
+    }
+
+    #[test]
+    fn test_bytecode_encoding_size() {
+        let mut diff = BatchStateDiff::new();
+
+        // Add a realistic contract bytecode (~1KB)
+        let bytecode = Bytes::from(vec![0x60u8; 1024]);
+        diff.deployed_bytecodes
+            .insert(B256::from([0x11u8; 32]), bytecode);
+
+        let encoded = encode_to_vec(&diff).unwrap();
+        // Should include: 3 map counts + 32 byte hash + 4 byte length + 1024 bytes
+        // Plus some overhead for map encoding
+        assert!(encoded.len() > 1024);
+        assert!(encoded.len() < 1100); // Not too much overhead
     }
 }
