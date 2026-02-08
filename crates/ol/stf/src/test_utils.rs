@@ -8,12 +8,15 @@ use strata_acct_types::{
     tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
-use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockId, Slot, WtxidsRoot};
+use strata_identifiers::{
+    AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot, WtxidsRoot,
+};
 use strata_ledger_types::{
     AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData,
 };
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_ol_chain_types_new::{OLBlockHeader, SnarkAccountUpdateTxPayload, TransactionPayload};
+use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{
@@ -21,6 +24,12 @@ use strata_snark_acct_types::{
     OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer,
     UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
 };
+
+/// Creates a genesis OLState using minimal empty parameters.
+pub fn create_test_genesis_state() -> OLState {
+    let params = OLParams::new_empty(L1BlockCommitment::default());
+    OLState::from_genesis_params(&params).expect("valid params")
+}
 
 use crate::{
     ExecResult,

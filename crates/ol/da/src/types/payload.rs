@@ -308,13 +308,20 @@ mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, Hash};
     use strata_codec::encode_to_vec;
     use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
-    use strata_identifiers::AccountSerial;
+    use strata_identifiers::{AccountSerial, L1BlockCommitment};
     use strata_ledger_types::{AccountTypeState, NewAccountData};
+    use strata_ol_params::OLParams;
     use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
     use strata_predicate::PredicateKey;
 
     use super::*;
     use crate::{AccountDiffEntry, DaProofStateDiff, NewAccountEntry, U16LenList};
+
+    /// Creates a genesis OLState using minimal empty parameters.
+    fn create_test_genesis_state() -> OLState {
+        let params = OLParams::new_empty(L1BlockCommitment::default());
+        OLState::from_genesis_params(&params).expect("valid params")
+    }
 
     fn test_account_id(seed: u8) -> AccountId {
         AccountId::from([seed; 32])
@@ -353,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_poll_context_rejects_existing_new_account() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let account_id = test_account_id(2);
         let new_acct = NewAccountData::<OLAccountState>::new(
             BitcoinAmount::from_sat(10),
@@ -383,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_apply_updates_balance() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let account_id = test_account_id(3);
         let new_acct = NewAccountData::<OLAccountState>::new(
             BitcoinAmount::from_sat(1_000),
@@ -418,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_apply_snark_seqno() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let account_id = test_account_id(4);
         let snark_state =
             OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::from([0x11u8; 32]));

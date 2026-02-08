@@ -22,5 +22,6 @@ zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 
 [dev-dependencies]
-strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-identifiers.workspace = true
+strata-ol-params.workspace = true
+strata-ol-stf = { workspace = true, features = ["test-utils"] }

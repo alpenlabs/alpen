@@ -20,15 +20,15 @@ use crate::{
     assembly::BlockComponents,
     context::BlockInfo,
     test_utils::{
-        InboxMmrTracker, execute_block_with_outputs, get_test_snark_account_id,
-        get_test_state_root, test_l1_block_id,
+        InboxMmrTracker, create_test_genesis_state, execute_block_with_outputs,
+        get_test_snark_account_id, get_test_state_root, test_l1_block_id,
     },
 };
 
 #[test]
 fn test_snark_account_deposit_and_withdrawal() {
     // Start with empty genesis state
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
 
     // Create a snark account in the state
     let snark_account_id = get_test_snark_account_id();

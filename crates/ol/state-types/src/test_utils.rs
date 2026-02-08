@@ -8,12 +8,19 @@ use strata_identifiers::{
     test_utils::{account_id_strategy, account_serial_strategy, buf32_strategy},
 };
 use strata_merkle::Mmr64B32;
+use strata_ol_params::OLParams;
 use strata_predicate::PredicateKey;
 
 use crate::ssz_generated::ssz::state::{
     EpochalState, GlobalState, OLAccountState, OLAccountTypeState, OLSnarkAccountState, OLState,
     ProofState, TsnlAccountEntry, TsnlLedgerAccountsTable,
 };
+
+/// Creates a genesis OLState using minimal empty parameters.
+pub fn create_test_genesis_state() -> OLState {
+    let params = OLParams::new_empty(L1BlockCommitment::default());
+    OLState::from_genesis_params(&params).expect("valid params")
+}
 
 pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
     any::<u64>().prop_map(BitcoinAmount::from_sat)

@@ -8,7 +8,7 @@ use strata_ol_state_types::OLState;
 use crate::{
     errors::ExecError,
     test_utils::{
-        SnarkUpdateBuilder, TEST_NONEXISTENT_ID, create_empty_account,
+        SnarkUpdateBuilder, TEST_NONEXISTENT_ID, create_empty_account, create_test_genesis_state,
         create_unchecked_snark_update, execute_tx_in_block, get_test_proof,
         get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
         setup_genesis_with_snark_account, test_account_id,
@@ -17,7 +17,7 @@ use crate::{
 
 #[test]
 fn test_snark_update_invalid_sequence_number() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -57,7 +57,7 @@ fn test_snark_update_invalid_sequence_number() {
 
 #[test]
 fn test_snark_update_insufficient_balance() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -101,7 +101,7 @@ fn test_snark_update_insufficient_balance() {
 
 #[test]
 fn test_snark_update_nonexistent_recipient() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let nonexistent_id = test_account_id(TEST_NONEXISTENT_ID); // Not created
 
