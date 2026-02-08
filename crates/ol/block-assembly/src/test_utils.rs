@@ -28,6 +28,7 @@ use strata_ol_chain_types_new::{
     test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolTransaction};
+use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
 use strata_predicate::PredicateKey;
@@ -38,6 +39,12 @@ use strata_snark_acct_types::{
 use strata_state::asm_state::AsmState;
 use strata_storage::{NodeStorage, OLStateManager, create_node_storage};
 use threadpool::ThreadPool;
+
+/// Creates a genesis OLState using minimal empty parameters.
+pub(crate) fn create_test_genesis_state() -> OLState {
+    let params = OLParams::new_empty(L1BlockCommitment::default());
+    OLState::from_genesis_params(&params).expect("valid params")
+}
 
 use crate::{
     BlockAssemblyResult, FixedSlotSealing, MempoolProvider,
@@ -468,7 +475,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockH
         .current();
 
     let genesis_info = BlockInfo::new_genesis(timestamp);
-    let mut temp_state = OLState::new_genesis();
+    let mut temp_state = create_test_genesis_state();
     let genesis_context = BlockContext::new(&genesis_info, None);
     let genesis_components = BlockComponents::new_empty();
     let genesis_output =
@@ -705,7 +712,7 @@ impl TestEnvBuilder {
         }
 
         // Create genesis state
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
 
         // Add snark accounts
         for (i, (account_id, balance)) in self.accounts.iter().enumerate() {

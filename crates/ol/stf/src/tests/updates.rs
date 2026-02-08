@@ -5,14 +5,14 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_state_types::OLState;
 
 use crate::test_utils::{
-    SnarkUpdateBuilder, create_empty_account, execute_tx_in_block, get_test_proof,
-    get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
+    SnarkUpdateBuilder, create_empty_account, create_test_genesis_state, execute_tx_in_block,
+    get_test_proof, get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
     setup_genesis_with_snark_account,
 };
 
 #[test]
 fn test_snark_update_success_with_transfer() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 

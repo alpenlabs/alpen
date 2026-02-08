@@ -589,8 +589,8 @@ mod tests {
     use crate::test_utils::{
         DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, StorageAsmMmr, StorageInboxMmr,
         TestEnvBuilder, add_snark_account_to_state, create_test_block_assembly_context,
-        create_test_context, create_test_parent_header, create_test_storage,
-        generate_message_entries, insert_inbox_messages_into_state,
+        create_test_context, create_test_genesis_state, create_test_parent_header,
+        create_test_storage, generate_message_entries, insert_inbox_messages_into_state,
         insert_inbox_messages_into_storage_state, test_account_id, test_hash,
     };
 
@@ -604,7 +604,7 @@ mod tests {
 
         // Create state with snark account
         let account_id = test_account_id(1);
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         add_snark_account_to_state(&mut state, account_id, 1, 100_000);
 
         // Create tx with claims from the tracker using builder
@@ -647,7 +647,7 @@ mod tests {
     #[test]
     fn test_inbox_proof_gen_success() {
         let storage = create_test_storage();
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
 
         // Create account
         let account_id = test_account_id(1);
@@ -718,7 +718,7 @@ mod tests {
         let invalid_claims = vec![AccumulatorClaim::new(asm_mmr.indices()[0], wrong_hash)];
 
         let account_id = test_account_id(1);
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         add_snark_account_to_state(&mut state, account_id, 1, 100_000);
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
@@ -756,7 +756,7 @@ mod tests {
         )];
 
         let account_id = test_account_id(1);
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         add_snark_account_to_state(&mut state, account_id, 1, 100_000);
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
@@ -789,7 +789,7 @@ mod tests {
 
         // Create state with snark account
         let account_id = test_account_id(1);
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         add_snark_account_to_state(&mut state, account_id, 1, 100_000);
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
@@ -878,7 +878,7 @@ mod tests {
     #[test]
     fn test_inbox_claim_missing_index() {
         let storage = create_test_storage();
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
 
         // Create account
         let account_id = test_account_id(1);
@@ -924,7 +924,7 @@ mod tests {
     #[test]
     fn test_inbox_claim_invalid_msg_idx() {
         let storage = create_test_storage();
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
 
         // Create account
         let account_id = test_account_id(1);
