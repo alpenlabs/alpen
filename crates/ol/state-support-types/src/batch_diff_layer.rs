@@ -219,12 +219,22 @@ impl<'batches, 'base, S: IStateAccessor> IStateBatchApplicable
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{AcctError, BitcoinAmount, SYSTEM_RESERVED_ACCTS};
-    use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
+    use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot};
     use strata_ledger_types::{AccountTypeState, IAccountState, IStateAccessor, NewAccountData};
+    use strata_ol_params::OLParams;
     use strata_ol_state_types::OLState;
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
     use crate::test_utils::*;
+
+    fn new_ol_state_at(epoch: Epoch, slot: Slot) -> OLState {
+        let last_l1_block: L1BlockCommitment = ArbitraryGenerator::new().generate();
+        let mut params = OLParams::new_empty(last_l1_block);
+        params.header.slot = slot;
+        params.header.epoch = epoch;
+        OLState::from_genesis_params(&params).expect("failed to create OLState from genesis params")
+    }
 
     // =========================================================================
     // Empty batch tests (pure passthrough)
@@ -247,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_global_state_from_base_when_empty() {
-        let base_state = OLState::new_at(5, 100);
+        let base_state = new_ol_state_at(5, 100);
         let batches: Vec<WriteBatch<_>> = vec![];
         let diff_state = BatchDiffState::new(&base_state, &batches);
 
@@ -323,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_global_state_from_top_batch() {
-        let base_state = OLState::new_at(5, 100);
+        let base_state = new_ol_state_at(5, 100);
 
         let mut batch = WriteBatch::new_from_state(&base_state);
         batch.global_mut().set_cur_slot(200);

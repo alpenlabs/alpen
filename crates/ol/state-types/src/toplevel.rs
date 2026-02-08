@@ -6,7 +6,7 @@ use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, Bitcoin
 use strata_asm_manifest_types::AsmManifest;
 use strata_crypto::hash::raw;
 use strata_identifiers::{
-    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot,
+    Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId,
 };
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
@@ -59,24 +59,6 @@ impl OLState {
             global,
             ledger,
         })
-    }
-
-    /// Create a state with specified epoch and slot for testing.
-    pub fn new_at(epoch: Epoch, slot: Slot) -> Self {
-        Self {
-            epoch: EpochalState::new(
-                BitcoinAmount::from(0),
-                epoch,
-                L1BlockCommitment::new(
-                    absolute::Height::from_consensus(0).unwrap(),
-                    L1BlockId::from(Buf32::zero()),
-                ),
-                EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
-                Mmr64::from_generic(&CompactMmr64::new(64)),
-            ),
-            global: GlobalState::new(slot),
-            ledger: TsnlLedgerAccountsTable::new_empty(),
-        }
     }
 
     /// Checks that a batch can be applied safely.
