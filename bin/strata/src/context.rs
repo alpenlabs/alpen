@@ -8,6 +8,7 @@ use format_serde_error::SerdeError;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
+use strata_ol_params::OLParams;
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
@@ -42,6 +43,10 @@ pub(crate) fn init_node_context(
     let params_path = args.rollup_params.ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(&params_path, &config)?;
 
+    // Load OL params
+    let ol_params_path = args.ol_params.ok_or(InitError::MissingOLParams)?;
+    let ol_params = load_ol_params(&ol_params_path)?;
+
     // Init storage
     let storage = init_storage(&config)?;
 
@@ -55,6 +60,7 @@ pub(crate) fn init_node_context(
         handle,
         config,
         params,
+        ol_params.into(),
         storage,
         bitcoin_client,
         status_channel,
@@ -134,6 +140,13 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     Ok(rollup_params)
 }
 
+fn load_ol_params(path: &Path) -> Result<OLParams, InitError> {
+    let json = fs::read_to_string(path)?;
+    let ol_params =
+        serde_json::from_str::<OLParams>(&json).map_err(|err| SerdeError::new(json, err))?;
+    Ok(ol_params)
+}
+
 /// Bitcoin client initialization
 fn create_bitcoin_rpc_client(config: &BitcoindConfig) -> Result<Arc<Client>, InitError> {
     let auth = Auth::UserPass(config.rpc_user.clone(), config.rpc_password.clone());
@@ -175,6 +188,7 @@ fn init_status_channel(
 pub(crate) fn check_and_init_genesis(
     storage: &NodeStorage,
     params: &Params,
+    ol_params: &OLParams,
 ) -> Result<(L1BlockCommitment, ClientState), InitError> {
     let csman = storage.client_state();
     let recent_state = csman
@@ -184,7 +198,7 @@ pub(crate) fn check_and_init_genesis(
     match recent_state {
         None => {
             // Initialize OL genesis block and state
-            init_ol_genesis(params, storage)
+            init_ol_genesis(params, ol_params, storage)
                 .map_err(|e| InitError::StorageCreation(e.to_string()))?;
 
             // Create and insert init client state into db.

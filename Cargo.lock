@@ -13669,6 +13669,7 @@ dependencies = [
  "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
+ "strata-ol-params",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
@@ -14851,6 +14852,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoind-async-client",
  "strata-config",
+ "strata-ol-params",
  "strata-params",
  "strata-status",
  "strata-storage",

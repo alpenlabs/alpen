@@ -9,6 +9,7 @@ use strata_db_types::traits::BlockStatus;
 use strata_identifiers::{Buf64, OLBlockCommitment};
 use strata_ledger_types::AsmManifest;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
+use strata_ol_params::OLParams;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, execute_and_complete_block};
 use strata_params::Params;
@@ -18,12 +19,15 @@ use tracing::{info, instrument};
 
 /// Initialize the OL genesis block and state for a fresh database.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
-pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<OLBlockCommitment> {
+pub(crate) fn init_ol_genesis(
+    params: &Params,
+    ol_params: &OLParams,
+    storage: &NodeStorage,
+) -> Result<OLBlockCommitment> {
     info!("initializing OL genesis block and state");
 
-    // Create initial OL state (uses genesis defaults)
-    // TODO: initialize with a Snark EE account for Alpen. Possibly with rollup params.
-    let mut ol_state = OLState::new_genesis();
+    // Create initial OL state from genesis parameters
+    let mut ol_state = OLState::from_genesis_params(ol_params)?;
 
     // Create genesis block info
     let genesis_l1 = &params.rollup().genesis_l1_view;
