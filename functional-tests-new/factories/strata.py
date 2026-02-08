@@ -11,6 +11,7 @@ import flexitest
 from common.config import (
     BitcoindConfig,
     ClientConfig,
+    OLParams,
     RollupParams,
     SequencerConfig,
     ServiceType,
@@ -77,6 +78,12 @@ class StrataFactory(flexitest.Factory):
         with open(params_path, "w") as f:
             f.write(params.as_json_string())
 
+        # Create OL params
+        ol_params = OLParams().with_genesis_l1(genesis_l1)
+        ol_params_path = datadir / "ol-params.json"
+        with open(ol_params_path, "w") as f:
+            f.write(ol_params.as_json_string())
+
         # Build command
         cmd = [
             "strata",
@@ -86,6 +93,8 @@ class StrataFactory(flexitest.Factory):
             str(datadir),
             "--rollup-params",
             str(params_path),
+            "--ol-params",
+            str(ol_params_path),
             "--rpc-host",
             rpc_host,
             "--rpc-port",

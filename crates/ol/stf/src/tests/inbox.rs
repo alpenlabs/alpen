@@ -15,15 +15,16 @@ use crate::{
     BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID,
     errors::ExecError,
     test_utils::{
-        InboxMmrTracker, SnarkUpdateBuilder, create_empty_account, execute_tx_in_block,
-        get_snark_state_expect, get_test_recipient_account_id, get_test_snark_account_id,
-        get_test_state_root, setup_genesis_with_snark_account, test_account_id,
+        InboxMmrTracker, SnarkUpdateBuilder, create_empty_account, create_test_genesis_state,
+        execute_tx_in_block, get_snark_state_expect, get_test_recipient_account_id,
+        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
+        test_account_id,
     },
 };
 
 #[test]
 fn test_snark_inbox_message_insertion() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = test_account_id(100);
 
     // Setup: genesis with snark account
@@ -74,7 +75,7 @@ fn test_snark_inbox_message_insertion() {
 
 #[test]
 fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -192,7 +193,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
 
 #[test]
 fn test_snark_update_invalid_message_index() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = test_account_id(100);
     let recipient_id = test_account_id(200);
 
@@ -246,7 +247,7 @@ fn test_snark_update_invalid_message_index() {
 
 #[test]
 fn test_snark_update_invalid_message_proof() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = test_account_id(100);
 
     // Setup: genesis with snark account
@@ -329,7 +330,7 @@ fn test_snark_update_invalid_message_proof() {
 
 #[test]
 fn test_snark_update_skip_message_out_of_order() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 

@@ -25,6 +25,9 @@ pub(crate) enum InitError {
     #[error("missing rollup params path in arguments")]
     MissingRollupParams,
 
+    #[error("missing OL params path in arguments")]
+    MissingOLParams,
+
     #[error("invalid datadir path: {0:?}")]
     InvalidDatadirPath(path::PathBuf),
 

@@ -23,6 +23,7 @@ use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Header parameters for the parent of the genesis block.
+    #[serde(default)]
     pub header: HeaderParams,
 
     /// Genesis accounts keyed by account ID.
@@ -33,6 +34,15 @@ pub struct OLParams {
 }
 
 impl OLParams {
+    /// Creates an [`OLParams`] with empty accounts and default header params.
+    pub fn new_empty(last_l1_block: L1BlockCommitment) -> Self {
+        Self {
+            header: HeaderParams::default(),
+            accounts: BTreeMap::new(),
+            last_l1_block,
+        }
+    }
+
     /// Builds an [`EpochCommitment`] from the genesis header parameters.
     ///
     /// The genesis header's epoch, slot, and parent block ID are treated as a

@@ -218,7 +218,6 @@ mod tests {
     use strata_ledger_types::{
         AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData,
     };
-    use strata_ol_state_types::OLState;
 
     use super::*;
     use crate::test_utils::*;
@@ -322,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_create_account_in_batch() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let account_id = test_account_id(1);
@@ -348,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_find_account_id_by_serial_for_new_account() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let account_id = test_account_id(1);
@@ -371,7 +370,7 @@ mod tests {
 
     #[test]
     fn test_slot_modifications_in_batch() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         assert_eq!(tracking.cur_slot(), 0);
@@ -386,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_epoch_modifications_in_batch() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         assert_eq!(tracking.cur_epoch(), 0);
@@ -401,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_total_ledger_balance_in_batch() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         tracking.set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
@@ -414,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_manifest_append_in_batch() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let height = L1Height::from(100u32);
@@ -434,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_compute_state_root_returns_unsupported() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let tracking = WriteTrackingState::new_from_state(&base_state);
 
         let result = tracking.compute_state_root();
@@ -475,7 +474,7 @@ mod tests {
 
     #[test]
     fn test_batch_reference_accessible() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let tracking = WriteTrackingState::new_from_state(&base_state);
 
         // Should be able to access batch via reference
@@ -489,7 +488,7 @@ mod tests {
 
     #[test]
     fn test_update_nonexistent_account_returns_error() {
-        let base_state = OLState::new_genesis();
+        let base_state = create_test_genesis_state();
         let mut tracking = WriteTrackingState::new_from_state(&base_state);
 
         let nonexistent_id = test_account_id(99);
