@@ -69,6 +69,7 @@ class StrataFactory(flexitest.Factory):
         genesis_l1: GenesisL1View,
         is_sequencer: bool = True,
         config_overrides: dict | None = None,
+        datadir_override: str | None = None,
         **kwargs,
     ) -> StrataService:
         """
@@ -78,15 +79,20 @@ class StrataFactory(flexitest.Factory):
             bconfig: Bitcoin daemon configuration
             is_sequencer: True for sequencer, False for fullnode
             config_overrides: Additional config overrides (-o flag)
+            datadir_override: Optional directory to use for node data.
+                When provided, this method can be called outside EnvContext.
         """
-        # Ensured by `with_ectx` decorator. Don't like this though.
-        ctx: flexitest.EnvContext = kwargs["ctx"]
-
         if config_overrides is None:
             config_overrides = dict()
 
         mode = "sequencer" if is_sequencer else "fullnode"
-        datadir = Path(ctx.make_service_dir(f"{ServiceType.Strata}_{mode}"))
+        if datadir_override is not None:
+            datadir = Path(datadir_override)
+            datadir.mkdir(parents=True, exist_ok=True)
+        else:
+            # Ensured by `with_ectx` decorator when called through EnvContext.
+            ctx: flexitest.EnvContext = kwargs["ctx"]
+            datadir = Path(ctx.make_service_dir(f"{ServiceType.Strata}_{mode}"))
         rpc_port = self.next_port()
         rpc_host = "127.0.0.1"
         logfile = datadir / "service.log"
