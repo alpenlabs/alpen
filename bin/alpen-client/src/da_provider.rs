@@ -25,6 +25,7 @@ use eyre::{bail, ensure};
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
 use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxStatus};
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 use tokio::{runtime::Handle, task::block_in_place};
 use tracing::*;
@@ -52,12 +53,12 @@ where
         Ok(EvmHeaderDigest {
             block_num: header.number,
             timestamp: header.timestamp,
-            base_fee: header
-                .base_fee_per_gas
-                .ok_or_else(|| eyre::eyre!(
+            base_fee: header.base_fee_per_gas.ok_or_else(|| {
+                eyre::eyre!(
                     "block {block_num} missing base_fee_per_gas; \
                      Alpen is post-London from genesis so this should always be present"
-                ))?,
+                )
+            })?,
             gas_used: header.gas_used,
             gas_limit: header.gas_limit,
         })
@@ -226,20 +227,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         let chunks = prepare_da_chunks(&blob)?;
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
 
-        let ops = self.envelope_handle.ops();
-
-        // Determine the prev_tail_wtxid from the preceding envelope entry.
-        let next_idx = ops.get_next_chunked_envelope_idx_async().await?;
-        let prev_tail_wtxid = if next_idx == 0 {
-            Buf32::zero()
-        } else {
-            ops.get_chunked_envelope_entry_async(next_idx - 1)
-                .await?
-                .map(|e| e.tail_wtxid())
-                .unwrap_or(Buf32::zero())
-        };
-
-        let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes, prev_tail_wtxid);
+        let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, MagicBytes::new(self.magic_bytes));
 
         let idx = self
             .envelope_handle

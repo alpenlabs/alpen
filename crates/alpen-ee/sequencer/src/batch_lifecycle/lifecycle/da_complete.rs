@@ -46,10 +46,8 @@ where
                     debug!(batch_idx = target_idx, batch_id = ?batch.id(), "DA confirmed");
 
                     // Update the DA filter so future batches omit already-published data.
-                    let block_hashes: Vec<B256> = batch
-                        .blocks_iter()
-                        .map(|h| B256::from(h.0))
-                        .collect();
+                    let block_hashes: Vec<B256> =
+                        batch.blocks_iter().map(|h| B256::from(h.0)).collect();
                     if let Err(e) = ctx.da_ctx.update_da_filter(&block_hashes) {
                         warn!(
                             error = %e,

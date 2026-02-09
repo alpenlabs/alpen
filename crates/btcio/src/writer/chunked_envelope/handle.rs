@@ -18,6 +18,7 @@ use bitcoind_async_client::{
 };
 use strata_config::btcio::WriterConfig;
 use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxStatus};
+use strata_primitives::buf::Buf32;
 use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
 use tokio::time::interval;
 use tracing::*;
@@ -143,7 +144,12 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
         match entry.status {
             ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign => {
                 debug!(status = ?entry.status, "entry needs signing");
-                match sign_chunked_envelope(&entry, &broadcast_handle, ctx.clone()).await {
+
+                let prev_tail_wtxid = resolve_prev_tail_wtxid(curr, &ops).await?;
+
+                match sign_chunked_envelope(&entry, prev_tail_wtxid, &broadcast_handle, ctx.clone())
+                    .await
+                {
                     Ok(updated) => {
                         ops.put_chunked_envelope_entry_async(curr, updated).await?;
                         debug!("entry signed successfully");
@@ -192,6 +198,24 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
             }
         }
     }
+}
+
+/// Resolves the correct `prev_tail_wtxid` for the entry at index `curr`.
+///
+/// For index 0, returns [`Buf32::zero`] (first entry in chain). For all others,
+/// reads entry[curr-1] from the DB and returns its
+/// [`tail_wtxid()`](ChunkedEnvelopeEntry::tail_wtxid). The watcher's sequential
+/// processing guarantees entry[curr-1] is signed, so `tail_wtxid()` returns the
+/// actual last-reveal wtxid rather than the stale fallback.
+async fn resolve_prev_tail_wtxid(curr: u64, ops: &ChunkedEnvelopeOps) -> anyhow::Result<Buf32> {
+    if curr == 0 {
+        return Ok(Buf32::zero());
+    }
+    Ok(ops
+        .get_chunked_envelope_entry_async(curr - 1)
+        .await?
+        .map(|e| e.tail_wtxid())
+        .unwrap_or(Buf32::zero()))
 }
 
 /// Checks commit tx status and broadcasts reveals once it is safe to do so.
@@ -390,7 +414,6 @@ mod tests {
         let mut e0 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x01; 50]],
             MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-            Buf32::zero(),
         );
         e0.status = ChunkedEnvelopeStatus::Finalized;
         ops.put_chunked_envelope_entry_blocking(0, e0).unwrap();
@@ -398,7 +421,6 @@ mod tests {
         let mut e1 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x02; 50]],
             MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-            Buf32::zero(),
         );
         e1.status = ChunkedEnvelopeStatus::Published;
         ops.put_chunked_envelope_entry_blocking(1, e1).unwrap();
@@ -406,7 +428,6 @@ mod tests {
         let mut e2 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x03; 50]],
             MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-            Buf32::zero(),
         );
         e2.status = ChunkedEnvelopeStatus::Unsigned;
         ops.put_chunked_envelope_entry_blocking(2, e2).unwrap();
@@ -414,7 +435,6 @@ mod tests {
         let mut e3 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x04; 50]],
             MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-            Buf32::zero(),
         );
         e3.status = ChunkedEnvelopeStatus::Unsigned;
         ops.put_chunked_envelope_entry_blocking(3, e3).unwrap();
@@ -541,7 +561,6 @@ mod tests {
         let mut entry = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0xAA; 100]; n],
             MagicBytes::new([0x01, 0x02, 0x03, 0x04]),
-            Buf32::zero(),
         );
         entry.commit_txid = Buf32::from([0x11; 32]);
         entry.reveals = (0..n)
@@ -894,5 +913,40 @@ mod tests {
             ChunkedEnvelopeStatus::CommitPublished,
             "Unpublished L1TxStatus should map to CommitPublished to avoid status regression"
         );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_prev_tail_wtxid_from_signed_predecessor() {
+        let ops = get_chunked_envelope_ops();
+
+        // Entry[0]: simulate signed state (reveals populated with known wtxid).
+        let mut e0 = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![0x01; 50]],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+        );
+        let real_tail = Buf32::from([0x42; 32]);
+        e0.reveals = vec![RevealTxMeta {
+            vout_index: 0,
+            txid: Buf32::from([0x11; 32]),
+            wtxid: real_tail,
+            tx_bytes: vec![0xDE, 0xAD],
+        }];
+        e0.status = ChunkedEnvelopeStatus::Unpublished;
+        ops.put_chunked_envelope_entry_async(0, e0).await.unwrap();
+
+        // Entry[1]: prev_tail_wtxid is zero at creation (deferred to signing).
+        let e1 = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![0x02; 50]],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+        );
+        ops.put_chunked_envelope_entry_async(1, e1).await.unwrap();
+
+        // resolve_prev_tail_wtxid should return entry[0]'s real tail_wtxid.
+        let resolved = resolve_prev_tail_wtxid(1, &ops).await.unwrap();
+        assert_eq!(resolved, real_tail);
+
+        // Index 0 should return zero (first in chain).
+        let resolved_zero = resolve_prev_tail_wtxid(0, &ops).await.unwrap();
+        assert_eq!(resolved_zero, Buf32::zero());
     }
 }
