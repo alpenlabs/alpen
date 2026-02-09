@@ -100,18 +100,39 @@ where
 mod tests {
     use std::sync::Arc;
 
+    use alloy_primitives::B256;
     use alpen_ee_common::{
-        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, ProofGenerationStatus,
+        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, MockDaBlobProvider,
+        ProofGenerationStatus,
     };
+    use alpen_reth_db::{DbResult, EeDaContext};
     use eyre::eyre;
     use tokio::sync::watch;
 
     use super::*;
     use crate::batch_lifecycle::{state::init_lifecycle_state, test_utils::*};
 
+    /// Noop DA context for tests — reports nothing as published.
+    struct NoopDaContext;
+
+    impl EeDaContext for NoopDaContext {
+        fn is_code_hash_published(&self, _code_hash: &B256) -> DbResult<bool> {
+            Ok(false)
+        }
+
+        fn mark_code_hashes_published(&self, _code_hashes: &[B256]) -> DbResult<()> {
+            Ok(())
+        }
+
+        fn update_da_filter(&self, _block_hashes: &[B256]) -> DbResult<()> {
+            Ok(())
+        }
+    }
+
     struct MockedCtxBuilder {
         da_provider: MockBatchDaProvider,
         prover: MockBatchProver,
+        blob_provider: MockDaBlobProvider,
     }
 
     impl MockedCtxBuilder {
@@ -121,6 +142,8 @@ mod tests {
         ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, S> {
             let da_provider = Arc::new(self.da_provider);
             let prover = Arc::new(self.prover);
+            let blob_provider: Arc<dyn alpen_ee_common::DaBlobProvider> =
+                Arc::new(self.blob_provider);
             let (_sealed_batch_tx, sealed_batch_rx) = watch::channel(make_batch_id(0, 0));
             let (proof_ready_tx, _proof_ready_rx) = watch::channel(None);
 
@@ -128,27 +151,34 @@ mod tests {
                 batch_storage,
                 da_provider,
                 prover,
+                blob_provider,
                 sealed_batch_rx,
                 proof_ready_tx,
+                da_ctx: Arc::new(NoopDaContext),
             }
         }
 
         fn new() -> Self {
+            let mut blob_provider = MockDaBlobProvider::new();
+            // Default: state diffs are always available
+            blob_provider
+                .expect_are_state_diffs_ready()
+                .returning(|_| Ok(true));
+
             Self {
                 da_provider: MockBatchDaProvider::new(),
                 prover: MockBatchProver::new(),
+                blob_provider,
             }
         }
 
         fn with_happy_mocks(mut self) -> Self {
             // All requests succeed immediately
-            self.da_provider
-                .expect_post_batch_da()
-                .returning(|_| Ok(()));
+            self.da_provider.expect_post_batch_da().returning(|_| Ok(0));
 
             self.da_provider
                 .expect_check_da_status()
-                .returning(|_| Ok(DaStatus::Ready(vec![make_da_ref(1, 1)])));
+                .returning(|_, _| Ok(DaStatus::Ready(vec![make_da_ref(1, 1)])));
 
             self.prover
                 .expect_request_proof_generation()
@@ -305,7 +335,7 @@ mod tests {
             .with(|b| {
                 b.da_provider
                     .expect_check_da_status()
-                    .returning(|_| Ok(DaStatus::Pending));
+                    .returning(|_, _| Ok(DaStatus::Pending));
             })
             // everything else immediately succeeds
             .with_happy_mocks()
@@ -384,7 +414,7 @@ mod tests {
         // DA check returns Failed
         let ctx = MockedCtxBuilder::new()
             .with(|b| {
-                b.da_provider.expect_check_da_status().returning(|_| {
+                b.da_provider.expect_check_da_status().returning(|_, _| {
                     Ok(DaStatus::Failed {
                         reason: "permanent failure".into(),
                     })

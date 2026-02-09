@@ -1,6 +1,6 @@
 use alpen_ee_common::{Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage};
 use eyre::Result;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::batch_lifecycle::{ctx::BatchLifecycleCtx, state::BatchLifecycleState};
 
@@ -29,18 +29,45 @@ where
 
     match status {
         BatchStatus::Sealed => {
-            // Start DA posting. If this fails, we retry in the next cycle.
-            debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Posting DA");
+            // Check if state diffs are available for all blocks in the batch.
+            // The Reth exex writes state diffs asynchronously, so we need to wait
+            // for them to be ready before posting DA.
+            let batch_id = batch.id();
+            match ctx.blob_provider.are_state_diffs_ready(batch_id) {
+                Ok(true) => {
+                    // State diffs ready, proceed with DA posting
+                }
+                Ok(false) => {
+                    warn!(
+                        batch_idx = target_idx,
+                        batch_id = ?batch_id,
+                        "State diffs not ready, waiting"
+                    );
+                    return Ok(()); // Will retry on next cycle
+                }
+                Err(e) => {
+                    warn!(
+                        batch_idx = target_idx,
+                        batch_id = ?batch_id,
+                        error = %e,
+                        "Failed to check state diff availability"
+                    );
+                    return Ok(()); // Will retry on next cycle
+                }
+            }
 
-            ctx.da_provider.post_batch_da(batch.id()).await?;
+            // Start DA posting. If this fails, we retry in the next cycle.
+            debug!(batch_idx = target_idx, batch_id = ?batch_id, "Posting DA");
+
+            let envelope_idx = ctx.da_provider.post_batch_da(batch_id).await?;
 
             ctx.batch_storage
-                .update_batch_status(batch.id(), BatchStatus::DaPending)
+                .update_batch_status(batch_id, BatchStatus::DaPending { envelope_idx })
                 .await?;
 
-            state.advance_da_pending(target_idx, batch.id());
+            state.advance_da_pending(target_idx, batch_id);
         }
-        BatchStatus::DaPending
+        BatchStatus::DaPending { .. }
         | BatchStatus::DaComplete { .. }
         | BatchStatus::ProofPending { .. }
         | BatchStatus::ProofReady { .. }
