@@ -12,11 +12,12 @@ pub struct BridgeV1Config {
     pub operators: Vec<EvenPublicKey>,
     /// The amount of bitcoin expected to be locked in the N/N multisig.
     pub denomination: BitcoinAmount,
-    /// Duration in blocks for assignment execution deadlines
-    pub assignment_duration: u64,
+    /// Number of Bitcoin blocks an operator has to fulfill a withdrawal before it is reassigned to
+    /// a different operator.
+    pub assignment_duration: u16,
     /// Amount the operator can take as fees for processing withdrawal.
     pub operator_fee: BitcoinAmount,
-    /// Number of blocks after Deposit Request Transaction that the depositor can reclaim funds if
-    /// operators fail to process the deposit.
-    pub recovery_delay: u32,
+    /// Number of Bitcoin blocks after Deposit Request Transaction that the depositor can reclaim
+    /// funds if operators fail to process the deposit.
+    pub recovery_delay: u16,
 }

@@ -118,7 +118,7 @@ mod tests {
           ],
           "threshold": 1
         },
-        "confirmation_depth": 3200105659
+        "confirmation_depth": 144
       }
     },
     {
