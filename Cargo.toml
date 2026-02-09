@@ -236,6 +236,7 @@ strata-ol-chain-types-new = { path = "crates/ol/chain-types" }
 strata-ol-chainstate-types = { path = "crates/ol-chainstate-types" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
 strata-ol-da = { path = "crates/ol/da" }
+strata-ol-genesis = { path = "crates/ol/genesis" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-msg-types = { path = "crates/ol/msg-types" }
 strata-ol-params = { path = "crates/ol/params" }

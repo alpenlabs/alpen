@@ -50,6 +50,7 @@ use reth_node_core::args::LogArgs;
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
 use strata_identifiers::{CredRule, OLBlockId};
+use strata_ol_genesis::ALPEN_EE_ACCOUNT_ID_BYTES;
 use strata_primitives::buf::Buf32;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
@@ -98,7 +99,7 @@ fn main() {
             let genesis_info = ee_genesis_block_info(&ext.custom_chain);
 
             let params = AlpenEeParams::new(
-                AccountId::new([0; 32]), // TODO: correct values
+                AccountId::new(ALPEN_EE_ACCOUNT_ID_BYTES),
                 genesis_info.blockhash(),
                 genesis_info.stateroot(),
                 genesis_info.blocknum(),

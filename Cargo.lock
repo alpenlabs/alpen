@@ -1089,6 +1089,7 @@ dependencies = [
  "strata-acct-types",
  "strata-common",
  "strata-identifiers",
+ "strata-ol-genesis",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-primitives",
@@ -13669,12 +13670,11 @@ dependencies = [
  "strata-ol-block-assembly",
  "strata-ol-chain-types-new",
  "strata-ol-checkpoint",
+ "strata-ol-genesis",
  "strata-ol-mempool",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
- "strata-ol-state-types",
- "strata-ol-stf",
  "strata-params",
  "strata-primitives",
  "strata-service",
@@ -14987,6 +14987,24 @@ dependencies = [
  "strata-predicate",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-ol-genesis"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-checkpoint-types",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-chain-types-new",
+ "strata-ol-params",
+ "strata-ol-state-types",
+ "strata-ol-stf",
+ "strata-params",
+ "strata-predicate",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

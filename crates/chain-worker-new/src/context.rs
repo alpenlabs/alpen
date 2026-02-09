@@ -41,7 +41,7 @@ pub struct ChainWorkerContextImpl {
     ol_state_mgr: Arc<OLStateManager>,
 
     /// Manager for checkpoint and epoch summary data.
-    checkpoint_mgr: Arc<OLCheckpointManager>,
+    ol_checkpoint_mgr: Arc<OLCheckpointManager>,
 
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
@@ -63,7 +63,7 @@ impl ChainWorkerContextImpl {
         Self {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
-            checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
+            ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
@@ -179,13 +179,14 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
         let commitment = summary.get_epoch_commitment();
-        self.checkpoint_mgr.insert_epoch_summary_blocking(summary)?;
+        self.ol_checkpoint_mgr
+            .insert_epoch_summary_blocking(summary)?;
         let _ = self.epoch_summary_tx.send(Some(commitment));
         Ok(())
     }
 
     fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary> {
-        self.checkpoint_mgr
+        self.ol_checkpoint_mgr
             .get_epoch_summary_blocking(*epoch)?
             .ok_or(WorkerError::MissingEpochSummary(*epoch))
     }
@@ -193,13 +194,16 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {
         // Get all epoch commitments for this epoch index
         let epoch_commitments = self
-            .checkpoint_mgr
+            .ol_checkpoint_mgr
             .get_epoch_commitments_at_blocking(epoch as u64)?;
 
         // Fetch the summary for each commitment
         let mut summaries = Vec::with_capacity(epoch_commitments.len());
         for commitment in epoch_commitments {
-            if let Some(summary) = self.checkpoint_mgr.get_epoch_summary_blocking(commitment)? {
+            if let Some(summary) = self
+                .ol_checkpoint_mgr
+                .get_epoch_summary_blocking(commitment)?
+            {
                 summaries.push(summary);
             }
         }
