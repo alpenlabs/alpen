@@ -83,6 +83,27 @@ class SequencerConfig:
 
 
 @dataclass
+class EeDaConfig:
+    """DA pipeline configuration for alpen-client sequencer.
+
+    Configures the EE data availability pipeline that posts state diffs
+    to Bitcoin L1 using chunked envelopes.
+    """
+
+    btc_rpc_url: str
+    btc_rpc_user: str
+    btc_rpc_password: str
+    magic_bytes: bytes  # 4 bytes for OP_RETURN tagging
+    l1_reorg_safe_depth: int = field(default=6)
+    genesis_l1_height: int = field(default=0)
+    batch_sealing_block_count: int = field(default=100)
+
+    def __post_init__(self):
+        if len(self.magic_bytes) != 4:
+            raise ValueError(f"magic_bytes must be exactly 4 bytes, got {len(self.magic_bytes)}")
+
+
+@dataclass
 class StrataConfig:
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
