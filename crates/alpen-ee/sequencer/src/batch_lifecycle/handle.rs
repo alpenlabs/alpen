@@ -2,7 +2,8 @@
 
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage};
+use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, DaBlobProvider};
+use alpen_reth_db::EeDaContext;
 use tokio::sync::watch;
 
 use super::{ctx::BatchLifecycleCtx, state::BatchLifecycleState, task::batch_lifecycle_task};
@@ -29,6 +30,10 @@ impl BatchLifecycleHandle {
 }
 
 /// Create batch lifecycle task.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "dependency injection requires all providers"
+)]
 pub fn create_batch_lifecycle_task<D, P, S>(
     initial_proof_ready_batch_id: Option<BatchId>,
     state: BatchLifecycleState,
@@ -36,6 +41,8 @@ pub fn create_batch_lifecycle_task<D, P, S>(
     da_provider: Arc<D>,
     prover: Arc<P>,
     batch_storage: Arc<S>,
+    blob_provider: Arc<dyn DaBlobProvider>,
+    da_ctx: Arc<dyn EeDaContext + Send + Sync>,
 ) -> (BatchLifecycleHandle, impl Future<Output = ()>)
 where
     D: BatchDaProvider,
@@ -49,7 +56,9 @@ where
         da_provider,
         prover,
         batch_storage,
+        blob_provider,
         proof_ready_tx,
+        da_ctx,
     };
 
     let handle = BatchLifecycleHandle {
