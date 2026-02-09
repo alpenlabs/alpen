@@ -10,11 +10,17 @@
 //! service framework design.
 
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::{Buf32, OLBlockCommitment};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::verify_block;
+use strata_ol_stf::{
+    BasicExecContext, BlockContext, BlockExecOutputs, BlockInfo, BlockPostStateCommitments,
+    ExecError, ExecOutputBuffer, TxExecContext, execute_block_manifests, execute_block_start,
+    execute_block_tx_segment, execute_epoch_initial_if_needed, verify_block_structure,
+    verify_header_continuity,
+};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use tracing::*;
@@ -227,8 +233,8 @@ impl ChainWorkerServiceState {
         let (write_batch, indexer_writes) =
             Self::run_stf_verification(&parent_state, block, parent_header)?;
 
-        // Use the state root from the header (verify_block validated it).
-        // Note: logs are validated internally by verify_block via the logs_root commitment.
+        // Use the state root from the header. We validate commitments in
+        // `run_stf_verification`.
         let computed_state_root = *block.header().state_root();
 
         Ok(OLBlockExecutionOutput::new(
@@ -246,23 +252,95 @@ impl ChainWorkerServiceState {
         block: &OLBlock,
         parent_header: Option<&OLBlockHeader>,
     ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
-        // Build the state stack: IndexerState<WriteTrackingState<&OLState>>
+        let header = block.header();
+        let body = block.body();
+
+        // Quick structural/header checks before mutating execution state.
+        verify_header_continuity(header, parent_header)?;
+        verify_block_structure(header, body)?;
+
+        // Build STF execution context with layered write/index tracking.
+        let block_info = BlockInfo::from_header(header);
+        let block_context = BlockContext::new(&block_info, parent_header);
+        let output_buffer = ExecOutputBuffer::new_empty();
         let tracking_state = WriteTrackingState::new_from_state(parent_state);
         let mut indexer_state = IndexerState::new(tracking_state);
 
-        // Execute using new OL STF
-        verify_block(
-            &mut indexer_state,
-            block.header(),
-            parent_header.cloned(),
-            block.body(),
-        )?;
+        // Execute standard per-block transitions.
+        execute_epoch_initial_if_needed(&mut indexer_state, &block_context)?;
+        execute_block_start(&mut indexer_state, &block_context)?;
 
-        // Extract outputs
+        let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
+        let tx_ctx = TxExecContext::new(&basic_ctx, parent_header);
+
+        if let Some(tx_segment) = body.tx_segment() {
+            execute_block_tx_segment(&mut indexer_state, tx_segment, &tx_ctx)?;
+        }
+
+        // Snapshot the pre-manifest batch to verify preseal/header commitments.
+        let pre_manifest_batch = indexer_state.inner().batch().clone();
+
+        // Terminal blocks apply L1 manifests after tx execution.
+        if let Some(manifest_container) = body.l1_update().map(|u| u.manifest_cont()) {
+            execute_block_manifests(
+                &mut indexer_state,
+                manifest_container,
+                tx_ctx.basic_context(),
+            )?;
+        }
+
+        let expectations = BlockPostStateCommitments::from_block_parts(header, body);
+        let pre_manifest_state_root =
+            Self::compute_state_root_from_batch(parent_state, pre_manifest_batch)?;
+
+        // Check pre-manifest root against preseal (terminal) or header root (non-terminal).
+        if header.is_terminal() {
+            let expected_preseal = expectations
+                .preseal_state_root()
+                .ok_or(ExecError::ChainIntegrity)?;
+            if &pre_manifest_state_root != expected_preseal {
+                return Err(ExecError::ChainIntegrity.into());
+            }
+        } else if &pre_manifest_state_root != expectations.header_state_root() {
+            return Err(ExecError::ChainIntegrity.into());
+        }
+
+        // Logs root must match the header commitment.
+        let computed_logs_root = BlockExecOutputs::new(expectations, output_buffer.into_logs())
+            .compute_block_logs_root();
+        if computed_logs_root != *header.logs_root() {
+            return Err(ExecError::ChainIntegrity.into());
+        }
+
+        // Extract tracked state and indexer side effects for persistence.
         let (tracking_state, indexer_writes) = indexer_state.into_parts();
         let write_batch = tracking_state.into_batch();
 
+        // Terminal blocks also validate the post-manifest final state root.
+        if header.is_terminal() {
+            let final_state_root =
+                Self::compute_state_root_from_batch(parent_state, write_batch.clone())?;
+            if final_state_root != *expectations.header_state_root() {
+                return Err(ExecError::ChainIntegrity.into());
+            }
+        }
+
         Ok((write_batch, indexer_writes))
+    }
+
+    /// Computes a state root by applying a write batch to a cloned parent state.
+    fn compute_state_root_from_batch(
+        parent_state: &OLState,
+        write_batch: WriteBatch<OLAccountState>,
+    ) -> WorkerResult<Buf32> {
+        let mut post_state = parent_state.clone();
+        post_state
+            .apply_write_batch(write_batch)
+            .map_err(ExecError::from)?;
+        post_state
+            .compute_state_root()
+            .map_err(ExecError::from)
+            .map_err(Into::into)
     }
 
     /// Persists the execution output to storage.

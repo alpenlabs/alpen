@@ -148,9 +148,36 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
-        // Store the write batch
+        // Store the write batch first.
         self.ol_state_mgr
             .put_write_batch_blocking(commitment, output.write_batch().clone())?;
+
+        // FCM reads toplevel OL state for the new tip when applying tip updates.
+        // Persist a reconstructed post-state snapshot for this commitment.
+        let block = self
+            .ol_block_mgr
+            .get_block_data_blocking(*commitment.blkid())?
+            .ok_or(WorkerError::MissingOLBlock(*commitment.blkid()))?;
+        let parent_blkid = block.header().parent_blkid();
+        let parent_commitment = if parent_blkid.is_null() {
+            OLBlockCommitment::null()
+        } else {
+            OLBlockCommitment::new(commitment.slot().saturating_sub(1), *parent_blkid)
+        };
+
+        let parent_state = self
+            .ol_state_mgr
+            .get_toplevel_ol_state_blocking(parent_commitment)?
+            .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+        let mut post_state = (*parent_state).clone();
+        post_state
+            .apply_write_batch(output.write_batch().clone())
+            .map_err(|err| {
+                WorkerError::Unexpected(format!("failed to apply write batch: {err}"))
+            })?;
+        self.ol_state_mgr
+            .put_toplevel_ol_state_blocking(commitment, post_state)?;
+
         Ok(())
     }
 

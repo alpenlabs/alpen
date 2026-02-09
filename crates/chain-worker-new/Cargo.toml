@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 strata-checkpoint-types.workspace = true
 strata-db-types.workspace = true
+strata-ledger-types.workspace = true
 strata-identifiers.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types-new.workspace = true
