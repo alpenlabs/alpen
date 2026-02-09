@@ -29,13 +29,19 @@ pub trait BatchDaProvider: Send + Sync {
     ///
     /// Initiates the data availability posting process for the given batch.
     /// The implementation handles broadcasting and internal tracking.
-    async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<()>;
+    /// Returns the chunked envelope index assigned to this DA submission.
+    async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<u64>;
 
     /// Checks DA status for a batch.
     ///
+    /// The `envelope_idx` identifies the chunked envelope entry assigned when
+    /// DA was first posted. It is persisted in [`BatchStatus::DaPending`] so
+    /// the caller can supply it even after a restart.
+    ///
     /// Returns a [`DaStatus`] indicating whether DA is pending, ready with L1
     /// block references, not yet requested, or has permanently failed.
-    async fn check_da_status(&self, batch_id: BatchId) -> eyre::Result<DaStatus>;
+    async fn check_da_status(&self, batch_id: BatchId, envelope_idx: u64)
+        -> eyre::Result<DaStatus>;
 }
 
 /// Source of [`DaBlob`]s for a batch.

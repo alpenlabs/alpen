@@ -71,12 +71,17 @@ pub struct DaBlob {
 // Total reveal weight is 398,029 wu.
 // This is 1,971 wu below the 400,000 wu standardness limit.
 // Using 395,000 to keep a safe margin.
-/// Maximum chunk payload size in bytes.
-const MAX_CHUNK_PAYLOAD: usize = 395_000;
-
 /// Serialized size of [`DaChunkHeader`] in bytes.
 /// version(1) + blob_hash(32) + chunk_index(2) + total_chunks(2) = 37
 const DA_CHUNK_HEADER_SIZE: usize = 37;
+
+/// Maximum size of the encoded chunk (header + payload) that the envelope
+/// builder accepts. Matches [`strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE`].
+const MAX_ENVELOPE_PAYLOAD: usize = 395_000;
+
+/// Maximum raw payload size per chunk, after reserving space for the
+/// [`DaChunkHeader`] that [`encode_da_chunk`] prepends.
+const MAX_CHUNK_PAYLOAD: usize = MAX_ENVELOPE_PAYLOAD - DA_CHUNK_HEADER_SIZE;
 
 /// Current DA chunk encoding version.
 ///
