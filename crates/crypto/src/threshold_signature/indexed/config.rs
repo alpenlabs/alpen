@@ -9,7 +9,7 @@ use std::{
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use serde::{de::Error, Deserialize, Serialize};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -50,7 +50,7 @@ impl<'de> Deserialize<'de> for ThresholdConfig {
         }
 
         let raw = Raw::deserialize(deserializer)?;
-        Self::try_new(raw.keys, raw.threshold).map_err(serde::de::Error::custom)
+        Self::try_new(raw.keys, raw.threshold).map_err(Error::custom)
     }
 }
 
@@ -71,12 +71,23 @@ impl<'a> Arbitrary<'a> for ThresholdConfig {
             .map(|_| CompressedPublicKey::arbitrary(u))
             .collect::<arbitrary::Result<_>>()?;
 
+        // Deduplicate keys to satisfy ThresholdConfig's uniqueness invariant
+        let keys: Vec<CompressedPublicKey> = keys
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if keys.is_empty() {
+            return Err(arbitrary::Error::IncorrectFormat);
+        }
+
         // Generate a valid threshold (1 to keys.len())
         let max_threshold = keys.len().clamp(1, 255);
         let threshold_u8 = u.int_in_range(1..=(max_threshold as u8))?;
         let threshold = NonZero::new(threshold_u8).expect("threshold is always >= 1");
 
-        Ok(Self { keys, threshold })
+        Self::try_new(keys, threshold).map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
 
