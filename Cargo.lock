@@ -1164,6 +1164,7 @@ name = "alpen-ee-database"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-common",
+ "alpen-reth-db",
  "async-trait",
  "bitcoin",
  "borsh",
@@ -1256,9 +1257,11 @@ dependencies = [
 name = "alpen-ee-sequencer"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-primitives",
  "alpen-ee-block-assembly",
  "alpen-ee-common",
  "alpen-ee-exec-chain",
+ "alpen-reth-db",
  "async-trait",
  "bitcoin",
  "eyre",
@@ -1312,6 +1315,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-proofimpl-evm-ee-stf",
+ "tracing",
  "typed-sled",
 ]
 
