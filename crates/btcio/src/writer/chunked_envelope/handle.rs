@@ -4,8 +4,10 @@
 //! lifecycle: Unsigned → Unpublished → CommitPublished → Published → Confirmed → Finalized.
 //!
 //! The `CommitPublished` intermediate state ensures reveal txs are broadcast directly
-//! (all at once) when the commit tx is published. This ensures all reveals are submitted
-//! together and prevents race conditions with the broadcaster's polling loop.
+//! (all at once) when the commit tx is on-chain. For single-reveal entries, broadcast
+//! happens as soon as the commit is in the mempool. For multi-reveal entries, we wait
+//! for the commit to be confirmed in a block to avoid hitting Bitcoin Core's mempool
+//! descendant size limit (default 101 KB).
 
 use std::{future::Future, sync::Arc, time::Duration};
 
@@ -111,7 +113,7 @@ fn find_first_pending_idx(ops: &ChunkedEnvelopeOps) -> anyhow::Result<u64> {
 ///
 /// The lifecycle is:
 /// 1. `Unsigned`/`NeedsResign` → sign commit+reveals, store commit in broadcast DB → `Unpublished`
-/// 2. `Unpublished` → wait for commit to be published, then broadcast ALL reveals together →
+/// 2. `Unpublished` → wait for commit to be on-chain, then broadcast ALL reveals →
 ///    `CommitPublished`
 /// 3. `CommitPublished` → wait for all reveals to be published → `Published`
 /// 4. `Published` → wait for confirmation → `Confirmed`
@@ -192,13 +194,21 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     }
 }
 
-/// Checks commit tx status and broadcasts ALL reveals together once commit is published.
+/// Checks commit tx status and broadcasts reveals once it is safe to do so.
 ///
 /// Called when status is `Unpublished`. Returns:
-/// - `CommitPublished` if commit is published and reveals are broadcast and stored in DB
+/// - `CommitPublished` if commit is on-chain and reveals are broadcast and stored in DB
 /// - `NeedsResign` if commit has invalid inputs or any reveal fails to broadcast
 /// - `Unsigned` if commit is missing
-/// - `Unpublished` if commit is still unpublished (waiting)
+/// - `Unpublished` if commit is still waiting
+///
+/// For single-reveal entries the reveal is broadcast as soon as the commit is
+/// published (in mempool) — one reveal's ~99 KB vsize fits within Bitcoin
+/// Core's default 101 KB descendant-size limit.
+///
+/// For multi-reveal entries we wait until the commit is **confirmed** (in a
+/// block) before broadcasting. Multiple large reveals would otherwise exceed
+/// the descendant-size limit and be rejected by the mempool.
 async fn check_commit_and_broadcast_reveals(
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
@@ -209,60 +219,66 @@ async fn check_commit_and_broadcast_reveals(
         return Ok(ChunkedEnvelopeStatus::Unsigned);
     };
 
-    match commit.status {
-        L1TxStatus::InvalidInputs => Ok(ChunkedEnvelopeStatus::NeedsResign),
-        L1TxStatus::Unpublished => {
-            // Commit not yet published, keep waiting.
-            Ok(ChunkedEnvelopeStatus::Unpublished)
-        }
-        L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => {
-            // Commit is published! Broadcast ALL reveals together.
-            info!(
-                commit_txid = %entry.commit_txid,
-                reveal_count = entry.reveals.len(),
-                "commit published, broadcasting all reveals together"
-            );
+    // A single reveal fits within the default 101 KB mempool descendant-size
+    // limit, so it can be broadcast as soon as the commit is in the mempool.
+    // Multiple reveals would exceed that limit, so we wait for the commit to
+    // be confirmed in a block first.
+    let needs_commit_confirmed = entry.reveals.len() > 1;
 
-            // First, deserialize all reveal transactions
-            let mut reveal_txs = Vec::with_capacity(entry.reveals.len());
-            for reveal in &entry.reveals {
-                let tx: bitcoin::Transaction = btc_deserialize(&reveal.tx_bytes)
-                    .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
-                reveal_txs.push((reveal.txid, tx));
+    let ready = match commit.status {
+        L1TxStatus::InvalidInputs => return Ok(ChunkedEnvelopeStatus::NeedsResign),
+        L1TxStatus::Unpublished => false,
+        L1TxStatus::Published => !needs_commit_confirmed,
+        L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => true,
+    };
+
+    if !ready {
+        return Ok(ChunkedEnvelopeStatus::Unpublished);
+    }
+
+    info!(
+        commit_txid = %entry.commit_txid,
+        reveal_count = entry.reveals.len(),
+        "commit on-chain, broadcasting all reveals"
+    );
+
+    // Deserialize all reveal transactions.
+    let mut reveal_txs = Vec::with_capacity(entry.reveals.len());
+    for reveal in &entry.reveals {
+        let tx: bitcoin::Transaction = btc_deserialize(&reveal.tx_bytes)
+            .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
+        reveal_txs.push((reveal.txid, tx));
+    }
+
+    // Broadcast all reveals.
+    for (txid, tx) in &reveal_txs {
+        match client.send_raw_transaction(tx).await {
+            Ok(_) => {
+                info!(%txid, "reveal tx broadcast successfully");
             }
-
-            // Broadcast all reveals together
-            for (txid, tx) in &reveal_txs {
-                match client.send_raw_transaction(tx).await {
-                    Ok(_) => {
-                        info!(%txid, "reveal tx broadcast successfully");
-                    }
-                    Err(e) if e.is_missing_or_invalid_input() => {
-                        // This shouldn't happen since commit is published, but handle gracefully
-                        warn!(%txid, ?e, "reveal tx has invalid inputs, will re-sign");
-                        return Ok(ChunkedEnvelopeStatus::NeedsResign);
-                    }
-                    Err(e) => {
-                        // Other errors - could be "already in mempool" which is fine,
-                        // or network errors. Log and continue - we'll verify status later.
-                        debug!(%txid, ?e, "broadcast returned error (may already be in mempool)");
-                    }
-                }
+            Err(e) if e.is_missing_or_invalid_input() => {
+                warn!(%txid, ?e, "reveal tx has invalid inputs, will re-sign");
+                return Ok(ChunkedEnvelopeStatus::NeedsResign);
             }
-
-            // All reveals broadcast successfully, now store them in broadcast DB for tracking
-            for (txid, tx) in reveal_txs {
-                let mut tx_entry = L1TxEntry::from_tx(&tx);
-                tx_entry.status = L1TxStatus::Published;
-                bcast
-                    .put_tx_entry(txid, tx_entry)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
+            Err(e) => {
+                // Could be "already in mempool" which is fine, or a network error.
+                // We'll verify actual status on the next poll.
+                debug!(%txid, ?e, "broadcast returned error (may already be in mempool)");
             }
-
-            Ok(ChunkedEnvelopeStatus::CommitPublished)
         }
     }
+
+    // Store all reveals in broadcast DB for tracking.
+    for (txid, tx) in reveal_txs {
+        let mut tx_entry = L1TxEntry::from_tx(&tx);
+        tx_entry.status = L1TxStatus::Published;
+        bcast
+            .put_tx_entry(txid, tx_entry)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
+    }
+
+    Ok(ChunkedEnvelopeStatus::CommitPublished)
 }
 
 /// Checks broadcast status of commit + all reveals (after reveals are in broadcast DB).
