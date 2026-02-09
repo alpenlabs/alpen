@@ -270,6 +270,14 @@ def main(argv: list[str]) -> int:
             pure_discovery=True,
             mesh_bootnodes=True,
         ),
+        # Alpen-client with DA pipeline (sequencer-only, no fullnodes)
+        # Using batch_sealing_block_count=30 to accumulate enough state diff for
+        # multi-chunk DA testing (60 contracts @ ~3 per block = 20 blocks)
+        "alpen_client_da": AlpenClientEnv(
+            fullnode_count=0,
+            enable_l1_da=True,
+            batch_sealing_block_count=30,
+        ),
     }
 
     # Set up test runtime

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import flexitest
 
+from common.config import EeDaConfig
 from common.services import AlpenClientProps, AlpenClientService
 
 
@@ -61,6 +62,7 @@ class AlpenClientFactory(flexitest.Factory):
         p2p_secret_key: str | None = None,
         enable_discovery: bool = False,
         custom_chain: str = "dev",
+        da_config: EeDaConfig | None = None,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -72,6 +74,7 @@ class AlpenClientFactory(flexitest.Factory):
             p2p_secret_key: P2P secret key for deterministic enode (hex, 32 bytes)
             enable_discovery: Enable discv5 peer discovery (for bootnode mode)
             custom_chain: Chain spec to use
+            da_config: Optional DA pipeline configuration for posting state diffs to L1
         """
         ctx: flexitest.EnvContext = kwargs["ctx"]
 
@@ -127,6 +130,20 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
+
+        # DA pipeline configuration
+        if da_config is not None:
+            # fmt: off
+            cmd.extend([
+                "--ee-da-magic-bytes", da_config.magic_bytes.hex(),
+                "--btc-rpc-url", da_config.btc_rpc_url,
+                "--btc-rpc-user", da_config.btc_rpc_user,
+                "--btc-rpc-password", da_config.btc_rpc_password,
+                "--l1-reorg-safe-depth", str(da_config.l1_reorg_safe_depth),
+                "--genesis-l1-height", str(da_config.genesis_l1_height),
+                "--batch-sealing-block-count", str(da_config.batch_sealing_block_count),
+            ])
+            # fmt: on
 
         http_url = f"http://127.0.0.1:{http_port}"
 
