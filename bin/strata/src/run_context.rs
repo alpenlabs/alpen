@@ -10,6 +10,7 @@ use strata_consensus_logic::FcmServiceHandle;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
 use strata_ol_block_assembly::BlockasmHandle;
+use strata_ol_checkpoint::OLCheckpointWorkerHandle;
 use strata_ol_mempool::MempoolHandle;
 use strata_params::Params;
 use strata_service::ServiceMonitor;
@@ -104,6 +105,7 @@ pub(crate) struct ServiceHandles {
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     mempool_handle: Arc<MempoolHandle>,
     chain_worker_handle: Arc<ChainWorkerHandle>,
+    checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
     fcm_handle: Arc<FcmServiceHandle>,
     /// Sequencer-specific handles (None for fullnodes)
     sequencer_handles: Option<SequencerServiceHandles>,
@@ -115,6 +117,7 @@ impl ServiceHandles {
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
+        checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
         sequencer_handles: Option<SequencerServiceHandles>,
     ) -> Self {
@@ -123,6 +126,7 @@ impl ServiceHandles {
             csm_monitor,
             mempool_handle,
             chain_worker_handle,
+            checkpoint_handle,
             fcm_handle,
             sequencer_handles,
         }

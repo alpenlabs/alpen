@@ -284,15 +284,25 @@ impl ChainWorkerServiceState {
         block: &OLBlock,
         last_block_output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
-        // Get epoch info from the write batch
-        let epochal = last_block_output.write_batch().epochal();
-        let prev_epoch_idx = epochal.cur_epoch();
-        let prev_terminal = epochal.asm_recorded_epoch().to_block_commitment();
+        // Use the block header epoch - this is the epoch being completed.
+        // Note: The write batch contains POST-manifest state where cur_epoch is already
+        // advanced. The header epoch is set during block assembly and doesn't change.
+        let completed_epoch = block.header().epoch();
 
         let slot = block.header().slot();
         let terminal = OLBlockCommitment::new(slot, block.header().compute_blkid());
 
+        // Get previous terminal from storage.
+        // Note: Epoch 0 (genesis) is created by genesis initialization, not chain-worker.
+        // Chain-worker starts processing from slot 1, so completed_epoch >= 1 is guaranteed.
+        let prev_summaries = self.ctx.fetch_epoch_summaries(completed_epoch - 1)?;
+        let prev_terminal = prev_summaries
+            .first()
+            .map(|s| *s.terminal())
+            .unwrap_or(OLBlockCommitment::null());
+
         // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
+        let epochal = last_block_output.write_batch().epochal();
         let new_tip_height = epochal.last_l1_height().into();
         let new_tip_blkid = epochal.last_l1_blkid();
         let new_l1_block = L1BlockCommitment::from_height_u64(new_tip_height, *new_tip_blkid)
@@ -300,14 +310,10 @@ impl ChainWorkerServiceState {
 
         let epoch_final_state = *last_block_output.computed_state_root();
 
-        // terminal and prev_terminal are already OLBlockCommitment = L2BlockCommitment
-        let terminal_l2 = terminal;
-        let prev_terminal_l2 = prev_terminal;
-
         let summary = EpochSummary::new(
-            prev_epoch_idx,
-            terminal_l2,
-            prev_terminal_l2,
+            completed_epoch,
+            terminal,
+            prev_terminal,
             new_l1_block,
             epoch_final_state,
         );
