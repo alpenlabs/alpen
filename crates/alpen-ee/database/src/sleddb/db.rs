@@ -29,6 +29,7 @@ fn abort<T>(reason: impl Error + Send + Sync + 'static) -> Result<T, TSledError>
     Err(TSledError::abort(reason))
 }
 
+#[derive(Debug)]
 pub(crate) struct EeNodeDBSled {
     ol_blockid_tree: SledTree<OLBlockAtEpochSchema>,
     account_state_tree: SledTree<AccountStateAtOLEpochSchema>,
