@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::{BatchId, DaBlob, L1DaBlockRef};
+use crate::{BatchId, DaBlob, EvmHeaderSummary, L1DaBlockRef};
 
 #[derive(Debug)]
 pub enum DaStatus {
@@ -42,6 +42,16 @@ pub trait BatchDaProvider: Send + Sync {
     /// block references, not yet requested, or has permanently failed.
     async fn check_da_status(&self, batch_id: BatchId, envelope_idx: u64)
         -> eyre::Result<DaStatus>;
+}
+
+/// Provides EVM block header summaries by block number.
+///
+/// Used during DA blob construction to attach chain-reconstruction metadata
+/// to each batch. The binary crate supplies the concrete implementation
+/// backed by its block header store.
+pub trait HeaderSummaryProvider: Send + Sync {
+    /// Returns the [`EvmHeaderSummary`] for the given block number.
+    fn header_summary(&self, block_num: u64) -> eyre::Result<EvmHeaderSummary>;
 }
 
 /// Source of [`DaBlob`]s for a batch.
