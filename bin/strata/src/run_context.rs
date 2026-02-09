@@ -10,7 +10,6 @@ use strata_config::Config;
 use strata_consensus_logic::FcmServiceHandle;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
-use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_checkpoint::OLCheckpointWorkerHandle;
 use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
@@ -58,6 +57,7 @@ impl RunContext {
         &self.service_handles.mempool_handle
     }
 
+    #[cfg(feature = "sequencer")]
     /// Returns the fork choice manager handle.
     pub(crate) fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
         &self.service_handles.fcm_handle
@@ -68,6 +68,7 @@ impl RunContext {
         self.common.executor()
     }
 
+    #[cfg(feature = "sequencer")]
     /// Returns the task manager.
     pub(crate) fn task_manager(&self) -> &TaskManager {
         &self.task_manager

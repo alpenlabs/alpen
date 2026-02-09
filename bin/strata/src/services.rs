@@ -5,9 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
+use strata_btcio::reader::query::bitcoin_data_reader_task;
+#[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::{L1BroadcastHandle, spawn_broadcaster_task},
-    reader::query::bitcoin_data_reader_task,
     writer::{EnvelopeHandle, start_envelope_task},
 };
 use strata_chain_worker_new::start_chain_worker_service_from_ctx;
@@ -17,6 +18,7 @@ use strata_consensus_logic::{
     FcmContext, start_fcm_service,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
+#[cfg(feature = "sequencer")]
 use strata_db_types::traits::DatabaseBackend;
 use strata_identifiers::OLBlockCommitment;
 use strata_node_context::NodeContext;
@@ -28,12 +30,17 @@ use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 #[cfg(feature = "sequencer")]
 use strata_ol_sequencer::TemplateManager;
+#[cfg(feature = "sequencer")]
 use strata_storage::ops::l1tx_broadcast;
 
+#[cfg(feature = "sequencer")]
+use crate::helpers::generate_sequencer_address;
+#[cfg(feature = "sequencer")]
+use crate::run_context::SequencerServiceHandles;
 use crate::{
     context::check_and_init_genesis,
-    helpers::{generate_sequencer_address, rollup_to_btcio_params},
-    run_context::{RunContext, SequencerServiceHandles, ServiceHandles},
+    helpers::rollup_to_btcio_params,
+    run_context::{RunContext, ServiceHandles},
 };
 
 /// Just simply starts services. This can later be extended to service registry pattern.
@@ -132,6 +139,7 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
 /// Starts the L1 broadcaster task (sequencer-specific).
 ///
 /// Manages L1 transaction broadcasting and tracks confirmation status.
+#[cfg(feature = "sequencer")]
 fn start_broadcaster(nodectx: &NodeContext) -> L1BroadcastHandle {
     let broadcast_db = nodectx.storage().db().broadcast_db();
     let broadcast_ctx = l1tx_broadcast::Context::new(broadcast_db);
@@ -149,6 +157,7 @@ fn start_broadcaster(nodectx: &NodeContext) -> L1BroadcastHandle {
 /// Starts the L1 writer/envelope task (sequencer-specific).
 ///
 /// Bundles L1 intents, creates envelope transactions, and publishes to Bitcoin.
+#[cfg(feature = "sequencer")]
 fn start_writer(
     nodectx: &NodeContext,
     broadcast_handle: Arc<L1BroadcastHandle>,

@@ -8,7 +8,9 @@ default = ["sequencer"]
 sequencer = [
   "dep:strata-asm-proto-checkpoint-txs",
   "dep:strata-checkpoint-types-ssz",
+  "dep:strata-crypto",
   "dep:strata-key-derivation",
+  "dep:strata-l1-txfmt",
   "dep:strata-ol-block-assembly",
   "dep:strata-ol-sequencer",
   "dep:zeroize",
@@ -24,14 +26,14 @@ strata-checkpoint-types-ssz = { workspace = true, optional = true }
 strata-common.workspace = true
 strata-config.workspace = true
 strata-consensus-logic.workspace = true
-strata-crypto.workspace = true
+strata-crypto = { workspace = true, optional = true }
 strata-csm-types.workspace = true
 strata-csm-worker.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-key-derivation = { workspace = true, optional = true }
-strata-l1-txfmt.workspace = true
+strata-l1-txfmt = { workspace = true, optional = true }
 strata-ledger-types.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
@@ -42,8 +44,6 @@ strata-ol-mempool.workspace = true
 strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
-strata-ol-state-types.workspace = true
-strata-ol-stf.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
