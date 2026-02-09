@@ -67,7 +67,7 @@ pub(crate) fn build_chunked_envelope_txs(
 
         let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?
             .add_envelopes(slice::from_ref(chunk))?
-            .build()?;
+            .build_without_min_check()?;
 
         let spend_info = TaprootBuilder::new()
             .add_leaf(0, reveal_script.clone())?
