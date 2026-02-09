@@ -17,7 +17,7 @@ use common::{
 use strata_acct_types::{AccountId, BitcoinAmount, SubjectId};
 use strata_ee_acct_runtime::ChainSegmentBuilder;
 use strata_ee_acct_types::{ExecHeader, ExecPartialState, PendingInputEntry};
-use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
+use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
 use strata_simple_ee::{
     SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader, SimpleHeaderIntrinsics,
     SimplePartialState, SimpleTransaction,
@@ -143,7 +143,7 @@ fn test_multiple_blocks_in_segment() {
 
     // First block
     let body1 = SimpleBlockBody::new(vec![]);
-    let mut inputs1 = BlockInputs::new_empty();
+    let mut inputs1 = ExecInputs::new_empty();
     inputs1.add_subject_deposit(deposit1);
     let intrinsics1 = SimpleHeaderIntrinsics {
         parent_blkid: header.compute_block_id(),
@@ -155,7 +155,7 @@ fn test_multiple_blocks_in_segment() {
 
     // Second block
     let body2 = SimpleBlockBody::new(vec![]);
-    let mut inputs2 = BlockInputs::new_empty();
+    let mut inputs2 = ExecInputs::new_empty();
     inputs2.add_subject_deposit(deposit2);
     let intrinsics2 = SimpleHeaderIntrinsics {
         parent_blkid: builder.current_header().compute_block_id(),
@@ -231,7 +231,7 @@ fn test_deposits_with_transactions() {
     };
 
     let body = SimpleBlockBody::new(vec![transfer, emit_transfer, emit_message]);
-    let mut inputs = BlockInputs::new_empty();
+    let mut inputs = ExecInputs::new_empty();
     inputs.add_subject_deposit(deposit);
 
     let intrinsics = SimpleHeaderIntrinsics {

@@ -1,5 +1,5 @@
 use strata_codec::Codec;
-use strata_ee_chain_types::BlockInputs;
+use strata_ee_chain_types::ExecInputs;
 use strata_identifiers::Hash;
 
 use crate::{errors::EnvResult, inputs::ExecPayload, outputs::ExecBlockOutput};
@@ -61,7 +61,7 @@ pub trait ExecBlock: Codec + Sized {
 }
 
 /// Execution environment.
-pub trait ExecutionEnvironment: Sized {
+pub trait ExecutionEnvironment: Sized + 'static {
     /// Partial execution chain state.
     type PartialState: ExecPartialState;
 
@@ -82,7 +82,7 @@ pub trait ExecutionEnvironment: Sized {
         &self,
         pre_state: &Self::PartialState,
         exec_payload: &ExecPayload<'_, Self::Block>,
-        inputs: &BlockInputs,
+        inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>>;
 
     /// Performs any additional checks needed from the block outputs against the

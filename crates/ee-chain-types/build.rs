@@ -6,7 +6,7 @@ fn main() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set by cargo");
     let output_path = Path::new(&out_dir).join("generated.rs");
 
-    let entry_points = ["block.ssz"];
+    let entry_points = ["io.ssz", "block.ssz", "chunk.ssz"];
     let base_dir = "ssz";
     let crates = ["strata_acct_types"];
 
@@ -19,5 +19,7 @@ fn main() {
     )
     .expect("Failed to generate SSZ types");
 
+    println!("cargo:rerun-if-changed=ssz/io.ssz");
     println!("cargo:rerun-if-changed=ssz/block.ssz");
+    println!("cargo:rerun-if-changed=ssz/chunk.ssz");
 }

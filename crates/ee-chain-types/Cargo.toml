@@ -12,12 +12,16 @@ strata-acct-types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
+thiserror.workspace = true
+
 [build-dependencies]
 ssz_codegen.workspace = true
 
 [dev-dependencies]
-proptest.workspace = true
+strata-identifiers.workspace = true
 strata-test-utils-ssz.workspace = true
+
+proptest.workspace = true
 
 [lints]
 workspace = true

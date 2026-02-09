@@ -1,4 +1,4 @@
-use strata_ee_chain_types::BlockOutputs;
+use strata_ee_chain_types::ExecOutputs;
 
 use crate::traits::ExecutionEnvironment;
 
@@ -6,12 +6,12 @@ use crate::traits::ExecutionEnvironment;
 #[derive(Debug)]
 pub struct ExecBlockOutput<E: ExecutionEnvironment> {
     write_batch: E::WriteBatch,
-    outputs: BlockOutputs,
+    outputs: ExecOutputs,
     // TODO
 }
 
 impl<E: ExecutionEnvironment> ExecBlockOutput<E> {
-    pub fn new(write_batch: E::WriteBatch, outputs: BlockOutputs) -> Self {
+    pub fn new(write_batch: E::WriteBatch, outputs: ExecOutputs) -> Self {
         Self {
             write_batch,
             outputs,
@@ -22,7 +22,7 @@ impl<E: ExecutionEnvironment> ExecBlockOutput<E> {
         &self.write_batch
     }
 
-    pub fn outputs(&self) -> &BlockOutputs {
+    pub fn outputs(&self) -> &ExecOutputs {
         &self.outputs
     }
 }

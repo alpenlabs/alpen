@@ -55,6 +55,7 @@ members = [
   "crates/ee-acct-runtime",
   "crates/ee-acct-types",
   "crates/ee-chain-types",
+  "crates/ee-chunk-runtime",
   "crates/eectl",
   "crates/evm-ee",
   "crates/evmexec",
@@ -98,6 +99,7 @@ members = [
   "crates/rpc/utils",
   "crates/sequencer",
   "crates/simple-ee",
+  "crates/snark-acct-runtime",
   "crates/snark-acct-sys",
   "crates/snark-acct-types",
   "crates/state",
@@ -222,6 +224,7 @@ strata-db-types = { path = "crates/db/types" }
 strata-ee-acct-runtime = { path = "crates/ee-acct-runtime" }
 strata-ee-acct-types = { path = "crates/ee-acct-types" }
 strata-ee-chain-types = { path = "crates/ee-chain-types" }
+strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
 strata-eectl = { path = "crates/eectl" }
 strata-evm-ee = { path = "crates/evm-ee" }
 strata-evmexec = { path = "crates/evmexec" }
@@ -259,6 +262,7 @@ strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }
 strata-sequencer = { path = "crates/sequencer" }
 strata-simple-ee = { path = "crates/simple-ee" }
+strata-snark-acct-runtime = { path = "crates/snark-acct-runtime" }
 strata-snark-acct-sys = { path = "crates/snark-acct-sys" }
 strata-snark-acct-types = { path = "crates/snark-acct-types" }
 strata-state = { path = "crates/state" }
@@ -465,6 +469,8 @@ reqwest = { version = "0.12.7", default-features = false, features = [
   "zstd",
   "json",
 ] }
+rkyv = { version = "0.8.14", features = ["little_endian", "pointer_width_32"] }
+rkyv_impl = "0.2.2"
 rlp = "0.5.2"
 secp256k1 = { version = "0.29.1", features = ["global-context", "std"] }
 serde = { version = "1.0", features = ["derive"] }

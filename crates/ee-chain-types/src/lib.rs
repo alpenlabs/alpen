@@ -17,6 +17,11 @@ mod ssz_generated {
 }
 
 // Publicly re-export only the SSZ items this crate's API intends to expose
-pub use ssz_generated::ssz::block::*;
+pub use ssz_generated::ssz::{block::*, chunk::*, io::*};
 
 mod block;
+mod chunk;
+mod io;
+mod sequence_tracker;
+
+pub use sequence_tracker::{SeqError, SeqResult, SequenceTracker};

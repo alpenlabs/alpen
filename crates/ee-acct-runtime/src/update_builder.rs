@@ -3,17 +3,18 @@
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
-    CommitChainSegment, EeAccountState, ExecBlock, ExecutionEnvironment, UpdateExtraData,
+    CommitChainSegment, DecodedEeMessageData, EeAccountState, ExecBlock, ExecutionEnvironment,
+    UpdateExtraData,
 };
+use strata_snark_acct_runtime::MsgMeta;
 use strata_snark_acct_types::{
     LedgerRefs, MAX_MESSAGES, MAX_TRANSFERS, MessageEntry, OutputMessage, OutputTransfer,
     ProofState, UpdateOperationData, UpdateOutputs,
 };
 
 use crate::{
-    builder_errors::BuilderResult,
+    builder_errors::BuilderResult, ee_program::apply_decoded_message,
     private_input::SharedPrivateInput,
-    update_processing::{MsgData, apply_message},
 };
 
 /// Builder for constructing complete update operations.
@@ -61,11 +62,19 @@ impl UpdateBuilder {
         message: MessageEntry,
         coinput: Vec<u8>,
     ) -> BuilderResult<Self> {
-        // Decode the message
-        let msg_data = MsgData::from_entry(&message)?;
+        // Extract metadata
+        let meta = MsgMeta::new(message.source(), message.incl_epoch(), message.payload_value());
 
-        // Apply message effects to the state using the same function as normal processing
-        apply_message(&mut self.current_state, &msg_data)?;
+        // Decode the message
+        let decoded = DecodedEeMessageData::decode_raw(message.payload_buf())?;
+
+        // Add value to tracked balance
+        if !meta.value().is_zero() {
+            self.current_state.add_tracked_balance(meta.value());
+        }
+
+        // Apply message effects to the state
+        apply_decoded_message(&mut self.current_state, &decoded, meta.value())?;
 
         // Store the message and coinput for later
         self.processed_messages.push(message);

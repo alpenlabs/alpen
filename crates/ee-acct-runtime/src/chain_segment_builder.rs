@@ -8,12 +8,9 @@ use strata_ee_acct_types::{
     BlockAssembler, CommitBlockData, CommitChainSegment, ExecBlock, ExecHeader, ExecPartialState,
     ExecPayload, ExecutionEnvironment, PendingInputEntry,
 };
-use strata_ee_chain_types::{BlockInputs, ExecBlockCommitment, ExecBlockPackage};
+use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, SequenceTracker};
 
-use crate::{
-    builder_errors::BuilderResult, exec_processing::validate_block_inputs,
-    verification_state::InputTracker,
-};
+use crate::{builder_errors::BuilderResult, exec_processing::validate_block_inputs};
 
 /// Builder for constructing a chain of blocks as a segment.
 ///
@@ -83,10 +80,10 @@ impl<E: ExecutionEnvironment + BlockAssembler> ChainSegmentBuilder<E> {
         &mut self,
         header_intrinsics: &<<E::Block as ExecBlock>::Header as ExecHeader>::Intrinsics,
         body: <E::Block as ExecBlock>::Body,
-        inputs: BlockInputs,
+        inputs: ExecInputs,
     ) -> BuilderResult<()> {
         // 1. Validate provided inputs against pending inputs using InputTracker.
-        let mut tracker = InputTracker::new(self.pending_inputs());
+        let mut tracker = SequenceTracker::new(self.pending_inputs());
         validate_block_inputs(&mut tracker, &inputs)?;
         let input_count = inputs.total_inputs();
 
@@ -162,7 +159,7 @@ mod tests {
 
     use strata_acct_types::{BitcoinAmount, SubjectId};
     use strata_ee_acct_types::PendingInputEntry;
-    use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
+    use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
     use strata_simple_ee::{
         SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader, SimpleHeaderIntrinsics,
         SimplePartialState, SimpleTransaction,
@@ -194,7 +191,7 @@ mod tests {
 
         // Create an empty block body
         let body = SimpleBlockBody::new(vec![]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
             index: header.index() + 1,
@@ -226,7 +223,7 @@ mod tests {
 
         // Create a block that consumes the deposit
         let body = SimpleBlockBody::new(vec![]);
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         inputs.add_subject_deposit(deposit);
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
@@ -272,7 +269,7 @@ mod tests {
 
         // First block: consume first deposit
         let body1 = SimpleBlockBody::new(vec![]);
-        let mut inputs1 = BlockInputs::new_empty();
+        let mut inputs1 = ExecInputs::new_empty();
         inputs1.add_subject_deposit(deposit1);
         let intrinsics1 = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
@@ -293,7 +290,7 @@ mod tests {
             value: 100,
         };
         let body2 = SimpleBlockBody::new(vec![transfer]);
-        let mut inputs2 = BlockInputs::new_empty();
+        let mut inputs2 = ExecInputs::new_empty();
         inputs2.add_subject_deposit(deposit2);
         let intrinsics2 = SimpleHeaderIntrinsics {
             parent_blkid: builder.current_header().compute_block_id(),
@@ -327,7 +324,7 @@ mod tests {
         let dest2 = SubjectId::from([2u8; 32]);
         let deposit2 = SubjectDepositData::new(dest2, BitcoinAmount::from(1000u64));
         let body = SimpleBlockBody::new(vec![]);
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         inputs.add_subject_deposit(deposit2);
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: header.compute_block_id(),
@@ -352,7 +349,7 @@ mod tests {
 
         // Try to append a block that wants more inputs than available
         let body = SimpleBlockBody::new(vec![]);
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         inputs.add_subject_deposit(deposit.clone());
         inputs.add_subject_deposit(deposit); // Add a second one that doesn't exist
         let intrinsics = SimpleHeaderIntrinsics {
