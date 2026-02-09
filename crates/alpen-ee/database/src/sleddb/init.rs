@@ -22,10 +22,7 @@ use crate::{sleddb::EeNodeDBSled, storage::EeNodeStorage};
 ///
 /// Opens a single sled instance and creates all typed database trees from it.
 /// Callers wrap individual DBs in ops/managers/threadpools as needed.
-#[expect(
-    missing_debug_implementations,
-    reason = "inner DB types from define_sled_database! macro don't derive Debug"
-)]
+#[derive(Debug)]
 pub struct EeDatabases {
     /// EE node database for chain state.
     pub(crate) ee_node_db: Arc<EeNodeDBSled>,
@@ -35,8 +32,8 @@ pub struct EeDatabases {
     pub(crate) broadcast_db: Arc<L1BroadcastDBSled>,
     /// Chunked envelope database.
     pub(crate) chunked_envelope_db: Arc<L1ChunkedEnvelopeDBSled>,
-    /// DA context for cross-batch bytecode deduplication.
-    pub(crate) da_context_db: Arc<EeDaContextDb>,
+    /// DA filter for cross-batch deduplication (bytecodes, extensible for addresses etc.).
+    pub(crate) da_context_db: Arc<EeDaContextDb<SledWitnessDB>>,
 }
 
 impl EeDatabases {
@@ -64,7 +61,7 @@ impl EeDatabases {
     }
 
     /// Returns a clone of the DA context database.
-    pub fn da_context_db(&self) -> Arc<EeDaContextDb> {
+    pub fn da_context_db(&self) -> Arc<EeDaContextDb<SledWitnessDB>> {
         self.da_context_db.clone()
     }
 }
@@ -109,7 +106,8 @@ pub(crate) fn init_database(datadir: &Path, db_retry_count: u16) -> Result<EeDat
     );
 
     let da_context_db = Arc::new(
-        EeDaContextDb::new(typed_sled).map_err(|e| eyre!("failed to create DA context db: {e}"))?,
+        EeDaContextDb::new(typed_sled, witness_db.clone())
+            .map_err(|e| eyre!("failed to create DA context db: {e}"))?,
     );
 
     Ok(EeDatabases {
