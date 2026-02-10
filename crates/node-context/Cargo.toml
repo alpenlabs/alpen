@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 strata-config.workspace = true
+strata-ol-params.workspace = true
 strata-params.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true

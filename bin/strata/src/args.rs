@@ -50,6 +50,10 @@ pub(crate) struct Args {
     #[argh(option, description = "rollup params")]
     pub rollup_params: Option<PathBuf>,
 
+    /// OL genesis params path (JSON file).
+    #[argh(option, description = "OL genesis params")]
+    pub ol_params: Option<PathBuf>,
+
     /// Rpc host that the client will listen to.
     #[argh(option, description = "rpc host")]
     pub rpc_host: Option<String>,

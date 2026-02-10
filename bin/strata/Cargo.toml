@@ -41,6 +41,7 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-checkpoint.workspace = true
 strata-ol-genesis.workspace = true
 strata-ol-mempool.workspace = true
+strata-ol-params.workspace = true
 strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
