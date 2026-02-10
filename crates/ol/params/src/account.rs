@@ -7,13 +7,13 @@ use strata_btc_types::BitcoinAmount;
 use strata_identifiers::Buf32;
 use strata_predicate::PredicateKey;
 
-/// Parameters for a single genesis snark account.
+/// Data for a single genesis snark account.
 ///
 /// The `predicate` and `inner_state` fields are required. The `balance` field
 /// defaults to [`BitcoinAmount::ZERO`] if omitted.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-pub struct AccountParams {
+pub struct GenesisSnarkAccountData {
     /// Verifying key (predicate).
     pub predicate: PredicateKey,
 

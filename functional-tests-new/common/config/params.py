@@ -34,7 +34,7 @@ class L1BlockCommitment:
 
 
 @dataclass
-class HeaderParams:
+class GenesisHeaderParams:
     timestamp: int = field(default=0)
     slot: int = field(default=0)
     epoch: int = field(default=0)
@@ -44,7 +44,7 @@ class HeaderParams:
 
 
 @dataclass
-class AccountParams:
+class GenesisAccountData:
     predicate: str = field(default="AlwaysAccept")
     inner_state: str = field(default_factory=lambda: hex_bytes_repeated(0))
     balance: int = field(default=0)
@@ -120,8 +120,8 @@ class RollupParams:
 
 @dataclass
 class OLParams:
-    header: HeaderParams | None = field(default=None)
-    accounts: dict[str, AccountParams] = field(default_factory=dict)
+    header: GenesisHeaderParams | None = field(default=None)
+    accounts: dict[str, GenesisAccountData] = field(default_factory=dict)
     last_l1_block: L1BlockCommitment = field(default_factory=L1BlockCommitment)
 
     def as_json_string(self) -> str:
