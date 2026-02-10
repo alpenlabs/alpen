@@ -1,13 +1,10 @@
 //! Toplevel state.
 
-use bitcoin::absolute;
 use ssz::Encode;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_crypto::hash::raw;
-use strata_identifiers::{
-    Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId,
-};
+use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
 use strata_ol_params::OLParams;
@@ -20,24 +17,6 @@ use crate::{
 };
 
 impl OLState {
-    /// Create a new genesis state for testing.
-    pub fn new_genesis() -> Self {
-        Self {
-            epoch: EpochalState::new(
-                BitcoinAmount::from(0),
-                0,
-                L1BlockCommitment::new(
-                    absolute::Height::from_consensus(0).unwrap(),
-                    L1BlockId::from(Buf32::zero()),
-                ),
-                EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
-                Mmr64::from_generic(&CompactMmr64::new(64)),
-            ),
-            global: GlobalState::new(0),
-            ledger: TsnlLedgerAccountsTable::new_empty(),
-        }
-    }
-
     /// Creates initial OL state from genesis parameters.
     pub fn from_genesis_params(params: &OLParams) -> AcctResult<Self> {
         let checkpointed_epoch = params.checkpointed_epoch();
