@@ -9,6 +9,8 @@ dependencies = [
   "requests>=2.31.0",
   "bitcoinlib>=0.6.15",
   "toml>=0.10.2",
+  "eth-account>=0.13.0",
+  "eth-abi>=5.0.0",
 ]
 
 [dependency-groups]
