@@ -4,7 +4,7 @@ from typing import cast
 
 import flexitest
 
-from common.config import BitcoindConfig, ServiceType
+from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
 from common.config.params import GenesisL1View
 from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
@@ -15,15 +15,34 @@ class StrataEnvConfig(flexitest.EnvConfig):
     Strata environment: Initializes services required to run strata.
     """
 
-    def __init__(self, pre_generate_blocks: int = 0):
+    def __init__(
+        self,
+        pre_generate_blocks: int = 0,
+        epoch_slots: int | None = None,
+    ):
         self.pre_generate_blocks = pre_generate_blocks
+        self.epoch_slots = epoch_slots
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
-        services = self.get_services(ectx, self.pre_generate_blocks)
+        epoch_sealing_config = (
+            EpochSealingConfig(slots_per_epoch=self.epoch_slots)
+            if self.epoch_slots is not None
+            else None
+        )
+
+        services = self.get_services(
+            ectx,
+            self.pre_generate_blocks,
+            epoch_sealing_config=epoch_sealing_config,
+        )
         return flexitest.LiveEnv(services)
 
     @staticmethod
-    def get_services(ectx: flexitest.EnvContext, pre_generate_blocks: int = 0):
+    def get_services(
+        ectx: flexitest.EnvContext,
+        pre_generate_blocks: int = 0,
+        epoch_sealing_config: EpochSealingConfig | None = None,
+    ):
         btc_factory = cast(BitcoinFactory, ectx.get_factory(ServiceType.Bitcoin))
         strata_factory = cast(StrataFactory, ectx.get_factory(ServiceType.Strata))
 
@@ -52,7 +71,12 @@ class StrataEnvConfig(flexitest.EnvConfig):
 
         # Start Strata sequencer
         genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
-        strata = strata_factory.create_node(bitcoind_config, genesis_l1, is_sequencer=True)
+        strata = strata_factory.create_node(
+            bitcoind_config,
+            genesis_l1,
+            is_sequencer=True,
+            epoch_sealing_config=epoch_sealing_config,
+        )
         strata.wait_for_ready(timeout=10)
 
         services = {

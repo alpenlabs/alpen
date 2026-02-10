@@ -11,6 +11,7 @@ import flexitest
 from common.config import (
     BitcoindConfig,
     ClientConfig,
+    EpochSealingConfig,
     SequencerConfig,
     ServiceType,
     StrataConfig,
@@ -44,7 +45,8 @@ class StrataFactory(flexitest.Factory):
         bconfig: BitcoindConfig,
         genesis_l1: GenesisL1View,
         is_sequencer: bool = True,
-        config_overrides: dict | None = None,
+        config_overrides: dict[str, object] | None = None,
+        epoch_sealing_config: EpochSealingConfig | None = None,
         **kwargs,
     ) -> StrataService:
         """
@@ -52,8 +54,10 @@ class StrataFactory(flexitest.Factory):
 
         Args:
             bconfig: Bitcoin daemon configuration
+            genesis_l1: Genesis L1 view (applied to all param sets).
             is_sequencer: True for sequencer, False for fullnode
             config_overrides: Additional config overrides (-o flag)
+            epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -70,14 +74,19 @@ class StrataFactory(flexitest.Factory):
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
         sequencer_config = SequencerConfig() if is_sequencer else None
-        config = StrataConfig(bitcoind=bconfig, client=client_config, sequencer=sequencer_config)
+        config = StrataConfig(
+            bitcoind=bconfig,
+            client=client_config,
+            sequencer=sequencer_config,
+            epoch_sealing=epoch_sealing_config,
+        )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
 
         genesis_l1_height = genesis_l1.blk.height
 
-        # Generate rollup params via datatool.
+        # Generate rollup params via datatool (also produces keys used below).
         params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
 
         # Generate OL params via datatool (uses Bitcoin RPC to fetch genesis L1 block).
