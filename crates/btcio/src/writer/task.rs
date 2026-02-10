@@ -11,6 +11,7 @@ use strata_db_types::{
     traits::L1WriterDatabase,
     types::{BundledPayloadEntry, IntentEntry, L1BundleStatus, L1TxStatus},
 };
+use strata_primitives::buf::Buf32;
 use strata_status::StatusChannel;
 use strata_storage::ops::writer::{Context, EnvelopeDataOps};
 use strata_tasks::TaskExecutor;
@@ -78,12 +79,21 @@ impl EnvelopeHandle {
     /// Checks if it is duplicate, if not creates a new [`IntentEntry`] from `intent` and puts it in
     /// the database
     pub async fn submit_intent_async(&self, intent: PayloadIntent) -> anyhow::Result<()> {
+        self.submit_intent_async_with_idx(intent).await.map(|_| ())
+    }
+
+    /// Checks if it is duplicate, if not creates a new [`IntentEntry`] from `intent` and puts it
+    /// in the database, returning the intent index in storage.
+    pub async fn submit_intent_async_with_idx(
+        &self,
+        intent: PayloadIntent,
+    ) -> anyhow::Result<Option<u64>> {
         let id = *intent.commitment();
 
         // Check if the intent is meant for L1
         if intent.dest() != PayloadDest::L1 {
             warn!(commitment = %id, "Received intent not meant for L1");
-            return Ok(());
+            return Ok(None);
         }
 
         debug!(commitment = %id, "Received intent for processing");
@@ -91,19 +101,55 @@ impl EnvelopeHandle {
         // Check if it is duplicate
         if self.ops.get_intent_by_id_async(id).await?.is_some() {
             warn!(commitment = %id, "Received duplicate intent");
-            return Ok(());
+            let next_idx = self.ops.get_next_intent_idx_async().await?;
+            return self.find_intent_idx_in_range(id, 0, next_idx).await;
         }
+
+        let next_idx = self.ops.get_next_intent_idx_async().await?;
 
         // Create and store IntentEntry
         let entry = IntentEntry::new_unbundled(intent);
         self.ops.put_intent_entry_async(id, entry.clone()).await?;
+
+        let next_idx_after_insert = self.ops.get_next_intent_idx_async().await?;
+        let intent_idx = self
+            .find_intent_idx_in_range(id, next_idx, next_idx_after_insert)
+            .await?;
+
+        if intent_idx.is_none() {
+            warn!(
+                commitment = %id,
+                start_idx = next_idx,
+                end_idx = next_idx_after_insert,
+                "intent stored but index lookup failed in expected range"
+            );
+        }
 
         // Send to bundler
         if let Err(e) = self.intent_tx.send(entry).await {
             warn!("Could not send intent entry to bundler: {:?}", e);
         }
 
-        Ok(())
+        Ok(intent_idx)
+    }
+
+    async fn find_intent_idx_in_range(
+        &self,
+        commitment: Buf32,
+        start_idx: u64,
+        end_idx: u64,
+    ) -> anyhow::Result<Option<u64>> {
+        for idx in start_idx..end_idx {
+            let Some(entry) = self.ops.get_intent_by_idx_async(idx).await? else {
+                continue;
+            };
+
+            if *entry.intent.commitment() == commitment {
+                return Ok(Some(idx));
+            }
+        }
+
+        Ok(None)
     }
 }
 
