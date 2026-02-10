@@ -1270,7 +1270,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "tree_hash 0.12.3",
+ "tree_hash 0.12.4",
 ]
 
 [[package]]
@@ -1548,7 +1548,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1559,7 +1559,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2706,7 +2706,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2726,7 +2726,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2744,7 +2744,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -4444,7 +4444,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4743,7 +4743,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7124,7 +7124,7 @@ dependencies = [
 [[package]]
 name = "moho-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/moho#65f026d1a23800f1e2290e4fb2ecb0ed7dca1851"
+source = "git+https://github.com/alpenlabs/moho#7995db30bf085497dc1645d21e92e7219a73e01d"
 dependencies = [
  "hex",
  "sha2",
@@ -7134,9 +7134,10 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "strata-merkle",
+ "strata-predicate",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
  "zkaleido",
 ]
 
@@ -7311,7 +7312,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7477,7 +7478,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -12159,7 +12160,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12930,8 +12931,8 @@ checksum = "9fed904c7fb2856d868b92464fc8fa597fce366edea1a9cbfaa8cb5fe080bd6d"
 
 [[package]]
 name = "sizzle-parser"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "thiserror 2.0.18",
 ]
@@ -13560,8 +13561,8 @@ dependencies = [
 
 [[package]]
 name = "ssz"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "hex",
  "itertools 0.13.0",
@@ -13573,8 +13574,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_codegen"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -13587,14 +13588,14 @@ dependencies = [
  "ssz_types",
  "syn 2.0.114",
  "toml 0.8.23",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
 name = "ssz_derive"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "darling 0.20.11",
  "quote",
@@ -13603,8 +13604,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_primitives"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "hex",
  "rand 0.8.5",
@@ -13613,8 +13614,8 @@ dependencies = [
 
 [[package]]
 name = "ssz_types"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "itertools 0.13.0",
  "serde",
@@ -13622,7 +13623,7 @@ dependencies = [
  "ssz",
  "ssz_primitives",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
+ "tree_hash 0.12.4",
 ]
 
 [[package]]
@@ -13707,8 +13708,8 @@ dependencies = [
  "strata-merkle",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -13786,8 +13787,8 @@ dependencies = [
  "strata-msg-fmt",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -14064,7 +14065,7 @@ dependencies = [
  "strata-test-utils",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
+ "tree_hash 0.12.4",
 ]
 
 [[package]]
@@ -14229,8 +14230,8 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -14291,7 +14292,7 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.18",
@@ -14300,7 +14301,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "quote",
  "syn 2.0.114",
@@ -14629,8 +14630,8 @@ dependencies = [
  "strata-msg-fmt",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -14645,8 +14646,8 @@ dependencies = [
  "ssz_types",
  "strata-acct-types",
  "strata-test-utils-ssz",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -14756,8 +14757,8 @@ dependencies = [
  "strata-codec",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
  "zeroize",
 ]
 
@@ -14775,7 +14776,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.18",
@@ -14784,9 +14785,12 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
+ "arbitrary",
  "bitcoin",
+ "borsh",
+ "serde",
  "thiserror 2.0.18",
 ]
 
@@ -14804,7 +14808,7 @@ dependencies = [
 [[package]]
 name = "strata-merkle"
 version = "0.2.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "borsh",
  "digest 0.10.7",
@@ -14817,8 +14821,8 @@ dependencies = [
  "ssz_types",
  "strata-codec",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -14839,7 +14843,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "thiserror 2.0.18",
 ]
@@ -14933,8 +14937,8 @@ dependencies = [
  "strata-snark-acct-types",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -15161,8 +15165,8 @@ dependencies = [
  "strata-predicate",
  "strata-snark-acct-types",
  "strata-test-utils-ssz",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -15223,7 +15227,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -15237,8 +15241,8 @@ dependencies = [
  "ssz_primitives",
  "ssz_types",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
  "zkaleido-sp1-groth16-verifier",
 ]
 
@@ -15515,7 +15519,7 @@ dependencies = [
 [[package]]
 name = "strata-service"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "anyhow",
  "futures",
@@ -15565,8 +15569,8 @@ dependencies = [
  "strata-identifiers",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
- "tree_hash 0.12.3",
- "tree_hash_derive 0.12.3",
+ "tree_hash 0.12.4",
+ "tree_hash_derive 0.12.4",
 ]
 
 [[package]]
@@ -15678,7 +15682,7 @@ dependencies = [
 [[package]]
 name = "strata-tasks"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc4#197c4fb95d52f81ccece68b3f1185fa583f648d2"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -15792,7 +15796,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "ssz",
- "tree_hash 0.12.3",
+ "tree_hash 0.12.4",
 ]
 
 [[package]]
@@ -16048,7 +16052,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16747,8 +16751,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "digest 0.10.7",
  "sha2",
@@ -16772,8 +16776,8 @@ dependencies = [
 
 [[package]]
 name = "tree_hash_derive"
-version = "0.12.3"
-source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.3#62b8567cd8a6e4a73bbee0ba25d06dd8ac0972be"
+version = "0.12.4"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.12.4#5a6243a71ff37a34ede72319e57666224507794e"
 dependencies = [
  "darling 0.20.11",
  "quote",
@@ -17326,7 +17330,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -18033,7 +18037,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20#d5b46312a55e8409a08a8437716ca42128e3d085"
 dependencies = [
  "arbitrary",
  "async-trait",
@@ -18046,12 +18050,14 @@ dependencies = [
 [[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20#d5b46312a55e8409a08a8437716ca42128e3d085"
 dependencies = [
  "async-trait",
  "bincode",
  "borsh",
  "hex",
+ "k256",
+ "rand_core 0.6.4",
  "serde",
  "zkaleido",
 ]
@@ -18059,7 +18065,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-groth16-verifier"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20#d5b46312a55e8409a08a8437716ca42128e3d085"
 dependencies = [
  "blake3",
  "borsh",
@@ -18074,7 +18080,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-host"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc18#cd7839e5bbed46d8304cd95a20e956af56e22dfc"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20#d5b46312a55e8409a08a8437716ca42128e3d085"
 dependencies = [
  "async-trait",
  "bincode",
