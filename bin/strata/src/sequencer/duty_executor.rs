@@ -7,7 +7,7 @@ use ssz::Encode;
 use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_btcio::writer::EnvelopeHandle;
 use strata_checkpoint_types_ssz::SignedCheckpointPayload;
-use strata_consensus_logic::message::ForkChoiceMessage;
+use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_l1_txfmt::TagData;
@@ -24,7 +24,7 @@ pub(crate) async fn duty_executor_worker(
     template_manager: Arc<TemplateManager>,
     envelope_handle: Arc<EnvelopeHandle>,
     storage: Arc<NodeStorage>,
-    fcm_handle: Arc<strata_consensus_logic::FcmServiceHandle>,
+    fcm_handle: Arc<FcmServiceHandle>,
     mut duty_rx: mpsc::Receiver<Duty>,
     handle: Handle,
     sequencer_key: Buf32,
@@ -70,14 +70,14 @@ async fn handle_duty(
     template_manager: Arc<TemplateManager>,
     envelope_handle: Arc<EnvelopeHandle>,
     storage: Arc<NodeStorage>,
-    fcm_handle: Arc<strata_consensus_logic::FcmServiceHandle>,
+    fcm_handle: Arc<FcmServiceHandle>,
     duty: Duty,
     sequencer_key: Buf32,
     failed_duties_tx: mpsc::Sender<Buf32>,
 ) {
     let duty_id = duty.generate_id();
     debug!(?duty_id, ?duty, "handle_duty");
-    let duty_result = match duty.clone() {
+    let duty_result = match duty {
         Duty::SignBlock(duty) => {
             handle_sign_block_duty(
                 template_manager,

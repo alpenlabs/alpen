@@ -46,8 +46,9 @@ fn main() -> Result<()> {
     // Initialize logging
     init_logging(rt.handle(), &config);
 
-    // Validate sequencer flag is enabled if sequencer feature is enabled
-    if args.sequencer && !cfg!(feature = "sequencer") {
+    // Validate sequencer flag isn't used when sequencer feature is disabled.
+    #[cfg(not(feature = "sequencer"))]
+    if args.sequencer {
         return Err(anyhow!(
             "Sequencer flag enabled but binary built without `sequencer` feature"
         ));

@@ -43,6 +43,10 @@ use crate::{
     run_context::{RunContext, ServiceHandles},
 };
 
+/// TTL for template manager.
+// TODO: make this configurable.
+const TEMPLATE_MANAGER_TTL: Duration = Duration::from_secs(60);
+
 /// Just simply starts services. This can later be extended to service registry pattern.
 pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> {
     // Start Asm worker
@@ -85,7 +89,7 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
         let template_manager = Arc::new(TemplateManager::new(
             blockasm_handle,
             nodectx.storage().clone(),
-            Duration::from_millis(60_000), // 60 seconds
+            TEMPLATE_MANAGER_TTL,
         ));
         Some(SequencerServiceHandles::new(
             broadcast_handle,

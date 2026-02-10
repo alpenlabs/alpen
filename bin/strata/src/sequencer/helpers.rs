@@ -15,7 +15,7 @@ use tracing::debug;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Sequencer key data.
-#[derive(ZeroizeOnDrop)]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub(crate) struct SequencerKey {
     /// Sequencer secret key.
     pub(crate) sk: Buf32,

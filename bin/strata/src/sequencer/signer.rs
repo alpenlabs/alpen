@@ -5,6 +5,7 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use tokio::sync::mpsc;
 use tracing::info;
+use zeroize::Zeroize;
 
 use super::{
     duty_executor::duty_executor_worker, duty_fetcher::duty_fetcher_worker, helpers::load_seqkey,
@@ -29,7 +30,7 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
     };
 
     // Load the sequencer key.
-    let sequencer_key = load_seqkey(sequencer_key_path)?;
+    let mut sequencer_key = load_seqkey(sequencer_key_path)?;
 
     // Get the duty poll interval.
     let poll_interval_ms = args
@@ -64,6 +65,9 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
             sequencer_key.sk,
         ),
     );
+
+    // Zeroize the sequencer key.
+    sequencer_key.zeroize();
 
     info!(%poll_interval_ms, "Sequencer signer started");
 

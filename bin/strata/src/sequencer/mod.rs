@@ -1,4 +1,4 @@
-//! OL RPC server implementation for sequencer node.
+//! OL sequencer implementation.
 
 mod duty_executor;
 mod duty_fetcher;

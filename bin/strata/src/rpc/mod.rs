@@ -113,13 +113,13 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         .merge(ol_module)
         .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))?;
 
-    // Create and register OL fullnode RPC server
-    let ol_fullnode_server = OLRpcServer::new(
+    // Create and register OL fullnode RPC listener
+    let ol_fullnode_listener = OLRpcServer::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
-    let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_server);
+    let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)
         .map_err(|e| anyhow!("Failed to merge OL fullnode RPC module: {}", e))?;
@@ -127,13 +127,13 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     // Create sequencer rpc handler if running as sequencer
     #[cfg(feature = "sequencer")]
     if let Some(sequencer_deps) = deps.seq_deps {
-        let ol_seq_server = OLSeqRpcServer::new(
+        let ol_seq_listener = OLSeqRpcServer::new(
             deps.storage.clone(),
             deps.status_channel.clone(),
             sequencer_deps.template_manager().clone(),
             sequencer_deps.envelope_handle().clone(),
         );
-        let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_server);
+        let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);
         module
             .merge(ol_seq_module)
             .map_err(|e| anyhow!("Failed to merge OL sequencer RPC module: {}", e))?;

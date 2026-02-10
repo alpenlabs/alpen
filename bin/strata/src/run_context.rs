@@ -57,8 +57,8 @@ impl RunContext {
         &self.service_handles.mempool_handle
     }
 
-    #[cfg(feature = "sequencer")]
     /// Returns the fork choice manager handle.
+    #[cfg(feature = "sequencer")]
     pub(crate) fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
         &self.service_handles.fcm_handle
     }
@@ -68,14 +68,14 @@ impl RunContext {
         self.common.executor()
     }
 
-    #[cfg(feature = "sequencer")]
     /// Returns the task manager.
+    #[cfg(feature = "sequencer")]
     pub(crate) fn task_manager(&self) -> &TaskManager {
         &self.task_manager
     }
 
-    #[cfg(feature = "sequencer")]
     /// Returns the sequencer handles if running as a sequencer.
+    #[cfg(feature = "sequencer")]
     pub(crate) fn sequencer_handles(&self) -> Option<&SequencerServiceHandles> {
         self.service_handles.sequencer_handles.as_ref()
     }
@@ -146,8 +146,8 @@ pub(crate) struct ServiceHandles {
     /// Handle for the FCM service.
     fcm_handle: Arc<FcmServiceHandle>,
 
-    #[cfg(feature = "sequencer")]
     /// Handles for sequencer-specific services ([`None`] when not running as sequencer).
+    #[cfg(feature = "sequencer")]
     sequencer_handles: Option<SequencerServiceHandles>,
 }
 
