@@ -13,7 +13,7 @@ use strata_identifiers::{Buf32, Epoch, OLBlockId};
 /// `body_root`, and `logs_root` default to their zero/null values.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-pub struct HeaderParams {
+pub struct GenesisHeaderParams {
     /// Block timestamp. Defaults to 0.
     #[serde(default)]
     pub timestamp: u64,
@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn test_header_all_defaults() {
         let json = r#"{}"#;
-        let params = serde_json::from_str::<HeaderParams>(json).expect("parse failed");
+        let params = serde_json::from_str::<GenesisHeaderParams>(json).expect("parse failed");
 
         assert_eq!(params.timestamp, 0);
         assert_eq!(params.epoch, 0);
@@ -64,7 +64,7 @@ mod tests {
             "body_root": "0202020202020202020202020202020202020202020202020202020202020202",
             "logs_root": "0303030303030303030303030303030303030303030303030303030303030303"
         }"#;
-        let params = serde_json::from_str::<HeaderParams>(json).expect("parse failed");
+        let params = serde_json::from_str::<GenesisHeaderParams>(json).expect("parse failed");
 
         assert_eq!(params.timestamp, 42);
         assert_eq!(params.epoch, 7);
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn test_header_partial_defaults() {
         let json = r#"{ "timestamp": 100 }"#;
-        let params = serde_json::from_str::<HeaderParams>(json).expect("parse failed");
+        let params = serde_json::from_str::<GenesisHeaderParams>(json).expect("parse failed");
 
         assert_eq!(params.timestamp, 100);
         assert_eq!(params.epoch, 0);
@@ -97,10 +97,10 @@ mod tests {
             "body_root": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
             "logs_root": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
         }"#;
-        let params = serde_json::from_str::<HeaderParams>(json).expect("parse failed");
+        let params = serde_json::from_str::<GenesisHeaderParams>(json).expect("parse failed");
         let serialized = serde_json::to_string(&params).expect("serialization failed");
-        let decoded =
-            serde_json::from_str::<HeaderParams>(&serialized).expect("deserialization failed");
+        let decoded = serde_json::from_str::<GenesisHeaderParams>(&serialized)
+            .expect("deserialization failed");
 
         assert_eq!(params.timestamp, decoded.timestamp);
         assert_eq!(params.epoch, decoded.epoch);

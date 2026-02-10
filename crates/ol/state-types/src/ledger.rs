@@ -5,7 +5,7 @@
 use strata_acct_types::{
     AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
 };
-use strata_ol_params::AccountParams;
+use strata_ol_params::GenesisSnarkAccountData;
 
 use crate::ssz_generated::ssz::state::{
     OLAccountState, OLAccountTypeState, OLSnarkAccountState, TsnlAccountEntry,
@@ -25,7 +25,7 @@ impl TsnlLedgerAccountsTable {
 
     /// Creates a new table populated with genesis accounts from params.
     pub fn from_genesis_account_params<'a>(
-        accounts: impl IntoIterator<Item = (&'a AccountId, &'a AccountParams)>,
+        accounts: impl IntoIterator<Item = (&'a AccountId, &'a GenesisSnarkAccountData)>,
     ) -> AcctResult<Self> {
         let mut table = Self::new_empty();
         for (id, acct_params) in accounts {
