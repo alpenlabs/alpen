@@ -1,6 +1,6 @@
 #[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Unstructured};
-use serde::{Deserialize, Serialize, de::Error};
+use serde::{Deserialize, Serialize};
 use strata_btc_types::GenesisL1View;
 use strata_l1_txfmt::MagicBytes;
 
@@ -14,7 +14,6 @@ use crate::subprotocols::SubprotocolInstance;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsmParams {
     /// SPS-50 magic bytes that identify protocol transactions on L1.
-    #[serde(with = "serde_magic_bytes")]
     pub magic: MagicBytes,
 
     /// Genesis L1 view used to bootstrap PoW header verification.
@@ -22,25 +21,6 @@ pub struct AsmParams {
 
     /// Ordered list of subprotocol configurations active in this ASM.
     pub subprotocols: Vec<SubprotocolInstance>,
-}
-
-/// Serialize/deserialize [`MagicBytes`] as a human-readable string using its
-/// Display/FromStr implementation.
-mod serde_magic_bytes {
-    use std::str::FromStr;
-
-    use serde::{Deserializer, Serializer};
-
-    use super::*;
-
-    pub(super) fn serialize<S: Serializer>(v: &MagicBytes, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&v.to_string())
-    }
-
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<MagicBytes, D::Error> {
-        let s = String::deserialize(d)?;
-        MagicBytes::from_str(&s).map_err(D::Error::custom)
-    }
 }
 
 #[cfg(feature = "arbitrary")]
