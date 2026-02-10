@@ -152,17 +152,16 @@ pub(crate) struct ServiceHandles {
 }
 
 impl ServiceHandles {
-    /// Creates a new [`ServiceHandles`] instance.
-    pub(crate) fn new(
+    /// Creates a new [`ServiceHandlesBuilder`] with required handles.
+    pub(crate) fn builder(
         asm_handle: Arc<AsmWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
         checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
-        #[cfg(feature = "sequencer")] sequencer_handles: Option<SequencerServiceHandles>,
-    ) -> Self {
-        Self {
+    ) -> ServiceHandlesBuilder {
+        ServiceHandlesBuilder {
             asm_handle,
             csm_monitor,
             mempool_handle,
@@ -170,7 +169,58 @@ impl ServiceHandles {
             checkpoint_handle,
             fcm_handle,
             #[cfg(feature = "sequencer")]
-            sequencer_handles,
+            sequencer_handles: None,
+        }
+    }
+}
+
+/// Builder for [`ServiceHandles`].
+pub(crate) struct ServiceHandlesBuilder {
+    /// Handle for the ASM worker.
+    asm_handle: Arc<AsmWorkerHandle>,
+
+    /// Handle for the CSM worker.
+    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
+
+    /// Handle for the mempool.
+    mempool_handle: Arc<MempoolHandle>,
+
+    /// Handle for the chain worker.
+    chain_worker_handle: Arc<ChainWorkerHandle>,
+
+    /// Handle for the checkpoint worker.
+    checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
+
+    /// Handle for the FCM service.
+    fcm_handle: Arc<FcmServiceHandle>,
+
+    /// Handles for sequencer-specific services ([`None`] when not running as sequencer).
+    #[cfg(feature = "sequencer")]
+    sequencer_handles: Option<SequencerServiceHandles>,
+}
+
+impl ServiceHandlesBuilder {
+    /// Adds sequencer-specific handles.
+    #[cfg(feature = "sequencer")]
+    pub(crate) fn with_sequencer_handles(
+        mut self,
+        sequencer_handles: Option<SequencerServiceHandles>,
+    ) -> Self {
+        self.sequencer_handles = sequencer_handles;
+        self
+    }
+
+    /// Builds [`ServiceHandles`].
+    pub(crate) fn build(self) -> ServiceHandles {
+        ServiceHandles {
+            asm_handle: self.asm_handle,
+            csm_monitor: self.csm_monitor,
+            mempool_handle: self.mempool_handle,
+            chain_worker_handle: self.chain_worker_handle,
+            checkpoint_handle: self.checkpoint_handle,
+            fcm_handle: self.fcm_handle,
+            #[cfg(feature = "sequencer")]
+            sequencer_handles: self.sequencer_handles,
         }
     }
 }

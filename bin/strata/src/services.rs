@@ -109,16 +109,17 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
         .block_on(start_fcm_service(fcm_ctx, nodectx.executor().clone()))?;
     let fcm_handle = Arc::new(fcm_handle);
 
-    let service_handles = ServiceHandles::new(
+    let service_handles_builder = ServiceHandles::builder(
         asm_handle,
         csm_monitor,
         mempool_handle,
         chain_worker_handle,
         checkpoint_handle,
         fcm_handle,
-        #[cfg(feature = "sequencer")]
-        sequencer_handles,
     );
+    #[cfg(feature = "sequencer")]
+    let service_handles_builder = service_handles_builder.with_sequencer_handles(sequencer_handles);
+    let service_handles = service_handles_builder.build();
 
     Ok(RunContext::from_node_ctx(nodectx, service_handles))
 }
