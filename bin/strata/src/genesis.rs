@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use strata_db_types::traits::BlockStatus;
 use strata_ledger_types::AsmManifest;
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts_with_manifest};
-use strata_params::Params;
+use strata_ol_params::OLParams;
 use strata_primitives::{L1BlockId, OLBlockCommitment};
 use strata_storage::NodeStorage;
 use tracing::{info, instrument};
@@ -16,10 +16,12 @@ const GENESIS_MANIFEST_WAIT_INTERVAL_MS: u64 = 1_000;
 
 /// Initialize the OL genesis block and state for a fresh database.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
-pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<OLBlockCommitment> {
+pub(crate) fn init_ol_genesis(
+    ol_params: &OLParams,
+    storage: &NodeStorage,
+) -> Result<OLBlockCommitment> {
     info!("initializing OL genesis block and state");
 
-    let genesis_l1 = &params.rollup().genesis_l1_view;
     // Wait for ASM manifest for genesis to be available.
     let GenesisArtifacts {
         ol_state,
@@ -27,13 +29,14 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
         commitment,
         epoch_summary,
     } = {
+        let genesis_l1 = ol_params.last_l1_block;
         let genesis_manifest = wait_for_genesis_manifest(
             storage,
-            &genesis_l1.blkid(),
+            genesis_l1.blkid(),
             GENESIS_MANIFEST_MAX_ATTEMPTS,
             GENESIS_MANIFEST_WAIT_INTERVAL_MS,
         )?;
-        build_genesis_artifacts_with_manifest(params, genesis_manifest)?
+        build_genesis_artifacts_with_manifest(ol_params, genesis_manifest)?
     };
     let genesis_blkid = *commitment.blkid();
 

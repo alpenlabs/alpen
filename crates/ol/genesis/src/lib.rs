@@ -2,18 +2,16 @@
 
 use std::result::Result as StdResult;
 
-use strata_acct_types::{AcctError, BitcoinAmount};
+use strata_acct_types::AcctError;
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{AccountId, Buf32, Buf64, L1BlockCommitment, OLBlockCommitment};
+use strata_identifiers::{Buf32, Buf64, OLBlockCommitment};
 use strata_ledger_types::AsmManifest;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
-use strata_ol_params::{AccountParams, OLParams};
+use strata_ol_params::OLParams;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
 };
-use strata_params::Params;
-use strata_predicate::PredicateKey;
 use thiserror::Error;
 use tracing::{info, instrument};
 
@@ -58,12 +56,10 @@ pub enum GenesisError {
 pub type Result<T> = StdResult<T, GenesisError>;
 
 /// Build the default genesis manifest from rollup params.
-pub fn default_genesis_manifest(params: &Params) -> AsmManifest {
-    let genesis_l1 = &params.rollup().genesis_l1_view;
-
+pub fn default_genesis_manifest(params: &OLParams) -> AsmManifest {
     AsmManifest::new(
-        genesis_l1.height_u64(),
-        genesis_l1.blkid(),
+        params.last_l1_block.height_u64(),
+        *params.last_l1_block.blkid(),
         // Placeholder manifest root for non-ASM genesis (tests/fallback paths).
         Buf32::zero().into(),
         vec![],
@@ -73,40 +69,16 @@ pub fn default_genesis_manifest(params: &Params) -> AsmManifest {
 /// Construct genesis state + block artifacts using a supplied manifest.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
 pub fn build_genesis_artifacts_with_manifest(
-    params: &Params,
+    params: &OLParams,
     genesis_manifest: AsmManifest,
 ) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
-    // Create genesis block info.
-    let genesis_l1 = &params.rollup().genesis_l1_view;
-    let genesis_l1_commitment =
-        L1BlockCommitment::from_height_u64(genesis_l1.height_u64(), genesis_l1.blkid()).ok_or(
-            GenesisError::InvalidGenesisL1Height {
-                height: genesis_l1.height_u64(),
-            },
-        )?;
-
-    let mut ol_params = OLParams {
-        last_l1_block: genesis_l1_commitment,
-        ..OLParams::default()
-    };
-
-    let alpen_ed_account = AccountId::new(ALPEN_EE_ACCOUNT_ID_BYTES);
-    let alpen_ed_state_root = params.rollup().evm_genesis_block_state_root;
-    ol_params
-        .accounts
-        .entry(alpen_ed_account)
-        .or_insert_with(|| AccountParams {
-            predicate: PredicateKey::always_accept(),
-            inner_state: alpen_ed_state_root,
-            balance: BitcoinAmount::ZERO,
-        });
-
     // Create initial OL state (uses genesis params).
-    let mut ol_state = OLState::from_genesis_params(&ol_params)?;
+    let mut ol_state = OLState::from_genesis_params(params)?;
 
-    let genesis_ts = genesis_l1.last_11_timestamps[10] as u64;
+    // Create genesis block info.
+    let genesis_ts = params.header.timestamp;
     let genesis_info = BlockInfo::new_genesis(genesis_ts);
 
     // Build genesis block components.
@@ -122,11 +94,12 @@ pub fn build_genesis_artifacts_with_manifest(
     let ol_block = OLBlock::new(signed_header, genesis_block.body().clone());
     let genesis_blkid = genesis_block.header().compute_blkid();
     let commitment = OLBlockCommitment::new(0, genesis_blkid);
+
     let epoch_summary = EpochSummary::new(
         0,
         commitment,
         OLBlockCommitment::null(),
-        genesis_l1_commitment,
+        params.last_l1_block,
         *genesis_block.header().state_root(),
     );
 
@@ -141,7 +114,7 @@ pub fn build_genesis_artifacts_with_manifest(
 }
 
 /// Construct genesis state + block artifacts using the default manifest.
-pub fn build_genesis_artifacts(params: &Params) -> Result<GenesisArtifacts> {
+pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     let genesis_manifest = default_genesis_manifest(params);
     build_genesis_artifacts_with_manifest(params, genesis_manifest)
 }
