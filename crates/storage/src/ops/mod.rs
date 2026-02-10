@@ -1,3 +1,4 @@
+pub mod account_genesis;
 pub mod asm;
 pub mod chainstate;
 pub mod checkpoint;

@@ -16,7 +16,7 @@ use std::{env, process, sync::Arc};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::{
-    chain_status_checked, BatchStorage, BlockNumHash, ExecBlockStorage, Storage,
+    chain_status_checked, BatchStorage, BlockNumHash, ExecBlockStorage, OLClient, Storage,
 };
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
@@ -49,7 +49,7 @@ use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
-use strata_identifiers::{CredRule, OLBlockId};
+use strata_identifiers::{CredRule, EpochCommitment, OLBlockId};
 use strata_ol_genesis::ALPEN_EE_ACCOUNT_ID_BYTES;
 use strata_primitives::buf::Buf32;
 use tokio::sync::{mpsc, watch};
@@ -103,9 +103,6 @@ fn main() {
                 genesis_info.blockhash(),
                 genesis_info.stateroot(),
                 genesis_info.blocknum(),
-                0,
-                0,
-                OLBlockId::from(Buf32([1; 32])), // TODO: correct values
             );
 
             info!(?params, sequencer = ext.sequencer, "Starting EE Node");
@@ -162,12 +159,9 @@ fn main() {
                 .into();
 
             let ol_client = if ext.dummy_ol_client {
+                use strata_identifiers::Buf32;
                 use strata_primitives::EpochCommitment;
-                let genesis_epoch = EpochCommitment::new(
-                    0,
-                    config.params().genesis_ol_slot(),
-                    config.params().genesis_ol_blockid(),
-                );
+                let genesis_epoch = EpochCommitment::new(0, 0, OLBlockId::from(Buf32([1; 32])));
                 info!(target: "alpen-client", "Using dummy OL client (no real OL connection)");
                 OLClientKind::Dummy(DummyOLClient { genesis_epoch })
             } else {
@@ -185,7 +179,13 @@ fn main() {
             let batch_prover = Arc::new(NoopProver);
             let batch_da_provider = Arc::new(NoopDaProvider);
 
-            ensure_genesis(config.as_ref(), storage.as_ref())
+            // Fetch the genesis epoch commitment from the OL client once at startup.
+            let genesis_epoch = ol_client
+                .account_genesis_epoch()
+                .await
+                .context("failed to fetch account genesis epoch from OL")?;
+
+            ensure_genesis(config.as_ref(), &genesis_epoch, storage.as_ref())
                 .await
                 .context("genesis should not fail")?;
 
@@ -248,7 +248,7 @@ fn main() {
 
             let (ol_tracker, ol_tracker_task) = OLTrackerBuilder::new(
                 ol_tracker_state,
-                config.params().clone(),
+                genesis_epoch.epoch(),
                 storage.clone(),
                 ol_client.clone(),
             )
@@ -517,11 +517,13 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 /// Mainly deals with ensuring database has minimal expected state.
 async fn ensure_genesis<TStorage: Storage + ExecBlockStorage + BatchStorage>(
     config: &AlpenEeConfig,
+    genesis_epoch: &EpochCommitment,
     storage: &TStorage,
 ) -> eyre::Result<()> {
-    ensure_genesis_ee_account_state(config, storage).await?;
+    ensure_genesis_ee_account_state(config, genesis_epoch, storage).await?;
     #[cfg(feature = "sequencer")]
-    ensure_finalized_exec_chain_genesis(config, storage).await?;
+    ensure_finalized_exec_chain_genesis(config, genesis_epoch.to_block_commitment(), storage)
+        .await?;
     #[cfg(feature = "sequencer")]
     ensure_batch_genesis(config, storage).await?;
     Ok(())

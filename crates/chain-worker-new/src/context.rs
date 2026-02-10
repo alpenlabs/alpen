@@ -14,7 +14,7 @@ use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateManager};
+use strata_storage::{AccountGenesisManager, OLBlockManager, OLCheckpointManager, OLStateManager};
 use tokio::{runtime::Handle, sync::watch};
 use tracing::warn;
 
@@ -43,6 +43,9 @@ pub struct ChainWorkerContextImpl {
     /// Manager for checkpoint and epoch summary data.
     ol_checkpoint_mgr: Arc<OLCheckpointManager>,
 
+    /// Manager for per-account creation epoch tracking.
+    account_genesis_mgr: Arc<AccountGenesisManager>,
+
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
 
@@ -64,6 +67,7 @@ impl ChainWorkerContextImpl {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
+            account_genesis_mgr: nodectx.storage().account_genesis().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
@@ -151,6 +155,15 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         // Store the write batch
         self.ol_state_mgr
             .put_write_batch_blocking(commitment, output.write_batch().clone())?;
+
+        // Record creation epoch for newly created accounts.
+        let wb = output.write_batch();
+        let epoch = wb.epochal().cur_epoch();
+        wb.ledger().iter_new_accounts().try_for_each(|(_, id)| {
+            self.account_genesis_mgr
+                .insert_account_creation_epoch_blocking(*id, epoch)
+        })?;
+
         Ok(())
     }
 

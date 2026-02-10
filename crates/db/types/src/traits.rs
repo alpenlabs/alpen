@@ -10,7 +10,7 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{
-    Epoch, EpochCommitment, Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot,
+    AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot,
 };
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
@@ -49,6 +49,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
+    fn account_genesis_db(&self) -> Arc<impl AccountGenesisDatabase>;
 }
 
 /// Database interface to control our view of ASM state.
@@ -536,6 +537,20 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Returns the highest slot that has a valid OL block, or an error at genesis or when no valid
     /// block exists.
     fn get_tip_slot(&self) -> DbResult<Slot>;
+}
+
+/// Database for per-account creation epoch tracking.
+///
+/// Stores the epoch at which each account was created. This supports
+/// resolving the genesis epoch commitment for accounts at query time.
+pub trait AccountGenesisDatabase: Send + Sync + 'static {
+    /// Inserts the creation epoch for an account.
+    ///
+    /// Fails if the account already has a recorded creation epoch.
+    fn insert_account_creation_epoch(&self, account_id: AccountId, epoch: Epoch) -> DbResult<()>;
+
+    /// Gets the creation epoch for an account, if recorded.
+    fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
 }
 
 /// Database interface for OL mempool transactions.
