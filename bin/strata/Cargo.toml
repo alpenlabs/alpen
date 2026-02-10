@@ -3,33 +3,47 @@ name = "strata"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["sequencer"]
+sequencer = [
+  "dep:strata-asm-proto-checkpoint-txs",
+  "dep:strata-checkpoint-types-ssz",
+  "dep:strata-crypto",
+  "dep:strata-key-derivation",
+  "dep:strata-l1-txfmt",
+  "dep:strata-ol-block-assembly",
+  "dep:strata-ol-sequencer",
+  "dep:zeroize",
+]
+
 [dependencies]
 ssz.workspace = true
-strata-asm-proto-checkpoint-txs.workspace = true
+strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btcio.workspace = true
 strata-chain-worker-new.workspace = true
-strata-checkpoint-types-ssz.workspace = true
+strata-checkpoint-types-ssz = { workspace = true, optional = true }
 strata-common.workspace = true
 strata-config.workspace = true
 strata-consensus-logic.workspace = true
-strata-crypto.workspace = true
+strata-crypto = { workspace = true, optional = true }
 strata-csm-types.workspace = true
 strata-csm-worker.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
-strata-l1-txfmt.workspace = true
+strata-key-derivation = { workspace = true, optional = true }
+strata-l1-txfmt = { workspace = true, optional = true }
 strata-ledger-types.workspace = true
 strata-node-context.workspace = true
-strata-ol-block-assembly.workspace = true
+strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-chain-types-new.workspace = true
 strata-ol-checkpoint.workspace = true
 strata-ol-genesis.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
-strata-ol-sequencer.workspace = true
+strata-ol-sequencer = { workspace = true, optional = true }
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
@@ -51,6 +65,7 @@ threadpool.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
+zeroize = { workspace = true, optional = true }
 
 [lints]
 workspace = true

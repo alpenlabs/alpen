@@ -1,4 +1,5 @@
-//! OL RPC server implementation for sequencer node.
+//! RPC server implementation for sequencer.
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -23,13 +24,21 @@ use crate::rpc::errors::{db_error, internal_error, not_found_error};
 
 /// Rpc handler for sequencer.
 pub(crate) struct OLSeqRpcServer {
+    /// Storage backend.
     storage: Arc<NodeStorage>,
+
+    /// Status channel.
     status_channel: Arc<StatusChannel>,
+
+    /// Template manager.
     template_manager: Arc<TemplateManager>,
+
+    /// Envelope handle.
     envelope_handle: Arc<EnvelopeHandle>,
 }
 
 impl OLSeqRpcServer {
+    /// Creates a new [`OLSeqRpcServer`] instance.
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
@@ -99,8 +108,6 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             )
             .map_err(|e| internal_error(e.to_string()))?;
             let payload = L1Payload::new(vec![signed_checkpoint.as_ssz_bytes()], checkpoint_tag);
-            // TODO: compute sighash correctly. It should be the same as the sequencer signer uses
-            // to sign the checkpoint and to verify
             let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
 
             let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
