@@ -22,7 +22,6 @@ strata-snark-acct-types.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
-bitcoin.workspace = true
 proptest = { optional = true, workspace = true }
 
 [build-dependencies]

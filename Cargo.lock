@@ -15168,7 +15168,6 @@ dependencies = [
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
  "proptest",
  "ssz",
  "ssz_codegen",
