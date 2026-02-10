@@ -14,6 +14,7 @@ from common.config import (
     AsmParams,
     BitcoindConfig,
     ClientConfig,
+    EpochSealingConfig,
     OLParams,
     RollupParams,
     SequencerConfig,
@@ -71,6 +72,8 @@ class StrataFactory(flexitest.Factory):
         genesis_l1: GenesisL1View,
         is_sequencer: bool = True,
         config_overrides: dict | None = None,
+        rollup_params_overrides: dict | None = None,
+        epoch_sealing_config: EpochSealingConfig | None = None,
         **kwargs,
     ) -> StrataService:
         """
@@ -80,6 +83,8 @@ class StrataFactory(flexitest.Factory):
             bconfig: Bitcoin daemon configuration
             is_sequencer: True for sequencer, False for fullnode
             config_overrides: Additional config overrides (-o flag)
+            rollup_params_overrides: Overrides for rollup params JSON.
+            epoch_sealing_config: Optional epoch sealing config for TOML.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -96,13 +101,23 @@ class StrataFactory(flexitest.Factory):
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
         sequencer_config = SequencerConfig() if is_sequencer else None
-        config = StrataConfig(bitcoind=bconfig, client=client_config, sequencer=sequencer_config)
+        config = StrataConfig(
+            bitcoind=bconfig,
+            client=client_config,
+            sequencer=sequencer_config,
+            epoch_sealing=epoch_sealing_config,
+        )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
 
         # Create rollup params
         params = RollupParams().with_genesis_l1(genesis_l1)
+        if rollup_params_overrides:
+            for key, value in rollup_params_overrides.items():
+                if not hasattr(params, key):
+                    raise ValueError(f"Unknown rollup param override: {key}")
+                setattr(params, key, value)
         params_path = datadir / "rollup-params.json"
         with open(params_path, "w") as f:
             f.write(params.as_json_string())

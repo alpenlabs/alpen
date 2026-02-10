@@ -8,6 +8,7 @@ from common.config.config import (
     BtcioConfig,
     ClientConfig,
     EeDaConfig,
+    EpochSealingConfig,
     ExecConfig,
     ReaderConfig,
     RelayerConfig,
@@ -56,6 +57,7 @@ __all__ = [
     "SequencerConfig",
     "SyncConfig",
     "EeDaConfig",
+    "EpochSealingConfig",
     # constants.py
     "ServiceType",
     # params.py
