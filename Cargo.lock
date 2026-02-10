@@ -1089,7 +1089,6 @@ dependencies = [
  "strata-acct-types",
  "strata-common",
  "strata-identifiers",
- "strata-ol-genesis",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-primitives",

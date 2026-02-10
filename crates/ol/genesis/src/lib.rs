@@ -15,12 +15,6 @@ use strata_ol_stf::{
 use thiserror::Error;
 use tracing::{info, instrument};
 
-/// 32-byte representation of the [`AccountId`] for the Alpen EE account.
-// TODO: this should be decided by the product team if they want to have
-//       a special number for the account id. The only restriction is that
-//       it should not be a special account id, i.e. in the range of 0-127.
-pub const ALPEN_EE_ACCOUNT_ID_BYTES: [u8; 32] = [1; 32];
-
 /// In-memory artifacts created during OL genesis construction.
 #[derive(Debug)]
 pub struct GenesisArtifacts {
