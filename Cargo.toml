@@ -277,15 +277,15 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 # strata-common
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
-], tag = "v0.1.0-alpha-rc4" }
-strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
-strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc4" }
+], tag = "v0.1.0-alpha-rc7" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
+strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
+strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
+strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
+strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
+strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc7" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
