@@ -3,6 +3,8 @@
 //! Key improvement: Templates are generated and embedded directly in duties,
 //! eliminating the need for separate template fetch requests.
 
+use std::fmt;
+
 use ssz::Encode;
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_crypto::hash;
@@ -56,6 +58,32 @@ impl Duty {
             Self::SignCheckpoint(c) => {
                 let encoded = c.checkpoint.as_ssz_bytes();
                 hash::raw(&encoded)
+            }
+        }
+    }
+}
+
+impl fmt::Display for Duty {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SignBlock(duty) => {
+                write!(
+                    f,
+                    "SignBlock(slot: {}, epoch: {}, ts: {}, ready: {})",
+                    duty.slot(),
+                    duty.template.epoch(),
+                    duty.target_timestamp(),
+                    if duty.is_ready() { "yes" } else { "no" }
+                )
+            }
+            Self::SignCheckpoint(duty) => {
+                write!(
+                    f,
+                    "SignCheckpoint(epoch: {}, l1_height: {}, l2_slot: {})",
+                    duty.epoch(),
+                    duty.checkpoint.new_tip().l1_height,
+                    duty.checkpoint.new_tip().l2_commitment.slot
+                )
             }
         }
     }
