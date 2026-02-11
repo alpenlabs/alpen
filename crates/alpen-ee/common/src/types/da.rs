@@ -50,26 +50,33 @@ pub struct DaBlob {
     pub state_diff: BatchStateDiff,
 }
 
-// Bitcoin standardness limit is 400,000 weight units per tx. Reveal tx
-// overhead (weight units):
+// Bitcoin policy caps standard transactions at 400,000 wu
+// (`MAX_STANDARD_TX_WEIGHT`).
 //
-// - Non-witness (x4 multiplier):
-//   - Version, locktime, counts, outpoint, sequence: ~40 bytes -> 160 wu
-//   - OP_RETURN output (36-byte tag + script): ~45 bytes -> 180 wu
-//   - Dust output to sequencer: ~35 bytes -> 140 wu
-// - Witness (x1 multiplier):
-//   - Schnorr signature: 65 wu
-//   - Control block: 33 wu
-//   - Script overhead (opcodes, pushdata headers): ~50 wu
-//   - Chunk header: 37 wu
+// For a 1-input taproot script-path reveal with 2 outputs, worst case at
+// `MAX_CHUNK_PAYLOAD = 395_000` is:
 //
-// Total overhead: ~665 wu. Remaining: ~399,335 wu for payload.
+// - chunk bytes in witness script = payload (395,000) + DA chunk header (37)
+//   = 395,037
+// - witness script bytes = chunk bytes + pubkey/CHECKSIG + envelope opcodes
+//   + pushdata prefixes
+//   = 395,037 + 34 + 3 + (3 * ceil(395,037 / 520))
+//   = 397,354
+// - base (non-witness) tx bytes = 142 -> 568 wu
+//   - input skeleton: 51 B
+//   - OP_RETURN linking output: 48 B (39-byte script + value + script_len)
+//   - P2TR sequencer output: 43 B
+// - witness bytes = marker/flag (2) + stack item framing + sig + control block
+//   + witness script = 397,461 -> 397,461 wu
+//
+// Total reveal weight is 398,029 wu.
+// This is 1,971 wu below the 400,000 wu standardness limit.
 // Using 395,000 to keep a safe margin.
-
 /// Maximum chunk payload size in bytes.
 const MAX_CHUNK_PAYLOAD: usize = 395_000;
 
 /// Serialized size of [`DaChunkHeader`] in bytes.
+/// version(1) + blob_hash(32) + chunk_index(2) + total_chunks(2) = 37
 const DA_CHUNK_HEADER_SIZE: usize = 37;
 
 /// Current DA chunk encoding version.
@@ -182,15 +189,37 @@ pub fn prepare_da_chunks(blob: &DaBlob) -> Result<Vec<Vec<u8>>, CodecError> {
         .collect()
 }
 
+/// Errors that can occur when reassembling DA chunks.
+#[derive(Debug, thiserror::Error)]
+pub enum ReassemblyError {
+    #[error("no chunks provided")]
+    Empty,
+    #[error("chunk {index} decode failed: {source}")]
+    Decode { index: usize, source: CodecError },
+    #[error("chunk {index} has unsupported version {version}")]
+    UnsupportedVersion { index: usize, version: u8 },
+    #[error("chunk count mismatch: header says {expected}, got {actual}")]
+    ChunkCountMismatch { expected: u16, actual: usize },
+    #[error("chunks disagree on total_chunks at index {index}")]
+    InconsistentTotalChunks { index: usize },
+    #[error("non-contiguous chunk indices: expected {expected} at position {position}")]
+    NonContiguousIndex { position: usize, expected: u16 },
+    #[error("blob hash mismatch at chunk {index}")]
+    HashMismatch { index: usize },
+    #[error("blob decode failed: {0}")]
+    BlobDecode(CodecError),
+}
+
 /// Reassembles a [`DaBlob`] from raw encoded chunks (header ++ payload each).
 ///
 /// Performs the full pipeline: decode headers, validate consistency,
 /// order by `chunk_index`, concatenate payloads, verify SHA-256 hash,
 /// and decode the resulting bytes into a `DaBlob`.
-/// Returns `None` on any validation failure.
-pub fn reassemble_da_blob(encoded_chunks: &[Vec<u8>]) -> Option<DaBlob> {
+pub fn reassemble_da_blob(
+    encoded_chunks: &[Vec<u8>],
+) -> Result<DaBlob, ReassemblyError> {
     let bytes = reassemble_from_da_chunks(encoded_chunks)?;
-    decode_buf_exact(&bytes).ok()
+    decode_buf_exact(&bytes).map_err(ReassemblyError::BlobDecode)
 }
 
 /// Reassembles raw bytes from encoded chunks (header ++ payload each).
@@ -198,18 +227,25 @@ pub fn reassemble_da_blob(encoded_chunks: &[Vec<u8>]) -> Option<DaBlob> {
 /// Performs the full pipeline: decode headers, reject unknown versions,
 /// order by `chunk_index`, concatenate payloads, compute the blob hash,
 /// and verify every chunk's claimed hash against the computed value.
-/// Returns `None` on any validation failure.
-fn reassemble_from_da_chunks(encoded_chunks: &[Vec<u8>]) -> Option<Vec<u8>> {
+fn reassemble_from_da_chunks(
+    encoded_chunks: &[Vec<u8>],
+) -> Result<Vec<u8>, ReassemblyError> {
     if encoded_chunks.is_empty() {
-        return None;
+        return Err(ReassemblyError::Empty);
     }
 
     // Decode all chunks and reject unknown versions.
     let mut decoded: Vec<(DaChunkHeader, &[u8])> = Vec::with_capacity(encoded_chunks.len());
-    for enc in encoded_chunks {
-        let (header, payload) = decode_da_chunk(enc).ok()?;
+    for (i, enc) in encoded_chunks.iter().enumerate() {
+        let (header, payload) = decode_da_chunk(enc).map_err(|e| ReassemblyError::Decode {
+            index: i,
+            source: e,
+        })?;
         if header.version != DA_CHUNK_ENCODING_VERSION {
-            return None;
+            return Err(ReassemblyError::UnsupportedVersion {
+                index: i,
+                version: header.version,
+            });
         }
         decoded.push((header, payload));
     }
@@ -217,20 +253,25 @@ fn reassemble_from_da_chunks(encoded_chunks: &[Vec<u8>]) -> Option<Vec<u8>> {
     // All chunks must agree on total_chunks count.
     let total_chunks = decoded[0].0.total_chunks;
     if total_chunks as usize != decoded.len() {
-        return None;
+        return Err(ReassemblyError::ChunkCountMismatch {
+            expected: total_chunks,
+            actual: decoded.len(),
+        });
     }
-    if decoded[1..]
-        .iter()
-        .any(|(h, _)| h.total_chunks != total_chunks)
-    {
-        return None;
+    for (i, (h, _)) in decoded[1..].iter().enumerate() {
+        if h.total_chunks != total_chunks {
+            return Err(ReassemblyError::InconsistentTotalChunks { index: i + 1 });
+        }
     }
 
     // Sort by index and verify contiguous [0..total_chunks).
     decoded.sort_by_key(|(h, _)| h.chunk_index);
     for (i, (header, _)) in decoded.iter().enumerate() {
         if header.chunk_index != i as u16 {
-            return None;
+            return Err(ReassemblyError::NonContiguousIndex {
+                position: i,
+                expected: i as u16,
+            });
         }
     }
 
@@ -240,11 +281,13 @@ fn reassemble_from_da_chunks(encoded_chunks: &[Vec<u8>]) -> Option<Vec<u8>> {
         .flat_map(|(_, p)| p.iter().copied())
         .collect();
     let computed_hash = blob_hash(&blob);
-    if decoded.iter().any(|(h, _)| h.blob_hash != computed_hash) {
-        return None;
+    for (i, (h, _)) in decoded.iter().enumerate() {
+        if h.blob_hash != computed_hash {
+            return Err(ReassemblyError::HashMismatch { index: i });
+        }
     }
 
-    Some(blob)
+    Ok(blob)
 }
 
 #[cfg(test)]
@@ -325,9 +368,9 @@ mod tests {
     #[test]
     fn full_pipeline_rejects_invalid_input() {
         // Empty input
-        assert!(reassemble_da_blob(&[]).is_none());
+        assert!(reassemble_da_blob(&[]).is_err());
         // Garbage input
-        assert!(reassemble_da_blob(&[vec![0xFF; 10]]).is_none());
+        assert!(reassemble_da_blob(&[vec![0xFF; 10]]).is_err());
 
         // Missing chunk - test with raw bytes that span multiple chunks
         let large_bytes: Vec<u8> = repeat_n(0u8, MAX_CHUNK_PAYLOAD + 100).collect();
@@ -342,6 +385,6 @@ mod tests {
             })
             .collect();
         chunks.remove(1); // Remove second chunk
-        assert!(reassemble_from_da_chunks(&chunks).is_none());
+        assert!(reassemble_from_da_chunks(&chunks).is_err());
     }
 }
