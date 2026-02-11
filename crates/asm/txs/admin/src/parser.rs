@@ -11,6 +11,8 @@ use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
 /// The OP_RETURN only contains the SPS-50 tag (magic bytes, subprotocol ID, tx type).
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct SignedPayload {
+    /// Sequence number used to prevent replay attacks and enforce ordering.
+    pub seqno: u64,
     /// The administrative action being proposed
     pub action: MultisigAction,
     /// The set of ECDSA signatures authorizing this action
@@ -19,8 +21,12 @@ pub struct SignedPayload {
 
 impl SignedPayload {
     /// Creates a new signed payload combining an action with its signatures.
-    pub fn new(action: MultisigAction, signatures: SignatureSet) -> Self {
-        Self { action, signatures }
+    pub fn new(seqno: u64, action: MultisigAction, signatures: SignatureSet) -> Self {
+        Self {
+            seqno,
+            action,
+            signatures,
+        }
     }
 }
 
