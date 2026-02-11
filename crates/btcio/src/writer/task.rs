@@ -105,32 +105,16 @@ impl EnvelopeHandle {
             return self.find_intent_idx_in_range(id, 0, next_idx).await;
         }
 
-        let next_idx = self.ops.get_next_intent_idx_async().await?;
-
         // Create and store IntentEntry
         let entry = IntentEntry::new_unbundled(intent);
-        self.ops.put_intent_entry_async(id, entry.clone()).await?;
-
-        let next_idx_after_insert = self.ops.get_next_intent_idx_async().await?;
-        let intent_idx = self
-            .find_intent_idx_in_range(id, next_idx, next_idx_after_insert)
-            .await?;
-
-        if intent_idx.is_none() {
-            warn!(
-                commitment = %id,
-                start_idx = next_idx,
-                end_idx = next_idx_after_insert,
-                "intent stored but index lookup failed in expected range"
-            );
-        }
+        let intent_idx = self.ops.put_intent_entry_async(id, entry.clone()).await?;
 
         // Send to bundler
         if let Err(e) = self.intent_tx.send(entry).await {
             warn!("Could not send intent entry to bundler: {:?}", e);
         }
 
-        Ok(intent_idx)
+        Ok(Some(intent_idx))
     }
 
     async fn find_intent_idx_in_range(

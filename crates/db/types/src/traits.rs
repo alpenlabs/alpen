@@ -317,7 +317,7 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     fn del_payload_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 
     /// Store the [`IntentEntry`].
-    fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<()>;
+    fn put_intent_entry(&self, payloadid: Buf32, payloadentry: IntentEntry) -> DbResult<u64>;
 
     /// Get a [`IntentEntry`] by its hash
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>>;
