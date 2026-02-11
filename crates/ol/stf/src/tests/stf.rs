@@ -1132,7 +1132,7 @@ fn test_verify_state_root_changes_with_state() {
 #[test]
 fn test_verify_block_through_write_tracking_stack() {
     // This test mimics chain-worker-new's verification path:
-    // IndexerState<WriteTrackingState<&OLState>> with verify_block_with_root_fn
+    // IndexerState<WriteTrackingState<&OLState>> with verify_block
     let mut state = OLState::new_genesis();
 
     // Assemble genesis block (terminal)
@@ -1159,12 +1159,8 @@ fn test_verify_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_from_state(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block_with_root_fn(&mut indexer, genesis.header(), None, genesis.body(), |s| {
-            s.inner()
-                .compute_state_root_materialized()
-                .map_err(ExecError::from)
-        })
-        .expect("Genesis verification through write-tracking stack should succeed");
+        verify_block(&mut indexer, genesis.header(), None, genesis.body())
+            .expect("Genesis verification through write-tracking stack should succeed");
     }
 
     // Apply genesis writes to get post-genesis state for next block
@@ -1173,12 +1169,8 @@ fn test_verify_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_from_state(&post_genesis);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block_with_root_fn(&mut indexer, genesis.header(), None, genesis.body(), |s| {
-            s.inner()
-                .compute_state_root_materialized()
-                .map_err(ExecError::from)
-        })
-        .expect("Genesis verification should succeed");
+        verify_block(&mut indexer, genesis.header(), None, genesis.body())
+            .expect("Genesis verification should succeed");
 
         let (tracking, _writes) = indexer.into_parts();
         post_genesis
@@ -1191,16 +1183,11 @@ fn test_verify_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_from_state(&post_genesis);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block_with_root_fn(
+        verify_block(
             &mut indexer,
             block1.header(),
             Some(genesis.header().clone()),
             block1.body(),
-            |s| {
-                s.inner()
-                    .compute_state_root_materialized()
-                    .map_err(ExecError::from)
-            },
         )
         .expect("Block 1 verification through write-tracking stack should succeed");
     }
@@ -1208,7 +1195,7 @@ fn test_verify_block_through_write_tracking_stack() {
 
 #[test]
 fn test_verify_terminal_block_through_write_tracking_stack() {
-    // Terminal blocks are important because verify_block calls compute_root twice
+    // Terminal blocks are important because verify_block calls compute_state_root twice
     // (pre-manifest and post-manifest), and the root changes between calls.
     let mut state = OLState::new_genesis();
     const SLOTS_PER_EPOCH: u64 = 3;
@@ -1239,26 +1226,17 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_from_state(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block_with_root_fn(
-            &mut indexer,
-            block.header(),
-            parent_header,
-            block.body(),
-            |s| {
-                s.inner()
-                    .compute_state_root_materialized()
-                    .map_err(ExecError::from)
+        verify_block(&mut indexer, block.header(), parent_header, block.body()).unwrap_or_else(
+            |e| {
+                panic!(
+                    "Block {} (slot {}, terminal={}) verification through write-tracking stack failed: {:?}",
+                    i,
+                    block.header().slot(),
+                    block.header().is_terminal(),
+                    e
+                )
             },
-        )
-        .unwrap_or_else(|e| {
-            panic!(
-                "Block {} (slot {}, terminal={}) verification through write-tracking stack failed: {:?}",
-                i,
-                block.header().slot(),
-                block.header().is_terminal(),
-                e
-            )
-        });
+        );
 
         // Apply writes to advance state for next block
         let (tracking, _writes) = indexer.into_parts();

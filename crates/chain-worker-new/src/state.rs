@@ -14,7 +14,7 @@ use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::verify_block_with_root_fn;
+use strata_ol_stf::verify_block;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use tracing::*;
@@ -250,18 +250,11 @@ impl ChainWorkerServiceState {
         let tracking_state = WriteTrackingState::new_from_state(parent_state);
         let mut indexer_state = IndexerState::new(tracking_state);
 
-        // Execute using new OL STF, providing materialized state root computation
-        // since WriteTrackingState::compute_state_root() is unsupported.
-        verify_block_with_root_fn(
+        verify_block(
             &mut indexer_state,
             block.header(),
             parent_header.cloned(),
             block.body(),
-            |s| {
-                s.inner()
-                    .compute_state_root_materialized()
-                    .map_err(Into::into)
-            },
         )?;
 
         // Extract outputs

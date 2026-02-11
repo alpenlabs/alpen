@@ -148,24 +148,6 @@ pub fn verify_block<S: IStateAccessor>(
     parent_header: Option<OLBlockHeader>,
     body: &OLBlockBody,
 ) -> ExecResult<()> {
-    verify_block_with_root_fn(state, header, parent_header, body, |s| {
-        s.compute_state_root().map_err(ExecError::from)
-    })
-}
-
-/// Verifies a block using a caller-provided state root computation function.
-///
-/// This is the same as [`verify_block`] but allows the caller to supply a
-/// custom `compute_root` closure for computing the state root. This is useful
-/// when the state accessor's `compute_state_root` is not directly usable
-/// (e.g. when verifying through a `WriteTrackingState` layer).
-pub fn verify_block_with_root_fn<S: IStateAccessor>(
-    state: &mut S,
-    header: &OLBlockHeader,
-    parent_header: Option<OLBlockHeader>,
-    body: &OLBlockBody,
-    compute_root: impl Fn(&S) -> ExecResult<Buf32>,
-) -> ExecResult<()> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header.as_ref())?;
     verify_block_structure(header, body)?;
@@ -195,7 +177,7 @@ pub fn verify_block_with_root_fn<S: IStateAccessor>(
     // 4. Check the state root.
     // - if it not a terminal, then check against the header state root
     // - if it *is* a terminal, then check against the preseal state root
-    let pre_manifest_state_root = compute_root(state)?;
+    let pre_manifest_state_root = state.compute_state_root()?;
 
     if header.is_terminal() {
         // For terminal blocks, check against the preseal state root
@@ -225,7 +207,7 @@ pub fn verify_block_with_root_fn<S: IStateAccessor>(
         )?;
 
         // After processing manifests, check the actual final state root against the header.
-        let final_state_root = compute_root(state)?;
+        let final_state_root = state.compute_state_root()?;
         if &final_state_root != exp.post_state_roots.header_state_root() {
             return Err(ExecError::ChainIntegrity);
         }
