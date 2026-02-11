@@ -95,7 +95,7 @@ pub fn create_test_admin_tx(
     let signature_set = create_signature_set(privkeys, signer_indices, sighash);
 
     // Create the signed payload (action + signatures) for the envelope
-    let signed_payload = SignedPayload::new(action.clone(), signature_set);
+    let signed_payload = SignedPayload::new(seqno, action.clone(), signature_set);
     let envelope_payload = borsh::to_vec(&signed_payload).expect("borsh serialization failed");
 
     // Create the minimal SPS-50 tag for OP_RETURN (no aux data needed)

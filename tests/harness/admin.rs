@@ -135,7 +135,7 @@ impl AdminContext {
     fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
         let sighash = action.compute_sighash(seqno);
         let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        let payload = borsh::to_vec(&SignedPayload::new(action.clone(), sig_set))
+        let payload = borsh::to_vec(&SignedPayload::new(seqno, action.clone(), sig_set))
             .expect("serialization should succeed");
         (payload, action.tx_type())
     }
