@@ -71,8 +71,8 @@ where
 ///
 /// For each batch, it:
 /// 1. Retrieves the block range from [`BatchStorage`].
-/// 2. Fetches per-block [`BlockStateChanges`] from the [`StateDiffProvider`].
-/// 3. Aggregates them into a [`BatchStateDiff`] via [`BatchBuilder`].
+/// 2. Fetches per-block [`BlockStateChanges`](alpen_reth_statediff::BlockStateChanges) from the [`StateDiffProvider`].
+/// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via [`BatchBuilder`].
 /// 4. Reads the last block's header to build [`EvmHeaderDigest`].
 /// 5. Returns the assembled [`DaBlob`].
 pub(crate) struct StateDiffBlobProvider<S, D, H> {
