@@ -45,7 +45,7 @@ pub(crate) async fn duty_fetcher_worker(
             };
 
         // Log non-empty duties
-        if !duties.is_empty() {
+        if duties.is_empty() {
             warn!(count = %duties.len(), "got no new duties, skipping");
             continue;
         }
