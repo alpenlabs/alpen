@@ -14896,6 +14896,7 @@ dependencies = [
  "strata-state",
  "strata-storage",
  "strata-tasks",
+ "strata-test-utils-l2",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
