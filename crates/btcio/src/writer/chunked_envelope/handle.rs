@@ -351,6 +351,7 @@ mod tests {
         Witness,
     };
     use strata_db_types::types::RevealTxMeta;
+    use strata_l1_txfmt::MagicBytes;
     use strata_primitives::buf::Buf32;
 
     use super::*;
@@ -372,7 +373,7 @@ mod tests {
 
         let mut e0 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x01; 50]],
-            [0xAA, 0xBB, 0xCC, 0xDD],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
             Buf32::zero(),
         );
         e0.status = ChunkedEnvelopeStatus::Finalized;
@@ -380,7 +381,7 @@ mod tests {
 
         let mut e1 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x02; 50]],
-            [0xAA, 0xBB, 0xCC, 0xDD],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
             Buf32::zero(),
         );
         e1.status = ChunkedEnvelopeStatus::Published;
@@ -388,7 +389,7 @@ mod tests {
 
         let mut e2 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x03; 50]],
-            [0xAA, 0xBB, 0xCC, 0xDD],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
             Buf32::zero(),
         );
         e2.status = ChunkedEnvelopeStatus::Unsigned;
@@ -396,7 +397,7 @@ mod tests {
 
         let mut e3 = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0x04; 50]],
-            [0xAA, 0xBB, 0xCC, 0xDD],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
             Buf32::zero(),
         );
         e3.status = ChunkedEnvelopeStatus::Unsigned;
@@ -523,7 +524,7 @@ mod tests {
     fn make_entry_with_reveals(n: usize) -> ChunkedEnvelopeEntry {
         let mut entry = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0xAA; 100]; n],
-            [0x01, 0x02, 0x03, 0x04],
+            MagicBytes::new([0x01, 0x02, 0x03, 0x04]),
             Buf32::zero(),
         );
         entry.commit_txid = Buf32::from([0x11; 32]);

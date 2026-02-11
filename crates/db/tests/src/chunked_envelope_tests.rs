@@ -2,12 +2,13 @@ use strata_db_types::{
     traits::L1ChunkedEnvelopeDatabase,
     types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus},
 };
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 
 fn make_entry(status: ChunkedEnvelopeStatus) -> ChunkedEnvelopeEntry {
     let mut entry = ChunkedEnvelopeEntry::new_unsigned(
         vec![vec![0xAA; 100]],
-        [0xDE, 0xAD, 0xBE, 0xEF],
+        MagicBytes::new([0xDE, 0xAD, 0xBE, 0xEF]),
         Buf32::zero(),
     );
     entry.status = status;

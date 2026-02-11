@@ -81,7 +81,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     let built = build_chunked_envelope_txs(
         &env_config,
         &entry.chunk_data,
-        &entry.magic_bytes,
+        entry.magic_bytes.as_bytes(),
         &entry.prev_tail_wtxid,
         utxos,
     )?;

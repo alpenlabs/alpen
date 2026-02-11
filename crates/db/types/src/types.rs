@@ -13,6 +13,7 @@ use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, Checkpoint
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::OLTxId;
+use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::buf::Buf32;
 use zkaleido::Proof;
@@ -397,7 +398,7 @@ pub struct ChunkedEnvelopeEntry {
     /// Opaque witness data per reveal, ordered by output index.
     pub chunk_data: Vec<Vec<u8>>,
     /// OP_RETURN tag magic bytes.
-    pub magic_bytes: [u8; 4],
+    pub magic_bytes: MagicBytes,
     /// Wtxid of the last reveal in the preceding envelope, or zero for the first.
     pub prev_tail_wtxid: Buf32,
     /// Commit transaction ID. Zero if unsigned.
@@ -414,7 +415,7 @@ impl ChunkedEnvelopeEntry {
     /// Transaction IDs and reveal metadata are populated after signing.
     pub fn new_unsigned(
         chunk_data: Vec<Vec<u8>>,
-        magic_bytes: [u8; 4],
+        magic_bytes: MagicBytes,
         prev_tail_wtxid: Buf32,
     ) -> Self {
         Self {
