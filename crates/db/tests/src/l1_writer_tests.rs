@@ -164,19 +164,24 @@ pub fn test_del_payload_entries_empty_database(db: &impl L1WriterDatabase) {
 pub fn test_put_intent_new_entry(db: &impl L1WriterDatabase) {
     let intent: IntentEntry = ArbitraryGenerator::new().generate();
     let intent_id: Buf32 = [0; 32].into();
+    let expected_idx = db.get_next_intent_idx().unwrap();
 
-    db.put_intent_entry(intent_id, intent.clone()).unwrap();
+    let idx = db.put_intent_entry(intent_id, intent.clone()).unwrap();
+    assert_eq!(idx, expected_idx);
 
     let stored_intent = db.get_intent_by_id(intent_id).unwrap();
     assert_eq!(stored_intent, Some(intent));
 }
 
+// TODO: This and the above test are identical. Merge them or make them test different scenarios.
 pub fn test_put_intent_entry(db: &impl L1WriterDatabase) {
     let intent: IntentEntry = ArbitraryGenerator::new().generate();
     let intent_id: Buf32 = [0; 32].into();
+    let expected_idx = db.get_next_intent_idx().unwrap();
 
     let result = db.put_intent_entry(intent_id, intent.clone());
     assert!(result.is_ok());
+    assert_eq!(result.unwrap(), expected_idx);
 
     let retrieved = db.get_intent_by_id(intent_id).unwrap().unwrap();
     assert_eq!(retrieved, intent);
