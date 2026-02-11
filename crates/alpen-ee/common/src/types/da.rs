@@ -71,13 +71,13 @@ pub struct DaBlob {
 // Total reveal weight is 398,029 wu.
 // This is 1,971 wu below the 400,000 wu standardness limit.
 // Using 395,000 to keep a safe margin.
-/// Serialized size of [`DaChunkHeader`] in bytes.
-/// version(1) + blob_hash(32) + chunk_index(2) + total_chunks(2) = 37
-const DA_CHUNK_HEADER_SIZE: usize = 37;
-
 /// Maximum size of the encoded chunk (header + payload) that the envelope
 /// builder accepts. Matches [`strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE`].
 const MAX_ENVELOPE_PAYLOAD: usize = 395_000;
+
+/// Serialized size of [`DaChunkHeader`] in bytes.
+/// version(1) + blob_hash(32) + chunk_index(2) + total_chunks(2) = 37
+const DA_CHUNK_HEADER_SIZE: usize = 37;
 
 /// Maximum raw payload size per chunk, after reserving space for the
 /// [`DaChunkHeader`] that [`encode_da_chunk`] prepends.
@@ -295,6 +295,7 @@ mod tests {
     use core::iter::repeat_n;
 
     use strata_acct_types::Hash;
+    use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
 
     use super::*;
 
@@ -363,6 +364,14 @@ mod tests {
         encoded_chunks.reverse();
         let reassembled = reassemble_da_blob(&encoded_chunks).unwrap();
         assert_da_blob_eq(&blob, &reassembled);
+    }
+
+    #[test]
+    fn envelope_payload_limit_matches_builder_constant() {
+        assert_eq!(
+            MAX_ENVELOPE_PAYLOAD, MAX_ENVELOPE_PAYLOAD_SIZE,
+            "MAX_ENVELOPE_PAYLOAD drifted from upstream builder constant (l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE)"
+        );
     }
 
     #[test]
