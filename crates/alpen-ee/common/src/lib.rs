@@ -36,7 +36,7 @@ pub use types::{
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     consensus_heads::ConsensusHeads,
-    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderDigest},
+    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderDigest, ReassemblyError},
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     ol_account_epoch_summary::OLEpochSummary,
