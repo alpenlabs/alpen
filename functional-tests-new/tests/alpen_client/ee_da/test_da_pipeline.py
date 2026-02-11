@@ -290,17 +290,17 @@ class TestDaPipeline(BaseTest):
             current_l2_block = self._sequencer.get_block_number()
             blocks_needed = expected_batch_last_block + batch_sealing_block_count
             if current_l2_block < blocks_needed:
-                logger.info(
+                logger.debug(
                     f"Attempt {attempt + 1}: Waiting for L2 block"
                     f" {blocks_needed} (current: {current_l2_block})"
                 )
                 self._sequencer.wait_for_block(blocks_needed, timeout=120)
 
-            logger.info(f"Attempt {attempt + 1}: Waiting for DA transactions to reach mempool...")
+            logger.debug(f"Attempt {attempt + 1}: Waiting for DA transactions to reach mempool...")
             time.sleep(10)
 
             mempool_info = self._btc_rpc.proxy.getmempoolinfo()
-            logger.info(
+            logger.debug(
                 f"Attempt {attempt + 1}: Mempool has {mempool_info.get('size', 0)} transaction(s)"
             )
 
@@ -315,7 +315,7 @@ class TestDaPipeline(BaseTest):
                 logger.info(f"Attempt {attempt + 1}: Found {len(new_envelopes)} new DA envelope(s)")
                 for env in new_envelopes:
                     chunk_size = len(env.payload) - DA_CHUNK_HEADER_SIZE
-                    logger.info(
+                    logger.debug(
                         f"  Chunk {env.chunk_index}/{env.total_chunks}: {chunk_size} bytes, "
                         f"blob_hash={env.blob_hash.hex()[:16]}..."
                     )
@@ -325,7 +325,7 @@ class TestDaPipeline(BaseTest):
 
                 results = reassemble_and_validate_blobs(multi_chunk_envelopes)
                 for result in results:
-                    logger.info(
+                    logger.debug(
                         f"  Reassembled blob: last_block_num={result.blob.last_block_num}, "
                         f"total_chunks={result.total_chunks}, total_size={result.total_size} bytes"
                     )
@@ -336,7 +336,7 @@ class TestDaPipeline(BaseTest):
                         multi_chunk_result = result
                         logger.info(f"  Found multi-chunk blob with {result.total_chunks} chunks!")
             else:
-                logger.info(f"Attempt {attempt + 1}: No new envelopes found")
+                logger.debug(f"Attempt {attempt + 1}: No new envelopes found")
 
             if multi_chunk_result is not None:
                 break
@@ -424,7 +424,7 @@ class TestDaPipeline(BaseTest):
             end_l1 = self._btc_rpc.proxy.getblockcount()
             new_envs = scan_for_da_envelopes(self._btc_rpc, prev_end + 1, end_l1)
             if new_envs:
-                logger.info(f"  Phase A attempt {attempt + 1}: Found {len(new_envs)} envelope(s)")
+                logger.debug(f"  Phase A attempt {attempt + 1}: Found {len(new_envs)} envelope(s)")
                 phase_a_all_envs.extend(new_envs)
                 state.envelopes.extend(new_envs)
 
@@ -484,7 +484,7 @@ class TestDaPipeline(BaseTest):
             end_l1 = self._btc_rpc.proxy.getblockcount()
             new_envs = scan_for_da_envelopes(self._btc_rpc, prev_end + 1, end_l1)
             if new_envs:
-                logger.info(f"  Phase B attempt {attempt + 1}: Found {len(new_envs)} envelope(s)")
+                logger.debug(f"  Phase B attempt {attempt + 1}: Found {len(new_envs)} envelope(s)")
                 phase_b_all_envs.extend(new_envs)
                 state.envelopes.extend(new_envs)
 

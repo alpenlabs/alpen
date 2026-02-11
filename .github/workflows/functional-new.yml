@@ -149,9 +149,9 @@ jobs:
         # NOTE: Entire _dd ends up hundreds of MBs, so keep only logs (still huge...).
         run: |
           # service logs
-          find functional-tests-new/_dd -type f -name "service.log" | zip -@ logs.zip
+          find functional-tests-new/_dd -type f -name "service.log" 2>/dev/null | zip -@ logs.zip || true
           # functional test logs
-          zip -r logs.zip functional-tests-new/_dd -i '*/logs/*.log'
+          zip -r logs.zip functional-tests-new/_dd -i '*/logs/*.log' 2>/dev/null || true
 
       - name: Upload logs as build artifact on failure
         if: steps.funcTestsRun.outcome == 'failure'
