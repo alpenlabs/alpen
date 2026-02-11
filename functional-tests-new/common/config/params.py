@@ -60,10 +60,32 @@ class GenesisL1View:
     @staticmethod
     def at_latest_block(btc_rpc) -> "GenesisL1View":
         blkid = btc_rpc.proxy.getbestblockhash()
-        blkheight = btc_rpc.proxy.getblock(blkid, 1)["height"]
+        block_info = btc_rpc.proxy.getblock(blkid, 1)
+        blkheight = block_info["height"]
         l1blk_commitment = L1BlockCommitment(blkheight, blkid)
-        # TODO: add timestamps as needed
-        return GenesisL1View(l1blk_commitment)
+
+        # Fetch the bits (compact target) from the current block.
+        # In regtest this is always 0x207fffff but we read it to be correct.
+        next_target = int(block_info["bits"], 16)
+
+        # Difficulty epoch start: regtest adjustment interval is 2016 blocks.
+        epoch_start_height = blkheight - (blkheight % 2016)
+        epoch_start_hash = btc_rpc.proxy.getblockhash(epoch_start_height)
+        epoch_start_timestamp = btc_rpc.proxy.getblock(epoch_start_hash, 1)["time"]
+
+        # Fetch last 11 block timestamps in ascending order.
+        last_11_timestamps = []
+        for i in range(10, -1, -1):
+            h = blkheight - i
+            if h < 0:
+                last_11_timestamps.append(0)
+            else:
+                bh = btc_rpc.proxy.getblockhash(h)
+                last_11_timestamps.append(btc_rpc.proxy.getblock(bh, 1)["time"])
+
+        return GenesisL1View(
+            l1blk_commitment, next_target, epoch_start_timestamp, last_11_timestamps
+        )
 
 
 # TODO: move this to some place common as this should be useful for other purposes as well
