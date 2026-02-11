@@ -15187,6 +15187,7 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-msg-types",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-sys",

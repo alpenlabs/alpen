@@ -24,6 +24,7 @@ strata-snark-acct-types.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+strata-ol-state-support-types.workspace = true
 strata-predicate.workspace = true
 ssz_primitives.workspace = true
 

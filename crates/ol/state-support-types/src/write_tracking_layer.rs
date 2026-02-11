@@ -62,6 +62,21 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
     pub fn into_batch(self) -> WriteBatch<S::AccountState> {
         self.batch
     }
+
+    /// Computes the state root by materializing the base state with the batch applied.
+    ///
+    /// This clones the base state, applies the current write batch to the clone,
+    /// then computes the state root on the result. Only available when the base
+    /// state supports cloning and batch application.
+    pub fn compute_state_root_materialized(&self) -> AcctResult<Buf32>
+    where
+        S: Clone + IStateBatchApplicable,
+        S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
+    {
+        let mut materialized = (*self.base).clone();
+        materialized.apply_write_batch(self.batch.clone())?;
+        materialized.compute_state_root()
+    }
 }
 
 impl<'base, S: IStateAccessor> IStateAccessor for WriteTrackingState<'base, S>
@@ -439,6 +454,44 @@ mod tests {
 
         let result = tracking.compute_state_root();
         assert!(matches!(result, Err(AcctError::Unsupported)));
+    }
+
+    #[test]
+    fn test_compute_state_root_materialized_no_writes() {
+        let base_state = OLState::new_genesis();
+        let tracking = WriteTrackingState::new_from_state(&base_state);
+
+        let result = tracking.compute_state_root_materialized();
+        assert!(result.is_ok());
+        // Should match the base state root since no writes were made
+        assert_eq!(result.unwrap(), base_state.compute_state_root().unwrap());
+    }
+
+    #[test]
+    fn test_compute_state_root_materialized_with_writes() {
+        let base_state = OLState::new_genesis();
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
+
+        // Make a modification
+        tracking.set_cur_slot(42);
+
+        let materialized_root = tracking
+            .compute_state_root_materialized()
+            .expect("materialized root should succeed");
+
+        // Should differ from the base state root
+        let base_root = base_state.compute_state_root().unwrap();
+        assert_ne!(materialized_root, base_root);
+
+        // Verify it matches what we'd get by applying the batch manually
+        let mut expected_state = base_state.clone();
+        expected_state
+            .apply_write_batch(tracking.into_batch())
+            .unwrap();
+        assert_eq!(
+            materialized_root,
+            expected_state.compute_state_root().unwrap()
+        );
     }
 
     // =========================================================================
