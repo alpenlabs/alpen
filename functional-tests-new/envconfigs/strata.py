@@ -5,7 +5,6 @@ from typing import cast
 import flexitest
 
 from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
-from common.config.params import GenesisL1View
 from factories.bitcoin import BitcoinFactory
 from factories.strata import StrataFactory
 
@@ -70,10 +69,10 @@ class StrataEnvConfig(flexitest.EnvConfig):
         # TODO: set up reth config
 
         # Start Strata sequencer
-        genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
+        genesis_l1_height = btc_rpc.proxy.getblockcount()
         strata = strata_factory.create_node(
             bitcoind_config,
-            genesis_l1,
+            genesis_l1_height,
             is_sequencer=True,
             epoch_sealing_config=epoch_sealing_config,
         )

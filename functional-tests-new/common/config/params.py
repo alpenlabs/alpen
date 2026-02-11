@@ -40,14 +40,6 @@ class GenesisL1View:
     epoch_start_timestamp: int = field(default=1000)
     last_11_timestamps: list[int] = field(default_factory=lambda: [0] * 11)  # TODO: more type safe
 
-    @staticmethod
-    def at_latest_block(btc_rpc) -> "GenesisL1View":
-        blkid = btc_rpc.proxy.getbestblockhash()
-        blkheight = btc_rpc.proxy.getblock(blkid, 1)["height"]
-        l1blk_commitment = L1BlockCommitment(blkheight, blkid)
-        # TODO: add timestamps as needed
-        return GenesisL1View(l1blk_commitment)
-
 
 # TODO: move this to some place common as this should be useful for other purposes as well
 def gen_random_keypair() -> tuple[str, Key]:

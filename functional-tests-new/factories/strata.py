@@ -16,7 +16,6 @@ from common.config import (
     ServiceType,
     StrataConfig,
 )
-from common.config.params import GenesisL1View
 from common.datatool import (
     generate_asm_params,
     generate_ol_params,
@@ -43,7 +42,7 @@ class StrataFactory(flexitest.Factory):
     def create_node(
         self,
         bconfig: BitcoindConfig,
-        genesis_l1: GenesisL1View,
+        genesis_l1_height: int,
         is_sequencer: bool = True,
         config_overrides: dict[str, object] | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
@@ -54,7 +53,7 @@ class StrataFactory(flexitest.Factory):
 
         Args:
             bconfig: Bitcoin daemon configuration
-            genesis_l1: Genesis L1 view (applied to all param sets).
+            genesis_l1_height: Genesis L1 height used for param generation.
             is_sequencer: True for sequencer, False for fullnode
             config_overrides: Additional config overrides (-o flag)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
@@ -83,8 +82,6 @@ class StrataFactory(flexitest.Factory):
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
-
-        genesis_l1_height = genesis_l1.blk.height
 
         # Generate rollup params via datatool (also produces keys used below).
         params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
