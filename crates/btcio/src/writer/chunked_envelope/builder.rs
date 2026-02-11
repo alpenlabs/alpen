@@ -33,6 +33,7 @@ struct RevealArtifact {
 }
 
 /// One unsigned commit tx and N signed reveal txs.
+#[derive(Debug)]
 pub(crate) struct ChunkedEnvelopeTxs {
     pub commit_tx: Transaction,
     pub reveal_txs: Vec<Transaction>,
@@ -412,6 +413,47 @@ mod tests {
             result.reveal_txs[2].output[0].script_pubkey, expected_tag_2,
             "reveal 2 should reference reveal 1's wtxid"
         );
+    }
+
+    #[test]
+    fn test_build_chunked_envelope_txs_insufficient_utxos() {
+        let config = get_test_config();
+        let chunks = vec![vec![0u8; 150], vec![0u8; 150], vec![0u8; 150]];
+        let magic = [0xAA, 0xBB, 0xCC, 0xDD];
+        let prev_wtxid = Buf32::zero();
+
+        let address = config.sequencer_address.clone();
+        let insufficient_utxos = vec![ListUnspentItem {
+            txid: "4cfbec13cf1510545f285cceceb6229bd7b6a918a8f6eba1dbee64d26226a3b7"
+                .parse::<Txid>()
+                .unwrap(),
+            vout: 0,
+            address: address.as_unchecked().clone(),
+            script_pubkey: ScriptBuf::new(),
+            amount: SignedAmount::from_sat(1000), // far too little for 3 reveals
+            confirmations: 100,
+            spendable: true,
+            solvable: true,
+            label: "".to_string(),
+            safe: true,
+            redeem_script: None,
+            descriptor: None,
+            parent_descriptors: None,
+        }];
+
+        let result =
+            build_chunked_envelope_txs(&config, &chunks, &magic, &prev_wtxid, insufficient_utxos);
+
+        assert!(result.is_err(), "should fail with insufficient UTXOs");
+        match result {
+            Err(EnvelopeError::NotEnoughUtxos(needed, have)) => {
+                assert!(
+                    needed > have,
+                    "needed ({needed}) should exceed have ({have})"
+                );
+            }
+            other => panic!("expected NotEnoughUtxos error, got: {other:?}"),
+        }
     }
 
     #[test]

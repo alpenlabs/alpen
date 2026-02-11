@@ -345,10 +345,19 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::{
+        absolute::LockTime, consensus::encode::serialize as btc_serialize, hashes::Hash,
+        transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+        Witness,
+    };
+    use strata_db_types::types::RevealTxMeta;
     use strata_primitives::buf::Buf32;
 
     use super::*;
-    use crate::writer::test_utils::get_chunked_envelope_ops;
+    use crate::{
+        test_utils::{SendRawTransactionMode, TestBitcoinClient},
+        writer::test_utils::{get_broadcast_handle, get_chunked_envelope_ops},
+    };
 
     #[test]
     fn test_find_first_pending_idx_empty() {
@@ -484,6 +493,389 @@ mod tests {
         assert_eq!(
             to_envelope_status(&L1TxStatus::Published),
             ChunkedEnvelopeStatus::Published,
+        );
+    }
+
+    // Async state-machine tests for commit/reveal status transitions.
+
+    /// Creates a minimal valid transaction for test database entries.
+    fn make_test_tx() -> Transaction {
+        Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: bitcoin::Txid::all_zeros(),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                witness: Witness::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        }
+    }
+
+    /// Creates a test entry with N reveal transactions containing valid tx_bytes.
+    fn make_entry_with_reveals(n: usize) -> ChunkedEnvelopeEntry {
+        let mut entry = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![0xAA; 100]; n],
+            [0x01, 0x02, 0x03, 0x04],
+            Buf32::zero(),
+        );
+        entry.commit_txid = Buf32::from([0x11; 32]);
+        entry.reveals = (0..n)
+            .map(|i| {
+                let tx = make_test_tx();
+                RevealTxMeta {
+                    vout_index: i as u32,
+                    txid: Buf32::from([(0x20 + i as u8); 32]),
+                    wtxid: Buf32::from([(0x30 + i as u8); 32]),
+                    tx_bytes: btc_serialize(&tx),
+                }
+            })
+            .collect();
+        entry.status = ChunkedEnvelopeStatus::Unpublished;
+        entry
+    }
+
+    #[tokio::test]
+    async fn test_check_commit_unpublished_stays_waiting() {
+        let bcast = get_broadcast_handle();
+        let client = TestBitcoinClient::new(1);
+        let entry = make_entry_with_reveals(2);
+
+        // Store commit with Unpublished status — reveals should NOT be broadcast.
+        let commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::Unpublished,
+            "should stay Unpublished while commit is not yet published"
+        );
+
+        // Ensure reveals are not inserted in broadcast DB before commit is published.
+        for reveal in &entry.reveals {
+            let rtx = bcast.get_tx_entry_by_id_async(reveal.txid).await.unwrap();
+            assert!(
+                rtx.is_none(),
+                "reveal should not be stored before commit publish"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_check_commit_missing_returns_unsigned() {
+        let bcast = get_broadcast_handle();
+        let client = TestBitcoinClient::new(1);
+        let entry = make_entry_with_reveals(2);
+
+        // Don't store commit at all — should return Unsigned for re-signing.
+        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::Unsigned,
+            "missing commit should trigger re-sign"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_commit_invalid_inputs_returns_needs_resign() {
+        let bcast = get_broadcast_handle();
+        let client = TestBitcoinClient::new(1);
+        let entry = make_entry_with_reveals(2);
+
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::InvalidInputs;
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+            .await
+            .unwrap();
+        assert_eq!(result, ChunkedEnvelopeStatus::NeedsResign);
+    }
+
+    #[tokio::test]
+    async fn test_check_commit_published_broadcasts_reveals() {
+        let bcast = get_broadcast_handle();
+        let client = TestBitcoinClient::new(1);
+        let entry = make_entry_with_reveals(3);
+
+        // Store commit as Published.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::Published;
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::CommitPublished,
+            "should broadcast reveals and transition to CommitPublished"
+        );
+
+        // Verify all reveals were stored in broadcast DB with Published status.
+        for reveal in &entry.reveals {
+            let rtx = bcast
+                .get_tx_entry_by_id_async(reveal.txid)
+                .await
+                .unwrap()
+                .expect("reveal should be in broadcast DB");
+            assert_eq!(
+                rtx.status,
+                L1TxStatus::Published,
+                "reveal should be marked Published"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_check_commit_broadcast_missing_input_returns_needs_resign() {
+        let bcast = get_broadcast_handle();
+        let client = TestBitcoinClient::new(1)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::MissingOrInvalidInput);
+        let entry = make_entry_with_reveals(2);
+
+        // Store commit as Published.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::Published;
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::NeedsResign,
+            "missing/invalid input during reveal broadcast should trigger re-sign"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_commit_broadcast_generic_error_keeps_commit_published_state() {
+        let bcast = get_broadcast_handle();
+        let client = TestBitcoinClient::new(1)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::GenericError);
+        let entry = make_entry_with_reveals(2);
+
+        // Store commit as Published.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::Published;
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::CommitPublished,
+            "generic reveal broadcast errors should still move to CommitPublished"
+        );
+
+        // Reveals are inserted for tracking even when RPC returned generic broadcast errors.
+        for reveal in &entry.reveals {
+            let rtx = bcast
+                .get_tx_entry_by_id_async(reveal.txid)
+                .await
+                .unwrap()
+                .expect("reveal should be in broadcast DB");
+            assert_eq!(rtx.status, L1TxStatus::Published);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_full_status_all_finalized() {
+        let bcast = get_broadcast_handle();
+        let entry = make_entry_with_reveals(2);
+
+        let finalized = L1TxStatus::Finalized {
+            confirmations: 6,
+            block_hash: Buf32::from([0xAA; 32]),
+            block_height: 100,
+        };
+
+        // Store commit as Finalized.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = finalized.clone();
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        // Store all reveals as Finalized.
+        for reveal in &entry.reveals {
+            let mut rtx = L1TxEntry::from_tx(&make_test_tx());
+            rtx.status = finalized.clone();
+            bcast.put_tx_entry(reveal.txid, rtx).await.unwrap();
+        }
+
+        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        assert_eq!(result, ChunkedEnvelopeStatus::Finalized);
+    }
+
+    #[tokio::test]
+    async fn test_full_status_least_progressed_wins() {
+        let bcast = get_broadcast_handle();
+        let entry = make_entry_with_reveals(3);
+
+        let confirmed = L1TxStatus::Confirmed {
+            confirmations: 3,
+            block_hash: Buf32::from([0xBB; 32]),
+            block_height: 100,
+        };
+
+        // Commit is Confirmed.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = confirmed.clone();
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        // Reveal 0: Confirmed.
+        let mut r0 = L1TxEntry::from_tx(&make_test_tx());
+        r0.status = confirmed.clone();
+        bcast.put_tx_entry(entry.reveals[0].txid, r0).await.unwrap();
+
+        // Reveal 1: Published (least progressed).
+        let mut r1 = L1TxEntry::from_tx(&make_test_tx());
+        r1.status = L1TxStatus::Published;
+        bcast.put_tx_entry(entry.reveals[1].txid, r1).await.unwrap();
+
+        // Reveal 2: Confirmed.
+        let mut r2 = L1TxEntry::from_tx(&make_test_tx());
+        r2.status = confirmed;
+        bcast.put_tx_entry(entry.reveals[2].txid, r2).await.unwrap();
+
+        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::Published,
+            "least progressed (Published) should determine overall status"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_full_status_commit_missing_returns_unsigned() {
+        let bcast = get_broadcast_handle();
+        let entry = make_entry_with_reveals(2);
+
+        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::Unsigned,
+            "missing commit should trigger re-sign"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_full_status_reveal_missing_returns_unsigned() {
+        let bcast = get_broadcast_handle();
+        let entry = make_entry_with_reveals(2);
+
+        // Store commit.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::Published;
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        // Store only first reveal.
+        let mut r0 = L1TxEntry::from_tx(&make_test_tx());
+        r0.status = L1TxStatus::Published;
+        bcast.put_tx_entry(entry.reveals[0].txid, r0).await.unwrap();
+
+        // Second reveal is missing.
+        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::Unsigned,
+            "missing reveal should trigger re-sign"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_full_status_reveal_invalid_inputs_returns_needs_resign() {
+        let bcast = get_broadcast_handle();
+        let entry = make_entry_with_reveals(2);
+
+        // Store commit as Published.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::Published;
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        // Reveal 0 is fine.
+        let mut r0 = L1TxEntry::from_tx(&make_test_tx());
+        r0.status = L1TxStatus::Published;
+        bcast.put_tx_entry(entry.reveals[0].txid, r0).await.unwrap();
+
+        // Reveal 1 has invalid inputs.
+        let mut r1 = L1TxEntry::from_tx(&make_test_tx());
+        r1.status = L1TxStatus::InvalidInputs;
+        bcast.put_tx_entry(entry.reveals[1].txid, r1).await.unwrap();
+
+        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::NeedsResign,
+            "InvalidInputs on any reveal should trigger re-sign"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_full_status_unpublished_maps_to_commit_published() {
+        let bcast = get_broadcast_handle();
+        let entry = make_entry_with_reveals(2);
+
+        // Commit is Published.
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::Published;
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        // Reveals are Unpublished (stored in DB but not yet in mempool).
+        for reveal in &entry.reveals {
+            let rtx = L1TxEntry::from_tx(&make_test_tx());
+            // from_tx creates with Unpublished status by default
+            bcast.put_tx_entry(reveal.txid, rtx).await.unwrap();
+        }
+
+        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::CommitPublished,
+            "Unpublished L1TxStatus should map to CommitPublished to avoid status regression"
         );
     }
 }

@@ -56,8 +56,7 @@ pub struct DaBlob {
 // For a 1-input taproot script-path reveal with 2 outputs, worst case at
 // `MAX_CHUNK_PAYLOAD = 395_000` is:
 //
-// - chunk bytes in witness script = payload (395,000) + DA chunk header (37)
-//   = 395,037
+// - chunk bytes in witness script = payload (395,000) + DA chunk header (37) = 395,037
 // - witness script bytes = chunk bytes + pubkey/CHECKSIG + envelope opcodes
 //   + pushdata prefixes
 //   = 395,037 + 34 + 3 + (3 * ceil(395,037 / 520))
@@ -215,9 +214,7 @@ pub enum ReassemblyError {
 /// Performs the full pipeline: decode headers, validate consistency,
 /// order by `chunk_index`, concatenate payloads, verify SHA-256 hash,
 /// and decode the resulting bytes into a `DaBlob`.
-pub fn reassemble_da_blob(
-    encoded_chunks: &[Vec<u8>],
-) -> Result<DaBlob, ReassemblyError> {
+pub fn reassemble_da_blob(encoded_chunks: &[Vec<u8>]) -> Result<DaBlob, ReassemblyError> {
     let bytes = reassemble_from_da_chunks(encoded_chunks)?;
     decode_buf_exact(&bytes).map_err(ReassemblyError::BlobDecode)
 }
@@ -227,9 +224,7 @@ pub fn reassemble_da_blob(
 /// Performs the full pipeline: decode headers, reject unknown versions,
 /// order by `chunk_index`, concatenate payloads, compute the blob hash,
 /// and verify every chunk's claimed hash against the computed value.
-fn reassemble_from_da_chunks(
-    encoded_chunks: &[Vec<u8>],
-) -> Result<Vec<u8>, ReassemblyError> {
+fn reassemble_from_da_chunks(encoded_chunks: &[Vec<u8>]) -> Result<Vec<u8>, ReassemblyError> {
     if encoded_chunks.is_empty() {
         return Err(ReassemblyError::Empty);
     }

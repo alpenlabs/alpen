@@ -95,14 +95,13 @@ async fn filter_unfinalized_from_db(
 
 #[cfg(test)]
 mod test {
-    use bitcoin::{consensus, Transaction};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
     use strata_primitives::buf::Buf32;
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;
-    use crate::test_utils::SOME_TX;
+    use crate::test_utils::gen_l1_tx_entry_with_status;
 
     fn get_ops() -> Arc<BroadcastDbOps> {
         let pool = threadpool::Builder::new().num_threads(2).build();
@@ -111,22 +110,15 @@ mod test {
         Arc::new(ops)
     }
 
-    fn gen_entry_with_status(st: L1TxStatus) -> L1TxEntry {
-        let tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
-        let mut entry = L1TxEntry::from_tx(&tx);
-        entry.status = st;
-        entry
-    }
-
     async fn populate_broadcast_db(ops: Arc<BroadcastDbOps>) -> Vec<(u64, L1TxEntry)> {
         // Make some insertions
-        let e1 = gen_entry_with_status(L1TxStatus::Unpublished);
+        let e1 = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
         let i1 = ops
             .put_tx_entry_async([1; 32].into(), e1.clone())
             .await
             .unwrap();
 
-        let e2 = gen_entry_with_status(L1TxStatus::Confirmed {
+        let e2 = gen_l1_tx_entry_with_status(L1TxStatus::Confirmed {
             confirmations: 1,
             block_hash: Buf32::zero(),
             block_height: 100,
@@ -136,7 +128,7 @@ mod test {
             .await
             .unwrap();
 
-        let e3 = gen_entry_with_status(L1TxStatus::Finalized {
+        let e3 = gen_l1_tx_entry_with_status(L1TxStatus::Finalized {
             confirmations: 1,
             block_hash: Buf32::zero(),
             block_height: 100,
@@ -146,13 +138,13 @@ mod test {
             .await
             .unwrap();
 
-        let e4 = gen_entry_with_status(L1TxStatus::Published);
+        let e4 = gen_l1_tx_entry_with_status(L1TxStatus::Published);
         let i4 = ops
             .put_tx_entry_async([4; 32].into(), e4.clone())
             .await
             .unwrap();
 
-        let e5 = gen_entry_with_status(L1TxStatus::InvalidInputs);
+        let e5 = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
         let i5 = ops
             .put_tx_entry_async([5; 32].into(), e5.clone())
             .await
@@ -209,18 +201,18 @@ mod test {
 
         // Get unfinalized entries where one entry is modified, another is removed
         let mut unfinalized_entries = state.unfinalized_entries.clone();
-        let entry = gen_entry_with_status(L1TxStatus::InvalidInputs);
+        let entry = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
         unfinalized_entries.push(IndexedEntry::new(0, entry));
 
         // Insert two more items to db, one invalid and one published. Note the new idxs than used
         // in populate db.
-        let e = gen_entry_with_status(L1TxStatus::InvalidInputs);
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
         let _ = ops
             .put_tx_entry_async([7; 32].into(), e.clone())
             .await
             .unwrap();
 
-        let e1 = gen_entry_with_status(L1TxStatus::Published); // this should be in new state
+        let e1 = gen_l1_tx_entry_with_status(L1TxStatus::Published); // this should be in new state
         let idx1 = ops
             .put_tx_entry_async([8; 32].into(), e1.clone())
             .await
