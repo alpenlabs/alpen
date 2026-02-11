@@ -11,7 +11,7 @@
 
 use std::{future::Future, sync::Arc, time::Duration};
 
-use bitcoin::{consensus::encode::deserialize as btc_deserialize, Address};
+use bitcoin::{consensus::encode::deserialize as btc_deserialize, Address, Transaction};
 use bitcoind_async_client::{
     traits::{Broadcaster, Reader, Signer, Wallet},
     Client,
@@ -132,71 +132,80 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     let mut curr = start_idx;
     loop {
         tick.as_mut().tick().await;
+        let span_curr = curr;
 
-        let dspan = debug_span!("chunked_envelope", %curr);
-        let _g = dspan.enter();
+        async {
+            let Some(entry) = ops.get_chunked_envelope_entry_async(curr).await? else {
+                trace!("no entry at current index, waiting");
+                return Ok::<(), anyhow::Error>(());
+            };
 
-        let Some(entry) = ops.get_chunked_envelope_entry_async(curr).await? else {
-            trace!("no entry at current index, waiting");
-            continue;
-        };
+            match entry.status {
+                ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign => {
+                    debug!(status = ?entry.status, "entry needs signing");
 
-        match entry.status {
-            ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign => {
-                debug!(status = ?entry.status, "entry needs signing");
+                    let prev_tail_wtxid = resolve_prev_tail_wtxid(curr, &ops).await?;
 
-                let prev_tail_wtxid = resolve_prev_tail_wtxid(curr, &ops).await?;
-
-                match sign_chunked_envelope(&entry, prev_tail_wtxid, &broadcast_handle, ctx.clone())
+                    match sign_chunked_envelope(
+                        &entry,
+                        prev_tail_wtxid,
+                        &broadcast_handle,
+                        ctx.clone(),
+                    )
                     .await
-                {
-                    Ok(updated) => {
-                        ops.put_chunked_envelope_entry_async(curr, updated).await?;
-                        debug!("entry signed successfully");
+                    {
+                        Ok(updated) => {
+                            ops.put_chunked_envelope_entry_async(curr, updated).await?;
+                            debug!("entry signed successfully");
+                        }
+                        Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
+                            error!(%need, %have, "waiting for sufficient utxos");
+                        }
+                        Err(e) => return Err(e.into()),
                     }
-                    Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
-                        error!(%need, %have, "waiting for sufficient utxos");
-                    }
-                    Err(e) => return Err(e.into()),
                 }
-            }
 
-            ChunkedEnvelopeStatus::Finalized => {
-                curr += 1;
-            }
-
-            ChunkedEnvelopeStatus::Unpublished => {
-                // Check if commit is published. If so, broadcast ALL reveals together.
-                let new_status = check_commit_and_broadcast_reveals(
-                    &entry,
-                    &broadcast_handle,
-                    ctx.client.as_ref(),
-                )
-                .await?;
-                if new_status != entry.status {
-                    debug!(?new_status, "status changed");
-                    let mut updated = entry.clone();
-                    updated.status = new_status.clone();
-                    ops.put_chunked_envelope_entry_async(curr, updated).await?;
-                }
-            }
-
-            ChunkedEnvelopeStatus::CommitPublished
-            | ChunkedEnvelopeStatus::Published
-            | ChunkedEnvelopeStatus::Confirmed => {
-                // Reveals are in broadcast DB, check their status.
-                let new_status = check_full_broadcast_status(&entry, &broadcast_handle).await?;
-                if new_status != entry.status {
-                    debug!(?new_status, "status changed");
-                    let mut updated = entry.clone();
-                    updated.status = new_status.clone();
-                    ops.put_chunked_envelope_entry_async(curr, updated).await?;
-                }
-                if new_status == ChunkedEnvelopeStatus::Finalized {
+                ChunkedEnvelopeStatus::Finalized => {
                     curr += 1;
                 }
+
+                ChunkedEnvelopeStatus::Unpublished => {
+                    // Check if commit is published. If so, broadcast ALL reveals together.
+                    let new_status = check_commit_and_broadcast_reveals(
+                        &entry,
+                        &broadcast_handle,
+                        ctx.client.as_ref(),
+                    )
+                    .await?;
+                    if new_status != entry.status {
+                        debug!(?new_status, "status changed");
+                        let mut updated = entry.clone();
+                        updated.status = new_status.clone();
+                        ops.put_chunked_envelope_entry_async(curr, updated).await?;
+                    }
+                }
+
+                ChunkedEnvelopeStatus::CommitPublished
+                | ChunkedEnvelopeStatus::Published
+                | ChunkedEnvelopeStatus::Confirmed => {
+                    // Reveals are in broadcast DB, check their status.
+                    let new_status = check_full_broadcast_status(&entry, &broadcast_handle).await?;
+                    if new_status != entry.status {
+                        debug!(?new_status, "status changed");
+                        let mut updated = entry;
+                        updated.status = new_status.clone();
+                        ops.put_chunked_envelope_entry_async(curr, updated).await?;
+                    }
+                    if new_status == ChunkedEnvelopeStatus::Finalized {
+                        curr += 1;
+                    }
+                }
             }
+
+            Ok(())
         }
+        .instrument(debug_span!("chunked_envelope", curr = %span_curr))
+        .await?;
     }
 }
 
@@ -269,7 +278,7 @@ async fn check_commit_and_broadcast_reveals(
     // Deserialize all reveal transactions.
     let mut reveal_txs = Vec::with_capacity(entry.reveals.len());
     for reveal in &entry.reveals {
-        let tx: bitcoin::Transaction = btc_deserialize(&reveal.tx_bytes)
+        let tx: Transaction = btc_deserialize(&reveal.tx_bytes)
             .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
         reveal_txs.push((reveal.txid, tx));
     }
@@ -278,7 +287,7 @@ async fn check_commit_and_broadcast_reveals(
     for (txid, tx) in &reveal_txs {
         match client.send_raw_transaction(tx).await {
             Ok(_) => {
-                info!(%txid, "reveal tx broadcast successfully");
+                debug!(%txid, "reveal tx broadcast successfully");
             }
             Err(e) if e.is_missing_or_invalid_input() => {
                 warn!(%txid, ?e, "reveal tx has invalid inputs, will re-sign");
@@ -287,10 +296,16 @@ async fn check_commit_and_broadcast_reveals(
             Err(e) => {
                 // Could be "already in mempool" which is fine, or a network error.
                 // We'll verify actual status on the next poll.
-                debug!(%txid, ?e, "broadcast returned error (may already be in mempool)");
+                warn!(%txid, ?e, "broadcast returned error (may already be in mempool)");
             }
         }
     }
+
+    info!(
+        commit_txid = %entry.commit_txid,
+        reveal_count = entry.reveals.len(),
+        "completed reveal broadcast attempt"
+    );
 
     // Store all reveals in broadcast DB for tracking.
     for (txid, tx) in reveal_txs {
