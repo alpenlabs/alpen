@@ -22,7 +22,7 @@ use crate::{
 
 #[cfg(feature = "sequencer")]
 mod sequencer_services {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
 
     use anyhow::{Result, anyhow};
     use strata_btcio::{
@@ -36,17 +36,12 @@ mod sequencer_services {
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
-    use strata_ol_sequencer::TemplateManager;
     use strata_storage::ops::l1tx_broadcast;
 
     use crate::{
         helpers::generate_sequencer_address,
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
     };
-
-    /// TTL for template manager.
-    // TODO: make this configurable.
-    const TEMPLATE_MANAGER_TTL: Duration = Duration::from_secs(60);
 
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
@@ -59,16 +54,11 @@ mod sequencer_services {
         let broadcast_handle = Arc::new(start_broadcaster(nodectx));
         let envelope_handle = start_writer(nodectx, broadcast_handle.clone())?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
-        let template_manager = Arc::new(TemplateManager::new(
-            blockasm_handle,
-            nodectx.storage().clone(),
-            TEMPLATE_MANAGER_TTL,
-        ));
 
         Ok(Some(SequencerServiceHandles::new(
             broadcast_handle,
             envelope_handle,
-            template_manager,
+            blockasm_handle,
         )))
     }
 

@@ -1,4 +1,5 @@
 use strata_db_types::DbError;
+use strata_ol_block_assembly::BlockAssemblyError;
 use strata_primitives::OLBlockId;
 use thiserror::Error;
 
@@ -27,4 +28,7 @@ pub enum Error {
 
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+
+    #[error("Block assembly: {0}")]
+    BlockAssembly(#[from] BlockAssemblyError),
 }

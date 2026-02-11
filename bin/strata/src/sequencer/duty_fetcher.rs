@@ -2,7 +2,8 @@
 
 use std::{sync::Arc, time::Duration};
 
-use strata_ol_sequencer::{Duty, TemplateManager, extract_duties};
+use strata_ol_block_assembly::BlockasmHandle;
+use strata_ol_sequencer::{Duty, extract_duties};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::{sync::mpsc, time::interval};
@@ -11,7 +12,7 @@ use tracing::{debug, error, warn};
 /// Worker for fetching duties from the sequencer.
 #[tracing::instrument(skip_all, fields(component = "sequencer_duty_fetcher"))]
 pub(crate) async fn duty_fetcher_worker(
-    template_manager: Arc<TemplateManager>,
+    blockasm_handle: Arc<BlockasmHandle>,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     duty_tx: mpsc::Sender<Duty>,
@@ -36,7 +37,7 @@ pub(crate) async fn duty_fetcher_worker(
         };
 
         let duties =
-            match extract_duties(template_manager.as_ref(), tip_blkid, storage.as_ref()).await {
+            match extract_duties(blockasm_handle.as_ref(), tip_blkid, storage.as_ref()).await {
                 Ok(duties) => duties,
                 Err(err) => {
                     error!(%err, "failed to extract duties");
@@ -45,7 +46,6 @@ pub(crate) async fn duty_fetcher_worker(
             };
 
         if duties.is_empty() {
-            debug!(count = %duties.len(), "got no new duties, skipping");
             continue;
         }
 
