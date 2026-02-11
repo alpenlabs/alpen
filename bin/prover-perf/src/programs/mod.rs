@@ -1,14 +1,12 @@
 use std::str::FromStr;
 
-use clap::ValueEnum;
-
 mod checkpoint;
 mod cl_stf;
 mod evm_ee;
 
 use crate::PerformanceReport;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum GuestProgram {
     EvmEeStf,

@@ -15395,7 +15395,7 @@ name = "strata-provers-perf"
 version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
- "clap",
+ "argh",
  "num-format",
  "reqwest 0.12.28",
  "serde_json",
