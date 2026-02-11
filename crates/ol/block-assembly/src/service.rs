@@ -65,6 +65,14 @@ where
                 _ = completion.send(result).await;
             }
 
+            BlockasmCommand::GetBlockTemplate {
+                parent_block_id,
+                completion,
+            } => {
+                let result = get_block_template(state, *parent_block_id);
+                _ = completion.send(result).await;
+            }
+
             BlockasmCommand::CompleteBlockTemplate {
                 template_id,
                 data,
@@ -123,6 +131,16 @@ where
         .insert_template(template_id, full_template.clone());
 
     Ok(full_template)
+}
+
+/// Look up a pending block template by parent block ID.
+fn get_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
+    state: &mut BlockasmServiceState<M, E, S>,
+    parent_block_id: OLBlockId,
+) -> Result<FullBlockTemplate, BlockAssemblyError> {
+    state
+        .state_mut()
+        .get_pending_block_template_by_parent(parent_block_id)
 }
 
 /// Complete a block template with signature.
