@@ -17,7 +17,8 @@ setup_path() {
 # Builds the binary.
 build() {
     # TODO: add conditional builds as we go
-    cargo build  -F debug-utils -F test-mode --bin strata --bin alpen-client
+    # TODO: name binary for sequencer
+    cargo build  -F sequencer -F debug-utils -F test-mode --bin strata --bin alpen-client
 }
 
 # Runs tests.
