@@ -27,8 +27,10 @@ use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxSt
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
-use tokio::{runtime::Handle, task::block_in_place};
 use tracing::*;
+
+/// Groups reveal txs by L1 block for [`L1DaBlockRef`] construction.
+type BlockMap = HashMap<(Buf32, u64), Vec<(Txid, Wtxid)>>;
 
 /// [`HeaderDigestProvider`] backed by a Reth [`HeaderProvider`](reth_provider::HeaderProvider).
 pub(crate) struct RethHeaderDigestProvider<P> {
@@ -94,22 +96,37 @@ impl<S, D, H> StateDiffBlobProvider<S, D, H> {
             da_ctx,
         }
     }
+
+    /// Returns `true` if the bytecode has not been published in a prior batch
+    /// and therefore still needs to be included in the DA blob.
+    ///
+    /// On DB errors the bytecode is conservatively kept — duplicates are safe,
+    /// missing data is not.
+    fn bytecode_needs_publish(&self, code_hash: &B256) -> bool {
+        match self.da_ctx.is_code_hash_published(code_hash) {
+            Ok(published) => !published,
+            Err(e) => {
+                warn!(?code_hash, error = %e, "failed to check published status, keeping bytecode");
+                true
+            }
+        }
+    }
 }
 
+#[async_trait]
 impl<S, D, H> DaBlobProvider for StateDiffBlobProvider<S, D, H>
 where
     S: BatchStorage,
     D: StateDiffProvider + Send + Sync,
     H: HeaderDigestProvider,
 {
-    fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob> {
-        // 1. Look up the batch to get its block range. `BatchStorage` is async but
-        //    `DaBlobProvider::get_blob` is sync, so we bridge via `block_in_place` + `block_on` to
-        //    avoid deadlocking the Tokio runtime when all worker threads are occupied.
-        let (batch, _status) = block_in_place(|| {
-            Handle::current().block_on(self.batch_storage.get_batch_by_id(batch_id))
-        })?
-        .ok_or_else(|| eyre::eyre!("batch {batch_id:?} not found in storage"))?;
+    async fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob> {
+        // 1. Look up the batch to get its block range.
+        let (batch, _status) = self
+            .batch_storage
+            .get_batch_by_id(batch_id)
+            .await?
+            .ok_or_else(|| eyre::eyre!("batch {batch_id:?} not found in storage"))?;
 
         // 2. Aggregate per-block diffs via BatchBuilder.
         let mut builder = BatchBuilder::new();
@@ -142,7 +159,7 @@ where
         let before = state_diff.deployed_bytecodes.len();
         state_diff
             .deployed_bytecodes
-            .retain(|hash, _| !self.da_ctx.is_code_hash_published(hash).unwrap_or(false));
+            .retain(|hash, _| self.bytecode_needs_publish(hash));
         let deduped = before - state_diff.deployed_bytecodes.len();
 
         info!(
@@ -164,12 +181,13 @@ where
         })
     }
 
-    fn are_state_diffs_ready(&self, batch_id: BatchId) -> eyre::Result<bool> {
+    async fn are_state_diffs_ready(&self, batch_id: BatchId) -> eyre::Result<bool> {
         // Look up the batch to get its block range.
-        let (batch, _status) = block_in_place(|| {
-            Handle::current().block_on(self.batch_storage.get_batch_by_id(batch_id))
-        })?
-        .ok_or_else(|| eyre::eyre!("batch {batch_id:?} not found in storage"))?;
+        let (batch, _status) = self
+            .batch_storage
+            .get_batch_by_id(batch_id)
+            .await?
+            .ok_or_else(|| eyre::eyre!("batch {batch_id:?} not found in storage"))?;
 
         // Check if all blocks have state diffs available.
         for block_hash in batch.blocks_iter() {
@@ -201,7 +219,7 @@ pub(crate) struct ChunkedEnvelopeDaProvider {
     blob_provider: Arc<dyn DaBlobProvider>,
     envelope_handle: Arc<ChunkedEnvelopeHandle>,
     broadcast_ops: Arc<BroadcastDbOps>,
-    magic_bytes: [u8; 4],
+    magic_bytes: MagicBytes,
 }
 
 impl ChunkedEnvelopeDaProvider {
@@ -209,7 +227,7 @@ impl ChunkedEnvelopeDaProvider {
         blob_provider: Arc<dyn DaBlobProvider>,
         envelope_handle: Arc<ChunkedEnvelopeHandle>,
         broadcast_ops: Arc<BroadcastDbOps>,
-        magic_bytes: [u8; 4],
+        magic_bytes: MagicBytes,
     ) -> Self {
         Self {
             blob_provider,
@@ -223,11 +241,11 @@ impl ChunkedEnvelopeDaProvider {
 #[async_trait]
 impl BatchDaProvider for ChunkedEnvelopeDaProvider {
     async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<u64> {
-        let blob = self.blob_provider.get_blob(batch_id)?;
+        let blob = self.blob_provider.get_blob(batch_id).await?;
         let chunks = prepare_da_chunks(&blob)?;
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
 
-        let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, MagicBytes::new(self.magic_bytes));
+        let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes);
 
         let idx = self
             .envelope_handle
@@ -287,7 +305,7 @@ impl ChunkedEnvelopeDaProvider {
         }
 
         // Group by (block_hash, block_height) -> Vec<(Txid, Wtxid)>.
-        let mut block_map: HashMap<(Buf32, u64), Vec<(Txid, Wtxid)>> = HashMap::new();
+        let mut block_map: BlockMap = HashMap::new();
 
         for (txid_buf, wtxid_buf) in &tx_pairs {
             let Some(tx_entry) = self

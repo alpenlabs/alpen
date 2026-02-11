@@ -41,3 +41,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
+strata-l1-envelope-fmt.workspace = true

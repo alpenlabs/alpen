@@ -33,7 +33,7 @@ where
             // The Reth exex writes state diffs asynchronously, so we need to wait
             // for them to be ready before posting DA.
             let batch_id = batch.id();
-            match ctx.blob_provider.are_state_diffs_ready(batch_id) {
+            match ctx.blob_provider.are_state_diffs_ready(batch_id).await {
                 Ok(true) => {
                     // State diffs ready, proceed with DA posting
                 }

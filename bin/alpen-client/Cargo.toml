@@ -23,7 +23,6 @@ sequencer = [
   "dep:strata-btcio",
   "dep:strata-config",
   "dep:strata-db-types",
-  "dep:strata-l1-txfmt",
 ]
 
 [[bin]]
@@ -52,8 +51,8 @@ strata-common = { workspace = true, features = ["async"] }
 strata-config = { workspace = true, optional = true }
 strata-db-types = { workspace = true, optional = true }
 strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
 strata-ol-genesis.workspace = true
-strata-l1-txfmt = { workspace = true, optional = true }
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-rpc-types.workspace = true
 strata-primitives.workspace = true
@@ -66,7 +65,6 @@ async-trait.workspace = true
 bitcoin = { workspace = true, optional = true }
 clap.workspace = true
 eyre.workspace = true
-hex.workspace = true
 jsonrpsee = { workspace = true, features = ["http-client"] }
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true

@@ -135,7 +135,7 @@ class AlpenClientFactory(flexitest.Factory):
         if da_config is not None:
             # fmt: off
             cmd.extend([
-                "--ee-da-magic-bytes", da_config.magic_bytes.hex(),
+                "--ee-da-magic-bytes", da_config.magic_bytes.decode("ascii"),
                 "--btc-rpc-url", da_config.btc_rpc_url,
                 "--btc-rpc-user", da_config.btc_rpc_user,
                 "--btc-rpc-password", da_config.btc_rpc_password,

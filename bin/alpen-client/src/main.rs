@@ -21,27 +21,12 @@ use alpen_ee_common::{
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
-#[cfg(feature = "sequencer")]
-use alpen_ee_exec_chain::{
-    build_exec_chain_consensus_forwarder_task, build_exec_chain_task,
-    init_exec_chain_state_from_storage,
-};
-#[cfg(feature = "sequencer")]
-use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OLTrackerBuilder};
-#[cfg(feature = "sequencer")]
-use alpen_ee_sequencer::{
-    block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
-};
 use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
-#[cfg(feature = "sequencer")]
-use alpen_reth_exex::StateDiffGenerator;
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
-#[cfg(feature = "sequencer")]
-use bitcoind_async_client::{traits::Wallet as _, Auth, Client as BtcClient};
 use clap::Parser;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
@@ -53,25 +38,36 @@ use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
-#[cfg(feature = "sequencer")]
-use strata_btcio::{
-    broadcaster::create_broadcaster_task, writer::chunked_envelope::create_chunked_envelope_task,
-    BtcioParams,
-};
-#[cfg(feature = "sequencer")]
-use strata_config::btcio::WriterConfig;
 use strata_identifiers::{CredRule, OLBlockId};
+use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::ALPEN_EE_ACCOUNT_ID_BYTES;
 use strata_primitives::buf::Buf32;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
-
 #[cfg(feature = "sequencer")]
-use crate::{
-    da_provider::{ChunkedEnvelopeDaProvider, RethHeaderDigestProvider, StateDiffBlobProvider},
-    noop_prover::NoopProver,
-    payload_builder::AlpenRethPayloadEngine,
+use {
+    crate::{
+        da_provider::{ChunkedEnvelopeDaProvider, RethHeaderDigestProvider, StateDiffBlobProvider},
+        noop_prover::NoopProver,
+        payload_builder::AlpenRethPayloadEngine,
+    },
+    alpen_ee_exec_chain::{
+        build_exec_chain_consensus_forwarder_task, build_exec_chain_task,
+        init_exec_chain_state_from_storage,
+    },
+    alpen_ee_genesis::ensure_finalized_exec_chain_genesis,
+    alpen_ee_sequencer::{
+        block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
+    },
+    alpen_reth_exex::StateDiffGenerator,
+    bitcoind_async_client::{traits::Wallet as _, Auth, Client as BtcClient},
+    strata_btcio::{
+        broadcaster::create_broadcaster_task,
+        writer::chunked_envelope::create_chunked_envelope_task, BtcioParams,
+    },
+    strata_config::btcio::WriterConfig,
 };
+
 use crate::{
     dummy_ol_client::DummyOLClient,
     genesis::ee_genesis_block_info,
@@ -398,11 +394,8 @@ fn main() {
                 let btc_pass = ext.btc_rpc_password.as_ref().expect("enforced by clap");
 
                 // Create BtcioParams directly from CLI args.
-                let btcio_params = BtcioParams::new(
-                    ext.l1_reorg_safe_depth,
-                    strata_l1_txfmt::MagicBytes::new(magic_bytes),
-                    ext.genesis_l1_height,
-                );
+                let btcio_params =
+                    BtcioParams::new(ext.l1_reorg_safe_depth, magic_bytes, ext.genesis_l1_height);
 
                 // Bitcoin RPC client.
                 let btc_client = Arc::new(
@@ -588,9 +581,9 @@ pub struct AdditionalConfig {
 
     // --- DA Configuration ---
     /// Magic bytes (hex-encoded, 4 bytes) for tagging EE DA envelope transactions.
-    /// Example: `deadbeef`.
+    /// Example: `ALPN`.
     #[arg(long, required = false, value_parser = parse_magic_bytes)]
-    pub ee_da_magic_bytes: Option<[u8; 4]>,
+    pub ee_da_magic_bytes: Option<MagicBytes>,
 
     /// Bitcoin Core RPC URL. Required when `--sequencer` is set.
     #[arg(long, required = false)]
@@ -664,13 +657,10 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
         .map_err(|e| eyre::eyre!("Failed to parse hex string as Buf32: {e}"))
 }
 
-/// Parse a hex-encoded string into 4 magic bytes.
-fn parse_magic_bytes(s: &str) -> eyre::Result<[u8; 4]> {
-    let s = s.strip_prefix("0x").unwrap_or(s);
-    let bytes = hex::decode(s).map_err(|e| eyre::eyre!("Failed to decode hex: {e}"))?;
-    bytes
-        .try_into()
-        .map_err(|_| eyre::eyre!("Magic bytes must be exactly 4 bytes"))
+/// Parse a magic bytes string using the [`MagicBytes`] parser from `strata-l1-txfmt`.
+fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
+    s.parse::<MagicBytes>()
+        .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
 }
 
 /// Handle genesis related tasks.
