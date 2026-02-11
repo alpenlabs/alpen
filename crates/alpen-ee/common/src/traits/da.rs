@@ -35,8 +35,9 @@ pub trait BatchDaProvider: Send + Sync {
     /// Checks DA status for a batch.
     ///
     /// The `envelope_idx` identifies the chunked envelope entry assigned when
-    /// DA was first posted. It is persisted in [`BatchStatus::DaPending`](crate::BatchStatus::DaPending) so
-    /// the caller can supply it even after a restart.
+    /// DA was first posted. It is persisted in
+    /// [`BatchStatus::DaPending`](crate::BatchStatus::DaPending) so the caller can supply it
+    /// even after a restart.
     ///
     /// Returns a [`DaStatus`] indicating whether DA is pending, ready with L1
     /// block references, not yet requested, or has permanently failed.
