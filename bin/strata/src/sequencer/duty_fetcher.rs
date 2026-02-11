@@ -6,7 +6,7 @@ use strata_ol_sequencer::{Duty, TemplateManager, extract_duties};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::{sync::mpsc, time::interval};
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 /// Worker for fetching duties from the sequencer.
 #[tracing::instrument(skip_all, fields(component = "sequencer_duty_fetcher"))]
@@ -44,11 +44,14 @@ pub(crate) async fn duty_fetcher_worker(
                 }
             };
 
-        // Log non-empty duties
-        if !duties.is_empty() {
-            warn!(count = %duties.len(), "got no new duties, skipping");
+        if duties.is_empty() {
+            debug!(count = %duties.len(), "got no new duties, skipping");
             continue;
         }
+
+        // Log non-empty duties
+        let duties_display: Vec<String> = duties.iter().map(ToString::to_string).collect();
+        debug!(duties = ?duties_display, "got some sequencer duties");
 
         for duty in duties {
             if duty_tx.send(duty).await.is_err() {

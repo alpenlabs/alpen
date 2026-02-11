@@ -39,20 +39,22 @@ impl L1WriterDatabase for L1WriterDBSled {
             .unwrap_or(0))
     }
 
-    fn put_intent_entry(&self, intent_id: Buf32, intent_entry: IntentEntry) -> DbResult<()> {
+    fn put_intent_entry(&self, intent_id: Buf32, intent_entry: IntentEntry) -> DbResult<u64> {
         let next_idx = self
             .intent_idx_tree
             .last()?
             .map(first)
             .map(|x| x + 1)
             .unwrap_or(0);
-        self.config
-            .with_retry((&self.intent_idx_tree, &self.intent_tree), |(iit, it)| {
-                let nxt = find_next_available_id(&iit, next_idx)?;
-                iit.insert(&nxt, &intent_id)?;
-                it.insert(&intent_id, &intent_entry)?;
-                Ok(())
-            })
+        let idx =
+            self.config
+                .with_retry((&self.intent_idx_tree, &self.intent_tree), |(iit, it)| {
+                    let nxt = find_next_available_id(&iit, next_idx)?;
+                    iit.insert(&nxt, &intent_id)?;
+                    it.insert(&intent_id, &intent_entry)?;
+                    Ok(nxt)
+                })?;
+        Ok(idx)
     }
 
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>> {

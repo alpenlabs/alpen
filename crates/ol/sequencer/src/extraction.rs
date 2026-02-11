@@ -53,11 +53,11 @@ async fn get_earliest_unsigned_checkpoint(
             break;
         };
 
-        last_ckpt -= 1;
-
         if last_ckpt == 0 {
             break;
-        };
+        }
+
+        last_ckpt -= 1;
     }
     Ok(unsigned_ckpt)
 }
