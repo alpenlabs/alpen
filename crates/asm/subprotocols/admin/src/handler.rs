@@ -303,18 +303,18 @@ mod tests {
 
         for update in updates {
             // Capture initial state before processing the update
-            let authority_seqno = state
+            let last_seqno = state
                 .authority(update.required_role())
                 .unwrap()
                 .last_seqno();
             let initial_next_id = state.next_update_id();
             let initial_queued_len = state.queued().len();
 
-            let payload_seqno = authority_seqno + 1;
+            let seqno = last_seqno + 1;
             let action = MultisigAction::Update(update.clone());
-            let sighash = action.compute_sighash(payload_seqno);
+            let sighash = action.compute_sighash(seqno);
             let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
-            let payload = SignedPayload::new(payload_seqno, action, sig_set);
+            let payload = SignedPayload::new(seqno, action, sig_set);
             handle_action(&mut state, payload, current_height, &mut relayer).unwrap();
 
             // Verify state changes after processing
@@ -326,7 +326,7 @@ mod tests {
             let new_queued_len = state.queued().len();
 
             // Authority sequence number should increment by 1
-            assert_eq!(new_last_seqno, authority_seqno + 1);
+            assert_eq!(new_last_seqno, seqno);
             // Next update ID should increment by 1
             assert_eq!(new_next_id, initial_next_id + 1);
             // Queue should contain one more item

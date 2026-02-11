@@ -170,7 +170,7 @@ mod tests {
         // Verify the signatures
         let res = verify_threshold_signatures(
             &config,
-            &parsed.signatures.signatures(),
+            parsed.signatures.signatures(),
             &action.compute_sighash(seqno).0,
         );
         assert!(res.is_ok());
