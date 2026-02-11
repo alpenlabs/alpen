@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_crypto::hash::{compute_borsh_hash, raw};
-use strata_l1_txfmt::TxType;
+use strata_l1_txfmt::{TagData, TxType};
 use strata_primitives::roles::{ProofType, Role};
 
 mod cancel;
@@ -12,9 +12,9 @@ use strata_primitives::buf::Buf32;
 pub use updates::UpdateAction;
 
 use crate::constants::{
-    ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE, OL_STF_VK_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE,
-    SEQUENCER_UPDATE_TX_TYPE, STRATA_ADMIN_MULTISIG_UPDATE_TX_TYPE,
-    STRATA_SEQ_MANAGER_MULTISIG_UPDATE_TX_TYPE,
+    ADMINISTRATION_SUBPROTOCOL_ID, ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE,
+    OL_STF_VK_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE, SEQUENCER_UPDATE_TX_TYPE,
+    STRATA_ADMIN_MULTISIG_UPDATE_TX_TYPE, STRATA_SEQ_MANAGER_MULTISIG_UPDATE_TX_TYPE,
 };
 
 pub type UpdateId = u32;
@@ -65,5 +65,14 @@ impl MultisigAction {
                 },
             },
         }
+    }
+
+    /// Constructs the SPS-50 [`TagData`] for this action.
+    ///
+    /// The tag is built from the administration subprotocol ID and the
+    /// action's [`TxType`], with no auxiliary data.
+    pub fn tag(&self) -> TagData {
+        TagData::new(ADMINISTRATION_SUBPROTOCOL_ID, self.tx_type(), vec![])
+            .expect("empty aux data always fits")
     }
 }
