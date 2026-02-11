@@ -39,19 +39,12 @@ impl SignedPayload {
 /// # Arguments
 /// * `tx` - A reference to the transaction input to parse
 ///
-/// # Returns
-/// A tuple containing:
-/// - `MultisigAction` - The administrative action extracted from the envelope payload
-/// - `SignatureSet` - The set of indexed ECDSA signatures
-///
 /// # Errors
 /// Returns `AdministrationTxParseError` if:
 /// - The transaction lacks a taproot leaf script in its witness
 /// - The envelope payload cannot be parsed
 /// - The signed payload cannot be deserialized
-pub fn parse_tx(
-    tx: &TxInputRef<'_>,
-) -> Result<(MultisigAction, SignatureSet), AdministrationTxParseError> {
+pub fn parse_tx(tx: &TxInputRef<'_>) -> Result<SignedPayload, AdministrationTxParseError> {
     let tx_type = tx.tag().tx_type();
 
     // Extract the taproot leaf script from the first input's witness
@@ -68,5 +61,5 @@ pub fn parse_tx(
     let signed_payload: SignedPayload = borsh::from_slice(&envelope_payload)
         .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
 
-    Ok((signed_payload.action, signed_payload.signatures))
+    Ok(signed_payload)
 }

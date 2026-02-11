@@ -4,8 +4,10 @@ use strata_asm_common::{
     logging::{error, info},
 };
 use strata_asm_params::AdministrationSubprotoParams;
-use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction, updates::predicate::ProofType};
-use strata_crypto::threshold_signature::SignatureSet;
+use strata_asm_txs_admin::{
+    actions::{MultisigAction, UpdateAction, updates::predicate::ProofType},
+    parser::SignedPayload,
+};
 use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
 
@@ -98,14 +100,13 @@ pub(crate) fn handle_pending_updates(
 /// * `Err(AdministrationError)` if validation failed or the action could not be processed
 pub(crate) fn handle_action(
     state: &mut AdministrationSubprotoState,
-    action: MultisigAction,
-    sig: SignatureSet,
+    payload: SignedPayload,
     current_height: u64,
     relayer: &mut impl MsgRelayer,
     params: &AdministrationSubprotoParams,
 ) -> Result<(), AdministrationError> {
     // Determine the required role based on the action type
-    let role = match &action {
+    let role = match &payload.action {
         MultisigAction::Update(update) => update.required_role(),
         MultisigAction::Cancel(cancel) => {
             // For cancel actions, we need to find the target action to determine its required role
@@ -121,10 +122,10 @@ pub(crate) fn handle_action(
     let authority = state
         .authority(role)
         .ok_or(AdministrationError::UnknownRole)?;
-    authority.verify_action_signature(&action, &sig)?;
+    authority.verify_action_signature(&payload)?;
 
     // Process the action based on its type
-    match action {
+    match payload.action {
         MultisigAction::Update(update) => {
             // Generate a unique ID for this update
             let id = state.next_update_id();
@@ -158,7 +159,7 @@ pub(crate) fn handle_action(
     let authority = state
         .authority_mut(role)
         .ok_or(AdministrationError::UnknownRole)?;
-    authority.increment_seqno();
+    authority.update_last_seqno(payload.seqno);
 
     Ok(())
 }
@@ -190,11 +191,12 @@ mod tests {
                 seq::SequencerUpdate,
             },
         },
+        parser::SignedPayload,
         test_utils::create_signature_set,
     };
     use strata_crypto::{
         keys::compressed::CompressedPublicKey,
-        threshold_signature::{SignatureSet, ThresholdConfig, ThresholdSignatureError},
+        threshold_signature::{SignatureSet, ThresholdConfig},
     };
     use strata_predicate::PredicateKey;
     use strata_test_utils::ArbitraryGenerator;
@@ -303,30 +305,30 @@ mod tests {
 
         for update in updates {
             // Capture initial state before processing the update
-            let initial_seq_no = state.authority(update.required_role()).unwrap().seqno();
+            let authority_seqno = state
+                .authority(update.required_role())
+                .unwrap()
+                .last_seqno();
             let initial_next_id = state.next_update_id();
             let initial_queued_len = state.queued().len();
 
+            let payload_seqno = authority_seqno + 1;
             let action = MultisigAction::Update(update.clone());
-            let sighash = action.compute_sighash(initial_seq_no);
+            let sighash = action.compute_sighash(payload_seqno);
             let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
-            handle_action(
-                &mut state,
-                action,
-                sig_set,
-                current_height,
-                &mut relayer,
-                &params,
-            )
-            .unwrap();
+            let payload = SignedPayload::new(payload_seqno, action, sig_set);
+            handle_action(&mut state, payload, current_height, &mut relayer, &params).unwrap();
 
             // Verify state changes after processing
-            let new_seq_no = state.authority(update.required_role()).unwrap().seqno();
+            let new_last_seqno = state
+                .authority(update.required_role())
+                .unwrap()
+                .last_seqno();
             let new_next_id = state.next_update_id();
             let new_queued_len = state.queued().len();
 
             // Authority sequence number should increment by 1
-            assert_eq!(new_seq_no, initial_seq_no + 1);
+            assert_eq!(new_last_seqno, authority_seqno + 1);
             // Next update ID should increment by 1
             assert_eq!(new_next_id, initial_next_id + 1);
             // Queue should contain one more item
@@ -354,7 +356,7 @@ mod tests {
         let mut state = AdministrationSubprotoState::new(&params);
         let mut relayer = MockRelayer::<CheckpointIncomingMsg>::new();
         let current_height = 1000;
-        let initial_seq_no = 0;
+        let last_seqno = 0;
 
         // Generate a random update action that require StrataAdministrator role
         let update = get_strata_administrator_update_actions(1)[0].clone();
@@ -362,59 +364,39 @@ mod tests {
         // Create signer indices (signers 0 and 2)
         let signer_indices = [0u8, 2u8];
 
-        // Create an action and queue that.
+        // Create an action and queue it with a valid seqno (> current authority seqno of 0).
+        let valid_seqno = last_seqno + 1;
         let action = MultisigAction::Update(update.clone());
-        let sighash = action.compute_sighash(initial_seq_no);
+        let sighash = action.compute_sighash(valid_seqno);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
-        let res = handle_action(
-            &mut state,
-            action,
-            sig_set,
-            current_height,
-            &mut relayer,
-            &params,
-        );
+        let payload = SignedPayload::new(valid_seqno, action, sig_set);
+        let res = handle_action(&mut state, payload, current_height, &mut relayer, &params);
         assert!(res.is_ok());
 
-        // Try queuing it again with same seq no
+        // Authority seqno is now 1. Try replaying with seqno 1 (<= current).
         let action = MultisigAction::Update(update.clone());
-        let sighash = action.compute_sighash(initial_seq_no);
+        let sighash = action.compute_sighash(1);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
-        let res = handle_action(
-            &mut state,
-            action,
-            sig_set,
-            current_height,
-            &mut relayer,
-            &params,
-        );
+
+        let payload = SignedPayload::new(1, action, sig_set);
+        let res = handle_action(&mut state, payload, current_height, &mut relayer, &params);
+
         assert!(res.is_err());
         assert!(matches!(
             res,
-            Err(AdministrationError::ThresholdSignature(
-                ThresholdSignatureError::InvalidSignature { .. }
-            ))
+            Err(AdministrationError::InvalidSeqno {
+                payload_seqno: 1,
+                last_seqno: 1,
+            })
         ));
 
-        // Try queuing it again with same arbitrary seq no.
-        let seq_no: u64 = ArbitraryGenerator::new().generate();
+        // Try with seqno 0, which is also <= current seqno of 1.
         let action = MultisigAction::Update(update.clone());
-        let sighash = action.compute_sighash(seq_no);
+        let sighash = action.compute_sighash(0);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
-        let res = handle_action(
-            &mut state,
-            action,
-            sig_set,
-            current_height,
-            &mut relayer,
-            &params,
-        );
-        assert!(matches!(
-            res,
-            Err(AdministrationError::ThresholdSignature(
-                ThresholdSignatureError::InvalidSignature { .. }
-            ))
-        ));
+        let payload = SignedPayload::new(0, action, sig_set);
+        let res = handle_action(&mut state, payload, current_height, &mut relayer, &params);
+        assert!(matches!(res, Err(AdministrationError::InvalidSeqno { .. })));
     }
 
     /// Test that Sequencer update actions are handled differently from other updates:
@@ -441,31 +423,31 @@ mod tests {
         for update in updates {
             let update: UpdateAction = update.into();
             // Capture initial state before processing the update
-            let initial_seq_no = state.authority(update.required_role()).unwrap().seqno();
+            let last_seqno = state
+                .authority(update.required_role())
+                .unwrap()
+                .last_seqno();
             let initial_next_id = state.next_update_id();
             let initial_queued_len = state.queued().len();
 
+            let payload_seqno = last_seqno + 1;
             let action = MultisigAction::Update(update.clone());
-            let sighash = action.compute_sighash(initial_seq_no);
+            let sighash = action.compute_sighash(payload_seqno);
             let sig_set = create_signature_set(&seq_manager_sks, &signer_indices, sighash);
 
-            handle_action(
-                &mut state,
-                action,
-                sig_set,
-                current_height,
-                &mut relayer,
-                &params,
-            )
-            .unwrap();
+            let payload = SignedPayload::new(payload_seqno, action, sig_set);
+            handle_action(&mut state, payload, current_height, &mut relayer, &params).unwrap();
 
             // Verify state changes after processing
-            let new_seq_no = state.authority(update.required_role()).unwrap().seqno();
+            let new_last_seqno = state
+                .authority(update.required_role())
+                .unwrap()
+                .last_seqno();
             let new_next_id = state.next_update_id();
             let new_queued_len = state.queued().len();
 
             // Authority sequence number should increment by 1
-            assert_eq!(new_seq_no, initial_seq_no + 1);
+            assert_eq!(new_last_seqno, last_seqno + 1);
             // Next update ID should increment by 1
             assert_eq!(new_next_id, initial_next_id + 1);
             // Queue length should remain the same (sequencer updates not queued)
@@ -536,21 +518,18 @@ mod tests {
         let updates = get_strata_administrator_update_actions(no_of_updates);
 
         for update in updates {
-            let seq_no = state.authority(update.required_role()).unwrap().seqno();
+            let last_seqno = state
+                .authority(update.required_role())
+                .unwrap()
+                .last_seqno();
+            let payload_seqno = last_seqno + 1;
             let update_action = MultisigAction::Update(update);
 
-            let sighash = update_action.compute_sighash(seq_no);
+            let sighash = update_action.compute_sighash(payload_seqno);
             let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
-            handle_action(
-                &mut state,
-                update_action,
-                sig_set,
-                current_height,
-                &mut relayer,
-                &params,
-            )
-            .unwrap();
+            let payload = SignedPayload::new(payload_seqno, update_action, sig_set);
+            handle_action(&mut state, payload, current_height, &mut relayer, &params).unwrap();
         }
 
         // Then create a random order in which the actions are cancelled.
@@ -562,30 +541,24 @@ mod tests {
             let cancel_action = MultisigAction::Cancel(CancelAction::new(id));
             let authorized_role = state.find_queued(&id).unwrap().action().required_role();
             // Capture initial state before cancellation
-            let initial_seq_no = state.authority(authorized_role).unwrap().seqno();
+            let last_seqno = state.authority(authorized_role).unwrap().last_seqno();
+            let payload_seqno = last_seqno + 1;
             let initial_next_id = state.next_update_id();
             let initial_queued_len = state.queued().len();
 
-            let sighash = cancel_action.compute_sighash(initial_seq_no);
+            let sighash = cancel_action.compute_sighash(payload_seqno);
             let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
-            handle_action(
-                &mut state,
-                cancel_action,
-                sig_set,
-                current_height,
-                &mut relayer,
-                &params,
-            )
-            .unwrap();
+            let payload = SignedPayload::new(payload_seqno, cancel_action, sig_set);
+            handle_action(&mut state, payload, current_height, &mut relayer, &params).unwrap();
 
             // Verify state changes after cancellation
-            let new_seq_no = state.authority(authorized_role).unwrap().seqno();
+            let new_last_seqno = state.authority(authorized_role).unwrap().last_seqno();
             let new_next_id = state.next_update_id();
             let new_queued_len = state.queued().len();
 
             // Authority sequence number should increment by 1
-            assert_eq!(new_seq_no, initial_seq_no + 1);
+            assert_eq!(new_last_seqno, last_seqno + 1);
             // Next update ID should remain unchanged (cancellation doesn't create new IDs)
             assert_eq!(new_next_id, initial_next_id);
             // Queue should shrink by 1
@@ -611,15 +584,9 @@ mod tests {
         let cancel_action: CancelAction = arb.generate();
         let cancel_action = MultisigAction::Cancel(cancel_action);
 
-        // Attempt to cancel a non-existent action should return an error
-        let res = handle_action(
-            &mut state,
-            cancel_action,
-            sig_set,
-            current_height,
-            &mut relayer,
-            &params,
-        );
+        let payload = SignedPayload::new(arb.generate(), cancel_action, sig_set);
+        let res = handle_action(&mut state, payload, current_height, &mut relayer, &params);
+
         assert!(matches!(res, Err(AdministrationError::UnknownAction(_))));
     }
 
@@ -632,7 +599,7 @@ mod tests {
         let (params, admin_sks, _) = create_test_params();
         let mut relayer = MockRelayer::<CheckpointIncomingMsg>::new();
         let mut state = AdministrationSubprotoState::new(&params);
-        let initial_seq_no = 0;
+        let last_seqno = 0;
         let current_height = 1000;
 
         // Create an update action
@@ -646,44 +613,32 @@ mod tests {
         // create signer indices (signers 0 and 2)
         let signer_indices = [0u8, 2u8];
 
-        let sighash = update_action.compute_sighash(initial_seq_no);
+        // Use seqno > initial (0) to pass validation
+        let update_seqno = last_seqno + 1;
+        let sighash = update_action.compute_sighash(update_seqno);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
-        // Queue the update action
-        handle_action(
-            &mut state,
-            update_action,
-            sig_set.clone(),
-            current_height,
-            &mut relayer,
-            &params,
-        )
-        .unwrap();
+        let payload = SignedPayload::new(update_seqno, update_action, sig_set);
+        handle_action(&mut state, payload, current_height, &mut relayer, &params).unwrap();
 
-        // Cancel the update action
+        // Cancel the update action (authority seqno is now 1, use seqno 2)
         let cancel_action = MultisigAction::Cancel(CancelAction::new(update_id));
-        let sighash = cancel_action.compute_sighash(initial_seq_no + 1);
+        let cancel_seqno = last_seqno + 2;
+        let sighash = cancel_action.compute_sighash(cancel_seqno);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
-        let res = handle_action(
-            &mut state,
-            cancel_action,
-            sig_set.clone(),
-            current_height,
-            &mut relayer,
-            &params,
-        );
+
+        let payload = SignedPayload::new(cancel_seqno, cancel_action, sig_set);
+        let res = handle_action(&mut state, payload, current_height, &mut relayer, &params);
+
         assert!(res.is_ok());
 
-        // Try cancelling the update action again
+        // Try cancelling the update action again (authority seqno is now 2, use seqno 3)
         let cancel_action = MultisigAction::Cancel(CancelAction::new(update_id));
-        let res = handle_action(
-            &mut state,
-            cancel_action,
-            sig_set.clone(),
-            current_height,
-            &mut relayer,
-            &params,
-        );
+        let retry_seqno = last_seqno + 3;
+        let sighash = cancel_action.compute_sighash(retry_seqno);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
+        let payload = SignedPayload::new(retry_seqno, cancel_action, sig_set);
+        let res = handle_action(&mut state, payload, current_height, &mut relayer, &params);
         assert!(res.is_err());
         assert!(matches!(res, Err(AdministrationError::UnknownAction(_))));
     }

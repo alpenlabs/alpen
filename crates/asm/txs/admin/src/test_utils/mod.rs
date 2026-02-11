@@ -164,13 +164,13 @@ mod tests {
             .unwrap();
         let tx_input = TxInputRef::new(&tx, tag_data_ref);
 
-        let (p_action, sig) = parse_tx(&tx_input).unwrap();
-        assert_eq!(action, p_action);
+        let parsed = parse_tx(&tx_input).unwrap();
+        assert_eq!(action, parsed.action);
 
         // Verify the signatures
         let res = verify_threshold_signatures(
             &config,
-            sig.signatures(),
+            &parsed.signatures.signatures(),
             &action.compute_sighash(seqno).0,
         );
         assert!(res.is_ok());

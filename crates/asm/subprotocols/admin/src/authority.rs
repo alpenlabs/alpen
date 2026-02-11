@@ -1,9 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::Role;
-use strata_asm_txs_admin::actions::MultisigAction;
-use strata_crypto::threshold_signature::{
-    SignatureSet, ThresholdConfig, ThresholdSignatureError, verify_threshold_signatures,
-};
+use strata_asm_txs_admin::parser::SignedPayload;
+use strata_crypto::threshold_signature::{ThresholdConfig, verify_threshold_signatures};
+
+use crate::error::AdministrationError;
 
 /// Manages threshold signature operations for a given role and key set, with replay protection via
 /// a sequence number.
@@ -13,17 +13,21 @@ pub struct MultisigAuthority {
     role: Role,
     /// The public keys of all grant-holders authorized to sign.
     config: ThresholdConfig,
-    /// Sequence number for the threshold configuration. It increases on each valid action.
+    /// The last sequence number that was successfully executed.
     /// This is used to prevent replay attacks.
-    seqno: u64,
+    last_seqno: u64,
 }
 
 impl MultisigAuthority {
+    /// Creates a new authority with `last_seqno` initialized to 0.
+    ///
+    /// Since `verify_action_signature` requires `payload.seqno > self.last_seqno`, the first
+    /// valid payload must have `seqno >= 1`.
     pub fn new(role: Role, config: ThresholdConfig) -> Self {
         Self {
             role,
             config,
-            seqno: 0,
+            last_seqno: 0,
         }
     }
 
@@ -38,7 +42,7 @@ impl MultisigAuthority {
     }
 
     /// Mutably borrow the threshold configuration.
-    pub fn config_mut(&mut self) -> &mut ThresholdConfig {
+    pub(crate) fn config_mut(&mut self) -> &mut ThresholdConfig {
         &mut self.config
     }
 
@@ -49,23 +53,33 @@ impl MultisigAuthority {
     // could be added in the future if multiple signature schemes are needed.
     pub fn verify_action_signature(
         &self,
-        action: &MultisigAction,
-        signatures: &SignatureSet,
-    ) -> Result<(), ThresholdSignatureError> {
+        payload: &SignedPayload,
+    ) -> Result<(), AdministrationError> {
+        if payload.seqno <= self.last_seqno {
+            return Err(AdministrationError::InvalidSeqno {
+                payload_seqno: payload.seqno,
+                last_seqno: self.last_seqno,
+            });
+        }
         // Compute the msg to sign by combining UpdateAction with sequence no
-        let sig_hash = action.compute_sighash(self.seqno);
+        let sig_hash = payload.action.compute_sighash(payload.seqno);
 
-        verify_threshold_signatures(&self.config, signatures.signatures(), &sig_hash.into())
+        verify_threshold_signatures(
+            &self.config,
+            payload.signatures.signatures(),
+            &sig_hash.into(),
+        )?;
+
+        Ok(())
     }
 
-    /// Increments the seqno.
-    pub fn increment_seqno(&mut self) {
-        self.seqno += 1;
+    /// Updates the last executed seqno.
+    pub(crate) fn update_last_seqno(&mut self, seqno: u64) {
+        self.last_seqno = seqno;
     }
 
-    /// Get the current sequence number (for testing).
-    #[cfg(test)]
-    pub fn seqno(&self) -> u64 {
-        self.seqno
+    /// Returns the last successfully executed sequence number.
+    pub fn last_seqno(&self) -> u64 {
+        self.last_seqno
     }
 }
