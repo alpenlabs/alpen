@@ -101,7 +101,7 @@ impl AdminContext {
     /// Auto-increments the appropriate role's sequence number after signing.
     pub fn sign(&mut self, action: MultisigAction) -> (Vec<u8>, u8) {
         let role = Self::role_for_action(&action);
-        let seqno = *self.seqnos.entry(role).or_insert(0);
+        let seqno = *self.seqnos.entry(role).or_insert(1);
         let result = self.sign_impl(&action, seqno);
         *self.seqnos.get_mut(&role).unwrap() += 1;
         result

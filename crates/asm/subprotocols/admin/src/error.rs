@@ -14,11 +14,10 @@ pub enum AdministrationError {
     UnknownAction(UpdateId),
 
     /// The payload's sequence number is not greater than the last executed sequence number.
-    #[error("invalid seqno: payload seqno {payload_seqno} must be greater than last seqno {last_seqno}")]
-    InvalidSeqno {
-        payload_seqno: u64,
-        last_seqno: u64,
-    },
+    #[error(
+        "invalid seqno: payload seqno {payload_seqno} must be greater than last seqno {last_seqno}"
+    )]
+    InvalidSeqno { payload_seqno: u64, last_seqno: u64 },
 
     /// Indicates a threshold signature error (configuration or signature validation).
     #[error(transparent)]
