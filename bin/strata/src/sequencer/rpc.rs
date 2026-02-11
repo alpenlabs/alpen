@@ -19,6 +19,7 @@ use strata_ol_sequencer::{BlockCompletionData, TemplateManager, extract_duties};
 use strata_primitives::{Buf64, HexBytes64};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
+use tracing::warn;
 
 use crate::rpc::errors::{db_error, internal_error, not_found_error};
 
@@ -124,8 +125,9 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             db.put_checkpoint_async(epoch, entry)
                 .await
                 .map_err(db_error)?;
+        } else {
+            warn!(%epoch, "received signature for already signed checkpoint, ignoring.");
         }
-        // If already signed, then fine, return
         Ok(())
     }
 }

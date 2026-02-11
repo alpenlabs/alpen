@@ -67,7 +67,7 @@ impl EnvelopeHandle {
 
         // Create and store IntentEntry
         let entry = IntentEntry::new_unbundled(intent);
-        self.ops.put_intent_entry_blocking(id, entry.clone())?;
+        let _idx = self.ops.put_intent_entry_blocking(id, entry.clone())?;
 
         // Send to bundler
         if let Err(e) = self.intent_tx.blocking_send(entry) {
