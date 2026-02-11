@@ -123,7 +123,7 @@ impl EnvelopeHandle {
         start_idx: u64,
         end_idx: u64,
     ) -> anyhow::Result<Option<u64>> {
-        for idx in start_idx..end_idx {
+        for idx in (start_idx..end_idx).rev() {
             let Some(entry) = self.ops.get_intent_by_idx_async(idx).await? else {
                 continue;
             };
