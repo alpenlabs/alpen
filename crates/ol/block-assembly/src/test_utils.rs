@@ -38,7 +38,7 @@ use strata_storage::{NodeStorage, OLStateManager, create_node_storage};
 use threadpool::ThreadPool;
 
 use crate::{
-    BlockAssemblyResult, FixedSlotSealing, MempoolProvider, context::BlockAssemblyContext,
+    BlockAssemblyResult, FixedSlotSealing, MempoolProvider, context::BlockAssemblyContextImpl,
 };
 
 /// Creates a test account ID with the given seed byte.
@@ -64,8 +64,8 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
 ///
 /// Uses unit types for mempool and state provider since
 /// proof generation only requires storage access.
-pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContext<(), ()> {
-    BlockAssemblyContext::new(storage, (), ())
+pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContextImpl<(), ()> {
+    BlockAssemblyContextImpl::new(storage, (), ())
 }
 
 /// Mock mempool provider for tests that stores transactions in memory.
@@ -149,7 +149,7 @@ impl StateProvider for StateProviderHandle {
 
 /// Concrete block assembly context for tests using mock implementations.
 pub(crate) type BlockAssemblyContextImpl =
-    BlockAssemblyContext<Arc<MockMempoolProvider>, StateProviderHandle>;
+    BlockAssemblyContextImpl<Arc<MockMempoolProvider>, StateProviderHandle>;
 
 /// Number of slots per epoch used in tests.
 pub(crate) const TEST_SLOTS_PER_EPOCH: u64 = 10;
@@ -817,6 +817,6 @@ pub(crate) fn create_test_block_assembly_context(
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
     let state_provider = StateProviderHandle(storage.ol_state().clone());
-    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider);
+    let ctx = BlockAssemblyContextImpl::new(storage, mempool_provider.clone(), state_provider);
     (ctx, mempool_provider)
 }

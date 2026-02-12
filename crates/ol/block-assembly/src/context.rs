@@ -1,4 +1,5 @@
 //! Block assembly context traits and implementation.
+// TODO split apart unrelated concerns from this module into separate ones
 
 use std::{
     fmt::{self, Debug, Display},
@@ -55,19 +56,20 @@ impl<T> BlockAssemblyStateAccess for T where
 ///
 /// Provides access to the parent OL block, state, and ASM manifests needed for block construction.
 #[async_trait]
-pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
+pub trait BlockAssemblyContext: Send + Sync + 'static {
     type State: BlockAssemblyStateAccess;
 
     /// Fetch an OL block by ID.
-    async fn fetch_ol_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlock>>;
+    async fn fetch_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlock>>;
 
-    /// Fetch the state snapshot for `tip`.
-    async fn fetch_state_for_tip(
+    /// Fetch the state snapshot for `block`.
+    async fn fetch_block_chainstate(
         &self,
         tip: OLBlockCommitment,
     ) -> BlockAssemblyResult<Option<Arc<Self::State>>>;
 
     /// Fetch ASM manifests from `start_height` to latest (ascending).
+    // FIXME make this only fetch a range
     async fn fetch_asm_manifests_from(
         &self,
         start_height: u64,
@@ -77,6 +79,7 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
 /// Generates MMR proofs needed during block assembly.
 pub trait AccumulatorProofGenerator: Send + Sync + 'static {
     /// Validates inbox message indices and generates message entry proofs.
+    // FIXME this should not take messages as arguments
     fn generate_inbox_proofs(
         &self,
         target: AccountId,
@@ -97,22 +100,17 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
 /// - [`BlockAssemblyAnchorContext`]
 /// - [`MempoolProvider`]
 /// - [`AccumulatorProofGenerator`]
+// FIXME this does a whole bunch of unrelated things which should be split apart
+// TODO move to another module
+#[expect(missing_debug_implementations, reason = "debug doesn't make sense")]
 #[derive(Clone)]
-pub struct BlockAssemblyContext<M, S> {
+pub struct BlockAssemblyContextImpl<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
 }
 
-impl<M, S> Debug for BlockAssemblyContext<M, S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BlockAssemblyContext")
-            .field("storage", &"<NodeStorage>")
-            .finish_non_exhaustive()
-    }
-}
-
-impl<M, S> BlockAssemblyContext<M, S> {
+impl<M, S> BlockAssemblyContextImpl<M, S> {
     /// Create a new block assembly context.
     pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: S) -> Self {
         Self {
@@ -149,6 +147,7 @@ impl<M, S> BlockAssemblyContext<M, S> {
         Ok(())
     }
 
+    // FIXME figure out why this function exists
     fn validate_inbox_entries(
         &self,
         target: AccountId,
@@ -187,7 +186,7 @@ impl<M, S> BlockAssemblyContext<M, S> {
 }
 
 #[async_trait]
-impl<M, S> BlockAssemblyAnchorContext for BlockAssemblyContext<M, S>
+impl<M, S> BlockAssemblyContext for BlockAssemblyContextImpl<M, S>
 where
     M: Send + Sync + 'static,
     S: StateProvider + Send + Sync + 'static,
@@ -196,7 +195,7 @@ where
 {
     type State = <S as StateProvider>::State;
 
-    async fn fetch_ol_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlock>> {
+    async fn fetch_block(&self, id: OLBlockId) -> BlockAssemblyResult<Option<OLBlock>> {
         self.storage
             .ol_block()
             .get_block_data_async(id)
@@ -204,12 +203,12 @@ where
             .map_err(BlockAssemblyError::Database)
     }
 
-    async fn fetch_state_for_tip(
+    async fn fetch_block_chainstate(
         &self,
-        tip: OLBlockCommitment,
+        block: OLBlockCommitment,
     ) -> BlockAssemblyResult<Option<Arc<Self::State>>> {
         self.state_provider
-            .get_state_for_tip_async(tip)
+            .get_state_for_tip_async(block)
             .await
             // keep current logic: stringified provider error
             .map_err(|e| BlockAssemblyError::Other(e.to_string()))
@@ -253,8 +252,9 @@ where
     }
 }
 
+// FIXME why does this passthrough to the underlying mempool provider unconditionally?
 #[async_trait]
-impl<M, S> MempoolProvider for BlockAssemblyContext<M, S>
+impl<M, S> MempoolProvider for BlockAssemblyContextImpl<M, S>
 where
     M: MempoolProvider + Send + Sync + 'static,
     S: Send + Sync + 'static,
@@ -299,7 +299,7 @@ fn map_inbox_mmr_error(e: DbError, account_id: AccountId) -> BlockAssemblyError 
     }
 }
 
-impl<M, S> AccumulatorProofGenerator for BlockAssemblyContext<M, S>
+impl<M, S> AccumulatorProofGenerator for BlockAssemblyContextImpl<M, S>
 where
     M: Send + Sync + 'static,
     S: Send + Sync + 'static,

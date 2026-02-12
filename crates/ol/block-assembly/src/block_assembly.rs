@@ -30,7 +30,7 @@ use tracing::{debug, error};
 use crate::{
     AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
     MempoolProvider,
-    context::BlockAssemblyAnchorContext,
+    context::BlockAssemblyContext,
     error::BlockAssemblyError,
     types::{BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate},
 };
@@ -132,7 +132,7 @@ pub(crate) async fn generate_block_template_inner<C, E>(
     block_generation_config: BlockGenerationConfig,
 ) -> BlockAssemblyResult<BlockTemplateResult>
 where
-    C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
+    C: BlockAssemblyContext + AccumulatorProofGenerator + MempoolProvider,
     C::State: BlockAssemblyStateAccess,
     E: EpochSealingPolicy,
 {
@@ -146,7 +146,7 @@ where
     );
 
     let parent_state = ctx
-        .fetch_state_for_tip(parent_commitment)
+        .fetch_block_chainstate(parent_commitment)
         .await?
         .ok_or_else(|| {
             BlockAssemblyError::Database(DbError::Other(format!(
@@ -226,7 +226,7 @@ async fn construct_block<C, E>(
     mempool_txs: Vec<(OLTxId, OLMempoolTransaction)>,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
 where
-    C: BlockAssemblyAnchorContext + AccumulatorProofGenerator,
+    C: BlockAssemblyContext + AccumulatorProofGenerator,
     E: EpochSealingPolicy,
 {
     // Extract parent commitment from config.
@@ -239,7 +239,7 @@ where
 
     // Fetch parent block using BlockAssemblyAnchorContext trait
     let parent_blkid = *parent_commitment.blkid();
-    let parent_block = ctx.fetch_ol_block(parent_blkid).await?.ok_or_else(|| {
+    let parent_block = ctx.fetch_block(parent_blkid).await?.ok_or_else(|| {
         BlockAssemblyError::Database(DbError::Other(format!(
             "Parent block not found for blkid: {parent_blkid}"
         )))
@@ -300,10 +300,7 @@ where
 /// Terminal blocks need to include all L1 blocks processed since the last terminal block.
 /// This function fetches manifests from `parent_state.last_l1_height() + 1` up to the latest
 /// available L1 block.
-async fn fetch_asm_manifests_for_terminal_block<
-    C: BlockAssemblyAnchorContext,
-    S: IStateAccessor,
->(
+async fn fetch_asm_manifests_for_terminal_block<C: BlockAssemblyContext, S: IStateAccessor>(
     ctx: &C,
     parent_state: &S,
 ) -> BlockAssemblyResult<Option<OLL1ManifestContainer>> {
@@ -1043,7 +1040,7 @@ mod tests {
         epoch_sealing_policy: &E,
     ) -> OLBlockCommitment
     where
-        C: BlockAssemblyAnchorContext<State = OLState> + AccumulatorProofGenerator,
+        C: BlockAssemblyContext<State = OLState> + AccumulatorProofGenerator,
         E: EpochSealingPolicy,
     {
         let mut current_commitment = start_commitment;
@@ -1059,7 +1056,7 @@ mod tests {
 
             // Fetch parent state
             let parent_state = ctx
-                .fetch_state_for_tip(config.parent_block_commitment())
+                .fetch_block_chainstate(config.parent_block_commitment())
                 .await
                 .unwrap_or_else(|e| panic!("Failed to fetch parent state at slot {slot}: {e:?}"))
                 .unwrap_or_else(|| panic!("Missing parent state at slot {slot}"));

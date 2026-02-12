@@ -14,9 +14,9 @@ mod state;
 mod test_utils;
 mod types;
 
-pub use builder::BlockasmBuilder;
+pub use builder::BlockasmServiceBuilder;
 pub use context::{
-    AccumulatorProofGenerator, BlockAssemblyAnchorContext, BlockAssemblyContext,
+    AccumulatorProofGenerator, BlockAssemblyContext, BlockAssemblyContextImpl,
     BlockAssemblyStateAccess,
 };
 pub use epoch_sealing::{EpochSealingPolicy, FixedSlotSealing};

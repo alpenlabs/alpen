@@ -14,13 +14,13 @@ use strata_tasks::TaskExecutor;
 
 use crate::{
     BlockAssemblyStateAccess, BlockasmHandle, EpochSealingPolicy, MempoolProvider,
-    context::BlockAssemblyContext, service::BlockasmService, state::BlockasmServiceState,
+    context::BlockAssemblyContextImpl, service::BlockasmService, state::BlockasmServiceState,
 };
 
 /// Builder for creating and launching block assembly service.
 ///
 /// Separates service initialization logic from the handle interface.
-pub struct BlockasmBuilder<M, E, S>
+pub struct BlockasmServiceBuilder<M, E, S>
 where
     M: MempoolProvider,
     E: EpochSealingPolicy,
@@ -35,7 +35,7 @@ where
     command_buffer_size: usize,
 }
 
-impl<M, E, S> BlockasmBuilder<M, E, S>
+impl<M, E, S> BlockasmServiceBuilder<M, E, S>
 where
     M: MempoolProvider,
     E: EpochSealingPolicy,
@@ -74,7 +74,7 @@ where
         S::Error: Display,
         S::State: BlockAssemblyStateAccess,
     {
-        let context = Arc::new(BlockAssemblyContext::new(
+        let context = Arc::new(BlockAssemblyContextImpl::new(
             self.storage,
             self.mempool_provider,
             self.state_provider,
@@ -101,7 +101,7 @@ where
     }
 }
 
-impl<M, E, S> Debug for BlockasmBuilder<M, E, S>
+impl<M, E, S> Debug for BlockasmServiceBuilder<M, E, S>
 where
     M: MempoolProvider,
     E: EpochSealingPolicy,

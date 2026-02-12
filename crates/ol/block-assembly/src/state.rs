@@ -13,8 +13,8 @@ use strata_service::ServiceState;
 use tracing::warn;
 
 use crate::{
-    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContext, error::BlockAssemblyError,
-    types::FullBlockTemplate,
+    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContextImpl,
+    error::BlockAssemblyError, types::FullBlockTemplate,
 };
 
 /// Mutable state for block assembly service (owned by service task).
@@ -121,7 +121,7 @@ impl BlockAssemblyState {
 pub(crate) struct BlockasmServiceState<M: MempoolProvider, E: EpochSealingPolicy, S> {
     params: Arc<Params>,
     sequencer_config: SequencerConfig,
-    ctx: Arc<BlockAssemblyContext<M, S>>,
+    ctx: Arc<BlockAssemblyContextImpl<M, S>>,
     epoch_sealing_policy: E,
     state: BlockAssemblyState,
 }
@@ -143,7 +143,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
     pub(crate) fn new(
         params: Arc<Params>,
         sequencer_config: SequencerConfig,
-        ctx: Arc<BlockAssemblyContext<M, S>>,
+        ctx: Arc<BlockAssemblyContextImpl<M, S>>,
         epoch_sealing_policy: E,
     ) -> Self {
         Self {
@@ -163,7 +163,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
         &self.sequencer_config
     }
 
-    pub(crate) fn context(&self) -> &BlockAssemblyContext<M, S> {
+    pub(crate) fn context(&self) -> &BlockAssemblyContextImpl<M, S> {
         self.ctx.as_ref()
     }
 

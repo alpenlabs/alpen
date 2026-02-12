@@ -33,7 +33,7 @@ mod sequencer_services {
     use strata_db_types::traits::DatabaseBackend;
     use strata_node_context::NodeContext;
     use strata_ol_block_assembly::{
-        BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
+        BlockasmHandle, BlockasmServiceBuilder, FixedSlotSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_sequencer::TemplateManager;
@@ -146,7 +146,7 @@ mod sequencer_services {
         let state_provider = nodectx.storage().ol_state().clone();
 
         nodectx.task_manager().handle().block_on(async {
-            BlockasmBuilder::new(
+            BlockasmServiceBuilder::new(
                 nodectx.params().clone(),
                 nodectx.storage().clone(),
                 mempool_provider,
