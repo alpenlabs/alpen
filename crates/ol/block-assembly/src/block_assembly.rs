@@ -8,7 +8,7 @@ use std::{
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
-use strata_ledger_types::{IAccountStateConstructible, IAccountStateMut, IStateAccessor};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{
     BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTransaction,
     OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
@@ -18,7 +18,7 @@ use strata_ol_mempool::{
     OLMempoolTxPayload,
 };
 use strata_ol_state_support_types::WriteTrackingState;
-use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
+use strata_ol_state_types::WriteBatch;
 use strata_ol_stf::{
     BasicExecContext, BlockContext, BlockExecOutputs, BlockInfo, BlockPostStateCommitments,
     ExecError, ExecOutputBuffer, TxExecContext, process_block_manifests, process_block_start,
@@ -324,14 +324,10 @@ async fn fetch_asm_manifests_for_terminal_block<
 /// Executes block initialization (epoch initial + block start) on a fresh write batch.
 ///
 /// Returns the accumulated write batch containing initialization changes.
-fn execute_block_initialization<S>(
+fn execute_block_initialization<S: BlockAssemblyStateAccess>(
     parent_state: &S,
     block_context: &BlockContext<'_>,
-) -> WriteBatch<S::AccountState>
-where
-    S: IStateAccessor,
-    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync,
-{
+) -> WriteBatch<S::AccountState> {
     let mut accumulated_batch = WriteBatch::new_from_state(parent_state);
 
     let mut init_state = WriteTrackingState::new(parent_state, accumulated_batch.clone());
@@ -371,8 +367,7 @@ fn process_transactions<P, S>(
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
-    S: IStateAccessor,
-    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync,
+    S: BlockAssemblyStateAccess,
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
@@ -438,8 +433,7 @@ fn build_block_template<S>(
     manifest_container: Option<OLL1ManifestContainer>,
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
-    S: IStateBatchApplicable + IStateAccessor + Clone,
-    S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync,
+    S: BlockAssemblyStateAccess,
 {
     // Clone parent state and apply accumulated batch to get state after transactions
     let mut final_state = parent_state.as_ref().clone();

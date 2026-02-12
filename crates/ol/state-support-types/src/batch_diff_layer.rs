@@ -10,7 +10,7 @@ use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, Bitcoin
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{IStateAccessor, NewAccountData};
-use strata_ol_state_types::WriteBatch;
+use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
 
 /// A read-only state accessor that overlays a stack of WriteBatch diffs.
 ///
@@ -21,6 +21,7 @@ use strata_ol_state_types::WriteBatch;
 /// The batch slice can be empty, making this a read-only wrapper for the base.
 /// This is useful for scenarios where you want to view state with pending
 /// changes applied without modifying anything.
+#[derive(Clone)]
 pub struct BatchDiffState<'batches, 'base, S: IStateAccessor> {
     base: &'base S,
     batches: &'batches [WriteBatch<S::AccountState>],
@@ -203,7 +204,14 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // TODO implement with new SSZ state summary type
+        Err(AcctError::Unsupported)
+    }
+}
+
+impl<'batches, 'base, S: IStateAccessor> IStateBatchApplicable
+    for BatchDiffState<'batches, 'base, S>
+{
+    fn apply_write_batch(&mut self, _batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
         Err(AcctError::Unsupported)
     }
 }

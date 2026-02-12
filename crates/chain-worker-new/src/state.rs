@@ -250,7 +250,6 @@ impl ChainWorkerServiceState {
         let tracking_state = WriteTrackingState::new_from_state(parent_state);
         let mut indexer_state = IndexerState::new(tracking_state);
 
-        // Execute using new OL STF
         verify_block(
             &mut indexer_state,
             block.header(),
