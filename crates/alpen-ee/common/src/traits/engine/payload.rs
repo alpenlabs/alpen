@@ -37,7 +37,7 @@ pub enum AlpenEnginePayloadError {
     #[error("expected blob sidecars to be empty; blockhash: {0}")]
     BlobSidecarsNotEmpty(B256),
     #[error("serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
+    Serialization(#[from] bincode::Error),
     #[error("RLP encoding error: {0}")]
     RlpEncode(#[from] alloy_rlp::Error),
 }
@@ -59,7 +59,7 @@ impl EnginePayload for AlpenBuiltPayload {
 
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
         let serializable = SerializablePayload::try_from(self.clone())?;
-        serde_json::to_vec(&serializable).map_err(|e| {
+        bincode::serialize(&serializable).map_err(|e| {
             error!(
                 blockhash = %self.block().hash(),
                 block_number = self.block().number,
@@ -72,17 +72,18 @@ impl EnginePayload for AlpenBuiltPayload {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let serializable = serde_json::from_slice::<SerializablePayload>(bytes)?;
+        let serializable = bincode::deserialize::<SerializablePayload>(bytes)?;
         serializable.try_into()
     }
 }
 
 type EthBlock = <EthPrimitives as NodePrimitives>::Block;
 
-/// Internal representation of a payload for serialization.
+/// Internal representation of a payload for bincode serialization.
 ///
-/// Uses RLP encoding for the block (which Ethereum types support natively)
-/// and serde_json for the wrapper structure.
+/// The block is stored as RLP-encoded bytes because `SealedBlock`'s serde
+/// implementation uses iterators that bincode cannot serialize when the
+/// block contains transactions.
 #[derive(Debug, Serialize, Deserialize)]
 struct SerializablePayload {
     payload_id: PayloadId,

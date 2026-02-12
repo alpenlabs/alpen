@@ -261,14 +261,17 @@ def main(argv: list[str]) -> int:
     global_envs: dict[str, flexitest.EnvConfig] = {
         "basic": StrataEnvConfig(pre_generate_blocks=110),
         # Alpen-client environments
-        "alpen_client": AlpenClientEnv(),  # admin_addPeer, no discovery
-        "alpen_client_discovery": AlpenClientEnv(enable_discovery=True, pure_discovery=True),
-        "alpen_client_multi": AlpenClientEnv(fullnode_count=3),
+        "alpen_client": AlpenClientEnv(enable_l1_da=True),
+        "alpen_client_discovery": AlpenClientEnv(
+            enable_discovery=True, pure_discovery=True, enable_l1_da=True
+        ),
+        "alpen_client_multi": AlpenClientEnv(fullnode_count=3, enable_l1_da=True),
         "alpen_client_mesh": AlpenClientEnv(
             fullnode_count=5,
             enable_discovery=True,
             pure_discovery=True,
             mesh_bootnodes=True,
+            enable_l1_da=True,
         ),
         # Alpen-client with DA pipeline (sequencer-only, no fullnodes)
         # Using batch_sealing_block_count=30 to accumulate enough state diff for

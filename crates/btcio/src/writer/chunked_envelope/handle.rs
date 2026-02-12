@@ -667,9 +667,13 @@ mod tests {
         let client = TestBitcoinClient::new(1);
         let entry = make_entry_with_reveals(3);
 
-        // Store commit as Published.
+        // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
-        commit_entry.status = L1TxStatus::Published;
+        commit_entry.status = L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::from([0xBB; 32]),
+            block_height: 100,
+        };
         bcast
             .put_tx_entry(entry.commit_txid, commit_entry)
             .await
@@ -706,9 +710,13 @@ mod tests {
             .with_send_raw_transaction_mode(SendRawTransactionMode::MissingOrInvalidInput);
         let entry = make_entry_with_reveals(2);
 
-        // Store commit as Published.
+        // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
-        commit_entry.status = L1TxStatus::Published;
+        commit_entry.status = L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::from([0xBB; 32]),
+            block_height: 100,
+        };
         bcast
             .put_tx_entry(entry.commit_txid, commit_entry)
             .await
@@ -731,9 +739,13 @@ mod tests {
             .with_send_raw_transaction_mode(SendRawTransactionMode::GenericError);
         let entry = make_entry_with_reveals(2);
 
-        // Store commit as Published.
+        // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
-        commit_entry.status = L1TxStatus::Published;
+        commit_entry.status = L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::from([0xBB; 32]),
+            block_height: 100,
+        };
         bcast
             .put_tx_entry(entry.commit_txid, commit_entry)
             .await
