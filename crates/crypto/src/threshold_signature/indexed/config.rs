@@ -3,11 +3,13 @@
 use std::{
     collections::HashSet,
     hash::{self, Hash},
+    io,
     num::NonZero,
 };
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{de::Error, Deserialize, Serialize};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -23,12 +25,70 @@ pub const MAX_SIGNERS: usize = 256;
 /// Defines who can sign (`keys`) and how many must sign (`threshold`).
 /// The threshold is stored as `NonZero<u8>` to enforce at the type level
 /// that it can never be zero.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+///
+/// Note: [`Deserialize`] and [`BorshDeserialize`] are implemented manually
+/// to route through [`Self::try_new`], ensuring that deserialized values
+/// satisfy the same invariants.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, BorshSerialize)]
 pub struct ThresholdConfig {
     /// Public keys of all authorized signers.
     keys: Vec<CompressedPublicKey>,
     /// Minimum number of signatures required (always >= 1).
     threshold: NonZero<u8>,
+}
+
+/// [`Deserialize`] is implemented manually to route through [`Self::try_new`].
+impl<'de> Deserialize<'de> for ThresholdConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Raw {
+            keys: Vec<CompressedPublicKey>,
+            threshold: NonZero<u8>,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        Self::try_new(raw.keys, raw.threshold).map_err(Error::custom)
+    }
+}
+
+/// [`BorshDeserialize`] is implemented manually to route through [`Self::try_new`].
+impl BorshDeserialize for ThresholdConfig {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let keys = Vec::<CompressedPublicKey>::deserialize_reader(reader)?;
+        let threshold = NonZero::<u8>::deserialize_reader(reader)?;
+        Self::try_new(keys, threshold).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    }
+}
+
+impl<'a> Arbitrary<'a> for ThresholdConfig {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        // Generate 1-4 keys for reasonable test sizes
+        let num_keys: usize = u.int_in_range(1..=4)?;
+        let keys: Vec<CompressedPublicKey> = (0..num_keys)
+            .map(|_| CompressedPublicKey::arbitrary(u))
+            .collect::<arbitrary::Result<_>>()?;
+
+        // Deduplicate keys to satisfy ThresholdConfig's uniqueness invariant
+        let keys: Vec<CompressedPublicKey> = keys
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if keys.is_empty() {
+            return Err(arbitrary::Error::IncorrectFormat);
+        }
+
+        // Generate a valid threshold (1 to keys.len())
+        let max_threshold = keys.len().clamp(1, 255);
+        let threshold_u8 = u.int_in_range(1..=(max_threshold as u8))?;
+        let threshold = NonZero::new(threshold_u8).expect("threshold is always >= 1");
+
+        Self::try_new(keys, threshold).map_err(|_| arbitrary::Error::IncorrectFormat)
+    }
 }
 
 impl ThresholdConfig {
@@ -220,6 +280,7 @@ impl<'a> Arbitrary<'a> for ThresholdConfigUpdate {
 #[cfg(test)]
 mod tests {
     use secp256k1::{Secp256k1, SecretKey};
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
 
@@ -282,6 +343,26 @@ mod tests {
     fn test_config_borsh_roundtrip() {
         let keys = vec![make_key(1), make_key(2)];
         let config = ThresholdConfig::try_new(keys, NonZero::new(2).unwrap()).unwrap();
+
+        let encoded = borsh::to_vec(&config).unwrap();
+        let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();
+
+        assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn test_config_serde_json_roundtrip_arbitrary() {
+        let config: ThresholdConfig = ArbitraryGenerator::new().generate();
+
+        let json = serde_json::to_string(&config).unwrap();
+        let decoded: ThresholdConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn test_config_borsh_roundtrip_arbitrary() {
+        let config: ThresholdConfig = ArbitraryGenerator::new().generate();
 
         let encoded = borsh::to_vec(&config).unwrap();
         let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();
