@@ -3,11 +3,12 @@
 import logging
 import time
 
+from common.rpc import JsonRpcClient
+from common.services.strata import StrataService
 import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
-from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,10 @@ logger = logging.getLogger(__name__)
 class TestSequencerRestart(StrataNodeTest):
     """Test that sequencer resumes block production after restart."""
 
+    BLOCKS_BEFORE_RESTART = 3
+    BLOCKS_AFTER_RESTART = 3
+    RESTART_PAUSE_SECONDS = 2
+
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("basic")
 
@@ -23,60 +28,33 @@ class TestSequencerRestart(StrataNodeTest):
         # Get sequencer service
         strata = self.get_service(ServiceType.Strata)
 
-        # Create RPC client
-        strata_rpc = strata.create_rpc()
-
+        # Wait for RPC and create client
         logger.info("Waiting for Strata RPC to be ready...")
-        strata.wait_for_rpc_ready(timeout=10)
+        rpc = strata.wait_for_rpc_ready(timeout=10)
 
-        # Get initial chain status
-        logger.info("Getting initial chain status...")
-        initial_status = wait_until_with_value(
-            strata_rpc.strata_getChainStatus,
-            lambda x: x is not None,
-            error_with="Timed out getting chain status",
-        )
-        initial_height = initial_status.get("latest", {}).get("slot", 0)
+        # Get initial height
+        initial_height = strata.get_cur_block_height(rpc)
         logger.info(f"Initial block height: {initial_height}")
 
-        # Wait for some blocks to be produced
-        num_slots = 3
-        for target_height in range(initial_height, initial_height + num_slots):
-            # Wait for new blocks to be produced
-            logger.info(f"Waiting for chain to reach height {target_height}...")
-
-            wait_until_with_value(
-                lambda: strata_rpc.strata_getChainStatus(),
-                lambda status: status.get("latest", {}).get("slot", 0) >= target_height,
-                error_with=f"Timeout waiting for block height {target_height}",
-                timeout=10,
-                step=1.0
-            )
-
-        pre_restart_height = strata_rpc.strata_getChainStatus().get("latest", {}).get("slot", 0)
+        # Wait for blocks before restart
+        pre_restart_height = strata.check_block_generation_in_range(rpc, 1, self.BLOCKS_BEFORE_RESTART)
         logger.info(f"Height before restart: {pre_restart_height}")
 
+        rpc = self.restart_sequencer_and_get_rpc(strata)
+
+        # Wait for blocks after restart
+        final_height = strata.check_block_generation_in_range(rpc, pre_restart_height, pre_restart_height + self.BLOCKS_AFTER_RESTART)
+        logger.info(f"Final height: {final_height}")
+        logger.info("Sequencer successfully resumed block production after restart")
+        return True
+
+    def restart_sequencer_and_get_rpc(self, strata: StrataService):
         # Restart the sequencer
         logger.info("Restarting Strata sequencer...")
         strata.stop()
-        time.sleep(2)  # Brief pause to ensure clean shutdown
+        time.sleep(self.RESTART_PAUSE_SECONDS)  # Brief pause to ensure clean shutdown
         strata.start()
 
         # Wait for RPC to be ready again
         logger.info("Waiting for Strata RPC to be ready after restart...")
-        strata.wait_for_rpc_ready(timeout=20)
-
-        num_slots = 3
-        for target_height in range(pre_restart_height, pre_restart_height + num_slots):
-            # Wait for new blocks to be produced
-            logger.info(f"Waiting for chain to reach height {target_height}...")
-
-            wait_until_with_value(
-                lambda: strata_rpc.strata_getChainStatus(),
-                lambda status: status.get("latest", {}).get("slot", 0) >= target_height,
-                error_with=f"Timeout waiting for block height {target_height}",
-                timeout=10,
-                step=1.0
-            )
-        logger.info("Sequencer successfully resumed block production after restart!")
-        return True
+        return strata.wait_for_rpc_ready(timeout=20)

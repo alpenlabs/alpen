@@ -6,7 +6,6 @@ import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
-from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
@@ -22,33 +21,16 @@ class TestSequencerBlockProduction(StrataNodeTest):
         # Get sequencer service
         strata = self.get_service(ServiceType.Strata)
 
-        # Create RPC client
-        strata_rpc = strata.create_rpc()
-
+        # Wait for RPC to be ready
         logger.info("Waiting for Strata RPC to be ready...")
-        strata.wait_for_rpc_ready(timeout=10)
+        rpc = strata.wait_for_rpc_ready(timeout=10)
 
-        # Get initial chain status
-        logger.info("Getting initial chain status...")
-        initial_status = wait_until_with_value(
-            strata_rpc.strata_getChainStatus,
-            lambda x: x is not None,
-            error_with="Timed out getting chain status",
-        )
-        initial_height = initial_status.get("latest", {}).get("slot", 0)
+        # Get initial height
+        initial_height = strata.get_cur_block_height(rpc)
         logger.info(f"Initial block height: {initial_height}")
 
-        for target_height in range(1, 5):
-            # Wait for new blocks to be produced
-            logger.info(f"Waiting for chain to reach height {target_height}...")
+        blocks_to_produce = 4
+        cur_height = strata.check_block_generation_in_range(rpc, 1, blocks_to_produce)
 
-            wait_until_with_value(
-                lambda: strata_rpc.strata_getChainStatus(),
-                lambda status: status.get("latest", {}).get("slot", 0) >= target_height,
-                error_with=f"Timeout waiting for block height {target_height}",
-                timeout=10,
-                step=1.0
-            )
-
-        logger.info("Sequencer is producing blocks correctly!")
+        logger.info(f"Sequencer produced {cur_height} blocks successfully")
         return True
