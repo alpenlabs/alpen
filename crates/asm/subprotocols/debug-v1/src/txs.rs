@@ -105,7 +105,7 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
     let dest = Descriptor::from_bytes(desc_bytes)
         .map_err(|e| DebugTxParseError::InvalidDescriptorFormat(e.to_string()))?;
 
-    let withdraw_output = WithdrawOutput::new(dest, amt);
+    let withdraw_output = WithdrawOutput::new(dest, amt, None);
     Ok(withdraw_output)
 }
 

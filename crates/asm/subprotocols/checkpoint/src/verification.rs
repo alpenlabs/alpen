@@ -10,6 +10,7 @@ use strata_checkpoint_types_ssz::{
 use strata_codec::decode_buf_exact;
 use strata_crypto::hash;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
+use strata_ol_msg_types::NO_PREFERRED_OPERATOR;
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
 use crate::{
@@ -174,7 +175,14 @@ fn extract_and_validate_withdrawal_intents(
             return Err(InvalidCheckpointPayload::MalformedWithdrawalDestDesc.into());
         };
 
-        let withdraw_output = WithdrawOutput::new(destination, withdrawal_data.amt().into());
+        let preferred_operator = (withdrawal_data.preferred_operator != NO_PREFERRED_OPERATOR)
+            .then_some(withdrawal_data.preferred_operator);
+
+        let withdraw_output = WithdrawOutput::new(
+            destination,
+            withdrawal_data.amt().into(),
+            preferred_operator,
+        );
         withdrawal_intents.push(withdraw_output);
     }
 
