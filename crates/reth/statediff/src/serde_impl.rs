@@ -8,7 +8,7 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
 use strata_da_framework::{
-    SignedVarInt, counter_schemes::CtrU64BySignedVarInt, DaCounter, DaRegister,
+    counter_schemes::CtrU64BySignedVarInt, DaCounter, DaRegister, SignedVarInt,
 };
 
 use crate::{

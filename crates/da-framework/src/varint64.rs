@@ -2,7 +2,7 @@
 //!
 //! Provides compact LEB128-style encoding for both signed and unsigned values
 //! where small values (the common case) use fewer bytes.
-//! 
+//!
 //! TODO: Eventually move to strata-codec and reconcile with its VarInt type.
 
 use crate::{Codec, CodecError, Decoder, Encoder};
@@ -109,7 +109,6 @@ impl Codec for UnsignedVarInt {
         Ok(Self(value))
     }
 }
-
 
 /// Signed variable-length integer covering full ±u64 magnitude range.
 ///
@@ -242,9 +241,8 @@ impl Codec for SignedVarInt {
 
 #[cfg(test)]
 mod tests {
-    use crate::{decode_buf_exact, encode_to_vec};
-
     use super::*;
+    use crate::{decode_buf_exact, encode_to_vec};
 
     const MAX_VARINT_BYTES: usize = 10;
 

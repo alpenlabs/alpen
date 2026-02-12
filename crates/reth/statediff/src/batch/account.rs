@@ -4,8 +4,8 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256, KECCAK_EMPTY};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{
-    SignedVarInt, counter_schemes::CtrU64BySignedVarInt, make_compound_impl, DaCounter, DaRegister,
-    DaWrite,
+    counter_schemes::CtrU64BySignedVarInt, make_compound_impl, DaCounter, DaRegister, DaWrite,
+    SignedVarInt,
 };
 
 use crate::{

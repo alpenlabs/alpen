@@ -307,9 +307,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
 mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, Hash};
     use strata_codec::encode_to_vec;
-    use strata_da_framework::{
-        DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes,
-    };
+    use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
     use strata_identifiers::AccountSerial;
     use strata_ledger_types::{AccountTypeState, NewAccountData};
     use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
