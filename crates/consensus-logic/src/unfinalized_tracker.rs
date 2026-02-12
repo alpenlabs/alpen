@@ -4,12 +4,13 @@ use std::collections::*;
 
 use strata_db_types::traits::BlockStatus;
 use strata_identifiers::Slot;
+use strata_ol_chain_types::L2Header;
 use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_state::prelude::*;
-use strata_storage::OLBlockManager;
+use strata_storage::{L2BlockManager, OLBlockManager};
 use tracing::*;
 
-use crate::{block_provider::BlockProvider, errors::ChainTipError};
+use crate::errors::ChainTipError;
 
 /// Entry in block tracker table we use to relate a block with its immediate
 /// relatives.
@@ -278,14 +279,11 @@ impl UnfinalizedBlockTracker {
     }
 
     /// Loads the unfinalized blocks into the tracker which are already in the DB
-    pub fn load_unfinalized_blocks(
-        &mut self,
-        block_provider: &impl BlockProvider,
-    ) -> anyhow::Result<()> {
+    pub fn load_unfinalized_blocks(&mut self, l2_blk_mgr: &L2BlockManager) -> anyhow::Result<()> {
         let mut height = self.finalized_epoch.last_slot() + 1;
 
         loop {
-            let blkids = match block_provider.get_blocks_at_height(height) {
+            let blkids = match l2_blk_mgr.get_blocks_at_height_blocking(height) {
                 Ok(ids) => ids,
                 Err(e) => {
                     error!(%height, err = %e, "failed to get new blocks");
@@ -305,7 +303,7 @@ impl UnfinalizedBlockTracker {
                 // TODO if a block doesn't have a concrete status (either
                 // missing or explicit unchecked) should we put it into a queue
                 // to be processed?
-                match block_provider.get_block_status(&blkid) {
+                match l2_blk_mgr.get_block_status_blocking(&blkid) {
                     Ok(Some(status)) => {
                         if status != BlockStatus::Valid {
                             debug!(%blkid, "skipping attaching block not known to be valid");
@@ -324,8 +322,12 @@ impl UnfinalizedBlockTracker {
 
                 // Once we've decided if we want to attach a block, we can
                 // continue now.
-                if let Some(block) = block_provider.get_block_data(&blkid)? {
-                    if let Err(e) = self.attach_block(block.slot(), blkid, block.parent_blkid()) {
+                if let Some(block) = l2_blk_mgr.get_block_data_blocking(&blkid)? {
+                    if let Err(e) = self.attach_block(
+                        block.header().header().slot(),
+                        blkid,
+                        *block.header().header().parent(),
+                    ) {
                         warn!(%blkid, err = %e, "failed to attach block, continuing");
                     }
                 } else {

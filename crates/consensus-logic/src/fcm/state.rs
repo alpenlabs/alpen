@@ -8,7 +8,7 @@ use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
 use strata_storage::OLBlockManager;
-use tokio::{runtime::Handle, time::sleep};
+use tokio::time::sleep;
 use tracing::{debug, warn};
 
 use crate::{

@@ -4,7 +4,6 @@ use std::{thread::sleep, time::Duration};
 
 use anyhow::{Result, anyhow};
 use strata_db_types::traits::BlockStatus;
-use strata_identifiers::OLBlockCommitment;
 use strata_ledger_types::AsmManifest;
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts_with_manifest};
 use strata_params::Params;
