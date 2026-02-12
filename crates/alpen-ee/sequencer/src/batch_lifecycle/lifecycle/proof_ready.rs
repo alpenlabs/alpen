@@ -30,7 +30,7 @@ where
     };
 
     match status {
-        BatchStatus::Sealed | BatchStatus::DaPending | BatchStatus::DaComplete { .. } => {
+        BatchStatus::Sealed | BatchStatus::DaPending { .. } | BatchStatus::DaComplete { .. } => {
             // Not ready, no action
         }
         BatchStatus::ProofPending { da } => {

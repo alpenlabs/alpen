@@ -4,6 +4,7 @@ use alpen_reth_statediff::BlockStateChanges;
 use revm_primitives::alloy_primitives::B256;
 use sled::transaction::{ConflictableTransactionError, ConflictableTransactionResult};
 use strata_proofimpl_evm_ee_stf::primitives::EvmBlockStfInput;
+use tracing::warn;
 use typed_sled::{error::Error, transaction::SledTransactional, SledDb, SledTree};
 
 use super::schema::{
@@ -132,26 +133,56 @@ impl StateDiffStore for WitnessDB {
     }
 }
 
-/// Persistent store for the EE DA context.
+/// Persistent DA filter for the EE.
 ///
-/// Tracks accumulated knowledge from prior DA publications (e.g. which
-/// contract bytecodes have already been published) so that future batches
-/// can avoid re-publishing the same data.
+/// Tracks which data items (currently contract bytecodes) have already been
+/// published to DA so that future batches can omit them. The filter grows as
+/// batches reach `DaComplete` status. Extensible for address dedup and other
+/// filtering logic.
 #[derive(Debug, Clone)]
-pub struct EeDaContextDb {
+pub struct EeDaContextDb<S> {
     published_code_hashes: SledTree<PublishedCodeHashSchema>,
+    state_diff_provider: Arc<S>,
 }
 
-impl EeDaContextDb {
-    pub fn new(db: Arc<SledDb>) -> Result<Self, Error> {
+impl<S> EeDaContextDb<S> {
+    pub fn new(db: Arc<SledDb>, state_diff_provider: Arc<S>) -> Result<Self, Error> {
         let published_code_hashes = db.get_tree::<PublishedCodeHashSchema>()?;
         Ok(Self {
             published_code_hashes,
+            state_diff_provider,
         })
     }
 }
 
-impl EeDaContext for EeDaContextDb {
+impl<S: StateDiffProvider + Send + Sync + 'static> EeDaContextDb<S> {
+    /// Collects deployed bytecodes from block state diffs and marks them in
+    /// the filter so future batches can omit them.
+    fn update_bytecode_filter(&self, block_hashes: &[B256]) -> DbResult<()> {
+        let mut code_hashes = Vec::new();
+        for block_hash in block_hashes {
+            match self.state_diff_provider.get_state_diff_by_hash(*block_hash) {
+                Ok(Some(diff)) => {
+                    code_hashes.extend(diff.deployed_bytecodes.keys().copied());
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!(
+                        %block_hash,
+                        error = %e,
+                        "failed to fetch state diff for block, skipping"
+                    );
+                }
+            }
+        }
+        if !code_hashes.is_empty() {
+            self.mark_code_hashes_published(&code_hashes)?;
+        }
+        Ok(())
+    }
+}
+
+impl<S: StateDiffProvider + Send + Sync + 'static> EeDaContext for EeDaContextDb<S> {
     fn is_code_hash_published(&self, code_hash: &B256) -> DbResult<bool> {
         let exists = self
             .published_code_hashes
@@ -167,6 +198,11 @@ impl EeDaContext for EeDaContextDb {
                 .map_err(|e| DbError::Other(e.to_string()))?;
         }
         Ok(())
+    }
+
+    fn update_da_filter(&self, block_hashes: &[B256]) -> DbResult<()> {
+        self.update_bytecode_filter(block_hashes)
+        // Future: self.update_address_filter(block_hashes)?;
     }
 }
 
@@ -323,9 +359,10 @@ mod tests {
         );
     }
 
-    fn setup_da_context() -> EeDaContextDb {
+    fn setup_da_context() -> EeDaContextDb<WitnessDB> {
         let db = Arc::new(get_sled_tmp_instance());
-        EeDaContextDb::new(db).unwrap()
+        let witness_db = Arc::new(WitnessDB::new(db.clone()).unwrap());
+        EeDaContextDb::new(db, witness_db).unwrap()
     }
 
     #[test]

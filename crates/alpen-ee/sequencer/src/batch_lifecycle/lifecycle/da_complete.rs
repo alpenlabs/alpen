@@ -1,3 +1,4 @@
+use alloy_primitives::B256;
 use alpen_ee_common::{Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, DaStatus};
 use eyre::Result;
 use tracing::{debug, error, warn};
@@ -31,14 +32,29 @@ where
         BatchStatus::Sealed => {
             // Not ready, no action
         }
-        BatchStatus::DaPending => {
+        BatchStatus::DaPending { envelope_idx } => {
             // Check if DA is confirmed
-            match ctx.da_provider.check_da_status(batch.id()).await? {
+            match ctx
+                .da_provider
+                .check_da_status(batch.id(), envelope_idx)
+                .await?
+            {
                 DaStatus::Pending => {
                     // Not ready, no action
                 }
                 DaStatus::Ready(da_refs) => {
                     debug!(batch_idx = target_idx, batch_id = ?batch.id(), "DA confirmed");
+
+                    // Update the DA filter so future batches omit already-published data.
+                    let block_hashes: Vec<B256> =
+                        batch.blocks_iter().map(|h| B256::from(h.0)).collect();
+                    if let Err(e) = ctx.da_ctx.update_da_filter(&block_hashes) {
+                        warn!(
+                            error = %e,
+                            "failed to update DA filter; \
+                             future batches may redundantly include already-published data"
+                        );
+                    }
 
                     ctx.batch_storage
                         .update_batch_status(batch.id(), BatchStatus::DaComplete { da: da_refs })
@@ -55,7 +71,15 @@ where
                         "Expected da operation to have been started. Retrying"
                     );
 
-                    ctx.da_provider.post_batch_da(batch.id()).await?;
+                    let new_envelope_idx = ctx.da_provider.post_batch_da(batch.id()).await?;
+                    ctx.batch_storage
+                        .update_batch_status(
+                            batch.id(),
+                            BatchStatus::DaPending {
+                                envelope_idx: new_envelope_idx,
+                            },
+                        )
+                        .await?;
                 }
                 DaStatus::Failed { reason } => {
                     // CRITICAL: Manual intervention required

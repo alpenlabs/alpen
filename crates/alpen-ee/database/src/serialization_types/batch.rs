@@ -141,7 +141,9 @@ impl From<DBL1DaBlockRef> for L1DaBlockRef {
 pub(crate) enum DBBatchStatus {
     Genesis,
     Sealed,
-    DaPending,
+    DaPending {
+        envelope_idx: u64,
+    },
     DaComplete {
         da: Vec<DBL1DaBlockRef>,
     },
@@ -159,7 +161,7 @@ impl From<BatchStatus> for DBBatchStatus {
         match value {
             BatchStatus::Genesis => Self::Genesis,
             BatchStatus::Sealed => Self::Sealed,
-            BatchStatus::DaPending => Self::DaPending,
+            BatchStatus::DaPending { envelope_idx } => Self::DaPending { envelope_idx },
             BatchStatus::DaComplete { da } => Self::DaComplete {
                 da: da.into_iter().map(Into::into).collect(),
             },
@@ -179,7 +181,7 @@ impl From<DBBatchStatus> for BatchStatus {
         match value {
             DBBatchStatus::Genesis => Self::Genesis,
             DBBatchStatus::Sealed => Self::Sealed,
-            DBBatchStatus::DaPending => Self::DaPending,
+            DBBatchStatus::DaPending { envelope_idx } => Self::DaPending { envelope_idx },
             DBBatchStatus::DaComplete { da } => Self::DaComplete {
                 da: da.into_iter().map(Into::into).collect(),
             },

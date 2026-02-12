@@ -269,7 +269,7 @@ pub mod tests {
             .unwrap();
 
         // Update status
-        let new_status = BatchStatus::DaPending;
+        let new_status = BatchStatus::DaPending { envelope_idx: 42 };
         storage
             .update_batch_status(genesis_batch.id(), new_status)
             .await
@@ -277,7 +277,10 @@ pub mod tests {
 
         // Verify status was updated
         let (_, status) = storage.get_batch_by_idx(0).await.unwrap().unwrap();
-        assert!(matches!(status, BatchStatus::DaPending));
+        assert!(matches!(
+            status,
+            BatchStatus::DaPending { envelope_idx: 42 }
+        ));
     }
 
     /// Test reverting batches.

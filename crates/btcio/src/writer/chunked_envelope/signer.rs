@@ -39,6 +39,7 @@ use crate::{
 /// Returns the updated entry with status [`Unpublished`](ChunkedEnvelopeStatus::Unpublished).
 pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     entry: &ChunkedEnvelopeEntry,
+    prev_tail_wtxid: Buf32,
     broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<ChunkedWriterContext<R>>,
 ) -> Result<ChunkedEnvelopeEntry, EnvelopeError> {
@@ -81,8 +82,8 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     let built = build_chunked_envelope_txs(
         &env_config,
         &entry.chunk_data,
-        entry.magic_bytes.as_bytes(),
-        &entry.prev_tail_wtxid,
+        &entry.magic_bytes,
+        &prev_tail_wtxid,
         utxos,
     )?;
 
@@ -125,6 +126,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     );
 
     let mut updated = entry.clone();
+    updated.prev_tail_wtxid = prev_tail_wtxid;
     updated.commit_txid = commit_txid;
     updated.reveals = reveals;
     updated.status = ChunkedEnvelopeStatus::Unpublished;

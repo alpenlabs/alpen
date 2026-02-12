@@ -1065,10 +1065,14 @@ dependencies = [
  "alpen-ee-genesis",
  "alpen-ee-ol-tracker",
  "alpen-ee-sequencer",
+ "alpen-reth-db",
  "alpen-reth-evm",
+ "alpen-reth-exex",
  "alpen-reth-node",
+ "alpen-reth-statediff",
  "async-trait",
  "bitcoin",
+ "bitcoind-async-client",
  "clap",
  "eyre",
  "jsonrpsee",
@@ -1087,8 +1091,12 @@ dependencies = [
  "reth-provider",
  "ssz",
  "strata-acct-types",
+ "strata-btcio",
  "strata-common",
+ "strata-config",
+ "strata-db-types",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-ol-genesis",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
@@ -1125,6 +1133,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types-engine",
  "alpen-reth-node",
  "alpen-reth-statediff",
@@ -1144,6 +1153,7 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
+ "strata-l1-envelope-fmt",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
  "tokio",
@@ -1164,6 +1174,7 @@ name = "alpen-ee-database"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-common",
+ "alpen-reth-db",
  "async-trait",
  "bitcoin",
  "borsh",
@@ -1258,9 +1269,11 @@ dependencies = [
 name = "alpen-ee-sequencer"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-primitives",
  "alpen-ee-block-assembly",
  "alpen-ee-common",
  "alpen-ee-exec-chain",
+ "alpen-reth-db",
  "async-trait",
  "bitcoin",
  "eyre",
@@ -1314,6 +1327,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-proofimpl-evm-ee-stf",
+ "tracing",
  "typed-sled",
 ]
 

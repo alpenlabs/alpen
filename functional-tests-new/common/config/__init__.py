@@ -7,6 +7,7 @@ from common.config.config import (
     BroadcasterConfig,
     BtcioConfig,
     ClientConfig,
+    EeDaConfig,
     ExecConfig,
     ReaderConfig,
     RelayerConfig,
@@ -46,6 +47,7 @@ __all__ = [
     "RelayerConfig",
     "SequencerConfig",
     "SyncConfig",
+    "EeDaConfig",
     # constants.py
     "ServiceType",
     # params.py

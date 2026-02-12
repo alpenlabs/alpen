@@ -15,6 +15,7 @@ strata-proofimpl-evm-ee-stf.workspace = true
 bincode.workspace = true
 revm-primitives.workspace = true
 sled.workspace = true
+tracing.workspace = true
 typed-sled.workspace = true
 
 [dev-dependencies]
