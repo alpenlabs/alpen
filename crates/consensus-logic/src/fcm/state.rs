@@ -8,7 +8,7 @@ use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
 use strata_storage::OLBlockManager;
-use tokio::time::sleep;
+use tokio::{runtime::Handle, time::sleep};
 use tracing::{debug, warn};
 
 use crate::{
@@ -224,7 +224,9 @@ pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmSt
 
     // Populate the unfinalized block tracker.
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
-    chain_tracker.load_unfinalized_blocks(storage.ol_block().as_ref())?;
+    chain_tracker
+        .load_unfinalized_ol_blocks_async(storage.ol_block().as_ref())
+        .await?;
 
     let cur_tip_block = determine_start_tip(&chain_tracker, storage.ol_block()).await?;
     debug!(?chain_tracker, "init chain tracker");
