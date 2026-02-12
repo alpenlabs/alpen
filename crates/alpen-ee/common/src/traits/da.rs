@@ -38,12 +38,13 @@ pub trait BatchDaProvider: Send + Sync {
     async fn check_da_status(&self, batch_id: BatchId) -> eyre::Result<DaStatus>;
 }
 
-/// Provides the DA blob for a batch.
+/// Source of [`DaBlob`]s for a batch.
 ///
-/// Separates blob preparation (fetching state diffs, aggregating)
-/// from blob publication (encoding, chunking, posting to Bitcoin, tracking).
+/// Encapsulates both readiness checking (are the underlying state diffs
+/// available?) and blob assembly, separating data preparation from
+/// publication (encoding, chunking, posting to Bitcoin, tracking).
 #[cfg_attr(feature = "test-utils", mockall::automock)]
-pub trait DaBlobProvider: Send + Sync {
+pub trait DaBlobSource: Send + Sync {
     /// Returns the [`DaBlob`] for the given batch.
     ///
     /// The blob contains batch metadata and the aggregated state diff.

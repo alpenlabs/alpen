@@ -74,6 +74,9 @@ impl EnvelopeConfig {
 // TODO: these might need to be in rollup params
 #[derive(Debug, Error)]
 pub enum EnvelopeError {
+    #[error("no payload provided")]
+    EmptyPayload,
+
     #[error("insufficient funds for tx (need {0} sats, have {1} sats)")]
     NotEnoughUtxos(u64, u64),
 

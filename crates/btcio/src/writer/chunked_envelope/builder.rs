@@ -52,7 +52,9 @@ pub(crate) fn build_chunked_envelope_txs(
     prev_tail_wtxid: &Buf32,
     utxos: Vec<ListUnspentItem>,
 ) -> Result<ChunkedEnvelopeTxs, EnvelopeError> {
-    assert!(!chunks.is_empty(), "chunks must not be empty");
+    if chunks.is_empty() {
+        return Err(EnvelopeError::EmptyPayload);
+    }
 
     // All tag scripts have the same shape (OP_RETURN + 4 + 32 bytes), so we
     // use a single representative for commit value estimation.

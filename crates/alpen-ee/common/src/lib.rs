@@ -8,7 +8,7 @@ mod types;
 mod utils;
 
 pub use traits::{
-    da::{BatchDaProvider, DaBlobProvider, DaStatus},
+    da::{BatchDaProvider, DaBlobSource, DaStatus},
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
@@ -23,7 +23,7 @@ pub use traits::{
 };
 #[cfg(feature = "test-utils")]
 pub use traits::{
-    da::{MockBatchDaProvider, MockDaBlobProvider},
+    da::{MockBatchDaProvider, MockDaBlobSource},
     ol_client::{MockOLClient, MockSequencerOLClient},
     prover::MockBatchProver,
     storage::{
@@ -36,7 +36,7 @@ pub use types::{
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     consensus_heads::ConsensusHeads,
-    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderDigest, ReassemblyError},
+    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, ReassemblyError},
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     ol_account_epoch_summary::OLEpochSummary,

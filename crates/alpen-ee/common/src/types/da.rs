@@ -22,7 +22,7 @@ use crate::BatchId;
 /// - `timestamp` enforces monotonicity (`next > parent`).
 /// - `block_num` identifies where the chain continues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
-pub struct EvmHeaderDigest {
+pub struct EvmHeaderSummary {
     /// Block number of the last EVM block in this batch.
     pub block_num: u64,
     /// Unix timestamp (seconds) of the last EVM block.
@@ -45,7 +45,7 @@ pub struct DaBlob {
     /// Batch identifier (prev_block_hash, last_block_hash)
     pub batch_id: BatchId,
     /// EVM header context of the last block in this batch.
-    pub evm_header: EvmHeaderDigest,
+    pub evm_header: EvmHeaderSummary,
     /// Aggregated state diff for the batch (can be empty for batches with no state changes)
     pub state_diff: BatchStateDiff,
 }
@@ -296,7 +296,7 @@ mod tests {
     fn make_test_da_blob() -> DaBlob {
         DaBlob {
             batch_id: BatchId::from_parts(Hash::from([0x11; 32]), Hash::from([0x22; 32])),
-            evm_header: EvmHeaderDigest {
+            evm_header: EvmHeaderSummary {
                 block_num: 42,
                 timestamp: 1_700_000_000,
                 base_fee: 1_000_000_000,
