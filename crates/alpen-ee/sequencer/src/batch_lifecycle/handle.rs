@@ -2,7 +2,7 @@
 
 use std::{future::Future, sync::Arc};
 
-use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, DaBlobProvider};
+use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, DaBlobSource};
 use alpen_reth_db::EeDaContext;
 use tokio::sync::watch;
 
@@ -41,7 +41,7 @@ pub fn create_batch_lifecycle_task<D, P, S>(
     da_provider: Arc<D>,
     prover: Arc<P>,
     batch_storage: Arc<S>,
-    blob_provider: Arc<dyn DaBlobProvider>,
+    blob_provider: Arc<dyn DaBlobSource>,
     da_ctx: Arc<dyn EeDaContext + Send + Sync>,
 ) -> (BatchLifecycleHandle, impl Future<Output = ()>)
 where

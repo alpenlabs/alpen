@@ -6,15 +6,15 @@
 //! entries, builds commit+reveal txs, and drives them through the broadcast
 //! lifecycle.
 //!
-//! Also contains [`StateDiffBlobProvider`], the concrete [`DaBlobProvider`]
+//! Also contains [`StateDiffBlobProvider`], the concrete [`DaBlobSource`]
 //! implementation that builds encoded DA blobs from per-block state diffs.
 
 use std::{collections::HashMap, sync::Arc};
 
 use alloy_primitives::B256;
 use alpen_ee_common::{
-    prepare_da_chunks, BatchDaProvider, BatchId, BatchStorage, DaBlob, DaBlobProvider, DaStatus,
-    EvmHeaderDigest, HeaderDigestProvider, L1DaBlockRef,
+    prepare_da_chunks, BatchDaProvider, BatchId, BatchStorage, DaBlob, DaBlobSource, DaStatus,
+    EvmHeaderSummary, HeaderSummaryProvider, L1DaBlockRef,
 };
 use alpen_ee_database::BroadcastDbOps;
 use alpen_reth_db::{EeDaContext, StateDiffProvider};
@@ -32,27 +32,27 @@ use tracing::*;
 /// Groups reveal txs by L1 block for [`L1DaBlockRef`] construction.
 type BlockMap = HashMap<(Buf32, u64), Vec<(Txid, Wtxid)>>;
 
-/// [`HeaderDigestProvider`] backed by a Reth [`HeaderProvider`](reth_provider::HeaderProvider).
-pub(crate) struct RethHeaderDigestProvider<P> {
+/// [`HeaderSummaryProvider`] backed by a Reth [`HeaderProvider`](reth_provider::HeaderProvider).
+pub(crate) struct RethHeaderSummaryProvider<P> {
     provider: P,
 }
 
-impl<P> RethHeaderDigestProvider<P> {
+impl<P> RethHeaderSummaryProvider<P> {
     pub(crate) fn new(provider: P) -> Self {
         Self { provider }
     }
 }
 
-impl<P> HeaderDigestProvider for RethHeaderDigestProvider<P>
+impl<P> HeaderSummaryProvider for RethHeaderSummaryProvider<P>
 where
     P: reth_provider::HeaderProvider<Header = reth_primitives::Header> + Send + Sync,
 {
-    fn header_digest(&self, block_num: u64) -> eyre::Result<EvmHeaderDigest> {
+    fn header_summary(&self, block_num: u64) -> eyre::Result<EvmHeaderSummary> {
         let header = self
             .provider
             .header_by_number(block_num)?
             .ok_or_else(|| eyre::eyre!("no header for block {block_num}"))?;
-        Ok(EvmHeaderDigest {
+        Ok(EvmHeaderSummary {
             block_num: header.number,
             timestamp: header.timestamp,
             base_fee: header.base_fee_per_gas.ok_or_else(|| {
@@ -67,7 +67,7 @@ where
     }
 }
 
-/// [`DaBlobProvider`] that builds encoded DA blobs from Reth state diffs.
+/// [`DaBlobSource`] that builds encoded DA blobs from Reth state diffs.
 ///
 /// For each batch, it:
 /// 1. Retrieves the block range from [`BatchStorage`].
@@ -75,12 +75,12 @@ where
 ///    [`StateDiffProvider`].
 /// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via
 ///    [`BatchBuilder`].
-/// 4. Reads the last block's header to build [`EvmHeaderDigest`].
+/// 4. Reads the last block's header to build [`EvmHeaderSummary`].
 /// 5. Returns the assembled [`DaBlob`].
 pub(crate) struct StateDiffBlobProvider<S, D, H> {
     batch_storage: Arc<S>,
     state_diff_provider: Arc<D>,
-    header_digest: Arc<H>,
+    header_summary: Arc<H>,
     da_ctx: Arc<dyn EeDaContext + Send + Sync>,
 }
 
@@ -88,13 +88,13 @@ impl<S, D, H> StateDiffBlobProvider<S, D, H> {
     pub(crate) fn new(
         batch_storage: Arc<S>,
         state_diff_provider: Arc<D>,
-        header_digest: Arc<H>,
+        header_summary: Arc<H>,
         da_ctx: Arc<dyn EeDaContext + Send + Sync>,
     ) -> Self {
         Self {
             batch_storage,
             state_diff_provider,
-            header_digest,
+            header_summary,
             da_ctx,
         }
     }
@@ -116,11 +116,11 @@ impl<S, D, H> StateDiffBlobProvider<S, D, H> {
 }
 
 #[async_trait]
-impl<S, D, H> DaBlobProvider for StateDiffBlobProvider<S, D, H>
+impl<S, D, H> DaBlobSource for StateDiffBlobProvider<S, D, H>
 where
     S: BatchStorage,
     D: StateDiffProvider + Send + Sync,
-    H: HeaderDigestProvider,
+    H: HeaderSummaryProvider,
 {
     async fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob> {
         // 1. Look up the batch to get its block range.
@@ -179,7 +179,7 @@ where
         );
 
         // 4. Read the last block's header for chain-reconstruction metadata.
-        let evm_header = self.header_digest.header_digest(batch.last_blocknum())?;
+        let evm_header = self.header_summary.header_summary(batch.last_blocknum())?;
 
         // 5. Construct the DaBlob with metadata.
         Ok(DaBlob {
@@ -224,7 +224,7 @@ where
 
 /// [`BatchDaProvider`] that posts DA via chunked envelope inscription.
 pub(crate) struct ChunkedEnvelopeDaProvider {
-    blob_provider: Arc<dyn DaBlobProvider>,
+    blob_provider: Arc<dyn DaBlobSource>,
     envelope_handle: Arc<ChunkedEnvelopeHandle>,
     broadcast_ops: Arc<BroadcastDbOps>,
     magic_bytes: MagicBytes,
@@ -232,7 +232,7 @@ pub(crate) struct ChunkedEnvelopeDaProvider {
 
 impl ChunkedEnvelopeDaProvider {
     pub(crate) fn new(
-        blob_provider: Arc<dyn DaBlobProvider>,
+        blob_provider: Arc<dyn DaBlobSource>,
         envelope_handle: Arc<ChunkedEnvelopeHandle>,
         broadcast_ops: Arc<BroadcastDbOps>,
         magic_bytes: MagicBytes,

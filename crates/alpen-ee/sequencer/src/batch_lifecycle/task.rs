@@ -102,7 +102,7 @@ mod tests {
 
     use alloy_primitives::B256;
     use alpen_ee_common::{
-        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, MockDaBlobProvider,
+        DaStatus, InMemoryStorage, MockBatchDaProvider, MockBatchProver, MockDaBlobSource,
         ProofGenerationStatus,
     };
     use alpen_reth_db::{DbResult, EeDaContext};
@@ -132,7 +132,7 @@ mod tests {
     struct MockedCtxBuilder {
         da_provider: MockBatchDaProvider,
         prover: MockBatchProver,
-        blob_provider: MockDaBlobProvider,
+        blob_provider: MockDaBlobSource,
     }
 
     impl MockedCtxBuilder {
@@ -142,7 +142,7 @@ mod tests {
         ) -> BatchLifecycleCtx<MockBatchDaProvider, MockBatchProver, S> {
             let da_provider = Arc::new(self.da_provider);
             let prover = Arc::new(self.prover);
-            let blob_provider: Arc<dyn alpen_ee_common::DaBlobProvider> =
+            let blob_provider: Arc<dyn alpen_ee_common::DaBlobSource> =
                 Arc::new(self.blob_provider);
             let (_sealed_batch_tx, sealed_batch_rx) = watch::channel(make_batch_id(0, 0));
             let (proof_ready_tx, _proof_ready_rx) = watch::channel(None);
@@ -159,7 +159,7 @@ mod tests {
         }
 
         fn new() -> Self {
-            let mut blob_provider = MockDaBlobProvider::new();
+            let mut blob_provider = MockDaBlobSource::new();
             // Default: state diffs are always available
             blob_provider
                 .expect_are_state_diffs_ready()

@@ -47,7 +47,9 @@ use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 use {
     crate::{
-        da_provider::{ChunkedEnvelopeDaProvider, RethHeaderDigestProvider, StateDiffBlobProvider},
+        da_provider::{
+            ChunkedEnvelopeDaProvider, RethHeaderSummaryProvider, StateDiffBlobProvider,
+        },
         noop_prover::NoopProver,
         payload_builder::AlpenRethPayloadEngine,
     },
@@ -347,7 +349,7 @@ fn main() {
             if ext.sequencer {
                 // sequencer specific tasks
 
-                use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobProvider};
+                use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
                     create_batch_builder, create_batch_lifecycle_task,
                     create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
@@ -439,13 +441,14 @@ fn main() {
                 )
                 .map_err(|e| eyre::eyre!("creating chunked envelope task: {e}"))?;
 
-                let header_digest = Arc::new(RethHeaderDigestProvider::new(node.provider.clone()));
+                let header_summary =
+                    Arc::new(RethHeaderSummaryProvider::new(node.provider.clone()));
 
                 let da_context_db = dbs.da_context_db();
-                let blob_provider: Arc<dyn DaBlobProvider> = Arc::new(StateDiffBlobProvider::new(
+                let blob_provider: Arc<dyn DaBlobSource> = Arc::new(StateDiffBlobProvider::new(
                     storage.clone(),
                     dbs.witness_db(),
-                    header_digest,
+                    header_summary,
                     da_context_db.clone(),
                 ));
 
