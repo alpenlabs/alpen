@@ -11,6 +11,7 @@ from common.wait import wait_until, wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
+
 class StrataProps(TypedDict):
     """Properties for Strata service."""
 
@@ -114,8 +115,8 @@ class StrataService(RpcService):
         target_height: int,
         rpc: JsonRpcClient | None = None,
         timeout: int = 10,
-        poll_interval: float = 1.0
-    ):
+        poll_interval: float = 1.0,
+    ) -> None:
         """
         Wait for the chain to reach a specific block height.
 
@@ -133,8 +134,52 @@ class StrataService(RpcService):
             lambda status: status.get("latest", {}).get("slot", 0) >= target_height,
             error_with=f"Timeout waiting for block height {target_height}",
             timeout=timeout,
-            step=poll_interval
+            step=poll_interval,
         )
+
+    def wait_for_additional_blocks(
+        self,
+        additional_blocks: int,
+        rpc: JsonRpcClient | None = None,
+        timeout_per_block: int = 10,
+        poll_interval: float = 1.0,
+    ) -> int:
+        """
+        Wait for a number of new blocks to be produced from current tip.
+
+        Args:
+            additional_blocks: Number of new blocks to wait for.
+            rpc: Optional RPC client. If None, creates a new one.
+            timeout_per_block: Timeout budget in seconds per expected block.
+            poll_interval: How often to check the height.
+
+        Returns:
+            Final block height after waiting.
+        """
+        if additional_blocks < 1:
+            raise ValueError("additional_blocks must be >= 1")
+
+        if rpc is None:
+            rpc = self.create_rpc()
+
+        start_height = self.get_cur_block_height(rpc)
+        target_height = start_height + additional_blocks
+        total_timeout = timeout_per_block * additional_blocks
+
+        logger.info(
+            "Waiting for %s new blocks (from %s to %s)...",
+            additional_blocks,
+            start_height + 1,
+            target_height,
+        )
+
+        self.wait_for_block_height(
+            target_height,
+            rpc,
+            timeout=total_timeout,
+            poll_interval=poll_interval,
+        )
+        return self.get_cur_block_height(rpc)
 
     def check_block_generation_in_range(self, rpc: JsonRpcClient, start: int, end: int) -> int:
         """Checks for range of blocks produced and returns current block height"""

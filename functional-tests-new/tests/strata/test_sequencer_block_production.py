@@ -30,7 +30,18 @@ class TestSequencerBlockProduction(StrataNodeTest):
         logger.info(f"Initial block height: {initial_height}")
 
         blocks_to_produce = 4
-        cur_height = strata.check_block_generation_in_range(rpc, 1, blocks_to_produce)
+        final_height = strata.wait_for_additional_blocks(blocks_to_produce, rpc)
+        produced_blocks = final_height - initial_height
 
-        logger.info(f"Sequencer produced {cur_height} blocks successfully")
+        if produced_blocks < blocks_to_produce:
+            raise AssertionError(
+                f"Expected at least {blocks_to_produce} new blocks, got {produced_blocks}",
+            )
+
+        logger.info(
+            "Sequencer produced %s new blocks successfully (height %s -> %s)",
+            produced_blocks,
+            initial_height,
+            final_height,
+        )
         return True

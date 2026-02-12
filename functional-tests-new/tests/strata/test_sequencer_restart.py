@@ -3,12 +3,12 @@
 import logging
 import time
 
-from common.rpc import JsonRpcClient
-from common.services.strata import StrataService
 import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
+from common.rpc import JsonRpcClient
+from common.services.strata import StrataService
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +37,35 @@ class TestSequencerRestart(StrataNodeTest):
         logger.info(f"Initial block height: {initial_height}")
 
         # Wait for blocks before restart
-        pre_restart_height = strata.check_block_generation_in_range(rpc, 1, self.BLOCKS_BEFORE_RESTART)
+        pre_restart_height = strata.wait_for_additional_blocks(
+            self.BLOCKS_BEFORE_RESTART,
+            rpc,
+        )
+        produced_before_restart = pre_restart_height - initial_height
+        if produced_before_restart < self.BLOCKS_BEFORE_RESTART:
+            raise AssertionError(
+                "Expected at least "
+                f"{self.BLOCKS_BEFORE_RESTART} new blocks before restart, "
+                f"got {produced_before_restart}",
+            )
         logger.info(f"Height before restart: {pre_restart_height}")
 
         rpc = self.restart_sequencer_and_get_rpc(strata)
 
         # Wait for blocks after restart
-        final_height = strata.check_block_generation_in_range(rpc, pre_restart_height, pre_restart_height + self.BLOCKS_AFTER_RESTART)
+        final_height = strata.wait_for_additional_blocks(self.BLOCKS_AFTER_RESTART, rpc)
+        produced_after_restart = final_height - pre_restart_height
+        if produced_after_restart < self.BLOCKS_AFTER_RESTART:
+            raise AssertionError(
+                "Expected at least "
+                f"{self.BLOCKS_AFTER_RESTART} new blocks after restart, "
+                f"got {produced_after_restart}",
+            )
         logger.info(f"Final height: {final_height}")
         logger.info("Sequencer successfully resumed block production after restart")
         return True
 
-    def restart_sequencer_and_get_rpc(self, strata: StrataService):
+    def restart_sequencer_and_get_rpc(self, strata: StrataService) -> JsonRpcClient:
         # Restart the sequencer
         logger.info("Restarting Strata sequencer...")
         strata.stop()
