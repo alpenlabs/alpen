@@ -158,7 +158,8 @@ impl ChainWorkerServiceState {
             self.fetch_block_with_parent(block_commitment)?;
 
         // Execute STF and get output and new state
-        let (output, new_state) = self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
+        let (output, new_state) =
+            self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
 
         // Persist results (including the full state)
         self.persist_execution_output(*block_commitment, &output, new_state)?;
@@ -229,7 +230,8 @@ impl ChainWorkerServiceState {
 
         // Apply write batch to parent state to get new state
         let mut new_state = parent_state;
-        new_state.apply_write_batch(write_batch.clone())
+        new_state
+            .apply_write_batch(write_batch.clone())
             .map_err(|e| WorkerError::Unexpected(format!("Failed to apply write batch: {}", e)))?;
 
         // Use the state root from the header (verify_block validated it).
@@ -237,12 +239,8 @@ impl ChainWorkerServiceState {
         let computed_state_root = *block.header().state_root();
 
         Ok((
-            OLBlockExecutionOutput::new(
-                computed_state_root,
-                write_batch,
-                indexer_writes,
-            ),
-            new_state
+            OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes),
+            new_state,
         ))
     }
 
