@@ -11,7 +11,7 @@ use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
     LinearAccumulator,
-    counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16, CtrU64ByUnsignedVarint},
+    counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16, CtrU64ByUnsignedVarInt},
     encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
@@ -144,7 +144,7 @@ impl SnarkDelta {
             &self.base_proof_state.inner().inner_state(),
             &self.final_proof_state.inner().inner_state(),
         );
-        let mut next_idx_builder = DaCounterBuilder::<CtrU64ByUnsignedVarint>::from_source(
+        let mut next_idx_builder = DaCounterBuilder::<CtrU64ByUnsignedVarInt>::from_source(
             self.base_proof_state.inner().next_inbox_msg_idx(),
         );
         next_idx_builder.set(self.final_proof_state.inner().next_inbox_msg_idx())?;
@@ -408,12 +408,14 @@ impl EpochDaAccumulator {
                 continue;
             }
 
+            // CtrU64BySignedVarInt::compare is total over (u64, u64) — every pair
+            // produces a valid signed delta, so this never returns None.
             let balance = {
                 let a: u64 = *delta.base_balance;
                 let b: u64 = *delta.final_balance;
-                CtrU64BySignedVarInt::compare(a, b)
-                    .map(DaCounter::new_changed)
-                    .unwrap_or_else(DaCounter::new_unchanged)
+                let delta = CtrU64BySignedVarInt::compare(a, b)
+                    .expect("CtrU64BySignedVarInt covers all u64 pairs");
+                DaCounter::new_changed(delta)
             };
             let snark_state = match delta.ty {
                 AccountTypeId::Empty => SnarkAccountDiff::default(),
