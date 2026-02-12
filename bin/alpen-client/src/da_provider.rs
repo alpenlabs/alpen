@@ -144,7 +144,7 @@ where
                     block_count += 1;
                 }
                 Ok(None) => {
-                    debug!(?block_hash, "no state diff for block, skipping");
+                    warn!(?block_hash, "no state diff for block, skipping");
                 }
                 Err(e) => {
                     warn!(?block_hash, error = %e, "failed to fetch state diff for block");
@@ -154,6 +154,12 @@ where
                 }
             }
         }
+
+        let expected_count = batch.blocks_iter().count() as u64;
+        eyre::ensure!(
+            block_count == expected_count,
+            "state diff count mismatch for batch {batch_id:?}: got {block_count}, expected {expected_count}"
+        );
 
         // 3. Build the aggregate diff and filter already-published bytecodes.
         let mut state_diff = builder.build();
