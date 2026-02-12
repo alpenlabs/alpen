@@ -7,8 +7,7 @@ use strata_db_types::traits::BlockStatus;
 use strata_ledger_types::AsmManifest;
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts_with_manifest};
 use strata_params::Params;
-use strata_primitives::{EpochCommitment, L1BlockId};
-use strata_status::OLSyncStatus;
+use strata_primitives::{L1BlockId, OLBlockCommitment};
 use strata_storage::NodeStorage;
 use tracing::{info, instrument};
 
@@ -17,7 +16,7 @@ const GENESIS_MANIFEST_WAIT_INTERVAL_MS: u64 = 1_000;
 
 /// Initialize the OL genesis block and state for a fresh database.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
-pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<OLSyncStatus> {
+pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<OLBlockCommitment> {
     info!("initializing OL genesis block and state");
 
     let genesis_l1 = &params.rollup().genesis_l1_view;
@@ -53,13 +52,7 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
         .insert_epoch_summary_blocking(epoch_summary)?;
 
     info!(%genesis_blkid, slot = 0, "OL genesis initialization complete");
-    let status = OLSyncStatus::new(
-        commitment,
-        EpochCommitment::null(), // Prev epoch commitment is null
-        EpochCommitment::null(), // Finalized epoch commitment is null
-        genesis_l1.blk,
-    );
-    Ok(status)
+    Ok(commitment)
 }
 
 /// Wait for the genesis block manifest to be available in the database.

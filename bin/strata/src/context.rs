@@ -10,7 +10,7 @@ use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_params::{Params, RollupParams, SyncParams};
 use strata_primitives::L1BlockCommitment;
-use strata_status::{OLSyncStatusUpdate, StatusChannel};
+use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
 use tokio::runtime::Handle;
 use tracing::warn;
@@ -178,7 +178,6 @@ fn init_status_channel(
 pub(crate) fn check_and_init_genesis(
     storage: &NodeStorage,
     params: &Params,
-    status_channel: &StatusChannel,
 ) -> Result<(L1BlockCommitment, ClientState), InitError> {
     let csman = storage.client_state();
     let recent_state = csman
@@ -188,10 +187,8 @@ pub(crate) fn check_and_init_genesis(
     match recent_state {
         None => {
             // Initialize OL genesis block and state
-            let sync_status = init_ol_genesis(params, storage)
+            let _ = init_ol_genesis(params, storage)
                 .map_err(|e| InitError::StorageCreation(e.to_string()))?;
-
-            status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(sync_status));
 
             // Create and insert init client state into db.
             let init_state = ClientState::default();
@@ -200,7 +197,6 @@ pub(crate) fn check_and_init_genesis(
             csman.put_update_blocking(&l1blk, update.clone())?;
             Ok((l1blk, init_state))
         }
-        // TODO: update status update when there is already a state
         Some(recent_state) => Ok(recent_state),
     }
 }

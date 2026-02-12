@@ -198,11 +198,7 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
     // Check and do genesis if not yet. This should be done after asm/csm/btcio and before mempool
     // because genesis requires asm to be working and mempool and other services expect genesis to
     // have happened.
-    check_and_init_genesis(
-        nodectx.storage().as_ref(),
-        nodectx.params().as_ref(),
-        nodectx.status_channel().as_ref(),
-    )?;
+    check_and_init_genesis(nodectx.storage().as_ref(), nodectx.params().as_ref())?;
 
     // Start mempool service
     let mempool_handle = Arc::new(start_mempool(&nodectx)?);
