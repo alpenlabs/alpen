@@ -45,6 +45,7 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
         let msg_payload = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),
             BitcoinAmount::from_sat(withdrawal_intent.amt),
+            withdrawal_intent.preferred_operator,
         );
         outputs.add_message(SentMessage::new(bridge_gateway_account_id, msg_payload));
     }
@@ -75,10 +76,11 @@ pub(crate) fn build_block_package<TPayload: EnginePayload>(
 fn create_withdrawal_init_message_payload(
     dest_desc: Descriptor,
     value: BitcoinAmount,
+    preferred_operator: u32,
 ) -> MsgPayload {
     // Encode the deposit message data
-    let withdrawal_data =
-        WithdrawalMsgData::new(0, dest_desc.to_bytes()).expect("valid descriptor");
+    let withdrawal_data = WithdrawalMsgData::new(0, dest_desc.to_bytes(), preferred_operator)
+        .expect("valid descriptor");
     let body = encode_to_vec(&withdrawal_data).expect("encode withdrawal data");
 
     // Create properly formatted message
