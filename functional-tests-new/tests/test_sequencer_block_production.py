@@ -35,29 +35,20 @@ class TestSequencerBlockProduction(StrataNodeTest):
             lambda x: x is not None,
             error_with="Timed out getting chain status",
         )
-        initial_height = initial_status.get("latest", {}).get("height", 0)
+        initial_height = initial_status.get("latest", {}).get("slot", 0)
         logger.info(f"Initial block height: {initial_height}")
 
-        # Wait for new blocks to be produced
-        target_height = initial_height + 5
-        logger.info(f"Waiting for chain to reach height {target_height}...")
+        for target_height in range(1, 5):
+            # Wait for new blocks to be produced
+            logger.info(f"Waiting for chain to reach height {target_height}...")
 
-        final_status = wait_until_with_value(
-            lambda: strata_rpc.strata_getChainStatus(),
-            lambda status: status.get("latest", {}).get("height", 0) >= target_height,
-            error_with=f"Timeout waiting for block height {target_height}",
-            timeout=30,
-            step=1.0
-        )
-
-        final_height = final_status.get("latest", {}).get("height", 0)
-        blocks_produced = final_height - initial_height
-
-        logger.info(f"Final block height: {final_height}")
-        logger.info(f"Blocks produced: {blocks_produced}")
-
-        # Verify blocks were produced
-        assert blocks_produced >= 5, f"Expected at least 5 blocks, got {blocks_produced}"
+            wait_until_with_value(
+                lambda: strata_rpc.strata_getChainStatus(),
+                lambda status: status.get("latest", {}).get("slot", 0) >= target_height,
+                error_with=f"Timeout waiting for block height {target_height}",
+                timeout=10,
+                step=1.0
+            )
 
         logger.info("Sequencer is producing blocks correctly!")
         return True

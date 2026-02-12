@@ -66,6 +66,13 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
         writes: &IndexerWrites,
     ) -> WorkerResult<()>;
 
+    /// Stores the full toplevel state for a block.
+    fn store_toplevel_state(
+        &self,
+        commitment: OLBlockCommitment,
+        state: OLState,
+    ) -> WorkerResult<()>;
+
     // =========================================================================
     // Epoch management
     // =========================================================================

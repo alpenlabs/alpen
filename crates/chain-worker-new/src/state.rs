@@ -157,11 +157,11 @@ impl ChainWorkerServiceState {
         let (block, parent_header, parent_commitment) =
             self.fetch_block_with_parent(block_commitment)?;
 
-        // Execute STF and get output
-        let output = self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
+        // Execute STF and get output and new state
+        let (output, new_state) = self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
 
-        // Persist results
-        self.persist_execution_output(*block_commitment, &output)?;
+        // Persist results (including the full state)
+        self.persist_execution_output(*block_commitment, &output, new_state)?;
 
         // Handle epoch terminal if needed
         if block.header().is_terminal() {
@@ -216,7 +216,7 @@ impl ChainWorkerServiceState {
         block: &OLBlock,
         parent_header: Option<&OLBlockHeader>,
         parent_commitment: OLBlockCommitment,
-    ) -> WorkerResult<OLBlockExecutionOutput> {
+    ) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
         // Fetch parent state
         let parent_state = self
             .ctx
@@ -227,14 +227,22 @@ impl ChainWorkerServiceState {
         let (write_batch, indexer_writes) =
             Self::run_stf_verification(&parent_state, block, parent_header)?;
 
+        // Apply write batch to parent state to get new state
+        let mut new_state = parent_state;
+        new_state.apply_write_batch(write_batch.clone())
+            .map_err(|e| WorkerError::Unexpected(format!("Failed to apply write batch: {}", e)))?;
+
         // Use the state root from the header (verify_block validated it).
         // Note: logs are validated internally by verify_block via the logs_root commitment.
         let computed_state_root = *block.header().state_root();
 
-        Ok(OLBlockExecutionOutput::new(
-            computed_state_root,
-            write_batch,
-            indexer_writes,
+        Ok((
+            OLBlockExecutionOutput::new(
+                computed_state_root,
+                write_batch,
+                indexer_writes,
+            ),
+            new_state
         ))
     }
 
@@ -264,13 +272,20 @@ impl ChainWorkerServiceState {
         Ok((write_batch, indexer_writes))
     }
 
-    /// Persists the execution output to storage.
+    /// Persists the execution output and state to storage.
     fn persist_execution_output(
         &self,
         block_commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
+        new_state: OLState,
     ) -> WorkerResult<()> {
+        // Store the write batch
         self.ctx.store_block_output(block_commitment, output)?;
+
+        // Store the full toplevel state
+        self.ctx.store_toplevel_state(block_commitment, new_state)?;
+
+        // Store auxiliary data
         self.ctx
             .store_auxiliary_data(block_commitment, output.indexer_writes())?;
         Ok(())
