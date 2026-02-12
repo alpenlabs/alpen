@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, DaBlobProvider};
+use alpen_ee_common::{BatchDaProvider, BatchId, BatchProver, BatchStorage, DaBlobSource};
 use alpen_reth_db::EeDaContext;
 use tokio::sync::watch;
 
@@ -29,7 +29,7 @@ where
     pub batch_storage: Arc<S>,
 
     /// Provider for DA blobs, also used to check per block state diff availability.
-    pub blob_provider: Arc<dyn DaBlobProvider>,
+    pub blob_provider: Arc<dyn DaBlobSource>,
 
     /// Sender to notify about batches reaching ProofReady state.
     pub proof_ready_tx: watch::Sender<Option<BatchId>>,
