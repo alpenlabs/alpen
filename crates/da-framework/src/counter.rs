@@ -451,6 +451,64 @@ pub mod counter_schemes {
             SignedVarintIncr::new(diff_i32)
         }
     }
+
+    // ==================== Full-range u64 varint counter schemes ====================
+
+    use crate::{SignedVarInt, UnsignedVarInt};
+
+    /// Counter scheme for u64 base with unsigned varint increment (full u64 range).
+    ///
+    /// Supports increments from 0 to u64::MAX with compact LEB128 encoding.
+    #[derive(Copy, Clone, Debug, Default)]
+    pub struct CtrU64ByUnsignedVarInt;
+
+    impl crate::CounterScheme for CtrU64ByUnsignedVarInt {
+        type Base = u64;
+        type Incr = UnsignedVarInt;
+
+        fn is_zero(incr: &Self::Incr) -> bool {
+            incr.is_zero()
+        }
+
+        fn update(base: &mut Self::Base, incr: &Self::Incr) {
+            *base = base.saturating_add(incr.inner());
+        }
+
+        fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
+            b.checked_sub(a).map(UnsignedVarInt::new)
+        }
+    }
+
+    /// Counter scheme for u64 base with signed varint increment (full u64 magnitude range).
+    ///
+    /// Supports increments from -u64::MAX to +u64::MAX with compact encoding.
+    #[derive(Copy, Clone, Debug, Default)]
+    pub struct CtrU64BySignedVarInt;
+
+    impl crate::CounterScheme for CtrU64BySignedVarInt {
+        type Base = u64;
+        type Incr = SignedVarInt;
+
+        fn is_zero(incr: &Self::Incr) -> bool {
+            incr.is_zero()
+        }
+
+        fn update(base: &mut Self::Base, incr: &Self::Incr) {
+            if incr.is_positive() {
+                *base = base.saturating_add(incr.magnitude());
+            } else {
+                *base = base.saturating_sub(incr.magnitude());
+            }
+        }
+
+        fn compare(a: Self::Base, b: Self::Base) -> Option<Self::Incr> {
+            Some(if b >= a {
+                SignedVarInt::positive(b - a)
+            } else {
+                SignedVarInt::negative(a - b)
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -458,11 +516,14 @@ mod tests {
     use super::{
         DaCounter,
         counter_schemes::{
-            CtrU64ByI16, CtrU64BySignedVarint, CtrU64ByUnsignedVarint, SignedVarintIncr,
-            UnsignedVarintIncr,
+            CtrU64ByI16, CtrU64BySignedVarInt, CtrU64BySignedVarint, CtrU64ByUnsignedVarInt,
+            CtrU64ByUnsignedVarint, SignedVarintIncr, UnsignedVarintIncr,
         },
     };
-    use crate::{ContextlessDaWrite, decode_buf_exact, encode_to_vec};
+    use crate::{
+        ContextlessDaWrite, CounterScheme, SignedVarInt, UnsignedVarInt, decode_buf_exact,
+        encode_to_vec,
+    };
 
     #[test]
     fn test_counter_simple() {
@@ -645,5 +706,105 @@ mod tests {
         let mut v = 50u64;
         ctr.apply(&mut v).unwrap();
         assert_eq!(v, 0); // Saturates at 0
+    }
+
+    // ==================== Full-range varint counter scheme tests ====================
+
+    #[test]
+    fn test_counter_unsigned_full_range() {
+        let incr = UnsignedVarInt::new(u64::MAX);
+        let mut base = 0u64;
+        CtrU64ByUnsignedVarInt::update(&mut base, &incr);
+        assert_eq!(base, u64::MAX);
+    }
+
+    #[test]
+    fn test_counter_unsigned_compare() {
+        let incr = CtrU64ByUnsignedVarInt::compare(100, 200).unwrap();
+        assert_eq!(incr.inner(), 100);
+
+        // Cannot represent negative diff
+        assert!(CtrU64ByUnsignedVarInt::compare(200, 100).is_none());
+    }
+
+    #[test]
+    fn test_counter_unsigned_da_counter_roundtrip() {
+        let incr = UnsignedVarInt::new(42);
+        let ctr = DaCounter::<CtrU64ByUnsignedVarInt>::new_changed(incr);
+
+        let mut v = 100u64;
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 142);
+    }
+
+    #[test]
+    fn test_counter_signed_full_range() {
+        // Increment to max
+        let mut base = 0u64;
+        let incr = SignedVarInt::positive(u64::MAX);
+        CtrU64BySignedVarInt::update(&mut base, &incr);
+        assert_eq!(base, u64::MAX);
+
+        // Decrement back to zero
+        let incr = SignedVarInt::negative(u64::MAX);
+        CtrU64BySignedVarInt::update(&mut base, &incr);
+        assert_eq!(base, 0);
+    }
+
+    #[test]
+    fn test_counter_signed_compare() {
+        // Positive diff
+        let incr = CtrU64BySignedVarInt::compare(100, 200).unwrap();
+        assert!(incr.is_positive());
+        assert_eq!(incr.magnitude(), 100);
+
+        // Negative diff
+        let incr = CtrU64BySignedVarInt::compare(200, 100).unwrap();
+        assert!(incr.is_negative());
+        assert_eq!(incr.magnitude(), 100);
+
+        // No change
+        let incr = CtrU64BySignedVarInt::compare(100, 100).unwrap();
+        assert!(incr.is_zero());
+    }
+
+    #[test]
+    fn test_counter_signed_da_counter_apply() {
+        let incr = SignedVarInt::positive(42);
+        let ctr = DaCounter::<CtrU64BySignedVarInt>::new_changed(incr);
+        let mut v = 100u64;
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 142);
+
+        let incr = SignedVarInt::negative(30);
+        let ctr = DaCounter::<CtrU64BySignedVarInt>::new_changed(incr);
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 112);
+    }
+
+    #[test]
+    fn test_counter_signed_saturation() {
+        let incr = SignedVarInt::negative(100);
+        let ctr = DaCounter::<CtrU64BySignedVarInt>::new_changed(incr);
+        let mut v = 50u64;
+        ctr.apply(&mut v).unwrap();
+        assert_eq!(v, 0); // Saturates at 0
+    }
+
+    #[test]
+    fn test_counter_signed_incr_encoding_roundtrip() {
+        // Test encoding the increment type directly (full u64 range)
+        let incr = SignedVarInt::positive(1_000_000_000_000u64);
+        let encoded = encode_to_vec(&incr).unwrap();
+        let decoded: SignedVarInt = decode_buf_exact(&encoded).unwrap();
+        assert!(decoded.is_positive());
+        assert_eq!(decoded.magnitude(), 1_000_000_000_000u64);
+
+        // Verify DaCounter wrapping works correctly
+        let ctr = DaCounter::<CtrU64BySignedVarInt>::new_changed(incr);
+        assert!(ctr.is_changed());
+        let d = ctr.diff().unwrap();
+        assert!(d.is_positive());
+        assert_eq!(d.magnitude(), 1_000_000_000_000u64);
     }
 }
