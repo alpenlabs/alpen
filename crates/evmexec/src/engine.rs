@@ -426,6 +426,7 @@ fn to_bridge_withdrawal_intent(
         amt,
         destination,
         withdrawal_txid,
+        ..
     } = rpc_withdrawal_intent;
     WithdrawalIntent::new(BitcoinAmount::from_sat(amt), destination, withdrawal_txid)
 }

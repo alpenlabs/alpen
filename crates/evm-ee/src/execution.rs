@@ -53,8 +53,12 @@ fn convert_withdrawal_intents_to_messages(
 ) {
     for intent in withdrawal_intents {
         // Create withdrawal message data with fees=0 (currently ignored) and destination descriptor
-        let withdrawal_msg = WithdrawalMsgData::new(0, intent.destination.to_bytes().to_vec())
-            .expect("destination descriptor too long");
+        let withdrawal_msg = WithdrawalMsgData::new(
+            0,
+            intent.destination.to_bytes().to_vec(),
+            intent.preferred_operator,
+        )
+        .expect("destination descriptor too long");
 
         let msg_data = encode_to_vec(&withdrawal_msg).expect("encoding failed");
         let bridge_gateway_account = AccountId::from(BRIDGE_GATEWAY_ACCOUNT);
