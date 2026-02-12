@@ -177,6 +177,16 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(())
     }
 
+    fn store_toplevel_state(
+        &self,
+        commitment: OLBlockCommitment,
+        state: OLState,
+    ) -> WorkerResult<()> {
+        self.ol_state_mgr
+            .put_toplevel_ol_state_blocking(commitment, state)?;
+        Ok(())
+    }
+
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
         let commitment = summary.get_epoch_commitment();
         self.ol_checkpoint_mgr

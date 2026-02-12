@@ -187,7 +187,7 @@ pub(crate) fn check_and_init_genesis(
     match recent_state {
         None => {
             // Initialize OL genesis block and state
-            init_ol_genesis(params, storage)
+            let _ = init_ol_genesis(params, storage)
                 .map_err(|e| InitError::StorageCreation(e.to_string()))?;
 
             // Create and insert init client state into db.

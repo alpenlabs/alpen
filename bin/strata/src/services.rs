@@ -263,7 +263,7 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     let config = OLMempoolConfig::default();
 
     // Get current chain tip - try status channel first, fall back to genesis from storage
-    let current_tip = match nodectx.status_channel().get_chain_sync_status() {
+    let current_tip = match nodectx.status_channel().get_ol_sync_status() {
         Some(status) => status.tip,
         None => {
             // No chain sync status yet - get genesis block from OL storage
