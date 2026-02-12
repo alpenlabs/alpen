@@ -322,8 +322,8 @@ impl OLClientRpcServer for OLRpcServer {
             })?;
 
         self.storage
-            .checkpoint()
-            .get_epoch_commitments_at(epoch as u64)
+            .ol_checkpoint()
+            .get_epoch_commitments_at_async(epoch as u64)
             .await
             .map_err(db_error)?
             .first()
