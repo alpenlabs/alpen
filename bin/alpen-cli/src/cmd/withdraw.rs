@@ -26,6 +26,10 @@ pub struct WithdrawArgs {
     /// the signet address to send funds to. defaults to a new internal wallet address
     #[argh(positional)]
     address: Option<String>,
+
+    /// preferred operator index for withdrawal assignment
+    #[argh(option)]
+    operator: Option<u32>,
 }
 
 pub async fn withdraw(
@@ -78,12 +82,13 @@ pub async fn withdraw(
         .try_into()
         .user_error("Failed to convert address to BOSD descriptor")?;
 
+    let calldata = encode_bridge_out_calldata(args.operator, &bosd);
+
     let tx = l2w
         .transaction_request()
         .with_to(settings.bridge_alpen_address)
         .with_value(U256::from(bridge_out_amount.to_sat() as u128 * SATS_TO_WEI))
-        // calldata for the Alpen EVM-BOSD descriptor
-        .input(TransactionInput::new(bosd.to_bytes().into()));
+        .input(TransactionInput::new(calldata.into()));
 
     let pb = ProgressBar::new_spinner().with_message("Broadcasting transaction");
     pb.enable_steady_tick(Duration::from_millis(100));
@@ -100,4 +105,23 @@ pub async fn withdraw(
     );
 
     Ok(())
+}
+
+/// Encodes bridge out calldata: `[1 byte B][B bytes: operator index (big-endian)][BOSD bytes]`.
+fn encode_bridge_out_calldata(operator: Option<u32>, bosd: &Descriptor) -> Vec<u8> {
+    let bosd_bytes = bosd.to_bytes();
+    let mut buf = Vec::with_capacity(1 + 4 + bosd_bytes.len());
+    match operator {
+        None => {
+            // B=0: no operator preference
+            buf.push(0);
+        }
+        Some(idx) => {
+            // B=4: operator index encoded as 4 big-endian bytes
+            buf.push(4);
+            buf.extend_from_slice(&idx.to_be_bytes());
+        }
+    }
+    buf.extend_from_slice(&bosd_bytes);
+    buf
 }
