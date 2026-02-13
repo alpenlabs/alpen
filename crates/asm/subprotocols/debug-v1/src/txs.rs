@@ -91,7 +91,8 @@ fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxPa
 
 /// Parses withdrawal data from auxiliary data bytes.
 ///
-/// Format: `[amount: 8 bytes][1 byte B][B bytes: operator index (big-endian)][descriptor: variable]`
+/// Format: `[amount: 8 bytes][1 byte B][B bytes: operator index (big-endian)][descriptor:
+/// variable]`
 /// - B=0: no operator preference
 /// - B=1..4: operator index encoded as B big-endian bytes
 /// - B>4: invalid
