@@ -13747,6 +13747,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
+ "rand 0.8.5",
  "serde",
  "strata-asm-manifest-types",
  "strata-asm-types",
