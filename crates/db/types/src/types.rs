@@ -13,6 +13,7 @@ use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, Checkpoint
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::OLTxId;
+use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::buf::Buf32;
 use zkaleido::Proof;
@@ -385,6 +386,102 @@ pub enum OLCheckpointStatus {
     Unsigned,
     /// Signed and stored as L1PayloadIntent with given index.
     Signed(L1PayloadIntentIndex),
+}
+
+/// A chunked envelope entry representing a commit tx funding N reveal txs.
+///
+/// Used for posting large DA blobs that exceed single-transaction limits.
+/// Each reveal contains a chunk of the original blob with header metadata
+/// for reassembly.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct ChunkedEnvelopeEntry {
+    /// Opaque witness data per reveal, ordered by output index.
+    pub chunk_data: Vec<Vec<u8>>,
+    /// OP_RETURN tag magic bytes.
+    pub magic_bytes: MagicBytes,
+    /// Wtxid of the last reveal in the preceding envelope, or zero for the first.
+    pub prev_tail_wtxid: Buf32,
+    /// Commit transaction ID. Zero if unsigned.
+    pub commit_txid: Buf32,
+    /// Per-reveal metadata, ordered by output index. Empty if unsigned.
+    pub reveals: Vec<RevealTxMeta>,
+    /// Lifecycle status.
+    pub status: ChunkedEnvelopeStatus,
+}
+
+impl ChunkedEnvelopeEntry {
+    /// Creates a new unsigned entry with no transaction metadata.
+    ///
+    /// Transaction IDs and reveal metadata are populated after signing.
+    pub fn new_unsigned(
+        chunk_data: Vec<Vec<u8>>,
+        magic_bytes: MagicBytes,
+        prev_tail_wtxid: Buf32,
+    ) -> Self {
+        Self {
+            chunk_data,
+            magic_bytes,
+            prev_tail_wtxid,
+            commit_txid: Buf32::zero(),
+            reveals: Vec::new(),
+            status: ChunkedEnvelopeStatus::Unsigned,
+        }
+    }
+
+    /// Returns the wtxid of the last reveal, or [`prev_tail_wtxid`](Self::prev_tail_wtxid) if
+    /// unsigned.
+    pub fn tail_wtxid(&self) -> Buf32 {
+        self.reveals
+            .last()
+            .map(|r| r.wtxid)
+            .unwrap_or(self.prev_tail_wtxid)
+    }
+}
+
+/// Metadata for a single reveal transaction within a chunked envelope.
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct RevealTxMeta {
+    /// Output index in the commit tx that this reveal spends.
+    pub vout_index: u32,
+    /// Reveal transaction ID.
+    pub txid: Buf32,
+    /// Reveal witness transaction ID.
+    pub wtxid: Buf32,
+    /// Raw signed reveal transaction bytes (consensus-encoded).
+    /// Stored here until the commit is published, then added to broadcast DB.
+    pub tx_bytes: Vec<u8>,
+}
+
+/// Lifecycle status of a chunked envelope.
+///
+/// The lifecycle ensures reveals are not broadcast before their parent commit tx
+/// is accepted into the mempool. This prevents `InvalidInputs` errors when the
+/// commit's outputs aren't yet spendable.
+///
+/// ```text
+/// Unsigned → Unpublished → CommitPublished → Published → Confirmed → Finalized
+///                 ↓              ↓
+///            NeedsResign    NeedsResign
+/// ```
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
+pub enum ChunkedEnvelopeStatus {
+    /// Chunk data prepared, transactions not yet created.
+    Unsigned,
+    /// Commit tx signed and stored in broadcast DB. Reveals are signed but held
+    /// locally until commit is published to ensure they don't fail with
+    /// `InvalidInputs` due to the commit outputs not yet being spendable.
+    Unpublished,
+    /// Commit tx is published/confirmed. Reveals are now stored in broadcast DB
+    /// and waiting to be published.
+    CommitPublished,
+    /// All transactions (commit + reveals) broadcast to the mempool.
+    Published,
+    /// Transactions confirmed with sufficient depth.
+    Confirmed,
+    /// Fully finalized on L1.
+    Finalized,
+    /// Input UTXOs were spent; needs fresh signing.
+    NeedsResign,
 }
 
 #[cfg(test)]

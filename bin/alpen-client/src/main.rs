@@ -157,9 +157,14 @@ fn main() {
 
             // --- INITIALIZE STATE ---
 
-            let storage: Arc<_> = init_db_storage(&datadir, config.db_retry_count())
-                .context("failed to load alpen database")?
-                .into();
+            let dbs = init_db_storage(&datadir, config.db_retry_count())
+                .context("failed to load alpen database")?;
+
+            let db_pool = threadpool::Builder::new()
+                .num_threads(8)
+                .thread_name("ee-db-pool".into())
+                .build();
+            let storage: Arc<_> = dbs.node_storage(db_pool).into();
 
             let ol_client = if ext.dummy_ol_client {
                 use strata_primitives::EpochCommitment;

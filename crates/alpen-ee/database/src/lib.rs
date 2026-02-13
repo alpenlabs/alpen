@@ -9,4 +9,6 @@ mod sleddb;
 mod storage;
 
 pub use error::{DbError, DbResult};
-pub use init::init_db_storage;
+pub use init::{init_db_storage, EeDatabases};
+pub use sleddb::{BroadcastDbOps, ChunkedEnvelopeOps};
+pub use storage::EeNodeStorage;

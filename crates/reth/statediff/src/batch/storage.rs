@@ -13,7 +13,7 @@ use crate::codec::TrimmedStorageValue;
 ///
 /// Uses a sorted map for deterministic encoding.
 /// Each slot value is encoded as a register (full replacement).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct StorageDiff {
     /// Changed storage slots: slot_key -> new_value (None = deleted/zeroed).

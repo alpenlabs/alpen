@@ -1,21 +1,14 @@
 //! Common traits and types for Alpen execution environment components.
 
+#[cfg(test)]
+use mockall as _;
+
 mod traits;
 mod types;
 mod utils;
 
-#[cfg(feature = "test-utils")]
 pub use traits::{
-    da::MockBatchDaProvider,
-    ol_client::{MockOLClient, MockSequencerOLClient},
-    prover::MockBatchProver,
-    storage::{
-        batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
-        InMemoryStorage, MockBatchStorage, MockExecBlockStorage, MockStorage,
-    },
-};
-pub use traits::{
-    da::{BatchDaProvider, DaStatus},
+    da::{BatchDaProvider, DaBlobSource, DaStatus},
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
@@ -28,11 +21,22 @@ pub use traits::{
         StorageError,
     },
 };
+#[cfg(feature = "test-utils")]
+pub use traits::{
+    da::{MockBatchDaProvider, MockDaBlobSource},
+    ol_client::{MockOLClient, MockSequencerOLClient},
+    prover::MockBatchProver,
+    storage::{
+        batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
+        InMemoryStorage, MockBatchStorage, MockExecBlockStorage, MockStorage,
+    },
+};
 pub use types::{
     batch::{Batch, BatchId, BatchStatus, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
     consensus_heads::ConsensusHeads,
+    da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, ReassemblyError},
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
     ol_account_epoch_summary::OLEpochSummary,

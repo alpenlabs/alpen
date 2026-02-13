@@ -23,6 +23,7 @@ use bitcoind_async_client::{
         },
         v29::{ImportDescriptors, ImportDescriptorsResult},
     },
+    error::ClientError,
     traits::{Broadcaster, Reader, Signer, Wallet},
     types::{
         CreateRawTransactionArguments, CreateRawTransactionInput, CreateRawTransactionOutput,
@@ -34,6 +35,7 @@ use bitcoind_async_client::{
 use musig2::secp256k1::SECP256K1;
 use rand::{rngs::OsRng, RngCore};
 use strata_csm_types::L1Payload;
+use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_l1_envelope_fmt::builder::build_envelope_script;
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
@@ -46,6 +48,16 @@ pub struct TestBitcoinClient {
     pub confs: u64,
     /// Which height a transaction was included in.
     pub included_height: u64,
+    /// Behavior for `send_raw_transaction`.
+    pub send_raw_transaction_mode: SendRawTransactionMode,
+}
+
+/// Configures how [`TestBitcoinClient`] responds to `send_raw_transaction`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendRawTransactionMode {
+    Success,
+    MissingOrInvalidInput,
+    GenericError,
 }
 
 impl TestBitcoinClient {
@@ -54,7 +66,13 @@ impl TestBitcoinClient {
             confs,
             // Use arbitrary value, make configurable as necessary
             included_height: 100,
+            send_raw_transaction_mode: SendRawTransactionMode::Success,
         }
+    }
+
+    pub fn with_send_raw_transaction_mode(mut self, mode: SendRawTransactionMode) -> Self {
+        self.send_raw_transaction_mode = mode;
+        self
     }
 }
 
@@ -67,6 +85,14 @@ const TEST_BLOCKSTR: &str = "000000207d862a78fcb02ab24ebd154a20b9992af6d2f0c94d3
 /// Taken from
 /// [`rust-bitcoin` test](https://docs.rs/bitcoin/0.32.1/src/bitcoin/blockdata/transaction.rs.html#1638).
 pub const SOME_TX: &str = "0100000001a15d57094aa7a21a28cb20b59aab8fc7d1149a3bdbcddba9c622e4f5f6a99ece010000006c493046022100f93bb0e7d8db7bd46e40132d1f8242026e045f03a0efe71bbb8e3f475e970d790221009337cd7f1f929f00cc6ff01f03729b069a7c21b59b1736ddfee5db5946c5da8c0121033b9b137ee87d5a812d6f506efdd37f0affa7ffc310711c06c7f3e097c9447c52ffffffff0100e1f505000000001976a9140389035a9225b3839e2bbf32d826a1e222031fd888ac00000000";
+
+/// Generates a [`L1TxEntry`] with the provided status from [`SOME_TX`].
+pub fn gen_l1_tx_entry_with_status(status: L1TxStatus) -> L1TxEntry {
+    let tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
+    let mut entry = L1TxEntry::from_tx(&tx);
+    entry.status = status;
+    entry
+}
 
 impl Reader for TestBitcoinClient {
     async fn estimate_smart_fee(&self, _conf_target: u16) -> ClientResult<u64> {
@@ -218,7 +244,17 @@ impl Reader for TestBitcoinClient {
 impl Broadcaster for TestBitcoinClient {
     // send_raw_transaction sends a raw transaction to the network
     async fn send_raw_transaction(&self, _tx: &Transaction) -> ClientResult<Txid> {
-        Ok(Txid::from_slice(&[1u8; 32]).unwrap())
+        match self.send_raw_transaction_mode {
+            SendRawTransactionMode::Success => Ok(Txid::from_slice(&[1u8; 32]).unwrap()),
+            SendRawTransactionMode::MissingOrInvalidInput => Err(ClientError::Server(
+                -26,
+                "missing or invalid input".to_string(),
+            )),
+            SendRawTransactionMode::GenericError => Err(ClientError::Server(
+                -1,
+                "generic broadcast failure".to_string(),
+            )),
+        }
     }
     async fn test_mempool_accept(&self, _tx: &Transaction) -> ClientResult<TestMempoolAccept> {
         let some_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();

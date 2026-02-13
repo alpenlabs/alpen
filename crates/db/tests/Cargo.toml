@@ -14,6 +14,7 @@ strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-l1-txfmt.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }

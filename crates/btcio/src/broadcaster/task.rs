@@ -206,7 +206,6 @@ async fn publish_tx(
 
 #[cfg(test)]
 mod test {
-    use bitcoin::{consensus, Transaction};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::traits::DatabaseBackend;
     use strata_l1_txfmt::MagicBytes;
@@ -214,20 +213,13 @@ mod test {
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;
-    use crate::test_utils::{TestBitcoinClient, SOME_TX};
+    use crate::test_utils::{gen_l1_tx_entry_with_status, TestBitcoinClient};
 
     fn get_ops() -> Arc<BroadcastDbOps> {
         let pool = threadpool::Builder::new().num_threads(2).build();
         let db = get_test_sled_backend().broadcast_db();
         let ops = Context::new(db).into_ops(pool);
         Arc::new(ops)
-    }
-
-    fn gen_entry_with_status(st: L1TxStatus) -> L1TxEntry {
-        let tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
-        let mut entry = L1TxEntry::from_tx(&tx);
-        entry.status = st;
-        entry
     }
 
     fn get_test_btcio_params() -> BtcioParams {
@@ -241,7 +233,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_unpublished_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Unpublished);
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
         let btcio_params = get_test_btcio_params();
 
         // Add tx to db
@@ -267,7 +259,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_published_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Published);
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Published);
         let btcio_params = get_test_btcio_params();
         let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
@@ -328,7 +320,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_confirmed_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Confirmed {
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Confirmed {
             confirmations: 1,
             block_hash: Buf32::zero(),
             block_height: 100,
@@ -394,7 +386,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_finalized_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::Finalized {
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Finalized {
             confirmations: 1,
             block_hash: Buf32::zero(),
             block_height: 100,
@@ -437,7 +429,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_excluded_entry() {
         let ops = get_ops();
-        let e = gen_entry_with_status(L1TxStatus::InvalidInputs);
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
         let btcio_params = get_test_btcio_params();
         let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
@@ -480,12 +472,12 @@ mod test {
         let reorg_depth = btcio_params.l1_reorg_safe_depth() as u64;
 
         // Add a couple of txs
-        let e1 = gen_entry_with_status(L1TxStatus::Unpublished);
+        let e1 = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
         let i1 = ops.put_tx_entry_async([1; 32].into(), e1).await.unwrap();
-        let e2 = gen_entry_with_status(L1TxStatus::InvalidInputs);
+        let e2 = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
         let _i2 = ops.put_tx_entry_async([2; 32].into(), e2).await.unwrap();
 
-        let e3 = gen_entry_with_status(L1TxStatus::Published);
+        let e3 = gen_l1_tx_entry_with_status(L1TxStatus::Published);
         let i3 = ops.put_tx_entry_async([3; 32].into(), e3).await.unwrap();
 
         let state = BroadcasterState::initialize(&ops).await.unwrap();
