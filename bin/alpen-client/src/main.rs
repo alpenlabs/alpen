@@ -114,7 +114,7 @@ fn main() {
                 params,
                 CredRule::Unchecked,
                 ol_client_url,
-                ext.sequencer_http,
+                ext.sequencer_http.clone(),
                 ext.db_retry_count,
             ));
 
@@ -254,8 +254,12 @@ fn main() {
             )
             .build();
 
+            let node_args = AlpenNodeArgs {
+                sequencer_http: ext.sequencer_http.clone(),
+            };
+
             let node_builder = builder
-                .node(AlpenEthereumNode::new(AlpenNodeArgs::default()))
+                .node(AlpenEthereumNode::new(node_args))
                 // Register Alpen gossip RLPx subprotocol
                 .on_component_initialized({
                     let gossip_tx = gossip_tx.clone();
