@@ -17,8 +17,12 @@ pub(crate) const AMOUNT_SIZE: usize = 8;
 /// Offset of amount field in auxiliary data.
 pub(crate) const AMOUNT_OFFSET: usize = 0;
 
-/// Offset of descriptor field in auxiliary data.
-pub(crate) const DESCRIPTOR_OFFSET: usize = AMOUNT_OFFSET + AMOUNT_SIZE;
+/// Offset of the operator-length byte (`B`) in auxiliary data.
+pub(crate) const OPERATOR_LEN_OFFSET: usize = AMOUNT_OFFSET + AMOUNT_SIZE;
+
+/// Maximum number of bytes used to encode the operator index.
+/// Operator index is a u32, so at most 4 bytes.
+pub(crate) const MAX_OPERATOR_INDEX_LEN: usize = 4;
 
 /// Minimum size of descriptor field in bytes.
 ///
@@ -27,5 +31,7 @@ pub(crate) const MIN_DESCRIPTOR_SIZE: usize = 20;
 
 /// Minimum auxiliary data length for mock withdrawal intent.
 ///
-/// Format: `[amount: 8 bytes][descriptor: variable]`
-pub(crate) const MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN: usize = AMOUNT_SIZE + MIN_DESCRIPTOR_SIZE;
+/// Format: `[amount: 8 bytes][1 byte B][B bytes: operator index][descriptor: variable]`
+/// Minimum case is B=0 (no operator preference).
+pub(crate) const MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN: usize =
+    AMOUNT_SIZE + 1 + MIN_DESCRIPTOR_SIZE;
