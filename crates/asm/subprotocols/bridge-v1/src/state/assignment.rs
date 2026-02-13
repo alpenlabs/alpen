@@ -186,6 +186,8 @@ impl AssignmentEntry {
         {
             idx
         } else {
+            // Select a random operator from eligible ones.
+            // Use ChaChaRng with L1 block ID as seed for deterministic random selection.
             let seed_bytes: [u8; 32] = Buf32::from(seed).into();
             let mut rng = ChaChaRng::from_seed(seed_bytes);
             let random_index = (rng.next_u32() as usize) % active_count;
@@ -593,6 +595,8 @@ mod tests {
 
         // Should still get assigned to a valid active operator via random fallback
         assert!(current_active_operators.is_active(assignment.current_assignee()));
+        assert_ne!(assignment.current_assignee(), bogus_idx);
+        assert!(assignment.current_assignee() < current_active_operators.len() as u32);
     }
 
     #[test]

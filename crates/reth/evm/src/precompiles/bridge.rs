@@ -106,6 +106,12 @@ fn parse_calldata(data: &[u8]) -> Result<(u32, &[u8]), PrecompileError> {
 
     let (operator_bytes, bosd_data) = rest.split_at(b);
 
+    if bosd_data.is_empty() {
+        return Err(PrecompileError::other(
+            "Calldata missing BOSD data after operator index",
+        ));
+    }
+
     let operator_idx = operator_bytes
         .iter()
         .fold(0u32, |acc, &byte| (acc << 8) | byte as u32);
@@ -189,6 +195,14 @@ mod tests {
     fn test_parse_calldata_truncated_operator_bytes() {
         // B=4 but only 2 operator bytes follow
         let data = vec![4, 0x01, 0x02];
+        let result = parse_calldata(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_calldata_empty_bosd_after_operator() {
+        // B=1 with operator byte but no BOSD data following
+        let data = vec![1, 0x05];
         let result = parse_calldata(&data);
         assert!(result.is_err());
     }
