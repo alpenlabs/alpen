@@ -78,7 +78,19 @@ pub fn build_genesis_artifacts_with_manifest(
 ) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
-    let mut ol_params = OLParams::default();
+    // Create genesis block info.
+    let genesis_l1 = &params.rollup().genesis_l1_view;
+    let genesis_l1_commitment =
+        L1BlockCommitment::from_height_u64(genesis_l1.height_u64(), genesis_l1.blkid()).ok_or(
+            GenesisError::InvalidGenesisL1Height {
+                height: genesis_l1.height_u64(),
+            },
+        )?;
+
+    let mut ol_params = OLParams {
+        last_l1_block: genesis_l1_commitment,
+        ..OLParams::default()
+    };
 
     let alpen_ed_account = AccountId::new(ALPEN_EE_ACCOUNT_ID_BYTES);
     let alpen_ed_state_root = params.rollup().evm_genesis_block_state_root;
@@ -94,8 +106,6 @@ pub fn build_genesis_artifacts_with_manifest(
     // Create initial OL state (uses genesis params).
     let mut ol_state = OLState::from_genesis_params(&ol_params)?;
 
-    // Create genesis block info.
-    let genesis_l1 = &params.rollup().genesis_l1_view;
     let genesis_ts = genesis_l1.last_11_timestamps[10] as u64;
     let genesis_info = BlockInfo::new_genesis(genesis_ts);
 
@@ -112,12 +122,6 @@ pub fn build_genesis_artifacts_with_manifest(
     let ol_block = OLBlock::new(signed_header, genesis_block.body().clone());
     let genesis_blkid = genesis_block.header().compute_blkid();
     let commitment = OLBlockCommitment::new(0, genesis_blkid);
-    let genesis_l1_commitment =
-        L1BlockCommitment::from_height_u64(genesis_l1.height_u64(), genesis_l1.blkid()).ok_or(
-            GenesisError::InvalidGenesisL1Height {
-                height: genesis_l1.height_u64(),
-            },
-        )?;
     let epoch_summary = EpochSummary::new(
         0,
         commitment,
