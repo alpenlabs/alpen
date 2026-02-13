@@ -6,9 +6,6 @@ use alloy_sol_types::sol;
 use serde::{Deserialize, Serialize};
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
-/// Sentinel value indicating no preferred operator for withdrawal assignment.
-pub const NO_PREFERRED_OPERATOR: u32 = u32::MAX;
-
 /// Type for withdrawal_intents in rpc.
 /// Distinct from `strata_bridge_types::WithdrawalIntent`
 /// as this will live in reth repo eventually
@@ -23,8 +20,8 @@ pub struct WithdrawalIntent {
     /// withdrawal request transaction id
     pub withdrawal_txid: Buf32,
 
-    /// User's preferred operator index for withdrawal assignment.
-    /// [`NO_PREFERRED_OPERATOR`] means no preference (random assignment).
+    /// User's selected operator index for withdrawal assignment.
+    /// `u32::MAX` means no selection (random assignment).
     pub selected_operator: u32,
 }
 

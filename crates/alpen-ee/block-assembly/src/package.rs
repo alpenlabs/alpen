@@ -45,7 +45,7 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
         let msg_payload = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),
             BitcoinAmount::from_sat(withdrawal_intent.amt),
-            withdrawal_intent.preferred_operator,
+            withdrawal_intent.selected_operator,
         );
         outputs.add_message(SentMessage::new(bridge_gateway_account_id, msg_payload));
     }
