@@ -13,11 +13,12 @@ withdrawal_intent_event_abi = {
     "inputs": [
         {"indexed": False, "internalType": "uint64", "name": "amount", "type": "uint64"},
         {"indexed": False, "internalType": "bytes", "name": "destination", "type": "bytes"},
+        {"indexed": False, "internalType": "uint32", "name": "preferredOperator", "type": "uint32"},
     ],
     "name": "WithdrawalIntentEvent",
     "type": "event",
 }
-event_signature_text = "WithdrawalIntentEvent(uint64,bytes)"
+event_signature_text = "WithdrawalIntentEvent(uint64,bytes,uint32)"
 
 
 @flexitest.register
@@ -53,7 +54,9 @@ class ElBridgePrecompileTest(BridgePrecompileMixin):
         deposit_amount = cfg.deposit_amount
         to_transfer_sats = deposit_amount * 10_000_000_000
         to_transfer_wei = to_transfer_sats  # Same value in wei
-        dest_pk = "0x04db4c79cc3ffca26f51e21241b9332d646b0772dd7e98de9c1de6b10990cab80b"
+        dest_pk = "04db4c79cc3ffca26f51e21241b9332d646b0772dd7e98de9c1de6b10990cab80b"
+        # Prepend B=0 (no operator preference) before the BOSD descriptor
+        calldata = "0x00" + dest_pk
 
         txid = web3.eth.send_transaction(
             {
@@ -61,7 +64,7 @@ class ElBridgePrecompileTest(BridgePrecompileMixin):
                 "value": hex(to_transfer_sats),
                 "from": source,
                 "gas": hex(200000),
-                "data": dest_pk,
+                "data": calldata,
             }
         )
 
@@ -78,7 +81,7 @@ class ElBridgePrecompileTest(BridgePrecompileMixin):
         event_data = get_event_data(web3.codec, withdrawal_intent_event_abi, log)
 
         assert event_data.args.amount == deposit_amount
-        assert event_data.args.destination.hex() == dest_pk[2:]  # Remove 0x prefix for comparison
+        assert event_data.args.destination.hex() == dest_pk
 
         final_block_no = web3.eth.block_number
         final_bridge_balance = web3.eth.get_balance(dest)
