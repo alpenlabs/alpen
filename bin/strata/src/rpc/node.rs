@@ -186,10 +186,12 @@ impl OLClientRpcServer for OLRpcServer {
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
         let latest = chain_sync_status.tip;
+        let parent = chain_sync_status.prev_epoch;
+        // TODO: STR-2420 Address this incorrect setting of confirmed epoch
         let confirmed = chain_sync_status.prev_epoch;
         let finalized = chain_sync_status.finalized_epoch;
 
-        Ok(RpcOLChainStatus::new(latest, confirmed, finalized))
+        Ok(RpcOLChainStatus::new(latest, parent, confirmed, finalized))
     }
 
     async fn get_blocks_summaries(
@@ -391,6 +393,7 @@ impl OLClientRpcServer for OLRpcServer {
                     .status_channel
                     .get_ol_sync_status()
                     .ok_or_else(|| internal_error("OL sync status not available"))?;
+                // TODO: STR-2420 Address this incorrect use of prev_epoch as confirmed epoch
                 chain_sync_status.prev_epoch.to_block_commitment()
             }
             OLBlockOrTag::Finalized => {
