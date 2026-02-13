@@ -134,7 +134,7 @@ impl WorkerContext for TestAsmWorkerContext {
 
     fn get_bitcoin_tx(&self, txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
         // Convert BitcoinTxid to Txid
-        let txid_inner: Txid = txid.clone().into();
+        let txid_inner: Txid = (*txid).into();
 
         // Fetch transaction from regtest synchronously
         // Try to use current runtime if available, otherwise create a new one
@@ -151,8 +151,7 @@ impl WorkerContext for TestAsmWorkerContext {
             }
             Err(_) => {
                 // No runtime available, create a temporary one
-                let rt =
-                    Runtime::new().map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
+                let rt = Runtime::new().map_err(|_| WorkerError::BitcoinTxNotFound(*txid))?;
                 rt.block_on(async {
                     self.client
                         .get_raw_transaction_verbosity_zero(&txid_inner)
@@ -160,7 +159,7 @@ impl WorkerContext for TestAsmWorkerContext {
                 })
             }
         }
-        .map_err(|_| WorkerError::BitcoinTxNotFound(txid.clone()))?;
+        .map_err(|_| WorkerError::BitcoinTxNotFound(*txid))?;
 
         // Extract the transaction and convert to RawBitcoinTx
         let tx = raw_tx_result.0;

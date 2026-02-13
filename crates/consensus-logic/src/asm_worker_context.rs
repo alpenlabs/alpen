@@ -113,7 +113,7 @@ impl WorkerContext for AsmWorkerCtx {
             )
             .map_err(|e| {
                 tracing::warn!(?txid, ?e, "Failed to fetch Bitcoin transaction");
-                WorkerError::BitcoinTxNotFound(txid.clone())
+                WorkerError::BitcoinTxNotFound(*txid)
             })?;
 
         let tx = raw_tx_response.0;
