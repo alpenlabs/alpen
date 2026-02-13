@@ -25,7 +25,7 @@ pub struct WithdrawalIntent {
 
     /// User's preferred operator index for withdrawal assignment.
     /// [`NO_PREFERRED_OPERATOR`] means no preference (random assignment).
-    pub preferred_operator: u32,
+    pub selected_operator: u32,
 }
 
 sol! {
