@@ -26,32 +26,38 @@ class TestGasEstimation(AlpenClientTest):
         rpc = sequencer.create_rpc()
 
         # Test 1: Simple ETH transfer
-        gas = rpc.eth_estimateGas({
-            "from": DEV_ADDRESS,
-            "to": "0x0000000000000000000000000000000000000001",
-            "value": "0x1",
-        })
+        gas = rpc.eth_estimateGas(
+            {
+                "from": DEV_ADDRESS,
+                "to": "0x0000000000000000000000000000000000000001",
+                "value": "0x1",
+            }
+        )
         gas_int = int(gas, 16)
         logger.info(f"Simple transfer gas estimate: {gas_int}")
         assert 21000 <= gas_int < 30000, f"Unexpected gas for simple transfer: {gas_int}"
 
         # Test 2: Transfer with data (should cost more)
-        gas_with_data = rpc.eth_estimateGas({
-            "from": DEV_ADDRESS,
-            "to": "0x0000000000000000000000000000000000000001",
-            "value": "0x1",
-            "data": "0x" + "ab" * 100,  # 100 bytes of data
-        })
+        gas_with_data = rpc.eth_estimateGas(
+            {
+                "from": DEV_ADDRESS,
+                "to": "0x0000000000000000000000000000000000000001",
+                "value": "0x1",
+                "data": "0x" + "ab" * 100,  # 100 bytes of data
+            }
+        )
         gas_with_data_int = int(gas_with_data, 16)
         logger.info(f"Transfer with data gas estimate: {gas_with_data_int}")
         assert gas_with_data_int > gas_int, "Data should increase gas cost"
 
         # Test 3: Zero value call
-        gas_zero = rpc.eth_estimateGas({
-            "from": DEV_ADDRESS,
-            "to": "0x0000000000000000000000000000000000000001",
-            "value": "0x0",
-        })
+        gas_zero = rpc.eth_estimateGas(
+            {
+                "from": DEV_ADDRESS,
+                "to": "0x0000000000000000000000000000000000000001",
+                "value": "0x0",
+            }
+        )
         gas_zero_int = int(gas_zero, 16)
         logger.info(f"Zero value transfer gas estimate: {gas_zero_int}")
         assert gas_zero_int >= 21000, f"Unexpected gas for zero transfer: {gas_zero_int}"

@@ -3,10 +3,14 @@ EVM account management for functional tests.
 
 Provides thread-safe nonce management and transaction signing utilities.
 Based on the patterns from functional-tests/utils/evm_account.py.
+
+Thread Safety:
+    - ManagedAccount uses instance-level locks for general use
+    - Dev accounts (get_dev_account, get_recipient_account) use module-level
+      shared state to prevent nonce conflicts when tests run in parallel
 """
 
 import threading
-from typing import Optional
 
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
@@ -17,6 +21,19 @@ from .config.constants import (
     DEV_RECIPIENT_ADDRESS,
     DEV_RECIPIENT_PRIVATE_KEY,
 )
+
+# =============================================================================
+# Module-level shared state for dev accounts
+# =============================================================================
+# These locks and nonces are shared across all instances of dev accounts
+# to prevent nonce conflicts when multiple tests use the same dev account
+# (e.g., in parallel test execution).
+
+_dev_account_lock = threading.Lock()
+_dev_account_nonce: int = 0
+
+_recipient_account_lock = threading.Lock()
+_recipient_account_nonce: int = 0
 
 
 class ManagedAccount:
@@ -83,7 +100,7 @@ class ManagedAccount:
         value: int,
         gas_price: int,
         gas: int = 21000,
-        nonce: Optional[int] = None,
+        nonce: int | None = None,
     ) -> str:
         """
         Sign a simple ETH transfer transaction.
@@ -121,7 +138,7 @@ class ManagedAccount:
         data: bytes = b"",
         gas_price: int,
         gas: int,
-        nonce: Optional[int] = None,
+        nonce: int | None = None,
     ) -> str:
         """
         Sign a general transaction (can include contract calls).
@@ -154,32 +171,97 @@ class ManagedAccount:
 
 
 # =============================================================================
+# Shared Dev Account (Thread-Safe for Parallel Tests)
+# =============================================================================
+
+
+class _SharedDevAccount(ManagedAccount):
+    """
+    Dev account that uses module-level shared state for thread safety.
+
+    This class overrides get_nonce and sync_nonce to use module-level
+    locks and nonce counters, ensuring that parallel tests don't get
+    conflicting nonces even when they each call get_dev_account().
+    """
+
+    def __init__(
+        self,
+        account: LocalAccount,
+        shared_lock: threading.Lock,
+        chain_id: int = DEV_CHAIN_ID,
+    ):
+        super().__init__(account, chain_id)
+        self._shared_lock = shared_lock
+
+    def get_nonce(self) -> int:
+        """
+        Get the next nonce using the shared module-level counter.
+
+        Thread-safe across all instances of this account.
+        """
+        global _dev_account_nonce, _recipient_account_nonce
+
+        with self._shared_lock:
+            if self._shared_lock is _dev_account_lock:
+                nonce = _dev_account_nonce
+                _dev_account_nonce += 1
+            else:
+                nonce = _recipient_account_nonce
+                _recipient_account_nonce += 1
+            return nonce
+
+    def sync_nonce(self, nonce: int) -> None:
+        """
+        Synchronize the shared nonce counter with an external value.
+
+        This updates the module-level nonce, affecting all instances.
+        """
+        global _dev_account_nonce, _recipient_account_nonce
+
+        with self._shared_lock:
+            if self._shared_lock is _dev_account_lock:
+                _dev_account_nonce = nonce
+            else:
+                _recipient_account_nonce = nonce
+
+
+# =============================================================================
 # Pre-configured Dev Accounts
 # =============================================================================
 
 
 def get_dev_account() -> ManagedAccount:
     """
-    Create a new instance of the primary dev account (Foundry/Hardhat account #0).
+    Get the primary dev account (Foundry/Hardhat account #0).
 
     This account is pre-funded in dev chain configurations.
 
-    IMPORTANT: Each call creates a fresh instance with its own nonce counter.
-    This ensures test isolation - each test manages its own nonce state.
-    Always call sync_nonce() after getting the account to sync with chain state.
+    Thread Safety:
+        All instances returned by this function share the same nonce counter.
+        This prevents nonce conflicts when tests run in parallel and each
+        calls get_dev_account().
+
+    Usage:
+        dev_account = get_dev_account()
+        # Sync with chain state before first use
+        nonce = int(rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)
+        dev_account.sync_nonce(nonce)
     """
-    return ManagedAccount.from_key(DEV_PRIVATE_KEY)
+    account = Account.from_key(DEV_PRIVATE_KEY)
+    return _SharedDevAccount(account, _dev_account_lock)
 
 
 def get_recipient_account() -> ManagedAccount:
     """
-    Create a new instance of the secondary dev account (Foundry/Hardhat account #1).
+    Get the secondary dev account (Foundry/Hardhat account #1).
 
     Useful as a recipient address for transfer tests.
 
-    IMPORTANT: Each call creates a fresh instance with its own nonce counter.
+    Thread Safety:
+        All instances returned by this function share the same nonce counter.
     """
-    return ManagedAccount.from_key(DEV_RECIPIENT_PRIVATE_KEY)
+    account = Account.from_key(DEV_RECIPIENT_PRIVATE_KEY)
+    return _SharedDevAccount(account, _recipient_account_lock)
 
 
 # Convenient access to recipient address without needing the full account

@@ -9,48 +9,13 @@ This tests the P2P transaction propagation:
 import logging
 
 import flexitest
-from eth_account import Account
 
-from common.accounts import ManagedAccount, get_dev_account
+from common.accounts import get_dev_account
 from common.base_test import AlpenClientTest
 from common.config.constants import DEV_ADDRESS
-from common.wait import wait_until
+from common.evm_utils import create_funded_account, wait_for_receipt
 
 logger = logging.getLogger(__name__)
-
-
-def wait_for_receipt(rpc, tx_hash: str, timeout: int = 30) -> dict:
-    """Wait for transaction receipt."""
-    receipt = None
-
-    def check_receipt():
-        nonlocal receipt
-        try:
-            receipt = rpc.eth_getTransactionReceipt(tx_hash)
-            return receipt is not None
-        except Exception:
-            return False
-
-    wait_until(check_receipt, error_with=f"Transaction {tx_hash} not mined", timeout=timeout)
-    return receipt
-
-
-def create_funded_account(rpc, dev_account: ManagedAccount, amount: int) -> ManagedAccount:
-    """Create a new account and fund it from the dev account."""
-    new_acct = Account.create()
-    new_managed = ManagedAccount(new_acct)
-
-    gas_price = int(rpc.eth_gasPrice(), 16)
-    raw_tx = dev_account.sign_transfer(
-        to=new_acct.address,
-        value=amount,
-        gas_price=gas_price,
-        gas=25000,
-    )
-    tx_hash = rpc.eth_sendRawTransaction(raw_tx)
-    wait_for_receipt(rpc, tx_hash)
-
-    return new_managed
 
 
 @flexitest.register
@@ -74,7 +39,7 @@ class TestTxForwarding(AlpenClientTest):
 
         # Create a fresh funded account for this test
         dev_account = get_dev_account()
-        # Use "pending" to include unconfirmed transactions (avoids nonce conflicts with parallel tests)
+        # Use "pending" to include unconfirmed txs (avoids nonce conflicts)
         dev_nonce = int(seq_rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)
         dev_account.sync_nonce(dev_nonce)
 

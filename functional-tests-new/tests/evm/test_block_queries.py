@@ -37,7 +37,9 @@ class TestBlockQueries(AlpenClientTest):
         for tag in ["earliest", "latest", "pending"]:
             block = rpc.eth_getBlockByNumber(tag, False)
             assert block is not None, f"Failed to get block at '{tag}'"
-            logger.info(f"Block at '{tag}': number={block.get('number')}, hash={block.get('hash')[:18]}...")
+            logger.info(
+                f"Block at '{tag}': number={block.get('number')}, hash={block.get('hash')[:18]}..."
+            )
 
         # Test eth_getBlockByNumber with specific number
         block_0 = rpc.eth_getBlockByNumber("0x0", False)

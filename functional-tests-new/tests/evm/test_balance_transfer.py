@@ -10,63 +10,21 @@ This test sends a simple ETH transfer and verifies:
 import logging
 
 import flexitest
-from eth_account import Account
 
-from common.accounts import ManagedAccount, get_dev_account
+from common.accounts import get_dev_account
 from common.base_test import AlpenClientTest
-from common.config.constants import DEV_ADDRESS, GWEI_TO_WEI
-from common.wait import wait_until
+from common.config.constants import (
+    BASEFEE_ADDRESS,
+    BENEFICIARY_ADDRESS,
+    DEV_ADDRESS,
+    GWEI_TO_WEI,
+)
+from common.evm_utils import create_funded_account, get_balance, wait_for_receipt
 
 logger = logging.getLogger(__name__)
 
-# Protocol addresses for fee distribution
-BASEFEE_ADDRESS = "0x5400000000000000000000000000000000000010"
-BENEFICIARY_ADDRESS = "0x5400000000000000000000000000000000000011"
-
 # Transfer amount in wei (1 ETH)
 TRANSFER_AMOUNT_WEI = 10**18
-
-
-def get_balance(rpc, address: str) -> int:
-    """Get balance in wei."""
-    result = rpc.eth_getBalance(address, "latest")
-    return int(result, 16)
-
-
-def wait_for_receipt(rpc, tx_hash: str, timeout: int = 30) -> dict:
-    """Wait for transaction receipt."""
-    receipt = None
-
-    def check_receipt():
-        nonlocal receipt
-        try:
-            receipt = rpc.eth_getTransactionReceipt(tx_hash)
-            return receipt is not None
-        except Exception:
-            return False
-
-    wait_until(check_receipt, error_with=f"Transaction {tx_hash} not mined", timeout=timeout)
-    return receipt
-
-
-def create_funded_account(rpc, dev_account: ManagedAccount, amount: int) -> ManagedAccount:
-    """Create a new account and fund it from the dev account."""
-    # Create new random account
-    new_acct = Account.create()
-    new_managed = ManagedAccount(new_acct)
-
-    # Fund it from dev account
-    gas_price = int(rpc.eth_gasPrice(), 16)
-    raw_tx = dev_account.sign_transfer(
-        to=new_acct.address,
-        value=amount,
-        gas_price=gas_price,
-        gas=25000,
-    )
-    tx_hash = rpc.eth_sendRawTransaction(raw_tx)
-    wait_for_receipt(rpc, tx_hash)
-
-    return new_managed
 
 
 @flexitest.register
@@ -84,7 +42,7 @@ class TestBalanceTransfer(AlpenClientTest):
 
         # Create a fresh funded account for this test to avoid nonce conflicts
         dev_account = get_dev_account()
-        # Use "pending" to include unconfirmed transactions (avoids nonce conflicts with parallel tests)
+        # Use "pending" to include unconfirmed txs (avoids nonce conflicts)
         dev_nonce = int(rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)
         dev_account.sync_nonce(dev_nonce)
 
