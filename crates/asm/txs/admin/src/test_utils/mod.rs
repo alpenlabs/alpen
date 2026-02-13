@@ -5,7 +5,7 @@ use bitcoin::{
     key::UntweakedKeypair,
     opcodes::{
         OP_FALSE,
-        all::{OP_CHECKMULTISIG, OP_ENDIF, OP_IF},
+        all::{OP_CHECKSIG, OP_ENDIF, OP_IF},
     },
     script::PushBytesBuf,
     secp256k1::{Message, SECP256K1, SecretKey, schnorr::Signature},
@@ -167,7 +167,7 @@ fn create_reveal_transaction_stub(
 fn build_reveal_script(taproot_public_key: &XOnlyPublicKey, payload: &[u8]) -> ScriptBuf {
     let mut script_bytes = script::Builder::new()
         .push_x_only_key(taproot_public_key)
-        .push_opcode(OP_CHECKMULTISIG)
+        .push_opcode(OP_CHECKSIG)
         .into_script()
         .into_bytes();
     let script = build_envelope_script(payload);
