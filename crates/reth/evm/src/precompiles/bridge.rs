@@ -28,7 +28,7 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     let (preferred_operator, bosd_data) = parse_calldata(input.data)?;
 
     // Validate that this is a valid BOSD
-    let _ = try_into_bosd(bosd_data)?;
+    validate_bosd(bosd_data)?;
 
     let withdrawal_amount = input.value;
 
@@ -119,15 +119,11 @@ fn parse_calldata(data: &[u8]) -> Result<(u32, &[u8]), PrecompileError> {
     Ok((operator_idx, bosd_data))
 }
 
-/// Ensures that input is a valid BOSD [`Descriptor`].
-fn try_into_bosd(maybe_bosd: &[u8]) -> Result<Descriptor, PrecompileError> {
-    let desc = Descriptor::from_bytes(maybe_bosd);
-    match desc {
-        Ok(valid_desc) => Ok(valid_desc),
-        Err(_) => Err(PrecompileError::other(
-            "Invalid BOSD: expected a valid BOSD descriptor",
-        )),
-    }
+/// Validates that input is a valid BOSD [`Descriptor`].
+fn validate_bosd(data: &[u8]) -> Result<(), PrecompileError> {
+    Descriptor::from_bytes(data)
+        .map_err(|_| PrecompileError::other("Invalid BOSD: expected a valid BOSD descriptor"))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -205,5 +201,20 @@ mod tests {
         let data = vec![1, 0x05];
         let result = parse_calldata(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_calldata_mismatched_b_eats_bosd_bytes() {
+        // Encoder intended B=1 with operator=3, but mistakenly set B=2.
+        // parse_calldata trusts B, so the first BOSD byte (0x00) is consumed
+        // as part of the operator index, producing a wrong operator and shifted BOSD.
+        let mut data = vec![2, 0x03]; // B=2, first operator byte
+        data.extend_from_slice(DUMMY_BOSD); // 0x00 of BOSD will be eaten as 2nd operator byte
+
+        let (operator, bosd) = parse_calldata(&data).unwrap();
+        // Operator becomes (0x03 << 8) | 0x00 = 768 instead of intended 3
+        assert_eq!(operator, 0x0300);
+        // BOSD is truncated by 1 byte
+        assert_eq!(bosd.len(), DUMMY_BOSD.len() - 1);
     }
 }
