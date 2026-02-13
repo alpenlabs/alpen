@@ -6,6 +6,7 @@ Creates Strata sequencer and fullnode instances.
 import contextlib
 import shutil
 import subprocess
+from dataclasses import asdict
 from pathlib import Path
 
 import flexitest
@@ -171,6 +172,9 @@ class StrataFactory(flexitest.Factory):
             "rpc_url": rpc_url,
             "datadir": str(datadir),
             "mode": mode,
+            "epoch_sealing": asdict(epoch_sealing_config)
+            if epoch_sealing_config is not None
+            else None,
         }
 
         svc = StrataService(

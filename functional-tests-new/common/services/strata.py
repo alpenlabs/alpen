@@ -20,6 +20,7 @@ class StrataProps(TypedDict):
     rpc_url: str
     datadir: str
     mode: str
+    epoch_sealing: dict | None
 
 
 class OLBlockCommitment(TypedDict):
