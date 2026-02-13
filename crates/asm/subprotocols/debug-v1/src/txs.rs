@@ -10,8 +10,8 @@ use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
 
 use crate::constants::{
-    AMOUNT_OFFSET, AMOUNT_SIZE, DESCRIPTOR_OFFSET, MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
-    MOCK_ASM_LOG_TX_TYPE, MOCK_WITHDRAW_INTENT_TX_TYPE,
+    AMOUNT_OFFSET, AMOUNT_SIZE, MAX_OPERATOR_INDEX_LEN, MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
+    MOCK_ASM_LOG_TX_TYPE, MOCK_WITHDRAW_INTENT_TX_TYPE, OPERATOR_LEN_OFFSET,
 };
 
 /// Errors that can occur during debug transaction parsing.
@@ -28,6 +28,10 @@ pub(crate) enum DebugTxParseError {
     /// Invalid descriptor format.
     #[error("invalid descriptor format: {0}")]
     InvalidDescriptorFormat(String),
+
+    /// The operator index length byte exceeds the maximum of 4.
+    #[error("invalid operator index length: {0} (max 4)")]
+    InvalidOperatorIndexLen(usize),
 }
 
 /// Info for mock ASM log injection.
@@ -86,6 +90,11 @@ fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxPa
 }
 
 /// Parses withdrawal data from auxiliary data bytes.
+///
+/// Format: `[amount: 8 bytes][1 byte B][B bytes: operator index (big-endian)][descriptor: variable]`
+/// - B=0: no operator preference
+/// - B=1..4: operator index encoded as B big-endian bytes
+/// - B>4: invalid
 fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, DebugTxParseError> {
     if aux_data.len() < MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN {
         return Err(DebugTxParseError::AuxDataTooShort {
@@ -94,25 +103,52 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
         });
     }
 
-    // Extract amount using constants
+    // Extract amount (8 bytes, big-endian)
     let amount_end = AMOUNT_OFFSET + AMOUNT_SIZE;
     let amount_bytes: [u8; AMOUNT_SIZE] = aux_data[AMOUNT_OFFSET..amount_end].try_into().unwrap();
     let amount = u64::from_be_bytes(amount_bytes);
     let amt = BitcoinAmount::from_sat(amount);
 
-    // Extract descriptor (self-describing, no length field needed)
-    let desc_bytes = &aux_data[DESCRIPTOR_OFFSET..];
+    // Extract preferred operator using variable-length encoding
+    // (same format as the EE bridge precompile calldata)
+    let b = aux_data[OPERATOR_LEN_OFFSET] as usize;
+    let operator_data_offset = OPERATOR_LEN_OFFSET + 1;
+
+    let (preferred_operator, descriptor_offset) = if b == 0 {
+        // B=0: no operator preference
+        (None, operator_data_offset)
+    } else if b > MAX_OPERATOR_INDEX_LEN {
+        // B>4: operator index cannot exceed u32 (4 bytes)
+        return Err(DebugTxParseError::InvalidOperatorIndexLen(b));
+    } else if aux_data.len() < operator_data_offset + b {
+        // Not enough bytes remaining to read B operator index bytes
+        return Err(DebugTxParseError::AuxDataTooShort {
+            expected: operator_data_offset + b,
+            actual: aux_data.len(),
+        });
+    } else {
+        // B=1..4: decode B big-endian bytes into a u32 operator index
+        let operator_idx = aux_data[operator_data_offset..operator_data_offset + b]
+            .iter()
+            .fold(0u32, |acc, &byte| (acc << 8) | byte as u32);
+        (Some(operator_idx), operator_data_offset + b)
+    };
+
+    // Extract descriptor (self-describing, variable length, consumes rest of aux_data)
+    let desc_bytes = &aux_data[descriptor_offset..];
     let dest = Descriptor::from_bytes(desc_bytes)
         .map_err(|e| DebugTxParseError::InvalidDescriptorFormat(e.to_string()))?;
 
-    let withdraw_output = WithdrawOutput::new(dest, amt, None);
+    let withdraw_output = WithdrawOutput::new(dest, amt, preferred_operator);
     Ok(withdraw_output)
 }
 
 /// Parses a mock withdrawal transaction.
 ///
 /// Auxiliary data format:
-/// - `[amount: 8 bytes]` - The withdrawal amount in satoshis
+/// - `[amount: 8 bytes]` - The withdrawal amount in satoshis (big-endian)
+/// - `[1 byte B]` - Operator index length (0 = no preference, 1..4 = index byte count)
+/// - `[B bytes]` - Operator index (big-endian), omitted when B=0
 /// - `[descriptor: variable]` - The self-describing Bitcoin descriptor
 fn parse_mock_withdraw_intent_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
     let aux_data = tx.tag().aux_data();
@@ -166,9 +202,10 @@ mod tests {
         let hash160 = [0x14; 20]; // 20-byte hash
         let p2wpkh_descriptor = Descriptor::new_p2wpkh(&hash160);
 
-        // Create auxiliary data: [amount: 8 bytes][descriptor: 21 bytes]
+        // Create auxiliary data: [amount: 8 bytes][B=0: 1 byte][descriptor: 21 bytes]
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.push(0x00); // B=0, no operator preference
         aux_data.extend_from_slice(&p2wpkh_descriptor.to_bytes());
 
         // Test the internal parsing function directly
@@ -179,6 +216,7 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2wpkh_descriptor.to_bytes()
         );
+        assert_eq!(withdraw_output.preferred_operator, None);
     }
 
     #[test]
@@ -188,9 +226,11 @@ mod tests {
         let hash256 = [0x32; 32]; // 32-byte hash
         let p2wsh_descriptor = Descriptor::new_p2wsh(&hash256);
 
-        // Create auxiliary data: [amount: 8 bytes][descriptor: 33 bytes]
+        // Create auxiliary data: [amount: 8][B=1: 1][operator: 1][descriptor: 33]
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.push(0x01); // B=1, one byte for operator index
+        aux_data.push(42); // operator index = 42
         aux_data.extend_from_slice(&p2wsh_descriptor.to_bytes());
 
         // Test the internal parsing function directly
@@ -201,6 +241,7 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2wsh_descriptor.to_bytes()
         );
+        assert_eq!(withdraw_output.preferred_operator, Some(42));
     }
 
     #[test]
@@ -215,9 +256,10 @@ mod tests {
         ];
         let p2tr_descriptor = Descriptor::new_p2tr(&x_only_pubkey).unwrap();
 
-        // Create auxiliary data: [amount: 8 bytes][descriptor: 33 bytes]
+        // Create auxiliary data: [amount: 8][B=0: 1][descriptor: 33]
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.push(0x00); // B=0, no operator preference
         aux_data.extend_from_slice(&p2tr_descriptor.to_bytes());
 
         // Test the internal parsing function directly
@@ -228,12 +270,13 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2tr_descriptor.to_bytes()
         );
+        assert_eq!(withdraw_output.preferred_operator, None);
     }
 
     #[test]
     fn test_parse_withdrawal_error_handling() {
         // Test too short auxiliary data
-        let short_aux_data = vec![1, 2, 3]; // Only 3 bytes, need at least 28
+        let short_aux_data = vec![1, 2, 3]; // Only 3 bytes, need at least 29
 
         let result = parse_withdrawal_from_aux_data(&short_aux_data);
         match result {
@@ -258,5 +301,20 @@ mod tests {
             }
             _ => panic!("Expected AuxDataTooShort error"),
         }
+    }
+
+    #[test]
+    fn test_parse_withdrawal_invalid_operator_len() {
+        let amount = 100_000u64;
+        let mut aux_data = Vec::new();
+        aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.push(0x05); // B=5, exceeds MAX_OPERATOR_INDEX_LEN
+        aux_data.extend_from_slice(&[0x00; 25]); // padding to pass min length check
+
+        let result = parse_withdrawal_from_aux_data(&aux_data);
+        assert!(matches!(
+            result,
+            Err(DebugTxParseError::InvalidOperatorIndexLen(5))
+        ));
     }
 }
