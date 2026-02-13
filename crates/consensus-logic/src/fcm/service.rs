@@ -165,9 +165,11 @@ async fn process_fc_message(
                         "expected epoch commitment for previous epoch {} not in db",
                         prev_epoch_num
                     ))?;
+                let confirmed_epoch = *cur_state.asm_recorded_epoch();
                 let status = ChainSyncStatus {
                     tip: fcm_state.cur_best_block(),
                     prev_epoch,
+                    confirmed_epoch,
                     finalized_epoch: *fcm_state.chain_tracker().finalized_epoch(),
                     // FIXME this is a bit convoluted, could this be simpler?
                     safe_l1: last_l1_blk,

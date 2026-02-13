@@ -450,9 +450,14 @@ pub fn tracker_task(
 
     // Update status.
     // TODO: avoid repetition from process_fc_message
+    let confirmed_epoch = status_channel
+        .get_cur_client_state()
+        .get_declared_final_epoch()
+        .unwrap_or(EpochCommitment::null());
     let status = ChainSyncStatus {
         tip: fcm.cur_best_block,
         prev_epoch: *fcm.get_chainstate_prev_epoch(),
+        confirmed_epoch,
         finalized_epoch: *fcm.chain_tracker.finalized_epoch(),
         // FIXME this is a bit convoluted, could this be simpler?
         safe_l1: fcm.cur_chainstate.l1_view().get_safe_block(),
@@ -620,9 +625,14 @@ fn process_fc_message(
                 }
 
                 // Update status.
+                let confirmed_epoch = status_channel
+                    .get_cur_client_state()
+                    .get_declared_final_epoch()
+                    .unwrap_or(EpochCommitment::null());
                 let status = ChainSyncStatus {
                     tip: fcm_state.cur_best_block,
                     prev_epoch: *fcm_state.get_chainstate_prev_epoch(),
+                    confirmed_epoch,
                     finalized_epoch: *fcm_state.chain_tracker.finalized_epoch(),
                     // FIXME this is a bit convoluted, could this be simpler?
                     safe_l1: fcm_state.cur_chainstate.l1_view().get_safe_block(),
