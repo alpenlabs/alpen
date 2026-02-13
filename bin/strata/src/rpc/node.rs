@@ -323,11 +323,9 @@ impl OLClientRpcServer for OLRpcServer {
 
         self.storage
             .ol_checkpoint()
-            .get_epoch_commitments_at_async(epoch as u64)
+            .get_canonical_epoch_commitment_at_async(epoch as u64)
             .await
             .map_err(db_error)?
-            .first()
-            .copied()
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
     }
 
