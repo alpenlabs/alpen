@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{ConsensusHeads, OLFinalizedStatus};
-use alpen_ee_config::AlpenEeParams;
 use tokio::sync::watch;
 
 pub(crate) struct OLTrackerCtx<TStorage, TOLClient> {
     pub storage: Arc<TStorage>,
     pub ol_client: Arc<TOLClient>,
-    pub params: Arc<AlpenEeParams>,
+    pub genesis_epoch: u32,
     pub ol_status_tx: watch::Sender<OLFinalizedStatus>,
     pub consensus_tx: watch::Sender<ConsensusHeads>,
     pub max_epochs_fetch: u32,

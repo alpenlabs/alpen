@@ -1,7 +1,7 @@
 //! OL RPC API definitions.
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
-use strata_identifiers::{AccountId, Epoch, OLBlockId, OLTxId};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;
 use strata_primitives::{HexBytes, HexBytes64};
@@ -46,6 +46,16 @@ pub trait OLClientRpc {
         account_id: AccountId,
         block_or_tag: OLBlockOrTag,
     ) -> RpcResult<Option<RpcSnarkAccountState>>;
+
+    /// Get the epoch commitment for the epoch in which an account was first created.
+    ///
+    /// Resolves the creation epoch and returns the corresponding
+    /// [`EpochCommitment`] in a single call.
+    #[method(name = "getAccountGenesisEpochCommitment")]
+    async fn get_account_genesis_epoch_commitment(
+        &self,
+        account_id: AccountId,
+    ) -> RpcResult<EpochCommitment>;
 
     /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]

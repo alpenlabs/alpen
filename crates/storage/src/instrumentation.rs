@@ -40,4 +40,7 @@ pub(crate) mod components {
 
     /// OLCheckpointDatabase operations. Fields: epoch
     pub(crate) const STORAGE_OL_CHECKPOINT: &str = "storage:ol_checkpoint";
+
+    /// AccountGenesisDatabase operations. Fields: account_id, epoch
+    pub(crate) const STORAGE_ACCOUNT_GENESIS: &str = "storage:account_genesis";
 }

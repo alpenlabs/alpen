@@ -11,13 +11,16 @@ use strata_common::{
     },
     ws_client::{ManagedWsClient, WsClientConfig},
 };
-use strata_identifiers::{AccountId, Epoch};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment};
 use strata_ol_rpc_api::OLClientRpcClient;
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
     RpcTransactionPayload,
 };
 use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData, UpdateStateData};
+
+/// Max retries for startup RPC calls where the OL node may still be booting.
+const STARTUP_RPC_MAX_RETRIES: u16 = 10;
 
 /// RPC-based OL client that communicates with an OL node via JSON-RPC.
 #[derive(Debug)]
@@ -98,6 +101,27 @@ impl OLClient for RpcOLClient {
                     confirmed: *status.confirmed(),
                     finalized: *status.finalized(),
                 })
+            },
+        )
+        .await
+    }
+
+    async fn account_genesis_epoch(&self) -> Result<EpochCommitment, OLClientError> {
+        retry_with_backoff_async(
+            "ol_client_account_genesis_epoch",
+            STARTUP_RPC_MAX_RETRIES,
+            &ExponentialBackoff::default(),
+            || async {
+                match &self.client {
+                    RpcTransportClient::Ws(client) => client
+                        .get_account_genesis_epoch_commitment(self.account_id)
+                        .await
+                        .map_err(|e| OLClientError::rpc(e.to_string())),
+                    RpcTransportClient::Http(client) => client
+                        .get_account_genesis_epoch_commitment(self.account_id)
+                        .await
+                        .map_err(|e| OLClientError::rpc(e.to_string())),
+                }
             },
         )
         .await

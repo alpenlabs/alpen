@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 alpen-ee-common.workspace = true
-alpen-ee-config.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-identifiers.workspace = true
@@ -21,5 +20,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
-alloy-primitives.workspace = true
 strata-acct-types.workspace = true

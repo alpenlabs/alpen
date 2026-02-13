@@ -37,6 +37,13 @@ pub(crate) fn init_ol_genesis(params: &Params, storage: &NodeStorage) -> Result<
     };
     let genesis_blkid = *commitment.blkid();
 
+    // Insert creation epoch 0 for all genesis accounts.
+    ol_state.ledger.accounts.iter().try_for_each(|entry| {
+        storage
+            .account_genesis()
+            .insert_account_creation_epoch_blocking(entry.id, 0)
+    })?;
+
     storage.ol_block().put_block_data_blocking(ol_block)?;
     storage
         .ol_block()

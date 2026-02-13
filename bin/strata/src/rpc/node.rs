@@ -308,6 +308,27 @@ impl OLClientRpcServer for OLRpcServer {
         Ok(summaries)
     }
 
+    async fn get_account_genesis_epoch_commitment(
+        &self,
+        account_id: AccountId,
+    ) -> RpcResult<EpochCommitment> {
+        let epoch = self
+            .storage
+            .account_genesis()
+            .get_account_creation_epoch_blocking(account_id)
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!("No creation epoch found for account {account_id}"))
+            })?;
+
+        self.storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(epoch as u64)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
+    }
+
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
         // Convert RPC transaction to mempool transaction
         let mempool_tx: OLMempoolTransaction = tx

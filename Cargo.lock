@@ -1235,9 +1235,7 @@ dependencies = [
 name = "alpen-ee-ol-tracker"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-primitives",
  "alpen-ee-common",
- "alpen-ee-config",
  "eyre",
  "strata-acct-types",
  "strata-ee-acct-runtime",
