@@ -1124,6 +1124,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types-engine",
  "alpen-reth-node",
  "async-trait",

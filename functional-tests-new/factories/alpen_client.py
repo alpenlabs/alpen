@@ -172,6 +172,7 @@ class AlpenClientFactory(flexitest.Factory):
         custom_chain: str = "dev",
         instance_id: int = 0,
         datadir_override: str | None = None,
+        sequencer_http: str | None = None,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -186,6 +187,7 @@ class AlpenClientFactory(flexitest.Factory):
             custom_chain: Chain spec to use
             instance_id: Instance ID for multiple fullnodes
             datadir_override: Optional datadir path (bypasses EnvContext requirement)
+            sequencer_http: Sequencer HTTP URL for transaction forwarding
         """
         if datadir_override:
             datadir = Path(datadir_override)
@@ -234,6 +236,10 @@ class AlpenClientFactory(flexitest.Factory):
         # Add bootnodes if provided (requires discovery to be enabled)
         if bootnodes:
             cmd.extend(["--bootnodes", ",".join(bootnodes)])
+
+        # Add sequencer HTTP URL for transaction forwarding
+        if sequencer_http:
+            cmd.extend(["--sequencer-http", sequencer_http])
 
         # Discovery mode configuration:
         # - enable_discovery=True: Use discv5 only (disable discv4)

@@ -52,6 +52,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()
+        seq_http_url = sequencer.props["http_url"]
 
         services = {"sequencer": sequencer}
         fullnodes = []
@@ -72,6 +73,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 bootnodes=bootnodes,
                 enable_discovery=self.enable_discovery,
                 instance_id=i,
+                sequencer_http=seq_http_url,  # Forward transactions to sequencer
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)
