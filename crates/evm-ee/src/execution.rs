@@ -56,7 +56,7 @@ fn convert_withdrawal_intents_to_messages(
         let withdrawal_msg = WithdrawalMsgData::new(
             0,
             intent.destination.to_bytes().to_vec(),
-            intent.preferred_operator,
+            intent.selected_operator,
         )
         .expect("destination descriptor too long");
 

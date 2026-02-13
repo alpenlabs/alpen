@@ -1,4 +1,7 @@
-use alpen_reth_primitives::{WithdrawalIntentEvent, NO_PREFERRED_OPERATOR};
+use alpen_reth_primitives::WithdrawalIntentEvent;
+
+/// Sentinel value indicating no operator was selected for withdrawal assignment.
+const NO_SELECTED_OPERATOR: u32 = u32::MAX;
 use reth_evm::precompiles::PrecompileInput;
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
 use revm_primitives::{Bytes, Log, LogData, U256};
@@ -75,7 +78,7 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
 /// Parses bridge out calldata into a preferred operator index and BOSD bytes.
 ///
 /// Format: `[1 byte B][B bytes: operator index (big-endian)][BOSD bytes]`
-/// - B=0: no preference, returns [`NO_PREFERRED_OPERATOR`]
+/// - B=0: no selection, returns [`NO_SELECTED_OPERATOR`]
 /// - B=1..4: decodes B bytes as a big-endian u32 operator index
 /// - B>4: error
 fn parse_calldata(data: &[u8]) -> Result<(u32, &[u8]), PrecompileError> {
@@ -86,7 +89,7 @@ fn parse_calldata(data: &[u8]) -> Result<(u32, &[u8]), PrecompileError> {
     let b = b as usize;
 
     if b == 0 {
-        return Ok((NO_PREFERRED_OPERATOR, rest));
+        return Ok((NO_SELECTED_OPERATOR, rest));
     }
 
     if b > MAX_OPERATOR_INDEX_LEN {
@@ -139,7 +142,7 @@ mod tests {
         data.extend_from_slice(DUMMY_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
-        assert_eq!(operator, NO_PREFERRED_OPERATOR);
+        assert_eq!(operator, NO_SELECTED_OPERATOR);
         assert_eq!(bosd, DUMMY_BOSD);
     }
 

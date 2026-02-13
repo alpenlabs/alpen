@@ -27,7 +27,7 @@ pub struct WithdrawArgs {
     #[argh(positional)]
     address: Option<String>,
 
-    /// preferred operator index for withdrawal assignment
+    /// selected operator index for withdrawal assignment
     #[argh(option)]
     operator: Option<u32>,
 }

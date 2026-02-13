@@ -63,7 +63,7 @@ pub fn extract_withdrawal_intents<'a>(
                     amt: event.amount,
                     destination,
                     withdrawal_txid: txid,
-                    preferred_operator: event.preferredOperator,
+                    selected_operator: event.preferredOperator,
                 })
             })
         })
