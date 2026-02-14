@@ -20,6 +20,9 @@ const DEFAULT_DB_RETRY_DELAY: u64 = 200;
 /// Default maximum transactions per block.
 const DEFAULT_MAX_TXS_PER_BLOCK: usize = 1000;
 
+/// Default TTL for pending block templates in seconds.
+const DEFAULT_BLOCK_TEMPLATE_TTL_SECS: u64 = 60;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -78,6 +81,10 @@ fn default_max_txs_per_block() -> usize {
     DEFAULT_MAX_TXS_PER_BLOCK
 }
 
+fn default_block_template_ttl_secs() -> u64 {
+    DEFAULT_BLOCK_TEMPLATE_TTL_SECS
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
     pub l1_follow_distance: u64,
@@ -89,6 +96,21 @@ pub struct SequencerConfig {
     /// Maximum number of transactions to fetch from mempool per block.
     #[serde(default = "default_max_txs_per_block")]
     pub max_txs_per_block: usize,
+
+    /// TTL for pending block templates in seconds.
+    ///
+    /// Templates that are not completed within this duration are expired and cleaned up.
+    #[serde(default = "default_block_template_ttl_secs")]
+    pub block_template_ttl_secs: u64,
+}
+
+impl Default for SequencerConfig {
+    fn default() -> Self {
+        Self {
+            max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
+            block_template_ttl_secs: DEFAULT_BLOCK_TEMPLATE_TTL_SECS,
+        }
+    }
 }
 
 /// Default slots per epoch for epoch sealing.
@@ -235,6 +257,7 @@ mod test {
 
             [sequencer]
             max_txs_per_block = 1000
+            block_template_ttl_secs = 30
 
             [epoch_sealing]
             policy = "FixedSlot"
@@ -251,6 +274,12 @@ mod test {
         assert!(
             config.sequencer.is_some(),
             "sequencer config should be present for sequencer"
+        );
+
+        let seq = config.sequencer.as_ref().unwrap();
+        assert_eq!(
+            seq.block_template_ttl_secs, 30,
+            "parsed block_template_ttl_secs should match TOML value"
         );
 
         assert!(
@@ -327,5 +356,25 @@ mod test {
             config.epoch_sealing.is_none(),
             "batcher config should be absent for fullnode"
         );
+    }
+
+    #[test]
+    fn test_sequencer_config_defaults() {
+        // Both fields omitted: should use defaults.
+        let config: SequencerConfig = toml::from_str("").unwrap();
+        assert_eq!(config.max_txs_per_block, DEFAULT_MAX_TXS_PER_BLOCK);
+        assert_eq!(
+            config.block_template_ttl_secs,
+            DEFAULT_BLOCK_TEMPLATE_TTL_SECS,
+        );
+
+        // Both fields explicit.
+        let toml_str = r#"
+            max_txs_per_block = 500
+            block_template_ttl_secs = 120
+        "#;
+        let config: SequencerConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.max_txs_per_block, 500);
+        assert_eq!(config.block_template_ttl_secs, 120);
     }
 }

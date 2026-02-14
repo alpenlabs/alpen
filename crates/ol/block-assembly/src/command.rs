@@ -13,14 +13,25 @@ use crate::{
 /// Type alias for block template generation result.
 type GenerateBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
 
+/// Type alias for block template lookup result.
+type GetBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
+
 /// Type alias for block template completion result.
 type CompleteBlockTemplateResult = Result<OLBlock, BlockAssemblyError>;
 
 #[derive(Debug)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "BlockTemplate suffix is intentionally descriptive"
+)]
 pub(crate) enum BlockasmCommand {
     GenerateBlockTemplate {
         config: BlockGenerationConfig,
         completion: CommandCompletionSender<GenerateBlockTemplateResult>,
+    },
+    GetBlockTemplate {
+        parent_block_id: OLBlockId,
+        completion: CommandCompletionSender<GetBlockTemplateResult>,
     },
     CompleteBlockTemplate {
         /// The ID of a previously generated template, used to look up the cached template.

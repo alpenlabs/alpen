@@ -12,7 +12,8 @@ use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::OLCheckpointStatus;
 use strata_l1_txfmt::TagData;
-use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty, TemplateManager};
+use strata_ol_block_assembly::BlockasmHandle;
+use strata_ol_sequencer::{BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty};
 use strata_primitives::buf::Buf32;
 use strata_storage::NodeStorage;
 use tokio::{runtime::Handle, select, sync::mpsc, time};
@@ -22,7 +23,7 @@ use super::helpers::{sign_checkpoint, sign_header};
 
 /// Worker for executing duties for the sequencer.
 pub(crate) async fn duty_executor_worker(
-    template_manager: Arc<TemplateManager>,
+    blockasm_handle: Arc<BlockasmHandle>,
     envelope_handle: Arc<EnvelopeHandle>,
     storage: Arc<NodeStorage>,
     fcm_handle: Arc<FcmServiceHandle>,
@@ -44,7 +45,7 @@ pub(crate) async fn duty_executor_worker(
                     }
                     seen_duties.insert(duty_id);
                     handle.spawn(handle_duty(
-                        template_manager.clone(),
+                        blockasm_handle.clone(),
                         envelope_handle.clone(),
                         storage.clone(),
                         fcm_handle.clone(),
@@ -68,7 +69,7 @@ pub(crate) async fn duty_executor_worker(
 
 /// Handles a duty for the sequencer.
 async fn handle_duty(
-    template_manager: Arc<TemplateManager>,
+    blockasm_handle: Arc<BlockasmHandle>,
     envelope_handle: Arc<EnvelopeHandle>,
     storage: Arc<NodeStorage>,
     fcm_handle: Arc<FcmServiceHandle>,
@@ -81,7 +82,7 @@ async fn handle_duty(
     let duty_result = match duty {
         Duty::SignBlock(duty) => {
             handle_sign_block_duty(
-                template_manager,
+                blockasm_handle,
                 storage,
                 fcm_handle,
                 duty,
@@ -104,7 +105,7 @@ async fn handle_duty(
 
 /// Handles a block signing duty for the sequencer.
 async fn handle_sign_block_duty(
-    template_manager: Arc<TemplateManager>,
+    blockasm_handle: Arc<BlockasmHandle>,
     storage: Arc<NodeStorage>,
     fcm_handle: Arc<strata_consensus_logic::FcmServiceHandle>,
     duty: BlockSigningDuty,
@@ -117,9 +118,10 @@ async fn handle_sign_block_duty(
     }
 
     let signature = sign_header(duty.template.header(), sequencer_key);
+    let completion = BlockCompletionData::from_signature(signature);
 
-    let block = template_manager
-        .complete_template(duty.template_id(), signature)
+    let block = blockasm_handle
+        .complete_block_template(duty.template_id(), completion)
         .await
         .map_err(|e| anyhow!("failed completing template: {e}"))?;
 

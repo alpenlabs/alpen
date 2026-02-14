@@ -43,4 +43,5 @@ strata-asm-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true
+strata-test-utils-l2.workspace = true
 threadpool.workspace = true

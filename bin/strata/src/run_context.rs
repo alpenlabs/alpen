@@ -10,10 +10,10 @@ use strata_config::Config;
 use strata_consensus_logic::FcmServiceHandle;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
+#[cfg(feature = "sequencer")]
+use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_checkpoint::OLCheckpointWorkerHandle;
 use strata_ol_mempool::MempoolHandle;
-#[cfg(feature = "sequencer")]
-use strata_ol_sequencer::TemplateManager;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -95,8 +95,8 @@ pub(crate) struct SequencerServiceHandles {
     /// Handle for submitting on-chain transactions using [`strata_btcio`].
     envelope_handle: Arc<EnvelopeHandle>,
 
-    /// Handle for managing block templates.
-    template_manager: Arc<TemplateManager>,
+    /// Handle for the block assembly service.
+    blockasm_handle: Arc<BlockasmHandle>,
 }
 
 #[cfg(feature = "sequencer")]
@@ -105,12 +105,12 @@ impl SequencerServiceHandles {
     pub(crate) fn new(
         broadcast_handle: Arc<L1BroadcastHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
-        template_manager: Arc<TemplateManager>,
+        blockasm_handle: Arc<BlockasmHandle>,
     ) -> Self {
         Self {
             broadcast_handle,
             envelope_handle,
-            template_manager,
+            blockasm_handle,
         }
     }
 
@@ -119,9 +119,9 @@ impl SequencerServiceHandles {
         &self.envelope_handle
     }
 
-    /// Returns the template manager handle.
-    pub(crate) fn template_manager(&self) -> &Arc<TemplateManager> {
-        &self.template_manager
+    /// Returns the block assembly handle.
+    pub(crate) fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
+        &self.blockasm_handle
     }
 }
 

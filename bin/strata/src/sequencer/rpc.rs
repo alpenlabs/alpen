@@ -13,9 +13,10 @@ use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::OLCheckpointStatus;
 use strata_identifiers::{Epoch, OLBlockId};
 use strata_l1_txfmt::TagData;
+use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_types::RpcDuty;
-use strata_ol_sequencer::{BlockCompletionData, TemplateManager, extract_duties};
+use strata_ol_sequencer::{BlockCompletionData, extract_duties};
 use strata_primitives::{Buf64, HexBytes64};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -31,8 +32,8 @@ pub(crate) struct OLSeqRpcServer {
     /// Status channel.
     status_channel: Arc<StatusChannel>,
 
-    /// Template manager.
-    template_manager: Arc<TemplateManager>,
+    /// Block assembly handle.
+    blockasm_handle: Arc<BlockasmHandle>,
 
     /// Envelope handle.
     envelope_handle: Arc<EnvelopeHandle>,
@@ -43,13 +44,13 @@ impl OLSeqRpcServer {
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
-        template_manager: Arc<TemplateManager>,
+        blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
     ) -> Self {
         Self {
             storage,
             status_channel,
-            template_manager,
+            blockasm_handle,
             envelope_handle,
         }
     }
@@ -68,7 +69,7 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             return Ok(vec![]);
         };
         let duties = extract_duties(
-            self.template_manager.as_ref(),
+            self.blockasm_handle.as_ref(),
             tip_blkid,
             self.storage.as_ref(),
         )
@@ -84,8 +85,8 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         template_id: OLBlockId,
         completion: BlockCompletionData,
     ) -> RpcResult<OLBlockId> {
-        self.template_manager
-            .complete_template(template_id, *completion.signature())
+        self.blockasm_handle
+            .complete_block_template(template_id, completion)
             .await
             .map_err(|e| internal_error(e.to_string()))?;
         Ok(template_id)

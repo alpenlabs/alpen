@@ -10,12 +10,12 @@ use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use node::*;
 #[cfg(feature = "sequencer")]
 use strata_btcio::writer::EnvelopeHandle;
+#[cfg(feature = "sequencer")]
+use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
-#[cfg(feature = "sequencer")]
-use strata_ol_sequencer::TemplateManager;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
@@ -41,17 +41,17 @@ struct SeqRpcDeps {
     /// Envelope handle.
     envelope_handle: Arc<EnvelopeHandle>,
 
-    /// Template manager.
-    template_manager: Arc<TemplateManager>,
+    /// Block assembly handle.
+    blockasm_handle: Arc<BlockasmHandle>,
 }
 
 #[cfg(feature = "sequencer")]
 impl SeqRpcDeps {
     /// Creates a new [`SeqRpcDeps`] instance.
-    fn new(envelope_handle: Arc<EnvelopeHandle>, template_manager: Arc<TemplateManager>) -> Self {
+    fn new(envelope_handle: Arc<EnvelopeHandle>, blockasm_handle: Arc<BlockasmHandle>) -> Self {
         Self {
             envelope_handle,
-            template_manager,
+            blockasm_handle,
         }
     }
 
@@ -60,9 +60,9 @@ impl SeqRpcDeps {
         &self.envelope_handle
     }
 
-    /// Returns the template manager.
-    fn template_manager(&self) -> &Arc<TemplateManager> {
-        &self.template_manager
+    /// Returns the block assembly handle.
+    fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
+        &self.blockasm_handle
     }
 }
 
@@ -73,7 +73,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     let seq_deps = runctx.sequencer_handles().map(|handles| {
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
-            handles.template_manager().clone(),
+            handles.blockasm_handle().clone(),
         )
     });
 
@@ -130,7 +130,7 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         let ol_seq_listener = OLSeqRpcServer::new(
             deps.storage.clone(),
             deps.status_channel.clone(),
-            sequencer_deps.template_manager().clone(),
+            sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);

@@ -3,6 +3,7 @@
 use std::{
     future::Future,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -16,7 +17,8 @@ use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
-    Buf32, Buf64, L1BlockCommitment, L1BlockId, MmrId, OLBlockCommitment, OLTxId, WtxidsRoot,
+    Buf32, Buf64, L1BlockCommitment, L1BlockId, MmrId, OLBlockCommitment, OLBlockId, OLTxId,
+    WtxidsRoot, test_utils::ol_block_commitment_strategy,
 };
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
@@ -38,7 +40,9 @@ use strata_storage::{NodeStorage, OLStateManager, create_node_storage};
 use threadpool::ThreadPool;
 
 use crate::{
-    BlockAssemblyResult, FixedSlotSealing, MempoolProvider, context::BlockAssemblyContext,
+    BlockAssemblyResult, FixedSlotSealing, MempoolProvider,
+    context::BlockAssemblyContext,
+    types::{BlockGenerationConfig, FullBlockTemplate},
 };
 
 /// Creates a test account ID with the given seed byte.
@@ -153,6 +157,9 @@ pub(crate) type BlockAssemblyContextImpl =
 
 /// Number of slots per epoch used in tests.
 pub(crate) const TEST_SLOTS_PER_EPOCH: u64 = 10;
+
+/// TTL for block templates in tests. Matches DEFAULT_BLOCK_TEMPLATE_TTL_SECS from config crate.
+pub(crate) const TEST_BLOCK_TEMPLATE_TTL: Duration = Duration::from_secs(60);
 
 // ===== Storage MMR Helpers =====
 //
@@ -469,6 +476,49 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockH
     genesis_output.completed_block().header().clone()
 }
 
+/// Creates a random [`FullBlockTemplate`] using proptest strategies.
+///
+/// Each call produces a distinct template (random header fields).
+pub(crate) fn create_test_template() -> FullBlockTemplate {
+    let mut runner = TestRunner::default();
+    let header = ol_test_utils::ol_block_header_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    let body = ol_test_utils::ol_block_body_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    FullBlockTemplate::new(header, body)
+}
+
+/// Creates a random [`FullBlockTemplate`] with a specific parent block ID.
+///
+/// Useful for testing cache eviction where multiple templates share the same parent.
+pub(crate) fn create_test_template_with_parent(parent: OLBlockId) -> FullBlockTemplate {
+    let mut runner = TestRunner::default();
+    let mut header = ol_test_utils::ol_block_header_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    header.parent_blkid = parent;
+    let body = ol_test_utils::ol_block_body_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    FullBlockTemplate::new(header, body)
+}
+
+/// Creates a random [`BlockGenerationConfig`] using proptest strategies.
+pub(crate) fn create_test_block_generation_config() -> BlockGenerationConfig {
+    let mut runner = TestRunner::default();
+    let commitment = ol_block_commitment_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    BlockGenerationConfig::new(commitment)
+}
+
 /// Create test storage instance.
 pub(crate) fn create_test_storage() -> Arc<NodeStorage> {
     let pool = ThreadPool::new(1);
@@ -742,9 +792,7 @@ impl TestEnvBuilder {
             null_commitment
         };
 
-        let sequencer_config = SequencerConfig {
-            max_txs_per_block: 100,
-        };
+        let sequencer_config = SequencerConfig::default();
 
         let epoch_sealing_policy = FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH);
 

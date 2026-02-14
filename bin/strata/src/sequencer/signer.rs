@@ -44,7 +44,7 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
     runctx.executor().spawn_critical_async(
         "sequencer-duty-fetcher",
         duty_fetcher_worker(
-            handles.template_manager().clone(),
+            handles.blockasm_handle().clone(),
             runctx.storage().clone(),
             runctx.status_channel().clone(),
             duty_tx,
@@ -56,7 +56,7 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
     runctx.executor().spawn_critical_async(
         "sequencer-duty-executor",
         duty_executor_worker(
-            handles.template_manager().clone(),
+            handles.blockasm_handle().clone(),
             handles.envelope_handle().clone(),
             runctx.storage().clone(),
             runctx.fcm_handle().clone(),
