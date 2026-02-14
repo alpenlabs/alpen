@@ -4,7 +4,8 @@ use strata_acct_types::Hash;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{
     BitSeqReader, BitSeqWriter, CompoundMember, DaCounter, DaLinacc, DaRegister, DaWrite,
-    counter_schemes, make_compound_impl,
+    counter_schemes::{CtrU64ByU16, CtrU64ByUnsignedVarInt},
+    make_compound_impl,
 };
 use strata_snark_acct_types::ProofState;
 
@@ -66,13 +67,13 @@ impl Codec for DaProofState {
 #[derive(Clone, Debug)]
 pub struct DaProofStateDiff {
     pub inner_state: DaRegister<Hash>,
-    pub next_inbox_msg_idx: DaCounter<counter_schemes::CtrU64ByUnsignedVarint>,
+    pub next_inbox_msg_idx: DaCounter<CtrU64ByUnsignedVarInt>,
 }
 
 impl DaProofStateDiff {
     pub fn new(
         inner_state: DaRegister<Hash>,
-        next_inbox_msg_idx: DaCounter<counter_schemes::CtrU64ByUnsignedVarint>,
+        next_inbox_msg_idx: DaCounter<CtrU64ByUnsignedVarInt>,
     ) -> Self {
         Self {
             inner_state,
@@ -97,7 +98,7 @@ impl Codec for DaProofStateDiff {
 
         let inner_state = bitr.decode_next_member::<DaRegister<Hash>>(dec)?;
         let next_inbox_msg_idx =
-            bitr.decode_next_member::<DaCounter<counter_schemes::CtrU64ByUnsignedVarint>>(dec)?;
+            bitr.decode_next_member::<DaCounter<CtrU64ByUnsignedVarInt>>(dec)?;
 
         Ok(Self {
             inner_state,
@@ -178,7 +179,7 @@ use super::inbox::InboxBuffer;
 #[derive(Debug)]
 pub struct SnarkAccountDiff {
     /// Sequence number counter diff.
-    pub seq_no: DaCounter<counter_schemes::CtrU64ByU16>,
+    pub seq_no: DaCounter<CtrU64ByU16>,
 
     /// Proof state diff.
     pub proof_state: DaProofStateDiff,
@@ -200,7 +201,7 @@ impl Default for SnarkAccountDiff {
 impl SnarkAccountDiff {
     /// Creates a new [`SnarkAccountDiff`] from a sequence number, proof state, and inbox diff.
     pub fn new(
-        seq_no: DaCounter<counter_schemes::CtrU64ByU16>,
+        seq_no: DaCounter<CtrU64ByU16>,
         proof_state: DaProofStateDiff,
         inbox: DaLinacc<InboxBuffer>,
     ) -> Self {
@@ -214,7 +215,7 @@ impl SnarkAccountDiff {
 
 make_compound_impl! {
     SnarkAccountDiff < (), crate::DaError > u8 => SnarkAccountTarget {
-        seq_no: counter (counter_schemes::CtrU64ByU16),
+        seq_no: counter (CtrU64ByU16),
         proof_state: compound (DaProofStateDiff),
         inbox: compound (DaLinacc<InboxBuffer>),
     }

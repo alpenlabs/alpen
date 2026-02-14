@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, marker::PhantomData};
 
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_codec::Codec;
-use strata_da_framework::{DaError as FrameworkDaError, DaWrite};
+use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
     AccountTypeState, Coin, IAccountState, IAccountStateConstructible, IAccountStateMut,
@@ -246,8 +246,8 @@ fn apply_account_diff_to_account<T: IAccountStateMut>(
     acct: &mut T,
     diff: &AccountDiff,
 ) -> Result<(), DaError> {
-    if let Some(new_balance) = diff.balance.new_value() {
-        apply_balance(acct, *new_balance)?;
+    if let Some(incr) = diff.balance.diff() {
+        apply_balance_delta(acct, incr)?;
     }
 
     if !DaWrite::is_default(&diff.snark) {
@@ -256,21 +256,16 @@ fn apply_account_diff_to_account<T: IAccountStateMut>(
     Ok(())
 }
 
-fn apply_balance<T: IAccountStateMut>(
+fn apply_balance_delta<T: IAccountStateMut>(
     acct: &mut T,
-    new_balance: BitcoinAmount,
+    incr: &SignedVarInt,
 ) -> Result<(), DaError> {
-    let current = acct.balance();
-    if new_balance > current {
-        let delta = new_balance
-            .checked_sub(current)
-            .expect("new balance exceeds current");
+    if incr.is_positive() {
+        let delta = BitcoinAmount::from_sat(incr.magnitude());
         let coin = Coin::new_unchecked(delta);
         acct.add_balance(coin);
-    } else if new_balance < current {
-        let delta = current
-            .checked_sub(new_balance)
-            .expect("current balance exceeds new");
+    } else {
+        let delta = BitcoinAmount::from_sat(incr.magnitude());
         acct.take_balance(delta)
             .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
     }
@@ -312,7 +307,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
 mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, Hash};
     use strata_codec::encode_to_vec;
-    use strata_da_framework::{DaCounter, DaLinacc, DaRegister, DaWrite, counter_schemes};
+    use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
     use strata_identifiers::AccountSerial;
     use strata_ledger_types::{AccountTypeState, NewAccountData};
     use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
@@ -398,8 +393,9 @@ mod tests {
             .create_new_account(account_id, new_acct)
             .expect("create account");
 
+        // Balance goes from 1_000 to 2_000, so the delta is +1_000
         let account_diff = AccountDiff::new(
-            DaRegister::new_set(BitcoinAmount::from_sat(2_000)),
+            DaCounter::new_changed(SignedVarInt::positive(1_000)),
             SnarkAccountDiff::default(),
         );
         let diff = StateDiff::new(
@@ -439,7 +435,7 @@ mod tests {
             DaProofStateDiff::default(),
             DaLinacc::new(),
         );
-        let account_diff = AccountDiff::new(DaRegister::new_unset(), snark_diff);
+        let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
         let diff = StateDiff::new(
             GlobalStateDiff::default(),
             LedgerDiff::new(
