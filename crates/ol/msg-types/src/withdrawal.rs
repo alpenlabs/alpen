@@ -15,6 +15,9 @@ pub const WITHDRAWAL_REJECTION_MSG_TYPE_ID: u16 = 0x05;
 /// Maximum length for withdrawal destination descriptor.
 pub const MAX_WITHDRAWAL_DESC_LEN: usize = 255;
 
+/// Sentinel value indicating no preferred operator for withdrawal assignment.
+pub const NO_PREFERRED_OPERATOR: u32 = u32::MAX;
+
 /// Message data for withdrawal initiation to the bridge gateway account.
 ///
 /// This message type is sent by accounts that want to trigger a withdrawal.
@@ -30,18 +33,25 @@ pub struct WithdrawalMsgData {
     /// Bitcoin Output Script Descriptor describing the withdrawal output.
     // TODO idk why, but I can't make the MAX_WITHDRAWAL_DESC_LEN const generic work
     dest_desc: VarVec<u8>,
+
+    /// User's preferred operator index for withdrawal assignment.
+    preferred_operator: u32,
 }
 
 impl WithdrawalMsgData {
-    /// Create a new withdrawal message data instance.
-    pub fn new(fees: u32, dest_desc: Vec<u8>) -> Option<Self> {
+    /// Creates a new withdrawal message data instance.
+    pub fn new(fees: u32, dest_desc: Vec<u8>, preferred_operator: u32) -> Option<Self> {
         // Ensure the destination descriptor isn't too long.
         if dest_desc.len() > MAX_WITHDRAWAL_DESC_LEN {
             return None;
         }
 
         let dest_desc = VarVec::from_vec(dest_desc)?;
-        Some(Self { fees, dest_desc })
+        Some(Self {
+            fees,
+            dest_desc,
+            preferred_operator,
+        })
     }
 
     /// Get the fees paid to the operator, in sats.
@@ -58,12 +68,18 @@ impl WithdrawalMsgData {
     pub fn into_dest_desc(self) -> VarVec<u8> {
         self.dest_desc
     }
+
+    /// Gets the user's preferred operator index.
+    pub fn preferred_operator(&self) -> u32 {
+        self.preferred_operator
+    }
 }
 
 impl Codec for WithdrawalMsgData {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.fees.encode(enc)?;
         self.dest_desc.encode(enc)?;
+        self.preferred_operator.encode(enc)?;
         Ok(())
     }
 
@@ -78,7 +94,13 @@ impl Codec for WithdrawalMsgData {
             return Err(CodecError::OverflowContainer);
         }
 
-        Ok(Self { fees, dest_desc })
+        let preferred_operator = u32::decode(dec)?;
+
+        Ok(Self {
+            fees,
+            dest_desc,
+            preferred_operator,
+        })
     }
 }
 
@@ -214,7 +236,8 @@ mod tests {
         fn test_withdrawal_msg_data_codec(
             fees in 0u32..=u32::MAX,
             // Use a reasonable size limit for the descriptor (up to 255 bytes for safety)
-            dest_desc_bytes in prop::collection::vec(any::<u8>(), 0..=255)
+            dest_desc_bytes in prop::collection::vec(any::<u8>(), 0..=255),
+            preferred_operator in any::<u32>(),
         ) {
             // Create test data with random values
             let dest_desc = VarVec::from_vec(dest_desc_bytes.clone())
@@ -223,6 +246,7 @@ mod tests {
             let msg_data = WithdrawalMsgData {
                 fees,
                 dest_desc,
+                preferred_operator,
             };
 
             // Encode
@@ -235,6 +259,7 @@ mod tests {
             // Verify round-trip
             prop_assert_eq!(decoded.fees, msg_data.fees);
             prop_assert_eq!(decoded.dest_desc.as_ref(), msg_data.dest_desc.as_ref());
+            prop_assert_eq!(decoded.preferred_operator, msg_data.preferred_operator);
         }
     }
 

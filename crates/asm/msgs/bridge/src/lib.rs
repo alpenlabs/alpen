@@ -32,12 +32,23 @@ pub struct WithdrawOutput {
 
     /// Amount to withdraw (in satoshis).
     pub amt: BitcoinAmount,
+
+    /// User's preferred operator index for withdrawal assignment.
+    pub preferred_operator: Option<u32>,
 }
 
 impl WithdrawOutput {
     /// Creates a new withdrawal output with the specified destination and amount.
-    pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
-        Self { destination, amt }
+    pub fn new(
+        destination: Descriptor,
+        amt: BitcoinAmount,
+        preferred_operator: Option<u32>,
+    ) -> Self {
+        Self {
+            destination,
+            amt,
+            preferred_operator,
+        }
     }
 
     /// Returns a reference to the destination descriptor.
