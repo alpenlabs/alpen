@@ -155,7 +155,7 @@ fn extract_and_validate_withdrawal_intents(
 
     for log in logs
         .iter()
-        .filter(|l| l.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
+        .filter(|l| l.account_serial() == *BRIDGE_GATEWAY_ACCT_SERIAL)
     {
         // Attempt to decode as withdrawal intent log data
         // Logs from this account may have other formats, so skip if decoding fails

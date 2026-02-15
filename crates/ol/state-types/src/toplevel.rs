@@ -422,7 +422,8 @@ mod tests {
             BitcoinAmount::from_sat(2000),
             AccountTypeState::Snark(snark_state_2),
         );
-        let serial_2 = AccountSerial::from(serial_1.inner() + 1);
+        let serial_2 = AccountSerial::try_from(serial_1.value() + 1)
+            .expect("acctsys: account serial out of varint range");
         batch
             .ledger_mut()
             .create_account_from_data(account_id_2, new_acct_2, serial_2);
