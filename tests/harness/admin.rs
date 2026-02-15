@@ -101,7 +101,7 @@ impl AdminContext {
     /// Auto-increments the appropriate role's sequence number after signing.
     pub fn sign(&mut self, action: MultisigAction) -> (Vec<u8>, u8) {
         let role = Self::role_for_action(&action);
-        let seqno = *self.seqnos.entry(role).or_insert(0);
+        let seqno = *self.seqnos.entry(role).or_insert(1);
         let result = self.sign_impl(&action, seqno);
         *self.seqnos.get_mut(&role).unwrap() += 1;
         result
@@ -135,7 +135,7 @@ impl AdminContext {
     fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
         let sighash = action.compute_sighash(seqno);
         let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        let payload = borsh::to_vec(&SignedPayload::new(action.clone(), sig_set))
+        let payload = borsh::to_vec(&SignedPayload::new(seqno, action.clone(), sig_set))
             .expect("serialization should succeed");
         (payload, action.tx_type())
     }

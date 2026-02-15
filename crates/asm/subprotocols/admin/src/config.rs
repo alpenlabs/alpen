@@ -17,17 +17,17 @@ pub struct AdministrationSubprotoParams {
     /// ThresholdConfig for [StrataSequencerManager](Role::StrataSequencerManager).
     pub strata_sequencer_manager: ThresholdConfig,
 
-    /// The confirmation depth (CD) setting: after an update transaction receives this many
-    /// confirmations, the update is enacted automatically. During this confirmation period,
-    /// the update can still be cancelled by submitting a cancel transaction.
-    pub confirmation_depth: u32,
+    /// The confirmation depth (CD) setting, in Bitcoin blocks: after an update transaction
+    /// receives this many confirmations, the update is enacted automatically. During this
+    /// confirmation period, the update can still be cancelled by submitting a cancel transaction.
+    pub confirmation_depth: u16,
 }
 
 impl AdministrationSubprotoParams {
     pub fn new(
         strata_administrator: ThresholdConfig,
         strata_sequencer_manager: ThresholdConfig,
-        confirmation_depth: u32,
+        confirmation_depth: u16,
     ) -> Self {
         Self {
             strata_administrator,

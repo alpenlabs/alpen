@@ -1,27 +1,20 @@
 use bitcoin::{
     Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, XOnlyPublicKey,
     absolute::LockTime,
-    blockdata::script,
     key::UntweakedKeypair,
-    opcodes::{
-        OP_FALSE,
-        all::{OP_CHECKMULTISIG, OP_ENDIF, OP_IF},
-    },
-    script::PushBytesBuf,
     secp256k1::{Message, SECP256K1, SecretKey, schnorr::Signature},
     taproot::{LeafVersion, TaprootBuilder},
     transaction::Version,
 };
 use rand::{RngCore, rngs::OsRng};
 use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
-use strata_l1_txfmt::MagicBytes;
+use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_txfmt::{MagicBytes, ParseConfig, TagData};
 use strata_primitives::buf::Buf32;
 
 pub(crate) const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
 
-use crate::{
-    actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::SignedPayload,
-};
+use crate::{actions::MultisigAction, parser::SignedPayload};
 
 /// Creates an ECDSA signature with recoverable public key for a message hash.
 ///
@@ -95,28 +88,18 @@ pub fn create_test_admin_tx(
     let signature_set = create_signature_set(privkeys, signer_indices, sighash);
 
     // Create the signed payload (action + signatures) for the envelope
-    let signed_payload = SignedPayload::new(action.clone(), signature_set);
+    let signed_payload = SignedPayload::new(seqno, action.clone(), signature_set);
     let envelope_payload = borsh::to_vec(&signed_payload).expect("borsh serialization failed");
-
-    // Create the minimal SPS-50 tag for OP_RETURN (no aux data needed)
-    // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE]
-    let mut tagged_payload = Vec::new();
-    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES.as_bytes()); // 4 bytes magic
-    tagged_payload.extend_from_slice(&ADMINISTRATION_SUBPROTOCOL_ID.to_be_bytes()); // 1 byte subprotocol ID
-    tagged_payload.extend_from_slice(&[action.tx_type()]); // 1 byte TxType
 
     // Create a minimal reveal transaction structure
     // This is a simplified version - in practice, this would be created as part of
     // a proper commit-reveal transaction pair using the btcio writer infrastructure
-    create_reveal_transaction_stub(envelope_payload, tagged_payload)
+    create_reveal_transaction_stub(envelope_payload, action.tag())
 }
 
 /// Creates a stub reveal transaction containing the envelope script.
 /// This is a simplified implementation for testing purposes.
-fn create_reveal_transaction_stub(
-    envelope_payload: Vec<u8>,
-    sps50_tagged_payload: Vec<u8>,
-) -> Transaction {
+fn create_reveal_transaction_stub(envelope_payload: Vec<u8>, sps50_tag: TagData) -> Transaction {
     // Create commit key
     let mut rand_bytes = [0; 32];
     OsRng.fill_bytes(&mut rand_bytes);
@@ -124,7 +107,12 @@ fn create_reveal_transaction_stub(
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
     // Start creating envelope content
-    let reveal_script = build_reveal_script(&public_key, &envelope_payload);
+    let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())
+        .unwrap()
+        .add_envelope(&envelope_payload)
+        .unwrap()
+        .build()
+        .unwrap();
 
     // Create spend info for tapscript
     let taproot_spend_info = TaprootBuilder::new()
@@ -144,6 +132,9 @@ fn create_reveal_transaction_stub(
             .serialize(),
     );
 
+    let sps50_output = ParseConfig::new(TEST_MAGIC_BYTES)
+        .encode_script_buf(&sps50_tag.as_ref())
+        .unwrap();
     Transaction {
         version: Version::TWO,
         lock_time: LockTime::ZERO,
@@ -155,37 +146,9 @@ fn create_reveal_transaction_stub(
         }],
         output: vec![TxOut {
             value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return(
-                PushBytesBuf::try_from(sps50_tagged_payload).unwrap(),
-            ),
+            script_pubkey: sps50_output,
         }],
     }
-}
-
-/// Builds reveal script such that it contains opcodes for verifying the internal key as well as the
-/// envelope block
-fn build_reveal_script(taproot_public_key: &XOnlyPublicKey, payload: &[u8]) -> ScriptBuf {
-    let mut script_bytes = script::Builder::new()
-        .push_x_only_key(taproot_public_key)
-        .push_opcode(OP_CHECKMULTISIG)
-        .into_script()
-        .into_bytes();
-    let script = build_envelope_script(payload);
-    script_bytes.extend(script.into_bytes());
-    ScriptBuf::from(script_bytes)
-}
-
-fn build_envelope_script(payload: &[u8]) -> ScriptBuf {
-    let mut builder = script::Builder::new()
-        .push_opcode(OP_FALSE)
-        .push_opcode(OP_IF);
-
-    // Insert actual data
-    for chunk in payload.chunks(520) {
-        builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
-    }
-    builder = builder.push_opcode(OP_ENDIF);
-    builder.into_script()
 }
 
 #[cfg(test)]
@@ -261,13 +224,13 @@ mod tests {
             .unwrap();
         let tx_input = TxInputRef::new(&tx, tag_data_ref);
 
-        let (p_action, sig) = parse_tx(&tx_input).unwrap();
-        assert_eq!(action, p_action);
+        let parsed = parse_tx(&tx_input).unwrap();
+        assert_eq!(action, parsed.action);
 
         // Verify the signatures
         let res = verify_threshold_signatures(
             &config,
-            sig.signatures(),
+            parsed.signatures.signatures(),
             &action.compute_sighash(seqno).0,
         );
         assert!(res.is_ok());

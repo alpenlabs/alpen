@@ -55,7 +55,7 @@ impl Subprotocol for AdministrationSubprotocol {
         anchor_pre: &AnchorState,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        params: &Self::Params,
+        _params: &Self::Params,
     ) {
         // Calculate current height as the next block height
         let current_height = anchor_pre
@@ -71,8 +71,8 @@ impl Subprotocol for AdministrationSubprotocol {
 
         // Phase 2: Process incoming administration transactions
         for tx in txs {
-            if let Ok((action, agg_sig)) = parse_tx(tx) {
-                let _ = handle_action(state, action, agg_sig, current_height, relayer, params);
+            if let Ok(signed_payload) = parse_tx(tx) {
+                let _ = handle_action(state, signed_payload, current_height, relayer);
             }
             // Transaction parsing failures are silently ignored to maintain system resilience
         }
