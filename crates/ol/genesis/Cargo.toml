@@ -12,8 +12,6 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-params.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
-strata-params.workspace = true
-strata-predicate.workspace = true
 
 thiserror.workspace = true
 tracing.workspace = true

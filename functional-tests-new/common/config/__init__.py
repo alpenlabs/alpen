@@ -20,8 +20,11 @@ from common.config.constants import ServiceType
 from common.config.params import (
     CredRule,
     DepositTxParams,
+    GenesisAccountData,
+    GenesisHeaderParams,
     GenesisL1View,
     L1BlockCommitment,
+    OLParams,
     Params,
     ProofPublishMode,
     ProofPublishModeTimeout,
@@ -49,11 +52,14 @@ __all__ = [
     # constants.py
     "ServiceType",
     # params.py
+    "GenesisAccountData",
     "RollupParams",
     "Params",
     "SyncParams",
     "L1BlockCommitment",
     "GenesisL1View",
+    "GenesisHeaderParams",
+    "OLParams",
     "ProofPublishModeTimeout",
     "ProofPublishMode",
     "SchnorrVerify",

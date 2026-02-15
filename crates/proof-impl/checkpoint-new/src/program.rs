@@ -66,22 +66,29 @@ impl CheckpointProgram {
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::Buf64;
+    use strata_identifiers::{Buf64, L1BlockCommitment};
     use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
+    use strata_ol_params::OLParams;
     use strata_ol_state_types::OLState;
     use strata_ol_stf::test_utils::build_empty_chain;
 
     use crate::program::{CheckpointProgram, CheckpointProverInput};
 
+    /// Creates a genesis OLState using minimal empty parameters.
+    fn create_test_genesis_state() -> OLState {
+        let params = OLParams::new_empty(L1BlockCommitment::default());
+        OLState::from_genesis_params(&params).expect("valid params")
+    }
+
     fn prepare_input() -> CheckpointProverInput {
         const SLOTS_PER_EPOCH: u64 = 100;
 
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let mut blocks = build_empty_chain(&mut state, 10, SLOTS_PER_EPOCH).unwrap();
         let parent = blocks.remove(0).into_header();
 
         // Start state is after the genesis block
-        let mut start_state = OLState::new_genesis();
+        let mut start_state = create_test_genesis_state();
         let _ = build_empty_chain(&mut start_state, 1, SLOTS_PER_EPOCH).unwrap();
 
         let blocks = blocks

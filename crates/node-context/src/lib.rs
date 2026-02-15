@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use strata_config::Config;
+use strata_ol_params::OLParams;
 use strata_params::Params;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -18,6 +19,7 @@ pub struct NodeContext {
     executor: Arc<TaskExecutor>,
     config: Config,
     params: Arc<Params>,
+    ol_params: Arc<OLParams>,
     task_manager: TaskManager,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
@@ -29,6 +31,7 @@ impl NodeContext {
         handle: Handle,
         config: Config,
         params: Arc<Params>,
+        ol_params: Arc<OLParams>,
         storage: Arc<NodeStorage>,
         bitcoin_client: Arc<Client>,
         status_channel: Arc<StatusChannel>,
@@ -39,6 +42,7 @@ impl NodeContext {
             executor: Arc::new(executor),
             config,
             params,
+            ol_params,
             task_manager,
             storage,
             bitcoin_client,
@@ -56,6 +60,10 @@ impl NodeContext {
 
     pub fn params(&self) -> &Arc<Params> {
         &self.params
+    }
+
+    pub fn ol_params(&self) -> &Arc<OLParams> {
+        &self.ol_params
     }
 
     pub fn task_manager(&self) -> &TaskManager {

@@ -5,6 +5,8 @@ Functional test runner.
 Usage:
     ./entry.py                          # Run all tests
     ./entry.py -t test_node_version     # Run specific test
+    ./entry.py -t tests/test_node_version.py  # Run specific test by path
+    ./entry.py tests/test_node_version.py     # Run specific test (positional)
     ./entry.py -g bridge                # Run test group (directory-based)
     ./entry.py -e basic                 # Keep-alive mode for debugging
     ./entry.py --list                   # List all tests
@@ -71,6 +73,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 Examples:
   %(prog)s                          Run all tests
   %(prog)s -t test_node_version     Run specific test
+  %(prog)s -t tests/test_node_version.py  Run specific test by path
+  %(prog)s tests/test_node_version.py     Run specific test (positional)
   %(prog)s -t test_foo test_bar     Run multiple tests
   %(prog)s -g bridge                Run all tests in bridge/ directory
   %(prog)s -g prover bridge         Run tests in multiple groups
@@ -100,7 +104,27 @@ Examples:
         action="store_true",
         help="List all available tests and exit",
     )
+    parser.add_argument(
+        "tests_pos",
+        nargs="*",
+        help="Run specific test(s) by name or path (positional, optional)",
+    )
     return parser.parse_args(argv[1:])
+
+
+def normalize_test_names(raw_tests: list[str]) -> frozenset[str]:
+    """
+    Normalize CLI test selectors.
+
+    Accepts bare names, filenames, or paths; strips directories and `.py`.
+    """
+    names: list[str] = []
+    for raw in raw_tests:
+        base = os.path.basename(raw)
+        name, _ = os.path.splitext(base)
+        if name:
+            names.append(name)
+    return frozenset(names)
 
 
 def filter_tests(
@@ -118,8 +142,8 @@ def filter_tests(
         Filtered dict of test names to paths
     """
     arg_groups = frozenset(args.groups or [])
-    # Extract filenames without .py extension
-    arg_tests = frozenset([t.removesuffix(".py") for t in (args.tests or [])])
+    # Normalize tests (accept bare names, filenames, or paths)
+    arg_tests = normalize_test_names((args.tests or []) + (args.tests_pos or []))
     disabled = disabled_tests()
 
     filtered = {}

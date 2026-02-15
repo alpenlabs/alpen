@@ -13,15 +13,16 @@ use crate::{
     BRIDGE_GATEWAY_ACCT_ID,
     errors::ExecError,
     test_utils::{
-        SnarkUpdateBuilder, TEST_RECIPIENT_ID, create_empty_account, execute_tx_in_block,
-        get_test_proof, get_test_recipient_account_id, get_test_snark_account_id,
-        get_test_state_root, setup_genesis_with_snark_account, test_account_id,
+        SnarkUpdateBuilder, TEST_RECIPIENT_ID, create_empty_account, create_test_genesis_state,
+        execute_tx_in_block, get_test_proof, get_test_recipient_account_id,
+        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
+        test_account_id,
     },
 };
 
 #[test]
 fn test_snark_update_zero_value_transfer() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -77,7 +78,7 @@ fn test_snark_update_zero_value_transfer() {
 
 #[test]
 fn test_snark_update_from_zero_balance_account() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -204,7 +205,7 @@ fn test_snark_update_from_zero_balance_account() {
 
 #[test]
 fn test_snark_update_self_transfer() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
 
     // Setup: genesis with snark account
@@ -248,7 +249,7 @@ fn test_snark_update_self_transfer() {
 
 #[test]
 fn test_snark_update_exact_balance_transfer() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -298,7 +299,7 @@ fn test_snark_update_exact_balance_transfer() {
 
 #[test]
 fn test_snark_update_max_bitcoin_supply() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -363,7 +364,7 @@ fn test_snark_update_max_bitcoin_supply() {
 
 #[test]
 fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -424,7 +425,7 @@ fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
 
 #[test]
 fn test_snark_update_overflow_u64_boundary() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient1_id = test_account_id(TEST_RECIPIENT_ID + 1); // Different test IDs
     let recipient2_id = test_account_id(TEST_RECIPIENT_ID + 2);
@@ -518,7 +519,7 @@ fn test_snark_update_overflow_u64_boundary() {
 
     // Test case 3: Verify that u64::MAX transfer works when balance is sufficient
     // Give snark account exactly u64::MAX balance
-    let mut state3 = OLState::new_genesis();
+    let mut state3 = create_test_genesis_state();
     let genesis_block3 = setup_genesis_with_snark_account(&mut state3, snark_id, u64::MAX);
     create_empty_account(&mut state3, recipient1_id);
 

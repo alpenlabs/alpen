@@ -37,7 +37,6 @@ alpen-reth-node.workspace = true
 strata-acct-types.workspace = true
 strata-common = { workspace = true, features = ["async"] }
 strata-identifiers.workspace = true
-strata-ol-genesis.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-rpc-types.workspace = true
 strata-primitives.workspace = true

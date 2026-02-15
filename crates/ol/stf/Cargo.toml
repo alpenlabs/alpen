@@ -16,6 +16,7 @@ strata-msg-fmt.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-da.workspace = true
 strata-ol-msg-types.workspace = true
+strata-ol-params = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-predicate = { workspace = true, optional = true }
 strata-snark-acct-sys.workspace = true
@@ -24,12 +25,17 @@ strata-snark-acct-types.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+ssz_primitives.workspace = true
+strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-predicate.workspace = true
-ssz_primitives.workspace = true
 
 [lints]
 workspace = true
 
 [features]
-test-utils = ["dep:strata-predicate", "dep:ssz_primitives"]
+test-utils = [
+  "dep:strata-predicate",
+  "dep:ssz_primitives",
+  "dep:strata-ol-params",
+]

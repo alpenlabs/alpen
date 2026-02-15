@@ -14,11 +14,12 @@ use proptest::{
 };
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_ol_chain_types_new::{TransactionAttachment, test_utils as ol_test_utils};
+use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
@@ -127,12 +128,18 @@ pub(crate) fn create_test_mempool_tx(payload: OLMempoolTxPayload) -> OLMempoolTr
     }
 }
 
+/// Creates a genesis OLState using minimal empty parameters.
+pub(crate) fn create_test_genesis_state() -> OLState {
+    let params = OLParams::new_empty(L1BlockCommitment::default());
+    OLState::from_genesis_params(&params).expect("valid params")
+}
+
 /// Create a test OLState with an empty account for the given account ID.
 ///
 /// Returns a state with an empty account for the given account ID at the specified slot.
 /// This allows generic account message transactions to pass account existence checks.
 pub(crate) fn create_test_ol_state_with_account(account_id: AccountId, slot: u64) -> OLState {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     // Set the slot
     state.set_cur_slot(slot);
     // Create an empty account so it exists for validation
@@ -155,7 +162,7 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     seq_no: u64,
     slot: u64,
 ) -> OLState {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     // Set the slot
     state.set_cur_slot(slot);
     // Create a fresh snark account, then update its sequence number
@@ -320,7 +327,7 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
 /// Also creates empty accounts for any account IDs that GenericAccountMessage
 /// transactions might use (they just need accounts to exist).
 pub(crate) async fn setup_test_state_for_tip(storage: &NodeStorage, tip: OLBlockCommitment) {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     state.set_cur_slot(tip.slot());
 
     // Create Snark accounts for common test account IDs (0-255)
@@ -377,7 +384,7 @@ pub(crate) fn create_test_state_provider(tip: OLBlockCommitment) -> InMemoryStat
 ///
 /// Creates a genesis state with Snark accounts for test account IDs (0-255).
 pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     state.set_cur_slot(slot);
 
     // Create Snark accounts for common test account IDs (0-255)
