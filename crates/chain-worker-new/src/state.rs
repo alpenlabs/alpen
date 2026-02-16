@@ -165,8 +165,20 @@ impl ChainWorkerServiceState {
         self.persist_execution_output(*block_commitment, &output, new_state)?;
 
         // Handle epoch terminal if needed
+        debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
         if block.header().is_terminal() {
             self.handle_complete_epoch(&block, &output)?;
+            // Send the epoch commitment to receiver
+            let epoch = EpochCommitment::new(
+                block.header().epoch(),
+                block.header().slot(),
+                block.header().compute_blkid(),
+            );
+
+            debug!(%epoch, "Sending epoch commitment to listeners");
+            if let Err(e) = self.ctx.epoch_summary_sender().send(Some(epoch)) {
+                warn!(%e, "Could not send epoch summary to receivers");
+            }
         }
 
         Ok(())
