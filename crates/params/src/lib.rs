@@ -49,13 +49,13 @@ pub struct RollupParams {
 
     /// Number of blocks after Deposit Request Transaction that the depositor can reclaim funds if
     /// operators fail to process the deposit.
-    pub recovery_delay: u32,
+    pub recovery_delay: u16,
 
     /// Predicate to verify the validity of checkpoint
     pub checkpoint_predicate: PredicateKey,
 
     /// Number of Bitcoin blocks a withdrawal dispatch assignment is valid for.
-    pub dispatch_assignment_dur: u32,
+    pub dispatch_assignment_dur: u16,
 
     /// Describes how proofs are published
     pub proof_publish_mode: ProofPublishMode,

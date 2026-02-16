@@ -1,5 +1,6 @@
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_crypto::threshold_signature::ThresholdConfig;
 
@@ -10,7 +11,7 @@ use strata_crypto::threshold_signature::ThresholdConfig;
 /// provided when constructing this struct. However, it does NOT prevent logical errors
 /// like using the same config for multiple roles or mismatched role-field assignments.
 /// The benefit is avoiding missing fields at compile-time rather than runtime validation.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct AdministrationSubprotoParams {
     /// ThresholdConfig for [StrataAdministrator](Role::StrataAdministrator).
@@ -26,7 +27,20 @@ pub struct AdministrationSubprotoParams {
 }
 
 /// Roles with authority in the administration subprotocol.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[repr(u8)]
 pub enum Role {
@@ -43,4 +57,32 @@ pub enum Role {
     /// The multisig authority that has exclusive ability to change the canonical
     /// public key of the default orchestration layer sequencer.
     StrataSequencerManager,
+}
+
+impl AdministrationSubprotoParams {
+    pub fn new(
+        strata_administrator: ThresholdConfig,
+        strata_sequencer_manager: ThresholdConfig,
+        confirmation_depth: u16,
+    ) -> Self {
+        Self {
+            strata_administrator,
+            strata_sequencer_manager,
+            confirmation_depth,
+        }
+    }
+
+    pub fn get_config(&self, role: Role) -> &ThresholdConfig {
+        match role {
+            Role::StrataAdministrator => &self.strata_administrator,
+            Role::StrataSequencerManager => &self.strata_sequencer_manager,
+        }
+    }
+
+    pub fn get_all_authorities(self) -> Vec<(Role, ThresholdConfig)> {
+        vec![
+            (Role::StrataAdministrator, self.strata_administrator),
+            (Role::StrataSequencerManager, self.strata_sequencer_manager),
+        ]
+    }
 }

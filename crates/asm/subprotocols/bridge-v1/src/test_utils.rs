@@ -4,6 +4,7 @@ use rand::Rng;
 use strata_asm_common::{
     AsmHistoryAccumulatorState, AsmLogEntry, AuxData, InterprotoMsg, MsgRelayer, VerifiedAuxData,
 };
+use strata_asm_params::BridgeV1Config;
 use strata_asm_txs_bridge_v1::{
     deposit::{DepositInfo, parse_deposit_tx},
     deposit_request::DrtHeaderAux,
@@ -22,7 +23,7 @@ use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use strata_test_utils::ArbitraryGenerator;
 
 use super::*;
-use crate::state::{assignment::AssignmentEntry, config::BridgeV1Config};
+use crate::state::assignment::AssignmentEntry;
 
 /// A Mock MsgRelayer that does nothing.
 ///
@@ -164,7 +165,7 @@ pub(crate) fn create_verified_aux_data(txs: Vec<RawBitcoinTx>) -> VerifiedAuxDat
 pub(crate) fn setup_deposit_test(
     drt_aux: &DrtHeaderAux,
     denomination: BitcoinAmount,
-    recovery_delay: u32,
+    recovery_delay: u16,
     operators: &[EvenSecretKey],
 ) -> (VerifiedAuxData, DepositInfo) {
     // 1. Prepare DRT & DT
