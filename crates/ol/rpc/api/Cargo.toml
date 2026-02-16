@@ -11,7 +11,7 @@ alpen-open-rpc.workspace = true
 alpen-open-rpc-macros.workspace = true
 strata-identifiers = { workspace = true, features = ["jsonschema"] }
 strata-ol-rpc-types = { workspace = true, features = ["jsonschema"] }
-strata-ol-sequencer.workspace = true
+strata-ol-sequencer = { workspace = true, features = ["jsonschema"] }
 strata-primitives = { workspace = true, features = ["jsonschema"] }
 
 jsonrpsee = { workspace = true, features = ["server", "macros"] }

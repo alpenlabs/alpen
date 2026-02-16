@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::{self, Debug, Display},
     str::FromStr,
 };
@@ -101,6 +102,20 @@ impl Display for OLBlockOrTag {
             Self::Confirmed => f.pad("confirmed"),
             Self::Finalized => f.pad("finalized"),
         }
+    }
+}
+
+#[cfg(feature = "jsonschema")]
+impl schemars::JsonSchema for OLBlockOrTag {
+    fn schema_name() -> Cow<'static, str> {
+        "OLBlockOrTag".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "Block identifier: 'latest', 'confirmed', 'finalized', a slot number, or a 0x-prefixed block hash"
+        })
     }
 }
 

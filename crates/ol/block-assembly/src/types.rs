@@ -78,6 +78,7 @@ impl BlockTemplate {
 /// Sufficient data to complete a [`FullBlockTemplate`] and create a [`OLBlock`].
 /// Currently consists of a valid signature for the block from sequencer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct BlockCompletionData {
     signature: Buf64,
 }

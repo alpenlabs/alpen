@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::{borrow::Cow, fmt, mem};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -85,6 +85,21 @@ impl fmt::Display for AccountId {
 }
 
 impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
+
+#[cfg(feature = "jsonschema")]
+impl schemars::JsonSchema for AccountId {
+    fn schema_name() -> Cow<'static, str> {
+        "AccountId".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "format": "hex",
+            "description": "32-byte hex-encoded account identifier"
+        })
+    }
+}
 
 type RawAccountSerial = u32;
 

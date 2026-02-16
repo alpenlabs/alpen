@@ -29,10 +29,14 @@ strata-tasks.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
+
+[features]
+jsonschema = ["dep:schemars", "strata-identifiers/jsonschema"]
 
 [dev-dependencies]
 bitcoin.workspace = true

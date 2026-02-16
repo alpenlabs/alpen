@@ -4,6 +4,7 @@ use strata_snark_acct_types::SnarkAccountState;
 
 /// Snark account state for RPC responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcSnarkAccountState {
     /// Account sequence number.
     seq_no: u64,
