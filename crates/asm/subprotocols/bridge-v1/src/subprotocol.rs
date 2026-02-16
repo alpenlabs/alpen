@@ -10,6 +10,7 @@ use strata_asm_common::{
     VerifiedAuxData,
     logging::{error, info},
 };
+use strata_asm_params::BridgeV1Config;
 use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::parse_tx};
 use strata_primitives::{
     buf::Buf32,
@@ -19,7 +20,7 @@ use strata_primitives::{
 use crate::{
     errors::BridgeSubprotocolError,
     handler::{handle_parsed_tx, preprocess_parsed_tx},
-    state::{BridgeV1Config, BridgeV1State},
+    state::BridgeV1State,
 };
 
 /// Bridge V1 subprotocol implementation.

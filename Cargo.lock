@@ -13863,6 +13863,7 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-asm-params",
  "strata-asm-txs-bridge-v1",
  "strata-bridge-types",
  "strata-btc-types",
@@ -13966,7 +13967,6 @@ version = "0.1.0"
 dependencies = [
  "strata-asm-common",
  "strata-asm-params",
- "strata-asm-proto-bridge-v1",
  "strata-asm-proto-checkpoint-v0",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",

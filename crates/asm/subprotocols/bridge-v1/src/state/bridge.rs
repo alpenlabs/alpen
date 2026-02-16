@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
+use strata_asm_params::BridgeV1Config;
 use strata_asm_txs_bridge_v1::{deposit::DepositInfo, errors::Mismatch};
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
@@ -8,7 +9,6 @@ use crate::{
     errors::{DepositValidationError, WithdrawalCommandError},
     state::{
         assignment::{AssignmentEntry, AssignmentTable},
-        config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
         withdrawal::WithdrawalCommand,
