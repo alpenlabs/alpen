@@ -58,6 +58,7 @@ impl MultisigAuthority {
     ) -> Result<(), AdministrationError> {
         if payload.seqno <= self.last_seqno {
             return Err(AdministrationError::InvalidSeqno {
+                role: self.role,
                 payload_seqno: payload.seqno,
                 last_seqno: self.last_seqno,
             });
@@ -65,6 +66,7 @@ impl MultisigAuthority {
 
         if payload.seqno > self.last_seqno + max_seqno_gap as u64 {
             return Err(AdministrationError::SeqnoGapTooLarge {
+                role: self.role,
                 payload_seqno: payload.seqno,
                 last_seqno: self.last_seqno,
                 max_gap: max_seqno_gap,

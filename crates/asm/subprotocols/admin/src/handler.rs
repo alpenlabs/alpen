@@ -404,6 +404,7 @@ mod tests {
         assert!(matches!(
             res,
             Err(AdministrationError::InvalidSeqno {
+                role: Role::StrataAdministrator,
                 payload_seqno: 1,
                 last_seqno: 1,
             })
@@ -789,6 +790,7 @@ mod tests {
         assert!(matches!(
             res,
             Err(AdministrationError::SeqnoGapTooLarge {
+                role: Role::StrataAdministrator,
                 payload_seqno: 11,
                 last_seqno: 0,
                 max_gap: 10,
