@@ -1,6 +1,6 @@
+use strata_asm_params::Role;
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdSignatureError;
-use strata_primitives::roles::Role;
 use thiserror::Error;
 
 /// Top-level error type for the administration subprotocol, composed of smaller error categories.

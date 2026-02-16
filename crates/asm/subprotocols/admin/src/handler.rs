@@ -121,7 +121,7 @@ pub(crate) fn handle_action(
     let authority = state
         .authority(role)
         .ok_or(AdministrationError::UnknownRole)?;
-    authority.verify_action_signature(&payload, max_seqno_gap)?;
+    let seqno_token = authority.verify_action_signature(&payload, max_seqno_gap)?;
 
     // Process the action based on its type
     match payload.action {
@@ -154,11 +154,11 @@ pub(crate) fn handle_action(
         }
     }
 
-    // Increment the sequence number for the authority to prevent replay attacks
+    // Advance the sequence number using the verified token to prevent replay attacks
     let authority = state
         .authority_mut(role)
         .ok_or(AdministrationError::UnknownRole)?;
-    authority.update_last_seqno(payload.seqno);
+    authority.update_last_seqno(seqno_token);
 
     Ok(())
 }
