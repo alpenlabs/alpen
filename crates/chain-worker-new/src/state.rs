@@ -169,16 +169,8 @@ impl ChainWorkerServiceState {
         if block.header().is_terminal() {
             self.handle_complete_epoch(&block, &output)?;
             // Send the epoch commitment to receiver
-            let epoch = EpochCommitment::new(
-                block.header().epoch(),
-                block.header().slot(),
-                block.header().compute_blkid(),
-            );
-
-            debug!(%epoch, "Sending epoch commitment to listeners");
-            if let Err(e) = self.ctx.epoch_summary_sender().send(Some(epoch)) {
-                warn!(%e, "Could not send epoch summary to receivers");
-            }
+            // TODO: it seems to be done for each block at the moment. Ideally we would do it just
+            // here.
         }
 
         Ok(())
@@ -342,6 +334,8 @@ impl ChainWorkerServiceState {
             epoch_final_state,
         );
 
+        // TODO: only store this at the end of epoch. This is not much of a problem even if it is
+        // done here, it's just redundant do do it here.
         debug!(?summary, "completed chain epoch");
         self.ctx.store_summary(summary)?;
 

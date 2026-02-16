@@ -31,18 +31,21 @@ class TestSequencerEpochProgression(StrataNodeTest):
 
         # Get initial sync status
         initial_status = strata.get_sync_status(rpc)
-        cur_epoch = initial_status["confirmed"]
+        prev_epoch = initial_status["confirmed"]
+        logger.info(f"initial prev epoch {prev_epoch}")
+        assert prev_epoch["last_blkid"] != "00" * 32
 
         epochs_to_check = 3
 
         for _ in range(1, epochs_to_check + 1):
             epoch = wait_until_with_value(
                 lambda: strata.get_sync_status(rpc)["confirmed"],
-                lambda v, cur_epoch=cur_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
+                lambda v, cur_epoch=prev_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
                 timeout=10,
                 error_with="Epoch not progressing",
             )
-            print("epoch", epoch)
-            cur_epoch = epoch
+            logger.info(f"cur prev epoch {epoch}")
+            assert epoch["last_blkid"] != "00" * 32
+            prev_epoch = epoch
 
         return True
