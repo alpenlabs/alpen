@@ -111,6 +111,7 @@ pub trait AccountTypeState {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
+    use strata_codec::VARINT_MAX;
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -120,10 +121,10 @@ mod tests {
 
         ssz_proptest!(
             AccountIntrinsicState,
-            (any::<u16>(), any::<u32>(), any::<u64>()).prop_map(|(raw_ty, serial, sats)| {
+            (any::<u16>(), 0..=VARINT_MAX, any::<u64>()).prop_map(|(raw_ty, serial, sats)| {
                 AccountIntrinsicState {
                     raw_ty,
-                    serial: AccountSerial::new(serial),
+                    serial: AccountSerial::new(serial).expect("serial is within varint bounds"),
                     balance: BitcoinAmount::from_sat(sats),
                 }
             })
@@ -131,7 +132,7 @@ mod tests {
 
         #[test]
         fn test_zero_ssz() {
-            let state = AccountIntrinsicState::new_empty(AccountSerial::new(0));
+            let state = AccountIntrinsicState::new_empty(AccountSerial::zero());
             let encoded = state.as_ssz_bytes();
             let decoded = AccountIntrinsicState::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(state.raw_ty(), decoded.raw_ty());
@@ -147,7 +148,7 @@ mod tests {
             EncodedAccountInnerState,
             (
                 any::<u16>(),
-                any::<u32>(),
+                0..=VARINT_MAX,
                 any::<u64>(),
                 prop::collection::vec(any::<u8>(), 0..100)
             )
@@ -155,7 +156,8 @@ mod tests {
                     EncodedAccountInnerState {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
-                            serial: AccountSerial::new(serial),
+                            serial: AccountSerial::new(serial)
+                                .expect("serial is within varint bounds"),
                             balance: BitcoinAmount::from_sat(sats),
                         },
                         encoded_state: encoded.into(),
@@ -166,7 +168,9 @@ mod tests {
         #[test]
         fn test_zero_ssz() {
             let state = EncodedAccountInnerState {
-                intrinsics: AccountIntrinsicState::new_empty(AccountSerial::new(0)),
+                intrinsics: AccountIntrinsicState::new_empty(
+                    AccountSerial::new(0).expect("serial is within varint bounds"),
+                ),
                 encoded_state: vec![].into(),
             };
             let encoded = state.as_ssz_bytes();
@@ -183,24 +187,31 @@ mod tests {
 
         ssz_proptest!(
             AcctStateSummary,
-            (any::<u16>(), any::<u32>(), any::<u64>(), any::<[u8; 32]>()).prop_map(
-                |(raw_ty, serial, sats, root)| {
+            (
+                any::<u16>(),
+                0..=VARINT_MAX,
+                any::<u64>(),
+                any::<[u8; 32]>()
+            )
+                .prop_map(|(raw_ty, serial, sats, root)| {
                     AcctStateSummary {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
-                            serial: AccountSerial::new(serial),
+                            serial: AccountSerial::new(serial)
+                                .expect("serial is within varint bounds"),
                             balance: BitcoinAmount::from_sat(sats),
                         },
                         typed_state_root: root.into(),
                     }
-                }
-            )
+                })
         );
 
         #[test]
         fn test_zero_ssz() {
             let state = AcctStateSummary {
-                intrinsics: AccountIntrinsicState::new_empty(AccountSerial::new(0)),
+                intrinsics: AccountIntrinsicState::new_empty(
+                    AccountSerial::new(0).expect("serial is within varint bounds"),
+                ),
                 typed_state_root: [0u8; 32].into(),
             };
             let encoded = state.as_ssz_bytes();

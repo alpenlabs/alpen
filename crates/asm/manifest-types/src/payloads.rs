@@ -96,7 +96,7 @@ impl AsmLog for CheckpointAckLogData {
 
 #[cfg(test)]
 mod tests {
-    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_codec::{VARINT_MAX, decode_buf_exact, encode_to_vec};
     use strata_identifiers::{AccountSerial, Buf32, OLBlockId, SubjectId};
 
     use super::*;
@@ -105,7 +105,7 @@ mod tests {
     fn test_deposit_intent_log_data_codec() {
         // Create test data
         let log_data = DepositIntentLogData {
-            dest_acct_serial: AccountSerial::from(42),
+            dest_acct_serial: AccountSerial::try_from(42).expect("serial is within varint bounds"),
             dest_subject: SubjectId::from([1u8; 32]),
             amt: 100_000_000,
         };
@@ -150,7 +150,7 @@ mod tests {
     fn test_deposit_intent_zero_amount() {
         // Test with zero amount
         let log_data = DepositIntentLogData {
-            dest_acct_serial: AccountSerial::from(0),
+            dest_acct_serial: AccountSerial::zero(),
             dest_subject: SubjectId::from([0u8; 32]),
             amt: 0,
         };
@@ -159,14 +159,15 @@ mod tests {
         let decoded: DepositIntentLogData = decode_buf_exact(&encoded).unwrap();
 
         assert_eq!(decoded.amt, 0);
-        assert_eq!(decoded.dest_acct_serial, AccountSerial::from(0));
+        assert_eq!(decoded.dest_acct_serial, AccountSerial::zero());
     }
 
     #[test]
     fn test_deposit_intent_max_values() {
         // Test with max values
         let log_data = DepositIntentLogData {
-            dest_acct_serial: AccountSerial::from(u32::MAX),
+            dest_acct_serial: AccountSerial::try_from(VARINT_MAX)
+                .expect("serial is within varint bounds"),
             dest_subject: SubjectId::from([255u8; 32]),
             amt: u64::MAX,
         };
@@ -174,7 +175,10 @@ mod tests {
         let encoded = encode_to_vec(&log_data).unwrap();
         let decoded: DepositIntentLogData = decode_buf_exact(&encoded).unwrap();
 
-        assert_eq!(decoded.dest_acct_serial, AccountSerial::from(u32::MAX));
+        assert_eq!(
+            decoded.dest_acct_serial,
+            AccountSerial::try_from(VARINT_MAX).expect("serial is within varint bounds")
+        );
         assert_eq!(decoded.dest_subject, SubjectId::from([255u8; 32]));
         assert_eq!(decoded.amt, u64::MAX);
     }

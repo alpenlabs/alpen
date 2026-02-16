@@ -15,7 +15,7 @@ use crate::ssz_generated::ssz::state::{
     ProofState, TsnlAccountEntry, TsnlLedgerAccountsTable,
 };
 
-pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
+pub(crate) fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
     any::<u64>().prop_map(BitcoinAmount::from_sat)
 }
 

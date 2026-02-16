@@ -191,7 +191,8 @@ where
     fn next_account_serial(&self) -> AccountSerial {
         let base_serial: u32 = self.base.next_account_serial().into();
         let new_count = self.batch.ledger().new_accounts().len() as u32;
-        AccountSerial::from(base_serial + new_count)
+        AccountSerial::try_from(base_serial + new_count)
+            .expect("acctsys: account serial out of varint range")
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
