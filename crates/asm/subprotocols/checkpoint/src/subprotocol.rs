@@ -5,16 +5,14 @@ use strata_asm_common::{
     AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     VerifiedAuxData, logging,
 };
+use strata_asm_params::CheckpointConfig;
 use strata_asm_proto_checkpoint_txs::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     parser::extract_signed_checkpoint_from_envelope,
 };
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
-use crate::{
-    handler::handle_checkpoint_tx,
-    state::{CheckpointConfig, CheckpointState},
-};
+use crate::{handler::handle_checkpoint_tx, state::CheckpointState};
 
 /// Checkpoint subprotocol implementation.
 ///

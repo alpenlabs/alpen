@@ -13885,6 +13885,7 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
+ "strata-asm-params",
  "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types-ssz",
  "strata-codec",
