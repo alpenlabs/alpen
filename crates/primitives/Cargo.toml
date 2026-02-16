@@ -21,9 +21,11 @@ bitcoin-bosd = { workspace = true, features = [
 ] }
 borsh.workspace = true
 hex.workspace = true
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 
 [features]
+jsonschema = ["dep:schemars", "strata-identifiers/jsonschema"]

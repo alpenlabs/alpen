@@ -1,6 +1,8 @@
 //! OL RPC API definitions.
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
+#[cfg(test)]
+use serde_json as _;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;
@@ -63,6 +65,7 @@ pub trait OLClientRpc {
 }
 
 /// OL RPC methods served by block executing nodes.
+#[alpen_open_rpc_macros::open_rpc(namespace = "strata", tag = "Full Node")]
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLFullNodeRpc {

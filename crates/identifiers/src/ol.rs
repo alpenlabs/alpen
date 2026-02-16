@@ -3,6 +3,8 @@ use std::{cmp, fmt, str};
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
+#[cfg(feature = "jsonschema")]
+use schemars::{r#gen::SchemaGenerator, schema::Schema};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
@@ -36,6 +38,17 @@ impl_buf_wrapper!(OLBlockId, Buf32, 32);
 
 // Manual TreeHash implementation for transparent wrapper
 impl_ssz_transparent_buf32_wrapper!(OLBlockId);
+
+#[cfg(feature = "jsonschema")]
+impl schemars::JsonSchema for OLBlockId {
+    fn schema_name() -> String {
+        "OLBlockId".to_owned()
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        generator.subschema_for::<Buf32>()
+    }
+}
 
 impl OLBlockId {
     /// Returns a dummy blkid that is all zeroes.

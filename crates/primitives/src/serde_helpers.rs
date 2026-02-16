@@ -34,11 +34,36 @@ pub mod serde_height {
 }
 
 pub mod serde_hex_bytes {
+    #[cfg(feature = "jsonschema")]
+    use schemars::{
+        r#gen::SchemaGenerator,
+        schema::{InstanceType, Metadata, Schema, SchemaObject},
+    };
     use serde::{Deserialize, Serialize};
     use strata_identifiers::L2BlockId;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HexBytes(#[serde(with = "hex::serde")] pub Vec<u8>);
+
+    #[cfg(feature = "jsonschema")]
+    impl schemars::JsonSchema for HexBytes {
+        fn schema_name() -> String {
+            "HexBytes".to_owned()
+        }
+
+        fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+            SchemaObject {
+                instance_type: Some(InstanceType::String.into()),
+                format: Some("hex".to_owned()),
+                metadata: Some(Box::new(Metadata {
+                    description: Some("Hex-encoded byte array".to_owned()),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }
+            .into()
+        }
+    }
 
     impl HexBytes {
         pub fn into_inner(self) -> Vec<u8> {

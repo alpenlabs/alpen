@@ -6,6 +6,7 @@ use strata_primitives::{HexBytes, OLBlockId};
 
 /// Rpc version of OL block entry in a slot range.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcBlockRangeEntry {
     slot: Slot,
     epoch: Epoch,

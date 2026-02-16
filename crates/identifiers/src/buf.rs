@@ -3,6 +3,11 @@ use std::str::FromStr;
 #[cfg(feature = "bitcoin")]
 use bitcoin::secp256k1::{Error, SecretKey, XOnlyPublicKey, schnorr::Signature};
 use const_hex as hex;
+#[cfg(feature = "jsonschema")]
+use schemars::{
+    r#gen::SchemaGenerator,
+    schema::{InstanceType, Metadata, Schema, SchemaObject},
+};
 use ssz_derive::{Decode, Encode};
 use ssz_primitives::FixedBytes;
 use zeroize::Zeroize;
@@ -69,6 +74,26 @@ internal::impl_buf_common!(Buf32, 32);
 internal::impl_buf_serde!(Buf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
+
+#[cfg(feature = "jsonschema")]
+impl schemars::JsonSchema for Buf32 {
+    fn schema_name() -> String {
+        "Buf32".to_owned()
+    }
+
+    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+        SchemaObject {
+            instance_type: Some(InstanceType::String.into()),
+            format: Some("hex".to_owned()),
+            metadata: Some(Box::new(Metadata {
+                description: Some("32-byte hex-encoded value".to_owned()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+}
 
 impl FromStr for Buf32 {
     type Err = hex::FromHexError;

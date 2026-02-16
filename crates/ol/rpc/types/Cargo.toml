@@ -18,9 +18,17 @@ strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
 hex.workspace = true
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 ssz.workspace = true
 thiserror.workspace = true
+
+[features]
+jsonschema = [
+  "dep:schemars",
+  "strata-identifiers/jsonschema",
+  "strata-primitives/jsonschema",
+]
 
 [dev-dependencies]
 serde_json.workspace = true
