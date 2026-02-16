@@ -9,7 +9,7 @@ use strata_ol_sequencer::BlockCompletionData;
 use strata_primitives::{HexBytes, HexBytes64};
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
-#[alpen_open_rpc_macros::open_rpc(namespace = "strata", tag = "Client Node")]
+#[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Client Node")]
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLClientRpc {
@@ -66,7 +66,7 @@ pub trait OLClientRpc {
 }
 
 /// OL RPC methods served by block executing nodes.
-#[alpen_open_rpc_macros::open_rpc(namespace = "strata", tag = "Full Node")]
+#[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Full Node")]
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLFullNodeRpc {
@@ -85,7 +85,7 @@ pub trait OLFullNodeRpc {
 }
 
 /// OL RPC methods served by sequencer node for sequencer signer.
-#[alpen_open_rpc_macros::open_rpc(namespace = "strata", tag = "Sequencer")]
+#[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Sequencer")]
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLSequencerRpc {

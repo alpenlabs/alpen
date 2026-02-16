@@ -3,7 +3,7 @@
 use strata_ol_rpc_api::{OLClientRpcOpenRpc, OLFullNodeRpcOpenRpc, OLSequencerRpcOpenRpc};
 
 fn build_spec() -> serde_json::Value {
-    let mut project = alpen_open_rpc::Project::new(
+    let mut project = strata_open_rpc::Project::new(
         "0.1.0",
         "Alpen OL RPC",
         "Alpen Orchestration Layer JSON-RPC API",

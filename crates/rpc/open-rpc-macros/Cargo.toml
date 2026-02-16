@@ -1,5 +1,5 @@
 [package]
-name = "alpen-open-rpc-macros"
+name = "strata-open-rpc-macros"
 version = "0.1.0"
 edition = "2021"
 

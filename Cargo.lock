@@ -1273,27 +1273,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-open-rpc"
-version = "0.1.0"
-dependencies = [
- "schemars 1.2.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "alpen-open-rpc-macros"
-version = "0.1.0"
-dependencies = [
- "derive-syn-parse",
- "itertools 0.14.0",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "unescape",
-]
-
-[[package]]
 name = "alpen-reth"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15145,13 +15124,13 @@ dependencies = [
 name = "strata-ol-rpc-api"
 version = "0.1.0"
 dependencies = [
- "alpen-open-rpc",
- "alpen-open-rpc-macros",
  "jsonrpsee",
  "serde_json",
  "strata-identifiers",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
+ "strata-open-rpc",
+ "strata-open-rpc-macros",
  "strata-primitives",
 ]
 
@@ -15270,6 +15249,27 @@ dependencies = [
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-open-rpc"
+version = "0.1.0"
+dependencies = [
+ "schemars 1.2.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "strata-open-rpc-macros"
+version = "0.1.0"
+dependencies = [
+ "derive-syn-parse",
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "unescape",
 ]
 
 [[package]]

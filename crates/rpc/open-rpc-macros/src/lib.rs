@@ -40,7 +40,7 @@ use unescape::unescape;
 /// ```
 ///
 /// This generates a `OLFullNodeRpcOpenRpc` struct with a `module_doc()` method
-/// that returns an `alpen_open_rpc::Module`.
+/// that returns an `strata_open_rpc::Module`.
 #[proc_macro_attribute]
 pub fn open_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr: OpenRpcAttributes = parse_macro_input!(attr);
@@ -86,14 +86,14 @@ pub fn open_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         if method.is_pubsub {
             Some(quote! {
-                let mut inputs: Vec<alpen_open_rpc::ContentDescriptor> = Vec::new();
+                let mut inputs: Vec<strata_open_rpc::ContentDescriptor> = Vec::new();
                 #(#inputs)*
                 let result = #returns_ty
                 builder.add_subscription(#namespace, #name, inputs, result, #doc, #tag, #deprecated);
             })
         } else {
             Some(quote! {
-                let mut inputs: Vec<alpen_open_rpc::ContentDescriptor> = Vec::new();
+                let mut inputs: Vec<strata_open_rpc::ContentDescriptor> = Vec::new();
                 #(#inputs)*
                 let result = #returns_ty
                 builder.add_method(#namespace, #name, inputs, result, #doc, #tag, #deprecated);
@@ -107,8 +107,8 @@ pub fn open_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
         #trait_data
         pub struct #open_rpc_name;
         impl #open_rpc_name {
-            pub fn module_doc() -> alpen_open_rpc::Module {
-                let mut builder = alpen_open_rpc::RpcModuleDocBuilder::default();
+            pub fn module_doc() -> strata_open_rpc::Module {
+                let mut builder = strata_open_rpc::RpcModuleDocBuilder::default();
                 #(#methods)*
                 builder.build()
             }
