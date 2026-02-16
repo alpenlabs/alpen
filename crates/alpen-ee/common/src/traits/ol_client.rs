@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_snark_acct_types::{MessageEntry, ProofState, Seqno, SnarkAccountUpdate};
 use thiserror::Error;
 
@@ -18,6 +18,10 @@ pub trait OLClient: Sized + Send + Sync {
 
     /// Retrieves epoch commitment and update operations for the specified epoch.
     async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError>;
+
+    /// Returns the epoch commitment for the epoch in which this client's account
+    /// was first created.
+    async fn account_genesis_epoch(&self) -> Result<EpochCommitment, OLClientError>;
 }
 
 /// Returns the current status of the OL chain.

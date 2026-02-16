@@ -1,7 +1,6 @@
 use std::{future::Future, sync::Arc};
 
 use alpen_ee_common::{ConsensusHeads, OLClient, OLFinalizedStatus, Storage};
-use alpen_ee_config::AlpenEeParams;
 use tokio::sync::watch;
 
 use crate::{ctx::OLTrackerCtx, state::OLTrackerState, task::ol_tracker_task};
@@ -34,7 +33,7 @@ impl OLTrackerHandle {
 #[derive(Debug)]
 pub struct OLTrackerBuilder<TStorage, TOLClient> {
     state: OLTrackerState,
-    params: Arc<AlpenEeParams>,
+    genesis_epoch: u32,
     storage: Arc<TStorage>,
     ol_client: Arc<TOLClient>,
     max_epochs_fetch: Option<u32>,
@@ -45,13 +44,13 @@ impl<TStorage, TOLClient> OLTrackerBuilder<TStorage, TOLClient> {
     /// Creates a new OL tracker builder with all required fields.
     pub fn new(
         state: OLTrackerState,
-        params: Arc<AlpenEeParams>,
+        genesis_epoch: u32,
         storage: Arc<TStorage>,
         ol_client: Arc<TOLClient>,
     ) -> Self {
         Self {
             state,
-            params,
+            genesis_epoch,
             storage,
             ol_client,
             max_epochs_fetch: None,
@@ -85,8 +84,8 @@ impl<TStorage, TOLClient> OLTrackerBuilder<TStorage, TOLClient> {
         };
         let ctx = OLTrackerCtx {
             storage: self.storage,
-            params: self.params,
             ol_client: self.ol_client,
+            genesis_epoch: self.genesis_epoch,
             ol_status_tx,
             consensus_tx,
             max_epochs_fetch: self.max_epochs_fetch.unwrap_or(DEFAULT_MAX_EPOCHS_FETCH),

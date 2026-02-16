@@ -1125,6 +1125,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types-engine",
  "alpen-reth-node",
  "alpen-reth-statediff",
@@ -1240,9 +1241,7 @@ dependencies = [
 name = "alpen-ee-ol-tracker"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-primitives",
  "alpen-ee-common",
- "alpen-ee-config",
  "eyre",
  "strata-acct-types",
  "strata-ee-acct-runtime",
@@ -13816,6 +13815,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-params"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "serde",
+ "serde_json",
+ "strata-btc-types",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-predicate",
+]
+
+[[package]]
 name = "strata-asm-proto-administration"
 version = "0.1.0"
 dependencies = [
@@ -14410,8 +14423,10 @@ dependencies = [
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
+ "serde_json",
  "sha2",
  "strata-identifiers",
+ "strata-test-utils",
  "thiserror 2.0.18",
  "zeroize",
 ]
@@ -14903,6 +14918,7 @@ dependencies = [
  "strata-state",
  "strata-storage",
  "strata-tasks",
+ "strata-test-utils-l2",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
@@ -15194,6 +15210,7 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-msg-types",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-sys",
@@ -15402,7 +15419,7 @@ name = "strata-provers-perf"
 version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
- "clap",
+ "argh",
  "num-format",
  "reqwest 0.12.28",
  "serde_json",

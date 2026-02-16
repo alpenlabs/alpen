@@ -1,3 +1,4 @@
+pub(crate) mod account_genesis;
 pub(crate) mod asm;
 pub(crate) mod chainstate;
 pub(crate) mod checkpoint;

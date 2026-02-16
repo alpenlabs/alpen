@@ -43,6 +43,10 @@ impl OLClient for DummyOLClient {
         })
     }
 
+    async fn account_genesis_epoch(&self) -> Result<EpochCommitment, OLClientError> {
+        Ok(self.genesis_epoch)
+    }
+
     async fn epoch_summary(&self, epoch: Epoch) -> Result<OLEpochSummary, OLClientError> {
         let commitment = EpochCommitment::new(
             epoch,

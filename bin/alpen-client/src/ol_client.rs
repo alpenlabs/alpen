@@ -5,7 +5,7 @@ use alpen_ee_common::{
     SequencerOLClient,
 };
 use async_trait::async_trait;
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, EpochCommitment};
 use strata_snark_acct_types::SnarkAccountUpdate;
 
 use crate::{dummy_ol_client::DummyOLClient, rpc_client::RpcOLClient};
@@ -35,6 +35,13 @@ impl OLClient for OLClientKind {
         match self {
             Self::Rpc(client) => <RpcOLClient as OLClient>::epoch_summary(client, epoch).await,
             Self::Dummy(client) => <DummyOLClient as OLClient>::epoch_summary(client, epoch).await,
+        }
+    }
+
+    async fn account_genesis_epoch(&self) -> Result<EpochCommitment, OLClientError> {
+        match self {
+            Self::Rpc(client) => client.account_genesis_epoch().await,
+            Self::Dummy(client) => client.account_genesis_epoch().await,
         }
     }
 }

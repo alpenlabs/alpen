@@ -10,8 +10,10 @@ use strata_checkpoint_types_ssz::SignedCheckpointPayload;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
+use strata_db_types::types::OLCheckpointStatus;
 use strata_l1_txfmt::TagData;
-use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty, TemplateManager};
+use strata_ol_block_assembly::BlockasmHandle;
+use strata_ol_sequencer::{BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty};
 use strata_primitives::buf::Buf32;
 use strata_storage::NodeStorage;
 use tokio::{runtime::Handle, select, sync::mpsc, time};
@@ -21,7 +23,7 @@ use super::helpers::{sign_checkpoint, sign_header};
 
 /// Worker for executing duties for the sequencer.
 pub(crate) async fn duty_executor_worker(
-    template_manager: Arc<TemplateManager>,
+    blockasm_handle: Arc<BlockasmHandle>,
     envelope_handle: Arc<EnvelopeHandle>,
     storage: Arc<NodeStorage>,
     fcm_handle: Arc<FcmServiceHandle>,
@@ -43,7 +45,7 @@ pub(crate) async fn duty_executor_worker(
                     }
                     seen_duties.insert(duty_id);
                     handle.spawn(handle_duty(
-                        template_manager.clone(),
+                        blockasm_handle.clone(),
                         envelope_handle.clone(),
                         storage.clone(),
                         fcm_handle.clone(),
@@ -67,7 +69,7 @@ pub(crate) async fn duty_executor_worker(
 
 /// Handles a duty for the sequencer.
 async fn handle_duty(
-    template_manager: Arc<TemplateManager>,
+    blockasm_handle: Arc<BlockasmHandle>,
     envelope_handle: Arc<EnvelopeHandle>,
     storage: Arc<NodeStorage>,
     fcm_handle: Arc<FcmServiceHandle>,
@@ -80,7 +82,7 @@ async fn handle_duty(
     let duty_result = match duty {
         Duty::SignBlock(duty) => {
             handle_sign_block_duty(
-                template_manager,
+                blockasm_handle,
                 storage,
                 fcm_handle,
                 duty,
@@ -90,7 +92,8 @@ async fn handle_duty(
             .await
         }
         Duty::SignCheckpoint(duty) => {
-            handle_sign_checkpoint_duty(envelope_handle, duty, duty_id, &sequencer_key).await
+            handle_sign_checkpoint_duty(envelope_handle, storage, duty, duty_id, &sequencer_key)
+                .await
         }
     };
 
@@ -102,7 +105,7 @@ async fn handle_duty(
 
 /// Handles a block signing duty for the sequencer.
 async fn handle_sign_block_duty(
-    template_manager: Arc<TemplateManager>,
+    blockasm_handle: Arc<BlockasmHandle>,
     storage: Arc<NodeStorage>,
     fcm_handle: Arc<strata_consensus_logic::FcmServiceHandle>,
     duty: BlockSigningDuty,
@@ -115,9 +118,10 @@ async fn handle_sign_block_duty(
     }
 
     let signature = sign_header(duty.template.header(), sequencer_key);
+    let completion = BlockCompletionData::from_signature(signature);
 
-    let block = template_manager
-        .complete_template(duty.template_id(), signature)
+    let block = blockasm_handle
+        .complete_block_template(duty.template_id(), completion)
         .await
         .map_err(|e| anyhow!("failed completing template: {e}"))?;
 
@@ -148,10 +152,26 @@ async fn handle_sign_block_duty(
 /// Handles a checkpoint signing duty for the sequencer.
 async fn handle_sign_checkpoint_duty(
     envelope_handle: Arc<EnvelopeHandle>,
+    storage: Arc<NodeStorage>,
     duty: CheckpointSigningDuty,
     duty_id: Buf32,
     sequencer_key: &Buf32,
 ) -> Result<()> {
+    let epoch = duty.epoch();
+    let checkpoint_db = storage.ol_checkpoint();
+    let Some(mut entry) = checkpoint_db
+        .get_checkpoint_async(epoch)
+        .await
+        .map_err(|e| anyhow!("failed loading checkpoint entry: {e}"))?
+    else {
+        return Err(anyhow!("missing checkpoint entry for epoch {epoch}"));
+    };
+
+    if entry.status != OLCheckpointStatus::Unsigned {
+        debug!(?duty_id, %epoch, "checkpoint already signed, skipping");
+        return Ok(());
+    }
+
     let sig = sign_checkpoint(duty.checkpoint(), sequencer_key);
     let signed_checkpoint = SignedCheckpointPayload::new(duty.checkpoint().clone(), sig);
     let checkpoint_tag = TagData::new(
@@ -165,14 +185,22 @@ async fn handle_sign_checkpoint_duty(
     let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
     let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
 
-    envelope_handle
-        .submit_intent_async(payload_intent)
+    let intent_idx = envelope_handle
+        .submit_intent_async_with_idx(payload_intent)
         .await
-        .map_err(|e| anyhow!("failed to submit checkpoint intent: {e}"))?;
+        .map_err(|e| anyhow!("failed to submit checkpoint intent: {e}"))?
+        .ok_or_else(|| anyhow!("failed to resolve checkpoint intent index for epoch {epoch}"))?;
+
+    entry.status = OLCheckpointStatus::Signed(intent_idx);
+    checkpoint_db
+        .put_checkpoint_async(epoch, entry)
+        .await
+        .map_err(|e| anyhow!("failed persisting signed checkpoint status: {e}"))?;
 
     info!(
         ?duty_id,
-        epoch = duty.epoch(),
+        %epoch,
+        %intent_idx,
         "checkpoint signing complete"
     );
 

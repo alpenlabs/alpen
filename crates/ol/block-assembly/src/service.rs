@@ -56,9 +56,20 @@ where
     }
 
     async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+        // Lazily clean up expired templates on every command.
+        state.state_mut().cleanup_expired_templates();
+
         match input {
             BlockasmCommand::GenerateBlockTemplate { config, completion } => {
                 let result = generate_block_template(state, config.clone()).await;
+                _ = completion.send(result).await;
+            }
+
+            BlockasmCommand::GetBlockTemplate {
+                parent_block_id,
+                completion,
+            } => {
+                let result = get_block_template(state, *parent_block_id);
                 _ = completion.send(result).await;
             }
 
@@ -122,6 +133,16 @@ where
     Ok(full_template)
 }
 
+/// Look up a pending block template by parent block ID.
+fn get_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
+    state: &mut BlockasmServiceState<M, E, S>,
+    parent_block_id: OLBlockId,
+) -> Result<FullBlockTemplate, BlockAssemblyError> {
+    state
+        .state_mut()
+        .get_pending_block_template_by_parent(parent_block_id)
+}
+
 /// Complete a block template with signature.
 ///
 /// The signature is provided by the caller (sequencer) via `BlockCompletionData`. The flow is:
@@ -173,3 +194,76 @@ fn check_completion_data(
 /// Service status for OL block assembly.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct BlockasmServiceStatus;
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Instant};
+
+    use strata_config::SequencerConfig;
+    use strata_test_utils_l2::gen_params;
+
+    use super::*;
+    use crate::{
+        command::create_completion,
+        epoch_sealing::FixedSlotSealing,
+        state::BlockasmServiceState,
+        test_utils::{
+            TEST_BLOCK_TEMPLATE_TTL, TEST_SLOTS_PER_EPOCH, create_test_block_assembly_context,
+            create_test_block_generation_config, create_test_storage, create_test_template,
+        },
+    };
+
+    /// Verifies that `process_input` lazily cleans up expired templates
+    /// before handling the incoming command.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_process_input_cleans_up_expired_templates() {
+        let storage = create_test_storage();
+        let (ctx, _) = create_test_block_assembly_context(storage.clone());
+        let params = gen_params();
+        let epoch_sealing_policy = FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH);
+        let sequencer_config = SequencerConfig::default();
+
+        let mut state = BlockasmServiceState::new(
+            Arc::new(params),
+            sequencer_config,
+            Arc::new(ctx),
+            epoch_sealing_policy,
+        );
+
+        // Insert a template and backdate it to simulate expiration.
+        let template = create_test_template();
+        let template_id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+
+        state.state_mut().insert_template(template_id, template);
+
+        state
+            .state_mut()
+            .pending_templates
+            .get_mut(&template_id)
+            .unwrap()
+            .created_at = Instant::now() - TEST_BLOCK_TEMPLATE_TTL;
+
+        // Send any command — the lazy cleanup in process_input runs before handling it.
+        let config = create_test_block_generation_config();
+        let (completion, _rx) = create_completion();
+        let cmd = BlockasmCommand::GenerateBlockTemplate { config, completion };
+        BlockasmService::<_, _, _>::process_input(&mut state, &cmd)
+            .await
+            .unwrap();
+
+        // Verify expired template was removed from both maps.
+        assert!(matches!(
+            state
+                .state_mut()
+                .get_pending_block_template(template_id),
+            Err(BlockAssemblyError::UnknownTemplateId(id)) if id == template_id
+        ));
+        assert!(matches!(
+            state
+                .state_mut()
+                .get_pending_block_template_by_parent(parent),
+            Err(BlockAssemblyError::NoPendingTemplateForParent(p)) if p == parent
+        ));
+    }
+}

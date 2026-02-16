@@ -23,6 +23,7 @@ strata-snark-acct-types.workspace = true
 
 alloy-eips.workspace = true
 alloy-primitives.workspace = true
+alloy-rlp.workspace = true
 alloy-rpc-types-engine.workspace = true
 async-trait.workspace = true
 bincode.workspace = true

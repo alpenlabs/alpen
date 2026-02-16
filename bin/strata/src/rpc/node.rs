@@ -166,8 +166,8 @@ impl OLClientRpcServer for OLRpcServer {
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus> {
         let chain_sync_status = self
             .status_channel
-            .get_chain_sync_status()
-            .ok_or_else(|| internal_error("Chain sync status not available"))?;
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?;
 
         let latest = chain_sync_status.tip;
         let confirmed = chain_sync_status.prev_epoch;
@@ -189,7 +189,7 @@ impl OLClientRpcServer for OLRpcServer {
         // Get finalized slot - blocks at or before this are guaranteed to be on canonical chain
         let finalized_slot = self
             .status_channel
-            .get_chain_sync_status()
+            .get_ol_sync_status()
             .map(|css| css.finalized_epoch.last_slot())
             .unwrap_or(0);
 
@@ -308,6 +308,27 @@ impl OLClientRpcServer for OLRpcServer {
         Ok(summaries)
     }
 
+    async fn get_account_genesis_epoch_commitment(
+        &self,
+        account_id: AccountId,
+    ) -> RpcResult<EpochCommitment> {
+        let epoch = self
+            .storage
+            .account_genesis()
+            .get_account_creation_epoch_blocking(account_id)
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!("No creation epoch found for account {account_id}"))
+            })?;
+
+        self.storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(epoch as u64)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
+    }
+
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
         // Convert RPC transaction to mempool transaction
         let mempool_tx: OLMempoolTransaction = tx
@@ -334,22 +355,22 @@ impl OLClientRpcServer for OLRpcServer {
             OLBlockOrTag::Latest => {
                 let chain_sync_status = self
                     .status_channel
-                    .get_chain_sync_status()
-                    .ok_or_else(|| internal_error("Chain sync status not available"))?;
+                    .get_ol_sync_status()
+                    .ok_or_else(|| internal_error("OL sync status not available"))?;
                 chain_sync_status.tip
             }
             OLBlockOrTag::Confirmed => {
                 let chain_sync_status = self
                     .status_channel
-                    .get_chain_sync_status()
-                    .ok_or_else(|| internal_error("Chain sync status not available"))?;
+                    .get_ol_sync_status()
+                    .ok_or_else(|| internal_error("OL sync status not available"))?;
                 chain_sync_status.prev_epoch.to_block_commitment()
             }
             OLBlockOrTag::Finalized => {
                 let chain_sync_status = self
                     .status_channel
-                    .get_chain_sync_status()
-                    .ok_or_else(|| internal_error("Chain sync status not available"))?;
+                    .get_ol_sync_status()
+                    .ok_or_else(|| internal_error("OL sync status not available"))?;
                 chain_sync_status.finalized_epoch.to_block_commitment()
             }
             OLBlockOrTag::OLBlockId(block_id) => {

@@ -3,7 +3,7 @@ use alpen_ee_config::AlpenEeParams;
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage};
-use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment};
+use strata_identifiers::{Buf32, OLBlockCommitment};
 
 pub fn build_genesis_ee_account_state(params: &AlpenEeParams) -> EeAccountState {
     EeAccountState::new(
@@ -30,11 +30,12 @@ pub fn build_genesis_exec_block_package(params: &AlpenEeParams) -> ExecBlockPack
     )
 }
 
-pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, ExecBlockPayload) {
+pub fn build_genesis_exec_block(
+    params: &AlpenEeParams,
+    genesis_ol_block: OLBlockCommitment,
+) -> (ExecBlockRecord, ExecBlockPayload) {
     let genesis_package = build_genesis_exec_block_package(params);
     let genesis_account_state = build_genesis_ee_account_state(params);
-    let genesis_ol_block =
-        OLBlockCommitment::new(params.genesis_ol_slot(), params.genesis_ol_blockid());
 
     // These fields are for evm genesis block.
     let genesis_blocknum = params.genesis_blocknum();
@@ -58,12 +59,4 @@ pub fn build_genesis_exec_block(params: &AlpenEeParams) -> (ExecBlockRecord, Exe
     let payload = ExecBlockPayload::from_bytes(Vec::new());
 
     (block, payload)
-}
-
-pub fn build_ee_genesis_ol_epoch(params: &AlpenEeParams) -> EpochCommitment {
-    EpochCommitment::new(
-        params.genesis_ol_epoch(),
-        params.genesis_ol_slot(),
-        params.genesis_ol_blockid(),
-    )
 }

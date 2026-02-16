@@ -83,7 +83,7 @@ where
     TStorage: Storage,
     TOLClient: OLClient,
 {
-    let genesis_epoch = ctx.params.genesis_ol_epoch();
+    let genesis_epoch = ctx.genesis_epoch;
 
     let ol_status = chain_status_checked(ctx.ol_client.as_ref()).await?;
 
@@ -122,7 +122,6 @@ where
 #[cfg(test)]
 mod tests {
     use alpen_ee_common::{MockOLClient, MockStorage, OLBlockOrEpoch, OLClientError, StorageError};
-    use strata_identifiers::{Buf32, OLBlockId};
 
     use super::*;
     use crate::test_utils::*;
@@ -347,27 +346,11 @@ mod tests {
     mod handle_reorg_tests {
         use std::sync::Arc;
 
-        use alloy_primitives::B256;
         use alpen_ee_common::{ConsensusHeads, OLFinalizedStatus};
-        use alpen_ee_config::AlpenEeParams;
-        use strata_acct_types::{AccountId, Hash};
+        use strata_acct_types::Hash;
         use tokio::sync::watch;
 
         use super::*;
-
-        fn make_test_params(genesis_epoch: u32) -> AlpenEeParams {
-            let mut bytes = [0u8; 32];
-            bytes[0] = genesis_epoch as u8;
-            AlpenEeParams::new(
-                AccountId::new([0; 32]),
-                B256::ZERO,
-                B256::ZERO,
-                0,
-                genesis_epoch,
-                0,
-                OLBlockId::from(Buf32::new(bytes)),
-            )
-        }
 
         fn make_test_ctx(
             storage: MockStorage,
@@ -383,12 +366,10 @@ mod tests {
                 finalized: Hash::new([0; 32]),
             });
 
-            let params = make_test_params(genesis_epoch);
-
             OLTrackerCtx {
                 storage: Arc::new(storage),
                 ol_client: Arc::new(ol_client),
-                params: Arc::new(params),
+                genesis_epoch,
                 ol_status_tx,
                 consensus_tx,
                 max_epochs_fetch: 10,

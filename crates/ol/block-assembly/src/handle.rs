@@ -62,6 +62,19 @@ impl BlockasmHandle {
         self.send_command(command, rx).await?
     }
 
+    /// Look up a pending block template by parent block ID.
+    pub async fn get_block_template(
+        &self,
+        parent_block_id: OLBlockId,
+    ) -> BlockAssemblyResult<FullBlockTemplate> {
+        let (completion, rx) = create_completion();
+        let command = BlockasmCommand::GetBlockTemplate {
+            parent_block_id,
+            completion,
+        };
+        self.send_command(command, rx).await?
+    }
+
     /// Complete specified template with completion data and return the final block.
     pub async fn complete_block_template(
         &self,

@@ -64,7 +64,8 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
     }
 }
 
-impl<'base, S: IStateAccessor> IStateAccessor for WriteTrackingState<'base, S>
+impl<'base, S: IStateAccessor + Clone + IStateBatchApplicable> IStateAccessor
+    for WriteTrackingState<'base, S>
 where
     S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
 {
@@ -194,12 +195,14 @@ where
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // TODO implement with new SSZ state summary type
-        Err(AcctError::Unsupported)
+        let mut materialized = (*self.base).clone();
+        materialized.apply_write_batch(self.batch.clone())?;
+        materialized.compute_state_root()
     }
 }
 
-impl<'base, S: IStateAccessor> IStateBatchApplicable for WriteTrackingState<'base, S>
+impl<'base, S: IStateAccessor + Clone + IStateBatchApplicable> IStateBatchApplicable
+    for WriteTrackingState<'base, S>
 where
     S::AccountState: Clone + IAccountStateConstructible + IAccountStateMut,
 {
@@ -429,16 +432,40 @@ mod tests {
     }
 
     // =========================================================================
-    // State root test
+    // State root tests
     // =========================================================================
 
     #[test]
-    fn test_compute_state_root_returns_unsupported() {
+    fn test_compute_state_root_no_writes() {
         let base_state = OLState::new_genesis();
         let tracking = WriteTrackingState::new_from_state(&base_state);
 
         let result = tracking.compute_state_root();
-        assert!(matches!(result, Err(AcctError::Unsupported)));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), base_state.compute_state_root().unwrap());
+    }
+
+    #[test]
+    fn test_compute_state_root_with_writes() {
+        let base_state = OLState::new_genesis();
+        let mut tracking = WriteTrackingState::new_from_state(&base_state);
+
+        tracking.set_cur_slot(42);
+
+        let root = tracking
+            .compute_state_root()
+            .expect("state root should succeed");
+
+        // Should differ from the base state root
+        let base_root = base_state.compute_state_root().unwrap();
+        assert_ne!(root, base_root);
+
+        // Verify it matches what we'd get by applying the batch manually
+        let mut expected_state = base_state.clone();
+        expected_state
+            .apply_write_batch(tracking.into_batch())
+            .unwrap();
+        assert_eq!(root, expected_state.compute_state_root().unwrap());
     }
 
     // =========================================================================
