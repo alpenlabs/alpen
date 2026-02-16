@@ -19,6 +19,17 @@ pub enum AdministrationError {
     )]
     InvalidSeqno { payload_seqno: u64, last_seqno: u64 },
 
+    /// The gap between payload seqno and last seqno exceeds the configured maximum.
+    #[error(
+        "seqno gap too large: payload seqno {payload_seqno} exceeds last seqno {last_seqno} by \
+         more than max gap {max_gap}"
+    )]
+    SeqnoGapTooLarge {
+        payload_seqno: u64,
+        last_seqno: u64,
+        max_gap: u8,
+    },
+
     /// Indicates a threshold signature error (configuration or signature validation).
     #[error(transparent)]
     ThresholdSignature(#[from] ThresholdSignatureError),

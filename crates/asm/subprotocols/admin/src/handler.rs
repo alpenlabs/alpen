@@ -102,6 +102,7 @@ pub(crate) fn handle_action(
     payload: SignedPayload,
     current_height: u64,
     relayer: &mut impl MsgRelayer,
+    max_seqno_gap: u8,
 ) -> Result<(), AdministrationError> {
     // Determine the required role based on the action type
     let role = match &payload.action {
@@ -120,7 +121,7 @@ pub(crate) fn handle_action(
     let authority = state
         .authority(role)
         .ok_or(AdministrationError::UnknownRole)?;
-    authority.verify_action_signature(&payload)?;
+    authority.verify_action_signature(&payload, max_seqno_gap)?;
 
     // Process the action based on its type
     match payload.action {
@@ -265,6 +266,7 @@ mod tests {
             strata_administrator,
             strata_sequencer_manager,
             confirmation_depth: 2016,
+            max_seqno_gap: 10,
         };
 
         (config, strata_admin_sks, strata_seq_manager_sks)
@@ -315,7 +317,14 @@ mod tests {
             let sighash = action.compute_sighash(seqno);
             let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
             let payload = SignedPayload::new(seqno, action, sig_set);
-            handle_action(&mut state, payload, current_height, &mut relayer).unwrap();
+            handle_action(
+                &mut state,
+                payload,
+                current_height,
+                &mut relayer,
+                params.max_seqno_gap,
+            )
+            .unwrap();
 
             // Verify state changes after processing
             let new_last_seqno = state
@@ -368,7 +377,13 @@ mod tests {
         let sighash = action.compute_sighash(valid_seqno);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
         let payload = SignedPayload::new(valid_seqno, action, sig_set);
-        let res = handle_action(&mut state, payload, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
         assert!(res.is_ok());
 
         // Authority seqno is now 1. Try replaying with seqno 1 (<= current).
@@ -377,7 +392,13 @@ mod tests {
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
         let payload = SignedPayload::new(1, action, sig_set);
-        let res = handle_action(&mut state, payload, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
 
         assert!(res.is_err());
         assert!(matches!(
@@ -393,7 +414,13 @@ mod tests {
         let sighash = action.compute_sighash(0);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
         let payload = SignedPayload::new(0, action, sig_set);
-        let res = handle_action(&mut state, payload, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
         assert!(matches!(res, Err(AdministrationError::InvalidSeqno { .. })));
     }
 
@@ -434,7 +461,14 @@ mod tests {
             let sig_set = create_signature_set(&seq_manager_sks, &signer_indices, sighash);
 
             let payload = SignedPayload::new(payload_seqno, action, sig_set);
-            handle_action(&mut state, payload, current_height, &mut relayer).unwrap();
+            handle_action(
+                &mut state,
+                payload,
+                current_height,
+                &mut relayer,
+                params.max_seqno_gap,
+            )
+            .unwrap();
 
             // Verify state changes after processing
             let new_last_seqno = state
@@ -527,7 +561,14 @@ mod tests {
             let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
             let payload = SignedPayload::new(payload_seqno, update_action, sig_set);
-            handle_action(&mut state, payload, current_height, &mut relayer).unwrap();
+            handle_action(
+                &mut state,
+                payload,
+                current_height,
+                &mut relayer,
+                params.max_seqno_gap,
+            )
+            .unwrap();
         }
 
         // Then create a random order in which the actions are cancelled.
@@ -548,7 +589,14 @@ mod tests {
             let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
             let payload = SignedPayload::new(payload_seqno, cancel_action, sig_set);
-            handle_action(&mut state, payload, current_height, &mut relayer).unwrap();
+            handle_action(
+                &mut state,
+                payload,
+                current_height,
+                &mut relayer,
+                params.max_seqno_gap,
+            )
+            .unwrap();
 
             // Verify state changes after cancellation
             let new_last_seqno = state.authority(authorized_role).unwrap().last_seqno();
@@ -583,7 +631,13 @@ mod tests {
         let cancel_action = MultisigAction::Cancel(cancel_action);
 
         let payload = SignedPayload::new(arb.generate(), cancel_action, sig_set);
-        let res = handle_action(&mut state, payload, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
 
         assert!(matches!(res, Err(AdministrationError::UnknownAction(_))));
     }
@@ -617,7 +671,14 @@ mod tests {
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
         let payload = SignedPayload::new(update_seqno, update_action, sig_set);
-        handle_action(&mut state, payload, current_height, &mut relayer).unwrap();
+        handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        )
+        .unwrap();
 
         // Cancel the update action (authority seqno is now 1, use seqno 2)
         let cancel_action = MultisigAction::Cancel(CancelAction::new(update_id));
@@ -626,7 +687,13 @@ mod tests {
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
 
         let payload = SignedPayload::new(cancel_seqno, cancel_action, sig_set);
-        let res = handle_action(&mut state, payload, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
 
         assert!(res.is_ok());
 
@@ -636,8 +703,96 @@ mod tests {
         let sighash = cancel_action.compute_sighash(retry_seqno);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
         let payload = SignedPayload::new(retry_seqno, cancel_action, sig_set);
-        let res = handle_action(&mut state, payload, current_height, &mut relayer);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
         assert!(res.is_err());
         assert!(matches!(res, Err(AdministrationError::UnknownAction(_))));
+    }
+
+    /// Test that consecutive updates with a sequence number gap within the allowed
+    /// `max_seqno_gap` are accepted.
+    #[test]
+    fn test_seqno_gap_within_limit_succeeds() {
+        let (params, admin_sks, _) = create_test_params();
+        let mut state = AdministrationSubprotoState::new(&params);
+        let mut relayer = MockRelayer::<CheckpointIncomingMsg>::new();
+        let current_height = 1000;
+        let signer_indices = [0u8, 2u8];
+
+        let updates = get_strata_administrator_update_actions(2);
+
+        // First action at seqno 1 (last_seqno is 0)
+        let action = MultisigAction::Update(updates[0].clone());
+        let sighash = action.compute_sighash(1);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
+        let payload = SignedPayload::new(1, action, sig_set);
+        handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        )
+        .unwrap();
+
+        // Second action at seqno 11 (last_seqno is 1, gap = 10 = max_seqno_gap)
+        let gap_seqno = 1 + params.max_seqno_gap as u64;
+        let action = MultisigAction::Update(updates[1].clone());
+        let sighash = action.compute_sighash(gap_seqno);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
+        let payload = SignedPayload::new(gap_seqno, action, sig_set);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
+
+        assert!(
+            res.is_ok(),
+            "seqno gap of exactly max_seqno_gap should succeed"
+        );
+    }
+
+    /// Test that a sequence number gap exceeding `max_seqno_gap` is rejected.
+    #[test]
+    fn test_seqno_gap_exceeds_limit_fails() {
+        let (params, admin_sks, _) = create_test_params();
+        let mut state = AdministrationSubprotoState::new(&params);
+        let mut relayer = MockRelayer::<CheckpointIncomingMsg>::new();
+        let current_height = 1000;
+        let signer_indices = [0u8, 2u8];
+
+        let update = get_strata_administrator_update_actions(1)[0].clone();
+
+        // Try action at seqno 11 (last_seqno is 0, gap = 11 > max_seqno_gap of 10)
+        let too_far_seqno = params.max_seqno_gap as u64 + 1;
+        let action = MultisigAction::Update(update);
+        let sighash = action.compute_sighash(too_far_seqno);
+        let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
+        let payload = SignedPayload::new(too_far_seqno, action, sig_set);
+        let res = handle_action(
+            &mut state,
+            payload,
+            current_height,
+            &mut relayer,
+            params.max_seqno_gap,
+        );
+
+        assert!(res.is_err());
+        assert!(matches!(
+            res,
+            Err(AdministrationError::SeqnoGapTooLarge {
+                payload_seqno: 11,
+                last_seqno: 0,
+                max_gap: 10,
+            })
+        ));
     }
 }

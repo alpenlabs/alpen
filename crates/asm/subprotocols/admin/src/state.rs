@@ -161,6 +161,7 @@ mod tests {
             strata_administrator,
             strata_sequencer_manager,
             confirmation_depth: 2016,
+            max_seqno_gap: 10,
         }
     }
 

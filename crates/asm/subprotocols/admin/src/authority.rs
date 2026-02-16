@@ -54,11 +54,20 @@ impl MultisigAuthority {
     pub fn verify_action_signature(
         &self,
         payload: &SignedPayload,
+        max_seqno_gap: u8,
     ) -> Result<(), AdministrationError> {
         if payload.seqno <= self.last_seqno {
             return Err(AdministrationError::InvalidSeqno {
                 payload_seqno: payload.seqno,
                 last_seqno: self.last_seqno,
+            });
+        }
+
+        if payload.seqno > self.last_seqno + max_seqno_gap as u64 {
+            return Err(AdministrationError::SeqnoGapTooLarge {
+                payload_seqno: payload.seqno,
+                last_seqno: self.last_seqno,
+                max_gap: max_seqno_gap,
             });
         }
         // Compute the msg to sign by combining UpdateAction with sequence no
