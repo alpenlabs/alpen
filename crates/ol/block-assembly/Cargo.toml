@@ -41,6 +41,7 @@ strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-types.workspace = true
 strata-db-store-sled.workspace = true
+strata-ol-params.workspace = true
 strata-predicate.workspace = true
 strata-state.workspace = true
 strata-test-utils-l2.workspace = true

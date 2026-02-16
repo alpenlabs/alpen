@@ -17,15 +17,16 @@ use crate::{
     context::BlockInfo,
     errors::ExecError,
     test_utils::{
-        ManifestMmrTracker, create_empty_account, execute_block_with_outputs, execute_tx_in_block,
-        get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
-        setup_genesis_with_snark_account, test_l1_block_id,
+        ManifestMmrTracker, create_empty_account, create_test_genesis_state,
+        execute_block_with_outputs, execute_tx_in_block, get_test_recipient_account_id,
+        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
+        test_l1_block_id,
     },
 };
 
 #[test]
 fn test_snark_update_with_valid_ledger_reference() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
@@ -138,7 +139,7 @@ fn test_snark_update_with_valid_ledger_reference() {
 
 #[test]
 fn test_snark_update_with_invalid_ledger_reference() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
 
     // Setup: genesis with snark account

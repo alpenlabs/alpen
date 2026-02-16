@@ -503,7 +503,6 @@ mod tests {
     use strata_ledger_types::{
         AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData,
     };
-    use strata_ol_state_types::OLState;
     use strata_snark_acct_types::Seqno;
 
     use super::*;
@@ -515,7 +514,7 @@ mod tests {
 
     #[test]
     fn test_passthrough_slot() {
-        let state = OLState::new_genesis();
+        let state = create_test_genesis_state();
         let mut indexer = IndexerState::new(state);
 
         // Test initial slot
@@ -532,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_passthrough_epoch() {
-        let state = OLState::new_genesis();
+        let state = create_test_genesis_state();
         let mut indexer = IndexerState::new(state);
 
         // Test initial epoch
@@ -574,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_passthrough_create_account() {
-        let state = OLState::new_genesis();
+        let state = create_test_genesis_state();
         let mut indexer = IndexerState::new(state);
 
         let account_id = test_account_id(1);
@@ -675,7 +674,7 @@ mod tests {
         let account_id_2 = test_account_id(2);
 
         // Setup state with two snark accounts
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let snark_state_1 = test_snark_account_state(1);
         let snark_state_2 = test_snark_account_state(2);
         state
@@ -736,7 +735,7 @@ mod tests {
 
     #[test]
     fn test_tracks_manifest_writes() {
-        let state = OLState::new_genesis();
+        let state = create_test_genesis_state();
         let mut indexer = IndexerState::new(state);
 
         // Create a test manifest
@@ -1006,7 +1005,7 @@ mod tests {
 
     #[test]
     fn test_writes_empty_initially() {
-        let state = OLState::new_genesis();
+        let state = create_test_genesis_state();
         let indexer = IndexerState::new(state);
 
         assert!(indexer.writes().is_empty());
@@ -1162,7 +1161,7 @@ mod tests {
         let account_id_2 = test_account_id(2);
 
         // Setup state with two snark accounts
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let snark_state_1 = test_snark_account_state(1);
         let snark_state_2 = test_snark_account_state(2);
         state

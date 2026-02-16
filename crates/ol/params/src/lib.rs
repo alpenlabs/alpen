@@ -8,10 +8,10 @@ mod header;
 
 use std::collections::BTreeMap;
 
-pub use account::AccountParams;
+pub use account::GenesisSnarkAccountData;
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
-pub use header::HeaderParams;
+pub use header::GenesisHeaderParams;
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 
@@ -24,11 +24,11 @@ use strata_identifiers::{AccountId, EpochCommitment, L1BlockCommitment};
 pub struct OLParams {
     /// Header parameters for the parent of the genesis block.
     #[serde(default)]
-    pub header: HeaderParams,
+    pub header: GenesisHeaderParams,
 
     /// Genesis accounts keyed by account ID.
     #[serde(default)]
-    pub accounts: BTreeMap<AccountId, AccountParams>,
+    pub accounts: BTreeMap<AccountId, GenesisSnarkAccountData>,
 
     /// Last L1 block known at genesis time, treated as the initial verified L1 tip.
     #[serde(default)]
@@ -36,6 +36,15 @@ pub struct OLParams {
 }
 
 impl OLParams {
+    /// Creates an [`OLParams`] with empty accounts and default header params.
+    pub fn new_empty(last_l1_block: L1BlockCommitment) -> Self {
+        Self {
+            header: GenesisHeaderParams::default(),
+            accounts: BTreeMap::new(),
+            last_l1_block,
+        }
+    }
+
     /// Builds an [`EpochCommitment`] from the genesis header parameters.
     ///
     /// The genesis header's epoch, slot, and parent block ID are treated as a
@@ -65,7 +74,7 @@ mod tests {
 
         accounts.insert(
             id1,
-            AccountParams {
+            GenesisSnarkAccountData {
                 predicate: PredicateKey::always_accept(),
                 inner_state: Buf32::zero(),
                 balance: BitcoinAmount::from_sat(1000),
@@ -74,7 +83,7 @@ mod tests {
 
         accounts.insert(
             id2,
-            AccountParams {
+            GenesisSnarkAccountData {
                 predicate: PredicateKey::always_accept(),
                 inner_state: Buf32::from([0xab; 32]),
                 balance: BitcoinAmount::ZERO,

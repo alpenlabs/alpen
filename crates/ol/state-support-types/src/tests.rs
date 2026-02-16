@@ -18,7 +18,7 @@ use strata_ledger_types::{
 };
 use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
-use strata_ol_state_types::{OLSnarkAccountState, OLState, WriteBatch};
+use strata_ol_state_types::{OLSnarkAccountState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::{MessageEntry, Seqno};
 
@@ -97,7 +97,7 @@ fn test_combined_inbox_message_tracking() {
 /// Test manifest tracking through combined layers.
 #[test]
 fn test_combined_manifest_tracking() {
-    let base_state = OLState::new_genesis();
+    let base_state = create_test_genesis_state();
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
@@ -151,7 +151,7 @@ fn test_combined_balance_modification() {
 /// Test account creation through combined layers.
 #[test]
 fn test_combined_account_creation() {
-    let base_state = OLState::new_genesis();
+    let base_state = create_test_genesis_state();
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
@@ -181,7 +181,7 @@ fn test_combined_account_creation() {
 /// Test global state modifications through combined layers.
 #[test]
 fn test_combined_global_state_modification() {
-    let base_state = OLState::new_genesis();
+    let base_state = create_test_genesis_state();
     let batch = WriteBatch::new_from_state(&base_state);
     let tracking = WriteTrackingState::new(&base_state, batch);
     let mut indexer = IndexerState::new(tracking);
@@ -342,7 +342,7 @@ fn test_write_tracking_over_batch_diff_update_account() {
 /// Test that create_new_account works through WriteTrackingState over BatchDiffState.
 #[test]
 fn test_write_tracking_over_batch_diff_create_account() {
-    let base_state = OLState::new_genesis();
+    let base_state = create_test_genesis_state();
 
     // Create BatchDiffState with empty batches
     let pending_batches: Vec<WriteBatch<_>> = vec![];
@@ -375,7 +375,7 @@ fn test_write_tracking_over_batch_diff_create_account() {
 /// Test that global/epochal setters work through WriteTrackingState over BatchDiffState.
 #[test]
 fn test_write_tracking_over_batch_diff_global_epochal_setters() {
-    let base_state = OLState::new_genesis();
+    let base_state = create_test_genesis_state();
 
     // Create BatchDiffState with a pending batch that has slot=50, epoch=3
     let mut pending_batch = WriteBatch::new_from_state(&base_state);
@@ -796,7 +796,7 @@ fn test_da_blob_deterministic() {
 
 #[test]
 fn test_account_diffs_ordered_by_serial() {
-    let mut state = OLState::new_genesis();
+    let mut state = create_test_genesis_state();
     let account_id_1 = test_account_id(1);
     let account_id_2 = test_account_id(2);
 
@@ -903,7 +903,7 @@ fn test_new_account_post_state_encoded() {
 
 #[test]
 fn test_new_account_vk_persisted_from_ol_state() {
-    let mut da_state = DaAccumulatingState::new(OLState::new_genesis());
+    let mut da_state = DaAccumulatingState::new(create_test_genesis_state());
     let account_id = test_account_id(10);
     let snark_state = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(4));
     let new_acct = NewAccountData::new(
@@ -1120,7 +1120,7 @@ fn test_expected_first_serial_mismatch() {
 /// Test reading account from pending batch through WriteTrackingState over BatchDiffState.
 #[test]
 fn test_write_tracking_over_batch_diff_reads_from_pending_batch() {
-    let base_state = OLState::new_genesis();
+    let base_state = create_test_genesis_state();
 
     // Create a pending batch with a new account
     let account_id_in_batch = test_account_id(1);
@@ -1154,7 +1154,7 @@ fn test_write_tracking_over_batch_diff_reads_from_pending_batch() {
 /// Test that WriteTrackingState over BatchDiffState can update an account from the pending batch.
 #[test]
 fn test_write_tracking_over_batch_diff_update_account_from_pending_batch() {
-    let base_state = OLState::new_genesis();
+    let base_state = create_test_genesis_state();
 
     // Create a pending batch with a new account
     let account_id = test_account_id(1);

@@ -5,7 +5,7 @@
 macro_rules! impl_opaque_thin_wrapper {
     ($target:ty => $inner:ty) => {
         impl $target {
-            pub fn new(v: $inner) -> Self {
+            pub const fn new(v: $inner) -> Self {
                 Self(v)
             }
 

@@ -1,13 +1,10 @@
 //! Toplevel state.
 
-use bitcoin::absolute;
 use ssz::Encode;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_crypto::hash::raw;
-use strata_identifiers::{
-    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, Slot,
-};
+use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_merkle::CompactMmr64;
 use strata_ol_params::OLParams;
@@ -20,24 +17,6 @@ use crate::{
 };
 
 impl OLState {
-    /// Create a new genesis state for testing.
-    pub fn new_genesis() -> Self {
-        Self {
-            epoch: EpochalState::new(
-                BitcoinAmount::from(0),
-                0,
-                L1BlockCommitment::new(
-                    absolute::Height::from_consensus(0).unwrap(),
-                    L1BlockId::from(Buf32::zero()),
-                ),
-                EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
-                Mmr64::from_generic(&CompactMmr64::new(64)),
-            ),
-            global: GlobalState::new(0),
-            ledger: TsnlLedgerAccountsTable::new_empty(),
-        }
-    }
-
     /// Creates initial OL state from genesis parameters.
     pub fn from_genesis_params(params: &OLParams) -> AcctResult<Self> {
         let checkpointed_epoch = params.checkpointed_epoch();
@@ -59,24 +38,6 @@ impl OLState {
             global,
             ledger,
         })
-    }
-
-    /// Create a state with specified epoch and slot for testing.
-    pub fn new_at(epoch: Epoch, slot: Slot) -> Self {
-        Self {
-            epoch: EpochalState::new(
-                BitcoinAmount::from(0),
-                epoch,
-                L1BlockCommitment::new(
-                    absolute::Height::from_consensus(0).unwrap(),
-                    L1BlockId::from(Buf32::zero()),
-                ),
-                EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::zero())),
-                Mmr64::from_generic(&CompactMmr64::new(64)),
-            ),
-            global: GlobalState::new(slot),
-            ledger: TsnlLedgerAccountsTable::new_empty(),
-        }
     }
 
     /// Checks that a batch can be applied safely.
@@ -293,7 +254,7 @@ mod tests {
     use strata_predicate::PredicateKey;
 
     use super::*;
-    use crate::{OLAccountTypeState, OLSnarkAccountState};
+    use crate::{OLAccountTypeState, OLSnarkAccountState, test_utils::create_test_genesis_state};
 
     fn test_account_id(seed: u8) -> AccountId {
         let mut bytes = [0u8; 32];
@@ -303,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_apply_batch_updates_global_state() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let mut batch = WriteBatch::new_from_state(&state);
 
         // Modify slot in batch.
@@ -316,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_apply_batch_updates_epochal_state() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let mut batch = WriteBatch::new_from_state(&state);
 
         // Modify epoch in batch.
@@ -329,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_apply_batch_creates_new_account() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let account_id = test_account_id(1);
         let mut batch = WriteBatch::new_from_state(&state);
 
@@ -357,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_apply_batch_updates_existing_account() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let account_id = test_account_id(1);
 
         // Create an account directly in state.
@@ -392,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_apply_batch_multiple_changes() {
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let account_id_1 = test_account_id(1);
         let account_id_2 = test_account_id(2);
 
@@ -447,7 +408,7 @@ mod tests {
     fn test_apply_batch_creates_and_updates_accounts() {
         // Actually now that I think about it, this test is kinda a duplicate.
 
-        let mut state = OLState::new_genesis();
+        let mut state = create_test_genesis_state();
         let existing_id = test_account_id(1);
         let new_id = test_account_id(2);
 
