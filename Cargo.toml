@@ -172,8 +172,6 @@ alpen-ee-exec-chain = { path = "crates/alpen-ee/exec-chain" }
 alpen-ee-genesis = { path = "crates/alpen-ee/genesis" }
 alpen-ee-ol-tracker = { path = "crates/alpen-ee/ol-tracker" }
 alpen-ee-sequencer = { path = "crates/alpen-ee/sequencer" }
-strata-open-rpc = { path = "crates/rpc/open-rpc" }
-strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
 alpen-reth-db = { path = "crates/reth/db" }
 alpen-reth-evm = { path = "crates/reth/evm" }
 alpen-reth-exex = { path = "crates/reth/exex" }
@@ -252,6 +250,8 @@ strata-ol-sequencer = { path = "crates/ol/sequencer" }
 strata-ol-state-support-types = { path = "crates/ol/state-support-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-stf = { path = "crates/ol/stf" }
+strata-open-rpc = { path = "crates/rpc/open-rpc" }
+strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
 strata-paas = { path = "crates/paas" }
 strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
