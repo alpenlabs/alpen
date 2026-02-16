@@ -11,11 +11,7 @@
 
 use std::collections::{btree_map::Entry::Occupied, BTreeMap};
 
-use schemars::{
-    r#gen::{SchemaGenerator, SchemaSettings},
-    schema::SchemaObject,
-    JsonSchema,
-};
+use schemars::{generate::SchemaSettings, JsonSchema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -121,7 +117,7 @@ pub struct ContentDescriptor {
     description: Option<String>,
     #[serde(skip_serializing_if = "default")]
     required: bool,
-    schema: SchemaObject,
+    schema: Value,
     #[serde(skip_serializing_if = "default")]
     deprecated: bool,
 }
@@ -249,7 +245,7 @@ impl Default for RpcModuleDocBuilder {
     fn default() -> Self {
         let schema_generator = SchemaSettings::default()
             .with(|s| {
-                s.definitions_path = "#/components/schemas/".to_string();
+                s.definitions_path = "#/components/schemas/".to_string().into();
             })
             .into_generator();
 
@@ -269,11 +265,9 @@ impl RpcModuleDocBuilder {
                 content_descriptors: self.content_descriptors,
                 schemas: self
                     .schema_generator
-                    .root_schema_for::<u8>()
-                    .definitions
+                    .take_definitions(true)
                     .into_iter()
-                    .map(|(name, schema)| (name, schema.into_object()))
-                    .collect::<BTreeMap<_, _>>(),
+                    .collect(),
             },
         }
     }
@@ -345,7 +339,7 @@ impl RpcModuleDocBuilder {
         description: Option<String>,
         required: bool,
     ) -> ContentDescriptor {
-        let schema = self.schema_generator.subschema_for::<T>().into_object();
+        let schema: Value = self.schema_generator.subschema_for::<T>().into();
         ContentDescriptor {
             name: name.replace(' ', ""),
             summary,
@@ -363,5 +357,5 @@ struct Components {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     content_descriptors: BTreeMap<String, ContentDescriptor>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    schemas: BTreeMap<String, SchemaObject>,
+    schemas: BTreeMap<String, Value>,
 }

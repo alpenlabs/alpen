@@ -7,6 +7,6 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-schemars = { version = "0.8", features = ["impl_json_schema"] }
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
