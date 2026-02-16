@@ -7,6 +7,7 @@
 pub mod asm_tests;
 pub mod chain_state_tests;
 pub mod checkpoint_tests;
+pub mod chunked_envelope_tests;
 pub mod client_state_tests;
 pub mod l1_broadcast_tests;
 pub mod l1_tests;

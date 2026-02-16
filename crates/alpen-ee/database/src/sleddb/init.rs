@@ -1,26 +1,95 @@
 use std::{fs, path::Path, sync::Arc};
 
 use eyre::{eyre, Context, Result};
-use strata_db_store_sled::SledDbConfig;
+use strata_db_store_sled::{
+    broadcaster::db::L1BroadcastDBSled, chunked_envelope::L1ChunkedEnvelopeDBSled, SledDbConfig,
+};
+/// Re-export ops types for callers.
+pub use strata_storage::ops::{
+    chunked_envelope::ChunkedEnvelopeOps, l1tx_broadcast::BroadcastDbOps,
+};
+use strata_storage::ops::{
+    chunked_envelope::Context as ChunkedEnvelopeContext,
+    l1tx_broadcast::Context as BroadcastContext,
+};
+use threadpool::ThreadPool;
 use typed_sled::SledDb;
 
-use crate::sleddb::EeNodeDBSled;
+use crate::{sleddb::EeNodeDBSled, storage::EeNodeStorage};
 
-/// Initialize database based on configured features
-pub(crate) fn init_db(datadir: &Path, db_retry_count: u16) -> Result<Arc<EeNodeDBSled>> {
+/// Container for all EE database instances.
+///
+/// Opens a single sled instance and creates all typed database trees from it.
+/// Callers wrap individual DBs in ops/managers/threadpools as needed.
+#[expect(
+    missing_debug_implementations,
+    reason = "inner DB types from define_sled_database! macro don't derive Debug"
+)]
+pub struct EeDatabases {
+    pub(crate) ee_node_db: Arc<EeNodeDBSled>,
+    /// L1 broadcast transaction database.
+    pub broadcast_db: Arc<L1BroadcastDBSled>,
+    /// Chunked envelope database.
+    pub chunked_envelope_db: Arc<L1ChunkedEnvelopeDBSled>,
+}
+
+impl EeDatabases {
+    /// Creates [`EeNodeStorage`] from the EE node database with the given
+    /// threadpool.
+    pub fn node_storage(&self, pool: ThreadPool) -> EeNodeStorage {
+        EeNodeStorage::new(pool, self.ee_node_db.clone())
+    }
+
+    /// Creates [`BroadcastDbOps`] from the broadcast database with the given
+    /// threadpool.
+    pub fn broadcast_ops(&self, pool: ThreadPool) -> BroadcastDbOps {
+        BroadcastContext::new(self.broadcast_db.clone()).into_ops(pool)
+    }
+
+    /// Creates [`ChunkedEnvelopeOps`] from the chunked envelope database with
+    /// the given threadpool.
+    pub fn chunked_envelope_ops(&self, pool: ThreadPool) -> ChunkedEnvelopeOps {
+        ChunkedEnvelopeContext::new(self.chunked_envelope_db.clone()).into_ops(pool)
+    }
+}
+
+/// Opens a single sled instance at `<datadir>/sled` and creates all database
+/// types from it.
+///
+/// All typed-sled trees coexist in one sled directory — each DB type uses
+/// uniquely named trees so there are no collisions.
+pub(crate) fn init_database(datadir: &Path, db_retry_count: u16) -> Result<EeDatabases> {
     let database_dir = datadir.join("sled");
 
     fs::create_dir_all(&database_dir)
-        .wrap_err_with(|| format!("creating database directory at {:?}", database_dir))?;
+        .wrap_err_with(|| format!("creating database directory at {database_dir:?}"))?;
 
     let sled_db = sled::open(&database_dir).wrap_err("opening sled database")?;
 
     let typed_sled =
-        SledDb::new(sled_db).map_err(|e| eyre!("Failed to create typed sled db: {}", e))?;
+        Arc::new(SledDb::new(sled_db).map_err(|e| eyre!("failed to create typed sled db: {e}"))?);
 
     let retry_delay_ms = 200u64;
-    let db_config = SledDbConfig::new_with_constant_backoff(db_retry_count, retry_delay_ms);
-    let node_db = EeNodeDBSled::new(Arc::new(typed_sled), db_config)
-        .map_err(|e| eyre!("Failed to create node db: {}", e))?;
-    Ok(Arc::new(node_db))
+    let config = SledDbConfig::new_with_constant_backoff(db_retry_count, retry_delay_ms);
+
+    let ee_node_db = Arc::new(
+        EeNodeDBSled::new(typed_sled.clone(), config.clone())
+            .map_err(|e| eyre!("failed to create EE node db: {e}"))?,
+    );
+
+    let broadcast_db = Arc::new(
+        L1BroadcastDBSled::new(typed_sled.clone(), config.clone())
+            .map_err(|e| eyre!("failed to create broadcast db: {e}"))?,
+    );
+
+    let chunked_envelope_db = Arc::new(
+        L1ChunkedEnvelopeDBSled::new(typed_sled, config)
+            .map_err(|e| eyre!("failed to create chunked envelope db: {e}"))?,
+    );
+
+    Ok(EeDatabases {
+        ee_node_db,
+        broadcast_db,
+        chunked_envelope_db,
+    })
 }

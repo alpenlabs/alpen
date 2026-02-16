@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use alloy_primitives::Bytes;
 use revm::database::BundleState;
 use revm_primitives::{Address, B256, KECCAK_EMPTY};
 use serde::{Deserialize, Serialize};
@@ -18,8 +19,9 @@ pub struct BlockStateChanges {
     pub accounts: BTreeMap<Address, BlockAccountChange>,
     /// Storage changes with original values per account.
     pub storage: BTreeMap<Address, BlockStorageDiff>,
-    /// Code hashes of contracts deployed in this block.
-    pub deployed_code_hashes: Vec<B256>,
+    /// Deployed contract bytecodes keyed by code hash.
+    /// This ensures bytecode is available for DA reconstruction.
+    pub deployed_bytecodes: BTreeMap<B256, Bytes>,
 }
 
 impl BlockStateChanges {
@@ -28,7 +30,7 @@ impl BlockStateChanges {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.accounts.is_empty() && self.storage.is_empty() && self.deployed_code_hashes.is_empty()
+        self.accounts.is_empty() && self.storage.is_empty() && self.deployed_bytecodes.is_empty()
     }
 }
 
@@ -80,11 +82,13 @@ impl From<&BundleState> for BlockStateChanges {
             }
         }
 
-        // Collect deployed contract code hashes
+        // Collect deployed contract bytecodes (keyed by hash for deduplication)
         for bytecode in bundle.contracts.values() {
             let code_hash = bytecode.hash_slow();
-            if code_hash != KECCAK_EMPTY && !result.deployed_code_hashes.contains(&code_hash) {
-                result.deployed_code_hashes.push(code_hash);
+            if code_hash != KECCAK_EMPTY && !result.deployed_bytecodes.contains_key(&code_hash) {
+                result
+                    .deployed_bytecodes
+                    .insert(code_hash, Bytes::from(bytecode.original_bytes().to_vec()));
             }
         }
 
@@ -126,13 +130,14 @@ mod tests {
             .insert(U256::from(1), (U256::ZERO, U256::from(100)));
         diff.storage.insert(Address::from([0x11u8; 20]), storage);
 
-        diff.deployed_code_hashes.push(B256::from([0x33u8; 32]));
+        diff.deployed_bytecodes
+            .insert(B256::from([0x33u8; 32]), Bytes::from_static(&[0x60, 0x80]));
 
         let encoded = bincode::serialize(&diff).unwrap();
         let decoded: BlockStateChanges = bincode::deserialize(&encoded).unwrap();
 
         assert_eq!(decoded.accounts.len(), 1);
         assert_eq!(decoded.storage.len(), 1);
-        assert_eq!(decoded.deployed_code_hashes.len(), 1);
+        assert_eq!(decoded.deployed_bytecodes.len(), 1);
     }
 }

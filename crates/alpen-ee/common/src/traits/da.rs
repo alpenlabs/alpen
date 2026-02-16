@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::{BatchId, L1DaBlockRef};
+use crate::{BatchId, DaBlob, L1DaBlockRef};
 
 #[derive(Debug)]
 pub enum DaStatus {
@@ -36,4 +36,26 @@ pub trait BatchDaProvider: Send + Sync {
     /// Returns a [`DaStatus`] indicating whether DA is pending, ready with L1
     /// block references, not yet requested, or has permanently failed.
     async fn check_da_status(&self, batch_id: BatchId) -> eyre::Result<DaStatus>;
+}
+
+/// Source of [`DaBlob`]s for a batch.
+///
+/// Encapsulates both readiness checking (are the underlying state diffs
+/// available?) and blob assembly, separating data preparation from
+/// publication (encoding, chunking, posting to Bitcoin, tracking).
+#[cfg_attr(feature = "test-utils", mockall::automock)]
+pub trait DaBlobSource: Send + Sync {
+    /// Returns the [`DaBlob`] for the given batch.
+    ///
+    /// The blob contains batch metadata and the aggregated state diff.
+    /// Even batches with no state changes return a blob (with empty state diff)
+    /// to ensure L1 chain continuity.
+    fn get_blob(&self, batch_id: BatchId) -> eyre::Result<DaBlob>;
+
+    /// Returns `true` if state diffs are ready for all blocks in the given batch.
+    ///
+    /// Used by the batch lifecycle to ensure state diffs have been written
+    /// by the Reth exex before attempting to post DA. This prevents race
+    /// conditions where DA posting is attempted before state diffs are ready.
+    fn are_state_diffs_ready(&self, batch_id: BatchId) -> eyre::Result<bool>;
 }

@@ -1,6 +1,6 @@
 use revm_primitives::alloy_primitives::B256;
-use strata_db_store_sled::define_table_without_codec;
-use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
+use strata_db_store_sled::{define_table_without_codec, impl_bincode_key_codec};
+use typed_sled::codec::{CodecError, ValueCodec};
 
 // First define the table structures without codecs
 define_table_without_codec!(
@@ -18,62 +18,16 @@ define_table_without_codec!(
     (BlockHashByNumber) u64 => Vec<u8>
 );
 
-// Custom codec for B256 key using big-endian serialization for ordering
-impl KeyCodec<BlockWitnessSchema> for B256 {
-    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
-        use bincode::Options;
+define_table_without_codec!(
+    /// Set of contract code hashes already published to DA.
+    /// Key is the code hash; value is unused (presence-only).
+    (PublishedCodeHashSchema) B256 => Vec<u8>
+);
 
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .serialize(self)
-            .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockWitnessSchema",
-                source: err.into(),
-            })
-    }
-
-    fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
-        use bincode::Options;
-
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .deserialize_from(&mut &data[..])
-            .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockWitnessSchema",
-                source: err.into(),
-            })
-    }
-}
-
-impl KeyCodec<BlockStateChangesSchema> for B256 {
-    fn encode_key(&self) -> Result<Vec<u8>, CodecError> {
-        use bincode::Options;
-
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .serialize(self)
-            .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockStateChangesSchema",
-                source: err.into(),
-            })
-    }
-
-    fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
-        use bincode::Options;
-
-        let bincode_options = bincode::options().with_fixint_encoding().with_big_endian();
-
-        bincode_options
-            .deserialize_from(&mut &data[..])
-            .map_err(|err| CodecError::SerializationFailed {
-                schema: "BlockStateChangesSchema",
-                source: err.into(),
-            })
-    }
-}
+// B256 key codec — big-endian serialization for lexicographic ordering
+impl_bincode_key_codec!(BlockWitnessSchema, B256);
+impl_bincode_key_codec!(BlockStateChangesSchema, B256);
+impl_bincode_key_codec!(PublishedCodeHashSchema, B256);
 
 // Vec<u8> value codec - stored as raw bytes
 impl ValueCodec<BlockWitnessSchema> for Vec<u8> {
@@ -97,6 +51,16 @@ impl ValueCodec<BlockStateChangesSchema> for Vec<u8> {
 }
 
 impl ValueCodec<BlockHashByNumber> for Vec<u8> {
+    fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
+        Ok(self.clone())
+    }
+
+    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
+        Ok(data.to_vec())
+    }
+}
+
+impl ValueCodec<PublishedCodeHashSchema> for Vec<u8> {
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Bytes, U256};
 use revm_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
 use strata_da_framework::{
@@ -115,8 +115,8 @@ pub struct BatchStateDiffSerde {
     pub accounts: BTreeMap<Address, AccountChangeSerde>,
     /// Storage slot changes per account.
     pub storage: BTreeMap<Address, StorageDiff>,
-    /// Code hashes of deployed contracts.
-    pub deployed_code_hashes: Vec<B256>,
+    /// Deployed contract bytecodes keyed by code hash (hex-encoded).
+    pub deployed_bytecodes: BTreeMap<B256, Bytes>,
 }
 
 impl From<&BatchStateDiff> for BatchStateDiffSerde {
@@ -124,7 +124,7 @@ impl From<&BatchStateDiff> for BatchStateDiffSerde {
         Self {
             accounts: diff.accounts.iter().map(|(k, v)| (*k, v.into())).collect(),
             storage: diff.storage.clone(),
-            deployed_code_hashes: diff.deployed_code_hashes.clone(),
+            deployed_bytecodes: diff.deployed_bytecodes.clone(),
         }
     }
 }
@@ -134,7 +134,7 @@ impl From<BatchStateDiff> for BatchStateDiffSerde {
         Self {
             accounts: diff.accounts.iter().map(|(k, v)| (*k, v.into())).collect(),
             storage: diff.storage,
-            deployed_code_hashes: diff.deployed_code_hashes,
+            deployed_bytecodes: diff.deployed_bytecodes,
         }
     }
 }
@@ -148,7 +148,7 @@ impl From<BatchStateDiffSerde> for BatchStateDiff {
                 .map(|(k, v)| (k, v.into()))
                 .collect(),
             storage: serde.storage,
-            deployed_code_hashes: serde.deployed_code_hashes,
+            deployed_bytecodes: serde.deployed_bytecodes,
         }
     }
 }
@@ -217,7 +217,10 @@ mod tests {
             Address::from([0x11u8; 20]),
             AccountChange::Created(AccountDiff::new_created(U256::from(1000), 1, B256::ZERO)),
         );
-        diff.deployed_code_hashes.push(B256::from([0x22u8; 32]));
+        diff.deployed_bytecodes.insert(
+            B256::from([0x22u8; 32]),
+            Bytes::from_static(&[0x60, 0x80, 0x60, 0x40]),
+        );
 
         let serde: BatchStateDiffSerde = (&diff).into();
         let json = serde_json::to_string_pretty(&serde).unwrap();
@@ -225,13 +228,13 @@ mod tests {
         // Verify JSON structure
         assert!(json.contains("accounts"));
         assert!(json.contains("storage"));
-        assert!(json.contains("deployed_code_hashes"));
+        assert!(json.contains("deployed_bytecodes"));
 
         // Deserialize back
         let parsed: BatchStateDiffSerde = serde_json::from_str(&json).unwrap();
         let roundtrip: BatchStateDiff = parsed.into();
 
         assert_eq!(roundtrip.accounts.len(), 1);
-        assert_eq!(roundtrip.deployed_code_hashes.len(), 1);
+        assert_eq!(roundtrip.deployed_bytecodes.len(), 1);
     }
 }

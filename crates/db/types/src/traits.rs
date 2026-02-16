@@ -26,8 +26,8 @@ use crate::{
     chainstate::ChainstateDatabase,
     mmr_helpers::MmrAlgorithm,
     types::{
-        BundledPayloadEntry, CheckpointEntry, IntentEntry, L1TxEntry, MempoolTxData,
-        OLCheckpointEntry,
+        BundledPayloadEntry, CheckpointEntry, ChunkedEnvelopeEntry, IntentEntry, L1TxEntry,
+        MempoolTxData, OLCheckpointEntry,
     },
     DbError, DbResult,
 };
@@ -48,6 +48,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
+    fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
     fn account_genesis_db(&self) -> Arc<impl AccountGenesisDatabase>;
 }
@@ -409,6 +410,31 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
 
     /// Get last broadcast entry
     fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>>;
+}
+
+/// Storage for chunked envelope entries.
+///
+/// Each entry represents one commit tx funding N reveal txs, tracked through
+/// signing, broadcasting, and L1 confirmation.
+pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
+    /// Stores a [`ChunkedEnvelopeEntry`] at the given index.
+    fn put_chunked_envelope_entry(&self, idx: u64, entry: ChunkedEnvelopeEntry) -> DbResult<()>;
+
+    /// Gets a [`ChunkedEnvelopeEntry`] by its index.
+    fn get_chunked_envelope_entry(&self, idx: u64) -> DbResult<Option<ChunkedEnvelopeEntry>>;
+
+    /// Gets the next available index.
+    fn get_next_chunked_envelope_idx(&self) -> DbResult<u64>;
+
+    /// Deletes a single entry by index.
+    ///
+    /// Returns true if the entry existed and was deleted.
+    fn del_chunked_envelope_entry(&self, idx: u64) -> DbResult<bool>;
+
+    /// Deletes all entries from the given index onwards (inclusive).
+    ///
+    /// Returns indices of deleted entries.
+    fn del_chunked_envelope_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 }
 
 // =============================================================================
