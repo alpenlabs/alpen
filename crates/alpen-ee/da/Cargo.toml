@@ -1,0 +1,27 @@
+[package]
+edition = "2021"
+name = "alpen-ee-da"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+alpen-ee-common.workspace = true
+alpen-ee-database.workspace = true
+alpen-reth-db.workspace = true
+alpen-reth-statediff.workspace = true
+strata-btcio.workspace = true
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
+strata-primitives.workspace = true
+
+alloy-primitives.workspace = true
+async-trait.workspace = true
+bitcoin.workspace = true
+eyre.workspace = true
+tracing.workspace = true
