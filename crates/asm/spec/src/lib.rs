@@ -8,9 +8,9 @@ use std::num::NonZero;
 
 use bitcoin::secp256k1::{Parity, PublicKey};
 use strata_asm_common::{AsmSpec, Loader, Stage};
-use strata_asm_params::AdministrationSubprotoParams;
+use strata_asm_params::{AdministrationSubprotoParams, BridgeV1Config};
 use strata_asm_proto_administration::AdministrationSubprotocol;
-use strata_asm_proto_bridge_v1::{BridgeV1Config, BridgeV1Subproto};
+use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_checkpoint_v0::{
     CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
