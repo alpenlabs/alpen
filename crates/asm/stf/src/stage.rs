@@ -24,11 +24,10 @@ impl<'c> PreProcessStage<'c> {
         anchor_state: &'c AnchorState,
         tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
     ) -> Self {
-        let max_manifest_height = anchor_state
-            .chain_view
-            .history_accumulator
-            .last_inserted_height();
-        let aux_collector = AuxRequestCollector::new(max_manifest_height);
+        let accumulator = &anchor_state.chain_view.history_accumulator;
+        let min_manifest_height = accumulator.offset();
+        let max_manifest_height = accumulator.last_inserted_height();
+        let aux_collector = AuxRequestCollector::new(min_manifest_height, max_manifest_height);
         Self {
             manager,
             anchor_state,

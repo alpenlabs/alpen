@@ -4,7 +4,10 @@
 
 use bitcoin::Txid;
 
-use crate::aux::data::{AuxRequests, ManifestHashRange};
+use crate::{
+    aux::data::{AuxRequests, ManifestHashRange},
+    logging,
+};
 
 /// Collects auxiliary data requests from subprotocols.
 ///
@@ -19,14 +22,16 @@ use crate::aux::data::{AuxRequests, ManifestHashRange};
 #[derive(Debug)]
 pub struct AuxRequestCollector {
     requests: AuxRequests,
+    min_manifest_height: u64,
     max_manifest_height: u64,
 }
 
 impl AuxRequestCollector {
-    /// Creates a new empty collector bounded by the given maximum manifest height.
-    pub fn new(max_manifest_height: u64) -> Self {
+    /// Creates a new empty collector bounded by the given manifest height range.
+    pub fn new(min_manifest_height: u64, max_manifest_height: u64) -> Self {
         Self {
             requests: AuxRequests::default(),
+            min_manifest_height,
             max_manifest_height,
         }
     }
@@ -37,7 +42,17 @@ impl AuxRequestCollector {
     /// * `start_height` - Starting L1 block height (inclusive)
     /// * `end_height` - Ending L1 block height (inclusive)
     pub fn request_manifest_hashes(&mut self, start_height: u64, end_height: u64) {
-        if start_height > end_height || end_height > self.max_manifest_height {
+        if start_height > end_height
+            || start_height < self.min_manifest_height
+            || end_height > self.max_manifest_height
+        {
+            logging::warn!(
+                start_height,
+                end_height,
+                self.min_manifest_height,
+                self.max_manifest_height,
+                "dropping out-of-bounds manifest hash request"
+            );
             return;
         }
 
@@ -65,7 +80,7 @@ mod tests {
 
     #[test]
     fn test_collector_basic() {
-        let mut collector = AuxRequestCollector::new(500);
+        let mut collector = AuxRequestCollector::new(0, 500);
         assert!(collector.requests.manifest_hashes.is_empty());
         assert!(collector.requests.bitcoin_txs.is_empty());
 
@@ -85,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_collector_drops_beyond_max_height() {
-        let mut collector = AuxRequestCollector::new(200);
+        let mut collector = AuxRequestCollector::new(0, 200);
 
         collector.request_manifest_hashes(100, 200);
         assert_eq!(collector.requests.manifest_hashes.len(), 1);
@@ -96,8 +111,21 @@ mod tests {
     }
 
     #[test]
+    fn test_collector_drops_below_min_height() {
+        let mut collector = AuxRequestCollector::new(100, 500);
+
+        // start_height < min_manifest_height: dropped
+        collector.request_manifest_hashes(50, 200);
+        assert!(collector.requests.manifest_hashes.is_empty());
+
+        // within bounds: accepted
+        collector.request_manifest_hashes(100, 200);
+        assert_eq!(collector.requests.manifest_hashes.len(), 1);
+    }
+
+    #[test]
     fn test_collector_drops_inverted_range() {
-        let mut collector = AuxRequestCollector::new(500);
+        let mut collector = AuxRequestCollector::new(0, 500);
 
         // start > end: silently dropped
         collector.request_manifest_hashes(200, 100);
@@ -106,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_collector_bitcoin_tx() {
-        let mut collector = AuxRequestCollector::new(500);
+        let mut collector = AuxRequestCollector::new(0, 500);
 
         let txid1 = Txid::from_byte_array([1u8; 32]);
         let txid2 = Txid::from_byte_array([2u8; 32]);
