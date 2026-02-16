@@ -2,11 +2,11 @@
 
 import logging
 
-from common.wait import wait_until_with_value
 import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
+from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class TestSequencerEpochProgression(StrataNodeTest):
                 lambda: strata.get_sync_status(rpc)["confirmed"],
                 lambda v, cur_epoch=cur_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
                 timeout=10,
-                error_with="Can't get sync status",
+                error_with="Epoch not progressing",
             )
             print("epoch", epoch)
             cur_epoch = epoch
