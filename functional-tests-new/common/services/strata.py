@@ -22,6 +22,23 @@ class StrataProps(TypedDict):
     mode: str
 
 
+class OLBlockCommitment(TypedDict):
+    slot: int
+    blkid: str  # hex string
+
+
+class EpochCommitment(TypedDict):
+    epoch: int
+    last_slot: int
+    last_blkid: str  # hex string
+
+
+class ChainSyncStatus(TypedDict):
+    latest: OLBlockCommitment
+    confirmed: EpochCommitment
+    finalized: EpochCommitment
+
+
 class StrataService(RpcService):
     """
     RpcService for Strata with health check via `strata_protocolVersion`.
@@ -90,6 +107,26 @@ class StrataService(RpcService):
         wait_until(lambda: rpc.call(method) is not None, error_with=err, timeout=timeout)
         return rpc
 
+    def get_sync_status(self, rpc: JsonRpcClient | None = None) -> ChainSyncStatus:
+        """
+        Get the current block height from chain status.
+
+        Args:
+            rpc: Optional RPC client. If None, creates a new one.
+
+        Returns:
+            ChainSyncStatus
+        """
+        if rpc is None:
+            rpc = self.create_rpc()
+
+        status = wait_until_with_value(
+            rpc.strata_getChainStatus,
+            lambda x: x is not None,
+            error_with="Timed out getting chain status",
+        )
+        return status
+
     def get_cur_block_height(self, rpc: JsonRpcClient | None = None) -> int:
         """
         Get the current block height from chain status.
@@ -100,15 +137,8 @@ class StrataService(RpcService):
         Returns:
             Current block height (slot number)
         """
-        if rpc is None:
-            rpc = self.create_rpc()
-
-        status = wait_until_with_value(
-            rpc.strata_getChainStatus,
-            lambda x: x is not None,
-            error_with="Timed out getting chain status",
-        )
-        return status.get("latest", {}).get("slot", 0)
+        sync_status = self.get_sync_status(rpc)
+        return sync_status["latest"]["slot"]
 
     def wait_for_block_height(
         self,

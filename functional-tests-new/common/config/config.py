@@ -102,6 +102,10 @@ class EeDaConfig:
         if len(self.magic_bytes) != 4:
             raise ValueError(f"magic_bytes must be exactly 4 bytes, got {len(self.magic_bytes)}")
 
+class EpochSealingConfig:
+    policy: str = field(default="FixedSlot")
+    slots_per_epoch: int | None = field(default=4)
+
 
 @dataclass
 class StrataConfig:
@@ -112,6 +116,7 @@ class StrataConfig:
     exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
     sequencer: SequencerConfig | None = field(default=None)
+    epoch_sealing: EpochSealingConfig = field(default_factory=EpochSealingConfig)
 
     def as_toml_string(self) -> str:
         d = asdict(self)
