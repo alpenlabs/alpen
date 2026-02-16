@@ -83,7 +83,7 @@ impl StrataAsmSpec {
         let bridge_v1_genesis = BridgeV1Config {
             operators,
             denomination: BitcoinAmount::from_sat(params.deposit_amount.to_sat()),
-            assignment_duration: params.dispatch_assignment_dur as u64,
+            assignment_duration: params.dispatch_assignment_dur,
             // TODO(QQ): adjust
             operator_fee: BitcoinAmount::ZERO,
             recovery_delay: params.recovery_delay,

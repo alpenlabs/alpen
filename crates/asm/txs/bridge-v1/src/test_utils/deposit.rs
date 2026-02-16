@@ -22,7 +22,7 @@ pub fn create_connected_drt_and_dt(
     drt_header_aux: &DrtHeaderAux,
     dt_header_aux: DepositTxHeaderAux,
     deposit_amount: Amount,
-    recovery_delay: u32,
+    recovery_delay: u16,
     operator_keys: &[EvenSecretKey],
 ) -> (Transaction, Transaction) {
     let harness =

@@ -318,12 +318,12 @@ pub struct AssignmentTable {
     /// The duration (in blocks) for which the operator is assigned to fulfill the withdrawal.
     /// If the operator fails to complete the withdrawal within this period, the assignment
     /// will be reassigned to another operator.
-    assignment_duration: u64,
+    assignment_duration: u16,
 }
 
 impl AssignmentTable {
     /// Creates a new empty assignment table with no assignments
-    pub fn new(assignment_duration: u64) -> Self {
+    pub fn new(assignment_duration: u16) -> Self {
         Self {
             assignments: SortedVec::new_empty(),
             assignment_duration,
@@ -425,7 +425,7 @@ impl AssignmentTable {
 
         let current_height = l1_block.height_u64();
         let seed = *l1_block.blkid();
-        let new_deadline = self.assignment_duration + current_height;
+        let new_deadline = self.assignment_duration as u64 + current_height;
 
         // Using iter_mut since we're only modifying non-sorting fields
         for assignment in self
@@ -466,7 +466,7 @@ impl AssignmentTable {
     ) -> Result<(), WithdrawalCommandError> {
         // Create assignment with deadline calculated from current block height + assignment
         // duration
-        let fulfillment_deadline = l1_block.height_u64() + self.assignment_duration;
+        let fulfillment_deadline = l1_block.height_u64() + self.assignment_duration as u64;
 
         let entry = AssignmentEntry::create_with_random_assignment(
             deposit_entry,
@@ -790,7 +790,7 @@ mod tests {
                 .is_active(original_assignee)
         );
         // Verify the deadline was set to the new deadline
-        let new_deadline: BitcoinBlockHeight = current_height + table.assignment_duration; // New absolute deadline
+        let new_deadline: BitcoinBlockHeight = current_height + table.assignment_duration as u64; // New absolute deadline
         assert_eq!(
             expired_assignment_after.fulfillment_deadline(),
             new_deadline,

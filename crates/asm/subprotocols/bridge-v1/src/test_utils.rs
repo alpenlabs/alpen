@@ -164,7 +164,7 @@ pub(crate) fn create_verified_aux_data(txs: Vec<RawBitcoinTx>) -> VerifiedAuxDat
 pub(crate) fn setup_deposit_test(
     drt_aux: &DrtHeaderAux,
     denomination: BitcoinAmount,
-    recovery_delay: u32,
+    recovery_delay: u16,
     operators: &[EvenSecretKey],
 ) -> (VerifiedAuxData, DepositInfo) {
     // 1. Prepare DRT & DT

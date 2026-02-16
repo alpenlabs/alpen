@@ -11,7 +11,7 @@ pub fn create_test_deposit_request_tx(
     header_aux: &DrtHeaderAux,
     internal_key: XOnlyPublicKey,
     deposit_amount: Amount,
-    recovery_delay: u32,
+    recovery_delay: u16,
 ) -> Transaction {
     // Create a tx with one input and two outputs.
     let mut tx = create_dummy_tx(1, 2);
