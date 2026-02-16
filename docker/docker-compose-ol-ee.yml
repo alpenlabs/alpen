@@ -1,0 +1,125 @@
+services:
+  # OL (Strata) node
+  strata:
+    build:
+      context: ..
+      dockerfile: docker/strata/Dockerfile
+    user: "0:0"
+    networks:
+      - strata_network
+    depends_on:
+      - bitcoind
+    command:
+      - "--sequencer-key"
+      - "/config/sequencer.key"
+    environment:
+      CONFIG_PATH: /config/config.toml
+      PARAM_PATH: /config/params.json
+      RUST_LOG: info
+      RUST_BACKTRACE: 1
+      NO_COLOR: 1
+    volumes:
+      - ./configs/config.toml:/config/config.toml:ro
+      - ./configs/params.json:/config/params.json:ro
+      - ./configs/sequencer.key:/config/sequencer.key:ro
+      - strata-data:/app/data
+    ports:
+      - "8432:8432"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    restart: unless-stopped
+
+  # EE sequencer / block builder
+  alpen-client:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    command:
+      --custom-chain testnet
+      --ol-client-url ws://strata:8432
+      --sequencer-pubkey 8697c8effd99a7639af1609f370a4a03722c181357d7769150a62f528817cb7e
+      --sequencer
+    environment:
+      RUST_LOG: info
+      SEQUENCER_PRIVATE_KEY: "667475110a3b5510cdd9200ecd02b2642f1d0c72efc1a693b662869bcdc7380e"
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    depends_on:
+      - strata
+    restart: unless-stopped
+    volumes:
+      - alpen-client-data:/app/.local
+      - alpen-client-data:/app/.cache
+    networks:
+      - strata_network     
+
+  # EE full node (follower) with its own data dir and ports
+  alpen-client-fullnode:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    command:
+      --custom-chain testnet    
+      --ol-client-url ws://strata:8432
+      --sequencer-pubkey 8697c8effd99a7639af1609f370a4a03722c181357d7769150a62f528817cb7e
+    environment:
+      RUST_LOG: info
+    ports:
+      - "9545:8545"
+      - "9546:8546"
+      - "31303:30303"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    depends_on:
+      - strata
+      - alpen-client
+    restart: unless-stopped
+    volumes:
+      - alpen-client-fullnode-data:/app/.local
+      - alpen-client-fullnode-data:/app/.cache
+    networks:
+      - strata_network     
+
+  bitcoind:
+    # build:
+    #   context: ./bitcoind/
+    image: public.ecr.aws/s6b4k6i9/strata/signet:latest
+    # healthcheck:
+    #   test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=rpcuser", "-rpcpassword=rpcpassword", "-rpcconnect=127.0.0.1", "-rpcport=18443", "getblockcount"]
+    #   interval: 5s
+    #   timeout: 3s
+    #   retries: 5
+    #   start_period: 5s
+    environment:
+      MINERENABLED: 1
+      RPC_ALLOW_IP: "0.0.0.0/0"
+      BITCOIND_RPC_USER: rpcuser
+      BITCOIND_RPC_PASSWORD: rpcpassword
+      BITCOIND_WALLET: default
+      BLOCKPRODUCTIONDELAY: 180
+      MAXTXFEE: 0.1
+      NUM_WALLETS: 0
+      MNEMONIC: "matter mother supply thrive clever damp unlock correct outside cruel strong submit short chimney host judge key control tobacco drastic radar window baby muffin"
+      GENERATE_BLOCKS: 4 # if env is set then blocks are generated. the number is number of seconds between L1 blocks / 4
+    container_name: strata_bitcoind
+    volumes:
+      - ./.data/data-bitcoind:/root/.bitcoin/
+      - ./bitcoind/entrypoint.sh:/app/entrypoint.sh
+    ports:
+      - "38332:38332"
+      - "38333:38333"
+    networks:
+      - strata_network
+
+networks:
+  strata_network:
+    driver: bridge
+    name: strata_network
+
+volumes:
+  bitcoind-data:
+  strata-data:
+  alpen-client-data:
+  alpen-client-fullnode-data:
