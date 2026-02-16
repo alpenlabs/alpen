@@ -42,7 +42,7 @@
 //! | [`AccountDiffSerde`] | [`AccountDiff`] | Balance, nonce delta, code hash |
 //!
 //! These types flatten the DA framework primitives into simple JSON fields
-//! (e.g., `nonce_delta: i32` instead of `DaCounter<CtrU64BySignedVarint>`).
+//! (e.g., `nonce_delta: i64` instead of `DaCounter<CtrU64BySignedVarInt>`).
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 

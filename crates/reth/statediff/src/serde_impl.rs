@@ -8,8 +8,7 @@ use alloy_primitives::U256;
 use revm_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
 use strata_da_framework::{
-    counter_schemes::{CtrU64BySignedVarint, SignedVarintIncr},
-    DaCounter, DaRegister,
+    counter_schemes::CtrU64BySignedVarInt, DaCounter, DaRegister, SignedVarInt,
 };
 
 use crate::{
@@ -34,7 +33,7 @@ pub struct AccountDiffSerde {
     pub balance_delta: Option<BalanceDeltaSerde>,
     /// Nonce delta (None = unchanged). Can be negative post-Shanghai via selfdestruct+recreate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nonce_delta: Option<i32>,
+    pub nonce_delta: Option<i64>,
     /// New code hash (None = unchanged).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_hash: Option<B256>,
@@ -47,7 +46,7 @@ impl From<&AccountDiff> for AccountDiffSerde {
                 positive: d.is_nonnegative(),
                 magnitude: d.magnitude(),
             }),
-            nonce_delta: diff.nonce.diff().map(|v| v.inner()),
+            nonce_delta: diff.nonce.diff().and_then(|v| v.to_i64()),
             code_hash: diff.code_hash.new_value().map(|v| v.0),
         }
     }
@@ -69,8 +68,8 @@ impl From<AccountDiffSerde> for AccountDiff {
                 .unwrap_or_else(DaCounter::new_unchanged),
             nonce: serde
                 .nonce_delta
-                .and_then(SignedVarintIncr::new)
-                .map(DaCounter::<CtrU64BySignedVarint>::new_changed)
+                .map(SignedVarInt::from_i64)
+                .map(DaCounter::<CtrU64BySignedVarInt>::new_changed)
                 .unwrap_or_else(DaCounter::new_unchanged),
             code_hash: serde
                 .code_hash
@@ -179,7 +178,7 @@ mod tests {
         let roundtrip_delta = roundtrip.balance.diff().unwrap();
         assert!(roundtrip_delta.is_nonnegative());
         assert_eq!(roundtrip_delta.magnitude(), U256::from(1000));
-        assert_eq!(roundtrip.nonce.diff().map(|v| v.inner()), Some(5));
+        assert_eq!(roundtrip.nonce.diff().and_then(|v| v.to_i64()), Some(5));
         assert_eq!(
             roundtrip.code_hash.new_value().unwrap().0,
             B256::from([0x11u8; 32])

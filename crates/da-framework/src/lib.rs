@@ -6,6 +6,7 @@ mod linear_acc;
 mod queue;
 mod register;
 mod traits;
+mod varint64;
 
 pub use codec::{
     Codec, CodecError, CodecResult, Decoder, Encoder, Varint, decode_buf_exact, decode_map,
@@ -19,3 +20,4 @@ pub use linear_acc::{DaLinacc, LinearAccumulator};
 pub use queue::{DaQueue, DaQueueBuilder, DaQueueTarget, QueueView};
 pub use register::DaRegister;
 pub use traits::{ContextlessDaWrite, DaBuilder, DaWrite};
+pub use varint64::{SignedVarInt, UnsignedVarInt};
