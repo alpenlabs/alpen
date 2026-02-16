@@ -17,7 +17,8 @@ use tracing::*;
 ///    [`StateDiffProvider`].
 /// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via
 ///    [`BatchBuilder`].
-/// 4. Reads the last block's header to build [`EvmHeaderSummary`](alpen_ee_common::EvmHeaderSummary).
+/// 4. Reads the last block's header to build
+///    [`EvmHeaderSummary`](alpen_ee_common::EvmHeaderSummary).
 /// 5. Returns the assembled [`DaBlob`].
 pub struct StateDiffBlobProvider<S, D, H> {
     batch_storage: Arc<S>,
