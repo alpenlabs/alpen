@@ -1,9 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_params::Role;
 use strata_asm_txs_admin::actions::MultisigAction;
 use strata_crypto::threshold_signature::{
     SignatureSet, ThresholdConfig, ThresholdSignatureError, verify_threshold_signatures,
 };
-use strata_primitives::roles::Role;
 
 /// Manages threshold signature operations for a given role and key set, with replay protection via
 /// a sequence number.

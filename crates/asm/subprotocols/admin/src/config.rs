@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_params::Role;
 use strata_crypto::threshold_signature::ThresholdConfig;
-use strata_primitives::roles::Role;
 
 /// Parameters for the admnistration subprotocol, containing ThresholdConfig for each role.
 ///

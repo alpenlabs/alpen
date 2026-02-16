@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
+strata-asm-params = { workspace = true, features = ["arbitrary"] }
 strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
 strata-predicate = { workspace = true, features = ["arbitrary"] }

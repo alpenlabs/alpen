@@ -5,7 +5,7 @@ pub mod seq;
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_primitives::roles::Role;
+use strata_asm_params::Role;
 
 use crate::actions::updates::{
     multisig::MultisigUpdate, operator::OperatorSetUpdate, predicate::PredicateUpdate,

@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_params::Role;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
-use strata_primitives::roles::Role;
 
 /// An update to a threshold configuration for a specific role:
 /// - adds new members

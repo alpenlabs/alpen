@@ -44,7 +44,6 @@ pub mod indexed;
 pub mod l1;
 pub mod prelude;
 pub mod proof;
-pub mod roles;
 pub mod serde_helpers;
 pub mod sorted_vec;
 pub mod utils;
