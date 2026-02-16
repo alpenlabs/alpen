@@ -48,8 +48,8 @@ use strata_db_types::{
     traits::{
         AccountGenesisDatabase, AsmDatabase, CheckpointDatabase, ClientStateDatabase,
         DatabaseBackend, L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database,
-        L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase,
-        OLCheckpointDatabase, OLStateDatabase, ProofDatabase,
+        L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase,
+        OLStateDatabase, ProofDatabase,
     },
 };
 use typed_sled::SledDb;
