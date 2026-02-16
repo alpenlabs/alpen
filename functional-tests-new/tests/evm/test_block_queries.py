@@ -1,6 +1,4 @@
-"""
-Test that verifies block query RPC methods work correctly.
-"""
+"""Test block query RPC methods."""
 
 import logging
 
@@ -13,10 +11,6 @@ logger = logging.getLogger(__name__)
 
 @flexitest.register
 class TestBlockQueries(AlpenClientTest):
-    """
-    Test various block query RPC methods.
-    """
-
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("alpen_client")
 
@@ -24,16 +18,13 @@ class TestBlockQueries(AlpenClientTest):
         sequencer = self.get_service("sequencer")
         rpc = sequencer.create_rpc()
 
-        # Wait for a few blocks to be produced
         sequencer.wait_for_block(3, timeout=30)
 
-        # Test eth_blockNumber
         block_num = rpc.eth_blockNumber()
         block_num_int = int(block_num, 16)
         logger.info(f"Current block number: {block_num_int}")
         assert block_num_int >= 3, f"Expected at least 3 blocks, got {block_num_int}"
 
-        # Test eth_getBlockByNumber with different tags
         for tag in ["earliest", "latest", "pending"]:
             block = rpc.eth_getBlockByNumber(tag, False)
             assert block is not None, f"Failed to get block at '{tag}'"
@@ -41,7 +32,6 @@ class TestBlockQueries(AlpenClientTest):
                 f"Block at '{tag}': number={block.get('number')}, hash={block.get('hash')[:18]}..."
             )
 
-        # Test eth_getBlockByNumber with specific number
         block_0 = rpc.eth_getBlockByNumber("0x0", False)
         assert block_0 is not None, "Failed to get genesis block"
         assert block_0["number"] == "0x0", "Genesis block should be number 0"
@@ -51,23 +41,19 @@ class TestBlockQueries(AlpenClientTest):
         assert block_1 is not None, "Failed to get block 1"
         assert block_1["parentHash"] == block_0["hash"], "Block 1 parent should be genesis"
 
-        # Test eth_getBlockByNumber with full transactions
         latest_block = rpc.eth_getBlockByNumber("latest", True)
         assert latest_block is not None, "Failed to get latest block with txs"
         assert "transactions" in latest_block, "Block should have transactions field"
 
-        # Test eth_getBlockByHash
         latest_hash = latest_block["hash"]
         block_by_hash = rpc.eth_getBlockByHash(latest_hash, False)
         assert block_by_hash is not None, f"Failed to get block by hash {latest_hash}"
         assert block_by_hash["hash"] == latest_hash, "Block hash mismatch"
         logger.info(f"Successfully queried block by hash: {latest_hash[:18]}...")
 
-        # Test non-existent block
         future_block = rpc.eth_getBlockByNumber(hex(block_num_int + 1000), False)
         assert future_block is None, "Future block should not exist"
 
-        # Test eth_getBlockTransactionCountByNumber
         tx_count = rpc.eth_getBlockTransactionCountByNumber("latest")
         tx_count_int = int(tx_count, 16)
         logger.info(f"Transaction count in latest block: {tx_count_int}")
