@@ -32,14 +32,16 @@ use harness::{
 };
 use integration_tests::harness;
 use rand::rngs::OsRng;
-use strata_asm_txs_admin::{parser::SignedPayload, test_utils::create_signature_set};
+use strata_asm_params::Role;
+use strata_asm_txs_admin::{
+    actions::updates::predicate::ProofType, parser::SignedPayload, test_utils::create_signature_set,
+};
 use strata_crypto::{
     keys::compressed::CompressedPublicKey,
     threshold_signature::{IndexedSignature, SignatureSet, ThresholdConfig},
 };
 use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;
-use strata_primitives::roles::{ProofType, Role};
 
 // ============================================================================
 // Sequencer Updates (StrataSequencerManager role - applied immediately)

@@ -6188,6 +6188,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "strata-asm-common",
  "strata-asm-manifest-types",
+ "strata-asm-params",
  "strata-asm-proto-administration",
  "strata-asm-proto-checkpoint-v0",
  "strata-asm-txs-admin",
@@ -13814,6 +13815,7 @@ name = "strata-asm-params"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "borsh",
  "serde",
  "serde_json",
  "strata-btc-types",
@@ -13833,6 +13835,7 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
+ "strata-asm-params",
  "strata-asm-txs-admin",
  "strata-crypto",
  "strata-predicate",
@@ -13983,6 +13986,7 @@ dependencies = [
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
+ "strata-asm-params",
  "strata-crypto",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
@@ -15269,7 +15273,6 @@ dependencies = [
 name = "strata-primitives"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
