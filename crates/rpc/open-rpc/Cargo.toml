@@ -1,0 +1,12 @@
+[package]
+name = "alpen-open-rpc"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+schemars = { version = "0.8", features = ["impl_json_schema"] }
+serde.workspace = true
+serde_json.workspace = true
