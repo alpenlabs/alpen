@@ -49,7 +49,7 @@ const DEFAULT_L1_GENESIS_HEIGHT: u64 = 100;
 const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;
 
 /// The default recovery delay to use in params.
-const DEFAULT_RECOVERY_DELAY: u32 = 1_008;
+const DEFAULT_RECOVERY_DELAY: u16 = 1_008;
 
 /// The default block time in seconds to use in params.
 const DEFAULT_BLOCK_TIME_SEC: u64 = 5;

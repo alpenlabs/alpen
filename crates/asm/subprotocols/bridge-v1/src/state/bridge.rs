@@ -38,7 +38,7 @@ pub struct BridgeV1State {
 
     /// Number of blocks after Deposit Request Transaction that the depositor can reclaim
     /// funds if operators fail to process the deposit.
-    recovery_delay: u32,
+    recovery_delay: u16,
 }
 
 impl BridgeV1State {
@@ -89,7 +89,7 @@ impl BridgeV1State {
     }
 
     /// Returns the recovery delay to reclaim funds.
-    pub fn recovery_delay(&self) -> u32 {
+    pub fn recovery_delay(&self) -> u16 {
         self.recovery_delay
     }
 
