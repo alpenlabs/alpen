@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use ops::account_genesis::{AccountGenesisOps, Context};
-use strata_db_types::{traits::AccountGenesisDatabase, DbResult};
+use ops::account_genesis::{AccountOps, Context};
+use strata_db_types::{traits::AccountDatabase, DbResult};
 use strata_identifiers::{AccountId, Epoch};
+use strata_primitives::OLBlockId;
 use threadpool::ThreadPool;
 
 use crate::ops;
@@ -12,13 +13,13 @@ use crate::ops;
     missing_debug_implementations,
     reason = "Inner types don't have Debug implementation"
 )]
-pub struct AccountGenesisManager {
-    ops: AccountGenesisOps,
+pub struct AccountManager {
+    ops: AccountOps,
 }
 
-impl AccountGenesisManager {
+impl AccountManager {
     /// Creates a new [`AccountGenesisManager`].
-    pub fn new(pool: ThreadPool, db: Arc<impl AccountGenesisDatabase + 'static>) -> Self {
+    pub fn new(pool: ThreadPool, db: Arc<impl AccountDatabase + 'static>) -> Self {
         let ops = Context::new(db).into_ops(pool);
         Self { ops }
     }
@@ -41,5 +42,41 @@ impl AccountGenesisManager {
         account_id: AccountId,
     ) -> DbResult<Option<Epoch>> {
         self.ops.get_account_creation_epoch_blocking(account_id)
+    }
+
+    /// Inserts account extra data by blocking.
+    pub fn insert_account_extra_data_blocking(
+        &self,
+        key: (AccountId, OLBlockId),
+        extra_data: Vec<u8>,
+    ) -> DbResult<()> {
+        self.ops.insert_account_extra_data_blocking(key, extra_data)
+    }
+
+    /// Inserts account extra data async.
+    pub async fn insert_account_extra_data_async(
+        &self,
+        key: (AccountId, OLBlockId),
+        extra_data: Vec<u8>,
+    ) -> DbResult<()> {
+        self.ops
+            .insert_account_extra_data_async(key, extra_data)
+            .await
+    }
+
+    /// Gets account extra data by blocking.
+    pub fn get_account_extra_data_blocking(
+        &self,
+        key: (AccountId, OLBlockId),
+    ) -> DbResult<Option<Vec<u8>>> {
+        self.ops.get_account_extra_data_blocking(key)
+    }
+
+    /// Gets account extra data async.
+    pub async fn get_account_extra_data_async(
+        &self,
+        key: (AccountId, OLBlockId),
+    ) -> DbResult<Option<Vec<u8>>> {
+        self.ops.get_account_extra_data_async(key).await
     }
 }

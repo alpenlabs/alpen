@@ -64,7 +64,7 @@ use strata_config::btcio::WriterConfig;
 use strata_identifiers::{CredRule, EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, RwLock};
 use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 use {
@@ -287,10 +287,10 @@ fn main() {
             let status_watcher = ol_tracker.ol_status_watcher();
 
             // Create shared reference for exec chain handle (will be set later for sequencer)
-            let exec_chain_handle_ref = Arc::new(tokio::sync::RwLock::new(None));
+            let exec_chain_handle_ref = Arc::new(RwLock::new(None));
             let exec_chain_handle_ref_clone = exec_chain_handle_ref.clone();
 
-            let node_builder = builder
+            let mut node_builder = builder
                 .node(AlpenEthereumNode::new(node_args))
                 // Register Alpen gossip RLPx subprotocol
                 .on_component_initialized({

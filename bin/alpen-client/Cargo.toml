@@ -33,7 +33,7 @@ alpen-ee-config.workspace = true
 alpen-ee-da = { workspace = true, optional = true }
 alpen-ee-database.workspace = true
 alpen-ee-engine.workspace = true
-alpen-ee-exec-chain.workspace = true
+alpen-ee-exec-chain = { workspace = true, optional = true }
 alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }

@@ -60,7 +60,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
-    fn account_genesis_db(&self) -> Arc<impl AccountGenesisDatabase>;
+    fn account_genesis_db(&self) -> Arc<impl AccountDatabase>;
 }
 
 /// Database interface to control our view of ASM state.
@@ -591,11 +591,8 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     fn get_tip_slot(&self) -> DbResult<Slot>;
 }
 
-/// Database for per-account creation epoch tracking.
-///
-/// Stores the epoch at which each account was created. This supports
-/// resolving the genesis epoch commitment for accounts at query time.
-pub trait AccountGenesisDatabase: Send + Sync + 'static {
+/// Database for tracking per-account data like creation epoch, extra data, etc.
+pub trait AccountDatabase: Send + Sync + 'static {
     /// Inserts the creation epoch for an account.
     ///
     /// Fails if the account already has a recorded creation epoch.
@@ -603,6 +600,16 @@ pub trait AccountGenesisDatabase: Send + Sync + 'static {
 
     /// Gets the creation epoch for an account, if recorded.
     fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
+
+    /// Inserts account extra data for a given OL Block.
+    fn insert_account_extra_data(
+        &self,
+        key: (AccountId, OLBlockId),
+        extra_data: Vec<u8>,
+    ) -> DbResult<()>;
+
+    /// Gets the account extra data for given account and OLBlockId.
+    fn get_account_extra_data(&self, key: (AccountId, OLBlockId)) -> DbResult<Option<Vec<u8>>>;
 }
 
 /// Database interface for OL mempool transactions.
