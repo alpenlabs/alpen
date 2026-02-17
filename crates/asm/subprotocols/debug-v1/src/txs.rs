@@ -93,7 +93,7 @@ fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxPa
 ///
 /// Format: `[amount: 8 bytes][1 byte B][B bytes: operator index (big-endian)][descriptor:
 /// variable]`
-/// - B=0: no operator preference
+/// - B=0: no operator selection
 /// - B=1..4: operator index encoded as B big-endian bytes
 /// - B>4: invalid
 fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, DebugTxParseError> {
@@ -110,13 +110,13 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
     let amount = u64::from_be_bytes(amount_bytes);
     let amt = BitcoinAmount::from_sat(amount);
 
-    // Extract preferred operator using variable-length encoding
+    // Extract selected operator using variable-length encoding
     // (same format as the EE bridge precompile calldata)
     let b = aux_data[OPERATOR_LEN_OFFSET] as usize;
     let operator_data_offset = OPERATOR_LEN_OFFSET + 1;
 
-    let (preferred_operator, descriptor_offset) = if b == 0 {
-        // B=0: no operator preference
+    let (selected_operator, descriptor_offset) = if b == 0 {
+        // B=0: no operator selection
         (None, operator_data_offset)
     } else if b > MAX_OPERATOR_INDEX_LEN {
         // B>4: operator index cannot exceed u32 (4 bytes)
@@ -140,7 +140,7 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
     let dest = Descriptor::from_bytes(desc_bytes)
         .map_err(|e| DebugTxParseError::InvalidDescriptorFormat(e.to_string()))?;
 
-    let withdraw_output = WithdrawOutput::new(dest, amt, preferred_operator);
+    let withdraw_output = WithdrawOutput::new(dest, amt, selected_operator);
     Ok(withdraw_output)
 }
 
@@ -148,7 +148,7 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
 ///
 /// Auxiliary data format:
 /// - `[amount: 8 bytes]` - The withdrawal amount in satoshis (big-endian)
-/// - `[1 byte B]` - Operator index length (0 = no preference, 1..4 = index byte count)
+/// - `[1 byte B]` - Operator index length (0 = no selection, 1..4 = index byte count)
 /// - `[B bytes]` - Operator index (big-endian), omitted when B=0
 /// - `[descriptor: variable]` - The self-describing Bitcoin descriptor
 fn parse_mock_withdraw_intent_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
@@ -217,7 +217,7 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2wpkh_descriptor.to_bytes()
         );
-        assert_eq!(withdraw_output.preferred_operator, None);
+        assert_eq!(withdraw_output.selected_operator, None);
     }
 
     #[test]
@@ -242,7 +242,7 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2wsh_descriptor.to_bytes()
         );
-        assert_eq!(withdraw_output.preferred_operator, Some(42));
+        assert_eq!(withdraw_output.selected_operator, Some(42));
     }
 
     #[test]
@@ -271,7 +271,7 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2tr_descriptor.to_bytes()
         );
-        assert_eq!(withdraw_output.preferred_operator, None);
+        assert_eq!(withdraw_output.selected_operator, None);
     }
 
     #[test]

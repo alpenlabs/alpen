@@ -31,7 +31,7 @@ sol! {
         uint64 amount,
         /// BOSD descriptor for withdrawal destinations in L1.
         bytes destination,
-        /// Preferred operator index. `u32::MAX` means no preference.
-        uint32 preferredOperator,
+        /// Selected operator index. `u32::MAX` means no selection.
+        uint32 selectedOperator,
     );
 }

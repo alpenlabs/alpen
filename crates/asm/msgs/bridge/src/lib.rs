@@ -33,8 +33,8 @@ pub struct WithdrawOutput {
     /// Amount to withdraw (in satoshis).
     pub amt: BitcoinAmount,
 
-    /// User's preferred operator index for withdrawal assignment.
-    pub preferred_operator: Option<u32>,
+    /// User's selected operator index for withdrawal assignment.
+    pub selected_operator: Option<u32>,
 }
 
 impl WithdrawOutput {
@@ -42,12 +42,12 @@ impl WithdrawOutput {
     pub fn new(
         destination: Descriptor,
         amt: BitcoinAmount,
-        preferred_operator: Option<u32>,
+        selected_operator: Option<u32>,
     ) -> Self {
         Self {
             destination,
             amt,
-            preferred_operator,
+            selected_operator,
         }
     }
 

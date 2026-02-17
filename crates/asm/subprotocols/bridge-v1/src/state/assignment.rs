@@ -161,7 +161,7 @@ impl AssignmentEntry {
         fulfillment_deadline: BitcoinBlockHeight,
         current_active_operators: &OperatorBitmap,
         seed: L1BlockId,
-        preferred_operator: Option<OperatorIdx>,
+        selected_operator: Option<OperatorIdx>,
     ) -> Result<Self, WithdrawalAssignmentError> {
         // No previous assignees at creation
         let previous_assignees =
@@ -180,13 +180,12 @@ impl AssignmentEntry {
             });
         }
 
-        // Honor preferred operator if eligible, otherwise fall back to random selection
+        // Honor selected operator if eligible, otherwise fall back to random selection
         let current_assignee = if let Some(idx) =
-            preferred_operator.filter(|&idx| eligible_operators.is_active(idx))
+            selected_operator.filter(|&idx| eligible_operators.is_active(idx))
         {
             idx
         } else {
-            // Select a random operator from eligible ones.
             // Use ChaChaRng with L1 block ID as seed for deterministic random selection.
             let seed_bytes: [u8; 32] = Buf32::from(seed).into();
             let mut rng = ChaChaRng::from_seed(seed_bytes);
@@ -470,7 +469,7 @@ impl AssignmentTable {
         withdrawal_cmd: WithdrawalCommand,
         current_active_operators: &OperatorBitmap,
         l1_block: &L1BlockCommitment,
-        preferred_operator: Option<OperatorIdx>,
+        selected_operator: Option<OperatorIdx>,
     ) -> Result<(), WithdrawalCommandError> {
         // Create assignment with deadline calculated from current block height + assignment
         // duration
@@ -482,7 +481,7 @@ impl AssignmentTable {
             fulfillment_deadline,
             current_active_operators,
             *l1_block.blkid(),
-            preferred_operator,
+            selected_operator,
         )?;
 
         self.assignments.insert(entry);
@@ -530,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_with_preferred_operator() {
+    fn test_create_with_selected_operator() {
         let mut arb = ArbitraryGenerator::new();
 
         // Generate deposit with at least 3 active operators so we can pick a specific one
@@ -546,8 +545,8 @@ mod tests {
         let seed: L1BlockId = arb.generate();
         let current_active_operators = deposit_entry.notary_operators().clone();
 
-        // Pick the second active operator as preferred
-        let preferred_idx = current_active_operators
+        // Pick the second active operator
+        let selected_idx = current_active_operators
             .active_indices()
             .nth(1)
             .expect("at least 3 active operators");
@@ -558,15 +557,15 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
-            Some(preferred_idx),
+            Some(selected_idx),
         )
         .unwrap();
 
-        assert_eq!(assignment.current_assignee(), preferred_idx);
+        assert_eq!(assignment.current_assignee(), selected_idx);
     }
 
     #[test]
-    fn test_create_with_ineligible_preferred_operator_falls_back_to_random() {
+    fn test_create_with_ineligible_selected_operator_falls_back_to_random() {
         let mut arb = ArbitraryGenerator::new();
         let deposit_entry: DepositEntry = loop {
             let candidate: DepositEntry = arb.generate();
