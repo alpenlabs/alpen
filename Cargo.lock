@@ -1059,6 +1059,7 @@ dependencies = [
  "alpen-chainspec",
  "alpen-ee-common",
  "alpen-ee-config",
+ "alpen-ee-da",
  "alpen-ee-database",
  "alpen-ee-engine",
  "alpen-ee-exec-chain",
@@ -1066,9 +1067,10 @@ dependencies = [
  "alpen-ee-ol-tracker",
  "alpen-ee-sequencer",
  "alpen-reth-evm",
+ "alpen-reth-exex",
  "alpen-reth-node",
  "async-trait",
- "bitcoin",
+ "bitcoind-async-client",
  "clap",
  "eyre",
  "jsonrpsee",
@@ -1087,8 +1089,11 @@ dependencies = [
  "reth-provider",
  "ssz",
  "strata-acct-types",
+ "strata-btcio",
  "strata-common",
+ "strata-config",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-primitives",
@@ -1158,6 +1163,26 @@ dependencies = [
  "alloy-primitives",
  "strata-acct-types",
  "strata-identifiers",
+]
+
+[[package]]
+name = "alpen-ee-da"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-common",
+ "alpen-ee-database",
+ "alpen-reth-db",
+ "alpen-reth-statediff",
+ "async-trait",
+ "bitcoin",
+ "eyre",
+ "strata-btcio",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-primitives",
+ "tracing",
 ]
 
 [[package]]

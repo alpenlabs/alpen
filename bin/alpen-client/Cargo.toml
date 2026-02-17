@@ -9,13 +9,17 @@ workspace = true
 [features]
 default = ["sequencer"]
 sequencer = [
+  "dep:alpen-ee-da",
   "dep:alpen-ee-exec-chain",
   "dep:alpen-ee-sequencer",
+  "dep:alpen-reth-exex",
   "dep:alpen-reth-evm",
   "dep:alloy-eips",
   "dep:alloy-rpc-types-engine",
-  "dep:bitcoin",
+  "dep:bitcoind-async-client",
   "dep:reth-payload-builder",
+  "dep:strata-btcio",
+  "dep:strata-config",
 ]
 
 [[bin]]
@@ -26,6 +30,7 @@ path = "src/main.rs"
 alpen-chainspec.workspace = true
 alpen-ee-common.workspace = true
 alpen-ee-config.workspace = true
+alpen-ee-da = { workspace = true, optional = true }
 alpen-ee-database.workspace = true
 alpen-ee-engine.workspace = true
 alpen-ee-exec-chain = { workspace = true, optional = true }
@@ -33,10 +38,15 @@ alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-evm = { workspace = true, optional = true }
+alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
+bitcoind-async-client = { workspace = true, optional = true }
 strata-acct-types.workspace = true
+strata-btcio = { workspace = true, optional = true }
 strata-common = { workspace = true, features = ["async"] }
+strata-config = { workspace = true, optional = true }
 strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-rpc-types.workspace = true
 strata-primitives.workspace = true
@@ -46,7 +56,6 @@ alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
-bitcoin = { workspace = true, optional = true }
 clap.workspace = true
 eyre.workspace = true
 jsonrpsee = { workspace = true, features = ["http-client"] }
