@@ -181,20 +181,19 @@ impl AssignmentEntry {
         }
 
         // Honor selected operator if eligible, otherwise fall back to random selection
-        let current_assignee = if let Some(idx) =
-            selected_operator.filter(|&idx| eligible_operators.is_active(idx))
-        {
-            idx
-        } else {
-            // Use ChaChaRng with L1 block ID as seed for deterministic random selection.
-            let seed_bytes: [u8; 32] = Buf32::from(seed).into();
-            let mut rng = ChaChaRng::from_seed(seed_bytes);
-            let random_index = (rng.next_u32() as usize) % active_count;
-            eligible_operators
-                .active_indices()
-                .nth(random_index)
-                .expect("random_index is within bounds of active_count")
-        };
+        let current_assignee =
+            if let Some(idx) = selected_operator.filter(|&idx| eligible_operators.is_active(idx)) {
+                idx
+            } else {
+                // Use ChaChaRng with L1 block ID as seed for deterministic random selection.
+                let seed_bytes: [u8; 32] = Buf32::from(seed).into();
+                let mut rng = ChaChaRng::from_seed(seed_bytes);
+                let random_index = (rng.next_u32() as usize) % active_count;
+                eligible_operators
+                    .active_indices()
+                    .nth(random_index)
+                    .expect("random_index is within bounds of active_count")
+            };
 
         Ok(Self {
             deposit_entry: deposit_entry.clone(),
