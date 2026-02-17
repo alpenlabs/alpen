@@ -76,10 +76,10 @@ pub(crate) fn build_block_package<TPayload: EnginePayload>(
 fn create_withdrawal_init_message_payload(
     dest_desc: Descriptor,
     value: BitcoinAmount,
-    preferred_operator: u32,
+    selected_operator: u32,
 ) -> MsgPayload {
     // Encode the deposit message data
-    let withdrawal_data = WithdrawalMsgData::new(0, dest_desc.to_bytes(), preferred_operator)
+    let withdrawal_data = WithdrawalMsgData::new(0, dest_desc.to_bytes(), selected_operator)
         .expect("valid descriptor");
     let body = encode_to_vec(&withdrawal_data).expect("encode withdrawal data");
 

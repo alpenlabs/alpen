@@ -129,7 +129,7 @@ fn handle_bridge_gateway_message<S: IStateAccessor>(
     // If it is, then we can emit a OL log with the amount and destination.
     let log_data = SimpleWithdrawalIntentLogData {
         amt: withdrawal_amt.into(),
-        preferred_operator: withdrawal_data.preferred_operator(),
+        selected_operator: withdrawal_data.selected_operator(),
         dest: withdrawal_data.into_dest_desc(),
     };
 

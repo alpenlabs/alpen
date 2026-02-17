@@ -13,7 +13,7 @@ withdrawal_intent_event_abi = {
     "inputs": [
         {"indexed": False, "internalType": "uint64", "name": "amount", "type": "uint64"},
         {"indexed": False, "internalType": "bytes", "name": "destination", "type": "bytes"},
-        {"indexed": False, "internalType": "uint32", "name": "preferredOperator", "type": "uint32"},
+        {"indexed": False, "internalType": "uint32", "name": "selectedOperator", "type": "uint32"},
     ],
     "name": "WithdrawalIntentEvent",
     "type": "event",

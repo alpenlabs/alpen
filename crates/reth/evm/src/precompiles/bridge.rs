@@ -21,11 +21,11 @@ const MAX_OPERATOR_INDEX_LEN: usize = 4;
 /// This precompile validates transaction and burns the bridge out amount.
 ///
 /// Calldata format: `[1 byte B][B bytes: operator index (big-endian)][BOSD bytes]`
-/// - B=0: no operator preference
+/// - B=0: no operator selection
 /// - B=1..4: operator index encoded as B big-endian bytes
 /// - B>4: invalid
 pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileResult {
-    let (preferred_operator, bosd_data) = parse_calldata(input.data)?;
+    let (selected_operator, bosd_data) = parse_calldata(input.data)?;
 
     // Validate that this is a valid BOSD
     validate_bosd(bosd_data)?;
@@ -51,7 +51,7 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     let evt = WithdrawalIntentEvent {
         amount,
         destination: Bytes::from(bosd_data.to_vec()),
-        preferredOperator: preferred_operator,
+        selectedOperator: selected_operator,
     };
 
     // Create a log entry for the bridge out intent
@@ -75,7 +75,7 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
 }
 
-/// Parses bridge out calldata into a preferred operator index and BOSD bytes.
+/// Parses bridge out calldata into a selected operator index and BOSD bytes.
 ///
 /// Format: `[1 byte B][B bytes: operator index (big-endian)][BOSD bytes]`
 /// - B=0: no selection, returns [`NO_SELECTED_OPERATOR`]

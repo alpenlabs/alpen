@@ -172,7 +172,7 @@ impl BridgeV1State {
             withdrawal_cmd,
             self.operators.current_multisig(),
             l1_block,
-            withdrawal_output.preferred_operator,
+            withdrawal_output.selected_operator,
         )
     }
 

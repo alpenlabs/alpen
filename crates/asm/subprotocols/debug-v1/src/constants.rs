@@ -32,6 +32,6 @@ pub(crate) const MIN_DESCRIPTOR_SIZE: usize = 20;
 /// Minimum auxiliary data length for mock withdrawal intent.
 ///
 /// Format: `[amount: 8 bytes][1 byte B][B bytes: operator index][descriptor: variable]`
-/// Minimum case is B=0 (no operator preference).
+/// Minimum case is B=0 (no operator selection).
 pub(crate) const MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN: usize =
     AMOUNT_SIZE + 1 + MIN_DESCRIPTOR_SIZE;

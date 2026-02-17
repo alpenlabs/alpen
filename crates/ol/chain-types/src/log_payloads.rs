@@ -14,18 +14,18 @@ pub struct SimpleWithdrawalIntentLogData {
     /// Destination BOSD.
     pub dest: VarVec<u8>,
 
-    /// User's preferred operator index for withdrawal assignment.
-    pub preferred_operator: u32,
+    /// User's selected operator index for withdrawal assignment.
+    pub selected_operator: u32,
 }
 
 impl SimpleWithdrawalIntentLogData {
     /// Create a new simple withdrawal intent log data instance.
-    pub fn new(amt: u64, dest: Vec<u8>, preferred_operator: u32) -> Option<Self> {
+    pub fn new(amt: u64, dest: Vec<u8>, selected_operator: u32) -> Option<Self> {
         let dest = VarVec::from_vec(dest)?;
         Some(Self {
             amt,
             dest,
-            preferred_operator,
+            selected_operator,
         })
     }
 
@@ -87,7 +87,7 @@ mod tests {
         let log_data = SimpleWithdrawalIntentLogData {
             amt: 100_000_000, // 1 BTC
             dest: VarVec::from_vec(b"bc1qtest123456789".to_vec()).unwrap(),
-            preferred_operator: 42,
+            selected_operator: 42,
         };
 
         // Encode
@@ -99,7 +99,7 @@ mod tests {
         // Verify round-trip
         assert_eq!(decoded.amt, log_data.amt);
         assert_eq!(decoded.dest.as_ref(), log_data.dest.as_ref());
-        assert_eq!(decoded.preferred_operator, log_data.preferred_operator);
+        assert_eq!(decoded.selected_operator, log_data.selected_operator);
     }
 
     #[test]
@@ -108,7 +108,7 @@ mod tests {
         let log_data = SimpleWithdrawalIntentLogData {
             amt: 50_000,
             dest: VarVec::from_vec(vec![]).unwrap(),
-            preferred_operator: 0,
+            selected_operator: 0,
         };
 
         let encoded = encode_to_vec(&log_data).unwrap();
@@ -124,7 +124,7 @@ mod tests {
         let log_data = SimpleWithdrawalIntentLogData {
             amt: u64::MAX,
             dest: VarVec::from_vec(vec![255u8; 200]).unwrap(),
-            preferred_operator: u32::MAX,
+            selected_operator: u32::MAX,
         };
 
         let encoded = encode_to_vec(&log_data).unwrap();
@@ -141,7 +141,7 @@ mod tests {
         let log_data = SimpleWithdrawalIntentLogData {
             amt: 0,
             dest: VarVec::from_vec(b"addr1test".to_vec()).unwrap(),
-            preferred_operator: 5,
+            selected_operator: 5,
         };
 
         let encoded = encode_to_vec(&log_data).unwrap();

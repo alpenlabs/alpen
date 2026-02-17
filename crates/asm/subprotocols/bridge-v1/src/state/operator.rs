@@ -102,7 +102,7 @@ pub(crate) fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptB
 ///
 /// **WARNING**: Since indices are never reused and `OperatorIdx` is `u32`, the table
 /// can support at most `u32::MAX - 1` unique operator registrations over its entire
-/// lifetime. Index `u32::MAX` is reserved as a sentinel for "no preferred operator"
+/// lifetime. Index `u32::MAX` is reserved as a sentinel for "no selected operator"
 /// in the withdrawal assignment protocol.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
 pub struct OperatorTable {
@@ -319,7 +319,7 @@ impl OperatorTable {
     ///
     /// Panics if:
     /// - Sequential operator insertion fails (bitmap index management error)
-    /// - `next_idx` reaches `u32::MAX` (reserved as the "no preferred operator" sentinel)
+    /// - `next_idx` reaches `u32::MAX` (reserved as the "no selected operator" sentinel)
     fn add_operators(&mut self, operators: &[EvenPublicKey]) {
         for musig2_pk in operators {
             // Check if it already exists in the table (which handles both existing operators
