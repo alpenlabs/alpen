@@ -5,12 +5,14 @@ l2_blocks_fetch_limit = 1_000
 datadir = "data"
 db_retry_count = 5
 # sequencer_rpc = "ws://strata-nodes-client-svc:8432"
-sync_endpoint = "ws://strata-client-strata-nodes-refactor-client-svc:8432"
+#sync_endpoint = "ws://strata-client-strata-nodes-refactor-client-svc:8432"
+is_sequencer = true
 
 [bitcoind]
+# Regtest bitcoind in docker-compose-ol-ee.yml exposes 18443
 rpc_url = "http://bitcoind:38332"
-rpc_user = "rpcuser"
-rpc_password = "rpcpassword"
+rpc_user = "bitcoin"
+rpc_password = "bitcoin"
 network = "signet"
 
 [sync]
@@ -38,3 +40,6 @@ secret = "configs/jwt.fn.hex"
 refresh_interval = 10
 stale_duration = 10
 relay_misc = true
+
+[sequencer]
+
