@@ -39,6 +39,11 @@ define_host!(
     GUEST_CHECKPOINT_ELF,
     "guest-checkpoint.elf"
 );
+define_host!(
+    CHECKPOINT_NEW_HOST,
+    GUEST_CHECKPOINT_NEW_ELF,
+    "guest-checkpoint-new.elf"
+);
 
 /// Returns a cloned Arc to the appropriate `SP1Host` instance based on the given [`ProofContext`].
 ///
