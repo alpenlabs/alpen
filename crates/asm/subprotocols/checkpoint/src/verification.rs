@@ -178,11 +178,8 @@ fn extract_and_validate_withdrawal_intents(
         let selected_operator = (withdrawal_data.selected_operator != NO_SELECTED_OPERATOR)
             .then_some(withdrawal_data.selected_operator);
 
-        let withdraw_output = WithdrawOutput::new(
-            destination,
-            withdrawal_data.amt().into(),
-            selected_operator,
-        );
+        let withdraw_output =
+            WithdrawOutput::new(destination, withdrawal_data.amt().into(), selected_operator);
         withdrawal_intents.push(withdraw_output);
     }
 
