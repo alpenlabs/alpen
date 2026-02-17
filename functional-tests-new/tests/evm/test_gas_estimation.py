@@ -24,7 +24,7 @@ class TestGasEstimation(AlpenClientTest):
         gas = rpc.eth_estimateGas(
             {
                 "from": DEV_ADDRESS,
-                "to": "0x0000000000000000000000000000000000000001",
+                "to": "0x000000000000000000000000000000000000dEaD",
                 "value": "0x1",
             }
         )
@@ -37,7 +37,7 @@ class TestGasEstimation(AlpenClientTest):
         gas_with_data = rpc.eth_estimateGas(
             {
                 "from": DEV_ADDRESS,
-                "to": "0x0000000000000000000000000000000000000001",
+                "to": "0x000000000000000000000000000000000000dEaD",
                 "value": "0x1",
                 "data": "0x" + "ab" * 100,
             }
@@ -49,7 +49,7 @@ class TestGasEstimation(AlpenClientTest):
         gas_zero = rpc.eth_estimateGas(
             {
                 "from": DEV_ADDRESS,
-                "to": "0x0000000000000000000000000000000000000001",
+                "to": "0x000000000000000000000000000000000000dEaD",
                 "value": "0x0",
             }
         )
@@ -63,7 +63,7 @@ class TestGasEstimation(AlpenClientTest):
             gas_tag = rpc.eth_estimateGas(
                 {
                     "from": DEV_ADDRESS,
-                    "to": "0x0000000000000000000000000000000000000001",
+                    "to": "0x000000000000000000000000000000000000dEaD",
                     "value": "0x1",
                 },
                 tag,

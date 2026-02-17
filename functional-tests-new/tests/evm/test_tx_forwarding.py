@@ -43,7 +43,7 @@ class TestTxForwarding(AlpenClientTest):
 
         gas_price = int(fn_rpc.eth_gasPrice(), 16)
 
-        recipient = "0x0000000000000000000000000000000000000001"
+        recipient = "0x000000000000000000000000000000000000dEaD"
         raw_tx = account.sign_transfer(
             to=recipient,
             value=1_000_000_000,

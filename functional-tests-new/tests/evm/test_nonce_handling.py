@@ -29,7 +29,7 @@ class TestNonceHandling(AlpenClientTest):
         account = create_funded_account(rpc, dev_account, 10**18)
         logger.info(f"Created test account: {account.address}")
 
-        recipient = "0x0000000000000000000000000000000000000001"
+        recipient = "0x000000000000000000000000000000000000dEaD"
 
         initial_nonce = int(rpc.eth_getTransactionCount(account.address, "latest"), 16)
         logger.info(f"Initial nonce: {initial_nonce}")

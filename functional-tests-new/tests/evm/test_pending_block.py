@@ -28,7 +28,7 @@ class TestPendingBlock(AlpenClientTest):
         gas = rpc.eth_estimateGas(
             {
                 "from": DEV_ADDRESS,
-                "to": "0x0000000000000000000000000000000000000001",
+                "to": "0x000000000000000000000000000000000000dEaD",
                 "value": "0x1",
             },
             "pending",
