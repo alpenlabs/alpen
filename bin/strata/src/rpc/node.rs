@@ -309,7 +309,7 @@ impl OLClientRpcServer for OLRpcServer {
     ) -> RpcResult<EpochCommitment> {
         let epoch = self
             .storage
-            .account_genesis()
+            .account()
             .get_account_creation_epoch_blocking(account_id)
             .map_err(db_error)?
             .ok_or_else(|| {

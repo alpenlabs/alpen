@@ -275,7 +275,7 @@ def main(argv: list[str]) -> int:
             enable_l1_da=True,
         ),
         # Environments containing both ee and ol
-        "ee_ol": EeOLEnv(pre_generate_blocks=110),
+        "el_ol": EeOLEnv(pre_generate_blocks=110),
     }
 
     # Set up test runtime

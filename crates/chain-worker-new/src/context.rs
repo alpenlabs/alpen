@@ -14,7 +14,7 @@ use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{AccountGenesisManager, OLBlockManager, OLCheckpointManager, OLStateManager};
+use strata_storage::{AccountManager, OLBlockManager, OLCheckpointManager, OLStateManager};
 use tokio::{runtime::Handle, sync::watch};
 use tracing::warn;
 
@@ -44,7 +44,7 @@ pub struct ChainWorkerContextImpl {
     ol_checkpoint_mgr: Arc<OLCheckpointManager>,
 
     /// Manager for per-account creation epoch tracking.
-    account_genesis_mgr: Arc<AccountGenesisManager>,
+    account_genesis_mgr: Arc<AccountManager>,
 
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
@@ -67,7 +67,7 @@ impl ChainWorkerContextImpl {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
-            account_genesis_mgr: nodectx.storage().account_genesis().clone(),
+            account_genesis_mgr: nodectx.storage().account().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),

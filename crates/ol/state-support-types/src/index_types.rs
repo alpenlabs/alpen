@@ -197,6 +197,13 @@ impl SnarkAcctStateUpdate {
             Self::Update(s) => s.seqno,
         }
     }
+
+    pub fn extra_data(&self) -> Option<&[u8]> {
+        match self {
+            Self::DirectSet(_) => None,
+            Self::Update(u) => Some(u.extra_data()),
+        }
+    }
 }
 
 // ============================================================================

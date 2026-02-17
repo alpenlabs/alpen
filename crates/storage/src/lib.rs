@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::Context;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub use managers::{
-    account_genesis::AccountGenesisManager,
+    account_genesis::AccountManager,
     asm::AsmStateManager,
     chainstate::ChainstateManager,
     checkpoint::CheckpointDbManager,
@@ -42,7 +42,7 @@ pub struct NodeStorage {
     /// Thread pool for blocking database operations
     pool: threadpool::ThreadPool,
 
-    account_genesis_manager: Arc<AccountGenesisManager>,
+    account_manager: Arc<AccountManager>,
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -69,7 +69,7 @@ impl Clone for NodeStorage {
         Self {
             db: self.db.clone(),
             pool: self.pool.clone(),
-            account_genesis_manager: self.account_genesis_manager.clone(),
+            account_manager: self.account_manager.clone(),
             asm_state_manager: self.asm_state_manager.clone(),
             l1_block_manager: self.l1_block_manager.clone(),
             l2_block_manager: self.l2_block_manager.clone(),
@@ -96,8 +96,8 @@ impl NodeStorage {
         &self.pool
     }
 
-    pub fn account_genesis(&self) -> &Arc<AccountGenesisManager> {
-        &self.account_genesis_manager
+    pub fn account(&self) -> &Arc<AccountManager> {
+        &self.account_manager
     }
 
     pub fn asm(&self) -> &Arc<AsmStateManager> {
@@ -171,8 +171,7 @@ pub fn create_node_storage(
     let ol_checkpoint_db = db.ol_checkpoint_db();
     let global_mmr_db = db.global_mmr_db();
 
-    let account_genesis_manager =
-        Arc::new(AccountGenesisManager::new(pool.clone(), account_genesis_db));
+    let account_genesis_manager = Arc::new(AccountManager::new(pool.clone(), account_genesis_db));
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -195,7 +194,7 @@ pub fn create_node_storage(
     Ok(NodeStorage {
         db,
         pool,
-        account_genesis_manager,
+        account_manager: account_genesis_manager,
         asm_state_manager: asm_manager,
         l1_block_manager,
         l2_block_manager,

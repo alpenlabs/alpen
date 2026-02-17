@@ -83,6 +83,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         da_magic_bytes: bytes = b'',
         l1_reorg_safe_depth: int = 2,
         batch_sealing_block_count: int = 10,
+        ol_endpoint: str | None = None,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -122,6 +123,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             sequencer_pubkey=pubkey,
             sequencer_privkey=privkey,
             enable_discovery=enable_discovery,
+            ol_endpoint=ol_endpoint,
             da_config=da_config,
         )
         sequencer.wait_for_ready(timeout=60)
@@ -148,6 +150,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 enable_discovery=enable_discovery,
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
+                ol_endpoint=ol_endpoint,
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)
