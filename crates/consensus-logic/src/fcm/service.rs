@@ -161,9 +161,10 @@ async fn process_fc_message(
                 let prev_epoch = ckpt_db
                     .get_canonical_epoch_commitment_at_async(prev_epoch_num as u64)
                     .await?
-                    .unwrap_or_else(|| {
-                        EpochCommitment::new(prev_epoch_num, 0, Buf32::zero().into())
-                    });
+                    .ok_or(anyhow!(
+                        "expected epoch commitment for previous epoch {} not in db",
+                        prev_epoch_num
+                    ))?;
                 let status = ChainSyncStatus {
                     tip: fcm_state.cur_best_block(),
                     prev_epoch,
