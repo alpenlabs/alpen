@@ -130,7 +130,12 @@ fn validate_bosd(data: &[u8]) -> Result<(), PrecompileError> {
 mod tests {
     use super::*;
 
-    const DUMMY_BOSD: &[u8] = &[0x00; 20]; // placeholder BOSD bytes
+    /// Valid P2WPKH descriptor: type tag (0x03) + 20-byte hash160.
+    const VALID_P2WPKH_BOSD: &[u8; 21] = &{
+        let mut buf = [0x14u8; 21];
+        buf[0] = 0x03; // P2WPKH type tag
+        buf
+    };
 
     #[test]
     fn test_parse_calldata_empty() {
@@ -141,21 +146,21 @@ mod tests {
     #[test]
     fn test_parse_calldata_no_preference() {
         let mut data = vec![0x00];
-        data.extend_from_slice(DUMMY_BOSD);
+        data.extend_from_slice(VALID_P2WPKH_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
         assert_eq!(operator, NO_SELECTED_OPERATOR);
-        assert_eq!(bosd, DUMMY_BOSD);
+        assert_eq!(bosd, VALID_P2WPKH_BOSD);
     }
 
     #[test]
     fn test_parse_calldata_operator_1_byte() {
         let mut data = vec![1, 42];
-        data.extend_from_slice(DUMMY_BOSD);
+        data.extend_from_slice(VALID_P2WPKH_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
         assert_eq!(operator, 42);
-        assert_eq!(bosd, DUMMY_BOSD);
+        assert_eq!(bosd, VALID_P2WPKH_BOSD);
     }
 
     #[test]
@@ -163,21 +168,21 @@ mod tests {
         let idx: u32 = 0x01020304;
         let mut data = vec![4];
         data.extend_from_slice(&idx.to_be_bytes());
-        data.extend_from_slice(DUMMY_BOSD);
+        data.extend_from_slice(VALID_P2WPKH_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
         assert_eq!(operator, idx);
-        assert_eq!(bosd, DUMMY_BOSD);
+        assert_eq!(bosd, VALID_P2WPKH_BOSD);
     }
 
     #[test]
     fn test_parse_calldata_operator_zero_4_bytes() {
         let mut data = vec![4, 0, 0, 0, 0];
-        data.extend_from_slice(DUMMY_BOSD);
+        data.extend_from_slice(VALID_P2WPKH_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
         assert_eq!(operator, 0);
-        assert_eq!(bosd, DUMMY_BOSD);
+        assert_eq!(bosd, VALID_P2WPKH_BOSD);
     }
 
     #[test]
@@ -206,15 +211,17 @@ mod tests {
     #[test]
     fn test_parse_calldata_mismatched_b_eats_bosd_bytes() {
         // Encoder intended B=1 with operator=3, but mistakenly set B=2.
-        // parse_calldata trusts B, so the first BOSD byte (0x00) is consumed
+        // parse_calldata trusts B, so the BOSD type tag (0x03) is consumed
         // as part of the operator index, producing a wrong operator and shifted BOSD.
         let mut data = vec![2, 0x03]; // B=2, first operator byte
-        data.extend_from_slice(DUMMY_BOSD); // 0x00 of BOSD will be eaten as 2nd operator byte
+        data.extend_from_slice(VALID_P2WPKH_BOSD); // type tag (0x03) eaten as 2nd operator byte
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
-        // Operator becomes (0x03 << 8) | 0x00 = 768 instead of intended 3
-        assert_eq!(operator, 0x0300);
-        // BOSD is truncated by 1 byte
-        assert_eq!(bosd.len(), DUMMY_BOSD.len() - 1);
+        // Operator becomes (0x03 << 8) | 0x03 = 771 instead of intended 3
+        assert_eq!(operator, 0x0303);
+        // BOSD is truncated by 1 byte — no longer a valid descriptor
+        assert_eq!(bosd.len(), VALID_P2WPKH_BOSD.len() - 1);
+        // The downstream validate_bosd catches the corruption
+        assert!(validate_bosd(bosd).is_err());
     }
 }
