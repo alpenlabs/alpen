@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
 use bitcoin::ScriptBuf;
-use strata_asm_common::AuxError;
 use strata_asm_txs_bridge_v1::errors::{BridgeTxParseError, Mismatch, TxStructureError};
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::BitcoinAmount;
@@ -23,9 +22,6 @@ pub enum BridgeSubprotocolError {
 
     #[error("failed to validate slash tx")]
     UnstakeTxValidation(#[from] UnstakeValidationError),
-
-    #[error("failed to get proper aux data")]
-    Aux(#[from] AuxError),
 }
 
 /// Errors that can occur when validating deposit transactions at the subprotocol level.
@@ -63,10 +59,6 @@ pub enum DepositValidationError {
     /// Failed to parse the Deposit Request Transaction.
     #[error("failed to parse DRT")]
     DrtParseError(#[from] TxStructureError),
-
-    /// Failed to fetch required auxiliary data (e.g., Deposit Request Tx).
-    #[error("auxiliary data lookup failed")]
-    Aux(#[from] AuxError),
 }
 
 /// Errors that can occur during deposit output lock validation.
@@ -109,10 +101,6 @@ pub enum SlashValidationError {
     /// Stake connector input is not locked to the expected N/N multisig script
     #[error("stake connector not locked to N/N multisig script")]
     InvalidStakeConnectorScript,
-
-    /// Failed to retrieve the stake connector from auxiliary data.
-    #[error("auxiliary data lookup failed")]
-    Aux(#[from] AuxError),
 }
 
 #[derive(Debug, Error)]

@@ -1,4 +1,6 @@
-use strata_asm_common::{AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData};
+use strata_asm_common::{
+    AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData, logging::error,
+};
 use strata_asm_logs::{DepositLog, NewExportEntry};
 use strata_asm_txs_bridge_v1::{
     BRIDGE_V1_SUBPROTOCOL_ID, deposit_request::parse_drt, parser::ParsedTx,
@@ -23,6 +25,15 @@ use crate::{
 /// # Returns
 /// * `Ok(())` if the transaction was processed successfully
 /// * `Err(BridgeSubprotocolError)` if validation fails or an error occurred during processing
+///
+/// # Panics
+///
+/// Panics if the required auxiliary data (Bitcoin transactions) is not provided. Auxiliary data is
+/// requested during the preprocessing phase for transactions that were identified as valid bridge
+/// transactions. If the aux data is not available, it indicates a failure in the aux data
+/// fulfillment system, not an invalid transaction. Silently ignoring this error would allow valid
+/// bridge transactions to be treated as invalid, enabling anyone to create a false ASM proof by
+/// simply not providing the required aux data.
 pub(crate) fn handle_parsed_tx(
     state: &mut BridgeV1State,
     parsed_tx: ParsedTx,
@@ -31,7 +42,13 @@ pub(crate) fn handle_parsed_tx(
 ) -> Result<(), BridgeSubprotocolError> {
     match parsed_tx {
         ParsedTx::Deposit(info) => {
-            let drt_tx = verified_aux_data.get_bitcoin_tx(info.drt_inpoint().txid)?;
+            let drt_txid = info.drt_inpoint().txid;
+            let drt_tx = verified_aux_data
+                .get_bitcoin_tx(drt_txid)
+                .unwrap_or_else(|e| {
+                    error!(error = %e, %drt_txid, "invalid aux data for deposit tx");
+                    panic!("invalid aux: deposit DRT not provided");
+                });
             let drt_info = parse_drt(drt_tx).map_err(DepositValidationError::from)?;
 
             validate_deposit_info(state, &info, &drt_info)?;
@@ -65,8 +82,13 @@ pub(crate) fn handle_parsed_tx(
             Ok(())
         }
         ParsedTx::Slash(info) => {
-            let stake_connector_txout =
-                verified_aux_data.get_bitcoin_txout(info.stake_inpoint().outpoint())?;
+            let outpoint = info.stake_inpoint().outpoint();
+            let stake_connector_txout = verified_aux_data
+                .get_bitcoin_txout(outpoint)
+                .unwrap_or_else(|e| {
+                    error!(error = %e, %outpoint, "invalid aux data for slash tx");
+                    panic!("invalid aux: stake connector tx not provided");
+                });
             validate_slash_stake_connector(state, &stake_connector_txout.script_pubkey)?;
             state.remove_operator(info.header_aux().operator_idx());
             Ok(())
@@ -248,5 +270,38 @@ mod tests {
             !state.operators().is_in_current_multisig(operator_idx),
             "Operator should be removed"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid aux: deposit DRT not provided")]
+    fn test_handle_deposit_tx_panics_on_missing_aux_data() {
+        let (mut state, operators) = create_test_state();
+        let drt_aux: DrtHeaderAux = ArbitraryGenerator::new().generate();
+        let (_correct_aux, info) = setup_deposit_test(
+            &drt_aux,
+            *state.denomination(),
+            state.recovery_delay(),
+            &operators,
+        );
+
+        // Provide empty aux data instead of the required DRT
+        let empty_aux = create_verified_aux_data(vec![]);
+        let parsed_tx = ParsedTx::Deposit(info);
+        let mut relayer = MockMsgRelayer;
+        let _ = handle_parsed_tx(&mut state, parsed_tx, &empty_aux, &mut relayer);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid aux: stake connector tx not provided")]
+    fn test_handle_slash_tx_panics_on_missing_aux_data() {
+        let operator_idx = 1;
+        let (mut state, operators) = create_test_state();
+        let (info, _correct_aux) = setup_slash_test(operator_idx, &operators);
+
+        // Provide empty aux data instead of the required stake connector tx
+        let empty_aux = create_verified_aux_data(vec![]);
+        let parsed_tx = ParsedTx::Slash(info);
+        let mut relayer = MockMsgRelayer;
+        let _ = handle_parsed_tx(&mut state, parsed_tx, &empty_aux, &mut relayer);
     }
 }
