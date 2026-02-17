@@ -9,6 +9,8 @@ from common.config.constants import DEV_ADDRESS
 
 logger = logging.getLogger(__name__)
 
+SIMPLE_TRANSFER_GAS = 21000
+
 
 @flexitest.register
 class TestPendingBlock(AlpenClientTest):
@@ -36,8 +38,7 @@ class TestPendingBlock(AlpenClientTest):
         gas_int = int(gas, 16)
         logger.info(f"Estimated gas: {gas_int}")
 
-        assert gas_int >= 21000, f"Gas estimate too low: {gas_int}"
-        assert gas_int < 100000, f"Gas estimate too high for simple transfer: {gas_int}"
+        assert gas_int == SIMPLE_TRANSFER_GAS, f"Expected {SIMPLE_TRANSFER_GAS} gas, got {gas_int}"
 
         logger.info("Pending block test passed")
         return True

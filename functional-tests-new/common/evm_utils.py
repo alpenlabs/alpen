@@ -12,7 +12,7 @@ def get_balance(rpc, address: str, block_tag: str = "latest") -> int:
     return int(result, 16)
 
 
-def wait_for_receipt(rpc, tx_hash: str, timeout: int = 30) -> dict:
+def wait_for_receipt(rpc, tx_hash: str, timeout: int = 10) -> dict:
     """Wait for a transaction receipt."""
     receipt: dict | None = None
 

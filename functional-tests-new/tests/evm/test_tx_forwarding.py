@@ -24,7 +24,7 @@ class TestTxForwarding(AlpenClientTest):
         seq_rpc = sequencer.create_rpc()
         fn_rpc = fullnode.create_rpc()
 
-        sequencer.wait_for_block(2, timeout=30)
+        sequencer.wait_for_block(2, timeout=10)
 
         dev_account = get_dev_account()
         dev_nonce = int(seq_rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)
@@ -34,7 +34,7 @@ class TestTxForwarding(AlpenClientTest):
         logger.info(f"Created test account: {account.address}")
 
         seq_block = int(seq_rpc.eth_blockNumber(), 16)
-        fullnode.wait_for_block(seq_block, timeout=30)
+        fullnode.wait_for_block(seq_block, timeout=10)
         logger.info(f"Fullnode synced to block {seq_block}")
 
         fn_balance = int(fn_rpc.eth_getBalance(account.address, "latest"), 16)
@@ -48,7 +48,7 @@ class TestTxForwarding(AlpenClientTest):
             to=recipient,
             value=1_000_000_000,
             gas_price=gas_price,
-            gas=25000,
+            gas=21000,
         )
 
         logger.info("Sending transaction to fullnode...")
@@ -56,7 +56,7 @@ class TestTxForwarding(AlpenClientTest):
         logger.info(f"Transaction sent to fullnode: {tx_hash}")
 
         logger.info("Waiting for receipt from sequencer...")
-        receipt = wait_for_receipt(seq_rpc, tx_hash, timeout=30)
+        receipt = wait_for_receipt(seq_rpc, tx_hash)
 
         assert receipt is not None, "Transaction not mined"
         assert receipt["status"] == "0x1", f"Transaction failed: {receipt}"

@@ -34,7 +34,7 @@ class TestBlockQueries(AlpenClientTest):
 
         block_0 = rpc.eth_getBlockByNumber("0x0", False)
         assert block_0 is not None, "Failed to get genesis block"
-        assert block_0["number"] == "0x0", "Genesis block should be number 0"
+        assert block_0["number"] == "0x0", "Block number mismatch"
         logger.info(f"Genesis block hash: {block_0['hash']}")
 
         block_1 = rpc.eth_getBlockByNumber("0x1", False)

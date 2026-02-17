@@ -9,7 +9,7 @@ import logging
 
 import flexitest
 
-from common.accounts import DEV_ACCOUNT, RECIPIENT_ACCOUNT, sign_transfer
+from common.accounts import get_dev_account, get_recipient_account
 from common.base_test import AlpenClientTest
 from common.wait import wait_until
 
@@ -40,18 +40,21 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
         seq_rpc = sequencer.create_rpc()
         fn_rpc = fullnodes[0].create_rpc()
 
+        dev_account = get_dev_account()
+        recipient_account = get_recipient_account()
+
         # Verify dev account has funds
-        balance = int(seq_rpc.eth_getBalance(DEV_ACCOUNT.address, "latest"), 16)
+        balance = int(seq_rpc.eth_getBalance(dev_account.address, "latest"), 16)
         assert balance > 0, "Dev account has no balance"
 
         # Build and send transaction to fullnode (not sequencer)
-        nonce = int(seq_rpc.eth_getTransactionCount(DEV_ACCOUNT.address, "latest"), 16)
+        nonce = int(seq_rpc.eth_getTransactionCount(dev_account.address, "pending"), 16)
+        dev_account.sync_nonce(nonce)
         gas_price = int(int(seq_rpc.eth_gasPrice(), 16) * 1.5)
 
-        raw_tx = sign_transfer(
-            to=RECIPIENT_ACCOUNT.address,
+        raw_tx = dev_account.sign_transfer(
+            to=recipient_account.address,
             value=TX_VALUE_WEI,
-            nonce=nonce,
             gas_price=gas_price,
         )
 
@@ -81,7 +84,7 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
             )
 
         # Verify recipient received funds
-        recipient_balance = int(seq_rpc.eth_getBalance(RECIPIENT_ACCOUNT.address, "latest"), 16)
+        recipient_balance = int(seq_rpc.eth_getBalance(recipient_account.address, "latest"), 16)
         assert recipient_balance >= TX_VALUE_WEI, "Recipient didn't receive funds"
 
         logger.info(f"Transaction propagation verified: block {block_num}")

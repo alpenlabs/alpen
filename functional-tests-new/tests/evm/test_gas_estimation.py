@@ -9,6 +9,8 @@ from common.config.constants import DEV_ADDRESS
 
 logger = logging.getLogger(__name__)
 
+SIMPLE_TRANSFER_GAS = 21000
+
 
 @flexitest.register
 class TestGasEstimation(AlpenClientTest):
@@ -28,7 +30,9 @@ class TestGasEstimation(AlpenClientTest):
         )
         gas_int = int(gas, 16)
         logger.info(f"Simple transfer gas estimate: {gas_int}")
-        assert 21000 <= gas_int < 30000, f"Unexpected gas for simple transfer: {gas_int}"
+        assert gas_int == SIMPLE_TRANSFER_GAS, (
+            f"Expected {SIMPLE_TRANSFER_GAS} gas for simple transfer, got {gas_int}"
+        )
 
         gas_with_data = rpc.eth_estimateGas(
             {
@@ -40,7 +44,7 @@ class TestGasEstimation(AlpenClientTest):
         )
         gas_with_data_int = int(gas_with_data, 16)
         logger.info(f"Transfer with data gas estimate: {gas_with_data_int}")
-        assert gas_with_data_int > gas_int, "Data should increase gas cost"
+        assert gas_with_data_int > SIMPLE_TRANSFER_GAS, "Data should increase gas cost"
 
         gas_zero = rpc.eth_estimateGas(
             {
@@ -51,7 +55,9 @@ class TestGasEstimation(AlpenClientTest):
         )
         gas_zero_int = int(gas_zero, 16)
         logger.info(f"Zero value transfer gas estimate: {gas_zero_int}")
-        assert gas_zero_int >= 21000, f"Unexpected gas for zero transfer: {gas_zero_int}"
+        assert gas_zero_int == SIMPLE_TRANSFER_GAS, (
+            f"Expected {SIMPLE_TRANSFER_GAS} gas for zero transfer, got {gas_zero_int}"
+        )
 
         for tag in ["latest", "pending"]:
             gas_tag = rpc.eth_estimateGas(
@@ -64,7 +70,9 @@ class TestGasEstimation(AlpenClientTest):
             )
             gas_tag_int = int(gas_tag, 16)
             logger.info(f"Gas estimate at '{tag}': {gas_tag_int}")
-            assert gas_tag_int >= 21000, f"Unexpected gas at {tag}: {gas_tag_int}"
+            assert gas_tag_int == SIMPLE_TRANSFER_GAS, (
+                f"Expected {SIMPLE_TRANSFER_GAS} gas at {tag}, got {gas_tag_int}"
+            )
 
         logger.info("Gas estimation test passed")
         return True

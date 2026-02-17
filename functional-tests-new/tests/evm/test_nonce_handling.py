@@ -41,33 +41,23 @@ class TestNonceHandling(AlpenClientTest):
             to=recipient,
             value=1000,
             gas_price=gas_price,
-            gas=25000,
+            gas=21000,
         )
         tx_hash = rpc.eth_sendRawTransaction(raw_tx)
-        logger.info(f"Sent tx with nonce {initial_nonce}: {tx_hash}")
+        logger.info(f"Sent tx with nonce 0: {tx_hash}")
 
         receipt = wait_for_receipt(rpc, tx_hash)
         assert receipt["status"] == "0x1", "Transaction should succeed"
 
         new_nonce = int(rpc.eth_getTransactionCount(account.address, "latest"), 16)
-        assert new_nonce == initial_nonce + 1, (
-            f"Nonce should increment: expected {initial_nonce + 1}, got {new_nonce}"
-        )
+        assert new_nonce == 1, f"Nonce should be 1, got {new_nonce}"
         logger.info(f"Nonce after tx: {new_nonce}")
 
-        old_nonce_tx = account.sign_transfer(
-            to=recipient,
-            value=1000,
-            gas_price=gas_price,
-            gas=25000,
-            nonce=initial_nonce,
-        )
-
         try:
-            rpc.eth_sendRawTransaction(old_nonce_tx)
-            raise AssertionError("Transaction with old nonce should be rejected")
+            rpc.eth_sendRawTransaction(raw_tx)
+            raise AssertionError("Replaying tx with old nonce should be rejected")
         except RpcError as e:
-            logger.info(f"Old nonce correctly rejected: {e.message}")
+            logger.info(f"Replay correctly rejected: {e.message}")
             assert e.message and "nonce" in e.message.lower(), (
                 f"Expected nonce error, got: {e.message}"
             )
@@ -78,7 +68,7 @@ class TestNonceHandling(AlpenClientTest):
                 to=recipient,
                 value=1000,
                 gas_price=gas_price,
-                gas=25000,
+                gas=21000,
             )
             tx_hash = rpc.eth_sendRawTransaction(raw_tx)
             tx_hashes.append(tx_hash)
@@ -89,10 +79,7 @@ class TestNonceHandling(AlpenClientTest):
             assert receipt["status"] == "0x1", f"Transaction {tx_hash} should succeed"
 
         final_nonce = int(rpc.eth_getTransactionCount(account.address, "latest"), 16)
-        expected_nonce = initial_nonce + 4
-        assert final_nonce == expected_nonce, (
-            f"Final nonce should be {expected_nonce}, got {final_nonce}"
-        )
+        assert final_nonce == 4, f"Final nonce should be 4, got {final_nonce}"
         logger.info(f"Final nonce: {final_nonce}")
 
         logger.info("Nonce handling test passed")
