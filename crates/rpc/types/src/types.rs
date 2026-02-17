@@ -207,6 +207,7 @@ pub struct RawBlockWitness {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[deprecated(note = "use OL checkpoint status types in `strata_ol_rpc_types`")]
 pub enum RpcCheckpointConfStatus {
     /// Pending to be posted on L1
     Pending,
@@ -233,6 +234,7 @@ impl From<CheckpointEntry> for RpcCheckpointConfStatus {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[deprecated(note = "use OL checkpoint/account summary types in `strata_ol_rpc_types`")]
 pub struct RpcCheckpointInfo {
     /// The index of the checkpoint
     pub idx: u64,
@@ -333,6 +335,7 @@ impl RpcDepositEntry {
 
 /// status of L2 Block
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(note = "use `strata_ol_rpc_types::RpcOLChainStatus` for OL/EE-decoupled status")]
 pub enum L2BlockStatus {
     /// Unknown block height
     Unknown,
@@ -345,6 +348,7 @@ pub enum L2BlockStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(note = "use `strata_ol_rpc_types::RpcOLChainStatus` for OL/EE-decoupled chain status")]
 pub struct RpcChainState {
     /// Most recent seen block.
     pub tip_blkid: L2BlockId,

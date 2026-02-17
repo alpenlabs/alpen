@@ -256,6 +256,7 @@ pub enum L1TxStatus {
 
 /// Entry corresponding to a BatchCommitment
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
+#[deprecated(note = "use `OLCheckpointEntry` for OL/EE-decoupled checkpoint storage")]
 pub struct CheckpointEntry {
     /// The batch checkpoint containing metadata, state transitions, and proof data.
     pub checkpoint: Checkpoint,
@@ -312,6 +313,7 @@ impl From<CheckpointEntry> for Checkpoint {
 }
 
 /// Status of the commmitment
+#[deprecated(note = "use `OLCheckpointStatus` for OL/EE-decoupled checkpoint signing status")]
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
 pub enum CheckpointProvingStatus {
     /// Proof has not been created for this checkpoint
@@ -320,6 +322,7 @@ pub enum CheckpointProvingStatus {
     ProofReady,
 }
 
+#[deprecated(note = "use `OLCheckpointStatus` for OL/EE-decoupled checkpoint confirmation flow")]
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
 pub enum CheckpointConfStatus {
     /// Pending to be posted on L1

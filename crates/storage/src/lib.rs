@@ -105,6 +105,7 @@ impl NodeStorage {
         &self.l1_block_manager
     }
 
+    #[deprecated(note = "use `ol_block()` for OL/EE-decoupled block storage")]
     pub fn l2(&self) -> &Arc<L2BlockManager> {
         &self.l2_block_manager
     }
@@ -117,6 +118,7 @@ impl NodeStorage {
         &self.client_state_manager
     }
 
+    #[deprecated(note = "use `ol_checkpoint()` for OL/EE-decoupled checkpoint storage")]
     pub fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
         &self.checkpoint_manager
     }

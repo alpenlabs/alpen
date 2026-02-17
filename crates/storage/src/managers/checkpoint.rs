@@ -11,6 +11,7 @@ use crate::{cache, ops};
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"
 )]
+#[deprecated(note = "use `OLCheckpointManager` for OL/EE-decoupled checkpoint storage")]
 pub struct CheckpointDbManager {
     ops: ops::checkpoint::CheckpointDataOps,
     summary_cache: cache::CacheTable<EpochCommitment, Option<EpochSummary>>,

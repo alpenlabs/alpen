@@ -14,6 +14,7 @@ use crate::{cache, ops};
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"
 )]
+#[deprecated(note = "use `OLBlockManager` for OL/EE-decoupled block storage")]
 pub struct L2BlockManager {
     ops: ops::l2::L2DataOps,
     block_cache: cache::CacheTable<L2BlockId, Option<L2BlockBundle>>,
