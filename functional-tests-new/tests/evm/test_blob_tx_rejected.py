@@ -31,11 +31,11 @@ def create_blob_data() -> bytes:
 @flexitest.register
 class TestBlobTransactionRejected(AlpenClientTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client")
+        ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        rpc = sequencer.create_rpc()
+        ee_sequencer = self.get_service("ee_sequencer")
+        rpc = ee_sequencer.create_rpc()
 
         private_key = hex(random.getrandbits(256))
         account = Account.from_key(private_key)

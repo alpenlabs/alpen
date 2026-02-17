@@ -22,27 +22,27 @@ class TestMeshDiscovery(AlpenClientTest):
     """Test that nodes form a mesh topology via discv5 discovery."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client_mesh")
+        ctx.set_env("alpen_ee_mesh")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        fullnodes = [self.get_service(f"fullnode_{i}") for i in range(FULLNODE_COUNT)]
+        ee_sequencer = self.get_service("ee_sequencer")
+        ee_fullnodes = [self.get_service(f"ee_fullnode_{i}") for i in range(FULLNODE_COUNT)]
 
         # Get node IDs for topology analysis
-        seq_id = sequencer.get_enode().split("@")[0].replace("enode://", "")
+        seq_id = ee_sequencer.get_enode().split("@")[0].replace("enode://", "")
         fn_ids = set()
-        for fn in fullnodes:
+        for fn in ee_fullnodes:
             fn_id = fn.get_enode().split("@")[0].replace("enode://", "")
             fn_ids.add(fn_id)
 
         # Wait for mesh formation
         logger.info("Waiting for mesh discovery...")
-        for fn in fullnodes:
+        for fn in ee_fullnodes:
             fn.wait_for_peers(MIN_MESH_PEERS, timeout=120)
 
         # Analyze topology
         mesh_connections = 0
-        for i, fn in enumerate(fullnodes):
+        for i, fn in enumerate(ee_fullnodes):
             peers = fn.get_peers()
             fn_peer_count = 0
             for peer in peers:
@@ -66,13 +66,13 @@ class TestMeshDiscovery(AlpenClientTest):
         logger.info(f"Mesh density: {mesh_density:.0f}% ({mesh_connections}/{max_connections})")
 
         # Verify block propagation
-        seq_block = sequencer.get_block_number()
+        seq_block = ee_sequencer.get_block_number()
         target_block = seq_block + 3
 
-        sequencer.wait_for_block(target_block, timeout=60)
-        seq_hash = sequencer.get_block_by_number(target_block)["hash"]
+        ee_sequencer.wait_for_block(target_block, timeout=60)
+        seq_hash = ee_sequencer.get_block_by_number(target_block)["hash"]
 
-        for i, fn in enumerate(fullnodes):
+        for i, fn in enumerate(ee_fullnodes):
             fn.wait_for_block(target_block, timeout=60)
             fn_hash = fn.get_block_by_number(target_block)["hash"]
             assert seq_hash == fn_hash, f"Fullnode {i} hash mismatch"

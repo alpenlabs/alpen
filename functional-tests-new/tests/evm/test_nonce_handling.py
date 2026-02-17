@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 @flexitest.register
 class TestNonceHandling(AlpenClientTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client")
+        ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        rpc = sequencer.create_rpc()
+        ee_sequencer = self.get_service("ee_sequencer")
+        rpc = ee_sequencer.create_rpc()
 
         dev_account = get_dev_account()
         dev_nonce = int(rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)

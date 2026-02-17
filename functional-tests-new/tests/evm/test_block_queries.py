@@ -12,13 +12,13 @@ logger = logging.getLogger(__name__)
 @flexitest.register
 class TestBlockQueries(AlpenClientTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client")
+        ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        rpc = sequencer.create_rpc()
+        ee_sequencer = self.get_service("ee_sequencer")
+        rpc = ee_sequencer.create_rpc()
 
-        sequencer.wait_for_block(3, timeout=30)
+        ee_sequencer.wait_for_block(3, timeout=30)
 
         block_num = rpc.eth_blockNumber()
         block_num_int = int(block_num, 16)

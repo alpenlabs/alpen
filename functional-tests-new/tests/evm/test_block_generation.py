@@ -12,18 +12,18 @@ logger = logging.getLogger(__name__)
 @flexitest.register
 class TestBlockGeneration(AlpenClientTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client")
+        ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
+        ee_sequencer = self.get_service("ee_sequencer")
 
-        initial_block = sequencer.get_block_number()
+        initial_block = ee_sequencer.get_block_number()
         logger.info(f"Initial block number: {initial_block}")
 
         target_block = initial_block + 5
-        sequencer.wait_for_block(target_block, timeout=10)
+        ee_sequencer.wait_for_block(target_block, timeout=10)
 
-        final_block = sequencer.get_block_number()
+        final_block = ee_sequencer.get_block_number()
         logger.info(f"Final block number: {final_block}")
 
         assert final_block >= target_block, (

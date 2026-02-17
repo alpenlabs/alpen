@@ -23,22 +23,22 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
     """Test that transactions sent to fullnode get mined and propagated."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client_multi")
+        ctx.set_env("alpen_ee_multi")
 
     def main(self, ctx):  # noqa: ARG002
-        sequencer = self.get_service("sequencer")
-        fullnodes = [self.get_service(f"fullnode_{i}") for i in range(3)]
+        ee_sequencer = self.get_service("ee_sequencer")
+        ee_fullnodes = [self.get_service(f"ee_fullnode_{i}") for i in range(3)]
 
         # Wait for P2P mesh to form
-        sequencer.wait_for_peers(3, timeout=60)
-        for fn in fullnodes:
+        ee_sequencer.wait_for_peers(3, timeout=60)
+        for fn in ee_fullnodes:
             fn.wait_for_peers(1, timeout=30)
 
         # Wait for chain to be active
-        sequencer.wait_for_block(5, timeout=60)
+        ee_sequencer.wait_for_block(5, timeout=60)
 
-        seq_rpc = sequencer.create_rpc()
-        fn_rpc = fullnodes[0].create_rpc()
+        seq_rpc = ee_sequencer.create_rpc()
+        fn_rpc = ee_fullnodes[0].create_rpc()
 
         dev_account = get_dev_account()
         recipient_account = get_recipient_account()
@@ -74,8 +74,8 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
         logger.info(f"Transaction mined in block {block_num}")
 
         # Verify block propagated to all fullnodes with correct tx
-        seq_block = sequencer.get_block_by_number(block_num)
-        for i, fn in enumerate(fullnodes):
+        seq_block = ee_sequencer.get_block_by_number(block_num)
+        for i, fn in enumerate(ee_fullnodes):
             fn.wait_for_block(block_num, timeout=60)
             fn_block = fn.get_block_by_number(block_num)
             assert fn_block["hash"] == seq_block["hash"], f"Fullnode {i} hash mismatch"

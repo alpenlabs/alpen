@@ -15,16 +15,16 @@ logger = logging.getLogger(__name__)
 @flexitest.register
 class TestTxForwarding(AlpenClientTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client")
+        ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        fullnode = self.get_service("fullnode")
+        ee_sequencer = self.get_service("ee_sequencer")
+        ee_fullnode = self.get_service("ee_fullnode")
 
-        seq_rpc = sequencer.create_rpc()
-        fn_rpc = fullnode.create_rpc()
+        seq_rpc = ee_sequencer.create_rpc()
+        fn_rpc = ee_fullnode.create_rpc()
 
-        sequencer.wait_for_block(2, timeout=10)
+        ee_sequencer.wait_for_block(2, timeout=10)
 
         dev_account = get_dev_account()
         dev_nonce = int(seq_rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)
@@ -34,7 +34,7 @@ class TestTxForwarding(AlpenClientTest):
         logger.info(f"Created test account: {account.address}")
 
         seq_block = int(seq_rpc.eth_blockNumber(), 16)
-        fullnode.wait_for_block(seq_block, timeout=10)
+        ee_fullnode.wait_for_block(seq_block, timeout=10)
         logger.info(f"Fullnode synced to block {seq_block}")
 
         fn_balance = int(fn_rpc.eth_getBalance(account.address, "latest"), 16)

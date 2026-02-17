@@ -103,7 +103,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         seq_enode = sequencer.get_enode()
         seq_http_url = sequencer.props["http_url"]
 
-        services["sequencer"] = sequencer
+        services["ee_sequencer"] = sequencer
         fullnodes = []
         fn_enodes = []  # Track fullnode enodes for mesh bootnodes
 
@@ -131,8 +131,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             if self.mesh_bootnodes:
                 fn_enodes.append(fullnode.get_enode())
 
-            # Use "fullnode" for single, "fullnode_N" for multiple
-            key = "fullnode" if self.fullnode_count == 1 else f"fullnode_{i}"
+            key = "ee_fullnode" if self.fullnode_count == 1 else f"ee_fullnode_{i}"
             services[key] = fullnode
 
         # Connect fullnodes to sequencer via admin_addPeer (unless pure_discovery mode)
