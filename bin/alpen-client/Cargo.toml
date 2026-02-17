@@ -33,7 +33,7 @@ alpen-ee-config.workspace = true
 alpen-ee-da = { workspace = true, optional = true }
 alpen-ee-database.workspace = true
 alpen-ee-engine.workspace = true
-alpen-ee-exec-chain = { workspace = true, optional = true }
+alpen-ee-exec-chain.workspace = true
 alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
@@ -52,13 +52,15 @@ strata-ol-rpc-types.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
+threadpool.workspace = true
+
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
 clap.workspace = true
 eyre.workspace = true
-jsonrpsee = { workspace = true, features = ["http-client"] }
+jsonrpsee = { workspace = true, features = ["http-client", "server", "macros"] }
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true
 reth-cli-runner.workspace = true
@@ -71,8 +73,9 @@ reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-provider.workspace = true
+serde.workspace = true
 ssz.workspace = true
-threadpool.workspace = true
+strata-rpc-utils.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
