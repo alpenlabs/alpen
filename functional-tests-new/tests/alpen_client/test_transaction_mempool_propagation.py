@@ -26,8 +26,8 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
         ctx.set_env("alpen_client_multi")
 
     def main(self, ctx):  # noqa: ARG002
-        sequencer = self.get_service("sequencer")
-        fullnodes = [self.get_service(f"fullnode_{i}") for i in range(3)]
+        sequencer = self.get_service("alpen_sequencer")
+        fullnodes = [self.get_service(f"alpen_fullnode_{i}") for i in range(3)]
 
         # Wait for P2P mesh to form
         sequencer.wait_for_peers(3, timeout=60)
