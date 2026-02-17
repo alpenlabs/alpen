@@ -231,6 +231,7 @@ async fn handle_new_block<T: SyncClient>(
     // send ForkChoiceMessage::NewBlock for all pending blocks in correct order
     while let Some(block) = fetched_blocks.pop() {
         state.attach_block(block.header())?;
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         context
             .storage
             .l2()

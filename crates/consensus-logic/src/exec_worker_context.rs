@@ -8,6 +8,7 @@ use strata_eectl::{
 };
 use strata_ol_chain_types::{L2BlockId, L2Header};
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{ClientStateManager, L2BlockManager};
 
 #[expect(
@@ -15,11 +16,13 @@ use strata_storage::{ClientStateManager, L2BlockManager};
     reason = "Some inner types don't have Debug impls"
 )]
 pub struct ExecWorkerCtx {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     l2man: Arc<L2BlockManager>,
     client: Arc<ClientStateManager>,
 }
 
 impl ExecWorkerCtx {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn new(l2man: Arc<L2BlockManager>, client: Arc<ClientStateManager>) -> Self {
         Self { l2man, client }
     }

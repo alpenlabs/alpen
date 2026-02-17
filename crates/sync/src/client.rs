@@ -70,6 +70,7 @@ impl<RPC: StrataApiClient + Send + Sync> RpcSyncPeer<RPC> {
         start_height: u64,
         end_height: u64,
     ) -> Result<Vec<L2BlockBundle>, ClientError> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let bytes = self
             .rpc_client
             .get_raw_bundles(start_height, end_height)
@@ -119,6 +120,7 @@ impl<RPC: StrataApiClient + Send + Sync> SyncClient for RpcSyncPeer<RPC> {
         &self,
         block_id: &L2BlockId,
     ) -> Result<Option<L2BlockBundle>, ClientError> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let bytes = self
             .rpc_client
             .get_raw_bundle_by_id(*block_id)

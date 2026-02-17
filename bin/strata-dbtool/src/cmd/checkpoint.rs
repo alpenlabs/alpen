@@ -1,6 +1,7 @@
 use argh::FromArgs;
 use strata_asm_logs::CheckpointUpdate;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
     traits::{AsmDatabase, CheckpointDatabase, DatabaseBackend, L1Database},
     types::CheckpointEntry,
@@ -58,6 +59,7 @@ pub(crate) struct GetEpochSummaryArgs {
 ///
 /// This finds the highest epoch index in the database.
 pub(crate) fn get_last_epoch(db: &impl DatabaseBackend) -> Result<Option<u64>, DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     db.checkpoint_db()
         .get_last_summarized_epoch()
         .internal_error("Failed to get last summarized epoch")
@@ -148,21 +150,27 @@ fn count_checkpoints_in_asm_logs(
 /// Get a checkpoint entry at a specific index.
 ///
 /// Returns `None` if no checkpoint exists at that index.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub(crate) fn get_checkpoint_at_index(
     db: &impl DatabaseBackend,
     index: u64,
 ) -> Result<Option<CheckpointEntry>, DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let chkpt_db = db.checkpoint_db();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     chkpt_db
         .get_checkpoint(index)
         .internal_error(format!("Failed to get checkpoint at index {}", index))
 }
 
 /// Get latest checkpoint entry.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub(crate) fn get_latest_checkpoint_entry(
     db: &impl DatabaseBackend,
 ) -> Result<CheckpointEntry, DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let chkpt_db = db.checkpoint_db();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let last_idx = chkpt_db
         .get_last_checkpoint_idx()
         .internal_error("Failed to get last checkpoint index")?
@@ -180,7 +188,9 @@ pub(crate) fn get_latest_checkpoint_entry(
 pub(crate) fn get_checkpoint_index_range(
     db: &impl DatabaseBackend,
 ) -> Result<Option<(u64, u64)>, DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let chkpt_db = db.checkpoint_db();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     if let Some(last_idx) = chkpt_db
         .get_last_checkpoint_idx()
         .internal_error("Failed to get last checkpoint index")?
@@ -205,6 +215,7 @@ pub(crate) fn get_checkpoint(
     })?;
 
     // Create the output data structure
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let checkpoint_info = CheckpointInfo {
         checkpoint_index: checkpoint_idx,
         checkpoint: &entry.checkpoint,
@@ -221,7 +232,9 @@ pub(crate) fn get_checkpoints_summary(
     db: &impl DatabaseBackend,
     args: GetCheckpointsSummaryArgs,
 ) -> Result<(), DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let chkpt_db = db.checkpoint_db();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let last_idx = chkpt_db
         .get_last_checkpoint_idx()
         .internal_error("Failed to get last checkpoint index")?
@@ -230,11 +243,13 @@ pub(crate) fn get_checkpoints_summary(
     let expected_checkpoints_count = last_idx + 1;
     let mut checkpoint_commitments = Vec::new();
     for idx in 0..=last_idx {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let entry = chkpt_db
             .get_checkpoint(idx)
             .internal_error(format!("Failed to get checkpoint at index {idx}"))?;
 
         if let Some(checkpoint_entry) = entry {
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             checkpoint_commitments.push(checkpoint_entry.checkpoint.commitment().clone());
         }
     }
@@ -261,9 +276,11 @@ pub(crate) fn get_epoch_summary(
     db: &impl DatabaseBackend,
     args: GetEpochSummaryArgs,
 ) -> Result<(), DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let chkpt_db = db.checkpoint_db();
     let epoch_idx = args.epoch_index;
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let epoch_commitments = chkpt_db
         .get_epoch_commitments_at(epoch_idx)
         .internal_error(format!(
@@ -277,6 +294,7 @@ pub(crate) fn get_epoch_summary(
         ));
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let epoch_summary = chkpt_db
         .get_epoch_summary(epoch_commitments[0])
         .internal_error(format!("Failed to get epoch summary for epoch {epoch_idx}",))?

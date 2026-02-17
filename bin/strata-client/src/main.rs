@@ -106,6 +106,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let database = init_db::init_database(&config.client.datadir, config.client.db_retry_count)?;
     let storage = Arc::new(create_node_storage(database.clone(), pool.clone())?);
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let checkpoint_handle: Arc<_> = CheckpointHandle::new(storage.checkpoint().clone()).into();
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
 
@@ -255,6 +256,7 @@ fn do_startup_checks(
         }
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let tip_blockid = match storage.l2().get_tip_block_blocking() {
         Ok(tip) => tip,
         Err(DbError::NotBootstrapped) => {
@@ -580,6 +582,7 @@ fn start_template_manager_task(
         block_template::worker_task(shutdown, worker_ctx, t_shared_state, rx)
     });
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     block_template::TemplateManagerHandle::new(
         tx,
         shared_state,

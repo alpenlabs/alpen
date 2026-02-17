@@ -3,12 +3,15 @@
 use std::sync::Arc;
 
 use strata_csm_types::SyncAction;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry, CheckpointProvingStatus};
 use strata_storage::NodeStorage;
 use tracing::*;
 
 /// Apply a sync action to storage.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> anyhow::Result<()> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let ckpt_db = storage.checkpoint();
     match action {
         SyncAction::FinalizeEpoch(epoch_comm) => {
@@ -25,6 +28,7 @@ pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> an
                 return Ok(());
             };
 
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let CheckpointConfStatus::Confirmed(l1ref) = ckpt_entry.confirmation_status else {
                 warn!(
                     ?epoch_comm,

@@ -21,6 +21,7 @@ use strata_eectl::{
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l1::BitcoinAmount;
 use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::L2BlockManager;
 use tokio::{runtime::Handle, sync::Mutex};
 use tracing::*;
@@ -279,10 +280,12 @@ impl<T: EngineRpc> RpcExecEngineInner<T> {
 pub struct RpcExecEngineCtl<T: EngineRpc> {
     inner: RpcExecEngineInner<T>,
     tokio_handle: Handle,
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     l2_block_manager: Arc<L2BlockManager>,
 }
 
 impl<T: EngineRpc> RpcExecEngineCtl<T> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn new(
         client: T,
         evm_head_block_hash: B256,

@@ -168,6 +168,7 @@ pub(crate) fn init_engine_controller(
     );
 
     let initial_fcs = fetch_init_fork_choice_state(storage, params.rollup())?;
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let eng_ctl = RpcExecEngineCtl::new(client, initial_fcs, handle.clone(), storage.l2().clone());
     let eng_ctl = Arc::new(eng_ctl);
     Ok(eng_ctl)

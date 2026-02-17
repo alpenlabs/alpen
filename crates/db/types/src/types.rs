@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")] // I have no idea how to make clippy be happy with precise expects in this module
 //! Module for database local types
 
 use std::fmt;
@@ -262,13 +263,29 @@ pub struct CheckpointEntry {
     pub checkpoint: Checkpoint,
 
     /// Proving Status
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointProvingStatus is retained for compatibility"
+    )]
     pub proving_status: CheckpointProvingStatus,
 
     /// Confirmation Status
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointConfStatus is retained for compatibility"
+    )]
     pub confirmation_status: CheckpointConfStatus,
 }
 
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointEntry is retained for compatibility"
+)]
 impl CheckpointEntry {
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointProvingStatus and CheckpointConfStatus are retained for compatibility"
+    )]
     pub fn new(
         checkpoint: Checkpoint,
         proving_status: CheckpointProvingStatus,
@@ -281,11 +298,19 @@ impl CheckpointEntry {
         }
     }
 
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointEntry is retained for compatibility"
+    )]
     pub fn into_batch_checkpoint(self) -> Checkpoint {
         self.checkpoint
     }
 
     /// Creates a new instance for a freshly defined checkpoint.
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointEntry is retained for compatibility"
+    )]
     pub fn new_pending_proof(
         info: BatchInfo,
         transition: BatchTransition,
@@ -300,12 +325,19 @@ impl CheckpointEntry {
             CheckpointConfStatus::Pending,
         )
     }
-
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointEntry is retained for compatibility"
+    )]
     pub fn is_proof_ready(&self) -> bool {
         self.proving_status == CheckpointProvingStatus::ProofReady
     }
 }
 
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointEntry is retained for compatibility"
+)]
 impl From<CheckpointEntry> for Checkpoint {
     fn from(entry: CheckpointEntry) -> Checkpoint {
         entry.into_batch_checkpoint()

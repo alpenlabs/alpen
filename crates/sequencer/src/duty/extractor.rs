@@ -1,9 +1,11 @@
 //! Extracts new duties for sequencer for a given consensus state.
 
 use strata_csm_types::ClientState;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::types::CheckpointConfStatus;
 use strata_ol_chain_types::{L2BlockId, L2Header};
 use strata_params::Params;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::L2BlockManager;
 use tracing::*;
 
@@ -14,6 +16,7 @@ use crate::{
 };
 
 /// Extracts new duties given a current chainstate and an identity.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub async fn extract_duties(
     tip_blkid: L2BlockId,
     cistate: &ClientState,
@@ -32,6 +35,7 @@ pub async fn extract_duties(
     Ok(duties)
 }
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 async fn extract_block_duties(
     tip_blkid: L2BlockId,
     l2_block_manager: &L2BlockManager,
@@ -78,7 +82,9 @@ async fn extract_batch_duties(
             break;
         };
 
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let epoch = ckpt.checkpoint.batch_info().epoch;
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let publish_ready =
             ckpt.is_proof_ready() && ckpt.confirmation_status == CheckpointConfStatus::Pending;
         trace!(%epoch, %publish_ready, "considering generating checkpoint publish duty");

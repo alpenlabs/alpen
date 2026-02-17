@@ -7,6 +7,7 @@ use strata_identifiers::Slot;
 use strata_ol_chain_types::L2Header;
 use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_state::prelude::*;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{L2BlockManager, OLBlockManager};
 use tracing::*;
 
@@ -279,6 +280,7 @@ impl UnfinalizedBlockTracker {
     }
 
     /// Loads the unfinalized blocks into the tracker which are already in the DB
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn load_unfinalized_blocks(&mut self, l2_blk_mgr: &L2BlockManager) -> anyhow::Result<()> {
         let mut height = self.finalized_epoch.last_slot() + 1;
 
@@ -471,14 +473,17 @@ mod tests {
     use std::collections::HashSet;
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
     use strata_ol_chain_types::L2Header;
     use strata_primitives::{epoch::EpochCommitment, l2::L2BlockId};
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     use strata_storage::L2BlockManager;
     use strata_test_utils_l2::gen_l2_chain;
 
     use crate::unfinalized_tracker;
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     fn setup_test_chain(l2_db: &impl L2BlockDatabase) -> [L2BlockId; 7] {
         // Chain A: g -> a1 -> a2 -> a3
         // Chain B: g -> a1 -> b2 -> b3
@@ -506,7 +511,9 @@ mod tests {
             .chain(c_chain.clone())
         {
             let blockid = b.header().get_blockid();
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             l2_db.put_block_data(b).unwrap();
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             l2_db.set_block_status(blockid, BlockStatus::Valid).unwrap();
         }
 
@@ -521,6 +528,7 @@ mod tests {
         ]
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     fn check_update_finalized(
         prev_finalized_tip: L2BlockId,
         new_finalized_tip: L2BlockId,
@@ -564,6 +572,7 @@ mod tests {
     #[test]
     fn test_load_unfinalized_blocks() {
         let db = get_test_sled_backend();
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
@@ -573,6 +582,7 @@ mod tests {
         let mut chain_tracker = unfinalized_tracker::UnfinalizedBlockTracker::new_empty(epoch);
 
         let pool = threadpool::ThreadPool::new(1);
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let blkman = L2BlockManager::new(pool, db.l2_db());
 
         chain_tracker.load_unfinalized_blocks(&blkman).unwrap();
@@ -610,6 +620,7 @@ mod tests {
     #[test]
     fn test_get_descendants() {
         let db = get_test_sled_backend();
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
@@ -619,6 +630,7 @@ mod tests {
         let mut chain_tracker = unfinalized_tracker::UnfinalizedBlockTracker::new_empty(epoch);
 
         let pool = threadpool::ThreadPool::new(1);
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let blkman = L2BlockManager::new(pool, db.l2_db());
 
         chain_tracker.load_unfinalized_blocks(&blkman).unwrap();
@@ -647,11 +659,13 @@ mod tests {
     #[test]
     fn test_update_finalized_tip() {
         let db = get_test_sled_backend();
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let l2_db = db.l2_db();
 
         let [g, a1, c1, a2, b2, a3, b3] = setup_test_chain(l2_db.as_ref());
 
         let pool = threadpool::ThreadPool::new(1);
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let blk_manager = L2BlockManager::new(pool, db.l2_db());
 
         check_update_finalized(

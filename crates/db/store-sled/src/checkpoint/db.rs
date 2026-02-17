@@ -1,4 +1,8 @@
 use strata_checkpoint_types::EpochSummary;
+#[expect(
+    deprecated,
+    reason = "legacy old Checkpoint code is retained for compatibility"
+)]
 use strata_db_types::{
     DbError, DbResult,
     traits::CheckpointDatabase,
@@ -17,6 +21,10 @@ define_sled_database!(
     }
 );
 
+#[expect(
+    deprecated,
+    reason = "legacy old Checkpoint code is retained for compatibility"
+)]
 impl CheckpointDatabase for CheckpointDBSled {
     fn insert_epoch_summary(&self, summary: EpochSummary) -> DbResult<()> {
         let epoch_idx = summary.epoch() as u64;

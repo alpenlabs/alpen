@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 //! Checkpoint Proof data operation interface.
 
 use strata_checkpoint_types::EpochSummary;

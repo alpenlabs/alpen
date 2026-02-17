@@ -33,6 +33,10 @@ impl StubL2Db {
     }
 }
 
+#[expect(
+    deprecated,
+    reason = "legacy L2 stub implementation is retained for compatibility"
+)]
 impl L2BlockDatabase for StubL2Db {
     fn put_block_data(&self, bundle: L2BlockBundle) -> DbResult<()> {
         let blkid = bundle.block().header().get_blockid();

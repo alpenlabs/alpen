@@ -37,6 +37,7 @@ fn compute_evm_fc_state_from_chainstate(
     tip_blockid: &L2BlockId,
     storage: &NodeStorage,
 ) -> Result<B256> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2man = storage.l2();
     let latest_evm_block_hash =
         get_evm_block_hash_by_id(tip_blockid, l2man)?.expect("evmexec: missing expected block");
@@ -44,6 +45,7 @@ fn compute_evm_fc_state_from_chainstate(
 }
 
 fn get_last_chainstate(storage: &NodeStorage) -> Result<Option<ChainstateEntry>> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let tip_blkid = match storage.l2().get_tip_block_blocking() {
         Ok(id) => id,
         Err(DbError::NotBootstrapped) => return Ok(None),
@@ -56,6 +58,7 @@ fn get_last_chainstate(storage: &NodeStorage) -> Result<Option<ChainstateEntry>>
         .map(|wb| ChainstateEntry::new(wb.into_toplevel(), tip_blkid)))
 }
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 fn get_evm_block_hash_by_id(
     block_id: &L2BlockId,
     l2man: &L2BlockManager,

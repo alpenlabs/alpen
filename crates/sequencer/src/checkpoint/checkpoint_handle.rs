@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{types::CheckpointEntry, DbResult};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::CheckpointDbManager;
 use tokio::sync::broadcast;
 use tracing::*;
@@ -13,6 +15,7 @@ use tracing::*;
 )]
 pub struct CheckpointHandle {
     /// Manager for underlying database.
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     db_manager: Arc<CheckpointDbManager>,
 
     /// Used to notify listeners about a checkpoint update in db.
@@ -21,6 +24,7 @@ pub struct CheckpointHandle {
 }
 
 impl CheckpointHandle {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn new(db_manager: Arc<CheckpointDbManager>) -> Self {
         let (update_notify_tx, _) = broadcast::channel::<u64>(10);
         Self {
@@ -35,6 +39,7 @@ impl CheckpointHandle {
         self.update_notify_tx.subscribe()
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub async fn put_checkpoint_and_notify(
         &self,
         idx: u64,
@@ -50,6 +55,7 @@ impl CheckpointHandle {
         Ok(())
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn put_checkpoint_and_notify_blocking(
         &self,
         idx: u64,
@@ -65,18 +71,22 @@ impl CheckpointHandle {
         Ok(())
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub async fn put_checkpoint(&self, idx: u64, entry: CheckpointEntry) -> DbResult<()> {
         self.db_manager.put_checkpoint(idx, entry).await
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn put_checkpoint_blocking(&self, idx: u64, entry: CheckpointEntry) -> DbResult<()> {
         self.db_manager.put_checkpoint_blocking(idx, entry)
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub async fn get_checkpoint(&self, idx: u64) -> DbResult<Option<CheckpointEntry>> {
         self.db_manager.get_checkpoint(idx).await
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn get_checkpoint_blocking(&self, idx: u64) -> DbResult<Option<CheckpointEntry>> {
         self.db_manager.get_checkpoint_blocking(idx)
     }

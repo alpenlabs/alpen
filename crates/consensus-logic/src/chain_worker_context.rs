@@ -12,6 +12,7 @@ use strata_db_types::{
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader};
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 use strata_primitives::prelude::*;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{ChainstateManager, CheckpointDbManager, L2BlockManager};
 use tracing::*;
 
@@ -20,8 +21,10 @@ use tracing::*;
     reason = "Some inner types don't have Debug impls"
 )]
 pub struct ChainWorkerCtx {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     l2man: Arc<L2BlockManager>,
     chsman: Arc<ChainstateManager>,
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     ckman: Arc<CheckpointDbManager>,
 
     /// Active state instance we build on top of for the current state.
@@ -29,6 +32,7 @@ pub struct ChainWorkerCtx {
 }
 
 impl ChainWorkerCtx {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn new(
         l2man: Arc<L2BlockManager>,
         chsman: Arc<ChainstateManager>,

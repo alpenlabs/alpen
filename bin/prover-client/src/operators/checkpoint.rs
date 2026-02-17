@@ -6,6 +6,7 @@ use strata_db_types::traits::ProofDatabase;
 use strata_primitives::proof::{ProofContext, ProofKey};
 use strata_proofimpl_checkpoint::program::CheckpointProverInput;
 use strata_rpc_api::StrataApiClient;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_rpc_types::RpcCheckpointInfo;
 use strata_zkvm_hosts::get_verification_key;
 use tracing::{error, info};
@@ -35,10 +36,12 @@ impl CheckpointOperator {
     }
 
     /// Fetches checkpoint information from the CL client.
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub(crate) async fn fetch_ckp_info(
         &self,
         ckp_idx: u64,
     ) -> Result<RpcCheckpointInfo, ProvingTaskError> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         self.cl_client
             .get_checkpoint_info(ckp_idx)
             .await
@@ -82,6 +85,7 @@ impl CheckpointOperator {
         info!(%ckp_idx, "Creating ClStf dependency for checkpoint");
 
         // Create ClStf proof context from the checkpoint's L2 range
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let cl_stf_ctx = ProofContext::ClStf(ckp_info.l2_range.0, ckp_info.l2_range.1);
 
         // Store Checkpoint dependencies (ClStf)

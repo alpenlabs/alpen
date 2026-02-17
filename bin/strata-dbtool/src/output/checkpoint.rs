@@ -2,6 +2,7 @@
 
 use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, EpochSummary};
 use strata_csm_types::CheckpointL1Ref;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::types::{CheckpointConfStatus, CheckpointProvingStatus};
 
 use super::{helpers::porcelain_field, traits::Formattable};
@@ -18,7 +19,9 @@ pub(crate) struct EpochInfo<'a> {
 pub(crate) struct CheckpointInfo<'a> {
     pub checkpoint_index: u64,
     pub checkpoint: &'a Checkpoint,
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub confirmation_status: &'a CheckpointConfStatus,
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub proving_status: &'a CheckpointProvingStatus,
 }
 
@@ -178,12 +181,14 @@ impl<'a> Formattable for CheckpointInfo<'a> {
 
         // Format confirmation status
         match self.confirmation_status {
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             CheckpointConfStatus::Pending => {
                 output.push(porcelain_field(
                     "checkpoint.confirmation_status",
                     format!("{:?}", self.confirmation_status),
                 ));
             }
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             CheckpointConfStatus::Confirmed(ref checkpoint_l1_ref) => {
                 output.push(porcelain_field(
                     "checkpoint.confirmation_status",
@@ -194,6 +199,7 @@ impl<'a> Formattable for CheckpointInfo<'a> {
                     "checkpoint.confirmation_status.l1_ref",
                 ));
             }
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             CheckpointConfStatus::Finalized(ref checkpoint_l1_ref) => {
                 output.push(porcelain_field(
                     "checkpoint.confirmation_status",

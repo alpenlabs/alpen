@@ -16,6 +16,7 @@ use strata_state::{
     exec_update::{ExecUpdate, UpdateInput, UpdateOutput},
     prelude::*,
 };
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{L2BlockManager, NodeStorage};
 use tokio::{
     runtime::Handle,
@@ -63,7 +64,9 @@ pub fn init_genesis_chainstate(
     storage
         .chainstate()
         .put_slot_write_batch_blocking(gid, wb)?;
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     storage.l2().put_block_data_blocking(gblock)?;
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     storage
         .l2()
         .set_block_status_blocking(&gid, BlockStatus::Valid)?;
@@ -156,6 +159,7 @@ pub fn check_needs_client_init(storage: &NodeStorage) -> anyhow::Result<bool> {
 }
 
 /// Checks if we have a genesis block written to the L2 block database.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub fn check_needs_genesis(l2man: &L2BlockManager) -> anyhow::Result<bool> {
     // Check if there's any genesis block written.
     match l2man.get_blocks_at_height_blocking(0) {

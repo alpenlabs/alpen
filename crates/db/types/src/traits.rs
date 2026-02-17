@@ -22,6 +22,10 @@ use strata_primitives::{
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointEntry is retained for compatibility"
+)]
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_helpers::MmrAlgorithm,
@@ -35,6 +39,10 @@ use crate::{
 /// Common database backend interface that we can parameterize worker tasks over if
 /// parameterizing them over each individual trait gets cumbersome or if we need
 /// to use behavior that crosses different interfaces.
+#[expect(
+    deprecated,
+    reason = "legacy old code L2BlockDatabase and CheckpointDatabase are retained for compatibility"
+)]
 pub trait DatabaseBackend: Send + Sync {
     fn asm_db(&self) -> Arc<impl AsmDatabase>;
     fn l1_db(&self) -> Arc<impl L1Database>;
@@ -225,9 +233,17 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     /// `batchidx` for the Checkpoint is expected to increase monotonically and
     /// correspond to the value of `cur_epoch` in
     /// [`strata_ol_chainstate_types::Chainstate`].
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointEntry is retained for compatibility"
+    )]
     fn put_checkpoint(&self, epoch: u64, entry: CheckpointEntry) -> DbResult<()>;
 
     /// Get a [`CheckpointEntry`] by its index.
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointEntry is retained for compatibility"
+    )]
     fn get_checkpoint(&self, epoch: u64) -> DbResult<Option<CheckpointEntry>>;
 
     /// Get last written checkpoint index.

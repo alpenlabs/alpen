@@ -1,5 +1,6 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_primitives::{l1::L1BlockId, l2::L2BlockId};
@@ -40,6 +41,7 @@ pub(crate) struct GetL2SummaryArgs {
 pub(crate) fn get_chain_tip_block_id(
     db: &impl DatabaseBackend,
 ) -> Result<L2BlockId, DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     db.l2_db()
         .get_tip_block()
         .internal_error("Failed to get chain tip block")
@@ -50,6 +52,7 @@ pub(crate) fn get_earliest_l2_block_id(
     db: &impl DatabaseBackend,
 ) -> Result<L2BlockId, DisplayedError> {
     // Get blocks at slot 0
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let blocks_at_slot_0 = db
         .l2_db()
         .get_blocks_at_height(0)
@@ -101,6 +104,7 @@ pub(crate) fn get_l2_block_data(
     db: &impl DatabaseBackend,
     block_id: L2BlockId,
 ) -> Result<Option<L2BlockBundle>, DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     db.l2_db()
         .get_block_data(block_id)
         .internal_error("Failed to read block data")
@@ -115,6 +119,7 @@ pub(crate) fn get_l2_block(
     let block_id = parse_l2_block_id(&args.block_id)?;
 
     // Fetch block status and data
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let status = db
         .l2_db()
         .get_block_status(block_id)
@@ -176,6 +181,7 @@ pub(crate) fn get_l2_summary(
     // Check for gaps between earliest and tip slots
     let mut missing_slots = Vec::new();
     for slot in earliest_slot..=tip_slot {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let blocks_at_slot = db
             .l2_db()
             .get_blocks_at_height(slot)

@@ -181,6 +181,7 @@ fn generate_block_template_inner(
 ) -> Result<FullBlockTemplate, Error> {
     // get parent block
     let parent_blkid = config.parent_block_id();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2man = storage.l2();
     let parent = l2man
         .get_block_data_blocking(&parent_blkid)?

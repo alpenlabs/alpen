@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")] // Don't know how to make clippy happy with precise line expects
 //! Macro trait def for the `strata_` RPC namespace using jsonrpsee.
 use bitcoin::Txid;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
@@ -8,6 +9,7 @@ use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_ol_chain_types::{L2Block, L2BlockId};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_rpc_types::{
     types::{RpcBlockHeader, RpcClientStatus, RpcL1Status},
     HexBytes, HexBytes32, HexBytes64, L2BlockStatus, RpcChainState, RpcCheckpointConfStatus,
@@ -134,11 +136,13 @@ pub trait StrataApi {
 
     /// Get nth checkpoint info if any
     #[deprecated(note = "use OL checkpoint/account summary RPCs in `strata_ol_rpc_api`")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "getCheckpointInfo")]
     async fn get_checkpoint_info(&self, idx: u64) -> RpcResult<Option<RpcCheckpointInfo>>;
 
     /// Get the checkpoint confirmation status if checkpoint exists
     #[deprecated(note = "use OL checkpoint signing/status RPCs in `strata_ol_rpc_api`")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "getCheckpointConfStatus")]
     async fn get_checkpoint_conf_status(
         &self,
@@ -149,6 +153,7 @@ pub trait StrataApi {
     /// This assumes that the block finalization is always sequential. i.e all the blocks before the
     /// last finalized block are also finalized
     #[deprecated(note = "use `getChainStatus` in `strata_ol_rpc_api::OLClientRpc`")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "getL2BlockStatus")]
     async fn get_l2_block_status(&self, block_height: u64) -> RpcResult<L2BlockStatus>;
 
@@ -229,6 +234,7 @@ pub trait StrataDebugApi {
     async fn get_block_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<L2Block>>;
 
     /// Get the ChainState at a certain index
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "debug_getChainstateById")]
     async fn get_chainstate_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<RpcChainState>>;
 
