@@ -19,6 +19,11 @@ class StrataEnvConfig(flexitest.EnvConfig):
         self.pre_generate_blocks = pre_generate_blocks
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
+        services = self.get_services(ectx, self.pre_generate_blocks)
+        return flexitest.LiveEnv(services)
+
+    @staticmethod
+    def get_services(ectx: flexitest.EnvContext, pre_generate_blocks: int = 0):
         btc_factory = cast(BitcoinFactory, ectx.get_factory(ServiceType.Bitcoin))
         strata_factory = cast(StrataFactory, ectx.get_factory(ServiceType.Strata))
 
@@ -32,9 +37,9 @@ class StrataEnvConfig(flexitest.EnvConfig):
         btc_rpc = bitcoind.create_rpc()
         btc_rpc.proxy.createwallet("testwallet")
 
-        if self.pre_generate_blocks > 0:
+        if pre_generate_blocks > 0:
             addr = btc_rpc.proxy.getnewaddress()
-            btc_rpc.proxy.generatetoaddress(self.pre_generate_blocks, addr)
+            btc_rpc.proxy.generatetoaddress(pre_generate_blocks, addr)
 
         # Create config (props validated by dataclass at factory level)
         bitcoind_config = BitcoindConfig(
@@ -54,5 +59,4 @@ class StrataEnvConfig(flexitest.EnvConfig):
             ServiceType.Bitcoin: bitcoind,
             ServiceType.Strata: strata,
         }
-
-        return flexitest.LiveEnv(services)
+        return services

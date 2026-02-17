@@ -19,8 +19,8 @@ class TestPureBootnodeDiscovery(AlpenClientTest):
         ctx.set_env("alpen_ee_discovery")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
-        ee_fullnode = self.get_service("ee_fullnode")
+        ee_sequencer = self.get_service("alpen_sequencer")
+        ee_fullnode = self.get_service("alpen_fullnode")
 
         logger.info("Waiting for discv5 peer discovery...")
         ee_sequencer.wait_for_peers(1, timeout=60)

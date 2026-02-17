@@ -27,8 +27,8 @@ class TestFullnodeSync(AlpenClientTest):
         ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
-        ee_fullnode_0 = self.get_service("ee_fullnode")
+        ee_sequencer = self.get_service("alpen_sequencer")
+        ee_fullnode_0 = self.get_service("alpen_fullnode")
 
         _, pubkey = generate_sequencer_keypair()
         factory = AlpenClientFactory(range(30600, 30700))

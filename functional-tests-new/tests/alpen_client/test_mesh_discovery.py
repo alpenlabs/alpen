@@ -25,8 +25,8 @@ class TestMeshDiscovery(AlpenClientTest):
         ctx.set_env("alpen_ee_mesh")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
-        ee_fullnodes = [self.get_service(f"ee_fullnode_{i}") for i in range(FULLNODE_COUNT)]
+        ee_sequencer = self.get_service("alpen_sequencer")
+        ee_fullnodes = [self.get_service(f"alpen_fullnode_{i}") for i in range(FULLNODE_COUNT)]
 
         # Get node IDs for topology analysis
         seq_id = ee_sequencer.get_enode().split("@")[0].replace("enode://", "")
