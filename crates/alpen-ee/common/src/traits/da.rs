@@ -75,5 +75,5 @@ pub trait DaBlobSource: Send + Sync {
     /// Used by the batch lifecycle to ensure state diffs have been written
     /// by the Reth exex before attempting to post DA. This prevents race
     /// conditions where DA posting is attempted before state diffs are ready.
-    async fn are_state_diffs_ready(&self, batch_id: BatchId) -> eyre::Result<bool>;
+    async fn are_state_diffs_ready(&self, batch_id: BatchId) -> bool;
 }

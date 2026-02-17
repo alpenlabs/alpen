@@ -163,7 +163,7 @@ mod tests {
             // Default: state diffs are always available
             blob_provider
                 .expect_are_state_diffs_ready()
-                .returning(|_| Ok(true));
+                .returning(|_| true);
 
             Self {
                 da_provider: MockBatchDaProvider::new(),

@@ -33,27 +33,13 @@ where
             // The Reth exex writes state diffs asynchronously, so we need to wait
             // for them to be ready before posting DA.
             let batch_id = batch.id();
-            match ctx.blob_provider.are_state_diffs_ready(batch_id).await {
-                Ok(true) => {
-                    // State diffs ready, proceed with DA posting
-                }
-                Ok(false) => {
-                    warn!(
-                        batch_idx = target_idx,
-                        batch_id = ?batch_id,
-                        "State diffs not ready, waiting"
-                    );
-                    return Ok(()); // Will retry on next cycle
-                }
-                Err(e) => {
-                    warn!(
-                        batch_idx = target_idx,
-                        batch_id = ?batch_id,
-                        error = %e,
-                        "Failed to check state diff availability"
-                    );
-                    return Ok(()); // Will retry on next cycle
-                }
+            if !ctx.blob_provider.are_state_diffs_ready(batch_id).await {
+                warn!(
+                    batch_idx = target_idx,
+                    batch_id = ?batch_id,
+                    "State diffs not ready, waiting"
+                );
+                return Ok(()); // Will retry on next cycle
             }
 
             // Start DA posting. If this fails, we retry in the next cycle.

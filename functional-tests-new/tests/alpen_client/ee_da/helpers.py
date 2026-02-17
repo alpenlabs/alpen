@@ -1,17 +1,15 @@
 """
 Test orchestration helpers for DA pipeline testing.
 
-Provides L1 scanning, batch sealing triggers, and shared test state.
+Provides L1 scanning and batch sealing triggers.
 """
 
 import logging
 import time
-from dataclasses import dataclass, field
 
 from envconfigs.alpen_client import DEFAULT_DA_MAGIC_BYTES
 from tests.alpen_client.ee_da.codec import (
     ZERO_WTXID,
-    DaBlob,
     DaEnvelope,
     extract_envelope_payload,
     extract_prev_tail_wtxid,
@@ -22,26 +20,6 @@ from tests.alpen_client.ee_da.codec import (
 logger = logging.getLogger(__name__)
 
 EXPECTED_MAGIC_BYTES = DEFAULT_DA_MAGIC_BYTES
-
-
-@dataclass
-class TestState:
-    """
-    Holds state across test scenarios for validation.
-
-    Tracks seen blobs and wtxid chain to validate:
-    1. last_block_num progression (monotonically increasing)
-    2. Wtxid chain integrity (each envelope references the previous)
-    """
-
-    # Max last_block_num seen so far (for scenario separation)
-    max_block_num: int = 0
-    # All DA envelopes seen, ordered by L1 height
-    envelopes: list[DaEnvelope] = field(default_factory=list)
-    # All reassembled blobs with their last_block_num
-    blobs: list[DaBlob] = field(default_factory=list)
-    # Baseline L1 height at test start
-    baseline_l1_height: int = 0
 
 
 def scan_for_da_envelopes(

@@ -139,35 +139,29 @@ where
         })
     }
 
-    async fn are_state_diffs_ready(&self, batch_id: BatchId) -> eyre::Result<bool> {
+    async fn are_state_diffs_ready(&self, batch_id: BatchId) -> bool {
         // Look up the batch to get its block range.
-        let (batch, _status) = self
-            .batch_storage
-            .get_batch_by_id(batch_id)
-            .await?
-            .ok_or_else(|| eyre::eyre!("batch {batch_id:?} not found in storage"))?;
+        let Ok(Some((batch, _status))) = self.batch_storage.get_batch_by_id(batch_id).await else {
+            warn!(?batch_id, "batch not found or lookup failed");
+            return false;
+        };
 
         // Check if all blocks have state diffs available.
         for block_hash in batch.blocks_iter() {
             let b256 = B256::from(block_hash.0);
             match self.state_diff_provider.get_state_diff_by_hash(b256) {
-                Ok(Some(_)) => {
-                    // State diff exists for this block
-                }
+                Ok(Some(_)) => {}
                 Ok(None) => {
-                    // State diff not yet available
-                    debug!(?block_hash, "state diff not available for block");
-                    return Ok(false);
+                    warn!(?block_hash, "state diff not available for block");
+                    return false;
                 }
                 Err(e) => {
                     warn!(?block_hash, error = %e, "failed to check state diff for block");
-                    return Err(eyre::eyre!(
-                        "failed to check state diff for block {block_hash:?}: {e}"
-                    ));
+                    return false;
                 }
             }
         }
 
-        Ok(true)
+        true
     }
 }

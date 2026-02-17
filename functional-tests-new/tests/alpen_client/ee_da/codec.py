@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # DA chunk header: version(1) + blob_hash(32) + chunk_index(2) + total_chunks(2)
 DA_CHUNK_HEADER_SIZE = 37
 
-# Minimum state_diff size for empty batch (3 varint counts for empty maps/vecs)
+# Minimum state_diff size for empty batch (3 u32 counts, 4 bytes BE each)
 EMPTY_STATE_DIFF_MAX_SIZE = 12
 
 # Zero wtxid (32 bytes of zeros) — used for first envelope in chain
