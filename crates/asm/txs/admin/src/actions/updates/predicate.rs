@@ -1,7 +1,6 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_predicate::PredicateKey;
-use strata_primitives::roles::ProofType;
 
 /// An update to the verifying key for a given Strata proof layer.
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
@@ -30,4 +29,10 @@ impl PredicateUpdate {
     pub fn into_inner(self) -> (PredicateKey, ProofType) {
         (self.key, self.kind)
     }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+pub enum ProofType {
+    Asm,
+    OLStf,
 }

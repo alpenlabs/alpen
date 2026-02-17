@@ -39,7 +39,7 @@ use bitcoin::{
 pub fn create_deposit_request_locking_script(
     recovery_pk: &[u8; 32],
     internal_key: XOnlyPublicKey,
-    recovery_delay: u32,
+    recovery_delay: u16,
 ) -> ScriptBuf {
     let spend_info = build_deposit_request_spend_info(recovery_pk, internal_key, recovery_delay);
     ScriptBuf::new_p2tr(SECP256K1, internal_key, spend_info.merkle_root())
@@ -49,7 +49,7 @@ pub fn create_deposit_request_locking_script(
 pub fn build_deposit_request_spend_info(
     recovery_pk: &[u8; 32],
     internal_key: XOnlyPublicKey,
-    recovery_delay: u32,
+    recovery_delay: u16,
 ) -> TaprootSpendInfo {
     let tapscript = Builder::new()
         .push_slice(recovery_pk)

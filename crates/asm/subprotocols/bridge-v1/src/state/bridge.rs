@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
+use strata_asm_params::BridgeV1Config;
 use strata_asm_txs_bridge_v1::{deposit::DepositInfo, errors::Mismatch};
 use strata_bridge_types::OperatorIdx;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
@@ -8,7 +9,6 @@ use crate::{
     errors::{DepositValidationError, WithdrawalCommandError},
     state::{
         assignment::{AssignmentEntry, AssignmentTable},
-        config::BridgeV1Config,
         deposit::{DepositEntry, DepositsTable},
         operator::OperatorTable,
         withdrawal::WithdrawalCommand,
@@ -38,7 +38,7 @@ pub struct BridgeV1State {
 
     /// Number of blocks after Deposit Request Transaction that the depositor can reclaim
     /// funds if operators fail to process the deposit.
-    recovery_delay: u32,
+    recovery_delay: u16,
 }
 
 impl BridgeV1State {
@@ -89,7 +89,7 @@ impl BridgeV1State {
     }
 
     /// Returns the recovery delay to reclaim funds.
-    pub fn recovery_delay(&self) -> u32 {
+    pub fn recovery_delay(&self) -> u16 {
         self.recovery_delay
     }
 

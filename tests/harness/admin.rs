@@ -18,11 +18,14 @@ use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
 use bitcoin::{secp256k1::SecretKey, BlockHash};
 use strata_asm_common::{AnchorState, Subprotocol};
+use strata_asm_params::Role;
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
     actions::{
         updates::{
-            multisig::MultisigUpdate, operator::OperatorSetUpdate, predicate::PredicateUpdate,
+            multisig::MultisigUpdate,
+            operator::OperatorSetUpdate,
+            predicate::{PredicateUpdate, ProofType},
             seq::SequencerUpdate,
         },
         CancelAction, MultisigAction, UpdateAction,
@@ -35,10 +38,7 @@ use strata_crypto::{
 };
 use strata_params::RollupParams;
 use strata_predicate::PredicateKey;
-use strata_primitives::{
-    buf::Buf32,
-    roles::{ProofType, Role},
-};
+use strata_primitives::buf::Buf32;
 use strata_test_utils_l2::get_test_operator_secret_key;
 
 use super::test_harness::AsmTestHarness;

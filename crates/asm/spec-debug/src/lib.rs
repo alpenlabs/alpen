@@ -6,8 +6,7 @@
 //! **Security Note**: This spec should only be used in testing environments.
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
-use strata_asm_proto_administration::AdministrationSubprotoParams;
-use strata_asm_proto_bridge_v1::BridgeV1Config;
+use strata_asm_params::{AdministrationSubprotoParams, BridgeV1Config};
 use strata_asm_proto_checkpoint_v0::CheckpointV0Params;
 use strata_asm_proto_debug_v1::DebugSubproto;
 use strata_asm_spec::StrataAsmSpec;

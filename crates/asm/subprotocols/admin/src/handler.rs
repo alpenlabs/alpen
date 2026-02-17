@@ -3,14 +3,14 @@ use strata_asm_common::{
     MsgRelayer,
     logging::{error, info},
 };
-use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction};
+use strata_asm_params::AdministrationSubprotoParams;
+use strata_asm_txs_admin::actions::{MultisigAction, UpdateAction, updates::predicate::ProofType};
 use strata_crypto::threshold_signature::SignatureSet;
 use strata_predicate::PredicateKey;
-use strata_primitives::{buf::Buf32, roles::ProofType};
+use strata_primitives::buf::Buf32;
 
 use crate::{
-    config::AdministrationSubprotoParams, error::AdministrationError, queued_update::QueuedUpdate,
-    state::AdministrationSubprotoState,
+    error::AdministrationError, queued_update::QueuedUpdate, state::AdministrationSubprotoState,
 };
 
 /// Processes and applies all queued updates that are ready to be enacted at the current height.
@@ -181,10 +181,14 @@ mod tests {
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
+    use strata_asm_params::{AdministrationSubprotoParams, Role};
     use strata_asm_txs_admin::{
         actions::{
             CancelAction, MultisigAction, UpdateAction,
-            updates::{predicate::PredicateUpdate, seq::SequencerUpdate},
+            updates::{
+                predicate::{PredicateUpdate, ProofType},
+                seq::SequencerUpdate,
+            },
         },
         test_utils::create_signature_set,
     };
@@ -193,13 +197,11 @@ mod tests {
         threshold_signature::{SignatureSet, ThresholdConfig, ThresholdSignatureError},
     };
     use strata_predicate::PredicateKey;
-    use strata_primitives::roles::{ProofType, Role};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::{handle_action, handle_pending_updates};
     use crate::{
-        config::AdministrationSubprotoParams, error::AdministrationError,
-        queued_update::QueuedUpdate, state::AdministrationSubprotoState,
+        error::AdministrationError, queued_update::QueuedUpdate, state::AdministrationSubprotoState,
     };
 
     struct MockRelayer<M> {

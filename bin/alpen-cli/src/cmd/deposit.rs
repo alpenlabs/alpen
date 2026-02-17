@@ -89,7 +89,7 @@ fn build_deposit_request_tx(
 fn prepare_deposit_request(
     bridge_pubkey: XOnlyPublicKey,
     network: Network,
-    recover_delay: u32,
+    recover_delay: u16,
     alpen_address: AlpenAddress,
     bridge_in_amount: Amount,
 ) -> (DescriptorTemplateOut, BitcoinAddress, DrtHeaderAux, TxOut) {
@@ -192,7 +192,7 @@ pub async fn deposit(
     // Number of blocks after which the wallet actually enables recovery. This is mostly to account
     // for any reorgs that may happen at the recovery height.
     let recover_at =
-        current_block_height + settings.params.recovery_delay + settings.finality_depth;
+        current_block_height + settings.params.recovery_delay as u32 + settings.finality_depth;
 
     println!(
         "Using {} as bridge in address",
@@ -251,11 +251,11 @@ pub async fn deposit(
 fn bridge_in_descriptor(
     bridge_pubkey: XOnlyPublicKey,
     private_key: PrivateKey,
-    recover_delay: u32,
+    recover_delay: u16,
 ) -> DescriptorTemplateOut {
     bdk_wallet::descriptor!(
         tr(bridge_pubkey,
-            and_v(v:pk(private_key),older(recover_delay))
+            and_v(v:pk(private_key),older(recover_delay as u32))
         )
     )
     .expect("valid descriptor")

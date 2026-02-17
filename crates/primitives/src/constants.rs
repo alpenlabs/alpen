@@ -7,7 +7,7 @@ pub const HASH_SIZE: usize = 32;
 pub const EE_ADDRESS_LEN: u8 = 20;
 
 /// Number of blocks after bridge in transaction confirmation that the recovery path can be spent.
-pub const RECOVER_DELAY: u32 = 1_008;
+pub const RECOVER_DELAY: u16 = 1_008;
 
 /// The number of timestamps used for calculating the median in Bitcoin header verification.
 /// According to Bitcoin consensus rules, we need to check that a block's timestamp

@@ -1,13 +1,12 @@
 use std::mem::take;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_asm_params::{AdministrationSubprotoParams, Role};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
-use strata_primitives::roles::Role;
 
 use crate::{
-    authority::MultisigAuthority, config::AdministrationSubprotoParams, error::AdministrationError,
-    queued_update::QueuedUpdate,
+    authority::MultisigAuthority, error::AdministrationError, queued_update::QueuedUpdate,
 };
 
 /// Holds the state for the Administration Subprotocol, including the various
@@ -116,18 +115,15 @@ mod tests {
 
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::rngs::OsRng;
+    use strata_asm_params::{AdministrationSubprotoParams, Role};
     use strata_asm_txs_admin::actions::UpdateAction;
     use strata_crypto::{
         keys::compressed::CompressedPublicKey,
         threshold_signature::{ThresholdConfig, ThresholdConfigUpdate},
     };
-    use strata_primitives::roles::Role;
     use strata_test_utils::ArbitraryGenerator;
 
-    use crate::{
-        config::AdministrationSubprotoParams, queued_update::QueuedUpdate,
-        state::AdministrationSubprotoState,
-    };
+    use crate::{queued_update::QueuedUpdate, state::AdministrationSubprotoState};
 
     fn create_test_config() -> AdministrationSubprotoParams {
         let secp = Secp256k1::new();
