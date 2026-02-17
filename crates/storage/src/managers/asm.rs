@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use strata_asm_common::AuxData;
 use strata_db_types::{traits::AsmDatabase, DbResult};
 use strata_primitives::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
@@ -48,5 +49,15 @@ impl AsmStateManager {
         max_count: usize,
     ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>> {
         self.ops.get_asm_states_from_blocking(from_block, max_count)
+    }
+
+    /// Puts [`AuxData`] for the given block.
+    pub fn put_aux_data(&self, block: L1BlockCommitment, data: AuxData) -> DbResult<()> {
+        self.ops.put_aux_data_blocking(block, data)
+    }
+
+    /// Returns [`AuxData`] that corresponds to passed block.
+    pub fn get_aux_data(&self, block: L1BlockCommitment) -> DbResult<Option<AuxData>> {
+        self.ops.get_aux_data_blocking(block)
     }
 }
