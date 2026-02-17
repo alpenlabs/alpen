@@ -17,12 +17,18 @@ strata-primitives.workspace = true
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
 borsh.workspace = true
-rand = { workspace = true, optional = true }
 strata-l1-envelope-fmt.workspace = true
 thiserror.workspace = true
 
 [features]
-test-utils = ["dep:rand", "dep:bitcoin", "strata-crypto/test-utils"]
+test-utils = [
+  "dep:bitcoin",
+  "strata-crypto/test-utils",
+  "strata-asm-common/test-utils",
+]
 
 [dev-dependencies]
+rand.workspace = true
+
 strata-test-utils.workspace = true
+strata-asm-common = { workspace = true, features = ["test-utils"] }

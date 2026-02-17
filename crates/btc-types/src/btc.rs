@@ -493,7 +493,7 @@ impl<'a> Arbitrary<'a> for BitcoinPsbt {
 }
 
 /// [Borsh](borsh)-friendly Bitcoin [`Txid`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxid(Txid);
 
 impl From<Txid> for BitcoinTxid {
