@@ -53,11 +53,10 @@ impl OLRpcServer {
         let blkid = self
             .storage
             .ol_block()
-            .get_blocks_at_height_async(height)
+            .get_canonical_block_at_async(height)
             .await
             .map_err(db_error)?
-            .first() // TODO: Assumes the canonical is the first one, but need to define it
-            .copied();
+            .map(|b| b.blkid);
         Ok(blkid)
     }
 
@@ -382,22 +381,13 @@ impl OLClientRpcServer for OLRpcServer {
                     .ok_or_else(|| not_found_error(format!("Block {block_id} not found")))?;
                 OLBlockCommitment::new(block.header().slot(), block_id)
             }
-            OLBlockOrTag::Slot(slot) => {
-                let block_ids = self
-                    .storage
-                    .ol_block()
-                    .get_blocks_at_height_async(slot)
-                    .await
-                    .map_err(|e| {
-                        error!(?e, slot, "Failed to get blocks at slot");
-                        db_error(e)
-                    })?;
-                let block_id = block_ids
-                    .first()
-                    .copied()
-                    .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
-                OLBlockCommitment::new(slot, block_id)
-            }
+            OLBlockOrTag::Slot(slot) => self
+                .storage
+                .ol_block()
+                .get_canonical_block_at_async(slot)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
         };
 
         // Get OL state at the resolved block
