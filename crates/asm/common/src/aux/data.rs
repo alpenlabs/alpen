@@ -39,7 +39,7 @@ impl AuxRequests {
 ///
 /// Contains unverified Bitcoin transactions and manifest hashes returned by external workers.
 /// This data must be validated before use during the main processing phase.
-#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AuxData {
     /// Manifest hashes with their MMR proofs (unverified)
     manifest_hashes: Vec<VerifiableManifestHash>,
@@ -108,7 +108,7 @@ impl ManifestHashRange {
 ///
 /// This is unverified data - the proof must be verified against a trusted compact MMR
 /// before the hash can be considered valid.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct VerifiableManifestHash {
     /// The hash of an [`AsmManifest`](crate::AsmManifest)
     hash: Hash32,

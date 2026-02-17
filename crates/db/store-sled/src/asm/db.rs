@@ -1,8 +1,9 @@
+use strata_asm_common::AuxData;
 use strata_db_types::{DbResult, traits::AsmDatabase};
 use strata_primitives::l1::L1BlockCommitment;
 use strata_state::asm_state::AsmState;
 
-use super::schemas::{AsmLogSchema, AsmStateSchema};
+use super::schemas::{AsmAuxDataSchema, AsmLogSchema, AsmStateSchema};
 use crate::define_sled_database;
 
 define_sled_database!(
@@ -10,6 +11,7 @@ define_sled_database!(
         asm_state_tree: AsmStateSchema,
         // TODO(refactor) - it should operate on manifests instead of logs.
         asm_log_tree: AsmLogSchema,
+        asm_aux_data_tree: AsmAuxDataSchema,
     }
 );
 
@@ -79,6 +81,15 @@ impl AsmDatabase for AsmDBSled {
         }
 
         Ok(result)
+    }
+
+    fn put_aux_data(&self, block: L1BlockCommitment, data: AuxData) -> DbResult<()> {
+        self.asm_aux_data_tree.insert(&block, &data)?;
+        Ok(())
+    }
+
+    fn get_aux_data(&self, block: L1BlockCommitment) -> DbResult<Option<AuxData>> {
+        Ok(self.asm_aux_data_tree.get(&block)?)
     }
 }
 

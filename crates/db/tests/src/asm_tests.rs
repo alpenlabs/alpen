@@ -1,4 +1,4 @@
-use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
+use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
 use strata_asm_types::HeaderVerificationState;
 use strata_db_types::traits::AsmDatabase;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
@@ -28,6 +28,23 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
     assert_eq!(update, state);
 }
 
+pub fn test_put_get_aux_data(db: &impl AsmDatabase) {
+    let block = L1BlockCommitment::from_height_u64(1, L1BlockId::default())
+        .expect("height should be valid");
+
+    // Initially no aux data.
+    let result = db.get_aux_data(block).expect("test: get empty");
+    assert!(result.is_none());
+
+    // Store and retrieve.
+    let aux_data = AuxData::default();
+    db.put_aux_data(block, aux_data.clone())
+        .expect("test: put aux_data");
+
+    let retrieved = db.get_aux_data(block).expect("test: get aux_data").unwrap();
+    assert_eq!(retrieved, aux_data);
+}
+
 // TODO(QQ): add more tests.
 #[macro_export]
 macro_rules! asm_state_db_tests {
@@ -36,6 +53,12 @@ macro_rules! asm_state_db_tests {
         fn test_get_asm() {
             let db = $setup_expr;
             $crate::asm_tests::test_get_asm(&db);
+        }
+
+        #[test]
+        fn test_put_get_aux_data() {
+            let db = $setup_expr;
+            $crate::asm_tests::test_put_get_aux_data(&db);
         }
     };
 }
