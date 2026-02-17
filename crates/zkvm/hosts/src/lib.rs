@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_primitives::proof::{ProofKey, ProofZkVm};
-use zkaleido::{VerifyingKey, ZkVmVkProvider};
+use zkaleido::VerifyingKey;
 
 pub mod native;
 #[cfg(feature = "sp1")]
