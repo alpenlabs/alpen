@@ -77,7 +77,7 @@ impl OLRpcServer {
         account_id: AccountId,
         mut epoch: Epoch,
     ) -> Result<Vec<u8>, ErrorObjectOwned> {
-        while epoch >= 0 {
+        loop {
             if let Some(extra_data) = self
                 .storage
                 .account()
@@ -86,6 +86,9 @@ impl OLRpcServer {
                 .map_err(db_error)?
             {
                 return Ok(extra_data);
+            }
+            if epoch == 0 {
+                break;
             }
             epoch -= 1;
         }
