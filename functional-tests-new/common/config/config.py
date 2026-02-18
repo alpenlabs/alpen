@@ -83,6 +83,12 @@ class SequencerConfig:
 
 
 @dataclass
+class EpochSealingConfig:
+    policy: str = field(default="FixedSlot")
+    slots_per_epoch: int = field(default=64)
+
+
+@dataclass
 class StrataConfig:
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
@@ -91,6 +97,7 @@ class StrataConfig:
     exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
     sequencer: SequencerConfig | None = field(default=None)
+    epoch_sealing: EpochSealingConfig | None = field(default=None)
 
     def as_toml_string(self) -> str:
         d = asdict(self)

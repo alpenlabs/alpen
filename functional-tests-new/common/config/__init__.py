@@ -7,6 +7,7 @@ from common.config.config import (
     BroadcasterConfig,
     BtcioConfig,
     ClientConfig,
+    EpochSealingConfig,
     ExecConfig,
     ReaderConfig,
     RelayerConfig,
@@ -47,6 +48,7 @@ __all__ = [
     "ExecConfig",
     "RethELConfig",
     "RelayerConfig",
+    "EpochSealingConfig",
     "SequencerConfig",
     "SyncConfig",
     # constants.py

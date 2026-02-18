@@ -59,11 +59,49 @@ class GenesisL1View:
 
     @staticmethod
     def at_latest_block(btc_rpc) -> "GenesisL1View":
+        """Build a GenesisL1View from the current chain tip.
+
+        Fetches the real target, epoch start timestamp, and last 11 block
+        timestamps from bitcoind so that the ASM's HeaderVerificationState
+        can correctly validate subsequent block headers.
+        """
         blkid = btc_rpc.proxy.getbestblockhash()
-        blkheight = btc_rpc.proxy.getblock(blkid, 1)["height"]
+        blk_info = btc_rpc.proxy.getblock(blkid, 1)
+        blkheight = blk_info["height"]
         l1blk_commitment = L1BlockCommitment(blkheight, blkid)
-        # TODO: add timestamps as needed
-        return GenesisL1View(l1blk_commitment)
+
+        # next_target: compact target (nBits) from the current block header.
+        # In regtest, difficulty is constant so this stays the same.
+        # The "bits" field in getblock returns a hex string of the compact target.
+        next_target = int(blk_info["bits"], 16)
+
+        # epoch_start_timestamp: timestamp of the most recent difficulty
+        # adjustment block. difficulty_adjustment_interval = 2016 for all
+        # networks (including regtest).
+        difficulty_interval = 2016
+        epoch_start_height = (blkheight // difficulty_interval) * difficulty_interval
+        epoch_start_hash = btc_rpc.proxy.getblockhash(epoch_start_height)
+        epoch_start_info = btc_rpc.proxy.getblock(epoch_start_hash, 1)
+        epoch_start_timestamp = epoch_start_info["time"]
+
+        # last_11_timestamps: timestamps of the last 11 blocks in ascending
+        # order (oldest first). If chain is shorter than 11 blocks, pad with 0.
+        timestamps = []
+        for i in range(11):
+            h = blkheight - (10 - i)
+            if h < 0:
+                timestamps.append(0)
+            else:
+                h_hash = btc_rpc.proxy.getblockhash(h)
+                h_info = btc_rpc.proxy.getblock(h_hash, 1)
+                timestamps.append(h_info["time"])
+
+        return GenesisL1View(
+            blk=l1blk_commitment,
+            next_target=next_target,
+            epoch_start_timestamp=epoch_start_timestamp,
+            last_11_timestamps=timestamps,
+        )
 
 
 # TODO: move this to some place common as this should be useful for other purposes as well
