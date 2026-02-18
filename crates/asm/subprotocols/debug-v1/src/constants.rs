@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use strata_l1_txfmt::{SubprotocolId, TxType};
 
 /// Debug subprotocol ID (set to u8::MAX to avoid production conflicts).
@@ -21,7 +23,7 @@ pub(crate) const AMOUNT_OFFSET: usize = 0;
 pub(crate) const OPERATOR_INDEX_OFFSET: usize = AMOUNT_OFFSET + AMOUNT_SIZE;
 
 /// Size of the operator index field in bytes.
-pub(crate) const OPERATOR_INDEX_SIZE: usize = 4;
+pub(crate) const OPERATOR_INDEX_SIZE: usize = size_of::<u32>();
 
 /// Offset of the descriptor field in auxiliary data.
 pub(crate) const DESCRIPTOR_OFFSET: usize = OPERATOR_INDEX_OFFSET + OPERATOR_INDEX_SIZE;
