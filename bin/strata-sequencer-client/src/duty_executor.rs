@@ -146,6 +146,7 @@ where
 
     debug!(%epoch, %duty_id, %sig, "signed checkpoint");
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     rpc.complete_checkpoint_signature(duty.inner().batch_info().epoch() as u64, HexBytes64(sig.0))
         .await
         .map_err(DutyExecError::CompleteCheckpoint)?;

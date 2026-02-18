@@ -225,6 +225,7 @@ fn spawn_exec_worker<E: ExecEngineCtl + Sync + Send + 'static>(
     engine: Arc<E>,
 ) -> anyhow::Result<ExecCtlHandle> {
     // Create the worker context - this stays in consensus-logic since it implements WorkerContext
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let context = ExecWorkerCtx::new(storage.l2().clone(), storage.client_state().clone());
 
     let handle = ExecWorkerBuilder::new()
@@ -246,6 +247,7 @@ fn spawn_chain_worker(
     exec_ctl_handle: ExecCtlHandle,
 ) -> anyhow::Result<ChainWorkerHandle> {
     // Create the worker context - this stays in consensus-logic since it implements WorkerContext
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let context = ChainWorkerCtx::new(
         storage.l2().clone(),
         storage.chainstate().clone(),

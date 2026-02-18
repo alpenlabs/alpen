@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use strata_consensus_logic::{message::ForkChoiceMessage, sync_manager::SyncManager};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::L2BlockManager;
 use tokio::sync::{mpsc, oneshot};
 
@@ -35,6 +36,7 @@ pub enum TemplateManagerRequest {
 pub struct TemplateManagerHandle {
     tx: mpsc::Sender<TemplateManagerRequest>,
     shared: SharedState,
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     l2_block_manager: Arc<L2BlockManager>,
     sync_manager: Arc<SyncManager>,
 }
@@ -42,6 +44,7 @@ pub struct TemplateManagerHandle {
 impl TemplateManagerHandle {
     /// Create new instance.
     // TODO make this not pub
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn new(
         tx: mpsc::Sender<TemplateManagerRequest>,
         shared: SharedState,

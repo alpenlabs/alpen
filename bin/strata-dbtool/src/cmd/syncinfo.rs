@@ -1,5 +1,6 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
 
 use super::{
@@ -26,6 +27,7 @@ pub(crate) fn get_syncinfo(
     db: &impl DatabaseBackend,
     args: GetSyncinfoArgs,
 ) -> Result<(), DisplayedError> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2_db = db.l2_db();
 
     // Get L1 tip
@@ -38,6 +40,7 @@ pub(crate) fn get_syncinfo(
     let l2_tip_height = get_chain_tip_slot(db)?;
 
     // Get L2 block status
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2_tip_block_status = l2_db
         .get_block_status(l2_tip_block_id)
         .internal_error("Failed to get L2 tip block status")?

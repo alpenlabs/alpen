@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")] // Don't know how to make clippy happy with precise line expects
 //! Macro trait def for the `strata_` RPC namespace using jsonrpsee.
 use bitcoin::Txid;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
@@ -8,6 +9,7 @@ use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_ol_chain_types::{L2Block, L2BlockId};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_rpc_types::{
     types::{RpcBlockHeader, RpcClientStatus, RpcL1Status},
     HexBytes, HexBytes32, HexBytes64, L2BlockStatus, RpcChainState, RpcCheckpointConfStatus,
@@ -21,6 +23,9 @@ use zkaleido::ProofReceipt;
 
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
+#[deprecated(
+    note = "use `strata_ol_rpc_api::{OLClientRpc, OLFullNodeRpc}` for OL/EE-decoupled RPC surfaces"
+)]
 pub trait StrataApi {
     /// Get blocks at a certain height
     #[method(name = "getBlocksAtIdx")]
@@ -91,9 +96,11 @@ pub trait StrataApi {
 
     /// Get blocks in range as raw bytes of borsh serialized `Vec<L2BlockBundle>`.
     /// `start_height` and `end_height` are inclusive.
+    #[deprecated(note = "use `getRawBlocksRange` in `strata_ol_rpc_api::OLFullNodeRpc`")]
     #[method(name = "getRawBundles")]
     async fn get_raw_bundles(&self, start_height: u64, end_height: u64) -> RpcResult<HexBytes>;
 
+    #[deprecated(note = "use `getRawBlockById` in `strata_ol_rpc_api::OLFullNodeRpc`")]
     #[method(name = "getRawBundleById")]
     async fn get_raw_bundle_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<HexBytes>>;
 
@@ -118,18 +125,24 @@ pub trait StrataApi {
     async fn get_active_operator_chain_pubkey_set(&self) -> RpcResult<PublickeyTable>;
 
     /// Get latest checkpoint info
+    #[deprecated(note = "use OL checkpoint/chain status RPCs in `strata_ol_rpc_api`")]
     #[method(name = "getLatestCheckpointIndex")]
     async fn get_latest_checkpoint_index(&self, finalized: Option<bool>) -> RpcResult<Option<u64>>;
 
     /// Get latest checkpoint index that still needs proof generation
+    #[deprecated(note = "use OL checkpoint signing/status RPCs in `strata_ol_rpc_api`")]
     #[method(name = "getNextUnprovenCheckpointIndex")]
     async fn get_next_unproven_checkpoint_index(&self) -> RpcResult<Option<u64>>;
 
     /// Get nth checkpoint info if any
+    #[deprecated(note = "use OL checkpoint/account summary RPCs in `strata_ol_rpc_api`")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "getCheckpointInfo")]
     async fn get_checkpoint_info(&self, idx: u64) -> RpcResult<Option<RpcCheckpointInfo>>;
 
     /// Get the checkpoint confirmation status if checkpoint exists
+    #[deprecated(note = "use OL checkpoint signing/status RPCs in `strata_ol_rpc_api`")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "getCheckpointConfStatus")]
     async fn get_checkpoint_conf_status(
         &self,
@@ -139,6 +152,8 @@ pub trait StrataApi {
     /// Get the l2block status from its height
     /// This assumes that the block finalization is always sequential. i.e all the blocks before the
     /// last finalized block are also finalized
+    #[deprecated(note = "use `getChainStatus` in `strata_ol_rpc_api::OLClientRpc`")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "getL2BlockStatus")]
     async fn get_l2_block_status(&self, block_height: u64) -> RpcResult<L2BlockStatus>;
 
@@ -161,6 +176,7 @@ pub trait StrataAdminApi {
 /// rpc endpoints that are only available on sequencer
 #[cfg_attr(not(feature = "client"), rpc(server))]
 #[cfg_attr(feature = "client", rpc(server, client))]
+#[deprecated(note = "use `strata_ol_rpc_api::OLSequencerRpc` for OL/EE-decoupled sequencer RPC")]
 pub trait StrataSequencerApi {
     /// Get the last broadcast entry
     #[method(name = "strata_getLastTxEntry")]
@@ -175,6 +191,7 @@ pub trait StrataSequencerApi {
     async fn submit_da_blob(&self, blobdata: HexBytes) -> RpcResult<()>;
 
     /// Verifies and adds the submitted proof to the checkpoint database
+    #[deprecated(note = "use OL checkpoint signing flow via `strata_ol_rpc_api::OLSequencerRpc`")]
     #[method(name = "strataadmin_submitCheckpointProof")]
     async fn submit_checkpoint_proof(&self, idx: u64, proof: ProofReceipt) -> RpcResult<()>;
 
@@ -202,6 +219,7 @@ pub trait StrataSequencerApi {
         completion: BlockCompletionData,
     ) -> RpcResult<L2BlockId>;
 
+    #[deprecated(note = "use OL checkpoint epoch-based signature flow")]
     #[method(name = "strataadmin_completeCheckpointSignature")]
     async fn complete_checkpoint_signature(&self, idx: u64, sig: HexBytes64) -> RpcResult<()>;
 }
@@ -209,12 +227,14 @@ pub trait StrataSequencerApi {
 /// rpc endpoints that are only available for debugging purpose and subject to change.
 #[cfg_attr(not(feature = "client"), rpc(server))]
 #[cfg_attr(feature = "client", rpc(server, client))]
+#[deprecated(note = "use `strata_ol_rpc_api` debug-capable OL RPC surfaces where available")]
 pub trait StrataDebugApi {
     /// Get the block by its id
     #[method(name = "debug_getBlockById")]
     async fn get_block_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<L2Block>>;
 
     /// Get the ChainState at a certain index
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     #[method(name = "debug_getChainstateById")]
     async fn get_chainstate_by_id(&self, block_id: L2BlockId) -> RpcResult<Option<RpcChainState>>;
 

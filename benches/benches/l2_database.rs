@@ -21,6 +21,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
     reason = "used for benchmarking"
 )]
 use strata_asm_manifest_types as _;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::traits::{BlockStatus, L2BlockDatabase};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
 #[allow(
@@ -80,6 +81,7 @@ fn bench_put_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
             |b, &payload_ops| match backend {
                 #[cfg(feature = "sled")]
                 DatabaseBackend::Sled => {
+                    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
                     b.iter_with_setup(
                         || {
                             let setup = L2BenchSetupSled::new();
@@ -111,6 +113,7 @@ fn bench_get_block_data_impl(backend: DatabaseBackend, c: &mut Criterion) {
             &payload_ops,
             |b, &payload_ops| match backend {
                 #[cfg(feature = "sled")]
+                #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
                 DatabaseBackend::Sled => {
                     b.iter_with_setup(
                         || {
@@ -145,6 +148,7 @@ fn bench_set_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
             &payload_ops,
             |b, &payload_ops| match backend {
                 #[cfg(feature = "sled")]
+                #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
                 DatabaseBackend::Sled => {
                     b.iter_with_setup(
                         || {
@@ -154,6 +158,7 @@ fn bench_set_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
                             let bundle = L2BlockBundle::arbitrary(&mut unstructured)
                                 .expect("Failed to generate L2BlockBundle");
                             let block_id = bundle.block().header().get_blockid();
+
                             setup.db.put_block_data(bundle).unwrap();
                             (setup, block_id)
                         },
@@ -182,6 +187,7 @@ fn bench_get_block_status_impl(backend: DatabaseBackend, c: &mut Criterion) {
             &payload_ops,
             |b, &payload_ops| match backend {
                 #[cfg(feature = "sled")]
+                #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
                 DatabaseBackend::Sled => {
                     b.iter_with_setup(
                         || {

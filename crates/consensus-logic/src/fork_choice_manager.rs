@@ -5,6 +5,7 @@ use std::{collections::VecDeque, sync::Arc};
 use strata_chain_worker::{ChainWorkerHandle, WorkerResult};
 use strata_chainexec::{validation_util, TipState};
 use strata_csm_types::{CheckpointState, ClientState};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{errors::DbError, traits::BlockStatus, types::CheckpointConfStatus};
 use strata_eectl::errors::EngineError;
 use strata_identifiers::Epoch;
@@ -13,6 +14,7 @@ use strata_ol_chainstate_types::Chainstate;
 use strata_params::Params;
 use strata_primitives::{epoch::EpochCommitment, l2::L2BlockCommitment};
 use strata_status::*;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;
 use tokio::{
@@ -92,16 +94,19 @@ impl ForkChoiceManager {
     }
 
     fn set_block_status(&self, id: &L2BlockId, status: BlockStatus) -> Result<(), DbError> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         self.storage.l2().set_block_status_blocking(id, status)?;
         Ok(())
     }
 
     #[expect(unused, reason = "used for fork choice manager")]
     fn get_block_status(&self, id: &L2BlockId) -> Result<Option<BlockStatus>, DbError> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         self.storage.l2().get_block_status_blocking(id)
     }
 
     fn get_block_data(&self, id: &L2BlockId) -> Result<Option<L2BlockBundle>, DbError> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         self.storage.l2().get_block_data_blocking(id)
     }
 
@@ -275,6 +280,7 @@ pub fn init_forkchoice_manager(
     // XXX right now we have to do some special casing for if we don't have an
     // initial checkpoint for the genesis epoch
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let latest_tip = storage.l2().get_tip_block_blocking()?;
     let latest_chainstate = storage
         .chainstate()
@@ -299,8 +305,10 @@ pub fn init_forkchoice_manager(
     // Populate the unfinalized block tracker.
     let mut chain_tracker =
         unfinalized_tracker::UnfinalizedBlockTracker::new_empty(finalized_epoch);
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     chain_tracker.load_unfinalized_blocks(storage.l2().as_ref())?;
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let cur_tip_block = determine_start_tip(&chain_tracker, storage.l2())?;
     debug!(?chain_tracker, "init chain tracker");
 
@@ -326,13 +334,16 @@ pub fn init_forkchoice_manager(
         // csm is ahead of chainstate
         // search for all pending checkpoints
         for epoch in finalized_epoch.epoch()..=csm_finalized_epoch.epoch() {
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let Some(checkpoint_entry) =
                 storage.checkpoint().get_checkpoint_blocking(epoch as u64)?
             else {
                 warn!(%epoch, "missing expected checkpoint entry");
                 continue;
             };
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             if let CheckpointConfStatus::Finalized(_) = checkpoint_entry.confirmation_status {
+                #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
                 let commitment = checkpoint_entry
                     .checkpoint
                     .batch_info()
@@ -347,6 +358,7 @@ pub fn init_forkchoice_manager(
 
 /// Determines the starting chain tip.  For now, this is just the block with the
 /// highest index, choosing the lowest ordered blockid in the case of ties.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 fn determine_start_tip(
     unfin: &UnfinalizedBlockTracker,
     l2_block_manager: &L2BlockManager,
@@ -393,6 +405,7 @@ pub fn tracker_task(
     info!("waiting for genesis before starting forkchoice logic");
 
     let genesis_block_id = handle.block_on(async {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         while storage
             .l2()
             .get_blocks_at_height_blocking(0)
@@ -401,6 +414,7 @@ pub fn tracker_task(
         {
             sleep(time::Duration::from_secs(1)).await;
         }
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         storage
             .l2()
             .get_blocks_at_height_blocking(0)
@@ -465,6 +479,7 @@ pub fn handle_unprocessed_blocks(
 ) -> anyhow::Result<()> {
     info!("checking for unprocessed L2 blocks");
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2_block_manager = storage.l2();
     let mut slot = fcm.cur_best_block.slot() + 1;
     loop {
@@ -687,6 +702,7 @@ fn handle_new_block(
     }
 
     // Now decide what the new tip should be and figure out how to get there.
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let best_block = pick_best_block(
         &cur_tip,
         fcm_state.chain_tracker.chain_tips_iter(),
@@ -744,6 +760,7 @@ fn handle_new_block(
 /// Returns if we should switch to the new fork.  This is dependent on our
 /// current tip and any of the competing forks.  It's "sticky" in that it'll try
 /// to stay where we currently are unless there's a definitely-better fork.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 fn pick_best_block<'t>(
     cur_tip: &'t L2BlockId,
     tips_iter: impl Iterator<Item = &'t L2BlockId>,

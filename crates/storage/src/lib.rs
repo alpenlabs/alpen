@@ -9,6 +9,7 @@ pub mod ops;
 use std::sync::Arc;
 
 use anyhow::Context;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub use managers::{
     account_genesis::AccountGenesisManager,
     asm::AsmStateManager,
@@ -44,6 +45,7 @@ pub struct NodeStorage {
     account_genesis_manager: Arc<AccountGenesisManager>,
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     l2_block_manager: Arc<L2BlockManager>,
 
     chainstate_manager: Arc<ChainstateManager>,
@@ -52,6 +54,7 @@ pub struct NodeStorage {
 
     // TODO maybe move this into a different one?
     // update: probably not, would require moving data around
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     checkpoint_manager: Arc<CheckpointDbManager>,
 
     ol_block_manager: Arc<OLBlockManager>,
@@ -105,6 +108,8 @@ impl NodeStorage {
         &self.l1_block_manager
     }
 
+    #[deprecated(note = "use `ol_block()` for OL/EE-decoupled block storage")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn l2(&self) -> &Arc<L2BlockManager> {
         &self.l2_block_manager
     }
@@ -117,6 +122,8 @@ impl NodeStorage {
         &self.client_state_manager
     }
 
+    #[deprecated(note = "use `ol_checkpoint()` for OL/EE-decoupled checkpoint storage")]
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn checkpoint(&self) -> &Arc<CheckpointDbManager> {
         &self.checkpoint_manager
     }
@@ -152,9 +159,11 @@ pub fn create_node_storage(
     let account_genesis_db = db.account_genesis_db();
     let asm_db = db.asm_db();
     let l1_db = db.l1_db();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2_db = db.l2_db();
     let chainstate_db = db.chain_state_db();
     let client_state_db = db.client_state_db();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let checkpoint_db = db.checkpoint_db();
     let ol_block_db = db.ol_block_db();
     let mempool_db = db.mempool_db();
@@ -166,6 +175,7 @@ pub fn create_node_storage(
         Arc::new(AccountGenesisManager::new(pool.clone(), account_genesis_db));
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2_block_manager = Arc::new(L2BlockManager::new(pool.clone(), l2_db));
     let chainstate_manager = Arc::new(ChainstateManager::new(pool.clone(), chainstate_db));
 
@@ -173,6 +183,7 @@ pub fn create_node_storage(
         ClientStateManager::new(pool.clone(), client_state_db).context("open client state")?,
     );
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));

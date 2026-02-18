@@ -29,6 +29,7 @@ pub(crate) fn sync_chainstate_to_el(
     engine: &impl ExecEngineCtl,
 ) -> Result<(), Error> {
     let chainstate_manager = storage.chainstate();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2_block_manager = storage.l2();
 
     // Get the tip block - represents the canonical chain

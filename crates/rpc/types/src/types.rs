@@ -10,6 +10,10 @@ use strata_asm_proto_bridge_v1::{DepositEntry, OperatorBitmap};
 use strata_bridge_types::WithdrawalIntent;
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointConfStatus and CheckpointEntry are retained for compatibility"
+)]
 use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_ol_chain_types::L2BlockId;
 pub use strata_primitives::serde_helpers::serde_hex_bytes::{HexBytes, HexBytes32, HexBytes64};
@@ -207,6 +211,7 @@ pub struct RawBlockWitness {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[deprecated(note = "use OL checkpoint status types in `strata_ol_rpc_types`")]
 pub enum RpcCheckpointConfStatus {
     /// Pending to be posted on L1
     Pending,
@@ -216,6 +221,10 @@ pub enum RpcCheckpointConfStatus {
     Finalized,
 }
 
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointConfStatus is retained for compatibility"
+)]
 impl From<CheckpointConfStatus> for RpcCheckpointConfStatus {
     fn from(value: CheckpointConfStatus) -> Self {
         match value {
@@ -226,6 +235,10 @@ impl From<CheckpointConfStatus> for RpcCheckpointConfStatus {
     }
 }
 
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointEntry is retained for compatibility"
+)]
 impl From<CheckpointEntry> for RpcCheckpointConfStatus {
     fn from(value: CheckpointEntry) -> Self {
         value.confirmation_status.into()
@@ -233,6 +246,11 @@ impl From<CheckpointEntry> for RpcCheckpointConfStatus {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[deprecated(note = "use OL checkpoint/account summary types in `strata_ol_rpc_types`")]
+#[expect(
+    deprecated,
+    reason = "legacy old code BatchInfo is retained for compatibility"
+)]
 pub struct RpcCheckpointInfo {
     /// The index of the checkpoint
     pub idx: u64,
@@ -246,6 +264,10 @@ pub struct RpcCheckpointInfo {
     pub confirmation_status: RpcCheckpointConfStatus,
 }
 
+#[expect(
+    deprecated,
+    reason = "legacy old code BatchInfo is retained for compatibility"
+)]
 impl From<BatchInfo> for RpcCheckpointInfo {
     fn from(value: BatchInfo) -> Self {
         Self {
@@ -277,6 +299,10 @@ impl From<CheckpointL1Ref> for RpcCheckpointL1Ref {
     }
 }
 
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointEntry is retained for compatibility"
+)]
 impl From<CheckpointEntry> for RpcCheckpointInfo {
     fn from(value: CheckpointEntry) -> Self {
         let mut item: Self = value.checkpoint.batch_info().clone().into();
@@ -333,6 +359,7 @@ impl RpcDepositEntry {
 
 /// status of L2 Block
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(note = "use `strata_ol_rpc_types::RpcOLChainStatus` for OL/EE-decoupled status")]
 pub enum L2BlockStatus {
     /// Unknown block height
     Unknown,
@@ -345,6 +372,7 @@ pub enum L2BlockStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(note = "use `strata_ol_rpc_types::RpcOLChainStatus` for OL/EE-decoupled chain status")]
 pub struct RpcChainState {
     /// Most recent seen block.
     pub tip_blkid: L2BlockId,

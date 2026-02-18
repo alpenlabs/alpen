@@ -1,6 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_consensus_logic::chain_worker_context::conv_blkid_to_slot_wb_id;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
     chainstate::ChainstateDatabase,
     traits::{
@@ -197,7 +198,9 @@ pub(crate) fn revert_chainstate(
 
     // Check if target block is inside checkpointed epoch
     let latest_checkpoint_entry = get_latest_checkpoint_entry(db)?;
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let latest_checkpoint_epoch = latest_checkpoint_entry.checkpoint.batch_info().epoch;
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let checkpoint_last_slot = latest_checkpoint_entry
         .checkpoint
         .batch_info()
@@ -271,6 +274,7 @@ pub(crate) fn revert_chainstate(
     let mut blocks_to_delete = Vec::new();
 
     for slot in target_slot + 1..=chain_tip_slot {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let l2_block_ids = db.l2_db().get_blocks_at_height(slot).unwrap_or_default();
         for block_id in l2_block_ids.iter() {
             // Convert block ID to write batch ID
@@ -303,6 +307,7 @@ pub(crate) fn revert_chainstate(
 
                     // Mark the status to unchecked
                     println!("Revert chainstate marking block unchecked {block_id:?}");
+                    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
                     db.l2_db()
                         .set_block_status(*block_id, BlockStatus::Unchecked)
                         .internal_error(format!(
@@ -313,6 +318,10 @@ pub(crate) fn revert_chainstate(
                     // Delete blocks if requested
                     if args.delete_blocks {
                         println!("Revert chainstate deleting block {block_id:?}");
+                        #[expect(
+                            deprecated,
+                            reason = "legacy old code is retained for compatibility"
+                        )]
                         db.l2_db()
                             .del_block_data(*block_id)
                             .internal_error(format!(
@@ -345,6 +354,7 @@ pub(crate) fn revert_chainstate(
     let needs_checkpoint_cleanup = first_epoch_to_clean <= (latest_checkpoint_epoch as u64);
 
     // Check if there are epoch summaries to clean (may exist beyond latest checkpoint)
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let last_summarized_epoch = db
         .checkpoint_db()
         .get_last_summarized_epoch()
@@ -416,6 +426,7 @@ pub(crate) fn revert_chainstate(
             );
 
             // Use bulk deletion methods for efficiency
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let deleted_checkpoints = db
                 .checkpoint_db()
                 .del_checkpoints_from_epoch(first_epoch_to_clean)
@@ -442,6 +453,7 @@ pub(crate) fn revert_chainstate(
                 "Revert chainstate cleaning up epoch summaries from epoch {first_epoch_to_clean} to {last_epoch}"
             );
 
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let deleted_summaries = db
                 .checkpoint_db()
                 .del_epoch_summaries_from_epoch(first_epoch_to_clean)

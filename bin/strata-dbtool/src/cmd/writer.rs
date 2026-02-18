@@ -59,6 +59,7 @@ pub(crate) fn get_writer_summary(
             // Iterate through all checkpoint epochs
             for epoch in start_epoch..=end_epoch {
                 if let Some(checkpoint_entry) = get_checkpoint_at_index(db, epoch)? {
+                    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
                     let checkpoint_hash = checkpoint_entry.checkpoint.hash();
 
                     if writer_db

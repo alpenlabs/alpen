@@ -23,6 +23,7 @@ use strata_ol_chainstate_types::Chainstate;
 use strata_params::{Params, RollupParams};
 use strata_primitives::buf::Buf32;
 use strata_state::exec_update::construct_ops_from_deposit_intents;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
 use tracing::*;
 
@@ -39,6 +40,7 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
     let prev_epoch = chainstate.prev_epoch();
     debug!(?prev_epoch);
     let epoch_start_slot = chainstate.prev_epoch().last_slot() + 1;
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let prev_header = storage
         .l2()
         .get_block_data_blocking(&prev_blkid)?
@@ -50,6 +52,7 @@ fn get_total_gas_used_in_epoch(storage: &NodeStorage, prev_blkid: L2BlockId) -> 
 
     let mut block_to_fetch = prev_blkid;
     for _ in epoch_start_slot..=prev_slot {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let block: L2BlockBundle = storage
             .l2()
             .get_block_data_blocking(&block_to_fetch)?
@@ -83,6 +86,7 @@ pub fn prepare_block(
 ) -> Result<(L2BlockHeader, L2BlockBody, L2BlockAccessory), Error> {
     let l1man = storage.l1();
     let chsman = storage.chainstate();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let ckptman = storage.checkpoint();
 
     let prev_global_sr = *prev_block.header().state_root();
@@ -161,6 +165,7 @@ pub fn prepare_block(
     Ok((header, body, block_acc))
 }
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 #[instrument(skip_all, fields(cur_safe_height = prev_chstate.l1_view().safe_height(), cur_next_exp_height = prev_chstate.l1_view().next_expected_height()))]
 fn prepare_l1_segment(
     prev_chstate: &Chainstate,
@@ -210,6 +215,7 @@ fn prepare_l1_segment(
     } else {
         let prev_epoch = prev_chstate.prev_epoch().epoch();
         // previous checkpoint entry should exist in db
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let checkpoint = ckptman
             .get_checkpoint_blocking(prev_epoch as u64)?
             .ok_or(Error::MissingCheckpoint(prev_epoch))?

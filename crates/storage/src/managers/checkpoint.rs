@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{traits::CheckpointDatabase, types::CheckpointEntry, DbResult};
 use strata_primitives::epoch::EpochCommitment;
 use threadpool::ThreadPool;
@@ -11,12 +12,15 @@ use crate::{cache, ops};
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"
 )]
+#[deprecated(note = "use `OLCheckpointManager` for OL/EE-decoupled checkpoint storage")]
 pub struct CheckpointDbManager {
     ops: ops::checkpoint::CheckpointDataOps,
     summary_cache: cache::CacheTable<EpochCommitment, Option<EpochSummary>>,
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     checkpoint_cache: cache::CacheTable<u64, Option<CheckpointEntry>>,
 }
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 impl CheckpointDbManager {
     pub fn new(pool: ThreadPool, db: Arc<impl CheckpointDatabase + 'static>) -> Self {
         let ops = ops::checkpoint::Context::new(db).into_ops(pool);
@@ -30,7 +34,9 @@ impl CheckpointDbManager {
     }
 
     pub async fn insert_epoch_summary(&self, summary: EpochSummary) -> DbResult<()> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         self.ops.insert_epoch_summary_async(summary).await?;
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         self.summary_cache
             .insert_async(summary.get_epoch_commitment(), Some(summary))
             .await;

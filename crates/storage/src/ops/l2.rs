@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 //! L2 block data operation interface.
 
 use strata_db_types::traits::*;

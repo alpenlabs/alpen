@@ -22,6 +22,7 @@ pub(crate) async fn submit_checkpoint_proof(
 
     info!(%proof_key, %checkpoint_index, "submitting ready checkpoint proof");
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     sequencer_client
         .submit_checkpoint_proof(checkpoint_index, proof.receipt().clone())
         .await

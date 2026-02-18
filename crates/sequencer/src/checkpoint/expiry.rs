@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::types::CheckpointProvingStatus;
 use tokio::{
     select,
@@ -64,56 +65,59 @@ pub async fn checkpoint_expiry_worker(
             }
         };
 
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         if checkpoint.proving_status == CheckpointProvingStatus::PendingProof {
             let expiry_time = Instant::now() + proof_timeout;
             expiry_queue.push(Reverse(CheckpointExpiry(last_checkpoint_idx, expiry_time)));
         }
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     loop {
         select! {
-            Ok(new_checkpoint_idx) = subscription.recv() => {
-                let checkpoint = match checkpoint_handle.get_checkpoint(new_checkpoint_idx).await {
-                    Ok(Some(entry)) => entry,
-                    Ok(None) => {
-                        warn!(%new_checkpoint_idx, "Expected checkpoint not found in db");
-                        continue;
-                    }
-                    Err(e) => {
-                        error!(%new_checkpoint_idx, ?e, "DB error occurred while fetching checkpoint ");
-                        continue;
-                    }
-                };
+        Ok(new_checkpoint_idx) = subscription.recv() => {
+        let checkpoint = match checkpoint_handle.get_checkpoint(new_checkpoint_idx).await {
+                        Ok(Some(entry)) => entry,
+                        Ok(None) => {
+                            warn!(%new_checkpoint_idx, "Expected checkpoint not found in db");
+                            continue;
+                        }
+                        Err(e) => {
+                            error!(%new_checkpoint_idx, ?e, "DB error occurred while fetching checkpoint ");
+                            continue;
+                        }
+                    };
 
-                if checkpoint.proving_status != CheckpointProvingStatus::PendingProof {
-                    continue;
+                    if checkpoint.proving_status != CheckpointProvingStatus::PendingProof {
+                        continue;
+                    }
+
+                    let expiry_time = time::Instant::now() + proof_timeout;
+
+                    expiry_queue.push(Reverse(CheckpointExpiry(new_checkpoint_idx, expiry_time)));
                 }
 
-                let expiry_time = time::Instant::now() + proof_timeout;
+                _ = time::sleep_until(expiry_queue
+                    .peek()
+                    .map(|Reverse(CheckpointExpiry(_, expiry_time))| *expiry_time)
+                    .unwrap_or_else(|| Instant::now() + Duration::from_millis(500))) => {
+                        let now = Instant::now();
+                        while let Some(Reverse(checkpoint_expiry)) = expiry_queue.peek() {
+                            if checkpoint_expiry.expiry() > now {
+                                break;
+                            }
 
-                expiry_queue.push(Reverse(CheckpointExpiry(new_checkpoint_idx, expiry_time)));
-            }
-
-            _ = time::sleep_until(expiry_queue
-                .peek()
-                .map(|Reverse(CheckpointExpiry(_, expiry_time))| *expiry_time)
-                .unwrap_or_else(|| Instant::now() + Duration::from_millis(500))) => {
-                    let now = Instant::now();
-                    while let Some(Reverse(checkpoint_expiry)) = expiry_queue.peek() {
-                        if checkpoint_expiry.expiry() > now {
-                            break;
+                            handle_pending_checkpoint_expiry(&checkpoint_handle, checkpoint_expiry.checkpoint_idx()).await;
+                            expiry_queue.pop();
                         }
-
-                        handle_pending_checkpoint_expiry(&checkpoint_handle, checkpoint_expiry.checkpoint_idx()).await;
-                        expiry_queue.pop();
-                    }
+                }
             }
-        }
     }
 }
 
 async fn handle_pending_checkpoint_expiry(checkpoint_handle: &CheckpointHandle, idx: u64) {
     match checkpoint_handle.get_checkpoint(idx).await {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         Ok(Some(entry)) => {
             if entry.proving_status != CheckpointProvingStatus::PendingProof {
                 warn!("Got request for already ready proof");

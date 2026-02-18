@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{types::CheckpointEntry, DbError};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
@@ -12,6 +13,7 @@ use strata_primitives::{
     self, epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment,
 };
 use strata_status::*;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{CheckpointDbManager, L1BlockManager, L2BlockManager, NodeStorage};
 use strata_tasks::ShutdownGuard;
 use tokio::runtime::Handle;
@@ -30,6 +32,7 @@ pub fn checkpoint_worker(
     checkpoint_handle: Arc<CheckpointHandle>,
     rt: Handle,
 ) -> anyhow::Result<()> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let ckman = storage.checkpoint();
 
     let mut chs_rx = SyncReceiver::new(status_ch.subscribe_chain_sync(), rt);
@@ -105,6 +108,7 @@ pub fn checkpoint_worker(
 
 /// Finds any epoch after a given epoch number that have been inserted but we
 /// haven't inserted checkpoint entries for.
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 fn find_ready_checkpoints(
     from_epoch: u64,
     ckman: &CheckpointDbManager,
@@ -186,6 +190,7 @@ fn handle_ready_epoch(
 
     // else save a pending proof checkpoint entry
     debug!(%epoch, "saving unproven checkpoint");
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let entry = CheckpointEntry::new_pending_proof(cpd.info, cpd.tsn, &cpd.chainstate);
     if let Err(e) = ckhandle.put_checkpoint_and_notify_blocking(epoch as u64, entry) {
         warn!(%epoch, err = %e, "failed to save checkpoint");
@@ -218,6 +223,7 @@ fn create_checkpoint_prep_data_from_summary(
     params: &RollupParams,
 ) -> anyhow::Result<CheckpointPrepData> {
     let l1man = storage.l1();
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2man = storage.l2();
     let chsman = storage.chainstate();
 
@@ -227,6 +233,7 @@ fn create_checkpoint_prep_data_from_summary(
     // There's some special handling we have to do if we're the genesis epoch.
     let prev_summary = if !is_genesis_epoch {
         let ec = summary.get_prev_epoch_commitment().unwrap();
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let ps = storage
             .checkpoint()
             .get_epoch_summary_blocking(ec)?
@@ -297,6 +304,7 @@ fn create_checkpoint_prep_data_from_summary(
     ))
 }
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 fn fetch_epoch_l2_headers(
     summary: &EpochSummary,
     l2man: &L2BlockManager,
@@ -343,6 +351,7 @@ fn fetch_epoch_l2_headers(
     Ok(headers)
 }
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 fn fetch_l2_block(blkid: &L2BlockId, l2man: &L2BlockManager) -> anyhow::Result<L2BlockBundle> {
     Ok(l2man
         .get_block_data_blocking(blkid)?

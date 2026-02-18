@@ -22,6 +22,10 @@ use strata_primitives::{
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
+#[expect(
+    deprecated,
+    reason = "legacy old code CheckpointEntry is retained for compatibility"
+)]
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_helpers::MmrAlgorithm,
@@ -35,14 +39,20 @@ use crate::{
 /// Common database backend interface that we can parameterize worker tasks over if
 /// parameterizing them over each individual trait gets cumbersome or if we need
 /// to use behavior that crosses different interfaces.
+#[expect(
+    deprecated,
+    reason = "legacy old code L2BlockDatabase and CheckpointDatabase are retained for compatibility"
+)]
 pub trait DatabaseBackend: Send + Sync {
     fn asm_db(&self) -> Arc<impl AsmDatabase>;
     fn l1_db(&self) -> Arc<impl L1Database>;
+    #[deprecated(note = "use `ol_block_db()` for OL/EE-decoupled block storage")]
     fn l2_db(&self) -> Arc<impl L2BlockDatabase>;
     fn client_state_db(&self) -> Arc<impl ClientStateDatabase>;
     fn ol_block_db(&self) -> Arc<impl OLBlockDatabase>;
     fn chain_state_db(&self) -> Arc<impl ChainstateDatabase>;
     fn ol_state_db(&self) -> Arc<impl OLStateDatabase>;
+    #[deprecated(note = "use `ol_checkpoint_db()` for OL/EE-decoupled checkpoint storage")]
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
     fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
@@ -143,6 +153,7 @@ pub trait ClientStateDatabase: Send + Sync + 'static {
 
 /// L2 data store for CL blocks.  Does not store anything about what we think
 /// the L2 chain tip is, that's controlled by the consensus state.
+#[deprecated(note = "use `OLBlockDatabase` for OL/EE-decoupled block storage")]
 pub trait L2BlockDatabase: Send + Sync + 'static {
     /// Stores an L2 block, does not care about the block height of the L2
     /// block.  Also sets the block's status to "unchecked".
@@ -190,6 +201,7 @@ pub enum BlockStatus {
 
 /// Database for checkpoint data.
 // TODO: Remove when we switch to using OL checkpoint database in all relevant places.
+#[deprecated(note = "use `OLCheckpointDatabase` for OL/EE-decoupled checkpoint storage")]
 pub trait CheckpointDatabase: Send + Sync + 'static {
     /// Inserts an epoch summary retrievable by its epoch commitment.
     ///
@@ -221,9 +233,17 @@ pub trait CheckpointDatabase: Send + Sync + 'static {
     /// `batchidx` for the Checkpoint is expected to increase monotonically and
     /// correspond to the value of `cur_epoch` in
     /// [`strata_ol_chainstate_types::Chainstate`].
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointEntry is retained for compatibility"
+    )]
     fn put_checkpoint(&self, epoch: u64, entry: CheckpointEntry) -> DbResult<()>;
 
     /// Get a [`CheckpointEntry`] by its index.
+    #[expect(
+        deprecated,
+        reason = "legacy old code CheckpointEntry is retained for compatibility"
+    )]
     fn get_checkpoint(&self, epoch: u64) -> DbResult<Option<CheckpointEntry>>;
 
     /// Get last written checkpoint index.

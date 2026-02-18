@@ -233,6 +233,7 @@ impl StrataProverClientApiServer for ProverClientRpc {
     }
 
     async fn prove_latest_checkpoint(&self) -> RpcResult<Vec<RpcProofKey>> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let next_unproven_idx = self
             .checkpoint_operator
             .cl_client()

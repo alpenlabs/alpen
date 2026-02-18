@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::traits::{BlockStatus, L2BlockDatabase};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
 use strata_test_utils::ArbitraryGenerator;

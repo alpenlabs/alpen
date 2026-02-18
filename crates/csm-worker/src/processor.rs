@@ -445,6 +445,7 @@ mod tests {
             );
 
             // Verify checkpoint was stored in database
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let stored_checkpoint = storage
                 .checkpoint()
                 .get_checkpoint_blocking(epoch as u64)
@@ -473,6 +474,7 @@ mod tests {
 
         // After processing 3 checkpoints, verify we have all of them in the database
         for epoch in 1u32..=3u32 {
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let stored_checkpoint = storage
                 .checkpoint()
                 .get_checkpoint_blocking(epoch as u64)

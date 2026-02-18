@@ -74,6 +74,7 @@ pub(crate) async fn initialize_from_db(
 ) -> Result<L2SyncState, L2SyncError> {
     debug!(?finalized_epoch, "loading unfinalized blocks");
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let l2man_tracker = storage.l2().clone();
 
     let tracker = Handle::current()

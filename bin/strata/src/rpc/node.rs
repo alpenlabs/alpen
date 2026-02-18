@@ -81,6 +81,7 @@ impl OLClientRpcServer for OLRpcServer {
         epoch: Epoch,
     ) -> RpcResult<RpcAccountEpochSummary> {
         // Get epoch commitments for the given epoch
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let commitments = self
             .storage
             .checkpoint()
@@ -140,6 +141,7 @@ impl OLClientRpcServer for OLRpcServer {
 
         // Get previous epoch commitment if available
         let prev_epoch_commitment = if epoch > 0 {
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let prev_commitments = self
                 .storage
                 .checkpoint()

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
     traits::{BlockStatus, L2BlockDatabase},
     DbResult,
@@ -14,12 +15,15 @@ use crate::{cache, ops};
     missing_debug_implementations,
     reason = "Some inner types don't have Debug implementation"
 )]
+#[deprecated(note = "use `OLBlockManager` for OL/EE-decoupled block storage")]
 pub struct L2BlockManager {
     ops: ops::l2::L2DataOps,
     block_cache: cache::CacheTable<L2BlockId, Option<L2BlockBundle>>,
 }
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 impl L2BlockManager {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     pub fn new(pool: ThreadPool, db: Arc<impl L2BlockDatabase + 'static>) -> Self {
         let ops = ops::l2::Context::new(db).into_ops(pool);
         let block_cache = cache::CacheTable::new(64.try_into().unwrap());

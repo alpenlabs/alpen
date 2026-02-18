@@ -9,6 +9,7 @@ use crate::checkpoint_runner::errors::CheckpointError;
 pub(crate) async fn fetch_next_unproven_checkpoint_index(
     cl_client: &HttpClient,
 ) -> CheckpointResult<Option<u64>> {
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     cl_client
         .get_next_unproven_checkpoint_index()
         .await

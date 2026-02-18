@@ -1,3 +1,4 @@
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
     DbError, DbResult,
     traits::{BlockStatus, L2BlockDatabase},
@@ -18,6 +19,7 @@ define_sled_database!(
     }
 );
 
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 impl L2BlockDatabase for L2DBSled {
     fn put_block_data(&self, bundle: L2BlockBundle) -> DbResult<()> {
         let block_id = bundle.block().header().get_blockid();
@@ -43,6 +45,7 @@ impl L2BlockDatabase for L2DBSled {
     }
 
     fn del_block_data(&self, id: L2BlockId) -> DbResult<bool> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         let bundle = match self.get_block_data(id)? {
             Some(block) => block,
             None => return Ok(false),
@@ -68,6 +71,7 @@ impl L2BlockDatabase for L2DBSled {
     }
 
     fn set_block_status(&self, id: L2BlockId, status: BlockStatus) -> DbResult<()> {
+        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
         if self.get_block_data(id)?.is_none() {
             return Ok(());
         }
@@ -91,8 +95,10 @@ impl L2BlockDatabase for L2DBSled {
         let mut height = bht.last()?.map(first).ok_or(DbError::NotBootstrapped)?;
 
         loop {
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let blocks = self.get_blocks_at_height(height)?;
             // collect all valid statuses at this height
+            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
             let valid = blocks
                 .into_iter()
                 .filter_map(|blkid| match self.get_block_status(blkid) {

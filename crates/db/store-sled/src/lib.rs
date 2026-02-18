@@ -42,6 +42,7 @@ use mempool::db::MempoolDBSled;
 use ol::db::OLBlockDBSled;
 use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
+#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
     DbResult,
     chainstate::ChainstateDatabase,
@@ -153,6 +154,7 @@ impl DatabaseBackend for SledBackend {
         self.l1_db.clone()
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     fn l2_db(&self) -> Arc<impl L2BlockDatabase> {
         self.l2_db.clone()
     }
@@ -173,6 +175,7 @@ impl DatabaseBackend for SledBackend {
         self.ol_state_db.clone()
     }
 
+    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase> {
         self.checkpoint_db.clone()
     }

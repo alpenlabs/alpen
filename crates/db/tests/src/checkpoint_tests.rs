@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     traits::CheckpointDatabase,

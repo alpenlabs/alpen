@@ -1,3 +1,4 @@
+#![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
