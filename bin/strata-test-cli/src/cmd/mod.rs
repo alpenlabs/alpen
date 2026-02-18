@@ -1,6 +1,8 @@
 pub mod args;
+pub mod build_snark_withdrawal;
 pub mod convert_to_xonly_pk;
 pub mod create_deposit_tx;
+pub mod create_mock_deposit;
 pub mod create_withdrawal_fulfillment;
 pub mod extract_p2tr_pubkey;
 pub mod get_address;
