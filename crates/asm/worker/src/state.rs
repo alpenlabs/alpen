@@ -3,7 +3,10 @@ use std::sync::Arc;
 use bitcoin::{Block, hashes::Hash};
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
 use strata_asm_params::AsmParams;
+#[cfg(not(feature = "debug-asm"))]
 use strata_asm_spec::StrataAsmSpec;
+#[cfg(feature = "debug-asm")]
+use strata_asm_spec_debug::DebugAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_btc_verification::HeaderVerificationState;
 use strata_primitives::{Buf32, l1::L1BlockCommitment};
@@ -32,13 +35,19 @@ pub struct AsmWorkerServiceState<W> {
     pub blkid: Option<L1BlockCommitment>,
 
     /// ASM spec for ASM STF.
+    #[cfg(not(feature = "debug-asm"))]
     asm_spec: StrataAsmSpec,
+    #[cfg(feature = "debug-asm")]
+    asm_spec: DebugAsmSpec,
 }
 
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
     pub fn new(context: W, asm_params: Arc<AsmParams>) -> Self {
+        #[cfg(not(feature = "debug-asm"))]
         let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
+        #[cfg(feature = "debug-asm")]
+        let asm_spec = DebugAsmSpec::from_asm_params(&asm_params);
         Self {
             asm_params,
             context,

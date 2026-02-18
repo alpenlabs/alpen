@@ -15,6 +15,7 @@ sequencer = [
   "dep:strata-ol-sequencer",
   "dep:zeroize",
 ]
+debug-asm = ["strata-asm-worker/debug-asm"]
 
 [dependencies]
 ssz.workspace = true
