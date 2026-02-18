@@ -86,6 +86,28 @@ impl FromStr for Buf32 {
     }
 }
 
+/// A 32-byte buffer with reversed-byte display and serialization.
+///
+/// Stores bytes internally in their natural (little-endian) order but
+/// reverses them for [`Display`], [`Debug`], and human-readable serde.
+/// This matches the Bitcoin convention where block hashes, transaction
+/// IDs, and other hash digests are displayed in reversed byte order.
+///
+/// Use this instead of [`Buf32`] when the value represents a Bitcoin
+/// type (e.g., `BlockHash`, `Txid`, `Wtxid`) that follows this
+/// convention.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[repr(transparent)]
+pub struct RBuf32(pub [u8; 32]);
+internal::impl_buf_core!(RBuf32, 32);
+internal::impl_rbuf_fmt!(RBuf32, 32);
+internal::impl_buf_borsh!(RBuf32, 32);
+internal::impl_buf_arbitrary!(RBuf32, 32);
+internal::impl_buf_codec!(RBuf32, 32);
+internal::impl_rbuf_serde!(RBuf32, 32);
+
+crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
+
 #[cfg(feature = "bitcoin")]
 impl From<bitcoin::BlockHash> for Buf32 {
     fn from(value: bitcoin::BlockHash) -> Self {
