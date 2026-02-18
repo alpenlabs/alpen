@@ -14164,7 +14164,6 @@ dependencies = [
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
  "strata-l1-txfmt",
- "strata-params",
 ]
 
 [[package]]
