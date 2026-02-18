@@ -87,13 +87,7 @@ async fn process_unfinalized_entries(
         let txid = Txid::from_slice(txid_raw.0.as_slice())
             .map_err(|e| BroadcasterError::Other(e.to_string()))?;
 
-        let span = debug_span!("process txentry", %idx, %txid);
-
-        let _ = span.enter();
-        debug!(current_status=?txentry.status);
-
         let updated_status = process_entry(rpc_client, txentry, &txid, params).await?;
-        debug!(?updated_status);
 
         if let Some(status) = updated_status {
             let mut new_txentry = txentry.clone();
@@ -106,13 +100,15 @@ async fn process_unfinalized_entries(
 
 /// Takes in `[L1TxEntry]`, checks status and then either publishes or checks for confirmations and
 /// returns its new status. Returns [`None`] if status is not changed.
+#[instrument(skip_all, fields(%txid), name = "process_txentry")]
 async fn process_entry(
     rpc_client: &(impl Broadcaster + Wallet),
     txentry: &L1TxEntry,
     txid: &Txid,
     params: &BtcioParams,
 ) -> BroadcasterResult<Option<L1TxStatus>> {
-    match txentry.status {
+    debug!(current_status=?txentry.status);
+    let result = match txentry.status {
         L1TxStatus::Unpublished => publish_tx(rpc_client, txentry).await.map(Some),
         L1TxStatus::Published | L1TxStatus::Confirmed { .. } => {
             check_tx_confirmations(rpc_client, txentry, txid, params)
@@ -121,7 +117,11 @@ async fn process_entry(
         }
         L1TxStatus::Finalized { .. } => Ok(None),
         L1TxStatus::InvalidInputs => Ok(None),
+    };
+    if let Ok(ref updated_status) = result {
+        debug!(?updated_status);
     }
+    result
 }
 
 async fn check_tx_confirmations(

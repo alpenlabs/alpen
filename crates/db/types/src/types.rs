@@ -412,16 +412,14 @@ pub struct ChunkedEnvelopeEntry {
 impl ChunkedEnvelopeEntry {
     /// Creates a new unsigned entry with no transaction metadata.
     ///
-    /// Transaction IDs and reveal metadata are populated after signing.
-    pub fn new_unsigned(
-        chunk_data: Vec<Vec<u8>>,
-        magic_bytes: MagicBytes,
-        prev_tail_wtxid: Buf32,
-    ) -> Self {
+    /// Transaction IDs, reveal metadata, and `prev_tail_wtxid` are populated
+    /// at signing time by the watcher (which guarantees the predecessor entry
+    /// is already signed).
+    pub fn new_unsigned(chunk_data: Vec<Vec<u8>>, magic_bytes: MagicBytes) -> Self {
         Self {
             chunk_data,
             magic_bytes,
-            prev_tail_wtxid,
+            prev_tail_wtxid: Buf32::zero(),
             commit_txid: Buf32::zero(),
             reveals: Vec::new(),
             status: ChunkedEnvelopeStatus::Unsigned,

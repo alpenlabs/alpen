@@ -62,7 +62,7 @@ pub enum BatchStatus {
     /// Newly sealed batch.
     Sealed,
     /// DA txn(s) posted, waiting for inclusion in block.
-    DaPending,
+    DaPending { envelope_idx: u64 },
     /// DA txn(s) included in block(s).
     DaComplete { da: Vec<L1DaBlockRef> },
     /// Proving started, waiting for proof generation.

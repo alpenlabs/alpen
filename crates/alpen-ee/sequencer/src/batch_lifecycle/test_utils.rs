@@ -104,7 +104,7 @@ pub(crate) async fn fill_storage(
         // Convert TestBatchStatus to BatchStatus with dummy data
         let status = match test_status {
             TestBatchStatus::Sealed => BatchStatus::Sealed,
-            TestBatchStatus::DaPending => BatchStatus::DaPending,
+            TestBatchStatus::DaPending => BatchStatus::DaPending { envelope_idx: 0 },
             TestBatchStatus::DaComplete => BatchStatus::DaComplete {
                 da: vec![make_da_ref(last_n, last_n)],
             },
@@ -141,7 +141,7 @@ pub(crate) fn read_batch_statuses(storage: impl AsRef<InMemoryStorage>) -> Vec<T
         .filter_map(|(_, (_, batch_status))| match batch_status {
             BatchStatus::Genesis => None,
             BatchStatus::Sealed => Some(TestBatchStatus::Sealed),
-            BatchStatus::DaPending => Some(TestBatchStatus::DaPending),
+            BatchStatus::DaPending { .. } => Some(TestBatchStatus::DaPending),
             BatchStatus::DaComplete { .. } => Some(TestBatchStatus::DaComplete),
             BatchStatus::ProofPending { .. } => Some(TestBatchStatus::ProofPending),
             BatchStatus::ProofReady { .. } => Some(TestBatchStatus::ProofReady),

@@ -42,7 +42,7 @@ struct CodecBytes(Bytes);
 
 impl Codec for CodecBytes {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Encode length as u32 varint, then raw bytes
+        // Encode length as u32, then raw bytes
         (self.0.len() as u32).encode(enc)?;
         enc.write_buf(&self.0)?;
         Ok(())
@@ -134,7 +134,7 @@ mod tests {
     fn test_empty_diff_size() {
         let diff = BatchStateDiff::new();
         let encoded = encode_to_vec(&diff).unwrap();
-        // Should be minimal: 3 u32 counts (0, 0, 0) = 3 bytes minimum
+        // Should be minimal: 3 u32 counts (0, 0, 0) = 12 bytes
         assert!(encoded.len() <= 12);
     }
 

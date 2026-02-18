@@ -44,11 +44,11 @@ pub trait StateDiffProvider {
     fn get_state_diff_by_number(&self, block_number: u64) -> DbResult<Option<BlockStateChanges>>;
 }
 
-/// Accumulated knowledge from prior DA publications.
+/// DA filter that grows as batches reach `DaComplete` status.
 ///
-/// Tracks which data items (e.g. contract bytecodes) have already been
-/// published to DA, so future batches can omit them. The context grows
-/// as batches reach `DaComplete` status.
+/// Tracks which data items have already been published to DA so that future
+/// batches can omit them. Currently tracks deployed contract bytecodes;
+/// extensible for address dedup and other filtering logic.
 pub trait EeDaContext {
     /// Returns `true` if the bytecode identified by `code_hash` was included
     /// in a previously confirmed batch's DA.
@@ -56,4 +56,11 @@ pub trait EeDaContext {
 
     /// Marks the given code hashes as published. Idempotent.
     fn mark_code_hashes_published(&self, code_hashes: &[B256]) -> DbResult<()>;
+
+    /// Updates the DA filter with data from the given blocks.
+    ///
+    /// Reads state diffs for each block and records which data items have been
+    /// published to DA. Currently tracks deployed bytecodes; extensible for
+    /// address dedup and other filtering logic.
+    fn update_da_filter(&self, block_hashes: &[B256]) -> DbResult<()>;
 }

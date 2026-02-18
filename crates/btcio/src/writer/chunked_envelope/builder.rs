@@ -17,6 +17,7 @@ use bitcoin::{
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 
 use crate::writer::builder::{
@@ -48,7 +49,7 @@ pub(crate) struct ChunkedEnvelopeTxs {
 pub(crate) fn build_chunked_envelope_txs(
     config: &EnvelopeConfig,
     chunks: &[Vec<u8>],
-    magic_bytes: &[u8; 4],
+    magic_bytes: &MagicBytes,
     prev_tail_wtxid: &Buf32,
     utxos: Vec<ListUnspentItem>,
 ) -> Result<ChunkedEnvelopeTxs, EnvelopeError> {
@@ -67,7 +68,7 @@ pub(crate) fn build_chunked_envelope_txs(
 
         let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?
             .add_envelopes(slice::from_ref(chunk))?
-            .build()?;
+            .build_without_min_check()?;
 
         let spend_info = TaprootBuilder::new()
             .add_leaf(0, reveal_script.clone())?
@@ -167,10 +168,10 @@ pub(crate) fn build_chunked_envelope_txs(
 }
 
 /// `OP_RETURN <magic_bytes(4)> <prev_wtxid(32)>`.
-fn build_linking_tag(magic_bytes: &[u8; 4], prev_wtxid: &Buf32) -> ScriptBuf {
+fn build_linking_tag(magic_bytes: &MagicBytes, prev_wtxid: &Buf32) -> ScriptBuf {
     script::Builder::new()
         .push_opcode(OP_RETURN)
-        .push_slice(magic_bytes)
+        .push_slice(magic_bytes.as_bytes())
         .push_slice(prev_wtxid.as_ref())
         .into_script()
 }
@@ -316,7 +317,7 @@ mod tests {
         let config = get_test_config();
         let utxos = get_mock_utxos();
         let chunks = vec![vec![0u8; 150]];
-        let magic = [0xAA, 0xBB, 0xCC, 0xDD];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
         let prev_wtxid = Buf32::zero();
 
         let result =
@@ -357,7 +358,7 @@ mod tests {
         let config = get_test_config();
         let utxos = get_mock_utxos();
         let chunks = vec![vec![1u8; 150], vec![2u8; 150], vec![3u8; 150]];
-        let magic = [0xAA, 0xBB, 0xCC, 0xDD];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
         let prev_wtxid = Buf32::zero();
 
         let result =
@@ -389,7 +390,7 @@ mod tests {
         let config = get_test_config();
         let utxos = get_mock_utxos();
         let chunks = vec![vec![1u8; 150], vec![2u8; 150], vec![3u8; 150]];
-        let magic = [0xAA, 0xBB, 0xCC, 0xDD];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
         let prev_wtxid = Buf32::zero();
 
         let result =
@@ -421,7 +422,7 @@ mod tests {
     fn test_build_chunked_envelope_txs_insufficient_utxos() {
         let config = get_test_config();
         let chunks = vec![vec![0u8; 150], vec![0u8; 150], vec![0u8; 150]];
-        let magic = [0xAA, 0xBB, 0xCC, 0xDD];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
         let prev_wtxid = Buf32::zero();
 
         let address = config.sequencer_address.clone();
@@ -460,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_build_linking_tag_structure() {
-        let magic = [0xDE, 0xAD, 0xBE, 0xEF];
+        let magic = MagicBytes::from([0xDE, 0xAD, 0xBE, 0xEF]);
         let wtxid = Buf32::from([0x42; 32]);
         let tag = build_linking_tag(&magic, &wtxid);
 
@@ -468,7 +469,7 @@ mod tests {
         let bytes = tag.as_bytes();
         assert_eq!(bytes[0], 0x6a, "should start with OP_RETURN");
         assert_eq!(bytes[1], 4, "push 4 bytes for magic");
-        assert_eq!(&bytes[2..6], &magic);
+        assert_eq!(&bytes[2..6], magic.as_bytes());
         assert_eq!(bytes[6], 32, "push 32 bytes for wtxid");
         assert_eq!(&bytes[7..39], wtxid.as_ref());
     }

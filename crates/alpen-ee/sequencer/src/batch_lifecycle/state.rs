@@ -210,7 +210,7 @@ pub(crate) async fn recover_from_storage(
         // Check what status level this batch has reached
         let at_least_da_pending = matches!(
             status,
-            BatchStatus::DaPending
+            BatchStatus::DaPending { .. }
                 | BatchStatus::DaComplete { .. }
                 | BatchStatus::ProofPending { .. }
                 | BatchStatus::ProofReady { .. }

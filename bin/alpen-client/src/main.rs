@@ -4,7 +4,7 @@ mod dummy_ol_client;
 mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
-mod noop_da_provider;
+mod header_summary;
 #[cfg(feature = "sequencer")]
 mod noop_prover;
 mod ol_client;
@@ -35,9 +35,13 @@ use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
 };
 use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
+#[cfg(feature = "sequencer")]
+use alpen_reth_exex::StateDiffGenerator;
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
+#[cfg(feature = "sequencer")]
+use bitcoind_async_client::{traits::Wallet as _, Auth, Client as BtcClient};
 use clap::Parser;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
@@ -49,19 +53,31 @@ use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
+#[cfg(feature = "sequencer")]
+use strata_btcio::{
+    broadcaster::create_broadcaster_task, writer::chunked_envelope::create_chunked_envelope_task,
+    BtcioParams,
+};
+#[cfg(feature = "sequencer")]
+use strata_config::btcio::WriterConfig;
 use strata_identifiers::{CredRule, EpochCommitment, OLBlockId};
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
-
 #[cfg(feature = "sequencer")]
-use crate::payload_builder::AlpenRethPayloadEngine;
+use {
+    crate::{
+        header_summary::RethHeaderSummaryProvider, noop_prover::NoopProver,
+        payload_builder::AlpenRethPayloadEngine,
+    },
+    alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider},
+};
+
 use crate::{
     dummy_ol_client::DummyOLClient,
     genesis::ee_genesis_block_info,
     gossip::{create_gossip_task, GossipConfig},
-    noop_da_provider::NoopDaProvider,
-    noop_prover::NoopProver,
     ol_client::OLClientKind,
     rpc_client::RpcOLClient,
 };
@@ -164,7 +180,7 @@ fn main() {
                 .num_threads(8)
                 .thread_name("ee-db-pool".into())
                 .build();
-            let storage: Arc<_> = dbs.node_storage(db_pool).into();
+            let storage: Arc<_> = dbs.node_storage(db_pool.clone()).into();
 
             let ol_client = if ext.dummy_ol_client {
                 use strata_identifiers::Buf32;
@@ -183,9 +199,9 @@ fn main() {
             };
             let ol_client = Arc::new(ol_client);
 
-            // TODO: real prover and da provider interfaces
+            // TODO: real prover interface
+            #[cfg(feature = "sequencer")]
             let batch_prover = Arc::new(NoopProver);
-            let batch_da_provider = Arc::new(NoopDaProvider);
 
             // Fetch the genesis epoch commitment from the OL client once at startup.
             let genesis_epoch = ol_client
@@ -266,7 +282,7 @@ fn main() {
                 sequencer_http: ext.sequencer_http.clone(),
             };
 
-            let node_builder = builder
+            let mut node_builder = builder
                 .node(AlpenEthereumNode::new(node_args))
                 // Register Alpen gossip RLPx subprotocol
                 .on_component_initialized({
@@ -283,6 +299,17 @@ fn main() {
                         Ok(())
                     }
                 });
+
+            // Install state diff exex for sequencer DA.
+            // The exex persists per-block state diffs that the blob provider reads.
+            #[cfg(feature = "sequencer")]
+            if ext.sequencer {
+                node_builder = node_builder.install_exex("state_diffs", {
+                    let state_diff_db = dbs.witness_db();
+                    |ctx| async { Ok(StateDiffGenerator::new(ctx, state_diff_db).start()) }
+                });
+                info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
+            }
 
             let handle = node_builder.launch().await?;
 
@@ -334,7 +361,7 @@ fn main() {
             if ext.sequencer {
                 // sequencer specific tasks
 
-                use alpen_ee_common::{require_latest_batch, BlockNumHash};
+                use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
                     create_batch_builder, create_batch_lifecycle_task,
                     create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
@@ -356,7 +383,8 @@ fn main() {
 
                 let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
 
-                let batch_sealing_policy = FixedBlockCountSealing::new(100);
+                let batch_sealing_policy =
+                    FixedBlockCountSealing::new(ext.batch_sealing_block_count);
                 let block_data_provider = Arc::new(BlockCountDataProvider);
 
                 let (batch_builder_handle, batch_builder_task) = create_batch_builder(
@@ -371,6 +399,86 @@ fn main() {
                     exec_chain_handle.clone(),
                 );
 
+                // --- DA pipeline ---
+                //
+                // clap `requires_all` on --sequencer guarantees all DA args are present.
+                let magic_bytes = ext.ee_da_magic_bytes.expect("enforced by clap");
+                let btc_url = ext.btc_rpc_url.as_ref().expect("enforced by clap");
+                let btc_user = ext.btc_rpc_user.as_ref().expect("enforced by clap");
+                let btc_pass = ext.btc_rpc_password.as_ref().expect("enforced by clap");
+
+                // Create BtcioParams directly from CLI args.
+                let btcio_params =
+                    BtcioParams::new(ext.l1_reorg_safe_depth, magic_bytes, ext.genesis_l1_height);
+
+                // Bitcoin RPC client.
+                let btc_client = Arc::new(
+                    BtcClient::new(
+                        btc_url.clone(),
+                        Auth::UserPass(btc_user.clone(), btc_pass.clone()),
+                        None,
+                        None,
+                        None,
+                    )
+                    .map_err(|e| eyre::eyre!("creating Bitcoin RPC client: {e}"))?,
+                );
+
+                // Sequencer address from bitcoin wallet.
+                let sequencer_address = btc_client
+                    .get_new_address()
+                    .await
+                    .map_err(|e| eyre::eyre!("failed to get sequencer address: {e}"))?;
+
+                // Wrap raw DBs in ops using the shared DB threadpool.
+                let broadcast_ops = Arc::new(dbs.broadcast_ops(db_pool.clone()));
+                let envelope_ops = Arc::new(dbs.chunked_envelope_ops(db_pool));
+
+                // Create broadcaster and chunked envelope tasks.
+                let broadcast_poll_interval = 5_000;
+                let (broadcast_handle, broadcaster_task) = create_broadcaster_task(
+                    btc_client.clone(),
+                    broadcast_ops.clone(),
+                    btcio_params,
+                    broadcast_poll_interval,
+                );
+
+                let writer_config = Arc::new(WriterConfig::default());
+                let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
+                    btc_client,
+                    writer_config,
+                    btcio_params,
+                    sequencer_address,
+                    envelope_ops,
+                    broadcast_handle.clone(),
+                )
+                .map_err(|e| eyre::eyre!("creating chunked envelope task: {e}"))?;
+
+                let header_summary =
+                    Arc::new(RethHeaderSummaryProvider::new(node.provider.clone()));
+
+                let da_context_db = dbs.da_context_db();
+                let blob_provider: Arc<dyn DaBlobSource> = Arc::new(StateDiffBlobProvider::new(
+                    storage.clone(),
+                    dbs.witness_db(),
+                    header_summary,
+                    da_context_db.clone(),
+                ));
+
+                let batch_da_provider = Arc::new(ChunkedEnvelopeDaProvider::new(
+                    blob_provider.clone(),
+                    envelope_handle,
+                    broadcast_ops,
+                    magic_bytes,
+                ));
+
+                // Spawn btcio tasks.
+                node.task_executor
+                    .spawn_critical("l1_broadcaster", broadcaster_task);
+                node.task_executor
+                    .spawn_critical("chunked_envelope_watcher", envelope_watcher_task);
+
+                info!(target: "alpen-client", "btcio DA pipeline started");
+
                 let (batch_lifecycle_handle, batch_lifecycle_task) = create_batch_lifecycle_task(
                     None,
                     batch_lifecycle_state,
@@ -378,6 +486,8 @@ fn main() {
                     batch_da_provider,
                     batch_prover.clone(),
                     storage.clone(),
+                    blob_provider,
+                    da_context_db,
                 );
 
                 let update_submitter_task = create_update_submitter_task(
@@ -469,14 +579,51 @@ pub struct AdditionalConfig {
     #[arg(long, required = false)]
     pub db_retry_count: Option<u16>,
 
-    /// Run the node as a sequencer. Requires the `sequencer` feature and a
-    /// `SEQUENCER_PRIVATE_KEY` environment variable.
-    #[arg(long, default_value_t = false)]
+    /// Run the node as a sequencer. Requires the `sequencer` feature,
+    /// a `SEQUENCER_PRIVATE_KEY` environment variable, and all DA-related
+    /// arguments (`--ee-da-magic-bytes`, `--btc-rpc-url`, `--btc-rpc-user`,
+    /// `--btc-rpc-password`).
+    #[arg(
+        long,
+        default_value_t = false,
+        requires_all = ["ee_da_magic_bytes", "btc_rpc_url", "btc_rpc_user", "btc_rpc_password"],
+    )]
     pub sequencer: bool,
 
     /// Sequencer's public key (hex-encoded, 32 bytes) for signature validation.
     #[arg(long, required = true, value_parser = parse_buf32)]
     pub sequencer_pubkey: Buf32,
+
+    // --- DA Configuration ---
+    /// Magic bytes (hex-encoded, 4 bytes) for tagging EE DA envelope transactions.
+    /// Example: `ALPN`.
+    #[arg(long, required = false, value_parser = parse_magic_bytes)]
+    pub ee_da_magic_bytes: Option<MagicBytes>,
+
+    /// Bitcoin Core RPC URL. Required when `--sequencer` is set.
+    #[arg(long, required = false)]
+    pub btc_rpc_url: Option<String>,
+
+    /// Bitcoin Core RPC username. Required when `--sequencer` is set.
+    #[arg(long, required = false)]
+    pub btc_rpc_user: Option<String>,
+
+    /// Bitcoin Core RPC password. Required when `--sequencer` is set.
+    #[arg(long, required = false)]
+    pub btc_rpc_password: Option<String>,
+
+    /// L1 reorg safe depth (number of confirmations for finality).
+    #[arg(long, default_value = "6")]
+    pub l1_reorg_safe_depth: u32,
+
+    /// Genesis L1 block height (the first L1 block the rollup cares about).
+    #[arg(long, default_value = "0")]
+    pub genesis_l1_height: u64,
+
+    /// Number of blocks per batch before sealing.
+    /// Lower values seal batches more frequently (useful for testing).
+    #[arg(long, default_value = "100")]
+    pub batch_sealing_block_count: u64,
 }
 
 /// Run node with logging
@@ -523,6 +670,12 @@ where
 fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
     s.parse::<Buf32>()
         .map_err(|e| eyre::eyre!("Failed to parse hex string as Buf32: {e}"))
+}
+
+/// Parse a magic bytes string using the [`MagicBytes`] parser from `strata-l1-txfmt`.
+fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
+    s.parse::<MagicBytes>()
+        .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
 }
 
 /// Handle genesis related tasks.
