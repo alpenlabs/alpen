@@ -18,6 +18,12 @@ pub const MAX_WITHDRAWAL_DESC_LEN: usize = 255;
 /// Sentinel value indicating no selected operator for withdrawal assignment.
 pub const NO_SELECTED_OPERATOR: u32 = u32::MAX;
 
+/// Converts a raw operator index to `Option<u32>`, treating
+/// [`NO_SELECTED_OPERATOR`] as `None`.
+pub fn resolve_selected_operator(raw: u32) -> Option<u32> {
+    (raw != NO_SELECTED_OPERATOR).then_some(raw)
+}
+
 // TODO: allow users to specify operator fee
 pub const DEFAULT_OPERATOR_FEE: u32 = 0;
 

@@ -13921,6 +13921,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-codec",
  "strata-l1-txfmt",
+ "strata-ol-msg-types",
  "strata-primitives",
  "thiserror 2.0.18",
 ]

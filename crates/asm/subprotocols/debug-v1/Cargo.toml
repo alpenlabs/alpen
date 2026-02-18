@@ -18,6 +18,7 @@ strata-primitives.workspace = true
 
 # Bridge subprotocol messages for inter-protocol messaging
 strata-asm-bridge-msgs.workspace = true
+strata-ol-msg-types.workspace = true
 
 [dev-dependencies]
 strata-codec.workspace = true

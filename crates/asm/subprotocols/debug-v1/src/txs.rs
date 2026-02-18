@@ -6,6 +6,7 @@
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::TxInputRef;
 use strata_l1_txfmt::TxType;
+use strata_ol_msg_types::resolve_selected_operator;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
 
@@ -85,9 +86,6 @@ fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxPa
     Ok(ParsedDebugTx::MockAsmLog(asm_log_info))
 }
 
-/// Sentinel value indicating no operator was selected for withdrawal assignment.
-const NO_SELECTED_OPERATOR: u32 = u32::MAX;
-
 /// Parses withdrawal data from auxiliary data bytes.
 ///
 /// Format: `[amount: 8 bytes][selected_operator: 4 bytes (big-endian u32)][descriptor: variable]`
@@ -113,11 +111,7 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
         .try_into()
         .unwrap();
     let operator_raw = u32::from_be_bytes(operator_bytes);
-    let selected_operator = if operator_raw == NO_SELECTED_OPERATOR {
-        None
-    } else {
-        Some(operator_raw)
-    };
+    let selected_operator = resolve_selected_operator(operator_raw);
 
     // Extract descriptor (self-describing, variable length, consumes rest of aux_data)
     let desc_bytes = &aux_data[DESCRIPTOR_OFFSET..];
@@ -266,6 +260,28 @@ mod tests {
             }
             _ => panic!("Expected AuxDataTooShort error"),
         }
+    }
+
+    #[test]
+    fn test_parse_withdrawal_large_operator_index() {
+        let amount = 500_000u64;
+        let operator_idx: u32 = 0x01020304;
+        let hash160 = [0x14; 20];
+        let descriptor = Descriptor::new_p2wpkh(&hash160);
+
+        let mut aux_data = Vec::new();
+        aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.extend_from_slice(&operator_idx.to_be_bytes());
+        aux_data.extend_from_slice(&descriptor.to_bytes());
+
+        let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
+
+        assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(500_000));
+        assert_eq!(withdraw_output.selected_operator, Some(0x01020304));
+        assert_eq!(
+            withdraw_output.destination.to_bytes(),
+            descriptor.to_bytes()
+        );
     }
 
     #[test]
