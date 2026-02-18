@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use alpen_reth_primitives::WithdrawalIntentEvent;
 use reth_evm::precompiles::PrecompileInput;
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
@@ -8,6 +10,9 @@ use crate::{
     constants::{BRIDGEOUT_PRECOMPILE_ADDRESS, FIXED_WITHDRAWAL_WEI},
     utils::wei_to_sats,
 };
+
+/// Size of the operator index field in calldata (u32 = 4 bytes).
+const OPERATOR_INDEX_SIZE: usize = size_of::<u32>();
 
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
@@ -73,13 +78,13 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
 /// - `u32::MAX`: no operator selection
 /// - Any other value: operator index
 fn parse_calldata(data: &[u8]) -> Result<(u32, &[u8]), PrecompileError> {
-    if data.len() < 5 {
+    if data.len() < OPERATOR_INDEX_SIZE + 1 {
         return Err(PrecompileError::other(
             "Calldata too short: expected at least 5 bytes (4 operator + 1 BOSD)",
         ));
     }
 
-    let (operator_bytes, bosd_data) = data.split_at(4);
+    let (operator_bytes, bosd_data) = data.split_at(OPERATOR_INDEX_SIZE);
     let selected_operator = u32::from_be_bytes(operator_bytes.try_into().expect("exactly 4 bytes"));
 
     Ok((selected_operator, bosd_data))
