@@ -6,6 +6,7 @@
 //! **Security Note**: This spec should only be used in testing environments.
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
+use strata_asm_params::AsmParams;
 use strata_asm_proto_debug_v1::DebugSubproto;
 use strata_asm_spec::StrataAsmSpec;
 use strata_l1_txfmt::MagicBytes;
@@ -50,6 +51,14 @@ impl DebugAsmSpec {
     ///
     /// This adds debug capabilities to an existing production spec.
     pub fn new(inner: StrataAsmSpec) -> Self {
+        Self { inner }
+    }
+
+    /// Creates a debug ASM spec from ASM parameters.
+    ///
+    /// Mirrors [`StrataAsmSpec::from_asm_params`] but wraps the result with debug capabilities.
+    pub fn from_asm_params(params: &AsmParams) -> Self {
+        let inner = StrataAsmSpec::from_asm_params(params);
         Self { inner }
     }
 }
