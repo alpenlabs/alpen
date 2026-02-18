@@ -17,6 +17,7 @@ sequencer = [
 
 [dependencies]
 ssz.workspace = true
+strata-asm-params.workspace = true
 strata-asm-txs-checkpoint = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btcio.workspace = true

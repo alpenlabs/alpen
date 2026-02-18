@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+strata-asm-params.workspace = true
 strata-config.workspace = true
 strata-ol-params.workspace = true
 strata-params.workspace = true

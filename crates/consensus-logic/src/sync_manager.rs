@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use bitcoin::absolute::Height;
 use bitcoind_async_client::Client;
+use strata_asm_params::AsmParams;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
@@ -74,6 +75,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     bitcoin_client: Arc<Client>,
     engine: Arc<E>,
     params: Arc<Params>,
+    asm_params: Arc<AsmParams>,
     status_channel: StatusChannel,
 ) -> anyhow::Result<SyncManager> {
     // Create channels.
@@ -97,12 +99,13 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
     // ASM worker.
     let asm_handle = executor.handle().clone();
     let asm_storage = storage.clone();
-    let asm_params = Arc::new(params.rollup().clone());
+    let rollup_params = Arc::new(params.rollup().clone());
 
     let asm_controller = Arc::new(spawn_asm_worker(
         executor,
         asm_handle,
         asm_storage,
+        rollup_params,
         asm_params,
         bitcoin_client,
     )?);
@@ -273,6 +276,7 @@ pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWor
         nodectx.executor().handle().clone(),
         nodectx.storage().clone(),
         nodectx.params().rollup.clone().into(),
+        nodectx.asm_params().clone(),
         nodectx.bitcoin_client().clone(),
     )
 }
@@ -281,7 +285,8 @@ pub fn spawn_asm_worker(
     executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
-    params: Arc<RollupParams>,
+    rollup_params: Arc<RollupParams>,
+    _asm_params: Arc<AsmParams>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<AsmWorkerHandle> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
@@ -298,7 +303,7 @@ pub fn spawn_asm_worker(
     // Use the new builder API to launch the worker and get a handle.
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
-        .with_params(params)
+        .with_params(rollup_params)
         .launch(executor)?;
 
     Ok(handle)

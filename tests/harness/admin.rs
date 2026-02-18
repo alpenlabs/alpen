@@ -204,7 +204,7 @@ pub fn extract_admin_state(
 
 impl AdminExt for AsmTestHarness {
     fn admin_context(&self) -> AdminContext {
-        AdminContext::from_params(&self.params)
+        AdminContext::from_params(&self.rollup_params)
     }
 
     fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState> {

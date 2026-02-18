@@ -25,6 +25,9 @@ pub(crate) enum InitError {
     #[error("missing rollup params path in arguments")]
     MissingRollupParams,
 
+    #[error("missing ASM params path in arguments")]
+    MissingAsmParams,
+
     #[error("missing OL params path in arguments")]
     MissingOLParams,
 
