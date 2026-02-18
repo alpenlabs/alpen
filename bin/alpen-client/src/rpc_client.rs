@@ -51,6 +51,23 @@ enum RpcTransportClient {
     Http(HttpClient),
 }
 
+/// Dispatches an RPC method call to the underlying transport client (WS or HTTP),
+/// mapping any RPC error to [`OLClientError`].
+macro_rules! call_rpc {
+    ($self:expr, $method:ident($($args:expr),*)) => {
+        match &$self.client {
+            RpcTransportClient::Ws(client) => client
+                .$method($($args),*)
+                .await
+                .map_err(|e| OLClientError::rpc(e.to_string())),
+            RpcTransportClient::Http(client) => client
+                .$method($($args),*)
+                .await
+                .map_err(|e| OLClientError::rpc(e.to_string())),
+        }
+    };
+}
+
 impl RpcTransportClient {
     fn from_url(url: String) -> Result<Self, OLClientError> {
         if url.starts_with("http://") || url.starts_with("https://") {
@@ -85,16 +102,7 @@ impl OLClient for RpcOLClient {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                let status = match &self.client {
-                    RpcTransportClient::Ws(client) => client
-                        .chain_status()
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string()))?,
-                    RpcTransportClient::Http(client) => client
-                        .chain_status()
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string()))?,
-                };
+                let status = call_rpc!(self, chain_status())?;
 
                 Ok(OLChainStatus {
                     latest: *status.latest(),
@@ -111,18 +119,7 @@ impl OLClient for RpcOLClient {
             "ol_client_account_genesis_epoch",
             STARTUP_RPC_MAX_RETRIES,
             &ExponentialBackoff::default(),
-            || async {
-                match &self.client {
-                    RpcTransportClient::Ws(client) => client
-                        .get_account_genesis_epoch_commitment(self.account_id)
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string())),
-                    RpcTransportClient::Http(client) => client
-                        .get_account_genesis_epoch_commitment(self.account_id)
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string())),
-                }
-            },
+            || async { call_rpc!(self, get_account_genesis_epoch_commitment(self.account_id)) },
         )
         .await
     }
@@ -133,16 +130,8 @@ impl OLClient for RpcOLClient {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                let epoch_summary = match &self.client {
-                    RpcTransportClient::Ws(client) => client
-                        .get_acct_epoch_summary(self.account_id, epoch)
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string()))?,
-                    RpcTransportClient::Http(client) => client
-                        .get_acct_epoch_summary(self.account_id, epoch)
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string()))?,
-                };
+                let epoch_summary =
+                    call_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
 
                 let update = UpdateInputData::new(
                     epoch_summary.next_seq_no,
@@ -184,16 +173,10 @@ impl SequencerOLClient for RpcOLClient {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                let block_summaries = match &self.client {
-                    RpcTransportClient::Ws(client) => client
-                        .get_blocks_summaries(self.account_id, min_slot, max_slot)
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string()))?,
-                    RpcTransportClient::Http(client) => client
-                        .get_blocks_summaries(self.account_id, min_slot, max_slot)
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string()))?,
-                };
+                let block_summaries = call_rpc!(
+                    self,
+                    get_blocks_summaries(self.account_id, min_slot, max_slot)
+                )?;
 
                 let blocks = block_summaries
                     .into_iter()
@@ -216,16 +199,10 @@ impl SequencerOLClient for RpcOLClient {
 
     /// Retrieves latest account state in the OL Chain for this account.
     async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError> {
-        let snark_account_state = match &self.client {
-            RpcTransportClient::Ws(client) => client
-                .get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
-                .await
-                .map_err(|e| OLClientError::rpc(e.to_string()))?,
-            RpcTransportClient::Http(client) => client
-                .get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
-                .await
-                .map_err(|e| OLClientError::rpc(e.to_string()))?,
-        }
+        let snark_account_state = call_rpc!(
+            self,
+            get_snark_account_state(self.account_id, OLBlockOrTag::Latest)
+        )?
         .ok_or_else(|| OLClientError::Rpc("missing latest account state".into()))?;
 
         Ok(OLAccountStateView {
@@ -254,18 +231,7 @@ impl SequencerOLClient for RpcOLClient {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                match &self.client {
-                    RpcTransportClient::Ws(client) => {
-                        client
-                            .submit_transaction(tx.clone())
-                            .await
-                            .map_err(|e| OLClientError::rpc(e.to_string()))?
-                    }
-                    RpcTransportClient::Http(client) => client
-                        .submit_transaction(tx.clone())
-                        .await
-                        .map_err(|e| OLClientError::rpc(e.to_string()))?,
-                };
+                call_rpc!(self, submit_transaction(tx.clone()))?;
 
                 Ok(())
             },
