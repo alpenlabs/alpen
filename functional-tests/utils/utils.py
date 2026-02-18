@@ -390,6 +390,41 @@ def generate_params(
     return res
 
 
+def generate_asm_params(
+    opxprivs: list[str],
+    bitcoind_config: BitcoindConfig,
+    genesis_l1_height: int,
+) -> str:
+    """Generates ASM params JSON from config values."""
+    # fmt: off
+    cmd = [
+        "strata-datatool",
+        "-b", "regtest",
+    ]
+
+    cmd.extend([
+        "--bitcoin-rpc-url", bitcoind_config.rpc_url,
+        "--bitcoin-rpc-user", bitcoind_config.rpc_user,
+        "--bitcoin-rpc-password", bitcoind_config.rpc_password,
+    ])
+
+    cmd.extend([
+        "gen-asm-params",
+        "--name", "ALPN",
+        "--genesis-l1-height", str(genesis_l1_height),
+    ])
+    # fmt: on
+
+    for k in opxprivs:
+        cmd.extend(["--opkey", k])
+
+    res = subprocess.run(cmd, stdout=subprocess.PIPE)
+    res.check_returncode()
+    res = str(res.stdout, "utf8").strip()
+    assert len(res) > 0, "no output generated"
+    return res
+
+
 def generate_simple_params(
     base_path: str,
     settings: RollupParamsSettings,
@@ -401,7 +436,7 @@ def generate_simple_params(
 
     If bitcoind_config is provided, will fetch the L1 block hash from Bitcoin RPC.
 
-    Result options are `params` and `opseedpaths`.
+    Result options are `params`, `asm_params`, and `opseedpaths`.
     """
     seqseedpath = os.path.join(base_path, "seqkey.bin")
     opseedpaths = [os.path.join(base_path, "opkey%s.bin") % i for i in range(operator_cnt)]
@@ -416,7 +451,11 @@ def generate_simple_params(
 
     params = generate_params(settings, seqkey, opxprivs, bitcoind_config)
     print(f"Params {params}")
-    return {"params": params, "opseedpaths": opseedpaths}
+
+    asm_params = generate_asm_params(opxprivs, bitcoind_config, settings.genesis_trigger)
+    print(f"ASM Params {asm_params}")
+
+    return {"params": params, "asm_params": asm_params, "opseedpaths": opseedpaths}
 
 
 def broadcast_tx(btcrpc: BitcoindClient, outputs: list[dict], options: dict) -> str:
