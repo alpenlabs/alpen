@@ -2,7 +2,6 @@
 
 use strata_db_types::{DbError, DbResult, traits::AccountDatabase};
 use strata_identifiers::{AccountId, Epoch};
-use strata_primitives::OLBlockId;
 
 use super::schemas::{AccountExtraDataSchema, AccountGenesisSchema};
 use crate::define_sled_database;
@@ -30,14 +29,14 @@ impl AccountDatabase for AccountGenesisDBSled {
 
     fn insert_account_extra_data(
         &self,
-        key: (AccountId, OLBlockId),
+        key: (AccountId, Epoch),
         extra_data: Vec<u8>,
     ) -> DbResult<()> {
         self.extra_data_tree.insert(&key, &extra_data)?;
         Ok(())
     }
 
-    fn get_account_extra_data(&self, key: (AccountId, OLBlockId)) -> DbResult<Option<Vec<u8>>> {
+    fn get_account_extra_data(&self, key: (AccountId, Epoch)) -> DbResult<Option<Vec<u8>>> {
         Ok(self.extra_data_tree.get(&key)?)
     }
 }

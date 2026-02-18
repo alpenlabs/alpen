@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jsonrpsee::core::RpcResult;
+use jsonrpsee::{core::RpcResult, types::ErrorObjectOwned};
 use ssz::Encode;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
@@ -69,6 +69,29 @@ impl OLRpcServer {
             .map_err(db_error)?
             .ok_or(not_found_error(format!("block not found: {blkid}")))?;
         Ok(blk)
+    }
+
+    /// Linearly scans for account extra data until it is found before or equal to provided epoch.
+    async fn get_extra_data_until_epoch(
+        &self,
+        account_id: AccountId,
+        mut epoch: Epoch,
+    ) -> Result<Vec<u8>, ErrorObjectOwned> {
+        while epoch >= 0 {
+            if let Some(extra_data) = self
+                .storage
+                .account()
+                .get_account_extra_data_async((account_id, epoch))
+                .await
+                .map_err(db_error)?
+            {
+                return Ok(extra_data);
+            }
+            epoch -= 1;
+        }
+        Err(not_found_error(format!(
+            "No account extra data found for account {account_id} before {epoch}"
+        )))
     }
 }
 
@@ -147,13 +170,17 @@ impl OLClientRpcServer for OLRpcServer {
             EpochCommitment::null()
         };
 
+        let extra_data = self
+            .get_extra_data_until_epoch(account_id, epoch_commitment.epoch())
+            .await?;
+
         Ok(RpcAccountEpochSummary::new(
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
             next_seq_no,
             proof_state,
-            vec![], // extra_data - not tracked per-epoch currently
+            extra_data,
             vec![], // processed_msgs - requires additional tracking infrastructure
         ))
     }

@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
+use strata_db_types::DbResult;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
@@ -44,7 +45,7 @@ pub struct ChainWorkerContextImpl {
     ol_checkpoint_mgr: Arc<OLCheckpointManager>,
 
     /// Manager for per-account creation epoch tracking.
-    account_genesis_mgr: Arc<AccountManager>,
+    account_mgr: Arc<AccountManager>,
 
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
@@ -67,7 +68,7 @@ impl ChainWorkerContextImpl {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
-            account_genesis_mgr: nodectx.storage().account().clone(),
+            account_mgr: nodectx.storage().account().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
@@ -160,8 +161,23 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         let wb = output.write_batch();
         let epoch = wb.epochal().cur_epoch();
         wb.ledger().iter_new_accounts().try_for_each(|(_, id)| {
-            self.account_genesis_mgr
+            self.account_mgr
                 .insert_account_creation_epoch_blocking(*id, epoch)
+            // TODO: might need to account for extra data as well
+        })?;
+
+        // Write account extra data
+        let mut snark_updates_iter = output.indexer_writes().snark_state_updates().iter();
+        snark_updates_iter.try_for_each(|update| -> DbResult<()> {
+            let acct_id = update.account_id();
+            if let Some(extra_data) = update.extra_data() {
+                // NOTE: this is expected to be updated for given epoch at every block that contains
+                // extra data for this account
+                let key = (acct_id, epoch);
+                self.account_mgr
+                    .insert_account_extra_data_blocking(key, extra_data.to_vec())?
+            }
+            Ok(())
         })?;
 
         Ok(())

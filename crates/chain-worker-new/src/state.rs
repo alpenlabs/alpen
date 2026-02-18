@@ -334,8 +334,6 @@ impl ChainWorkerServiceState {
             epoch_final_state,
         );
 
-        // TODO: only store this at the end of epoch. This is not much of a problem even if it is
-        // done here, it's just redundant do do it here.
         debug!(?summary, "completed chain epoch");
         self.ctx.store_summary(summary)?;
 
