@@ -116,7 +116,12 @@ macro_rules! impl_buf_wrapper {
 pub(crate) mod internal {
     // Crate-internal impls.
 
-    macro_rules! impl_buf_common {
+    /// Generates the foundational API for a fixed-size byte buffer type.
+    ///
+    /// Provides constructors (`new`, `zero`), accessors (`as_slice`, `as_mut_slice`,
+    /// `as_bytes`, `is_zero`), the `LEN` constant, standard conversion traits (`AsRef`,
+    /// `AsMut`, `From`, `TryFrom`), and `Default`.
+    macro_rules! impl_buf_core {
         ($name:ident, $len:expr) => {
             impl $name {
                 pub const LEN: usize = $len;
@@ -202,7 +207,12 @@ pub(crate) mod internal {
                     Self([0; $len])
                 }
             }
+        };
+    }
 
+    /// Generates `Debug` (full hex) and `Display` (truncated hex) formatting.
+    macro_rules! impl_buf_fmt {
+        ($name:ident, $len:expr) => {
             impl ::std::fmt::Debug for $name {
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                     // twice as large, required by the hex::encode_to_slice.
@@ -224,7 +234,12 @@ pub(crate) mod internal {
                     Ok(())
                 }
             }
+        };
+    }
 
+    /// Generates `BorshSerialize` and `BorshDeserialize` impls.
+    macro_rules! impl_buf_borsh {
+        ($name:ident, $len:expr) => {
             impl ::borsh::BorshSerialize for $name {
                 fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
                     let bytes = self.0.as_ref();
@@ -242,7 +257,12 @@ pub(crate) mod internal {
                     Ok(array.into())
                 }
             }
+        };
+    }
 
+    /// Generates `Arbitrary` impl for property-based testing.
+    macro_rules! impl_buf_arbitrary {
+        ($name:ident, $len:expr) => {
             impl<'a> ::arbitrary::Arbitrary<'a> for $name {
                 fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
                     let mut array = [0u8; $len];
@@ -250,21 +270,23 @@ pub(crate) mod internal {
                     Ok(array.into())
                 }
             }
+        };
+    }
 
-            // Codec implementation for Buf types
+    /// Generates `strata_codec::Codec` impl.
+    macro_rules! impl_buf_codec {
+        ($name:ident, $len:expr) => {
             impl $crate::strata_codec::Codec for $name {
                 fn encode(
                     &self,
                     enc: &mut impl $crate::strata_codec::Encoder,
                 ) -> Result<(), $crate::strata_codec::CodecError> {
-                    // Encode the underlying byte array
                     self.0.encode(enc)
                 }
 
                 fn decode(
                     dec: &mut impl $crate::strata_codec::Decoder,
                 ) -> Result<Self, $crate::strata_codec::CodecError> {
-                    // Decode the byte array and wrap it
                     let bytes = <[u8; $len]>::decode(dec)?;
                     Ok(Self(bytes))
                 }
@@ -387,7 +409,11 @@ pub(crate) mod internal {
         };
     }
 
-    pub(crate) use impl_buf_common;
+    pub(crate) use impl_buf_arbitrary;
+    pub(crate) use impl_buf_borsh;
+    pub(crate) use impl_buf_codec;
+    pub(crate) use impl_buf_core;
+    pub(crate) use impl_buf_fmt;
     pub(crate) use impl_buf_serde;
 }
 
@@ -720,7 +746,11 @@ mod tests {
     #[derive(PartialEq)]
     pub struct TestBuf20([u8; 20]);
 
-    crate::macros::internal::impl_buf_common!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_core!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_fmt!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_borsh!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_arbitrary!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_codec!(TestBuf20, 20);
     crate::macros::internal::impl_buf_serde!(TestBuf20, 20);
 
     #[test]
