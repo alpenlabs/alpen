@@ -78,7 +78,7 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
 /// - `u32::MAX`: no operator selection
 /// - Any other value: operator index
 fn parse_calldata(data: &[u8]) -> Result<(u32, &[u8]), PrecompileError> {
-    if data.len() < OPERATOR_INDEX_SIZE + 1 {
+    if data.len() <= OPERATOR_INDEX_SIZE {
         return Err(PrecompileError::other(
             "Calldata too short: expected at least 5 bytes (4 operator + 1 BOSD)",
         ));
