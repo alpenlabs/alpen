@@ -1,7 +1,4 @@
 use alpen_reth_primitives::WithdrawalIntentEvent;
-
-/// Sentinel value indicating no operator was selected for withdrawal assignment.
-const NO_SELECTED_OPERATOR: u32 = u32::MAX;
 use reth_evm::precompiles::PrecompileInput;
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
 use revm_primitives::{Bytes, Log, LogData, U256};
@@ -12,18 +9,13 @@ use crate::{
     utils::wei_to_sats,
 };
 
-/// Maximum number of bytes used to encode the operator index in calldata.
-/// Operator index is a u32, so at most 4 bytes.
-const MAX_OPERATOR_INDEX_LEN: usize = 4;
-
 /// Custom precompile to burn rollup native token and add bridge out intent of equal amount.
 /// Bridge out intent is created during block payload generation.
 /// This precompile validates transaction and burns the bridge out amount.
 ///
-/// Calldata format: `[1 byte B][B bytes: operator index (big-endian)][BOSD bytes]`
-/// - B=0: no operator selection
-/// - B=1..4: operator index encoded as B big-endian bytes
-/// - B>4: invalid
+/// Calldata format: `[4 bytes: selected_operator (big-endian u32)][BOSD bytes]`
+/// - `u32::MAX` (`0xFFFFFFFF`): no operator selection
+/// - Any other value: operator index
 pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let (selected_operator, bosd_data) = parse_calldata(input.data)?;
 
@@ -77,46 +69,20 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
 
 /// Parses bridge out calldata into a selected operator index and BOSD bytes.
 ///
-/// Format: `[1 byte B][B bytes: operator index (big-endian)][BOSD bytes]`
-/// - B=0: no selection, returns [`NO_SELECTED_OPERATOR`]
-/// - B=1..4: decodes B bytes as a big-endian u32 operator index
-/// - B>4: error
+/// Format: `[4 bytes: selected_operator (big-endian u32)][BOSD bytes]`
+/// - `u32::MAX`: no operator selection
+/// - Any other value: operator index
 fn parse_calldata(data: &[u8]) -> Result<(u32, &[u8]), PrecompileError> {
-    let (&b, rest) = data
-        .split_first()
-        .ok_or_else(|| PrecompileError::other("Empty calldata"))?;
-
-    let b = b as usize;
-
-    if b == 0 {
-        return Ok((NO_SELECTED_OPERATOR, rest));
-    }
-
-    if b > MAX_OPERATOR_INDEX_LEN {
+    if data.len() < 5 {
         return Err(PrecompileError::other(
-            "Invalid operator index length: exceeds maximum of 4 bytes",
+            "Calldata too short: expected at least 5 bytes (4 operator + 1 BOSD)",
         ));
     }
 
-    if rest.len() < b {
-        return Err(PrecompileError::other(
-            "Calldata too short for operator index",
-        ));
-    }
+    let (operator_bytes, bosd_data) = data.split_at(4);
+    let selected_operator = u32::from_be_bytes(operator_bytes.try_into().expect("exactly 4 bytes"));
 
-    let (operator_bytes, bosd_data) = rest.split_at(b);
-
-    if bosd_data.is_empty() {
-        return Err(PrecompileError::other(
-            "Calldata missing BOSD data after operator index",
-        ));
-    }
-
-    let operator_idx = operator_bytes
-        .iter()
-        .fold(0u32, |acc, &byte| (acc << 8) | byte as u32);
-
-    Ok((operator_idx, bosd_data))
+    Ok((selected_operator, bosd_data))
 }
 
 /// Validates that input is a valid BOSD [`Descriptor`].
@@ -129,6 +95,9 @@ fn validate_bosd(data: &[u8]) -> Result<(), PrecompileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Sentinel value indicating no operator was selected for withdrawal assignment.
+    const NO_SELECTED_OPERATOR: u32 = u32::MAX;
 
     /// Valid P2WPKH descriptor: type tag (0x03) + 20-byte hash160.
     const VALID_P2WPKH_BOSD: &[u8; 21] = &{
@@ -145,7 +114,8 @@ mod tests {
 
     #[test]
     fn test_parse_calldata_no_preference() {
-        let mut data = vec![0x00];
+        let mut data = Vec::new();
+        data.extend_from_slice(&u32::MAX.to_be_bytes());
         data.extend_from_slice(VALID_P2WPKH_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
@@ -154,8 +124,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_calldata_operator_1_byte() {
-        let mut data = vec![1, 42];
+    fn test_parse_calldata_operator_42() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&42u32.to_be_bytes());
         data.extend_from_slice(VALID_P2WPKH_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
@@ -164,9 +135,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_calldata_operator_4_bytes() {
+    fn test_parse_calldata_operator_large() {
         let idx: u32 = 0x01020304;
-        let mut data = vec![4];
+        let mut data = Vec::new();
         data.extend_from_slice(&idx.to_be_bytes());
         data.extend_from_slice(VALID_P2WPKH_BOSD);
 
@@ -176,8 +147,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_calldata_operator_zero_4_bytes() {
-        let mut data = vec![4, 0, 0, 0, 0];
+    fn test_parse_calldata_operator_zero() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&0u32.to_be_bytes());
         data.extend_from_slice(VALID_P2WPKH_BOSD);
 
         let (operator, bosd) = parse_calldata(&data).unwrap();
@@ -186,42 +158,18 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_calldata_b_too_large() {
-        let data = vec![5, 0, 0, 0, 0, 0];
+    fn test_parse_calldata_too_short() {
+        // Only 3 bytes — less than the minimum 5 (4 operator + 1 BOSD)
+        let data = vec![0x00, 0x01, 0x02];
         let result = parse_calldata(&data);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_parse_calldata_truncated_operator_bytes() {
-        // B=4 but only 2 operator bytes follow
-        let data = vec![4, 0x01, 0x02];
+    fn test_parse_calldata_only_operator_no_bosd() {
+        // Exactly 4 bytes (operator only, no BOSD)
+        let data = vec![0x00, 0x00, 0x00, 0x05];
         let result = parse_calldata(&data);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_calldata_empty_bosd_after_operator() {
-        // B=1 with operator byte but no BOSD data following
-        let data = vec![1, 0x05];
-        let result = parse_calldata(&data);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_calldata_mismatched_b_eats_bosd_bytes() {
-        // Encoder intended B=1 with operator=3, but mistakenly set B=2.
-        // parse_calldata trusts B, so the BOSD type tag (0x03) is consumed
-        // as part of the operator index, producing a wrong operator and shifted BOSD.
-        let mut data = vec![2, 0x03]; // B=2, first operator byte
-        data.extend_from_slice(VALID_P2WPKH_BOSD); // type tag (0x03) eaten as 2nd operator byte
-
-        let (operator, bosd) = parse_calldata(&data).unwrap();
-        // Operator becomes (0x03 << 8) | 0x03 = 771 instead of intended 3
-        assert_eq!(operator, 0x0303);
-        // BOSD is truncated by 1 byte — no longer a valid descriptor
-        assert_eq!(bosd.len(), VALID_P2WPKH_BOSD.len() - 1);
-        // The downstream validate_bosd catches the corruption
-        assert!(validate_bosd(bosd).is_err());
     }
 }

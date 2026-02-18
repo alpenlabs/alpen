@@ -107,21 +107,14 @@ pub async fn withdraw(
     Ok(())
 }
 
-/// Encodes bridge out calldata: `[1 byte B][B bytes: operator index (big-endian)][BOSD bytes]`.
+/// Encodes bridge out calldata: `[4 bytes: selected_operator (big-endian u32)][BOSD bytes]`.
+///
+/// When no operator is selected, `u32::MAX` is written as the sentinel value.
 fn encode_bridge_out_calldata(operator: Option<u32>, bosd: &Descriptor) -> Vec<u8> {
     let bosd_bytes = bosd.to_bytes();
-    let mut buf = Vec::with_capacity(1 + 4 + bosd_bytes.len());
-    match operator {
-        None => {
-            // B=0: no operator preference
-            buf.push(0);
-        }
-        Some(idx) => {
-            // B=4: operator index encoded as 4 big-endian bytes
-            buf.push(4);
-            buf.extend_from_slice(&idx.to_be_bytes());
-        }
-    }
+    let mut buf = Vec::with_capacity(4 + bosd_bytes.len());
+    let selected = operator.unwrap_or(u32::MAX);
+    buf.extend_from_slice(&selected.to_be_bytes());
     buf.extend_from_slice(&bosd_bytes);
     buf
 }
