@@ -56,6 +56,7 @@ __all__ = [
     "ExecConfig",
     "RethELConfig",
     "RelayerConfig",
+    "EpochSealingConfig",
     "SequencerConfig",
     "SequencerRuntimeConfig",
     "SyncConfig",

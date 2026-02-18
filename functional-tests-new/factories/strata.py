@@ -13,6 +13,7 @@ from common.config import (
     BitcoindConfig,
     ClientConfig,
     EpochSealingConfig,
+    OLParams,
     SequencerConfig,
     SequencerRuntimeConfig,
     ServiceType,
@@ -47,6 +48,7 @@ class StrataFactory(flexitest.Factory):
         genesis_l1_height: int,
         is_sequencer: bool = True,
         config_overrides: dict[str, object] | None = None,
+        ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
         **kwargs,
     ) -> StrataService:
@@ -58,6 +60,7 @@ class StrataFactory(flexitest.Factory):
             genesis_l1_height: Genesis L1 height used for param generation.
             is_sequencer: True for sequencer, False for fullnode
             config_overrides: Additional config overrides (-o flag)
+            ol_params: Custom OL parameters (genesis accounts, etc.)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
