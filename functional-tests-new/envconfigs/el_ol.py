@@ -3,6 +3,7 @@ Alpen-client test environment configurations.
 """
 
 from common.config.constants import ServiceType
+from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 import flexitest
 
@@ -48,6 +49,7 @@ class EeOLEnv(flexitest.EnvConfig):
 
         # Get and pass ol endpoint
         seq: StrataService = strata_services[ServiceType.Strata]
+        bitcoin: BitcoinService = strata_services[ServiceType.Bitcoin]
         ol_endpoint = seq.props["rpc_url"]
 
         alpen_services = AlpenClientEnv.get_services(
@@ -56,6 +58,7 @@ class EeOLEnv(flexitest.EnvConfig):
             self.fullnode_count,
             self.mesh_bootnodes,
             self.pure_discovery,
+            bitcoin_service=bitcoin,
             ol_endpoint=ol_endpoint,
         )
 
