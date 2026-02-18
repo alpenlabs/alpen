@@ -203,6 +203,15 @@ impl WorkerContext for TestAsmWorkerContext {
         self.manifests.lock().unwrap().push(manifest);
         Ok(())
     }
+
+    fn has_l1_manifest(&self, blockid: &L1BlockId) -> WorkerResult<bool> {
+        Ok(self
+            .manifests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|m| m.blkid() == blockid))
+    }
 }
 
 /// Helper to construct GenesisL1View from a block hash using the client.

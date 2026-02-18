@@ -324,6 +324,10 @@ mod tests {
         fn get_manifest_hash(&self, _index: u64) -> WorkerResult<Option<Hash>> {
             Ok(None)
         }
+
+        fn has_l1_manifest(&self, _blockid: &L1BlockId) -> WorkerResult<bool> {
+            Ok(false)
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

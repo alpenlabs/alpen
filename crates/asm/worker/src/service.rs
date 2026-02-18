@@ -101,9 +101,8 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         // to the external MMR, since the internal compact MMR in AnchorState starts
         // empty with offset = genesis_height + 1. Appending genesis here would shift
         // all external MMR indices by 1 relative to the internal accumulator.
-        // Idempotency: skip if the external MMR already has a leaf (implies genesis
-        // manifest was stored in a previous run).
-        if pivot_block.height() == genesis_height && ctx.get_manifest_hash(0)?.is_none() {
+        // Idempotency: skip if the genesis manifest already exists in the L1 database.
+        if pivot_block.height() == genesis_height && !ctx.has_l1_manifest(pivot_block.blkid())? {
             let genesis_span = info_span!("asm.genesis_manifest",
                 pivot_height = pivot_block.height().to_consensus_u32(),
                 pivot_block = %pivot_block.blkid()
