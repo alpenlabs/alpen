@@ -89,7 +89,7 @@ impl FromStr for Buf32 {
 /// A 32-byte buffer with reversed-byte display and serialization.
 ///
 /// Stores bytes internally in their natural (little-endian) order but
-/// reverses them for [`Display`], [`Debug`], and human-readable serde.
+/// reverses them for [`Display`](std::fmt::Display), [`Debug`], and human-readable serde.
 /// This matches the Bitcoin convention where block hashes, transaction
 /// IDs, and other hash digests are displayed in reversed byte order.
 ///
