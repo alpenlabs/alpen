@@ -27,6 +27,7 @@ from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
 from envconfigs.el_ol import EeOLEnv
+from envconfigs.ol_isolated import OLIsolatedEnvConfig
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
@@ -260,6 +261,8 @@ def main(argv: list[str]) -> int:
     # Define global environments
     global_envs: dict[str, flexitest.EnvConfig] = {
         "basic": StrataEnvConfig(pre_generate_blocks=110),
+        # OL isolated environment (no EE)
+        "ol_isolated": OLIsolatedEnvConfig(),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
         "alpen_ee_discovery": AlpenClientEnv(
