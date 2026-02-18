@@ -13777,7 +13777,6 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
- "rand 0.8.5",
  "serde",
  "strata-asm-manifest-types",
  "strata-asm-types",
@@ -15076,6 +15075,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-txs-checkpoint",
+ "strata-asm-txs-test-utils",
  "strata-btc-types",
  "strata-codec",
  "strata-da-framework",

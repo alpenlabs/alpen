@@ -52,7 +52,7 @@ pub fn create_dummy_tx(num_inputs: usize, num_outputs: usize) -> Transaction {
 
 /// Creates a stub reveal transaction containing the envelope script.
 /// This is a simplified implementation for testing purposes.
-pub fn create_reveal_transaction_stub(envelope_payload: Vec<u8>, tag: TagData) -> Transaction {
+pub fn create_reveal_transaction_stub(envelope_payload: Vec<u8>, tag: &TagData) -> Transaction {
     // Create commit key
     let mut rand_bytes = [0; 32];
     OsRng.fill_bytes(&mut rand_bytes);

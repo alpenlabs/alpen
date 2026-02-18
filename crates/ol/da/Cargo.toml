@@ -24,7 +24,7 @@ thiserror.workspace = true
 workspace = true
 
 [dev-dependencies]
-strata-asm-common = { workspace = true, features = ["test-utils"] }
+strata-asm-txs-test-utils.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-ol-params.workspace = true
 strata-ol-state-types.workspace = true

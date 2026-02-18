@@ -52,24 +52,17 @@ where
 mod tests {
 
     use bitcoin::ScriptBuf;
-    use strata_asm_common::test_utils::create_reveal_transaction_stub;
     use strata_asm_txs_checkpoint::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
+    use strata_asm_txs_test_utils::create_reveal_transaction_stub;
     use strata_l1_envelope_fmt::parser::parse_envelope_payload;
-    use strata_l1_txfmt::TagData;
 
     use super::*;
     use crate::DaExtractorError;
 
-    /// Magic bytes for testing purposes.
-    const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
-
     /// Creates a checkpoint transaction with the given payload, subprotocol, tx type, and secret
     /// key.
-    fn make_checkpoint_tx(payload: &[u8], tag_data: &TagData) -> Transaction {
-        let tag_script = ParseConfig::new(TEST_MAGIC_BYTES)
-            .encode_script_buf(&tag_data.as_ref())
-            .expect("encode tag script");
-        create_reveal_transaction_stub(payload.to_vec(), tag_script.into_bytes())
+    fn make_checkpoint_tx(payload: &[u8]) -> Transaction {
+        create_reveal_transaction_stub(payload.to_vec(), &OL_STF_CHECKPOINT_TX_TAG)
     }
 
     /// Extracts the leaf script from a transaction.
@@ -94,7 +87,7 @@ mod tests {
         let payload = vec![0xAB; 1_300];
         assert!(payload.len() > 520, "payload must exceed single push limit");
 
-        let tx = make_checkpoint_tx(&payload, &OL_STF_CHECKPOINT_TX_TAG);
+        let tx = make_checkpoint_tx(&payload);
 
         let script = extract_leaf_script(&tx).expect("extract envelope-bearing leaf script");
         let parsed_payload = parse_envelope_payload(&script).expect("parse envelope payload");

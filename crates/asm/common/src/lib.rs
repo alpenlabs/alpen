@@ -24,8 +24,5 @@ pub use subprotocol::*;
 use tracing as _;
 pub use tx::*;
 
-#[cfg(any(test, feature = "test-utils"))]
-pub mod test_utils;
-
 // Re-export the logging module
 pub mod logging;

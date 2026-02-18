@@ -86,7 +86,7 @@ pub fn create_test_admin_tx(
     // Create a minimal reveal transaction structure
     // This is a simplified version - in practice, this would be created as part of
     // a proper commit-reveal transaction pair using the btcio writer infrastructure
-    create_reveal_transaction_stub(envelope_payload, action.tag())
+    create_reveal_transaction_stub(envelope_payload, &action.tag())
 }
 
 #[cfg(test)]
