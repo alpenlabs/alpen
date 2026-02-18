@@ -21,7 +21,7 @@ pub use acct::{
     AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SUBJ_ID_LEN, SYSTEM_RESERVED_ACCTS,
     SubjectId, SubjectIdBytes,
 };
-pub use buf::{Buf20, Buf32, Buf64};
+pub use buf::{Buf20, Buf32, Buf64, RBuf32};
 pub use cred_rule::CredRule;
 pub use deposit::{DepositDescriptor, DepositDescriptorError};
 pub use exec::{

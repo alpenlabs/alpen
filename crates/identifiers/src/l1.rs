@@ -8,7 +8,6 @@ use arbitrary::{Arbitrary, Result as ArbitraryResult, Unstructured};
 pub(crate) use bitcoin::{BlockHash, absolute};
 use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
-use hex::encode_to_slice;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
 #[cfg(feature = "bitcoin")]
 use ssz::view;
@@ -17,7 +16,7 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::view::ToOwnedSsz;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
-use crate::buf::Buf32;
+use crate::buf::{Buf32, RBuf32};
 // Use generated type when bitcoin feature is not enabled
 #[cfg(not(feature = "bitcoin"))]
 use crate::ssz_generated::ssz::commitments::L1BlockCommitment;
@@ -32,6 +31,9 @@ pub type BitcoinBlockHeight = u64;
 pub type L1Height = u32;
 
 /// ID of an L1 block, usually the hash of its header.
+///
+/// Wraps [`RBuf32`] so that display and human-readable serde automatically
+/// use Bitcoin's reversed byte order convention.
 #[derive(
     Copy,
     Clone,
@@ -44,115 +46,36 @@ pub type L1Height = u32;
     Arbitrary,
     BorshSerialize,
     BorshDeserialize,
+    Serialize,
+    Deserialize,
     Encode,
     Decode,
 )]
-pub struct L1BlockId(Buf32);
+pub struct L1BlockId(RBuf32);
 
-// NOTE: Manual serde serialization (especially for JSON (human-readable formats)) due to
-// Buf32 hex bytes need to be reversed for compatibility with block and transaction ID hashes.
-// See <https://learnmeabitcoin.com/technical/general/byte-order/>
-// Satoshi had to use a f**** windows 32-bit computer....
-impl Serialize for L1BlockId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        if serializer.is_human_readable() {
-            let mut bytes = self.0.0;
-            bytes.reverse();
-            let mut buf = [0u8; 64];
-            encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
-            // SAFETY: hex encoding always produces valid UTF-8
-            let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
-            serializer.serialize_str(hex_str)
-        } else {
-            <Buf32 as Serialize>::serialize(&self.0, serializer)
-        }
-    }
-}
+// Debug, Display, From<RBuf32>, AsRef<[u8; 32]>, and Codec via RBuf32 delegation.
+crate::impl_buf_wrapper!(L1BlockId, RBuf32, 32);
 
-impl<'de> Deserialize<'de> for L1BlockId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        if deserializer.is_human_readable() {
-            struct L1BlockIdVisitor;
-
-            impl<'de> de::Visitor<'de> for L1BlockIdVisitor {
-                type Value = L1BlockId;
-
-                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    formatter
-                        .write_str("a hex string with an optional 0x prefix representing 32 bytes")
-                }
-
-                fn visit_str<E>(self, v: &str) -> Result<L1BlockId, E>
-                where
-                    E: de::Error,
-                {
-                    let hex_str = if v.starts_with("0x") || v.starts_with("0X") {
-                        &v[2..]
-                    } else {
-                        v
-                    };
-                    let bytes = hex::decode(hex_str).map_err(E::custom)?;
-                    if bytes.len() != 32 {
-                        return Err(E::custom(format!("expected 32 bytes, got {}", bytes.len())));
-                    }
-                    let mut array = [0u8; 32];
-                    array.copy_from_slice(&bytes);
-                    array.reverse();
-                    Ok(L1BlockId(Buf32::from(array)))
-                }
-            }
-
-            deserializer.deserialize_str(L1BlockIdVisitor)
-        } else {
-            let buf = <Buf32 as Deserialize>::deserialize(deserializer)?;
-            Ok(L1BlockId(buf))
-        }
-    }
-}
-
-// Custom implementation without Debug/Display to avoid conflicts
 impl From<Buf32> for L1BlockId {
     fn from(value: Buf32) -> Self {
-        Self(value)
+        Self(RBuf32(value.0))
     }
 }
 
 impl From<L1BlockId> for Buf32 {
     fn from(value: L1BlockId) -> Self {
-        value.0
-    }
-}
-
-impl Codec for L1BlockId {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.0.encode(enc)
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let buf = Buf32::decode(dec)?;
-        Ok(Self(buf))
-    }
-}
-
-impl AsRef<[u8; 32]> for L1BlockId {
-    fn as_ref(&self) -> &[u8; 32] {
-        self.0.as_ref()
+        Buf32(value.0 .0)
     }
 }
 
 // Manual TreeHash implementation for transparent wrapper
-crate::impl_ssz_transparent_buf32_wrapper!(L1BlockId);
+crate::impl_ssz_transparent_wrapper!(L1BlockId, crate::buf::RBuf32, 32);
 
 #[cfg(feature = "bitcoin")]
 impl From<BlockHash> for L1BlockId {
     fn from(value: BlockHash) -> Self {
-        L1BlockId(value.into())
+        use bitcoin::hashes::Hash;
+        L1BlockId(RBuf32(*value.as_raw_hash().as_byte_array()))
     }
 }
 
@@ -160,7 +83,7 @@ impl From<BlockHash> for L1BlockId {
 impl From<L1BlockId> for BlockHash {
     fn from(value: L1BlockId) -> Self {
         use bitcoin::hashes::Hash;
-        BlockHash::from_byte_array(value.0.into())
+        BlockHash::from_byte_array(value.0 .0)
     }
 }
 
@@ -598,32 +521,6 @@ impl ToOwnedSsz<L1BlockCommitment> for L1BlockCommitmentRef<'_> {
     }
 }
 
-// Custom debug implementation to print the block hash in little endian
-impl fmt::Debug for L1BlockId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = self.0.0;
-        bytes.reverse();
-        let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
-        encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
-        // SAFETY: hex encoding always produces valid UTF-8
-        let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
-        f.write_str(hex_str)
-    }
-}
-
-// Custom display implementation to print the block hash in little endian
-impl fmt::Display for L1BlockId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = self.0.0;
-        bytes.reverse();
-        let mut buf = [0u8; 64]; // 32 bytes * 2 for hex
-        encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
-        // SAFETY: hex encoding always produces valid UTF-8
-        let hex_str = unsafe { str::from_utf8_unchecked(&buf) };
-        f.write_str(hex_str)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use ssz::{Decode, Encode};
@@ -633,6 +530,8 @@ mod tests {
     use crate::test_utils::{buf32_strategy, l1_block_commitment_strategy};
 
     mod l1_block_id {
+        use bitcoin::BlockHash;
+
         use super::*;
 
         ssz_proptest!(
@@ -647,6 +546,49 @@ mod tests {
             let encoded = zero.as_ssz_bytes();
             let decoded = L1BlockId::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(zero, decoded);
+        }
+
+        /// Verifies that `L1BlockId`'s `Debug` output matches Bitcoin's `BlockHash` `Display`,
+        /// i.e. the full reversed-byte hex string.
+        #[test]
+        fn debug_matches_bitcoin_display() {
+            let block_hash: BlockHash =
+                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+                    .parse()
+                    .unwrap();
+            let l1_id = L1BlockId::from(block_hash);
+
+            assert_eq!(format!("{:?}", l1_id), format!("{}", block_hash));
+        }
+
+        /// Verifies that `L1BlockId`'s human-readable serde serialization matches
+        /// Bitcoin's `BlockHash` serialization (both produce the reversed-hex string).
+        #[test]
+        fn serde_json_matches_bitcoin() {
+            let block_hash: BlockHash =
+                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+                    .parse()
+                    .unwrap();
+            let l1_id = L1BlockId::from(block_hash);
+
+            let l1_json = serde_json::to_string(&l1_id).unwrap();
+            let btc_json = serde_json::to_string(&block_hash).unwrap();
+            assert_eq!(l1_json, btc_json);
+        }
+
+        /// Verifies round-trip: deserializing a Bitcoin `BlockHash` JSON string as
+        /// `L1BlockId` produces the same value as converting via `From`.
+        #[test]
+        fn serde_json_roundtrip_from_bitcoin() {
+            let block_hash: BlockHash =
+                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+                    .parse()
+                    .unwrap();
+
+            let json = serde_json::to_string(&block_hash).unwrap();
+            let deserialized: L1BlockId = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(deserialized, L1BlockId::from(block_hash));
         }
     }
 
