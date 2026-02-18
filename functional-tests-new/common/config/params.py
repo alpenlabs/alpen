@@ -117,11 +117,17 @@ class RollupParams:
         self.genesis_l1_view = genesis_l1
         return self
 
+ALPEN_ACCOUNT_ID = "01" * 32
+
+def default_accounts():
+    return {
+        ALPEN_ACCOUNT_ID : GenesisAccountData()
+    }
 
 @dataclass
 class OLParams:
     header: GenesisHeaderParams | None = field(default=None)
-    accounts: dict[str, GenesisAccountData] = field(default_factory=dict)
+    accounts: dict[str, GenesisAccountData] = field(default_factory=default_accounts)
     last_l1_block: L1BlockCommitment = field(default_factory=L1BlockCommitment)
 
     def as_json_string(self) -> str:

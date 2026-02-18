@@ -4,6 +4,7 @@ Alpen-client test environment configurations.
 
 from typing import cast
 
+from common.services.bitcoin import BitcoinService
 import flexitest
 
 from common.config import EeDaConfig, ServiceType
@@ -79,10 +80,11 @@ class AlpenClientEnv(flexitest.EnvConfig):
         fullnode_count: int,
         mesh_bootnodes: int,
         pure_discovery: bool,
-        enable_l1_da: bool = False,
-        da_magic_bytes: bytes = b'',
+        enable_l1_da: bool = True,
+        da_magic_bytes: bytes = b'0000',
         l1_reorg_safe_depth: int = 2,
         batch_sealing_block_count: int = 10,
+        bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
@@ -93,14 +95,19 @@ class AlpenClientEnv(flexitest.EnvConfig):
 
         # Start Bitcoin if DA is enabled
         if enable_l1_da:
-            btc_factory = cast(BitcoinFactory, ectx.get_factory(ServiceType.Bitcoin))
-            bitcoin = btc_factory.create_regtest()
-            bitcoin.wait_for_ready(timeout=30)
+            if bitcoin_service is None:
+                btc_factory = cast(BitcoinFactory, ectx.get_factory(ServiceType.Bitcoin))
+                bitcoin = btc_factory.create_regtest()
+                bitcoin.wait_for_ready(timeout=30)
+
+                btc_rpc = bitcoin.create_rpc()
+                btc_rpc.proxy.createwallet("testwallet")
+                address = btc_rpc.proxy.getnewaddress()
+                btc_rpc.proxy.generatetoaddress(101, address)
+            else:
+                bitcoin = bitcoin_service
 
             btc_rpc = bitcoin.create_rpc()
-            btc_rpc.proxy.createwallet("testwallet")
-            address = btc_rpc.proxy.getnewaddress()
-            btc_rpc.proxy.generatetoaddress(101, address)
 
             genesis_l1_height = btc_rpc.proxy.getblockcount()
 
