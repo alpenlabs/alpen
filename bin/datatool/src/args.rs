@@ -43,10 +43,6 @@ pub(crate) struct Args {
     pub(crate) subc: Subcommand,
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "Enum contains large variants for different subcommands"
-)]
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub(crate) enum Subcommand {
@@ -54,6 +50,7 @@ pub(crate) enum Subcommand {
     SeqPubkey(SubcSeqPubkey),
     SeqPrivkey(SubcSeqPrivkey),
     Params(SubcParams),
+    AsmParams(SubcAsmParams),
     #[cfg(feature = "btc-client")]
     GenL1View(SubcGenL1View),
 }
@@ -186,6 +183,74 @@ pub(crate) struct SubcParams {
         description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
     )]
     pub(crate) genesis_l1_view_file: Option<String>,
+}
+
+/// Generate an ASM params file from inputs.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(
+    subcommand,
+    name = "gen-asm-params",
+    description = "generates ASM params from inputs"
+)]
+pub(crate) struct SubcAsmParams {
+    #[argh(
+        option,
+        description = "output file path .json (default stdout)",
+        short = 'o'
+    )]
+    pub(crate) output: Option<PathBuf>,
+
+    #[argh(
+        option,
+        description = "network name / magic bytes (default ALPN)",
+        short = 'n'
+    )]
+    pub(crate) name: Option<String>,
+
+    #[argh(
+        option,
+        description = "add a bridge operator key (master xpriv)",
+        short = 'b'
+    )]
+    pub(crate) opkey: Vec<String>,
+
+    #[argh(
+        option,
+        description = "read bridge operator keys (master xpriv) by line from file",
+        short = 'B'
+    )]
+    pub(crate) opkeys: Option<PathBuf>,
+
+    #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
+    pub(crate) deposit_sats: Option<String>,
+
+    #[argh(
+        option,
+        description = "genesis L1 block height (default 100)",
+        short = 'g'
+    )]
+    pub(crate) genesis_l1_height: Option<u64>,
+
+    #[argh(
+        option,
+        description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
+    )]
+    pub(crate) genesis_l1_view_file: Option<String>,
+
+    #[argh(option, description = "assignment duration in blocks (default 64)")]
+    pub(crate) assignment_duration: Option<u16>,
+
+    #[argh(option, description = "recovery delay in blocks (default 1008)")]
+    pub(crate) recovery_delay: Option<u16>,
+
+    #[argh(option, description = "operator fee in sats (default 50000000)")]
+    pub(crate) operator_fee: Option<u64>,
+
+    #[argh(
+        option,
+        description = "confirmation depth for admin subprotocol (default 144)"
+    )]
+    pub(crate) confirmation_depth: Option<u16>,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]

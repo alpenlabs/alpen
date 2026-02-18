@@ -27,6 +27,10 @@ pub struct NodeContext {
 }
 
 impl NodeContext {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Constructor needs all fields to initialize NodeContext"
+    )]
     pub fn new(
         handle: Handle,
         config: Config,
