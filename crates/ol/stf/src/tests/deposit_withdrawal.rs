@@ -7,7 +7,9 @@ use strata_identifiers::{Buf32, SubjectId, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
-use strata_ol_msg_types::{NO_SELECTED_OPERATOR, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
+use strata_ol_msg_types::{
+    DEFAULT_OPERATOR_FEE, NO_SELECTED_OPERATOR, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData,
+};
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{
@@ -128,9 +130,12 @@ fn test_snark_account_deposit_and_withdrawal() {
     // Now create a snark account update transaction that produces a withdrawal
     let withdrawal_amount = 100_000_000u64; // Withdraw exactly 1 BTC (required denomination)
     let withdrawal_dest_desc = b"bc1qexample".to_vec(); // Example Bitcoin address descriptor
-    let withdrawal_msg_data =
-        WithdrawalMsgData::new(0, withdrawal_dest_desc.clone(), NO_SELECTED_OPERATOR)
-            .expect("Valid withdrawal data");
+    let withdrawal_msg_data = WithdrawalMsgData::new(
+        DEFAULT_OPERATOR_FEE,
+        withdrawal_dest_desc.clone(),
+        NO_SELECTED_OPERATOR,
+    )
+    .expect("Valid withdrawal data");
 
     // Encode the withdrawal message data using the msg-fmt library
     let encoded_withdrawal_body = strata_codec::encode_to_vec(&withdrawal_msg_data)
