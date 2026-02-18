@@ -17,8 +17,8 @@ class BridgePrecompileMixin(bridge_mixin.BridgeMixin):
         xonlypk = extract_p2tr_pubkey(self.withdraw_address)
         bosd = xonlypk_to_descriptor(xonlypk)
 
-        # Prepend B=0 (no operator preference) before BOSD for precompile calldata format
-        self.bosd = b"\x00" + bytes.fromhex(bosd)
+        # Prepend u32::MAX (no operator selection) as 4 big-endian bytes before BOSD
+        self.bosd = b"\xff\xff\xff\xff" + bytes.fromhex(bosd)
 
         # Extract ABI for compatibility with existing tests
         self.abi, _ = SmartContracts.compile_contract(

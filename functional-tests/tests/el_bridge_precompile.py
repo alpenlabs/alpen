@@ -55,8 +55,8 @@ class ElBridgePrecompileTest(BridgePrecompileMixin):
         to_transfer_sats = deposit_amount * 10_000_000_000
         to_transfer_wei = to_transfer_sats  # Same value in wei
         dest_pk = "04db4c79cc3ffca26f51e21241b9332d646b0772dd7e98de9c1de6b10990cab80b"
-        # Prepend B=0 (no operator preference) before the BOSD descriptor
-        calldata = "0x00" + dest_pk
+        # Prepend u32::MAX (no operator selection) as 4 big-endian bytes before the BOSD descriptor
+        calldata = "0xffffffff" + dest_pk
 
         txid = web3.eth.send_transaction(
             {

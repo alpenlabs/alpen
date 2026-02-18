@@ -15,6 +15,7 @@ pub struct SimpleWithdrawalIntentLogData {
     pub dest: VarVec<u8>,
 
     /// User's selected operator index for withdrawal assignment.
+    // TODO(STR-1861): encode as varint to reduce DA cost in checkpoint payloads.
     pub selected_operator: u32,
 }
 
