@@ -7,7 +7,7 @@
 use bitcoin::Transaction;
 use bitcoind_async_client::traits::Reader;
 use strata_asm_common::TxInputRef;
-use strata_asm_proto_checkpoint_txs::parser::extract_signed_checkpoint_from_envelope;
+use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
 use strata_codec::decode_buf_exact;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
@@ -52,27 +52,17 @@ where
 mod tests {
 
     use bitcoin::ScriptBuf;
-    use strata_asm_common::test_utils::create_reveal_transaction_stub;
-    use strata_asm_proto_checkpoint_txs::{
-        CHECKPOINT_V0_SUBPROTOCOL_ID, CheckpointTxError, OL_STF_CHECKPOINT_TX_TYPE,
-    };
+    use strata_asm_txs_checkpoint::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
+    use strata_asm_txs_test_utils::create_reveal_transaction_stub;
     use strata_l1_envelope_fmt::parser::parse_envelope_payload;
-    use strata_l1_txfmt::TagDataRef;
 
     use super::*;
     use crate::DaExtractorError;
 
-    /// Magic bytes for testing purposes.
-    const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
-
     /// Creates a checkpoint transaction with the given payload, subprotocol, tx type, and secret
     /// key.
-    fn make_checkpoint_tx(payload: &[u8], subprotocol: u8, tx_type: u8) -> Transaction {
-        let tag_data = TagDataRef::new(subprotocol, tx_type, &[]).expect("build tag");
-        let tag_script = ParseConfig::new(TEST_MAGIC_BYTES)
-            .encode_script_buf(&tag_data)
-            .expect("encode tag script");
-        create_reveal_transaction_stub(payload.to_vec(), tag_script.into_bytes())
+    fn make_checkpoint_tx(payload: &[u8]) -> Transaction {
+        create_reveal_transaction_stub(payload.to_vec(), &OL_STF_CHECKPOINT_TX_TAG)
     }
 
     /// Extracts the leaf script from a transaction.
@@ -97,11 +87,7 @@ mod tests {
         let payload = vec![0xAB; 1_300];
         assert!(payload.len() > 520, "payload must exceed single push limit");
 
-        let tx = make_checkpoint_tx(
-            &payload,
-            CHECKPOINT_V0_SUBPROTOCOL_ID,
-            OL_STF_CHECKPOINT_TX_TYPE,
-        );
+        let tx = make_checkpoint_tx(&payload);
 
         let script = extract_leaf_script(&tx).expect("extract envelope-bearing leaf script");
         let parsed_payload = parse_envelope_payload(&script).expect("parse envelope payload");

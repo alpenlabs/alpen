@@ -13,7 +13,7 @@ use strata_asm_common::{
     VerifiedAuxData, logging,
 };
 use strata_asm_logs::CheckpointUpdate;
-use strata_asm_proto_checkpoint_txs::{
+use strata_asm_txs_checkpoint_v0::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };

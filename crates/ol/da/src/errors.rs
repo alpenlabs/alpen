@@ -1,6 +1,6 @@
 use bitcoin::consensus::encode;
 use strata_acct_types::AccountSerial;
-use strata_asm_proto_checkpoint_txs::CheckpointTxError;
+use strata_asm_txs_checkpoint::CheckpointTxError;
 use strata_btc_types::BitcoinTxid;
 use strata_codec::CodecError;
 use strata_da_framework::DaError as FrameworkDaError;

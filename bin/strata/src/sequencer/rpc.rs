@@ -5,14 +5,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
+use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::writer::EnvelopeHandle;
 use strata_checkpoint_types_ssz::SignedCheckpointPayload;
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::OLCheckpointStatus;
 use strata_identifiers::{Epoch, OLBlockId};
-use strata_l1_txfmt::TagData;
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_types::RpcDuty;
@@ -104,13 +103,10 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             let signed_checkpoint =
                 SignedCheckpointPayload::new(entry.checkpoint.clone(), Buf64(sig.0));
             // TODO: verify sig
-            let checkpoint_tag = TagData::new(
-                CHECKPOINT_V0_SUBPROTOCOL_ID,
-                OL_STF_CHECKPOINT_TX_TYPE,
-                vec![],
-            )
-            .map_err(|e| internal_error(e.to_string()))?;
-            let payload = L1Payload::new(vec![signed_checkpoint.as_ssz_bytes()], checkpoint_tag);
+            let payload = L1Payload::new(
+                vec![signed_checkpoint.as_ssz_bytes()],
+                OL_STF_CHECKPOINT_TX_TAG.clone(),
+            );
             let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
 
             let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);

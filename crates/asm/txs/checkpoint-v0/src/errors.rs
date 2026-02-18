@@ -1,3 +1,4 @@
+use borsh::io::Error as BorshIoError;
 use ssz::DecodeError;
 use strata_l1_envelope_fmt::errors::EnvelopeParseError;
 use thiserror::Error;
@@ -20,6 +21,10 @@ pub enum CheckpointTxError {
     /// Failed to parse the envelope script structure.
     #[error("failed to parse checkpoint envelope script: {0}")]
     EnvelopeParse(#[from] EnvelopeParseError),
+
+    /// Failed to deserialize data embedded inside the envelope.
+    #[error("failed to deserialize checkpoint payload")]
+    Deserialization(#[source] BorshIoError),
 
     /// Failed to deserialize SSZ checkpoint payload.
     #[error("failed to deserialize checkpoint payload: {0:?}")]

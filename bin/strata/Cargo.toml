@@ -6,11 +6,10 @@ edition = "2024"
 [features]
 default = ["sequencer"]
 sequencer = [
-  "dep:strata-asm-proto-checkpoint-txs",
+  "dep:strata-asm-txs-checkpoint",
   "dep:strata-checkpoint-types-ssz",
   "dep:strata-crypto",
   "dep:strata-key-derivation",
-  "dep:strata-l1-txfmt",
   "dep:strata-ol-block-assembly",
   "dep:strata-ol-sequencer",
   "dep:zeroize",
@@ -18,7 +17,7 @@ sequencer = [
 
 [dependencies]
 ssz.workspace = true
-strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
+strata-asm-txs-checkpoint = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btcio.workspace = true
 strata-chain-worker-new.workspace = true
@@ -33,7 +32,6 @@ strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-key-derivation = { workspace = true, optional = true }
-strata-l1-txfmt = { workspace = true, optional = true }
 strata-ledger-types.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }

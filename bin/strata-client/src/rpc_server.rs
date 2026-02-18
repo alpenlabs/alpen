@@ -5,8 +5,8 @@ use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction,
 use futures::{future, TryFutureExt};
 use jsonrpsee::core::RpcResult;
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
-use strata_asm_proto_checkpoint_txs::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
+use strata_asm_txs_checkpoint_v0::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_bridge_types::{PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};

@@ -2,16 +2,11 @@ use bitcoin::{
     Transaction,
     secp256k1::{Message, SECP256K1, SecretKey},
 };
-use strata_asm_common::test_utils::create_reveal_transaction_stub;
+use strata_asm_txs_test_utils::create_reveal_transaction_stub;
 use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
-use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 
-pub(crate) const TEST_MAGIC_BYTES: MagicBytes = MagicBytes::new(*b"ALPN");
-
-use crate::{
-    actions::MultisigAction, constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::SignedPayload,
-};
+use crate::{actions::MultisigAction, parser::SignedPayload};
 
 /// Creates an ECDSA signature with recoverable public key for a message hash.
 ///
@@ -88,17 +83,10 @@ pub fn create_test_admin_tx(
     let signed_payload = SignedPayload::new(action.clone(), signature_set);
     let envelope_payload = borsh::to_vec(&signed_payload).expect("borsh serialization failed");
 
-    // Create the minimal SPS-50 tag for OP_RETURN (no aux data needed)
-    // Format: [MAGIC_BYTES][SUBPROTOCOL_ID][TX_TYPE]
-    let mut tagged_payload = Vec::new();
-    tagged_payload.extend_from_slice(TEST_MAGIC_BYTES.as_bytes()); // 4 bytes magic
-    tagged_payload.extend_from_slice(&ADMINISTRATION_SUBPROTOCOL_ID.to_be_bytes()); // 1 byte subprotocol ID
-    tagged_payload.extend_from_slice(&[action.tx_type()]); // 1 byte TxType
-
     // Create a minimal reveal transaction structure
     // This is a simplified version - in practice, this would be created as part of
     // a proper commit-reveal transaction pair using the btcio writer infrastructure
-    create_reveal_transaction_stub(envelope_payload, tagged_payload)
+    create_reveal_transaction_stub(envelope_payload, &action.tag())
 }
 
 #[cfg(test)]
@@ -108,6 +96,7 @@ mod tests {
     use bitcoin::secp256k1::PublicKey;
     use rand::rngs::OsRng;
     use strata_asm_common::TxInputRef;
+    use strata_asm_txs_test_utils::TEST_MAGIC_BYTES;
     use strata_crypto::{
         keys::compressed::CompressedPublicKey,
         threshold_signature::{ThresholdConfig, verify_threshold_signatures},

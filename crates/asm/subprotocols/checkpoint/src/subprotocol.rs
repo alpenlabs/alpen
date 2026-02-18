@@ -6,9 +6,8 @@ use strata_asm_common::{
     VerifiedAuxData, logging,
 };
 use strata_asm_params::CheckpointConfig;
-use strata_asm_proto_checkpoint_txs::{
-    CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
-    parser::extract_signed_checkpoint_from_envelope,
+use strata_asm_txs_checkpoint::{
+    CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_signed_checkpoint_from_envelope,
 };
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
@@ -27,7 +26,7 @@ use crate::{handler::handle_checkpoint_tx, state::CheckpointState};
 pub struct CheckpointSubprotocol;
 
 impl Subprotocol for CheckpointSubprotocol {
-    const ID: SubprotocolId = CHECKPOINT_V0_SUBPROTOCOL_ID;
+    const ID: SubprotocolId = CHECKPOINT_SUBPROTOCOL_ID;
 
     type Params = CheckpointConfig;
     type State = CheckpointState;

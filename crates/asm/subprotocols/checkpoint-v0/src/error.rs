@@ -1,6 +1,6 @@
 //! Error types for checkpoint v0 subprotocol
 
-use strata_asm_proto_checkpoint_txs::CheckpointTxError;
+use strata_asm_txs_checkpoint_v0::CheckpointTxError;
 use strata_identifiers::Epoch;
 use thiserror::Error;
 

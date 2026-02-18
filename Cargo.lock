@@ -13685,7 +13685,7 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "ssz",
- "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-checkpoint",
  "strata-asm-worker",
  "strata-btcio",
  "strata-chain-worker-new",
@@ -13700,7 +13700,6 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-key-derivation",
- "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-node-context",
  "strata-ol-block-assembly",
@@ -13767,7 +13766,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "strata-asm-common",
- "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-checkpoint-v0",
  "strata-predicate",
  "strata-primitives",
 ]
@@ -13778,7 +13777,6 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "borsh",
- "rand 0.8.5",
  "serde",
  "strata-asm-manifest-types",
  "strata-asm-types",
@@ -13917,7 +13915,7 @@ dependencies = [
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-params",
- "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-checkpoint",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-crypto",
@@ -13930,22 +13928,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-checkpoint-txs"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "borsh",
- "ssz",
- "strata-asm-common",
- "strata-bridge-types",
- "strata-checkpoint-types",
- "strata-checkpoint-types-ssz",
- "strata-l1-envelope-fmt",
- "strata-ol-chainstate-types",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "strata-asm-proto-checkpoint-v0"
 version = "0.1.0"
 dependencies = [
@@ -13954,7 +13936,7 @@ dependencies = [
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-checkpoint-v0",
  "strata-checkpoint-types",
  "strata-identifiers",
  "strata-predicate",
@@ -14025,6 +14007,7 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-common",
  "strata-asm-params",
+ "strata-asm-txs-test-utils",
  "strata-crypto",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
@@ -14043,6 +14026,7 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "strata-asm-common",
+ "strata-asm-txs-test-utils",
  "strata-bridge-types",
  "strata-codec",
  "strata-crypto",
@@ -14051,6 +14035,45 @@ dependencies = [
  "strata-test-utils",
  "strata-test-utils-btcio",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-asm-txs-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "ssz",
+ "strata-asm-common",
+ "strata-checkpoint-types-ssz",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-asm-txs-checkpoint-v0"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "ssz",
+ "strata-asm-common",
+ "strata-bridge-types",
+ "strata-checkpoint-types",
+ "strata-l1-envelope-fmt",
+ "strata-ol-chainstate-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-asm-txs-test-utils"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "rand 0.8.5",
+ "strata-asm-common",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
 ]
 
 [[package]]
@@ -14311,8 +14334,8 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "strata-asm-proto-bridge-v1",
- "strata-asm-proto-checkpoint-txs",
  "strata-asm-txs-bridge-v1",
+ "strata-asm-txs-checkpoint-v0",
  "strata-bridge-types",
  "strata-btcio",
  "strata-checkpoint-types",
@@ -15050,7 +15073,8 @@ dependencies = [
  "bitcoind-async-client",
  "strata-acct-types",
  "strata-asm-common",
- "strata-asm-proto-checkpoint-txs",
+ "strata-asm-txs-checkpoint",
+ "strata-asm-txs-test-utils",
  "strata-btc-types",
  "strata-codec",
  "strata-da-framework",

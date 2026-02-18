@@ -1,5 +1,5 @@
 [package]
-name = "strata-asm-txs-checkpoint"
+name = "strata-asm-txs-checkpoint-v0"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,9 +9,11 @@ workspace = true
 [dependencies]
 ssz.workspace = true
 strata-asm-common.workspace = true
-strata-checkpoint-types-ssz.workspace = true
+strata-bridge-types.workspace = true
+strata-checkpoint-types.workspace = true
 strata-l1-envelope-fmt.workspace = true
-strata-l1-txfmt.workspace = true
+strata-ol-chainstate-types.workspace = true
 
 bitcoin.workspace = true
+borsh.workspace = true
 thiserror.workspace = true

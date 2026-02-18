@@ -16,7 +16,6 @@ strata-msg-fmt.workspace = true
 
 bitcoin.workspace = true
 borsh.workspace = true
-rand = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
@@ -24,6 +23,3 @@ tracing.workspace = true
 [dev-dependencies]
 strata-identifiers.workspace = true
 strata-test-utils.workspace = true
-
-[features]
-test-utils = ["dep:rand"]

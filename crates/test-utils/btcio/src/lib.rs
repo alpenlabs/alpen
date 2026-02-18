@@ -20,4 +20,3 @@ pub use harness::BtcioTestHarness;
 pub use mining::mine_blocks;
 pub use submit::{submit_transaction_with_key, submit_transaction_with_keys};
 pub use transaction::broadcast_transaction;
-pub use utils::create_dummy_tx;
