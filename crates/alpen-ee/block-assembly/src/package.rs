@@ -8,7 +8,7 @@ use strata_ee_chain_types::{
     BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage, SubjectDepositData,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
-use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
+use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
 use tracing::warn;
 
 /// Builds [`BlockInputs`] from parsed input messages.
@@ -79,8 +79,12 @@ fn create_withdrawal_init_message_payload(
     selected_operator: u32,
 ) -> MsgPayload {
     // Encode the deposit message data
-    let withdrawal_data = WithdrawalMsgData::new(0, dest_desc.to_bytes(), selected_operator)
-        .expect("valid descriptor");
+    let withdrawal_data = WithdrawalMsgData::new(
+        DEFAULT_OPERATOR_FEE,
+        dest_desc.to_bytes(),
+        selected_operator,
+    )
+    .expect("valid descriptor");
     let body = encode_to_vec(&withdrawal_data).expect("encode withdrawal data");
 
     // Create properly formatted message

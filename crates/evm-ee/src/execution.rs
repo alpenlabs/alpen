@@ -21,7 +21,7 @@ use strata_ee_acct_types::{
     ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
-use strata_ol_msg_types::WithdrawalMsgData;
+use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WithdrawalMsgData};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
@@ -52,9 +52,8 @@ fn convert_withdrawal_intents_to_messages(
     outputs: &mut BlockOutputs,
 ) {
     for intent in withdrawal_intents {
-        // Create withdrawal message data with fees=0 (currently ignored) and destination descriptor
         let withdrawal_msg = WithdrawalMsgData::new(
-            0,
+            DEFAULT_OPERATOR_FEE,
             intent.destination.to_bytes().to_vec(),
             intent.selected_operator,
         )

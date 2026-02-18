@@ -18,6 +18,9 @@ pub const MAX_WITHDRAWAL_DESC_LEN: usize = 255;
 /// Sentinel value indicating no selected operator for withdrawal assignment.
 pub const NO_SELECTED_OPERATOR: u32 = u32::MAX;
 
+// TODO: allow users to specify operator fee
+pub const DEFAULT_OPERATOR_FEE: u32 = 0;
+
 /// Message data for withdrawal initiation to the bridge gateway account.
 ///
 /// This message type is sent by accounts that want to trigger a withdrawal.
