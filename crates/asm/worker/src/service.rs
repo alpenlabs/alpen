@@ -97,8 +97,12 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         // Special handling for genesis block - its anchor state was created during init
         // but its manifest wasn't (because Bitcoin block wasn't available yet).
-        // This must happen BEFORE processing skipped_blocks so genesis gets index 0.
-        // Only create it if it doesn't exist yet (idempotency check via MMR leaf index 0).
+        // We only store the manifest to L1 (for data consumers) but do NOT append it
+        // to the external MMR, since the internal compact MMR in AnchorState starts
+        // empty with offset = genesis_height + 1. Appending genesis here would shift
+        // all external MMR indices by 1 relative to the internal accumulator.
+        // Idempotency: skip if the external MMR already has a leaf (implies genesis
+        // manifest was stored in a previous run).
         if pivot_block.height() == genesis_height && ctx.get_manifest_hash(0)?.is_none() {
             let genesis_span = info_span!("asm.genesis_manifest",
                 pivot_height = pivot_block.height().to_consensus_u32(),
@@ -128,11 +132,9 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                 vec![], // TODO: this is not supposed to be empty right?
             );
 
-            let manifest_hash = genesis_manifest.compute_hash();
             ctx.store_l1_manifest(genesis_manifest)?;
-            let leaf_index = ctx.append_manifest_to_mmr(manifest_hash.into())?;
 
-            info!(%pivot_block, leaf_index, "Created genesis manifest");
+            info!(%pivot_block, "Created genesis manifest");
         } // genesis_span drops here
 
         state.update_anchor_state(pivot_anchor.unwrap(), pivot_block);

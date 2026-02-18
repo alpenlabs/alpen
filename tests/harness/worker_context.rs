@@ -10,6 +10,7 @@ use std::{
 
 use bitcoin::{absolute::Height, block::Header, Block, BlockHash, Network, Txid};
 use bitcoind_async_client::{traits::Reader, Client};
+use strata_asm_manifest_types::AsmManifest;
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
 use strata_btc_types::{GenesisL1View, RawBitcoinTx};
 use strata_primitives::{
@@ -40,6 +41,8 @@ pub struct TestAsmWorkerContext {
     pub mmr_leaves: Arc<Mutex<Vec<[u8; 32]>>>,
     /// Manifest hash lookup by index
     pub manifest_hashes: Arc<Mutex<HashMap<u64, [u8; 32]>>>,
+    /// Stored manifests in insertion order
+    pub manifests: Arc<Mutex<Vec<AsmManifest>>>,
 }
 
 impl TestAsmWorkerContext {
@@ -52,6 +55,7 @@ impl TestAsmWorkerContext {
             latest_asm_state: Arc::new(Mutex::new(None)),
             mmr_leaves: Arc::new(Mutex::new(Vec::new())),
             manifest_hashes: Arc::new(Mutex::new(HashMap::new())),
+            manifests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -170,7 +174,13 @@ impl WorkerContext for TestAsmWorkerContext {
     fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64> {
         let mut leaves = self.mmr_leaves.lock().unwrap();
         let index = leaves.len() as u64;
-        leaves.push(*manifest_hash.as_ref());
+        let hash_bytes = *manifest_hash.as_ref();
+        leaves.push(hash_bytes);
+        // Keep manifest_hashes in sync so get_manifest_hash lookups work.
+        self.manifest_hashes
+            .lock()
+            .unwrap()
+            .insert(index, hash_bytes);
         Ok(index)
     }
 
@@ -189,11 +199,8 @@ impl WorkerContext for TestAsmWorkerContext {
             .map(|h| Buf32::from(*h)))
     }
 
-    fn store_l1_manifest(
-        &self,
-        _manifest: strata_asm_manifest_types::AsmManifest,
-    ) -> WorkerResult<()> {
-        // Test implementation - no-op for now as we don't need manifest storage in tests
+    fn store_l1_manifest(&self, manifest: AsmManifest) -> WorkerResult<()> {
+        self.manifests.lock().unwrap().push(manifest);
         Ok(())
     }
 }
