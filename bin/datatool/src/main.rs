@@ -14,6 +14,7 @@ use zkaleido_sp1_groth16_verifier as _;
 mod args;
 #[cfg(feature = "btc-client")]
 mod btc_client;
+mod checkpoint_predicate;
 mod cmd;
 mod util;
 

@@ -18,6 +18,7 @@ use strata_primitives::{block_credential, buf::Buf32, l1::GenesisL1View};
 
 use crate::{
     args::{CmdContext, SubcParams},
+    checkpoint_predicate::resolve_checkpoint_predicate,
     util::parse_abbr_amt,
 };
 
@@ -51,7 +52,11 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
     };
 
     // Get genesis L1 view first (before moving other fields)
-    let genesis_l1_view = retrieve_genesis_l1_view(&cmd, ctx)?;
+    let genesis_l1_view = retrieve_genesis_l1_view(
+        cmd.genesis_l1_view_file.as_deref(),
+        cmd.genesis_l1_height,
+        ctx,
+    )?;
 
     // Parse each of the operator keys.
     let mut opkeys = Vec::new();
@@ -143,33 +148,6 @@ fn export_elf(_elf_path: &Path) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// Returns the appropriate [`PredicateKey`] based on the enabled features.
-///
-/// If the **sp1** feature is enabled, returns an Sp1Groth16 PredicateKey.
-/// Otherwise, returns an AlwaysAccept PredicateKey.
-fn resolve_checkpoint_predicate() -> PredicateKey {
-    // Use SP1 if `sp1` feature is enabled
-    #[cfg(feature = "sp1-builder")]
-    {
-        use strata_predicate::PredicateTypeId;
-        use strata_sp1_guest_builder::GUEST_CHECKPOINT_VK_HASH_STR;
-        use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
-        let vk_buf32: Buf32 = GUEST_CHECKPOINT_VK_HASH_STR
-            .parse()
-            .expect("invalid sp1 checkpoint verifier key hash");
-        let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0)
-            .expect("Failed to load SP1 Groth16 verifier");
-        let condition_bytes = sp1_verifier.vk.to_uncompressed_bytes();
-        PredicateKey::new(PredicateTypeId::Sp1Groth16, condition_bytes)
-    }
-
-    // If `sp1` is not enabled, use the AlwaysAccept predicate
-    #[cfg(not(feature = "sp1-builder"))]
-    {
-        PredicateKey::always_accept()
-    }
 }
 
 /// Inputs for constructing the network parameters.
@@ -265,9 +243,13 @@ fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockIn
 /// 1. If `genesis_l1_view_file` is provided, load from that JSON file
 /// 2. If `btc-client` feature is enabled and RPC credentials are available, fetch from Bitcoin node
 /// 3. Otherwise, return an error
-fn retrieve_genesis_l1_view(cmd: &SubcParams, ctx: &CmdContext) -> anyhow::Result<GenesisL1View> {
+pub(super) fn retrieve_genesis_l1_view(
+    genesis_l1_view_file: Option<&str>,
+    genesis_l1_height: Option<u64>,
+    ctx: &CmdContext,
+) -> anyhow::Result<GenesisL1View> {
     // Priority 1: Use file if provided
-    if let Some(ref file) = cmd.genesis_l1_view_file {
+    if let Some(file) = genesis_l1_view_file {
         let content = fs::read_to_string(file).map_err(|e| {
             anyhow::anyhow!("Failed to read genesis L1 view file {:?}: {}", file, e)
         })?;
@@ -288,7 +270,7 @@ fn retrieve_genesis_l1_view(cmd: &SubcParams, ctx: &CmdContext) -> anyhow::Resul
 
             return runtime::Runtime::new()?.block_on(fetch_genesis_l1_view_with_config(
                 config,
-                cmd.genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
+                genesis_l1_height.unwrap_or(DEFAULT_L1_GENESIS_HEIGHT),
             ));
         }
     }
