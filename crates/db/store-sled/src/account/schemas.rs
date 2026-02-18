@@ -1,7 +1,6 @@
 //! Schema definitions for the account genesis database.
 
-use strata_identifiers::AccountId;
-use strata_primitives::OLBlockId;
+use strata_identifiers::{AccountId, Epoch};
 
 use crate::{define_table_with_default_codec, define_table_without_codec, impl_borsh_value_codec};
 
@@ -11,7 +10,7 @@ define_table_with_default_codec!(
 );
 
 define_table_with_default_codec!(
-    /// Maps [`(AccountId, OLBlockId)`] tuple to extra data bytes.
+    /// Maps [`(AccountId, Epoch)`] tuple to extra data bytes.
     /// Stores additional account data associated with specific OL blocks.
-    (AccountExtraDataSchema) (AccountId, OLBlockId) => Vec<u8>
+    (AccountExtraDataSchema) (AccountId, Epoch) => Vec<u8>
 );

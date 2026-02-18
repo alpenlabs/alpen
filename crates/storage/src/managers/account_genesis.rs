@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use ops::account_genesis::{AccountOps, Context};
+use ops::account::{AccountOps, Context};
 use strata_db_types::{traits::AccountDatabase, DbResult};
 use strata_identifiers::{AccountId, Epoch};
-use strata_primitives::OLBlockId;
 use threadpool::ThreadPool;
 
 use crate::ops;
@@ -47,7 +46,7 @@ impl AccountManager {
     /// Inserts account extra data by blocking.
     pub fn insert_account_extra_data_blocking(
         &self,
-        key: (AccountId, OLBlockId),
+        key: (AccountId, Epoch),
         extra_data: Vec<u8>,
     ) -> DbResult<()> {
         self.ops.insert_account_extra_data_blocking(key, extra_data)
@@ -56,7 +55,7 @@ impl AccountManager {
     /// Inserts account extra data async.
     pub async fn insert_account_extra_data_async(
         &self,
-        key: (AccountId, OLBlockId),
+        key: (AccountId, Epoch),
         extra_data: Vec<u8>,
     ) -> DbResult<()> {
         self.ops
@@ -67,7 +66,7 @@ impl AccountManager {
     /// Gets account extra data by blocking.
     pub fn get_account_extra_data_blocking(
         &self,
-        key: (AccountId, OLBlockId),
+        key: (AccountId, Epoch),
     ) -> DbResult<Option<Vec<u8>>> {
         self.ops.get_account_extra_data_blocking(key)
     }
@@ -75,7 +74,7 @@ impl AccountManager {
     /// Gets account extra data async.
     pub async fn get_account_extra_data_async(
         &self,
-        key: (AccountId, OLBlockId),
+        key: (AccountId, Epoch),
     ) -> DbResult<Option<Vec<u8>>> {
         self.ops.get_account_extra_data_async(key).await
     }

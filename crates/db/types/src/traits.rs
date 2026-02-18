@@ -601,15 +601,18 @@ pub trait AccountDatabase: Send + Sync + 'static {
     /// Gets the creation epoch for an account, if recorded.
     fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
 
-    /// Inserts account extra data for a given OL Block.
+    /// Inserts account extra data for a given epoch index.
+    // NOTE: This gets updated in every OL block where there is snark update for the account.
+    // NOTE: We only want the extra data for an epoch and not per-block so this should suffice.
+    // TODO: Make this more robust by associating with epoch commitment instead of epoch index.
     fn insert_account_extra_data(
         &self,
-        key: (AccountId, OLBlockId),
+        key: (AccountId, Epoch),
         extra_data: Vec<u8>,
     ) -> DbResult<()>;
 
     /// Gets the account extra data for given account and OLBlockId.
-    fn get_account_extra_data(&self, key: (AccountId, OLBlockId)) -> DbResult<Option<Vec<u8>>>;
+    fn get_account_extra_data(&self, key: (AccountId, Epoch)) -> DbResult<Option<Vec<u8>>>;
 }
 
 /// Database interface for OL mempool transactions.
