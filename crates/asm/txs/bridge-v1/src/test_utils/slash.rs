@@ -1,12 +1,10 @@
 use bitcoin::{Amount, OutPoint, Transaction};
+use strata_asm_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
 use strata_crypto::EvenSecretKey;
 use strata_l1_txfmt::ParseConfig;
 use strata_test_utils_btcio::{BtcioTestHarness, address::derive_musig2_p2tr_address};
 
-use crate::{
-    slash::{SlashInfo, SlashTxHeaderAux},
-    test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
-};
+use crate::slash::{SlashInfo, SlashTxHeaderAux};
 
 /// Creates a slash transaction for testing purposes.
 pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {

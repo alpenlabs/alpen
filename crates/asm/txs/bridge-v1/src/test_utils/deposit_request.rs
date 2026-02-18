@@ -1,10 +1,8 @@
 use bitcoin::{Amount, Transaction, XOnlyPublicKey};
+use strata_asm_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
 use strata_l1_txfmt::ParseConfig;
 
-use crate::{
-    deposit_request::{DrtHeaderAux, create_deposit_request_locking_script},
-    test_utils::{TEST_MAGIC_BYTES, create_dummy_tx},
-};
+use crate::deposit_request::{DrtHeaderAux, create_deposit_request_locking_script};
 
 /// Creates a deposit request transaction with the correct outputs and the provided SPS50 metadata.
 pub fn create_test_deposit_request_tx(

@@ -9,7 +9,9 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-params = { workspace = true, features = ["arbitrary"] }
+strata-asm-txs-test-utils = { workspace = true, optional = true }
 strata-crypto.workspace = true
+strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
 strata-predicate = { workspace = true, features = ["arbitrary"] }
 strata-primitives.workspace = true
@@ -17,18 +19,16 @@ strata-primitives.workspace = true
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
 borsh.workspace = true
-strata-l1-envelope-fmt.workspace = true
 thiserror.workspace = true
 
 [features]
 test-utils = [
   "dep:bitcoin",
   "strata-crypto/test-utils",
-  "strata-asm-common/test-utils",
+  "dep:strata-asm-txs-test-utils",
 ]
 
 [dev-dependencies]
 rand.workspace = true
 
 strata-test-utils.workspace = true
-strata-asm-common = { workspace = true, features = ["test-utils"] }

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use bitcoin::{Address, Amount, OutPoint, Transaction, hashes::Hash};
+use strata_asm_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
 use strata_crypto::{EvenSecretKey, test_utils::schnorr::Musig2Tweak};
 use strata_l1_txfmt::ParseConfig;
 use strata_test_utils_btcio::{BtcioTestHarness, address::derive_musig2_p2tr_address};
@@ -10,7 +11,7 @@ use strata_test_utils_btcio::{BtcioTestHarness, address::derive_musig2_p2tr_addr
 use crate::{
     deposit::DepositTxHeaderAux,
     deposit_request::{DRT_OUTPUT_INDEX, DrtHeaderAux, build_deposit_request_spend_info},
-    test_utils::{TEST_MAGIC_BYTES, create_dummy_tx, create_test_deposit_request_tx},
+    test_utils::create_test_deposit_request_tx,
 };
 
 /// Creates a deposit request transaction and its matching deposit transaction, wiring them
