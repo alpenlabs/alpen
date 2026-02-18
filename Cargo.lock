@@ -13700,7 +13700,6 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-key-derivation",
- "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-node-context",
  "strata-ol-block-assembly",
@@ -14046,6 +14045,7 @@ dependencies = [
  "strata-asm-common",
  "strata-checkpoint-types-ssz",
  "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
  "thiserror 2.0.18",
 ]
 

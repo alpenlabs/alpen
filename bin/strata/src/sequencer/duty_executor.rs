@@ -4,14 +4,13 @@ use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use ssz::Encode;
-use strata_asm_txs_checkpoint::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
+use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::writer::EnvelopeHandle;
 use strata_checkpoint_types_ssz::SignedCheckpointPayload;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::OLCheckpointStatus;
-use strata_l1_txfmt::TagData;
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_sequencer::{BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty};
 use strata_primitives::buf::Buf32;
@@ -174,10 +173,11 @@ async fn handle_sign_checkpoint_duty(
 
     let sig = sign_checkpoint(duty.checkpoint(), sequencer_key);
     let signed_checkpoint = SignedCheckpointPayload::new(duty.checkpoint().clone(), sig);
-    let checkpoint_tag = TagData::new(CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, vec![])
-        .map_err(|e| anyhow!("failed to build checkpoint tag: {e}"))?;
 
-    let payload = L1Payload::new(vec![signed_checkpoint.as_ssz_bytes()], checkpoint_tag);
+    let payload = L1Payload::new(
+        vec![signed_checkpoint.as_ssz_bytes()],
+        OL_STF_CHECKPOINT_TX_TAG.clone(),
+    );
     let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
     let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
 
