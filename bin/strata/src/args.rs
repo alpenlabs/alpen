@@ -54,6 +54,10 @@ pub(crate) struct Args {
     #[argh(option, description = "OL genesis params")]
     pub ol_params: Option<PathBuf>,
 
+    /// Path to ASM params JSON file.
+    #[argh(option, description = "asm params")]
+    pub asm_params: Option<PathBuf>,
+
     /// Rpc host that the client will listen to.
     #[argh(option, description = "rpc host")]
     pub rpc_host: Option<String>,

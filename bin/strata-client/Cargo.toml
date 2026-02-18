@@ -11,6 +11,7 @@ name = "strata-client"
 path = "src/main.rs"
 
 [dependencies]
+strata-asm-params.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
 strata-asm-txs-checkpoint-v0.workspace = true

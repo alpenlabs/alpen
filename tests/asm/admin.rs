@@ -463,7 +463,7 @@ async fn test_multiple_updates_same_block() {
 
     // Verify all 3 transactions were included in the block
     let block = harness.client.get_block(&block_hash).await.unwrap();
-    let parser = ParseConfig::new(harness.params.magic_bytes);
+    let parser = ParseConfig::new(harness.rollup_params.magic_bytes);
     let admin_tx_count = block
         .txdata
         .iter()

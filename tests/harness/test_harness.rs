@@ -52,6 +52,7 @@ use bitcoind_async_client::{
 };
 use corepc_node::Node;
 use rand::RngCore;
+use strata_asm_params::AsmParams;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
 use strata_params::RollupParams;
@@ -61,6 +62,7 @@ use strata_primitives::{
 };
 use strata_state::{asm_state::AsmState, BlockSubmitter};
 use strata_tasks::{TaskExecutor, TaskManager};
+use strata_test_utils::ArbitraryGenerator;
 use tokio::{runtime::Handle, task::block_in_place, time::sleep};
 
 use super::worker_context::{get_genesis_l1_view, TestAsmWorkerContext};
@@ -91,7 +93,9 @@ pub struct AsmTestHarness {
     /// ASM worker context for querying state
     pub context: TestAsmWorkerContext,
     /// Rollup parameters
-    pub params: Arc<RollupParams>,
+    pub rollup_params: Arc<RollupParams>,
+    /// ASM-specific parameters
+    pub asm_params: Arc<AsmParams>,
     /// Task executor for spawning tasks
     pub executor: TaskExecutor,
     /// Genesis block height
@@ -124,23 +128,29 @@ impl AsmTestHarness {
         let genesis_hash = client.get_block_hash(genesis_height).await?;
 
         // 3. Setup parameters
-        let mut params = strata_test_utils_l2::gen_params().rollup;
-        params.network = Network::Regtest;
+        let mut rollup_params = strata_test_utils_l2::gen_params().rollup;
+        rollup_params.network = Network::Regtest;
         let genesis_view = get_genesis_l1_view(&client, &genesis_hash).await?;
-        params.genesis_l1_view = genesis_view;
-        let params = Arc::new(params);
+        rollup_params.genesis_l1_view = genesis_view.clone();
+        let rollup_params = Arc::new(rollup_params);
 
-        // 4. Create worker context
+        // 4. Build AsmParams via arbitrary, then override magic and l1_view
+        let mut asm_params: AsmParams = ArbitraryGenerator::new().generate();
+        asm_params.magic = rollup_params.magic_bytes;
+        asm_params.l1_view = genesis_view;
+        let asm_params = Arc::new(asm_params);
+
+        // 5. Create worker context
         let context = TestAsmWorkerContext::new((*client).clone());
 
-        // 5. Create task executor
+        // 6. Create task executor
         let task_manager = TaskManager::new(Handle::current());
         let executor = task_manager.create_executor();
 
-        // 6. Launch ASM worker service
+        // 7. Launch ASM worker service
         let asm_handle = AsmWorkerBuilder::new()
             .with_context(context.clone())
-            .with_params(params.clone())
+            .with_params(rollup_params.clone())
             .launch(&executor)?;
 
         let harness = Self {
@@ -148,7 +158,8 @@ impl AsmTestHarness {
             client,
             asm_handle,
             context,
-            params,
+            rollup_params,
+            asm_params,
             executor,
             genesis_height,
         };
@@ -500,7 +511,7 @@ impl AsmTestHarness {
 
         // Build SPS-50 compliant OP_RETURN tag using TagData and ParseConfig
         let tag_data = TagDataRef::new(subprotocol_id, tx_type, &[])?;
-        let parse_config = ParseConfig::new(self.params.magic_bytes);
+        let parse_config = ParseConfig::new(self.asm_params.magic);
         let op_return_script = parse_config.encode_script_buf(&tag_data)?;
 
         let op_return_output = TxOut {

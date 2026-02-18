@@ -10,6 +10,7 @@ use bitcoind_async_client::{traits::Reader, Client};
 use errors::InitError;
 use jsonrpsee::{server, Methods};
 use rpc_client::sync_client;
+use strata_asm_params::AsmParams;
 use strata_btcio::{
     broadcaster::{spawn_broadcaster_task, L1BroadcastHandle},
     reader::query::bitcoin_data_reader_task,
@@ -86,6 +87,13 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
     let params = resolve_and_validate_params(args.rollup_params.as_deref(), &config)
         .map_err(anyhow::Error::from)?;
 
+    // Load ASM params.
+    let asm_params_path = args
+        .asm_params
+        .as_ref()
+        .ok_or_else(|| anyhow!("missing --asm-params path"))?;
+    let asm_params: Arc<AsmParams> = Arc::new(load_asm_params(asm_params_path)?);
+
     // Init the task manager and logging before we do anything else.
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -123,6 +131,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         pool,
         &config,
         params.clone(),
+        asm_params,
         database.clone(),
         storage.clone(),
         bitcoin_client,
@@ -317,11 +326,16 @@ fn do_startup_checks(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "legacy function, will be refactored"
+)]
 fn start_core_tasks(
     executor: &TaskExecutor,
     pool: threadpool::ThreadPool,
     config: &Config,
     params: Arc<Params>,
+    asm_params: Arc<AsmParams>,
     database: Arc<SledBackend>,
     storage: Arc<NodeStorage>,
     bitcoin_client: Arc<Client>,
@@ -350,6 +364,7 @@ fn start_core_tasks(
         bitcoin_client.clone(),
         engine.clone(),
         params.clone(),
+        asm_params,
         status_channel.clone(),
     )?
     .into();

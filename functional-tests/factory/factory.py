@@ -122,6 +122,7 @@ class StrataFactory(flexitest.Factory):
             "--datadir", datadir,
             "--config", config_file,
             "--rollup-params", rollup_params_file,
+            "--asm-params", asm_params_file,
             "--rpc-host", rpc_host,
             "--rpc-port", str(rpc_port),
 
