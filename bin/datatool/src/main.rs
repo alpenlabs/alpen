@@ -14,10 +14,11 @@ use zkaleido_sp1_groth16_verifier as _;
 mod args;
 #[cfg(feature = "btc-client")]
 mod btc_client;
+mod cmd;
 mod util;
 
 use args::resolve_context_and_subcommand;
-use util::exec_subc;
+use cmd::exec_subc;
 
 fn main() {
     let args: args::Args = argh::from_env();
