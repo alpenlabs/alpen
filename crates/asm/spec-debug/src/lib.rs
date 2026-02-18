@@ -11,6 +11,7 @@ use strata_asm_proto_checkpoint_v0::CheckpointV0Params;
 use strata_asm_proto_debug_v1::DebugSubproto;
 use strata_asm_spec::StrataAsmSpec;
 use strata_l1_txfmt::MagicBytes;
+use strata_params::RollupParams;
 
 /// Debug ASM specification that includes the debug subprotocol.
 ///
@@ -63,6 +64,14 @@ impl DebugAsmSpec {
             bridge_v1_genesis,
             admin_params,
         );
+        Self { inner }
+    }
+
+    /// Creates a debug ASM spec from rollup parameters.
+    ///
+    /// Mirrors [`StrataAsmSpec::from_params`] but wraps the result with debug capabilities.
+    pub fn from_params(params: &RollupParams) -> Self {
+        let inner = StrataAsmSpec::from_params(params);
         Self { inner }
     }
 }

@@ -6,7 +6,11 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+debug-asm = ["dep:strata-asm-spec-debug"]
+
 [dependencies]
+strata-asm-spec-debug = { workspace = true, optional = true }
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-spec.workspace = true
