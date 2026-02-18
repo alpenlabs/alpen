@@ -1,7 +1,9 @@
 use argh::FromArgs;
 
 use super::{
+    build_snark_withdrawal::BuildSnarkWithdrawalArgs,
     convert_to_xonly_pk::ConvertToXonlyPkArgs, create_deposit_tx::CreateDepositTxArgs,
+    create_mock_deposit::CreateMockDepositArgs,
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
     extract_p2tr_pubkey::ExtractP2trPubkeyArgs, get_address::GetAddressArgs,
     musig_aggregate_pks::MusigAggregatePksArgs, sign_schnorr_sig::SignSchnorrSigArgs,
@@ -17,7 +19,7 @@ pub struct TopLevel {
 
 /// Available subcommands for the CLI.
 ///
-/// Each variant represents a distinct operation for testing Strata bridge functionality.
+/// Each variant represents a distinct operation for testing Strata functionality.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum Commands {
@@ -26,6 +28,12 @@ pub enum Commands {
 
     /// Create a withdrawal fulfillment transaction (WFT) for bridge withdrawals
     CreateWithdrawalFulfillment(CreateWithdrawalFulfillmentArgs),
+
+    /// Inject a mock deposit via the debug subprotocol
+    CreateMockDeposit(CreateMockDepositArgs),
+
+    /// Build a snark account withdrawal transaction JSON
+    BuildSnarkWithdrawal(BuildSnarkWithdrawalArgs),
 
     /// Get a taproot address at a specific derivation index
     GetAddress(GetAddressArgs),
