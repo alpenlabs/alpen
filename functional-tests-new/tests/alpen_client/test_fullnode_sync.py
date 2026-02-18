@@ -35,14 +35,14 @@ class TestFullnodeSync(AlpenClientTest):
 
         # Wait for initial sync
         logger.info("Waiting for initial sync...")
-        ee_sequencer.wait_for_peers(1, timeout=30)
-        ee_fullnode_0.wait_for_peers(1, timeout=30)
+        ee_sequencer.wait_for_peers(1, timeout=15)
+        ee_fullnode_0.wait_for_peers(1, timeout=15)
 
         # Produce blocks
         initial_block = ee_sequencer.get_block_number()
         target_block = initial_block + 10
-        ee_sequencer.wait_for_block(target_block, timeout=120)
-        ee_fullnode_0.wait_for_block(target_block, timeout=60)
+        ee_sequencer.wait_for_block(target_block, timeout=30)
+        ee_fullnode_0.wait_for_block(target_block, timeout=30)
 
         expected_hash = ee_fullnode_0.get_block_by_number(target_block)["hash"]
         fn0_enode = ee_fullnode_0.get_enode()
@@ -60,23 +60,23 @@ class TestFullnodeSync(AlpenClientTest):
                 instance_id=1,
                 datadir_override=tmpdir,
             )
-            ee_fullnode_1.wait_for_ready(timeout=60)
+            ee_fullnode_1.wait_for_ready(timeout=30)
 
             # Connect ee_fullnode_1 to ee_fullnode_0
             fn0_rpc = ee_fullnode_0.create_rpc()
             fn0_rpc.admin_addPeer(ee_fullnode_1.get_enode())
 
-            ee_fullnode_1.wait_for_peers(1, timeout=30)
+            ee_fullnode_1.wait_for_peers(1, timeout=15)
 
             # Verify historical sync
-            ee_fullnode_1.wait_for_block(target_block, timeout=120)
+            ee_fullnode_1.wait_for_block(target_block, timeout=60)
             fn1_hash = ee_fullnode_1.get_block_by_number(target_block)["hash"]
             assert expected_hash == fn1_hash, "Historical block hash mismatch"
 
             # Verify new block relay
             new_target = target_block + 5
-            ee_sequencer.wait_for_block(new_target, timeout=120)
-            ee_fullnode_1.wait_for_block(new_target, timeout=60)
+            ee_sequencer.wait_for_block(new_target, timeout=15)
+            ee_fullnode_1.wait_for_block(new_target, timeout=15)
 
             logger.info(f"ee_fullnode_1 synced block {target_block} and new block {new_target}")
             return True

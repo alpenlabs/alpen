@@ -18,7 +18,7 @@ class TestBlockQueries(AlpenClientTest):
         ee_sequencer = self.get_service("ee_sequencer")
         rpc = ee_sequencer.create_rpc()
 
-        ee_sequencer.wait_for_block(3, timeout=30)
+        ee_sequencer.wait_for_block(3, timeout=10)
 
         block_num = rpc.eth_blockNumber()
         block_num_int = int(block_num, 16)
