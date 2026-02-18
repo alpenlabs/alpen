@@ -1,6 +1,6 @@
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{MsgRelayer, TxInputRef, VerifiedAuxData, logging};
-use strata_asm_txs_checkpoint_v0::parser::extract_signed_checkpoint_from_envelope;
+use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
 
 use crate::{
