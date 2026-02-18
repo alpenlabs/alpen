@@ -1,0 +1,15 @@
+[package]
+name = "strata-asm-txs-test-utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-asm-common.workspace = true
+strata-l1-envelope-fmt.workspace = true
+strata-l1-txfmt.workspace = true
+
+bitcoin.workspace = true
+rand.workspace = true
+
+[lints]
+workspace = true

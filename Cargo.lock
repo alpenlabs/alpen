@@ -14066,6 +14066,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-txs-test-utils"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "rand 0.8.5",
+ "strata-asm-common",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+]
+
+[[package]]
 name = "strata-asm-types"
 version = "0.3.0-alpha.1"
 dependencies = [
