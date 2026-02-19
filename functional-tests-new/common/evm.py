@@ -7,18 +7,18 @@ deployments with storage writes, and large-bytecode deployments.
 
 from eth_account import Account
 
-from common.accounts import DEV_ACCOUNT, DEV_CHAIN_ID, DEV_PRIVATE_KEY
+from common.accounts import get_dev_account
+from common.config.constants import DEV_CHAIN_ID, DEV_PRIVATE_KEY
 
 # Convenience re-export so callers can do ``from common.evm import DEV_ACCOUNT_ADDRESS``.
-DEV_ACCOUNT_ADDRESS = DEV_ACCOUNT.address
+DEV_ACCOUNT_ADDRESS = get_dev_account().address
 
 
 def send_eth_transfer(rpc, nonce: int, to_addr: str, value_wei: int) -> str:
     """Send a simple ETH transfer and return the tx hash."""
-    from common.accounts import sign_transfer
-
+    dev = get_dev_account()
     gas_price = int(rpc.eth_gasPrice(), 16)
-    raw_tx = sign_transfer(to=to_addr, value=value_wei, nonce=nonce, gas_price=gas_price)
+    raw_tx = dev.sign_transfer(to=to_addr, value=value_wei, nonce=nonce, gas_price=gas_price)
     return rpc.eth_sendRawTransaction(raw_tx)
 
 
