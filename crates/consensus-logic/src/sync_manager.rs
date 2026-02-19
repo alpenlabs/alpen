@@ -286,7 +286,7 @@ pub fn spawn_asm_worker(
     handle: Handle,
     storage: Arc<NodeStorage>,
     rollup_params: Arc<RollupParams>,
-    _asm_params: Arc<AsmParams>,
+    asm_params: Arc<AsmParams>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<AsmWorkerHandle> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
@@ -304,6 +304,7 @@ pub fn spawn_asm_worker(
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
         .with_params(rollup_params)
+        .with_asm_params(asm_params)
         .launch(executor)?;
 
     Ok(handle)
