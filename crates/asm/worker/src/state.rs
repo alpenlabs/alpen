@@ -41,7 +41,7 @@ pub struct AsmWorkerServiceState<W> {
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
     pub fn new(context: W, rollup_params: Arc<RollupParams>, asm_params: Arc<AsmParams>) -> Self {
-        let asm_spec = StrataAsmSpec::from_params(&rollup_params);
+        let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
         Self {
             rollup_params,
             asm_params,
