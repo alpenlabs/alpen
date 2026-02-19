@@ -18,7 +18,7 @@ use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
 use bitcoin::{secp256k1::SecretKey, BlockHash};
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_params::Role;
+use strata_asm_params::{AsmParams, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
     actions::{
@@ -36,7 +36,6 @@ use strata_asm_txs_admin::{
 use strata_crypto::{
     keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfigUpdate,
 };
-use strata_params::RollupParams;
 use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
 use strata_test_utils_l2::get_test_operator_secret_key;
@@ -88,7 +87,7 @@ impl AdminContext {
     /// Create admin context from rollup parameters.
     ///
     /// Uses the test operator key which is configured for both admin roles.
-    pub fn from_params(_params: &RollupParams) -> Self {
+    pub fn from_params(_params: &AsmParams) -> Self {
         Self {
             privkeys: vec![get_test_operator_secret_key()],
             signer_indices: vec![0],
@@ -204,7 +203,7 @@ pub fn extract_admin_state(
 
 impl AdminExt for AsmTestHarness {
     fn admin_context(&self) -> AdminContext {
-        AdminContext::from_params(&self.rollup_params)
+        AdminContext::from_params(&self.asm_params)
     }
 
     fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState> {

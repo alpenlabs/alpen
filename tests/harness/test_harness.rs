@@ -55,7 +55,6 @@ use rand::RngCore;
 use strata_asm_params::AsmParams;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
-use strata_params::RollupParams;
 use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
@@ -92,8 +91,6 @@ pub struct AsmTestHarness {
     pub asm_handle: AsmWorkerHandle,
     /// ASM worker context for querying state
     pub context: TestAsmWorkerContext,
-    /// Rollup parameters
-    pub rollup_params: Arc<RollupParams>,
     /// ASM-specific parameters
     pub asm_params: Arc<AsmParams>,
     /// Task executor for spawning tasks
@@ -128,15 +125,10 @@ impl AsmTestHarness {
         let genesis_hash = client.get_block_hash(genesis_height).await?;
 
         // 3. Setup parameters
-        let mut rollup_params = strata_test_utils_l2::gen_params().rollup;
-        rollup_params.network = Network::Regtest;
         let genesis_view = get_genesis_l1_view(&client, &genesis_hash).await?;
-        rollup_params.genesis_l1_view = genesis_view.clone();
-        let rollup_params = Arc::new(rollup_params);
 
         // 4. Build AsmParams via arbitrary, then override magic and l1_view
         let mut asm_params: AsmParams = ArbitraryGenerator::new().generate();
-        asm_params.magic = rollup_params.magic_bytes;
         asm_params.l1_view = genesis_view;
         let asm_params = Arc::new(asm_params);
 
@@ -150,7 +142,6 @@ impl AsmTestHarness {
         // 7. Launch ASM worker service
         let asm_handle = AsmWorkerBuilder::new()
             .with_context(context.clone())
-            .with_params(rollup_params.clone())
             .with_asm_params(asm_params.clone())
             .launch(&executor)?;
 
@@ -159,7 +150,6 @@ impl AsmTestHarness {
             client,
             asm_handle,
             context,
-            rollup_params,
             asm_params,
             executor,
             genesis_height,

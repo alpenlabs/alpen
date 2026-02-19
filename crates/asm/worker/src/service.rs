@@ -44,7 +44,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         let ctx = &state.context;
 
         // Handle pre-genesis: if the block is before genesis we don't care about it.
-        let genesis_height = state.rollup_params.genesis_l1_view.height();
+        let genesis_height = state.asm_params.l1_view.blk.height();
         let height = incoming_block.height();
         if height < genesis_height {
             warn!(%height, "ignoring unexpected L1 block before genesis");
