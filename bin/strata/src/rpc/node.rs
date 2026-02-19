@@ -13,7 +13,7 @@ use strata_ol_rpc_types::{
     OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
     RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
 };
-use strata_primitives::HexBytes;
+use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -322,6 +322,17 @@ impl OLClientRpcServer for OLRpcServer {
             .await
             .map_err(db_error)?
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
+    }
+
+    async fn get_l1_header_commitment(&self, l1_height: u64) -> RpcResult<Option<HexBytes32>> {
+        let manifest = self
+            .storage
+            .l1()
+            .get_block_manifest_at_height_async(l1_height)
+            .await
+            .map_err(db_error)?;
+
+        Ok(manifest.map(|m| HexBytes32::from(m.compute_hash())))
     }
 
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {

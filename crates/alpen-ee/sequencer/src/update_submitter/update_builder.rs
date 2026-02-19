@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use alpen_ee_common::{
-    Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef, ProofId,
+    Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef, ProofId, SequencerOLClient,
 };
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
@@ -17,6 +19,7 @@ pub(super) async fn build_update_from_batch(
     batch: &Batch,
     da_refs: &[L1DaBlockRef],
     proof_id: &ProofId,
+    ol_client: &impl SequencerOLClient,
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
 ) -> Result<SnarkAccountUpdate> {
@@ -42,7 +45,8 @@ pub(super) async fn build_update_from_batch(
         .checked_sub(1)
         .ok_or_else(|| eyre!("cannot build update for genesis batch"))?;
 
-    let update_operation = build_update_operation(seq_no, da_refs, blocks)?;
+    let l1_header_commitments = fetch_l1_header_commitments_by_height(da_refs, ol_client).await?;
+    let update_operation = build_update_operation(seq_no, da_refs, &l1_header_commitments, blocks)?;
 
     // Should we re-check that proof is valid ?
 
@@ -52,10 +56,36 @@ pub(super) async fn build_update_from_batch(
     ))
 }
 
+async fn fetch_l1_header_commitments_by_height(
+    da_refs: &[L1DaBlockRef],
+    ol_client: &impl SequencerOLClient,
+) -> Result<HashMap<u64, Hash>> {
+    let mut heights: Vec<u64> = da_refs
+        .iter()
+        .map(|da_ref| da_ref.block.height_u64())
+        .collect();
+    heights.sort_unstable();
+    heights.dedup();
+
+    let l1_header_commitments = try_join_all(
+        heights
+            .into_iter()
+            .map(|height| async move {
+                let hash = ol_client.get_l1_header_commitment(height).await?;
+                Ok::<_, eyre::Error>((height, hash))
+            })
+            .collect::<Vec<_>>(),
+    )
+    .await?;
+
+    Ok(l1_header_commitments.into_iter().collect())
+}
+
 /// Build an [`UpdateOperationData`] from data in a batch.
 fn build_update_operation(
     seq_no: u64,
     da_refs: &[L1DaBlockRef],
+    l1_header_commitments: &HashMap<u64, Hash>,
     blocks: Vec<ExecBlockRecord>,
 ) -> Result<UpdateOperationData> {
     // 1. Get info from final block
@@ -100,15 +130,19 @@ fn build_update_operation(
     let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs as u32, 0);
     let extra_data_buf = encode_to_vec(&extra_data)?;
 
-    // 4. Build ledger refs from DA block references (idx = L1 block height). The hash value is
-    //    carried as EE-side context; OL proof generation/verification binds the canonical ASM MMR
-    //    leaf hash by height.
+    // 4. Build ledger refs from DA block references (idx = L1 block height) and canonical L1 header
+    //    commitments fetched from OL.
     let mut l1_header_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {
-            AccumulatorClaim::new(da_ref.block.height_u64(), *da_ref.block.blkid().as_ref())
+            let height = da_ref.block.height_u64();
+            let hash = l1_header_commitments
+                .get(&height)
+                .copied()
+                .ok_or_else(|| eyre!("missing L1 header commitment for L1 height {height}"))?;
+            Ok(AccumulatorClaim::new(height, *hash.as_ref()))
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
     // Canonicalize by height before dedup: multiple DA txns may land in the same L1 block.
     l1_header_refs.sort_by_key(|c| c.idx());
     l1_header_refs.dedup_by_key(|c| c.idx());

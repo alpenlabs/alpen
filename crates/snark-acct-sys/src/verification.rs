@@ -130,9 +130,15 @@ fn verify_ledger_refs(
                 ref_idx: lref.idx(),
             });
         }
+        if proof.entry_hash() != lref.entry_hash() {
+            return Err(AcctError::InvalidLedgerReference {
+                account_id: target,
+                ref_idx: lref.idx(),
+            });
+        }
         let cohashes = proof.proof().cohashes();
         let generic_proof = MerkleProof::from_cohashes(cohashes, mmr_idx);
-        if !generic_mmr.verify::<StrataHasher>(&generic_proof, proof.entry_hash().as_ref()) {
+        if !generic_mmr.verify::<StrataHasher>(&generic_proof, lref.entry_hash().as_ref()) {
             return Err(AcctError::InvalidLedgerReference {
                 account_id: target,
                 ref_idx: lref.idx(),

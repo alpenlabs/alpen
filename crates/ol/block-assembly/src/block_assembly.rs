@@ -702,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn test_l1_header_claim_uses_canonical_mmr_leaf_hash() {
+    fn test_l1_header_claim_hash_mismatch() {
         let storage = create_test_storage();
 
         // Use StorageAsmMmr with random hashes
@@ -734,25 +734,13 @@ mod tests {
             _ => panic!("Expected snark account update payload"),
         };
         let result = convert_snark_account_update(&ctx, mempool_payload);
+        assert!(result.is_err(), "Should fail with hash mismatch");
+        let err = result.unwrap_err();
         assert!(
-            result.is_ok(),
-            "Proof generation should succeed for valid height"
+            matches!(err, BlockAssemblyError::L1HeaderHashMismatch { .. }),
+            "Expected L1HeaderHashMismatch, got: {:?}",
+            err
         );
-
-        let payload = result.unwrap();
-        match payload {
-            TransactionPayload::SnarkAccountUpdate(sau) => {
-                let proofs = sau.update_container().accumulator_proofs();
-                let l1_proofs = proofs.ledger_ref_proofs().l1_headers_proofs();
-                assert_eq!(l1_proofs.len(), 1, "Should have 1 L1 header proof");
-                assert_eq!(
-                    l1_proofs[0].entry_hash(),
-                    asm_mmr.hashes()[0],
-                    "Proof should use canonical hash from MMR leaf"
-                );
-            }
-            _ => panic!("Expected SnarkAccountUpdate transaction"),
-        }
     }
 
     #[test]

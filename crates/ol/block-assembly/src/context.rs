@@ -152,6 +152,14 @@ impl<M, S> BlockAssemblyContext<M, S> {
                 .get_node_blocking(pos)
                 .map_err(map_l1_header_mmr_error)?
                 .ok_or(BlockAssemblyError::L1HeaderLeafNotFound(mmr_idx))?;
+            let claimed_hash = claim.entry_hash();
+            if actual_hash != claimed_hash {
+                return Err(BlockAssemblyError::L1HeaderHashMismatch {
+                    idx: mmr_idx,
+                    expected: actual_hash,
+                    actual: claimed_hash,
+                });
+            }
             resolved_refs.push((mmr_idx, actual_hash));
         }
 
@@ -367,7 +375,7 @@ where
 
         let resolved_refs = self.validate_l1_header_claims(l1_header_refs)?;
 
-        // Generate proofs using MMR indices (height → index conversion)
+        // Generate proofs using MMR indices (height -> index conversion)
         let mut l1_header_proofs = Vec::new();
         for (mmr_idx, entry_hash) in resolved_refs {
             let merkle_proof = mmr_handle
@@ -438,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn test_l1_header_proof_gen_uses_canonical_mmr_leaf_hash() {
+    fn test_l1_header_proof_gen_hash_mismatch() {
         let storage = create_test_storage();
 
         // Add a header hash to the ASM MMR
@@ -455,13 +463,23 @@ mod tests {
 
         let result = ctx.generate_l1_header_proofs(&[claim]);
 
-        assert!(result.is_ok(), "Should succeed with valid claim height");
-        let proofs = result.unwrap();
         assert!(
-            proofs.l1_headers_proofs()[0].entry_hash() == expected_hash,
-            "Proof should use canonical hash from MMR leaf"
+            result.is_err(),
+            "Should fail when claim hash does not match MMR leaf"
         );
-        assert_ne!(proofs.l1_headers_proofs()[0].entry_hash(), wrong_hash);
+        let err = result.unwrap_err();
+        assert!(
+            matches!(
+                err,
+                BlockAssemblyError::L1HeaderHashMismatch {
+                    idx: 0,
+                    expected,
+                    actual
+                } if expected == expected_hash && actual == wrong_hash
+            ),
+            "Expected L1HeaderHashMismatch, got: {:?}",
+            err
+        );
     }
 
     #[test]
