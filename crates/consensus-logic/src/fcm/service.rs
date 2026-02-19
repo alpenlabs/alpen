@@ -117,6 +117,7 @@ async fn process_fc_message(
     fcm_state: &mut FcmState,
 ) -> anyhow::Result<()> {
     let blk_db = fcm_state.ctx().storage().ol_block().clone();
+    let ckpt_db = fcm_state.ctx().storage().ol_checkpoint().clone();
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
             strata_common::check_bail_trigger("fcm_new_block");
@@ -155,12 +156,15 @@ async fn process_fc_message(
                 );
 
                 let cur_state = fcm_state.cur_ol_state();
-                let prev_epoch = EpochCommitment::new(
-                    cur_state.cur_epoch().saturating_sub(1),
-                    // TODO(STR-2142): correctly calculate previous epoch terminal info
-                    0,
-                    Buf32::zero().into(),
-                );
+                // Get prev epoch summary
+                let prev_epoch_num = cur_state.cur_epoch().saturating_sub(1);
+                let prev_epoch = ckpt_db
+                    .get_canonical_epoch_commitment_at_async(prev_epoch_num as u64)
+                    .await?
+                    .ok_or(anyhow!(
+                        "expected epoch commitment for previous epoch {} not in db",
+                        prev_epoch_num
+                    ))?;
                 let status = ChainSyncStatus {
                     tip: fcm_state.cur_best_block(),
                     prev_epoch,

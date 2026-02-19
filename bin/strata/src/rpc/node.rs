@@ -53,11 +53,10 @@ impl OLRpcServer {
         let blkid = self
             .storage
             .ol_block()
-            .get_blocks_at_height_async(height)
+            .get_canonical_block_at_async(height)
             .await
             .map_err(db_error)?
-            .first() // TODO: Assumes the canonical is the first one, but need to define it
-            .copied();
+            .map(|b| b.blkid);
         Ok(blkid)
     }
 
@@ -81,23 +80,18 @@ impl OLClientRpcServer for OLRpcServer {
         epoch: Epoch,
     ) -> RpcResult<RpcAccountEpochSummary> {
         // Get epoch commitments for the given epoch
-        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-        let commitments = self
+        let epoch_commitment = self
             .storage
-            .checkpoint()
-            .get_epoch_commitments_at(epoch as u64)
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(epoch as u64)
             .await
             .map_err(|e| {
-                error!(?e, ?epoch, "Failed to get epoch commitments");
+                error!(?e, ?epoch, "Failed to get canonical epoch commitment");
                 db_error(e)
+            })?
+            .ok_or_else(|| {
+                not_found_error(format!("No canonical commitment found for epoch {epoch}"))
             })?;
-
-        // For now, use the first commitment if available
-        // TODO: This should be more sophisticated - we might need to determine which commitment
-        // corresponds to the canonical chain
-        let epoch_commitment = commitments.first().ok_or_else(|| {
-            not_found_error(format!("No epoch commitment found for epoch {epoch}"))
-        })?;
 
         // Get OL state at the terminal block using the epoch commitment directly
         // (EpochCommitment already contains the terminal slot and block ID)
@@ -141,21 +135,20 @@ impl OLClientRpcServer for OLRpcServer {
 
         // Get previous epoch commitment if available
         let prev_epoch_commitment = if epoch > 0 {
-            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-            let prev_commitments = self
-                .storage
-                .checkpoint()
-                .get_epoch_commitments_at((epoch - 1) as u64)
+            self.storage
+                .ol_checkpoint()
+                .get_canonical_epoch_commitment_at_async((epoch - 1) as u64)
                 .await
-                .ok()
-                .and_then(|c| c.first().copied());
-            prev_commitments.unwrap_or_else(EpochCommitment::null)
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
+                })?
         } else {
             EpochCommitment::null()
         };
 
         Ok(RpcAccountEpochSummary::new(
-            *epoch_commitment,
+            epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
             next_seq_no,
@@ -388,22 +381,13 @@ impl OLClientRpcServer for OLRpcServer {
                     .ok_or_else(|| not_found_error(format!("Block {block_id} not found")))?;
                 OLBlockCommitment::new(block.header().slot(), block_id)
             }
-            OLBlockOrTag::Slot(slot) => {
-                let block_ids = self
-                    .storage
-                    .ol_block()
-                    .get_blocks_at_height_async(slot)
-                    .await
-                    .map_err(|e| {
-                        error!(?e, slot, "Failed to get blocks at slot");
-                        db_error(e)
-                    })?;
-                let block_id = block_ids
-                    .first()
-                    .copied()
-                    .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
-                OLBlockCommitment::new(slot, block_id)
-            }
+            OLBlockOrTag::Slot(slot) => self
+                .storage
+                .ol_block()
+                .get_canonical_block_at_async(slot)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
         };
 
         // Get OL state at the resolved block

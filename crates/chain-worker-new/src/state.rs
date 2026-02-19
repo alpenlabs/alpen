@@ -165,8 +165,12 @@ impl ChainWorkerServiceState {
         self.persist_execution_output(*block_commitment, &output, new_state)?;
 
         // Handle epoch terminal if needed
+        debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
         if block.header().is_terminal() {
             self.handle_complete_epoch(&block, &output)?;
+            // Send the epoch commitment to receiver
+            // TODO: it seems to be done for each block at the moment. Ideally we would do it just
+            // here.
         }
 
         Ok(())
@@ -330,6 +334,8 @@ impl ChainWorkerServiceState {
             epoch_final_state,
         );
 
+        // TODO: only store this at the end of epoch. This is not much of a problem even if it is
+        // done here, it's just redundant do do it here.
         debug!(?summary, "completed chain epoch");
         self.ctx.store_summary(summary)?;
 

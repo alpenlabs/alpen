@@ -271,9 +271,12 @@ where
     );
 
     // Phase 3: Detect terminal blocks and fetch L1 manifests if needed.
+    debug!(%block_slot, "Calling should seal_epoch");
     let manifest_container = if epoch_sealing_policy.should_seal_epoch(block_slot) {
+        debug!(%block_slot, "Calling should seal_epoch returned true");
         fetch_asm_manifests_for_terminal_block(ctx, parent_state.as_ref()).await?
     } else {
+        debug!(%block_slot, "Calling should seal_epoch returned false");
         None
     };
 
@@ -313,12 +316,11 @@ async fn fetch_asm_manifests_for_terminal_block<
     // Fetch manifests using BlockAssemblyAnchorContext trait
     let manifests = ctx.fetch_asm_manifests_from(start_height).await?;
 
-    if manifests.is_empty() {
-        Ok(None)
-    } else {
-        let container = OLL1ManifestContainer::new(manifests)?;
-        Ok(Some(container))
-    }
+    let container = OLL1ManifestContainer::new(manifests)?;
+
+    // Return the container regardless of whether manifests is empty or not. Because otherwise, if
+    // for some reasons L1 is slow, epoch sealing policy is not respected.
+    Ok(Some(container))
 }
 
 /// Executes block initialization (epoch initial + block start) on a fresh write batch.
