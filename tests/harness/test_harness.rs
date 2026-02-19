@@ -389,6 +389,16 @@ impl AsmTestHarness {
         Ok(self.context.get_manifest_hash(index)?)
     }
 
+    /// Get a snapshot of all stored manifests.
+    pub fn get_stored_manifests(&self) -> Vec<strata_asm_manifest_types::AsmManifest> {
+        self.context.manifests.lock().unwrap().clone()
+    }
+
+    /// Get a snapshot of all external MMR leaf hashes.
+    pub fn get_mmr_leaves(&self) -> Vec<[u8; 32]> {
+        self.context.mmr_leaves.lock().unwrap().clone()
+    }
+
     // ========================================================================
     // Funding & Wallet
     // ========================================================================

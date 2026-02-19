@@ -50,4 +50,7 @@ pub trait WorkerContext {
     ///
     /// Reads the hash directly from the MMR structure.
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>>;
+
+    /// Checks whether an L1 manifest already exists for the given block ID.
+    fn has_l1_manifest(&self, blockid: &L1BlockId) -> WorkerResult<bool>;
 }
