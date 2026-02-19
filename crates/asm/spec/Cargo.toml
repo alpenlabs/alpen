@@ -11,6 +11,7 @@ strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-proto-administration.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
+strata-asm-proto-checkpoint.workspace = true
 strata-asm-proto-checkpoint-v0.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
