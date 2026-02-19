@@ -1,18 +1,19 @@
-use alpen_ee_common::{Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, ProofId};
+use alpen_ee_common::{Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef, ProofId};
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::UpdateExtraData;
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, UpdateOperationData,
-    UpdateOutputs,
+    AccumulatorClaim, LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate,
+    UpdateOperationData, UpdateOutputs,
 };
 use tree_hash::{Sha256Hasher, TreeHash};
 
 /// Build a [`SnarkAccountUpdate`] from a batch in ProofReady state.
 pub(super) async fn build_update_from_batch(
     batch: &Batch,
+    da_refs: &[L1DaBlockRef],
     proof_id: &ProofId,
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
@@ -39,7 +40,7 @@ pub(super) async fn build_update_from_batch(
         .checked_sub(1)
         .ok_or_else(|| eyre!("cannot build update for genesis batch"))?;
 
-    let update_operation = build_update_operation(seq_no, blocks)?;
+    let update_operation = build_update_operation(seq_no, da_refs, blocks)?;
 
     // Should we re-check that proof is valid ?
 
@@ -52,6 +53,7 @@ pub(super) async fn build_update_from_batch(
 /// Build an [`UpdateOperationData`] from data in a batch.
 fn build_update_operation(
     seq_no: u64,
+    da_refs: &[L1DaBlockRef],
     blocks: Vec<ExecBlockRecord>,
 ) -> Result<UpdateOperationData> {
     // 1. Get info from final block
@@ -96,12 +98,23 @@ fn build_update_operation(
     let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs as u32, 0);
     let extra_data_buf = encode_to_vec(&extra_data)?;
 
-    // 4. Build update operation
+    // 4. Build ledger refs from DA block references (idx = L1 block height)
+    let mut l1_header_refs: Vec<AccumulatorClaim> = da_refs
+        .iter()
+        .map(|da_ref| {
+            AccumulatorClaim::new(da_ref.block.height_u64(), *da_ref.block.blkid().as_ref())
+        })
+        .collect();
+    // Dedup by height — multiple DA txns may land in the same L1 block
+    l1_header_refs.dedup_by_key(|c| c.idx());
+    let ledger_refs = LedgerRefs::new(l1_header_refs);
+
+    // 5. Build update operation
     let update = UpdateOperationData::new(
         seq_no,
         ProofState::new(inner_state, next_inbox_msg_idx),
         messages,
-        LedgerRefs::new_empty(),
+        ledger_refs,
         outputs,
         extra_data_buf,
     );
