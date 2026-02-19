@@ -112,8 +112,11 @@ pub async fn block_builder_task<
         .get_best_block()
         .await
         .expect("next_block_target_timestamp: failed to get best exec block");
+    let last_hash = last_local_block.parent_blockhash();
+    info!(%last_hash, "LAST LOCAL BLOCK parent");
 
     let mut next_block_target = compute_next_block_target(&last_local_block, &config);
+    info!(?next_block_target, "next block target");
 
     let clock = SystemClock;
     loop {
