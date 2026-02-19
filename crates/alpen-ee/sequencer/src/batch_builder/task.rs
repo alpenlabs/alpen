@@ -132,11 +132,13 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
                     return;
                 }
                 let new_tip = *ctx.preconf_rx.borrow_and_update();
+                println!("canonical tip received: {:?}", new_tip );
                 handle_new_tip(&mut state, &ctx, new_tip).await
             }
 
             // Branch 2: Periodically poll pending blocks when queue is non-empty
             _ = pending_poll_interval.tick(), if state.has_pending_blocks() => {
+                println!("processing pending blocks");
                 process_pending_blocks(&mut state, &ctx).await
             }
         };
@@ -244,6 +246,10 @@ where
         // Try to get block data (non-blocking check)
         let Some(block_data) = ctx.block_data_provider.get_block_data(block.hash()).await? else {
             // Data not ready yet, stop processing
+            println!(
+                "processing pending blocks, block data not yet ready {:?}",
+                block.hash()
+            );
             break;
         };
 

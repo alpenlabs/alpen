@@ -118,6 +118,7 @@ fn main() {
             // TODO: define how we want to deterministically generate the AccountId
             const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 
+            println!("GENESIS INFO: {}", genesis_info.blockhash());
             let params = AlpenEeParams::new(
                 ALPEN_EE_ACCOUNT_ID,
                 genesis_info.blockhash(),

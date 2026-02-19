@@ -8,7 +8,7 @@ use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::EpochCommitment;
 use strata_snark_acct_types::UpdateInputData;
 use tokio::time;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     ctx::OLTrackerCtx,
@@ -26,9 +26,11 @@ pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
 {
     loop {
         time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
+        use tracing::*;
 
         match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_epochs_fetch).await {
             Ok(TrackOLAction::Extend(epoch_operations, chain_status)) => {
+                info!(?epoch_operations, ?chain_status, "Received track action");
                 if let Err(error) =
                     handle_extend_ee_state(&epoch_operations, &chain_status, &mut state, &ctx).await
                 {
@@ -36,11 +38,14 @@ pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
                 }
             }
             Ok(TrackOLAction::Reorg) => {
+                info!("Received reorg action");
                 if let Err(error) = handle_reorg(&mut state, &ctx).await {
                     handle_tracker_error(error, "reorg");
                 }
             }
-            Ok(TrackOLAction::Noop) => {}
+            Ok(TrackOLAction::Noop) => {
+                info!("received noop action");
+            }
             Err(error) => {
                 handle_tracker_error(error, "track ol state");
             }
@@ -214,6 +219,7 @@ where
             error
         })?;
 
+        info!(%ol_epoch, "building tracker state");
         // 2. build next tracker state
         let next_state = build_tracker_state(
             EeAccountStateAtEpoch::new(*ol_epoch, ee_state.clone()),
@@ -234,11 +240,11 @@ where
                 );
                 error
             })?;
-
         // 4. update local state
         *state = next_state;
 
         // 5. notify watchers
+        info!(%ol_epoch, "notifying watchers from ol tracker");
         ctx.notify_ol_status_update(state.get_ol_status());
         ctx.notify_consensus_update(state.get_consensus_heads());
     }

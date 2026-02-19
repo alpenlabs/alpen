@@ -25,7 +25,7 @@ pub async fn ensure_genesis_ee_account_state<TStorage: Storage>(
         return Ok(());
     }
 
-    warn!("ee state not found; create using genesis config");
+    warn!(%genesis_ol_epoch, "ee state not found; create using genesis config");
 
     // persist genesis state
     storage

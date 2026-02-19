@@ -50,7 +50,11 @@ pub(crate) fn init_ol_genesis(
             .insert_account_creation_epoch_blocking(entry.id, 0)?;
         // Insert extra data
         // TODO: correct value possibly from params
-        let extra = UpdateExtraData::new(Buf32::zero(), 0, 0);
+        let gen_hash = [
+            70, 192, 220, 96, 251, 19, 27, 228, 204, 197, 83, 6, 163, 69, 252, 194, 14, 68, 35, 51,
+            36, 149, 15, 151, 139, 165, 241, 133, 170, 42, 244, 220,
+        ];
+        let extra = UpdateExtraData::new(gen_hash.into(), 0, 0);
         let extra_data = encode_to_vec(&extra).expect("Can't encode genesis extradata");
         storage
             .account()
