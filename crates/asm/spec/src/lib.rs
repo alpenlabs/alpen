@@ -8,7 +8,9 @@ use std::num::NonZero;
 
 use bitcoin::secp256k1::{Parity, PublicKey};
 use strata_asm_common::{AsmSpec, Loader, Stage};
-use strata_asm_params::{AdministrationSubprotoParams, BridgeV1Config};
+use strata_asm_params::{
+    AdministrationSubprotoParams, AsmParams, BridgeV1Config, SubprotocolInstance,
+};
 use strata_asm_proto_administration::AdministrationSubprotocol;
 use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_checkpoint_v0::{
@@ -17,7 +19,7 @@ use strata_asm_proto_checkpoint_v0::{
 use strata_crypto::{keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig};
 use strata_l1_txfmt::MagicBytes;
 use strata_params::RollupParams;
-use strata_primitives::l1::BitcoinAmount;
+use strata_primitives::{CredRule, l1::BitcoinAmount};
 
 /// ASM specification for the Strata protocol.
 ///
@@ -111,6 +113,43 @@ impl StrataAsmSpec {
 
         Self {
             magic_bytes: params.magic_bytes,
+            checkpoint_v0_params,
+            bridge_v1_genesis,
+            admin_params,
+        }
+    }
+
+    pub fn from_asm_params(params: &AsmParams) -> Self {
+        let mut checkpoint_config = None;
+        let mut bridge_config = None;
+        let mut admin_config = None;
+
+        for instance in &params.subprotocols {
+            match instance {
+                SubprotocolInstance::Checkpoint(cfg) => checkpoint_config = Some(cfg),
+                SubprotocolInstance::Bridge(cfg) => bridge_config = Some(cfg),
+                SubprotocolInstance::Admin(cfg) => admin_config = Some(cfg),
+            }
+        }
+
+        let ckpt = checkpoint_config.expect("AsmParams missing Checkpoint subprotocol");
+        let checkpoint_v0_params = CheckpointV0Params {
+            verification_params: CheckpointV0VerificationParams {
+                genesis_l1_block: params.l1_view.blk,
+                cred_rule: CredRule::Unchecked, // FIXME: @PG
+                predicate: ckpt.checkpoint_predicate.clone(),
+            },
+        };
+
+        let bridge_v1_genesis = bridge_config
+            .expect("AsmParams missing Bridge subprotocol")
+            .clone();
+        let admin_params = admin_config
+            .expect("AsmParams missing Admin subprotocol")
+            .clone();
+
+        Self {
+            magic_bytes: params.magic,
             checkpoint_v0_params,
             bridge_v1_genesis,
             admin_params,
