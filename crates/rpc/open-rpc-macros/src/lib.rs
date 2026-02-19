@@ -45,8 +45,15 @@ use unescape::unescape;
 pub fn open_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr: OpenRpcAttributes = parse_macro_input!(attr);
 
-    let mut trait_data: syn::ItemTrait = syn::parse(item).unwrap();
-    let rpc_definition = parse_rpc_method(&mut trait_data).unwrap();
+    match open_rpc_inner(attr, item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+fn open_rpc_inner(attr: OpenRpcAttributes, item: TokenStream2) -> syn::Result<TokenStream2> {
+    let mut trait_data: syn::ItemTrait = syn::parse2(item)?;
+    let rpc_definition = parse_rpc_method(&mut trait_data)?;
 
     let namespace = attr
         .find_attr("namespace")
@@ -77,9 +84,13 @@ pub fn open_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
             })
         }
         let returns_ty = if let Some(ty) = &method.returns {
-            let (ty, required) = extract_type_from_option(ty.clone());
-            let name = quote! {#ty}.to_string();
-            quote! {Some(builder.create_content_descriptor::<#ty>(#name, None, None, #required));}
+            if let Some(inner_ty) = extract_type_from(ty, "Option") {
+                let name = quote! {#inner_ty}.to_string();
+                quote! {Some(builder.create_content_descriptor::<#ty>(#name, None, None, false));}
+            } else {
+                let name = quote! {#ty}.to_string();
+                quote! {Some(builder.create_content_descriptor::<#ty>(#name, None, None, true));}
+            }
         } else {
             quote! {None;}
         };
@@ -103,7 +114,7 @@ pub fn open_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let open_rpc_name = quote::format_ident!("{}OpenRpc", &rpc_definition.name);
 
-    quote! {
+    Ok(quote! {
         #trait_data
         pub struct #open_rpc_name;
         impl #open_rpc_name {
@@ -113,8 +124,7 @@ pub fn open_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
                 builder.build()
             }
         }
-    }
-    .into()
+    })
 }
 
 trait OptionalQuote {
@@ -149,7 +159,7 @@ fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, sy
     let mut methods = Vec::new();
     for trait_item in &mut trait_data.items {
         if let TraitItem::Method(method) = trait_item {
-            let doc = extract_doc_comments(&method.attrs).to_string();
+            let doc = extract_doc_comments(&method.attrs)?;
             let params: Vec<_> = method
                 .sig
                 .inputs
@@ -160,7 +170,10 @@ fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, sy
                         syn::FnArg::Typed(arg) => {
                             let description =
                                 if let Some(description) = arg.attrs.iter().position(|a| a.path.is_ident("doc")) {
-                                    let doc = extract_doc_comments(&arg.attrs);
+                                    let doc = match extract_doc_comments(&arg.attrs) {
+                                        Ok(doc) => doc,
+                                        Err(e) => return Some(Err(e)),
+                                    };
                                     arg.attrs.remove(description);
                                     Some(doc)
                                 } else {
@@ -192,23 +205,36 @@ fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, sy
                         syn::ReturnType::Type(_, output) => extract_type_from(output, "RpcResult"),
                     };
                     let attributes = parse::<Attributes>(token)?;
-                    let method_name = attributes.get_value("name");
+                    let method_name = attributes.get_value("name")?;
                     let deprecated = attributes.find("deprecated").is_some();
                     (method_name, returns, false, deprecated)
                 } else if let Some(attr) = find_attr(&mut method.attrs, "subscription") {
                     let token: TokenStream = attr.tokens.clone().into();
                     let attributes = parse::<Attributes>(token)?;
-                    let name = attributes.get_value("name");
+                    let name = attributes.get_value("name")?;
                     let type_ = attributes
                         .find("item")
-                        .expect("Subscription should have an [item] attribute")
+                        .ok_or_else(|| {
+                            syn::Error::new(
+                                method.sig.ident.span(),
+                                "subscription should have an `item` attribute",
+                            )
+                        })?
                         .type_
                         .clone()
-                        .expect("[item] attribute should have a value");
+                        .ok_or_else(|| {
+                            syn::Error::new(
+                                method.sig.ident.span(),
+                                "`item` attribute should have a value",
+                            )
+                        })?;
                     let deprecated = attributes.find("deprecated").is_some();
                     (name, Some(type_), true, deprecated)
                 } else {
-                    panic!("Unknown method name")
+                    return Err(syn::Error::new(
+                        method.sig.ident.span(),
+                        "method must have a `method` or `subscription` attribute",
+                    ));
                 };
 
             methods.push(Method {
@@ -291,7 +317,7 @@ fn respan_token_stream(stream: TokenStream2, span: Span) -> TokenStream2 {
 }
 
 /// Extract doc comments from `#[doc = "..."]` attributes.
-fn extract_doc_comments(attrs: &[Attribute]) -> String {
+fn extract_doc_comments(attrs: &[Attribute]) -> syn::Result<String> {
     let mut s = String::new();
     let mut sep = "";
     for attr in attrs {
@@ -321,7 +347,15 @@ fn extract_doc_comments(attrs: &[Attribute]) -> String {
         s.push_str(line);
     }
 
-    unescape(&s).unwrap_or_else(|| panic!("Cannot unescape doc comments : [{s}]"))
+    unescape(&s).ok_or_else(|| {
+        syn::Error::new(
+            attrs
+                .first()
+                .map(|a| a.span())
+                .unwrap_or_else(Span::call_site),
+            format!("cannot unescape doc comments: [{s}]"),
+        )
+    })
 }
 
 #[derive(Parse)]
@@ -367,15 +401,23 @@ impl Attributes {
         self.attrs.iter().find(|attr| attr.key == attr_name)
     }
 
-    pub fn get_value(&self, attr_name: &str) -> String {
-        self.attrs
+    pub fn get_value(&self, attr_name: &str) -> syn::Result<String> {
+        let attr = self
+            .attrs
             .iter()
             .find(|attr| attr.key == attr_name)
-            .unwrap_or_else(|| panic!("Method should have a [{attr_name}] attribute."))
-            .value
-            .as_ref()
-            .unwrap_or_else(|| panic!("[{attr_name}] attribute should have a value"))
-            .value()
+            .ok_or_else(|| {
+                syn::Error::new(
+                    Span::call_site(),
+                    format!("method should have a `{attr_name}` attribute"),
+                )
+            })?;
+        attr.value.as_ref().map(|v| v.value()).ok_or_else(|| {
+            syn::Error::new(
+                attr.key.span(),
+                format!("`{attr_name}` attribute should have a value"),
+            )
+        })
     }
 }
 

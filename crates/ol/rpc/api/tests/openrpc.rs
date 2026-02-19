@@ -159,6 +159,58 @@ fn client_rpc_get_account_epoch_summary_has_two_params() {
 }
 
 #[test]
+fn optional_return_type_has_nullable_schema() {
+    let spec = build_spec();
+    let methods = spec["methods"].as_array().unwrap();
+
+    let method = methods
+        .iter()
+        .find(|m| m["name"] == "strata_getSnarkAccountState")
+        .expect("strata_getSnarkAccountState should exist");
+
+    let result = &method["result"];
+
+    // Option<T> return should NOT be marked required
+    assert!(
+        result.get("required").is_none() || result["required"] == false,
+        "optional result should not be required"
+    );
+
+    // Schema should use anyOf with a null variant
+    let schema = &result["schema"];
+    let any_of = schema["anyOf"]
+        .as_array()
+        .expect("optional result schema should use anyOf");
+    assert!(
+        any_of.iter().any(|v| v["type"] == "null"),
+        "optional result schema should contain a null variant, got: {any_of:?}"
+    );
+}
+
+#[test]
+fn non_optional_return_type_is_required() {
+    let spec = build_spec();
+    let methods = spec["methods"].as_array().unwrap();
+
+    let method = methods
+        .iter()
+        .find(|m| m["name"] == "strata_getChainStatus")
+        .expect("strata_getChainStatus should exist");
+
+    let result = &method["result"];
+    assert_eq!(
+        result["required"], true,
+        "non-optional result should be required"
+    );
+
+    // Schema should NOT have anyOf with null
+    assert!(
+        result["schema"]["anyOf"].is_null(),
+        "non-optional result schema should not use anyOf"
+    );
+}
+
+#[test]
 fn sequencer_rpc_complete_block_template_has_two_params() {
     let spec = build_spec();
     let methods = spec["methods"].as_array().unwrap();
