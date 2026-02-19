@@ -98,6 +98,9 @@ class EpochalState(Container):
     #~# external_kind: container
     manifests_mmr: strata_acct_types.Mmr64
 
+    ### Offset for mapping L1 block heights to MMR leaf indices (genesis_height + 1)
+    manifests_mmr_offset: uint64
+
 ### Global state tracking current slot
 class GlobalState(Container):
     ### Current slot number

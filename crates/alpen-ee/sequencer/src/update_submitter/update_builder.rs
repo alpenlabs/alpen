@@ -1,4 +1,6 @@
-use alpen_ee_common::{Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef, ProofId};
+use alpen_ee_common::{
+    Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef, ProofId,
+};
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
 use strata_acct_types::Hash;

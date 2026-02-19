@@ -143,6 +143,13 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .unwrap_or_else(|| self.base.asm_manifests_mmr())
     }
 
+    fn asm_manifests_mmr_offset(&self) -> u64 {
+        self.batches
+            .last()
+            .map(|b| b.epochal().manifests_mmr_offset())
+            .unwrap_or_else(|| self.base.asm_manifests_mmr_offset())
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {

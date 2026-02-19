@@ -611,7 +611,7 @@ mod tests {
 
         // Create tx with claims from the tracker using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(asm_mmr.claims())
+            .with_l1_claims(asm_mmr.claims(0))
             .build();
 
         let ctx = create_test_context(storage.clone());
@@ -709,7 +709,7 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_random_headers(1);
 
-        // Create claim with correct index but WRONG hash (deterministic to guarantee mismatch)
+        // Create claim with correct height but WRONG hash (deterministic to guarantee mismatch)
         let wrong_hash = test_hash(99);
         assert_ne!(
             wrong_hash,
@@ -717,7 +717,9 @@ mod tests {
             "Test setup: wrong_hash should differ from actual hash"
         );
 
-        let invalid_claims = vec![AccumulatorClaim::new(asm_mmr.indices()[0], wrong_hash)];
+        // Use height (mmr_index + offset) instead of raw MMR index
+        let claim_height = asm_mmr.indices()[0] + 1; // offset = genesis_height(0) + 1
+        let invalid_claims = vec![AccumulatorClaim::new(claim_height, wrong_hash)];
 
         let account_id = test_account_id(1);
         let mut state = create_test_genesis_state();
@@ -785,9 +787,9 @@ mod tests {
         // Setup storage WITHOUT any L1 headers in ASM MMR
         let storage = create_test_storage();
 
-        // Create claim for index 0 with arbitrary hash (MMR is empty)
+        // Create claim for height 1 (minimum valid height) with arbitrary hash (MMR is empty)
         let arbitrary_hash = test_hash(42);
-        let invalid_claims = vec![AccumulatorClaim::new(0, arbitrary_hash)];
+        let invalid_claims = vec![AccumulatorClaim::new(1, arbitrary_hash)];
 
         // Create state with snark account
         let account_id = test_account_id(1);
@@ -1442,9 +1444,9 @@ mod tests {
             .build()
             .await;
 
-        // Valid tx for account1: L1 header claims exist in both MMRs
+        // Valid tx for account1: L1 header claims exist in both MMRs (using L1 block height)
         let valid_claims = vec![AccumulatorClaim::new(
-            env.manifests[0].index,
+            env.manifests[0].height,
             env.manifests[0].hash,
         )];
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
@@ -1453,9 +1455,9 @@ mod tests {
             .build();
         let valid_txid = valid_tx.compute_txid();
 
-        // Invalid tx for account2: fake L1 header claim NOT in MMR
+        // Invalid tx for account2: valid height but fake hash (NOT matching the real manifest)
         let fake_hash = test_hash(99);
-        let invalid_claims = vec![AccumulatorClaim::new(0, fake_hash)];
+        let invalid_claims = vec![AccumulatorClaim::new(env.manifests[0].height, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)
             .with_l1_claims(invalid_claims)

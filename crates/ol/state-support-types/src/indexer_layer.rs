@@ -436,6 +436,10 @@ where
         self.inner.asm_manifests_mmr()
     }
 
+    fn asm_manifests_mmr_offset(&self) -> u64 {
+        self.inner.asm_manifests_mmr_offset()
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {

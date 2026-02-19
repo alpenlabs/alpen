@@ -64,6 +64,9 @@ pub trait IStateAccessor {
     /// Gets the ASM manifests MMR for ledger reference verification.
     fn asm_manifests_mmr(&self) -> &Mmr64;
 
+    /// Gets the offset for mapping L1 block heights to manifests MMR leaf indices.
+    fn asm_manifests_mmr_offset(&self) -> u64;
+
     // ===== Account methods =====
 
     /// Checks if an account exists.

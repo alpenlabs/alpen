@@ -124,6 +124,10 @@ where
         self.batch.epochal().asm_manifests_mmr()
     }
 
+    fn asm_manifests_mmr_offset(&self) -> u64 {
+        self.batch.epochal().manifests_mmr_offset()
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {

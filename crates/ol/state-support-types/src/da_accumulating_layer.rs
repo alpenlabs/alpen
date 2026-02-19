@@ -686,6 +686,10 @@ where
     fn asm_manifests_mmr(&self) -> &Mmr64 {
         self.inner.asm_manifests_mmr()
     }
+
+    fn asm_manifests_mmr_offset(&self) -> u64 {
+        self.inner.asm_manifests_mmr_offset()
+    }
 }
 
 fn encode_payload(state_diff: StateDiff) -> Result<Vec<u8>, DaAccumulationError> {

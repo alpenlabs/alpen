@@ -102,6 +102,7 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
+    genesis_l1_height: u64,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
@@ -114,12 +115,28 @@ impl<M, S> Debug for BlockAssemblyContext<M, S> {
 
 impl<M, S> BlockAssemblyContext<M, S> {
     /// Create a new block assembly context.
-    pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: S) -> Self {
+    pub fn new(
+        storage: Arc<NodeStorage>,
+        mempool_provider: M,
+        state_provider: S,
+        genesis_l1_height: u64,
+    ) -> Self {
         Self {
             storage,
             mempool_provider,
             state_provider,
+            genesis_l1_height,
         }
+    }
+
+    /// Converts an L1 block height to an MMR leaf index using the offset.
+    fn height_to_mmr_index(&self, height: u64) -> BlockAssemblyResult<u64> {
+        let offset = self.genesis_l1_height + 1;
+        height.checked_sub(offset).ok_or_else(|| {
+            BlockAssemblyError::Other(format!(
+                "L1 height {height} is before MMR start offset {offset}"
+            ))
+        })
     }
 
     fn validate_l1_header_claims(
@@ -128,18 +145,18 @@ impl<M, S> BlockAssemblyContext<M, S> {
     ) -> BlockAssemblyResult<()> {
         let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
         for claim in l1_header_refs {
-            let leaf_idx = claim.idx();
-            let pos = leaf_index_to_pos(leaf_idx);
+            let mmr_idx = self.height_to_mmr_index(claim.idx())?;
+            let pos = leaf_index_to_pos(mmr_idx);
 
             let entry_hash = claim.entry_hash();
             let actual_hash = mmr_handle
                 .get_node_blocking(pos)
                 .map_err(map_l1_header_mmr_error)?
-                .ok_or(BlockAssemblyError::L1HeaderLeafNotFound(leaf_idx))?;
+                .ok_or(BlockAssemblyError::L1HeaderLeafNotFound(mmr_idx))?;
 
             if actual_hash.as_ref() != entry_hash.as_ref() {
                 return Err(BlockAssemblyError::L1HeaderHashMismatch {
-                    idx: leaf_idx,
+                    idx: claim.idx(),
                     expected: entry_hash,
                     actual: actual_hash,
                 });
@@ -358,13 +375,14 @@ where
 
         self.validate_l1_header_claims(l1_header_refs)?;
 
-        // Generate proofs
+        // Generate proofs using MMR indices (height → index conversion)
         let mut l1_header_proofs = Vec::new();
         for claim in l1_header_refs {
+            let mmr_idx = self.height_to_mmr_index(claim.idx())?;
             let entry_hash: [u8; 32] = claim.entry_hash().into();
 
             let merkle_proof = mmr_handle
-                .generate_proof(claim.idx())
+                .generate_proof(mmr_idx)
                 .map_err(map_l1_header_mmr_error)?;
 
             let mmr_proof = MmrEntryProof::new(entry_hash, merkle_proof);
@@ -398,7 +416,7 @@ mod tests {
         asm_mmr.add_header(test_hash(42));
 
         // Collect claims and hashes before creating context
-        let claims = asm_mmr.claims();
+        let claims = asm_mmr.claims(0);
         let expected_hash = asm_mmr.hashes()[0];
 
         let ctx = create_test_context(storage);
@@ -419,7 +437,7 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_headers((1..=3).map(test_hash));
 
-        let claims = asm_mmr.claims();
+        let claims = asm_mmr.claims(0);
 
         let ctx = create_test_context(storage);
 
@@ -438,10 +456,10 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_header(test_hash(42));
 
-        // Create claim with correct index but wrong hash
-        let claim_idx = asm_mmr.indices()[0];
+        // Create claim with correct height but wrong hash
+        let claim_height = asm_mmr.indices()[0] + 1; // height = mmr_idx + offset(1)
         let wrong_hash = test_hash(99);
-        let claim = AccumulatorClaim::new(claim_idx, wrong_hash);
+        let claim = AccumulatorClaim::new(claim_height, wrong_hash);
 
         let ctx = create_test_context(storage);
 
@@ -450,7 +468,7 @@ mod tests {
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
-            matches!(&err, BlockAssemblyError::L1HeaderHashMismatch { idx, .. } if *idx == claim_idx),
+            matches!(&err, BlockAssemblyError::L1HeaderHashMismatch { idx, .. } if *idx == claim_height),
             "Expected L1HeaderHashMismatch error, got: {:?}",
             err
         );
@@ -464,9 +482,9 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_header(test_hash(42));
 
-        // Create claim with non-existent index (index 999 doesn't exist)
-        let nonexistent_index = 999u64;
-        let claim = AccumulatorClaim::new(nonexistent_index, asm_mmr.hashes()[0]);
+        // Create claim with non-existent height (height 999 → MMR index 998, doesn't exist)
+        let nonexistent_height = 999u64;
+        let claim = AccumulatorClaim::new(nonexistent_height, asm_mmr.hashes()[0]);
 
         let ctx = create_test_context(storage);
 
@@ -474,8 +492,9 @@ mod tests {
 
         assert!(result.is_err(), "Should fail with missing index");
         let err = result.unwrap_err();
+        let expected_mmr_idx = nonexistent_height - 1; // offset = genesis_height(0) + 1
         assert!(
-            matches!(&err, BlockAssemblyError::L1HeaderLeafNotFound(idx) if *idx == nonexistent_index),
+            matches!(&err, BlockAssemblyError::L1HeaderLeafNotFound(idx) if *idx == expected_mmr_idx),
             "Expected L1HeaderLeafNotFound error, got: {:?}",
             err
         );
@@ -484,7 +503,8 @@ mod tests {
     #[test]
     fn test_l1_header_claim_empty_mmr() {
         let storage = create_test_storage();
-        let claim = AccumulatorClaim::new(0, test_hash(42));
+        // height=1 is the minimum valid height (offset = genesis_height(0) + 1)
+        let claim = AccumulatorClaim::new(1, test_hash(42));
         let ctx = create_test_context(storage);
 
         let result = ctx.generate_l1_header_proofs(&[claim]);

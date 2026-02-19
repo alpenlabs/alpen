@@ -32,6 +32,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     verify_ledger_refs(
         target,
         state_accessor.asm_manifests_mmr(),
+        state_accessor.asm_manifests_mmr_offset(),
         accum_proofs.ledger_ref_proofs(),
         update.operation().ledger_refs(),
     )?;
@@ -94,9 +95,13 @@ pub fn verify_message_index(
 }
 
 /// Verifies the ledger ref proofs against the provided asm mmr for an account.
+///
+/// The `offset` converts L1 block heights (stored in `AccumulatorClaim.idx`)
+/// to MMR leaf indices: `mmr_idx = height - offset`.
 fn verify_ledger_refs(
     target: AccountId,
     mmr: &Mmr64,
+    offset: u64,
     ledger_ref_proofs: &LedgerRefProofs,
     ledger_refs: &LedgerRefs,
 ) -> AcctResult<()> {
@@ -114,11 +119,18 @@ fn verify_ledger_refs(
     {
         let hash = lref.entry_hash();
         let cohashes = proof.proof().cohashes();
-        let generic_proof = MerkleProof::from_cohashes(cohashes, lref.idx());
+        let mmr_idx =
+            lref.idx()
+                .checked_sub(offset)
+                .ok_or_else(|| AcctError::InvalidLedgerReference {
+                    account_id: target,
+                    ref_idx: lref.idx(),
+                })?;
+        let generic_proof = MerkleProof::from_cohashes(cohashes, mmr_idx);
         if !generic_mmr.verify::<StrataHasher>(&generic_proof, hash.as_ref()) {
             return Err(AcctError::InvalidLedgerReference {
                 account_id: target,
-                ref_idx: proof.entry_idx(),
+                ref_idx: lref.idx(),
             });
         }
     }
