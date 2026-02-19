@@ -107,7 +107,8 @@ fn build_update_operation(
             AccumulatorClaim::new(da_ref.block.height_u64(), *da_ref.block.blkid().as_ref())
         })
         .collect();
-    // Dedup by height — multiple DA txns may land in the same L1 block
+    // Canonicalize by height before dedup: multiple DA txns may land in the same L1 block.
+    l1_header_refs.sort_by_key(|c| c.idx());
     l1_header_refs.dedup_by_key(|c| c.idx());
     let ledger_refs = LedgerRefs::new(l1_header_refs);
 
