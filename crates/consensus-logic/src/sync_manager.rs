@@ -285,7 +285,7 @@ pub fn spawn_asm_worker(
     executor: &TaskExecutor,
     handle: Handle,
     storage: Arc<NodeStorage>,
-    rollup_params: Arc<RollupParams>,
+    _rollup_params: Arc<RollupParams>,
     asm_params: Arc<AsmParams>,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<AsmWorkerHandle> {
@@ -303,7 +303,6 @@ pub fn spawn_asm_worker(
     // Use the new builder API to launch the worker and get a handle.
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
-        .with_params(rollup_params)
         .with_asm_params(asm_params)
         .launch(executor)?;
 

@@ -18,14 +18,13 @@
 //! - Requires Bitcoin node with transaction indexing enabled (`txindex=1`)
 //! - Returns `WorkerError::BitcoinTxNotFound` if transaction not found
 
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 use strata_asm_common::{
     AsmMerkleProof, AuxData, AuxRequests, ManifestHashRange, VerifiableManifestHash,
 };
 use strata_asm_manifest_types::Hash32;
 use strata_btc_types::BitcoinTxid;
-use strata_params::RollupParams;
 use strata_primitives::prelude::*;
 use tracing::*;
 
@@ -44,7 +43,7 @@ pub struct AuxDataResolver<'a> {
     /// Worker context for accessing ASM state and MMR database
     context: &'a dyn WorkerContext,
     /// Rollup parameters for genesis height calculation
-    params: Arc<RollupParams>,
+    l1_genesis: L1BlockCommitment,
 }
 
 impl<'a> AuxDataResolver<'a> {
@@ -54,8 +53,11 @@ impl<'a> AuxDataResolver<'a> {
     ///
     /// * `context` - Worker context for ASM state access and MMR database
     /// * `params` - Rollup parameters (needed for genesis height)
-    pub fn new(context: &'a dyn WorkerContext, params: Arc<RollupParams>) -> Self {
-        Self { context, params }
+    pub fn new(context: &'a dyn WorkerContext, l1_genesis: L1BlockCommitment) -> Self {
+        Self {
+            context,
+            l1_genesis,
+        }
     }
 
     /// Resolves all auxiliary data requests from subprotocols.
@@ -168,7 +170,7 @@ impl<'a> AuxDataResolver<'a> {
 
         debug!(count = ranges.len(), "Resolving manifest hash ranges");
 
-        let genesis_height = self.params.genesis_l1_view.height_u64();
+        let genesis_height = self.l1_genesis.height_u64();
 
         let mut resolved = Vec::new();
 
@@ -243,7 +245,7 @@ impl<'a> AuxDataResolver<'a> {
 impl<'a> fmt::Debug for AuxDataResolver<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AuxDataResolver")
-            .field("params", &self.params)
+            .field("l1_genesis", &self.l1_genesis)
             .finish_non_exhaustive()
     }
 }
