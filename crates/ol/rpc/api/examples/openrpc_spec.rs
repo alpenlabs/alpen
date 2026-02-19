@@ -17,10 +17,12 @@
 //! <https://playground.open-rpc.org> for interactive exploration.
 #![allow(unused_crate_dependencies, reason = "example binary")]
 
+use std::env;
+
 use strata_ol_rpc_api::{OLClientRpcOpenRpc, OLFullNodeRpcOpenRpc, OLSequencerRpcOpenRpc};
 
 fn main() {
-    let compact = std::env::args().any(|a| a == "--compact");
+    let compact = env::args().any(|a| a == "--compact");
 
     let mut project = strata_open_rpc::Project::new(
         "0.1.0",

@@ -1,5 +1,8 @@
 //! Types related to OL RPC.
 
+#[cfg(feature = "jsonschema")]
+mod jsonschema;
+
 mod account_state;
 mod account_summary;
 mod block;

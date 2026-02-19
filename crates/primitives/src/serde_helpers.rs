@@ -34,28 +34,11 @@ pub mod serde_height {
 }
 
 pub mod serde_hex_bytes {
-    use std::borrow::Cow;
-
     use serde::{Deserialize, Serialize};
     use strata_identifiers::L2BlockId;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HexBytes(#[serde(with = "hex::serde")] pub Vec<u8>);
-
-    #[cfg(feature = "jsonschema")]
-    impl schemars::JsonSchema for HexBytes {
-        fn schema_name() -> Cow<'static, str> {
-            "HexBytes".into()
-        }
-
-        fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-            schemars::json_schema!({
-                "type": "string",
-                "format": "hex",
-                "description": "Hex-encoded byte array"
-            })
-        }
-    }
 
     impl HexBytes {
         pub fn into_inner(self) -> Vec<u8> {
@@ -90,21 +73,6 @@ pub mod serde_hex_bytes {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HexBytes32(#[serde(with = "hex::serde")] pub [u8; 32]);
 
-    #[cfg(feature = "jsonschema")]
-    impl schemars::JsonSchema for HexBytes32 {
-        fn schema_name() -> Cow<'static, str> {
-            "HexBytes32".into()
-        }
-
-        fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-            schemars::json_schema!({
-                "type": "string",
-                "format": "hex",
-                "description": "32-byte hex-encoded value"
-            })
-        }
-    }
-
     // NOTE: keeping for backward compatibility
     impl From<&L2BlockId> for HexBytes32 {
         fn from(value: &L2BlockId) -> Self {
@@ -126,21 +94,6 @@ pub mod serde_hex_bytes {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HexBytes64(#[serde(with = "hex::serde")] pub [u8; 64]);
-
-    #[cfg(feature = "jsonschema")]
-    impl schemars::JsonSchema for HexBytes64 {
-        fn schema_name() -> Cow<'static, str> {
-            "HexBytes64".into()
-        }
-
-        fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-            schemars::json_schema!({
-                "type": "string",
-                "format": "hex",
-                "description": "64-byte hex-encoded value"
-            })
-        }
-    }
 
     impl From<[u8; 64]> for HexBytes64 {
         fn from(value: [u8; 64]) -> Self {

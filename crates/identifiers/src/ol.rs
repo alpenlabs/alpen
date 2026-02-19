@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cmp, fmt, str};
+use std::{cmp, fmt, str};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -37,17 +37,6 @@ impl_buf_wrapper!(OLBlockId, Buf32, 32);
 // Manual TreeHash implementation for transparent wrapper
 impl_ssz_transparent_buf32_wrapper!(OLBlockId);
 
-#[cfg(feature = "jsonschema")]
-impl schemars::JsonSchema for OLBlockId {
-    fn schema_name() -> Cow<'static, str> {
-        "OLBlockId".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        generator.subschema_for::<Buf32>()
-    }
-}
-
 impl OLBlockId {
     /// Returns a dummy blkid that is all zeroes.
     pub fn null() -> Self {
@@ -82,26 +71,6 @@ impl crate::OLBlockCommitment {
 
     pub fn is_null(&self) -> bool {
         self.slot == 0 && self.blkid.0.is_zero()
-    }
-}
-
-#[cfg(feature = "jsonschema")]
-impl schemars::JsonSchema for OLBlockCommitment {
-    fn schema_name() -> Cow<'static, str> {
-        "OLBlockCommitment".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let slot_schema = generator.subschema_for::<u64>();
-        let blkid_schema = generator.subschema_for::<OLBlockId>();
-        schemars::json_schema!({
-            "type": "object",
-            "properties": {
-                "slot": slot_schema,
-                "blkid": blkid_schema
-            },
-            "required": ["slot", "blkid"]
-        })
     }
 }
 
@@ -192,17 +161,6 @@ pub struct OLTxId(Buf32);
 impl_buf_wrapper!(OLTxId, Buf32, 32);
 
 crate::impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
-
-#[cfg(feature = "jsonschema")]
-impl schemars::JsonSchema for OLTxId {
-    fn schema_name() -> Cow<'static, str> {
-        "OLTxId".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        generator.subschema_for::<Buf32>()
-    }
-}
 
 #[cfg(test)]
 mod tests {

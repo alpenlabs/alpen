@@ -13,7 +13,7 @@
 //! We also have a sentinel "null" epoch used to refer to the "finalized epoch"
 //! as of the genesis block.
 
-use std::{borrow::Cow, cmp, fmt, str};
+use std::{cmp, fmt, str};
 
 use const_hex as hex;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
@@ -85,28 +85,6 @@ impl Codec for EpochCommitment {
             epoch,
             last_slot,
             last_blkid,
-        })
-    }
-}
-
-#[cfg(feature = "jsonschema")]
-impl schemars::JsonSchema for EpochCommitment {
-    fn schema_name() -> Cow<'static, str> {
-        "EpochCommitment".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let epoch_schema = generator.subschema_for::<Epoch>();
-        let last_slot_schema = generator.subschema_for::<Slot>();
-        let last_blkid_schema = generator.subschema_for::<OLBlockId>();
-        schemars::json_schema!({
-            "type": "object",
-            "properties": {
-                "epoch": epoch_schema,
-                "last_slot": last_slot_schema,
-                "last_blkid": last_blkid_schema
-            },
-            "required": ["epoch", "last_slot", "last_blkid"]
         })
     }
 }

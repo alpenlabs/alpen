@@ -1,4 +1,4 @@
-use std::{borrow::Cow, str::FromStr};
+use std::str::FromStr;
 
 #[cfg(feature = "bitcoin")]
 use bitcoin::secp256k1::{Error, SecretKey, XOnlyPublicKey, schnorr::Signature};
@@ -69,21 +69,6 @@ internal::impl_buf_common!(Buf32, 32);
 internal::impl_buf_serde!(Buf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
-
-#[cfg(feature = "jsonschema")]
-impl schemars::JsonSchema for Buf32 {
-    fn schema_name() -> Cow<'static, str> {
-        "Buf32".into()
-    }
-
-    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "string",
-            "format": "hex",
-            "description": "32-byte hex-encoded value"
-        })
-    }
-}
 
 impl FromStr for Buf32 {
     type Err = hex::FromHexError;
@@ -241,21 +226,6 @@ internal::impl_buf_common!(Buf64, 64);
 internal::impl_buf_serde!(Buf64, 64);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
-
-#[cfg(feature = "jsonschema")]
-impl schemars::JsonSchema for Buf64 {
-    fn schema_name() -> Cow<'static, str> {
-        "Buf64".into()
-    }
-
-    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "string",
-            "format": "hex",
-            "description": "64-byte hex-encoded value"
-        })
-    }
-}
 
 // NOTE: we cannot do `ZeroizeOnDrop` since `Buf64` is `Copy`.
 impl Zeroize for Buf64 {
