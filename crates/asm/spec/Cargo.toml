@@ -7,13 +7,10 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-bitcoin.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-proto-administration.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
 strata-asm-proto-checkpoint-v0.workspace = true
-strata-crypto.workspace = true
 strata-l1-txfmt.workspace = true
-strata-params.workspace = true
 strata-primitives.workspace = true
