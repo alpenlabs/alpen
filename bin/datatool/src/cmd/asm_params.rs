@@ -38,6 +38,9 @@ const DEFAULT_OPERATOR_FEE: u64 = 50_000_000;
 /// The default confirmation depth for admin subprotocol.
 const DEFAULT_CONFIRMATION_DEPTH: u16 = 144;
 
+/// The default allowed seqno gap for admin subprotocol.
+const DEFAULT_MAX_SEQNO_GAP: NonZero<u8> = NonZero::new(10).expect("10 is non-zero");
+
 /// Executes the `gen-asm-params` subcommand.
 ///
 /// Generates the ASM params for a Strata network.
@@ -96,6 +99,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         threshold.clone(),
         threshold,
         cmd.confirmation_depth.unwrap_or(DEFAULT_CONFIRMATION_DEPTH),
+        cmd.max_seqno_gap.unwrap_or(DEFAULT_MAX_SEQNO_GAP),
     );
 
     // Build checkpoint config.

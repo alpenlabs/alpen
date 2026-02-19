@@ -1,6 +1,6 @@
 //! Command line arguments for Strata's `datatool` binary.
 
-use std::path::PathBuf;
+use std::{num::NonZero, path::PathBuf};
 
 use argh::FromArgs;
 use bitcoin::Network;
@@ -251,6 +251,12 @@ pub(crate) struct SubcAsmParams {
         description = "confirmation depth for admin subprotocol (default 144)"
     )]
     pub(crate) confirmation_depth: Option<u16>,
+
+    #[argh(
+        option,
+        description = "confirmation depth for admin subprotocol (default 100)"
+    )]
+    pub(crate) max_seqno_gap: Option<NonZero<u8>>,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
