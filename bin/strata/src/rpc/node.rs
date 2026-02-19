@@ -141,7 +141,7 @@ impl OLClientRpcServer for OLRpcServer {
                 .await
                 .map_err(db_error)?
                 .ok_or_else(|| {
-                    not_found_error(format!("No epoch commitment found for epoch {epoch}"))
+                    not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
                 })?
         } else {
             EpochCommitment::null()
