@@ -702,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn test_l1_header_claim_hash_mismatch() {
+    fn test_l1_header_claim_uses_canonical_mmr_leaf_hash() {
         let storage = create_test_storage();
 
         // Use StorageAsmMmr with random hashes
@@ -734,14 +734,25 @@ mod tests {
             _ => panic!("Expected snark account update payload"),
         };
         let result = convert_snark_account_update(&ctx, mempool_payload);
-
-        assert!(result.is_err(), "Should fail with hash mismatch");
-        let err = result.unwrap_err();
         assert!(
-            matches!(&err, BlockAssemblyError::L1HeaderHashMismatch { .. }),
-            "Expected L1HeaderHashMismatch, got: {:?}",
-            err
+            result.is_ok(),
+            "Proof generation should succeed for valid height"
         );
+
+        let payload = result.unwrap();
+        match payload {
+            TransactionPayload::SnarkAccountUpdate(sau) => {
+                let proofs = sau.update_container().accumulator_proofs();
+                let l1_proofs = proofs.ledger_ref_proofs().l1_headers_proofs();
+                assert_eq!(l1_proofs.len(), 1, "Should have 1 L1 header proof");
+                assert_eq!(
+                    l1_proofs[0].entry_hash(),
+                    asm_mmr.hashes()[0],
+                    "Proof should use canonical hash from MMR leaf"
+                );
+            }
+            _ => panic!("Expected SnarkAccountUpdate transaction"),
+        }
     }
 
     #[test]
@@ -1455,9 +1466,10 @@ mod tests {
             .build();
         let valid_txid = valid_tx.compute_txid();
 
-        // Invalid tx for account2: valid height but fake hash (NOT matching the real manifest)
+        // Invalid tx for account2: non-existent L1 height (no corresponding MMR leaf)
         let fake_hash = test_hash(99);
-        let invalid_claims = vec![AccumulatorClaim::new(env.manifests[0].height, fake_hash)];
+        let missing_height = env.manifests.last().unwrap().height + 100;
+        let invalid_claims = vec![AccumulatorClaim::new(missing_height, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)
             .with_l1_claims(invalid_claims)

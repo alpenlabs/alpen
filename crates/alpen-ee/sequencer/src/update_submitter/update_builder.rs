@@ -100,7 +100,9 @@ fn build_update_operation(
     let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs as u32, 0);
     let extra_data_buf = encode_to_vec(&extra_data)?;
 
-    // 4. Build ledger refs from DA block references (idx = L1 block height)
+    // 4. Build ledger refs from DA block references (idx = L1 block height). The hash value is
+    //    carried as EE-side context; OL proof generation/verification binds the canonical ASM MMR
+    //    leaf hash by height.
     let mut l1_header_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {

@@ -117,8 +117,6 @@ fn verify_ledger_refs(
         .iter()
         .zip(ledger_ref_proofs.l1_headers_proofs())
     {
-        let hash = lref.entry_hash();
-        let cohashes = proof.proof().cohashes();
         let mmr_idx =
             lref.idx()
                 .checked_sub(offset)
@@ -126,8 +124,15 @@ fn verify_ledger_refs(
                     account_id: target,
                     ref_idx: lref.idx(),
                 })?;
+        if proof.entry_idx() != mmr_idx {
+            return Err(AcctError::InvalidLedgerReference {
+                account_id: target,
+                ref_idx: lref.idx(),
+            });
+        }
+        let cohashes = proof.proof().cohashes();
         let generic_proof = MerkleProof::from_cohashes(cohashes, mmr_idx);
-        if !generic_mmr.verify::<StrataHasher>(&generic_proof, hash.as_ref()) {
+        if !generic_mmr.verify::<StrataHasher>(&generic_proof, proof.entry_hash().as_ref()) {
             return Err(AcctError::InvalidLedgerReference {
                 account_id: target,
                 ref_idx: lref.idx(),

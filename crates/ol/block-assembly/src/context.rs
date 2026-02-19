@@ -142,28 +142,20 @@ impl<M, S> BlockAssemblyContext<M, S> {
     fn validate_l1_header_claims(
         &self,
         l1_header_refs: &[AccumulatorClaim],
-    ) -> BlockAssemblyResult<()> {
+    ) -> BlockAssemblyResult<Vec<(u64, Hash)>> {
         let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
+        let mut resolved_refs = Vec::with_capacity(l1_header_refs.len());
         for claim in l1_header_refs {
             let mmr_idx = self.height_to_mmr_index(claim.idx())?;
             let pos = leaf_index_to_pos(mmr_idx);
-
-            let entry_hash = claim.entry_hash();
             let actual_hash = mmr_handle
                 .get_node_blocking(pos)
                 .map_err(map_l1_header_mmr_error)?
                 .ok_or(BlockAssemblyError::L1HeaderLeafNotFound(mmr_idx))?;
-
-            if actual_hash.as_ref() != entry_hash.as_ref() {
-                return Err(BlockAssemblyError::L1HeaderHashMismatch {
-                    idx: claim.idx(),
-                    expected: entry_hash,
-                    actual: actual_hash,
-                });
-            }
+            resolved_refs.push((mmr_idx, actual_hash));
         }
 
-        Ok(())
+        Ok(resolved_refs)
     }
 
     fn validate_inbox_entries(
@@ -373,14 +365,11 @@ where
     ) -> BlockAssemblyResult<LedgerRefProofs> {
         let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
 
-        self.validate_l1_header_claims(l1_header_refs)?;
+        let resolved_refs = self.validate_l1_header_claims(l1_header_refs)?;
 
         // Generate proofs using MMR indices (height → index conversion)
         let mut l1_header_proofs = Vec::new();
-        for claim in l1_header_refs {
-            let mmr_idx = self.height_to_mmr_index(claim.idx())?;
-            let entry_hash: [u8; 32] = claim.entry_hash().into();
-
+        for (mmr_idx, entry_hash) in resolved_refs {
             let merkle_proof = mmr_handle
                 .generate_proof(mmr_idx)
                 .map_err(map_l1_header_mmr_error)?;
@@ -449,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn test_l1_header_proof_gen_hash_mismatch() {
+    fn test_l1_header_proof_gen_uses_canonical_mmr_leaf_hash() {
         let storage = create_test_storage();
 
         // Add a header hash to the ASM MMR
@@ -460,18 +449,19 @@ mod tests {
         let claim_height = asm_mmr.indices()[0] + 1; // height = mmr_idx + offset(1)
         let wrong_hash = test_hash(99);
         let claim = AccumulatorClaim::new(claim_height, wrong_hash);
+        let expected_hash = asm_mmr.hashes()[0];
 
         let ctx = create_test_context(storage);
 
         let result = ctx.generate_l1_header_proofs(&[claim]);
 
-        assert!(result.is_err(), "Should fail with hash mismatch");
-        let err = result.unwrap_err();
+        assert!(result.is_ok(), "Should succeed with valid claim height");
+        let proofs = result.unwrap();
         assert!(
-            matches!(&err, BlockAssemblyError::L1HeaderHashMismatch { idx, .. } if *idx == claim_height),
-            "Expected L1HeaderHashMismatch error, got: {:?}",
-            err
+            proofs.l1_headers_proofs()[0].entry_hash() == expected_hash,
+            "Proof should use canonical hash from MMR leaf"
         );
+        assert_ne!(proofs.l1_headers_proofs()[0].entry_hash(), wrong_hash);
     }
 
     #[test]
