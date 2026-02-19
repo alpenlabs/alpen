@@ -6,8 +6,6 @@
 //! **Security Note**: This spec should only be used in testing environments.
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
-use strata_asm_params::{AdministrationSubprotoParams, BridgeV1Config};
-use strata_asm_proto_checkpoint_v0::CheckpointV0Params;
 use strata_asm_proto_debug_v1::DebugSubproto;
 use strata_asm_spec::StrataAsmSpec;
 use strata_l1_txfmt::MagicBytes;
@@ -51,18 +49,7 @@ impl DebugAsmSpec {
     /// Creates a debug ASM spec by wrapping a production spec.
     ///
     /// This adds debug capabilities to an existing production spec.
-    pub fn new(
-        magic_bytes: strata_l1_txfmt::MagicBytes,
-        checkpoint_v0_params: CheckpointV0Params,
-        bridge_v1_genesis: BridgeV1Config,
-        admin_params: AdministrationSubprotoParams,
-    ) -> Self {
-        let inner = StrataAsmSpec::new(
-            magic_bytes,
-            checkpoint_v0_params,
-            bridge_v1_genesis,
-            admin_params,
-        );
+    pub fn new(inner: StrataAsmSpec) -> Self {
         Self { inner }
     }
 }

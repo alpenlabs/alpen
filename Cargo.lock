@@ -13969,6 +13969,7 @@ dependencies = [
  "strata-asm-params",
  "strata-asm-proto-administration",
  "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-v0",
  "strata-l1-txfmt",
  "strata-primitives",
@@ -13979,8 +13980,6 @@ name = "strata-asm-spec-debug"
 version = "0.1.0"
 dependencies = [
  "strata-asm-common",
- "strata-asm-params",
- "strata-asm-proto-checkpoint-v0",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
  "strata-l1-txfmt",
