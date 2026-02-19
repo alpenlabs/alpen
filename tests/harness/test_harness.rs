@@ -151,6 +151,7 @@ impl AsmTestHarness {
         let asm_handle = AsmWorkerBuilder::new()
             .with_context(context.clone())
             .with_params(rollup_params.clone())
+            .with_asm_params(asm_params.clone())
             .launch(&executor)?;
 
         let harness = Self {
