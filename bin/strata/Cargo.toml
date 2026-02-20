@@ -22,7 +22,6 @@ strata-asm-worker.workspace = true
 strata-btcio.workspace = true
 strata-chain-worker-new.workspace = true
 strata-checkpoint-types-ssz = { workspace = true, optional = true }
-strata-codec.workspace = true
 strata-common.workspace = true
 strata-config.workspace = true
 strata-consensus-logic.workspace = true
@@ -31,7 +30,6 @@ strata-csm-types.workspace = true
 strata-csm-worker.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
-strata-ee-acct-types.workspace = true
 strata-identifiers.workspace = true
 strata-key-derivation = { workspace = true, optional = true }
 strata-ledger-types.workspace = true

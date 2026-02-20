@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jsonrpsee::{core::RpcResult, types::ErrorObjectOwned};
+use jsonrpsee::core::RpcResult;
 use ssz::Encode;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
