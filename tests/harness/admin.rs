@@ -5,20 +5,26 @@
 //! # Example
 //!
 //! ```ignore
-//! use harness::test_harness::create_test_harness;
-//! use harness::admin::{AdminExt, sequencer_update};
+//! use harness::test_harness::AsmTestHarnessBuilder;
+//! use harness::admin::{create_test_admin_setup, sequencer_update, AdminExt};
 //!
-//! let harness = create_test_harness().await?;
-//! let mut ctx = harness.admin_context();
+//! let (admin_params, mut ctx) = create_test_admin_setup(2);
+//! let harness = AsmTestHarnessBuilder::default()
+//!     .with_admin_params(admin_params)
+//!     .build()
+//!     .await?;
 //! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
 //! let state = harness.admin_state()?;
 //! ```
 
 use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
-use bitcoin::{secp256k1::SecretKey, BlockHash};
+use bitcoin::{
+    secp256k1::{PublicKey, Secp256k1, SecretKey},
+    BlockHash,
+};
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_params::{AsmParams, Role};
+use strata_asm_params::{AdministrationSubprotoParams, AsmParams, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
     actions::{
@@ -34,7 +40,8 @@ use strata_asm_txs_admin::{
     test_utils::create_signature_set,
 };
 use strata_crypto::{
-    keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfigUpdate,
+    keys::compressed::CompressedPublicKey,
+    threshold_signature::{ThresholdConfig, ThresholdConfigUpdate},
 };
 use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
@@ -84,6 +91,15 @@ pub struct AdminContext {
 }
 
 impl AdminContext {
+    /// Creates an admin context with the given signing keys.
+    pub fn new(privkeys: Vec<SecretKey>, signer_indices: Vec<u8>) -> Self {
+        Self {
+            privkeys,
+            signer_indices,
+            seqnos: HashMap::new(),
+        }
+    }
+
     /// Create admin context from rollup parameters.
     ///
     /// Uses the test operator key which is configured for both admin roles.
@@ -188,6 +204,33 @@ pub fn predicate_update(key: PredicateKey, proof_type: ProofType) -> MultisigAct
     MultisigAction::Update(UpdateAction::VerifyingKey(PredicateUpdate::new(
         key, proof_type,
     )))
+}
+
+// ============================================================================
+// Test Setup
+// ============================================================================
+
+/// Creates matching admin subprotocol params and signing context.
+///
+/// Derives a 1-of-1 [`ThresholdConfig`] from [`get_test_operator_secret_key`] for both
+/// admin roles, so that signatures produced by the returned [`AdminContext`] pass
+/// verification against the returned [`AdministrationSubprotoParams`].
+pub fn create_test_admin_setup(
+    confirmation_depth: u16,
+) -> (AdministrationSubprotoParams, AdminContext) {
+    let secp = Secp256k1::new();
+    let sk = get_test_operator_secret_key();
+    let pk = CompressedPublicKey::from(PublicKey::from_secret_key(&secp, &sk));
+    let config =
+        ThresholdConfig::try_new(vec![pk], NonZero::new(1).unwrap()).expect("valid config");
+
+    let params = AdministrationSubprotoParams {
+        strata_administrator: config.clone(),
+        strata_sequencer_manager: config,
+        confirmation_depth,
+    };
+    let ctx = AdminContext::new(vec![sk], vec![0]);
+    (params, ctx)
 }
 
 /// Extract admin subprotocol state from AnchorState.

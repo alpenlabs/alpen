@@ -8,8 +8,11 @@
 //!
 //! These tests use the harness's ergonomic admin API:
 //! ```ignore
-//! let harness = create_test_harness().await?;
-//! let mut ctx = harness.admin_context();
+//! let (admin_params, mut ctx) = create_test_admin_setup(2);
+//! let harness = AsmTestHarnessBuilder::default()
+//!     .with_admin_params(admin_params)
+//!     .build()
+//!     .await?;
 //! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
 //! let state = harness.admin_state()?;
 //! ```
@@ -25,10 +28,10 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoind_async_client::traits::Reader;
 use harness::{
     admin::{
-        cancel_update, multisig_config_update, operator_set_update, predicate_update,
-        sequencer_update, AdminExt, SUBPROTOCOL_ID as ADMIN_SUBPROTOCOL_ID,
+        cancel_update, create_test_admin_setup, multisig_config_update, operator_set_update,
+        predicate_update, sequencer_update, AdminExt, SUBPROTOCOL_ID as ADMIN_SUBPROTOCOL_ID,
     },
-    test_harness::create_test_harness,
+    test_harness::AsmTestHarnessBuilder,
 };
 use integration_tests::harness;
 use rand::rngs::OsRng;
@@ -50,8 +53,12 @@ use strata_predicate::PredicateKey;
 /// Verifies sequencer updates are applied immediately (not queued).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sequencer_update_applies_immediately() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     harness
         .submit_admin_action(&mut ctx, sequencer_update([1u8; 32]))
@@ -79,8 +86,12 @@ async fn test_sequencer_update_applies_immediately() {
 /// Verifies operator set updates are queued (not applied immediately).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_operator_update_is_queued() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     harness
         .submit_admin_action(
@@ -110,8 +121,12 @@ async fn test_operator_update_is_queued() {
 /// Verifies multisig config updates are queued (not applied immediately).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multisig_update_is_queued() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols
     harness.mine_block(None).await.unwrap();
@@ -162,8 +177,12 @@ async fn test_multisig_update_is_queued() {
 /// Verifies predicate (verifying key) updates are queued.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_predicate_update_is_queued() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols
     harness.mine_block(None).await.unwrap();
@@ -191,8 +210,12 @@ async fn test_predicate_update_is_queued() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_queued_update_activates() {
     // confirmation_depth=2, so updates activate 2 blocks after submission
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols
     harness.mine_block(None).await.unwrap();
@@ -263,8 +286,12 @@ async fn test_queued_update_activates() {
 /// Verifies cancel action removes a queued update.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_removes_queued_update() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Create an operator set update that gets queued (ID=0)
     harness
@@ -298,7 +325,12 @@ async fn test_cancel_removes_queued_update() {
 /// Verifies transactions signed with wrong key are rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wrong_key_rejected() {
-    let harness = create_test_harness().await.unwrap();
+    let (admin_params, _ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Create a transaction signed with WRONG key (not the operator key)
     let secp = Secp256k1::new();
@@ -345,8 +377,12 @@ async fn test_wrong_key_rejected() {
 /// Verifies transactions with corrupted signatures are rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_corrupted_signature_rejected() {
-    let harness = create_test_harness().await.unwrap();
-    let ctx = harness.admin_context();
+    let (admin_params, ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     let action = sequencer_update([88u8; 32]);
     let seqno = 1;
@@ -396,8 +432,12 @@ async fn test_corrupted_signature_rejected() {
 /// Verifies replay attacks (reused sequence numbers) are rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_replay_attack_rejected() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Submit first transaction (seqno=0, auto-incremented to 1)
     harness
@@ -428,8 +468,12 @@ async fn test_replay_attack_rejected() {
 /// Verifies multiple admin transactions can be processed in a single block.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multiple_updates_same_block() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Build 3 transactions with sequential seqnos
     let (payload1, tx_type1) = ctx.sign(sequencer_update([7u8; 32]));
@@ -504,8 +548,12 @@ async fn test_multiple_updates_same_block() {
 /// This gives us block H+1 to submit a cancel, making the test deterministic.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_prevents_queued_update_activation() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols
     harness.mine_block(None).await.unwrap();
