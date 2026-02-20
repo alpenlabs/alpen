@@ -219,6 +219,15 @@ where
             error
         })?;
 
+        info!(%ol_epoch, "building tracker state");
+        // 2. build next tracker state
+        let next_state = build_tracker_state(
+            EeAccountStateAtEpoch::new(*ol_epoch, ee_state.clone()),
+            chain_status,
+            ctx.storage.as_ref(),
+        )
+        .await?;
+
         // 3. Atomically persist corresponding ee state for this ol epoch.
         ctx.storage
             .store_ee_account_state(ol_epoch, &ee_state)
@@ -231,15 +240,6 @@ where
                 );
                 error
             })?;
-
-        info!(%ol_epoch, "building tracker state");
-        // 2. build next tracker state
-        let next_state = build_tracker_state(
-            EeAccountStateAtEpoch::new(*ol_epoch, ee_state.clone()),
-            chain_status,
-            ctx.storage.as_ref(),
-        )
-        .await?;
 
         // 4. update local state
         *state = next_state;
