@@ -73,9 +73,7 @@ reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-provider.workspace = true
-serde.workspace = true
 ssz.workspace = true
-strata-rpc-utils.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
