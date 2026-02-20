@@ -8,7 +8,7 @@ use std::{
 
 use strata_identifiers::OLBlockCommitment;
 use strata_service::{AsyncServiceInput, ServiceBuilder, ServiceInput};
-use strata_status::{ChainSyncStatusUpdate, OLSyncStatusUpdate, StatusChannel};
+use strata_status::{OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 use tokio::sync::{mpsc, watch};

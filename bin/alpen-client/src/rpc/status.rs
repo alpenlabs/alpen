@@ -1,16 +1,18 @@
 //! Status RPC implementation for alpen-client
 
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use alpen_ee_exec_chain::ExecChainHandle;
 use alpen_ee_ol_tracker::OLTrackerHandle;
 use async_trait::async_trait;
-use tokio::sync::RwLock;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use serde::{Deserialize, Serialize};
 use strata_primitives::{Buf32, OLBlockCommitment};
 use strata_rpc_utils::to_jsonrpsee_error;
+use tokio::sync::RwLock;
 
 // TODO: move to some more relevant crate
 /// Status RPC API for alpen-client

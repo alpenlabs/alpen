@@ -81,7 +81,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         mesh_bootnodes: int,
         pure_discovery: bool,
         enable_l1_da: bool = True,
-        da_magic_bytes: bytes = b'0000',
+        da_magic_bytes: bytes = b"0000",
         l1_reorg_safe_depth: int = 2,
         batch_sealing_block_count: int = 10,
         bitcoin_service: BitcoinService | None = None,

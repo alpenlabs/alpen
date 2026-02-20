@@ -56,11 +56,11 @@ class BaseTest(flexitest.Test):
         return svc
 
 
-
 class StrataNodeTest(BaseTest):
     """
     Base Test class for testing strata. Assumes related services like strata, bitcoin, reth, etc.
     """
+
     pass
 
 
@@ -68,4 +68,5 @@ class AlpenClientTest(BaseTest):
     """
     Base Test class for alpen-client P2P tests.
     """
+
     pass

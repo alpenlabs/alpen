@@ -3,10 +3,10 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use alpen_ee_common::{
-    BatchId, BatchProver, BatchStorage, ExecBlockStorage, OLFinalizedStatus, SequencerOLClient,
+    BatchId, BatchProver, BatchStatus, BatchStorage, ExecBlockStorage, OLFinalizedStatus,
+    SequencerOLClient,
 };
 use eyre::{eyre, Result};
-use strata_identifiers::Buf32;
 use strata_snark_acct_types::SnarkAccountUpdate;
 use tokio::{sync::watch, time};
 use tracing::{debug, error, info, warn};
@@ -158,14 +158,13 @@ async fn process_ready_batches(
         info!(?batch, ?status, "Got batch");
 
         // Only process ProofReady batches
-        // let BatchStatus::ProofReady { da: _, proof } = status else {
-        //     // Batch not ready yet, stop processing (must be sent in order)
-        //     info!(%batch_idx, "Batch not ready");
-        //     break;
-        // };
+        let BatchStatus::ProofReady { da: _, proof } = status else {
+            // Batch not ready yet, stop processing (must be sent in order)
+            info!(%batch_idx, "Batch not ready");
+            break;
+        };
 
         // Get update from cache or build it
-        let proof = Buf32::zero();
         let batch_id = batch.id();
         let update = if let Some(cached) = update_cache.get(&batch_id) {
             cached.clone()

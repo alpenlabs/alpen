@@ -43,6 +43,7 @@ GWEI_TO_WEI = 1_000_000_000
 # Account Id of Alpen EE in Strata
 ALPEN_ACCOUNT_ID = "01" * 32
 
+
 class ServiceType(str, Enum):
     """
     Service type identifiers for test environments.

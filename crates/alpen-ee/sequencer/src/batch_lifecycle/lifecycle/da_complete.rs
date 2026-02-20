@@ -34,11 +34,12 @@ where
         }
         BatchStatus::DaPending { envelope_idx } => {
             // Check if DA is confirmed
-            match ctx
+            let da_status = ctx
                 .da_provider
                 .check_da_status(batch.id(), envelope_idx)
-                .await?
-            {
+                .await?;
+            debug!(?da_status, "checking da status");
+            match da_status {
                 DaStatus::Pending => {
                     // Not ready, no action
                 }
