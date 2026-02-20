@@ -12,9 +12,9 @@
 )]
 
 use harness::{
-    admin::{predicate_update, sequencer_update, AdminExt},
+    admin::{create_test_admin_setup, predicate_update, sequencer_update, AdminExt},
     checkpoint::CheckpointExt,
-    test_harness::create_test_harness,
+    test_harness::AsmTestHarnessBuilder,
 };
 use integration_tests::harness;
 use strata_asm_txs_admin::actions::updates::predicate::ProofType;
@@ -28,8 +28,12 @@ use strata_primitives::block_credential::CredRule;
 /// Verifies sequencer key updates propagate to checkpoint subprotocol.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sequencer_update_propagates_to_checkpoint() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols (genesis state has no sections)
     harness.mine_block(None).await.unwrap();
@@ -70,8 +74,12 @@ async fn test_sequencer_update_propagates_to_checkpoint() {
 /// Verifies multiple sequential sequencer key updates result in checkpoint having the latest key.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multiple_sequencer_updates_checkpoint_has_latest() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols
     harness.mine_block(None).await.unwrap();
@@ -128,8 +136,12 @@ async fn test_multiple_sequencer_updates_checkpoint_has_latest() {
 /// 3. Verify checkpoint's predicate field is updated
 #[tokio::test(flavor = "multi_thread")]
 async fn test_predicate_update_propagates_to_checkpoint() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols
     harness.mine_block(None).await.unwrap();
@@ -187,8 +199,12 @@ async fn test_predicate_update_propagates_to_checkpoint() {
 /// Tests the interaction between immediate updates (sequencer) and queued updates (predicate).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sequencer_and_predicate_updates_both_apply() {
-    let harness = create_test_harness().await.unwrap();
-    let mut ctx = harness.admin_context();
+    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let harness = AsmTestHarnessBuilder::default()
+        .with_admin_params(admin_params)
+        .build()
+        .await
+        .unwrap();
 
     // Initialize subprotocols
     harness.mine_block(None).await.unwrap();
