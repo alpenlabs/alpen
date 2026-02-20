@@ -687,8 +687,8 @@ where
         self.inner.asm_manifests_mmr()
     }
 
-    fn asm_manifests_mmr_offset(&self) -> u64 {
-        self.inner.asm_manifests_mmr_offset()
+    fn asm_manifests_mmr_start_height(&self) -> L1Height {
+        self.inner.asm_manifests_mmr_start_height()
     }
 }
 

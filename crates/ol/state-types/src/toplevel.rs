@@ -195,8 +195,11 @@ impl IStateAccessor for OLState {
         self.epoch.asm_manifests_mmr()
     }
 
-    fn asm_manifests_mmr_offset(&self) -> u64 {
-        self.epoch.manifests_mmr_offset()
+    fn asm_manifests_mmr_start_height(&self) -> L1Height {
+        self.epoch
+            .manifests_mmr_offset()
+            .try_into()
+            .expect("state: manifests MMR offset does not fit in L1Height")
     }
 
     // ===== Account methods =====

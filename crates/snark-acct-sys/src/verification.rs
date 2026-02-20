@@ -2,6 +2,7 @@ use ssz::Encode as _;
 use strata_acct_types::{
     AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash,
 };
+use strata_identifiers::L1Height;
 use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_merkle::MerkleProof;
 use strata_snark_acct_types::{
@@ -31,8 +32,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     // 3. Verify ledger references using the provided state accessor
     verify_ledger_refs(
         target,
-        state_accessor.asm_manifests_mmr(),
-        state_accessor.asm_manifests_mmr_offset(),
+        state_accessor,
         accum_proofs.ledger_ref_proofs(),
         update.operation().ledger_refs(),
     )?;
@@ -100,11 +100,11 @@ pub fn verify_message_index(
 /// to MMR leaf indices: `mmr_idx = height - offset`.
 fn verify_ledger_refs(
     target: AccountId,
-    mmr: &Mmr64,
-    offset: u64,
+    state_accessor: &impl IStateAccessor,
     ledger_ref_proofs: &LedgerRefProofs,
     ledger_refs: &LedgerRefs,
 ) -> AcctResult<()> {
+    let mmr: &Mmr64 = state_accessor.asm_manifests_mmr();
     let generic_mmr = mmr.to_generic();
 
     // Check if the refs and refs in proofs are the same
@@ -117,13 +117,19 @@ fn verify_ledger_refs(
         .iter()
         .zip(ledger_ref_proofs.l1_headers_proofs())
     {
-        let mmr_idx =
+        let l1_height: L1Height =
             lref.idx()
-                .checked_sub(offset)
-                .ok_or_else(|| AcctError::InvalidLedgerReference {
+                .try_into()
+                .map_err(|_| AcctError::InvalidLedgerReference {
                     account_id: target,
                     ref_idx: lref.idx(),
                 })?;
+        let mmr_idx = state_accessor
+            .asm_manifest_mmr_index_for_height(l1_height)
+            .ok_or_else(|| AcctError::InvalidLedgerReference {
+                account_id: target,
+                ref_idx: lref.idx(),
+            })?;
         if proof.entry_idx() != mmr_idx {
             return Err(AcctError::InvalidLedgerReference {
                 account_id: target,

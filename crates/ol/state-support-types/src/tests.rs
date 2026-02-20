@@ -786,8 +786,8 @@ impl IStateAccessor for TestState {
         todo!()
     }
 
-    fn asm_manifests_mmr_offset(&self) -> u64 {
-        1 // default test offset (genesis_height=0 + 1)
+    fn asm_manifests_mmr_start_height(&self) -> L1Height {
+        1 // default test start height (genesis_height=0 + 1)
     }
 }
 

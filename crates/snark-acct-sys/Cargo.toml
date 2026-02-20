@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 ssz.workspace = true
 strata-acct-types.workspace = true
+strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-merkle.workspace = true
 strata-snark-acct-types.workspace = true
