@@ -2,7 +2,7 @@ import l1
 import ol
 
 ### Commitment to a block by ID at a particular slot
-#~# derive: Copy, Hash, Serialize, Deserialize
+#~# derive: Copy, Hash, Serialize, Deserialize, Default
 class OLBlockCommitment(Container):
     ### Slot number
     slot: ol.Slot
@@ -11,7 +11,7 @@ class OLBlockCommitment(Container):
     blkid: ol.OLBlockId
 
 ### Commitment to L1 block with height and ID
-#~# derive: Copy, Hash, Serialize, Deserialize
+#~# derive: Copy, Hash, Serialize, Deserialize, Default
 class L1BlockCommitment(Container):
     ### L1 block height (u32 in consensus format)
     height: l1.L1Height
@@ -20,7 +20,7 @@ class L1BlockCommitment(Container):
     blkid: l1.L1BlockId
 
 ### Commitment to a particular epoch by the last block and slot
-#~# derive: Copy, Hash, Serialize, Deserialize
+#~# derive: Copy, Hash, Serialize, Deserialize, Default
 class EpochCommitment(Container):
     ### Epoch number
     epoch: ol.Epoch

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use bitcoin::absolute::Height;
 use serde::Serialize;
 use strata_csm_types::ClientState;
 use strata_db_types::{traits::BlockStatus, DbError};
@@ -150,8 +149,7 @@ async fn process_fc_message(
 
                 // Update status.
                 let last_l1_blk = L1BlockCommitment::new(
-                    Height::from_consensus(fcm_state.cur_ol_state().last_l1_height())
-                        .expect("Invalid l1 height"),
+                    fcm_state.cur_ol_state().last_l1_height(),
                     *fcm_state.cur_ol_state().last_l1_blkid(),
                 );
 

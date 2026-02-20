@@ -14517,7 +14517,6 @@ name = "strata-csm-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitcoin",
  "serde",
  "serde_json",
  "strata-asm-common",
@@ -14966,7 +14965,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bitcoin",
  "proptest",
  "schemars 1.2.0",
  "serde",
