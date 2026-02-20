@@ -119,10 +119,10 @@ class RollupParams:
         self.genesis_l1_view = genesis_l1
         return self
 
+
 def default_accounts():
-    return {
-        ALPEN_ACCOUNT_ID : GenesisAccountData()
-    }
+    return {ALPEN_ACCOUNT_ID: GenesisAccountData()}
+
 
 @dataclass
 class OLParams:

@@ -8,6 +8,7 @@ from enum import Enum
 # Account Id of Alpen EE in Strata
 ALPEN_ACCOUNT_ID = "01" * 32
 
+
 class ServiceType(str, Enum):
     """
     Service type identifiers for test environments.

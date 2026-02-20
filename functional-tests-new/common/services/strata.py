@@ -15,11 +15,13 @@ logger = logging.getLogger(__name__)
 
 class StrataProps(TypedDict):
     """Properties for Strata service."""
+
     rpc_port: int
     rpc_host: str
     rpc_url: str
     datadir: str
     mode: str
+
 
 class StrataService(RpcService):
     """
