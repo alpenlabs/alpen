@@ -1,3 +1,5 @@
+use std::num::NonZero;
+
 use strata_asm_params::Role;
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdSignatureError;
@@ -34,7 +36,7 @@ pub enum AdministrationError {
         role: Role,
         payload_seqno: u64,
         last_seqno: u64,
-        max_gap: u8,
+        max_gap: NonZero<u8>,
     },
 
     /// Indicates a threshold signature error (configuration or signature validation).

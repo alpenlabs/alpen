@@ -1,3 +1,5 @@
+use std::num::NonZero;
+
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -29,7 +31,7 @@ pub struct AdministrationSubprotoParams {
     ///
     /// A payload with `seqno > last_seqno + max_seqno_gap` is rejected. This prevents
     /// excessively large jumps in sequence numbers while still allowing non-sequential usage.
-    pub max_seqno_gap: u8,
+    pub max_seqno_gap: NonZero<u8>,
 }
 
 /// Roles with authority in the administration subprotocol.
@@ -70,7 +72,7 @@ impl AdministrationSubprotoParams {
         strata_administrator: ThresholdConfig,
         strata_sequencer_manager: ThresholdConfig,
         confirmation_depth: u16,
-        max_seqno_gap: u8,
+        max_seqno_gap: NonZero<u8>,
     ) -> Self {
         Self {
             strata_administrator,

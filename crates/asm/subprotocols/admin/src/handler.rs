@@ -1,3 +1,5 @@
+use std::num::NonZero;
+
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
     MsgRelayer,
@@ -102,7 +104,7 @@ pub(crate) fn handle_action(
     payload: SignedPayload,
     current_height: u64,
     relayer: &mut impl MsgRelayer,
-    max_seqno_gap: u8,
+    max_seqno_gap: NonZero<u8>,
 ) -> Result<(), AdministrationError> {
     // Determine the required role based on the action type
     let role = match &payload.action {
@@ -266,7 +268,7 @@ mod tests {
             strata_administrator,
             strata_sequencer_manager,
             confirmation_depth: 2016,
-            max_seqno_gap: 10,
+            max_seqno_gap: 10.try_into().unwrap(),
         };
 
         (config, strata_admin_sks, strata_seq_manager_sks)
@@ -742,7 +744,7 @@ mod tests {
         .unwrap();
 
         // Second action at seqno 11 (last_seqno is 1, gap = 10 = max_seqno_gap)
-        let gap_seqno = 1 + params.max_seqno_gap as u64;
+        let gap_seqno = 1 + params.max_seqno_gap.get() as u64;
         let action = MultisigAction::Update(updates[1].clone());
         let sighash = action.compute_sighash(gap_seqno);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
@@ -773,7 +775,7 @@ mod tests {
         let update = get_strata_administrator_update_actions(1)[0].clone();
 
         // Try action at seqno 11 (last_seqno is 0, gap = 11 > max_seqno_gap of 10)
-        let too_far_seqno = params.max_seqno_gap as u64 + 1;
+        let too_far_seqno = params.max_seqno_gap.get() as u64 + 1;
         let action = MultisigAction::Update(update);
         let sighash = action.compute_sighash(too_far_seqno);
         let sig_set = create_signature_set(&admin_sks, &signer_indices, sighash);
@@ -793,8 +795,8 @@ mod tests {
                 role: Role::StrataAdministrator,
                 payload_seqno: 11,
                 last_seqno: 0,
-                max_gap: 10,
-            })
+                max_gap,
+            }) if max_gap.get() == 10
         ));
     }
 }

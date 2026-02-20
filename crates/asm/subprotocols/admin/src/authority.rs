@@ -1,3 +1,5 @@
+use std::num::NonZero;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::Role;
 use strata_asm_txs_admin::parser::SignedPayload;
@@ -64,7 +66,7 @@ impl MultisigAuthority {
     pub fn verify_action_signature(
         &self,
         payload: &SignedPayload,
-        max_seqno_gap: u8,
+        max_seqno_gap: NonZero<u8>,
     ) -> Result<SeqNoToken, AdministrationError> {
         if payload.seqno <= self.last_seqno {
             return Err(AdministrationError::InvalidSeqno {
@@ -74,7 +76,7 @@ impl MultisigAuthority {
             });
         }
 
-        if payload.seqno > self.last_seqno + max_seqno_gap as u64 {
+        if payload.seqno > self.last_seqno + max_seqno_gap.get() as u64 {
             return Err(AdministrationError::SeqnoGapTooLarge {
                 role: self.role,
                 payload_seqno: payload.seqno,

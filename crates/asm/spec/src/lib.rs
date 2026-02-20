@@ -105,8 +105,8 @@ impl StrataAsmSpec {
         let admin_params = AdministrationSubprotoParams::new(
             admin_config.clone(),
             admin_config,
-            2,  // confirmation_depth: updates activate 2 blocks after submission
-            10, // max_seqno_gap: maximum allowed gap between consecutive sequence numbers
+            2, // confirmation_depth: updates activate 2 blocks after submission
+            NonZero::new(10).unwrap(),
         );
 
         Self {
