@@ -51,7 +51,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
             # Wait until next_epoch is present
             status = wait_until_with_value(
                 lambda: get_sync_status_and_mine_blocks(strata_seq, btc_rpc),
-                lambda s: s["confirmed"]["epoch"] >= next_epoch,
+                lambda s, next_epoch=next_epoch: s["confirmed"]["epoch"] >= next_epoch,
                 error_with=f"Expected epoch {next_epoch} not found",
                 timeout=10,
             )
@@ -65,21 +65,26 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
 
                 if acct_summary["update_input"] is not None:
                     logger.info(
-                        f"Received update input {new_updates_count + 1}. Alpen is submitting updates to strata. {acct_summary}"
+                        f"Received update input {new_updates_count + 1}. "
+                        "Alpen is submitting updates to strata. {acct_summary}"
                     )
                     last_new_update_at = ep
                     new_updates_count += 1
 
                 elif ep > last_new_update_at + EXPECT_UPDATE_WITHIN_EPOCH:
                     assert False, (
-                        f"No new update(nth={new_updates_count + 1}) received within {EXPECT_UPDATE_WITHIN_EPOCH} epochs"
+                        f"No new update(nth={new_updates_count + 1}) received"
+                        " within {EXPECT_UPDATE_WITHIN_EPOCH} epochs"
                     )
 
                 next_epoch += 1
 
 
 def get_sync_status_and_mine_blocks(strata: StrataService, btc_rpc):
-    """Gets sync status, but also piggybacks block mining to let DA chunks submitted by alpen to get included"""
+    """
+    Gets sync status, but also piggybacks block mining to let DA chunks
+    submitted by alpen to get included
+    """
     mine_address = btc_rpc.proxy.getnewaddress()
     btc_rpc.proxy.generatetoaddress(2, mine_address)
     return strata.get_sync_status()
