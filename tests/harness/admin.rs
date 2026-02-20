@@ -24,7 +24,7 @@ use bitcoin::{
     BlockHash,
 };
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_params::{AdministrationSubprotoParams, AsmParams, Role};
+use strata_asm_params::{AdministrationSubprotoParams, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
     actions::{
@@ -45,7 +45,6 @@ use strata_crypto::{
 };
 use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
-use strata_test_utils_l2::get_test_operator_secret_key;
 
 use super::test_harness::AsmTestHarness;
 
@@ -57,9 +56,6 @@ pub const SUBPROTOCOL_ID: u8 = 0;
 /// This trait provides admin-specific convenience methods while keeping
 /// the core harness infrastructure-focused.
 pub trait AdminExt {
-    /// Get an admin signing context.
-    fn admin_context(&self) -> AdminContext;
-
     /// Get admin subprotocol state.
     fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState>;
 
@@ -96,17 +92,6 @@ impl AdminContext {
         Self {
             privkeys,
             signer_indices,
-            seqnos: HashMap::new(),
-        }
-    }
-
-    /// Create admin context from rollup parameters.
-    ///
-    /// Uses the test operator key which is configured for both admin roles.
-    pub fn from_params(_params: &AsmParams) -> Self {
-        Self {
-            privkeys: vec![get_test_operator_secret_key()],
-            signer_indices: vec![0],
             seqnos: HashMap::new(),
         }
     }
@@ -212,14 +197,14 @@ pub fn predicate_update(key: PredicateKey, proof_type: ProofType) -> MultisigAct
 
 /// Creates matching admin subprotocol params and signing context.
 ///
-/// Derives a 1-of-1 [`ThresholdConfig`] from [`get_test_operator_secret_key`] for both
-/// admin roles, so that signatures produced by the returned [`AdminContext`] pass
-/// verification against the returned [`AdministrationSubprotoParams`].
+/// Generates a random 1-of-1 [`ThresholdConfig`] keypair for both admin roles, so that
+/// signatures produced by the returned [`AdminContext`] pass verification against the
+/// returned [`AdministrationSubprotoParams`].
 pub fn create_test_admin_setup(
     confirmation_depth: u16,
 ) -> (AdministrationSubprotoParams, AdminContext) {
     let secp = Secp256k1::new();
-    let sk = get_test_operator_secret_key();
+    let sk = SecretKey::new(&mut rand::thread_rng());
     let pk = CompressedPublicKey::from(PublicKey::from_secret_key(&secp, &sk));
     let config =
         ThresholdConfig::try_new(vec![pk], NonZero::new(1).unwrap()).expect("valid config");
@@ -245,10 +230,6 @@ pub fn extract_admin_state(
 }
 
 impl AdminExt for AsmTestHarness {
-    fn admin_context(&self) -> AdminContext {
-        AdminContext::from_params(&self.asm_params)
-    }
-
     fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState> {
         let (_, asm_state) = self
             .get_latest_asm_state()?
