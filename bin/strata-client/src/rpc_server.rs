@@ -323,6 +323,7 @@ impl StrataApiServer for StrataRpcImpl {
                             *intent.amt(),
                             intent.destination().clone(),
                             *intent.withdrawal_txid(),
+                            intent.selected_operator(),
                         )
                     })
                     .collect();
