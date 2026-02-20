@@ -204,6 +204,21 @@ impl WorkerContext for TestAsmWorkerContext {
         Ok(())
     }
 
+    fn store_aux_data(
+        &self,
+        _blockid: &L1BlockCommitment,
+        _data: &strata_asm_common::AuxData,
+    ) -> WorkerResult<()> {
+        Ok(())
+    }
+
+    fn get_aux_data(
+        &self,
+        _blockid: &L1BlockCommitment,
+    ) -> WorkerResult<Option<strata_asm_common::AuxData>> {
+        Ok(None)
+    }
+
     fn has_l1_manifest(&self, blockid: &L1BlockId) -> WorkerResult<bool> {
         Ok(self
             .manifests

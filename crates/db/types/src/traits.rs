@@ -6,7 +6,7 @@ use std::sync::Arc;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_acct_types::CompactMmr64;
-use strata_asm_common::AsmManifest;
+use strata_asm_common::{AsmManifest, AuxData};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{
@@ -83,6 +83,12 @@ pub trait AsmDatabase: Send + Sync + 'static {
         from_block: L1BlockCommitment,
         max_count: usize,
     ) -> DbResult<Vec<(L1BlockCommitment, AsmState)>>;
+
+    /// Writes auxiliary data for a given L1 block.
+    fn put_aux_data(&self, block: L1BlockCommitment, data: AuxData) -> DbResult<()>;
+
+    /// Gets auxiliary data for the given L1 block.
+    fn get_aux_data(&self, block: L1BlockCommitment) -> DbResult<Option<AuxData>>;
 }
 
 /// Database interface to control our view of L1 data.

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bitcoin::{Block, hashes::Hash};
-use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
+use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
@@ -14,8 +14,6 @@ use tracing::field::Empty;
 use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResolver, constants};
 
 /// Service state for the ASM worker.
-///
-/// TODO: additional fields and bookkeeping related to STF version and storing aux inputs.
 #[derive(Debug)]
 pub struct AsmWorkerServiceState<W> {
     /// Params.
@@ -87,10 +85,10 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         }
     }
 
-    /// Returns the actual ASM STF results: a Bitcoin block is applied onto current anchor state.
+    /// Returns the actual ASM STF results and the auxiliary data used during the transition.
     ///
     /// A caller is responsible for ensuring the current anchor is a parent of a passed block.
-    pub fn transition(&self, block: &Block) -> WorkerResult<AsmStfOutput> {
+    pub fn transition(&self, block: &Block) -> WorkerResult<(AsmStfOutput, AuxData)> {
         let cur_state = self.anchor.as_ref().expect("state should be set before");
 
         // Pre process transition next block against current anchor state.
@@ -126,7 +124,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             protocol_txs: pre_process.txs,
             header: &block.header,
             wtxids_root,
-            aux_data,
+            aux_data: aux_data.clone(),
         };
 
         // Asm transition.
@@ -134,6 +132,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
         let _stf_guard = stf_span.enter();
 
         strata_asm_stf::compute_asm_transition(&self.asm_spec, cur_state.state(), stf_input)
+            .map(|output| (output, aux_data))
             .map_err(WorkerError::AsmError)
     }
 
@@ -327,6 +326,18 @@ mod tests {
 
         fn has_l1_manifest(&self, _blockid: &L1BlockId) -> WorkerResult<bool> {
             Ok(false)
+        }
+
+        fn store_aux_data(
+            &self,
+            _blockid: &L1BlockCommitment,
+            _data: &AuxData,
+        ) -> WorkerResult<()> {
+            Ok(())
+        }
+
+        fn get_aux_data(&self, _blockid: &L1BlockCommitment) -> WorkerResult<Option<AuxData>> {
+            Ok(None)
         }
     }
 

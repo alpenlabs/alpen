@@ -144,6 +144,23 @@ impl WorkerContext for AsmWorkerCtx {
         })
     }
 
+    fn store_aux_data(
+        &self,
+        blockid: &L1BlockCommitment,
+        data: &strata_asm_common::AuxData,
+    ) -> WorkerResult<()> {
+        self.asmman
+            .put_aux_data(*blockid, data.clone())
+            .map_err(conv_db_err)
+    }
+
+    fn get_aux_data(
+        &self,
+        blockid: &L1BlockCommitment,
+    ) -> WorkerResult<Option<strata_asm_common::AuxData>> {
+        self.asmman.get_aux_data(*blockid).map_err(conv_db_err)
+    }
+
     fn has_l1_manifest(&self, blockid: &L1BlockId) -> WorkerResult<bool> {
         self.l1man
             .get_block_manifest(blockid)
