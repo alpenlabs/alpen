@@ -2,11 +2,11 @@
 Alpen-client test environment configurations.
 """
 
+import flexitest
+
 from common.config.constants import ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
-import flexitest
-
 from envconfigs.alpen_client import AlpenClientEnv
 from envconfigs.strata import StrataEnvConfig
 
