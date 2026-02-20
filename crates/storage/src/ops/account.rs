@@ -2,6 +2,7 @@
 
 use strata_db_types::{traits::*, types::AccountExtraDataEntry};
 use strata_identifiers::{AccountId, Epoch};
+use strata_primitives::nonempty_vec::NonEmptyVec;
 
 use crate::{exec::*, instrumentation::components};
 
@@ -10,6 +11,6 @@ inst_ops_simple! {
         insert_account_creation_epoch(account_id: AccountId, epoch: Epoch) => ();
         get_account_creation_epoch(account_id: AccountId) => Option<Epoch>;
         insert_account_extra_data(key: (AccountId, Epoch), extra_data: AccountExtraDataEntry) => ();
-        get_account_extra_data(key: (AccountId, Epoch)) => Option<Vec<AccountExtraDataEntry>>;
+        get_account_extra_data(key: (AccountId, Epoch)) => Option<NonEmptyVec<AccountExtraDataEntry>>;
     }
 }

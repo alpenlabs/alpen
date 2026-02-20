@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
-use strata_identifiers::{OLTxId, Slot};
+use strata_identifiers::OLTxId;
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::{buf::Buf32, OLBlockCommitment};
