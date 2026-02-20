@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ops::account::{AccountOps, Context};
-use strata_db_types::{traits::AccountDatabase, DbResult};
+use strata_db_types::{traits::AccountDatabase, types::AccountExtraDataEntry, DbResult};
 use strata_identifiers::{AccountId, Epoch};
 use threadpool::ThreadPool;
 
@@ -47,7 +47,7 @@ impl AccountManager {
     pub fn insert_account_extra_data_blocking(
         &self,
         key: (AccountId, Epoch),
-        extra_data: Vec<u8>,
+        extra_data: AccountExtraDataEntry,
     ) -> DbResult<()> {
         self.ops.insert_account_extra_data_blocking(key, extra_data)
     }
@@ -56,7 +56,7 @@ impl AccountManager {
     pub async fn insert_account_extra_data_async(
         &self,
         key: (AccountId, Epoch),
-        extra_data: Vec<u8>,
+        extra_data: AccountExtraDataEntry,
     ) -> DbResult<()> {
         self.ops
             .insert_account_extra_data_async(key, extra_data)
@@ -67,7 +67,7 @@ impl AccountManager {
     pub fn get_account_extra_data_blocking(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<Vec<u8>>> {
+    ) -> DbResult<Option<Vec<AccountExtraDataEntry>>> {
         self.ops.get_account_extra_data_blocking(key)
     }
 
@@ -75,7 +75,7 @@ impl AccountManager {
     pub async fn get_account_extra_data_async(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<Vec<u8>>> {
+    ) -> DbResult<Option<Vec<AccountExtraDataEntry>>> {
         self.ops.get_account_extra_data_async(key).await
     }
 }

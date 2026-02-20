@@ -22,6 +22,7 @@ use strata_primitives::{
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
+use crate::types::AccountExtraDataEntry;
 #[expect(
     deprecated,
     reason = "legacy old code CheckpointEntry is retained for compatibility"
@@ -601,18 +602,23 @@ pub trait AccountDatabase: Send + Sync + 'static {
     /// Gets the creation epoch for an account, if recorded.
     fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
 
-    /// Inserts account extra data for a given epoch index.
+    /// Inserts account extra data for a given epoch index. This appends the inserted extra data to
+    /// the existing value in the db.
     // NOTE: This gets updated in every OL block where there is snark update for the account.
     // NOTE: We only want the extra data for an epoch and not per-block so this should suffice.
     // TODO: Make this more robust by associating with epoch commitment instead of epoch index.
     fn insert_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-        extra_data: Vec<u8>,
+        extra_data: AccountExtraDataEntry,
     ) -> DbResult<()>;
 
-    /// Gets the account extra data for given account and OLBlockId.
-    fn get_account_extra_data(&self, key: (AccountId, Epoch)) -> DbResult<Option<Vec<u8>>>;
+    /// Gets the account extra data for given account and OLBlockId. Returns an array of collected
+    /// extra data over an epoch.
+    fn get_account_extra_data(
+        &self,
+        key: (AccountId, Epoch),
+    ) -> DbResult<Option<Vec<AccountExtraDataEntry>>>;
 }
 
 /// Database interface for OL mempool transactions.

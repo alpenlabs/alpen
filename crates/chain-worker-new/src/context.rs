@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::DbResult;
+use strata_db_types::{DbResult, types::AccountExtraDataEntry};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
@@ -174,8 +174,9 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
                 // NOTE: this is expected to be updated for given epoch at every block that contains
                 // extra data for this account
                 let key = (acct_id, epoch);
+                let entry = AccountExtraDataEntry::new(extra_data.to_vec(), commitment);
                 self.account_mgr
-                    .insert_account_extra_data_blocking(key, extra_data.to_vec())?
+                    .insert_account_extra_data_blocking(key, entry)?
             }
             Ok(())
         })?;
