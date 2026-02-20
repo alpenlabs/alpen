@@ -162,7 +162,7 @@ impl ChainWorkerServiceState {
             self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
 
         // Persist results (including the full state)
-        self.persist_execution_output(*block_commitment, &output, new_state)?;
+        self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
 
         // Handle epoch terminal if needed
         debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
@@ -277,12 +277,14 @@ impl ChainWorkerServiceState {
     /// Persists the execution output and state to storage.
     fn persist_execution_output(
         &self,
+        block: &OLBlock,
         block_commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
         new_state: OLState,
     ) -> WorkerResult<()> {
         // Store the write batch
-        self.ctx.store_block_output(block_commitment, output)?;
+        self.ctx
+            .store_block_output(block, block_commitment, output)?;
 
         // Store the full toplevel state
         self.ctx.store_toplevel_state(block_commitment, new_state)?;
