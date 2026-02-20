@@ -1,7 +1,7 @@
 //! Traits for the chain worker to interface with the underlying system.
 
 use bitcoin::{Block, Network};
-use strata_asm_common::AsmManifest;
+use strata_asm_common::{AsmManifest, AuxData};
 use strata_btc_types::BitcoinTxid;
 use strata_primitives::{hash::Hash, prelude::*};
 use strata_state::asm_state::AsmState;
@@ -50,6 +50,15 @@ pub trait WorkerContext {
     ///
     /// Reads the hash directly from the MMR structure.
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>>;
+
+    /// Stores [`AuxData`] for a given L1 block.
+    ///
+    /// This should be called after each STF execution with the auxiliary data
+    /// used during the transition, so the prover can use it as input.
+    fn store_aux_data(&self, blockid: &L1BlockCommitment, data: &AuxData) -> WorkerResult<()>;
+
+    /// Retrieves [`AuxData`] for a given L1 block.
+    fn get_aux_data(&self, blockid: &L1BlockCommitment) -> WorkerResult<Option<AuxData>>;
 
     /// Checks whether an L1 manifest already exists for the given block ID.
     fn has_l1_manifest(&self, blockid: &L1BlockId) -> WorkerResult<bool>;

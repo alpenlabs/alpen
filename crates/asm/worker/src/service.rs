@@ -149,7 +149,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
             info!(%block_id, "ASM transition attempt");
             match state.transition(block) {
-                Ok(asm_stf_out) => {
+                Ok((asm_stf_out, aux_data)) => {
                     let storage_span = debug_span!("asm.manifest_storage");
                     let _storage_guard = storage_span.enter();
 
@@ -162,6 +162,9 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
                     // Append manifest hash to MMR database
                     let leaf_index = state.context.append_manifest_to_mmr(manifest_hash.into())?;
+
+                    // Store auxiliary data for prover consumption
+                    state.context.store_aux_data(block_id, &aux_data)?;
 
                     let new_state = AsmState::from_output(asm_stf_out);
                     // Store and update anchor.
