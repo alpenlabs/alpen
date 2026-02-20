@@ -29,7 +29,7 @@ use bitcoind_async_client::traits::Reader;
 use harness::{
     admin::{
         cancel_update, create_test_admin_setup, multisig_config_update, operator_set_update,
-        predicate_update, sequencer_update, AdminExt, SUBPROTOCOL_ID as ADMIN_SUBPROTOCOL_ID,
+        predicate_update, sequencer_update, AdminExt,
     },
     test_harness::AsmTestHarnessBuilder,
 };
@@ -37,7 +37,8 @@ use integration_tests::harness;
 use rand::rngs::OsRng;
 use strata_asm_params::Role;
 use strata_asm_txs_admin::{
-    actions::updates::predicate::ProofType, parser::SignedPayload, test_utils::create_signature_set,
+    actions::updates::predicate::ProofType, constants::ADMINISTRATION_SUBPROTOCOL_ID,
+    parser::SignedPayload, test_utils::create_signature_set,
 };
 use strata_crypto::{
     keys::compressed::CompressedPublicKey,
@@ -350,7 +351,7 @@ async fn test_wrong_key_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, action.tx_type(), payload)
+        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, action.tx_type(), payload)
         .await
         .unwrap();
 
@@ -406,7 +407,7 @@ async fn test_corrupted_signature_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, action.tx_type(), payload)
+        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, action.tx_type(), payload)
         .await
         .unwrap();
 
@@ -481,15 +482,15 @@ async fn test_multiple_updates_same_block() {
     let (payload3, tx_type3) = ctx.sign(sequencer_update([9u8; 32]));
 
     let tx1 = harness
-        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, tx_type1, payload1)
+        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type1, payload1)
         .await
         .unwrap();
     let tx2 = harness
-        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, tx_type2, payload2)
+        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type2, payload2)
         .await
         .unwrap();
     let tx3 = harness
-        .build_envelope_tx(ADMIN_SUBPROTOCOL_ID, tx_type3, payload3)
+        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type3, payload3)
         .await
         .unwrap();
 
@@ -516,7 +517,7 @@ async fn test_multiple_updates_same_block() {
         .filter(|tx| {
             parser
                 .try_parse_tx(tx)
-                .map(|payload| payload.subproto_id() == ADMIN_SUBPROTOCOL_ID)
+                .map(|payload| payload.subproto_id() == ADMINISTRATION_SUBPROTOCOL_ID)
                 .unwrap_or(false)
         })
         .count();

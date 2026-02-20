@@ -19,6 +19,10 @@ from common.config.config import (
 )
 from common.config.constants import ServiceType
 from common.config.params import (
+    AdminSubprotocolConfig,
+    AsmParams,
+    BridgeV1SubprotocolConfig,
+    CheckpointSubprotocolConfig,
     CredRule,
     DepositTxParams,
     GenesisAccountData,
@@ -32,6 +36,7 @@ from common.config.params import (
     RollupParams,
     SchnorrVerify,
     SyncParams,
+    ThresholdConfig,
     gen_random_keypair,
     hex_bytes_repeated,
 )
@@ -62,6 +67,11 @@ __all__ = [
     "GenesisL1View",
     "GenesisHeaderParams",
     "OLParams",
+    "AsmParams",
+    "ThresholdConfig",
+    "AdminSubprotocolConfig",
+    "CheckpointSubprotocolConfig",
+    "BridgeV1SubprotocolConfig",
     "ProofPublishModeTimeout",
     "ProofPublishMode",
     "SchnorrVerify",

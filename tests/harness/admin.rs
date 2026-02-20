@@ -36,6 +36,7 @@ use strata_asm_txs_admin::{
         },
         CancelAction, MultisigAction, UpdateAction,
     },
+    constants::ADMINISTRATION_SUBPROTOCOL_ID,
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
@@ -48,8 +49,8 @@ use strata_primitives::buf::Buf32;
 
 use super::test_harness::AsmTestHarness;
 
-/// Admin subprotocol ID per SPS-50.
-pub const SUBPROTOCOL_ID: u8 = 0;
+/// The default allowed seqno gap for admin subprotocol.
+const DEFAULT_MAX_SEQNO_GAP: NonZero<u8> = NonZero::new(10).expect("10 is non-zero");
 
 /// Extension trait for admin subprotocol operations on the test harness.
 ///
@@ -213,6 +214,7 @@ pub fn create_test_admin_setup(
         strata_administrator: config.clone(),
         strata_sequencer_manager: config,
         confirmation_depth,
+        max_seqno_gap: DEFAULT_MAX_SEQNO_GAP,
     };
     let ctx = AdminContext::new(vec![sk], vec![0]);
     (params, ctx)
@@ -245,7 +247,7 @@ impl AdminExt for AsmTestHarness {
         let (payload, tx_type) = ctx.sign(action);
         let target_height = self.get_processed_height()? + 1;
         let tx = self
-            .build_envelope_tx(SUBPROTOCOL_ID, tx_type, payload)
+            .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type, payload)
             .await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))
@@ -262,7 +264,7 @@ impl AdminExt for AsmTestHarness {
         let (payload, tx_type) = ctx.sign_with_seqno(action, seqno);
         let target_height = self.get_processed_height()? + 1;
         let tx = self
-            .build_envelope_tx(SUBPROTOCOL_ID, tx_type, payload)
+            .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type, payload)
             .await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))
