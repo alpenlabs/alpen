@@ -3,9 +3,7 @@
 use std::{thread::sleep, time::Duration};
 
 use anyhow::{Result, anyhow};
-use strata_codec::encode_to_vec;
-use strata_db_types::{traits::BlockStatus, types::AccountExtraDataEntry};
-use strata_ee_acct_types::UpdateExtraData;
+use strata_db_types::traits::BlockStatus;
 use strata_ledger_types::AsmManifest;
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts_with_manifest};
 use strata_ol_params::OLParams;
@@ -47,19 +45,7 @@ pub(crate) fn init_ol_genesis(
         info!(%entry.id, "inserting account info");
         storage
             .account()
-            .insert_account_creation_epoch_blocking(entry.id, 0)?;
-        // Insert extra data
-        // TODO: correct value possibly from params
-        let gen_hash = [
-            70, 192, 220, 96, 251, 19, 27, 228, 204, 197, 83, 6, 163, 69, 252, 194, 14, 68, 35, 51,
-            36, 149, 15, 151, 139, 165, 241, 133, 170, 42, 244, 220,
-        ];
-        let extra = UpdateExtraData::new(gen_hash.into(), 0, 0);
-        let extra_data = encode_to_vec(&extra).expect("Can't encode genesis extradata");
-        let extra_entry = AccountExtraDataEntry::new(extra_data, commitment);
-        storage
-            .account()
-            .insert_account_extra_data_blocking((entry.id, 0), extra_entry)
+            .insert_account_creation_epoch_blocking(entry.id, 0)
     })?;
 
     storage.ol_block().put_block_data_blocking(ol_block)?;
