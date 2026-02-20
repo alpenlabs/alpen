@@ -158,7 +158,7 @@ impl OLClientRpcServer for OLRpcServer {
                 seq_no: next_seq_no,
                 proof_state: proof_state.into(),
                 extra_data: extra_data
-                    .last()
+                    .last() // FIXME: check if this is canonical or not and account for reorgs.
                     .cloned()
                     .expect("Should be present")
                     .into_parts()

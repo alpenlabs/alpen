@@ -150,6 +150,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
     fn store_block_output(
         &self,
+        block: &OLBlock,
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
@@ -159,7 +160,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
         // Record creation epoch for newly created accounts.
         let wb = output.write_batch();
-        let epoch = wb.epochal().cur_epoch();
+        let epoch = block.header().epoch();
         wb.ledger().iter_new_accounts().try_for_each(|(_, id)| {
             self.account_mgr
                 .insert_account_creation_epoch_blocking(*id, epoch)

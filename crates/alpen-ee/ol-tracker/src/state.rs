@@ -67,7 +67,7 @@ where
         return Err(OLTrackerError::MissingGenesisEpoch);
     };
 
-    info!(?best_state, "Building traker state during init");
+    info!(?best_state, "Building tracker state during init");
     build_tracker_state(best_state, &ol_chain_status, storage).await
 }
 
