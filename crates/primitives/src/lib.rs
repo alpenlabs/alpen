@@ -46,6 +46,7 @@ pub mod prelude;
 pub mod proof;
 pub mod serde_helpers;
 pub mod sorted_vec;
+pub mod nonempty_vec;
 pub mod utils;
 
 pub use bitcoin_bosd;
