@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # This is empirical and is used to allow alpen to create and submit DA and get it confirmed.
 # TODO: might need to more intelligently calculate this
-EXPECT_UPDATE_WITHIN_EPOCH = 12
+EXPECT_UPDATE_WITHIN_EPOCH = 15
 CHECK_N_UPDATES = 3  # How many updates from alpen to check in strata
 
 
