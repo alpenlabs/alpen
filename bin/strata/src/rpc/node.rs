@@ -11,7 +11,7 @@ use strata_ol_mempool::{MempoolHandle, OLMempoolTransaction};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
-    RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
+    RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_primitives::HexBytes;
 use strata_snark_acct_types::ProofState;
@@ -69,38 +69,6 @@ impl OLRpcServer {
             .map_err(db_error)?
             .ok_or(not_found_error(format!("block not found: {blkid}")))?;
         Ok(blk)
-    }
-
-    /// Linearly scans for account extra data until it is found before or equal to provided epoch.
-    async fn get_extra_data_until_epoch(
-        &self,
-        account_id: AccountId,
-        mut epoch: Epoch,
-    ) -> Result<Vec<u8>, ErrorObjectOwned> {
-        loop {
-            if let Some(extra_data) = self
-                .storage
-                .account()
-                .get_account_extra_data_async((account_id, epoch))
-                .await
-                .map_err(db_error)?
-            {
-                let extra_data = extra_data
-                    .last() // Get the latest. TODO: this needs to be updated
-                    .cloned()
-                    .expect("need to have at least one entry")
-                    .into_parts()
-                    .0;
-                return Ok(extra_data);
-            }
-            if epoch == 0 {
-                break;
-            }
-            epoch -= 1;
-        }
-        Err(not_found_error(format!(
-            "No account extra data found for account {account_id} before {epoch}"
-        )))
     }
 }
 
@@ -179,18 +147,35 @@ impl OLClientRpcServer for OLRpcServer {
             EpochCommitment::null()
         };
 
-        let extra_data = self
-            .get_extra_data_until_epoch(account_id, epoch_commitment.epoch())
-            .await?;
+        let update = if let Some(extra_data) = self
+            .storage
+            .account()
+            .get_account_extra_data_async((account_id, epoch))
+            .await
+            .map_err(db_error)?
+        {
+            let update = RpcUpdateInputData {
+                seq_no: next_seq_no,
+                proof_state: proof_state.into(),
+                extra_data: extra_data
+                    .last()
+                    .cloned()
+                    .expect("Should be present")
+                    .into_parts()
+                    .0
+                    .into(),
+                messages: vec![], // TODO: Compute and fetch from mmr db
+            };
+            Some(update)
+        } else {
+            None
+        };
 
         Ok(RpcAccountEpochSummary::new(
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
-            next_seq_no,
-            proof_state,
-            extra_data,
-            vec![], // processed_msgs - requires additional tracking infrastructure
+            update,
         ))
     }
 
