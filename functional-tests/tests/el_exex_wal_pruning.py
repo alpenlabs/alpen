@@ -1,7 +1,6 @@
 import glob
 import logging
 import os
-import time
 
 import flexitest
 from web3 import Web3
@@ -77,8 +76,17 @@ class ElExexWalPruningTest(testenv.StrataTester):
         wait_until_epoch_finalized(seqrpc, 1, timeout=120)
         logging.info("Epoch 1 finalized")
 
-        # Give reth a moment to process the finalization and prune WAL
-        time.sleep(5)
+        # Wait for reth to process the finalization and prune WAL
+        def wal_files_pruned():
+            current = set(glob.glob(os.path.join(wal_dir, "*.wal")))
+            return len(wal_files_before - current) > 0
+
+        wait_until(
+            wal_files_pruned,
+            error_with="No WAL files were pruned after finalization. "
+            "FinishedHeight may be reporting incorrect block numbers.",
+            timeout=30,
+        )
 
         # Verify WAL pruning by tracking specific files by their IDs.
         wal_files_after = set(glob.glob(os.path.join(wal_dir, "*.wal")))
@@ -94,12 +102,6 @@ class ElExexWalPruningTest(testenv.StrataTester):
         logging.info(
             f"WAL files: {len(wal_files_before)} before, {len(wal_files_after)} after, "
             f"pruned IDs: {pruned_ids}, remaining original IDs: {remaining_ids}"
-        )
-
-        # At least some files must have been pruned
-        assert pruned_files, (
-            f"No WAL files were pruned after finalization. "
-            f"FinishedHeight may be reporting incorrect block numbers."
         )
 
         # Pruned IDs must all be lower than surviving IDs.
