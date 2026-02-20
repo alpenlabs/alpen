@@ -8,6 +8,8 @@ from typing import Literal
 
 from bitcoinlib.keys import Key
 
+from common.config.constants import ALPEN_ACCOUNT_ID
+
 
 def hex_bytes_repeated(n: int, repeat: int = 32) -> str:
     """Generate hex string of repeated byte value.
@@ -116,8 +118,6 @@ class RollupParams:
     def with_genesis_l1(self, genesis_l1: GenesisL1View):
         self.genesis_l1_view = genesis_l1
         return self
-
-ALPEN_ACCOUNT_ID = "01" * 32
 
 def default_accounts():
     return {
