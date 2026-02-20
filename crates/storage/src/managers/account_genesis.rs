@@ -18,7 +18,7 @@ pub struct AccountManager {
 }
 
 impl AccountManager {
-    /// Creates a new [`AccountGenesisManager`].
+    /// Creates a new [`AccountManager`].
     pub fn new(pool: ThreadPool, db: Arc<impl AccountDatabase + 'static>) -> Self {
         let ops = Context::new(db).into_ops(pool);
         Self { ops }
