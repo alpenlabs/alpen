@@ -311,9 +311,10 @@ async fn test_wrong_key_rejected() {
 
     // Sign with wrong key
     let action = sequencer_update([2u8; 32]);
-    let sighash = action.compute_sighash(0);
+    let seqno = 1;
+    let sighash = action.compute_sighash(seqno);
     let sig_set = create_signature_set(&[wrong_privkey], &[0u8], sighash);
-    let signed = SignedPayload::new(action.clone(), sig_set);
+    let signed = SignedPayload::new(seqno, action.clone(), sig_set);
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
@@ -348,7 +349,8 @@ async fn test_corrupted_signature_rejected() {
     let ctx = harness.admin_context();
 
     let action = sequencer_update([88u8; 32]);
-    let sighash = action.compute_sighash(0);
+    let seqno = 1;
+    let sighash = action.compute_sighash(seqno);
     let sig_set = create_signature_set(ctx.privkeys(), ctx.signer_indices(), sighash);
 
     // Corrupt the signature
@@ -364,7 +366,7 @@ async fn test_corrupted_signature_rejected() {
     }
 
     let corrupted_sig_set = SignatureSet::new(indexed_sigs).unwrap();
-    let signed = SignedPayload::new(action.clone(), corrupted_sig_set);
+    let signed = SignedPayload::new(seqno, action.clone(), corrupted_sig_set);
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness

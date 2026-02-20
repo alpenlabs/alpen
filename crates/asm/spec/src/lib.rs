@@ -106,6 +106,7 @@ impl StrataAsmSpec {
             admin_config.clone(),
             admin_config,
             2, // confirmation_depth: updates activate 2 blocks after submission
+            NonZero::new(10).unwrap(),
         );
 
         Self {

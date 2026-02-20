@@ -98,7 +98,8 @@ mod tests {
           ],
           "threshold": 1
         },
-        "confirmation_depth": 144
+        "confirmation_depth": 144,
+        "max_seqno_gap": 10
       }
     },
     {

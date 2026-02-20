@@ -1,9 +1,22 @@
+use std::num::NonZero;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::Role;
-use strata_asm_txs_admin::actions::MultisigAction;
-use strata_crypto::threshold_signature::{
-    SignatureSet, ThresholdConfig, ThresholdSignatureError, verify_threshold_signatures,
-};
+use strata_asm_txs_admin::parser::SignedPayload;
+use strata_crypto::threshold_signature::{ThresholdConfig, verify_threshold_signatures};
+
+use crate::error::AdministrationError;
+
+/// Opaque proof token for a verified sequence number.
+///
+/// Produced by [`MultisigAuthority::verify_action_signature`] and consumed by
+/// [`MultisigAuthority::update_last_seqno`], enforcing at the type level that the sequence number
+/// can only advance after successful signature verification.
+///
+/// This type has no public constructor or accessors, and is neither [`Clone`] nor [`Copy`],
+/// so that each verification produces exactly one state update.
+#[derive(Debug)]
+pub struct SeqNoToken(u64);
 
 /// Manages threshold signature operations for a given role and key set, with replay protection via
 /// a sequence number.
@@ -13,17 +26,20 @@ pub struct MultisigAuthority {
     role: Role,
     /// The public keys of all grant-holders authorized to sign.
     config: ThresholdConfig,
-    /// Sequence number for the threshold configuration. It increases on each valid action.
-    /// This is used to prevent replay attacks.
-    seqno: u64,
+    /// Last sequence number that was successfully executed. Used to prevent replay attacks.
+    last_seqno: u64,
 }
 
 impl MultisigAuthority {
+    /// Creates a new authority with `last_seqno` initialized to 0.
+    ///
+    /// Since `verify_action_signature` requires `payload.seqno > self.last_seqno`, the first
+    /// valid payload must have `seqno >= 1`.
     pub fn new(role: Role, config: ThresholdConfig) -> Self {
         Self {
             role,
             config,
-            seqno: 0,
+            last_seqno: 0,
         }
     }
 
@@ -38,7 +54,7 @@ impl MultisigAuthority {
     }
 
     /// Mutably borrow the threshold configuration.
-    pub fn config_mut(&mut self) -> &mut ThresholdConfig {
+    pub(crate) fn config_mut(&mut self) -> &mut ThresholdConfig {
         &mut self.config
     }
 
@@ -49,23 +65,47 @@ impl MultisigAuthority {
     // could be added in the future if multiple signature schemes are needed.
     pub fn verify_action_signature(
         &self,
-        action: &MultisigAction,
-        signatures: &SignatureSet,
-    ) -> Result<(), ThresholdSignatureError> {
+        payload: &SignedPayload,
+        max_seqno_gap: NonZero<u8>,
+    ) -> Result<SeqNoToken, AdministrationError> {
+        if payload.seqno <= self.last_seqno {
+            return Err(AdministrationError::InvalidSeqno {
+                role: self.role,
+                payload_seqno: payload.seqno,
+                last_seqno: self.last_seqno,
+            });
+        }
+
+        if payload.seqno > self.last_seqno + max_seqno_gap.get() as u64 {
+            return Err(AdministrationError::SeqnoGapTooLarge {
+                role: self.role,
+                payload_seqno: payload.seqno,
+                last_seqno: self.last_seqno,
+                max_gap: max_seqno_gap,
+            });
+        }
         // Compute the msg to sign by combining UpdateAction with sequence no
-        let sig_hash = action.compute_sighash(self.seqno);
+        let sig_hash = payload.action.compute_sighash(payload.seqno);
 
-        verify_threshold_signatures(&self.config, signatures.signatures(), &sig_hash.into())
+        verify_threshold_signatures(
+            &self.config,
+            payload.signatures.signatures(),
+            &sig_hash.into(),
+        )?;
+
+        Ok(SeqNoToken(payload.seqno))
     }
 
-    /// Increments the seqno.
-    pub fn increment_seqno(&mut self) {
-        self.seqno += 1;
+    /// Updates the last executed seqno.
+    ///
+    /// Requires a [`SeqNoToken`] token, which can only be obtained from
+    /// [`verify_action_signature`](Self::verify_action_signature).
+    pub(crate) fn update_last_seqno(&mut self, seqno: SeqNoToken) {
+        self.last_seqno = seqno.0;
     }
 
-    /// Get the current sequence number (for testing).
-    #[cfg(test)]
-    pub fn seqno(&self) -> u64 {
-        self.seqno
+    /// Returns the last successfully executed sequence number.
+    pub fn last_seqno(&self) -> u64 {
+        self.last_seqno
     }
 }

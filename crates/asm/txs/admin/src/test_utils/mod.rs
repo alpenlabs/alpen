@@ -80,7 +80,7 @@ pub fn create_test_admin_tx(
     let signature_set = create_signature_set(privkeys, signer_indices, sighash);
 
     // Create the signed payload (action + signatures) for the envelope
-    let signed_payload = SignedPayload::new(action.clone(), signature_set);
+    let signed_payload = SignedPayload::new(seqno, action.clone(), signature_set);
     let envelope_payload = borsh::to_vec(&signed_payload).expect("borsh serialization failed");
 
     // Create a minimal reveal transaction structure
@@ -164,13 +164,13 @@ mod tests {
             .unwrap();
         let tx_input = TxInputRef::new(&tx, tag_data_ref);
 
-        let (p_action, sig) = parse_tx(&tx_input).unwrap();
-        assert_eq!(action, p_action);
+        let parsed = parse_tx(&tx_input).unwrap();
+        assert_eq!(action, parsed.action);
 
         // Verify the signatures
         let res = verify_threshold_signatures(
             &config,
-            sig.signatures(),
+            parsed.signatures.signatures(),
             &action.compute_sighash(seqno).0,
         );
         assert!(res.is_ok());

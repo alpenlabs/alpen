@@ -25,6 +25,11 @@ pub struct AdministrationSubprotoState {
 
     /// UpdateId for the next update.
     next_update_id: UpdateId,
+
+    /// The confirmation depth (CD) setting, in Bitcoin blocks: after an update transaction
+    /// receives this many confirmations, the update is enacted automatically. During this
+    /// confirmation period, the update can still be cancelled by submitting a cancel transaction.
+    confirmation_depth: u16,
 }
 
 impl AdministrationSubprotoState {
@@ -40,8 +45,14 @@ impl AdministrationSubprotoState {
             authorities,
             queued: Vec::new(),
             next_update_id: 0,
+            confirmation_depth: config.confirmation_depth,
         }
     }
+
+    pub fn confirmation_depth(&self) -> u16 {
+        self.confirmation_depth
+    }
+
     /// Get a reference to the authority for the given role.
     pub fn authority(&self, role: Role) -> Option<&MultisigAuthority> {
         self.authorities.get(role as usize)
@@ -150,6 +161,7 @@ mod tests {
             strata_administrator,
             strata_sequencer_manager,
             confirmation_depth: 2016,
+            max_seqno_gap: NonZero::new(10).unwrap(),
         }
     }
 
