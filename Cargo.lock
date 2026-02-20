@@ -13956,6 +13956,7 @@ dependencies = [
  "strata-asm-txs-checkpoint-v0",
  "strata-checkpoint-types",
  "strata-identifiers",
+ "strata-ol-msg-types",
  "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.18",

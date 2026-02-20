@@ -17,6 +17,7 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
                 BitcoinAmount::from_sat(intent.amt),
                 intent.destination.clone(),
                 intent.withdrawal_txid,
+                intent.selected_operator,
             )
         })
         .collect::<Vec<_>>();
