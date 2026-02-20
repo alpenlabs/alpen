@@ -10,7 +10,6 @@ mod noop_prover;
 mod ol_client;
 #[cfg(feature = "sequencer")]
 mod payload_builder;
-mod rpc;
 mod rpc_client;
 
 use std::{env, process, sync::Arc};
@@ -64,7 +63,7 @@ use strata_config::btcio::WriterConfig;
 use strata_identifiers::{CredRule, EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
-use tokio::sync::{mpsc, watch, RwLock};
+use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 use {
@@ -287,10 +286,6 @@ fn main() {
             let consensus_watcher = ol_tracker.consensus_watcher();
             let status_watcher = ol_tracker.ol_status_watcher();
 
-            // Create shared reference for exec chain handle (will be set later for sequencer)
-            let exec_chain_handle_ref = Arc::new(RwLock::new(None));
-            let exec_chain_handle_ref_clone = exec_chain_handle_ref.clone();
-
             let mut node_builder = builder
                 .node(AlpenEthereumNode::new(node_args))
                 // Register Alpen gossip RLPx subprotocol
@@ -305,24 +300,6 @@ fn main() {
                             .network
                             .add_rlpx_sub_protocol(handler.into_rlpx_sub_protocol());
                         info!(target: "alpen-gossip", "Registered Alpen gossip RLPx subprotocol");
-                        Ok(())
-                    }
-                })
-                // Add custom RPC modules including status endpoints
-                .extend_rpc_modules({
-                    move |ctx| {
-                        use rpc::{AlpenClientStatusApiServer, AlpenClientStatusRpc};
-
-                        // Create status RPC with available handles
-                        // ExecChainHandle will be set later for sequencer mode
-                        let status_rpc = AlpenClientStatusRpc::new(
-                            Some(ol_tracker),
-                            exec_chain_handle_ref_clone,
-                        );
-
-                        // Register the status RPC endpoints
-                        ctx.modules.merge_configured(status_rpc.into_rpc())?;
-
                         Ok(())
                     }
                 });
@@ -400,9 +377,6 @@ fn main() {
 
                 let (exec_chain_handle, exec_chain_task) =
                     build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
-
-                // Update the shared reference with the actual exec chain handle
-                *exec_chain_handle_ref.write().await = Some(exec_chain_handle.clone());
 
                 let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
                     ol_chain_tracker_state,
