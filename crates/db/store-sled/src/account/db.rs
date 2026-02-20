@@ -2,6 +2,7 @@
 
 use strata_db_types::{DbError, DbResult, traits::AccountDatabase, types::AccountExtraDataEntry};
 use strata_identifiers::{AccountId, Epoch};
+use strata_primitives::nonempty_vec::NonEmptyVec;
 
 use super::schemas::{AccountExtraDataSchema, AccountGenesisSchema};
 use crate::define_sled_database;
@@ -39,7 +40,7 @@ impl AccountDatabase for AccountGenesisDBSled {
             new.push(extra_data);
             new
         } else {
-            vec![extra_data]
+            NonEmptyVec::new(extra_data)
         };
         self.extra_data_tree
             .compare_and_swap(key, curr, Some(new))?;
@@ -49,7 +50,7 @@ impl AccountDatabase for AccountGenesisDBSled {
     fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<Vec<AccountExtraDataEntry>>> {
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>> {
         Ok(self.extra_data_tree.get(&key)?)
     }
 }

@@ -16,6 +16,7 @@ use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::{
+    nonempty_vec::NonEmptyVec,
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
@@ -618,7 +619,7 @@ pub trait AccountDatabase: Send + Sync + 'static {
     fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<Vec<AccountExtraDataEntry>>>;
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>>;
 }
 
 /// Database interface for OL mempool transactions.
