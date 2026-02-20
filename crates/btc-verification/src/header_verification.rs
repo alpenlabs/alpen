@@ -1,9 +1,7 @@
 use std::io;
 
 use arbitrary::Arbitrary;
-use bitcoin::{
-    BlockHash, CompactTarget, Network, absolute, block::Header, hashes::Hash, params::Params,
-};
+use bitcoin::{BlockHash, CompactTarget, Network, block::Header, hashes::Hash, params::Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::{BtcParams, GenesisL1View};
@@ -139,7 +137,7 @@ impl HeaderVerificationState {
     /// calculates a new target using the timespan between epoch start and current block.
     /// Otherwise, returns the current target unchanged.
     fn next_target(&mut self, header: &Header) -> u32 {
-        let next_height = self.last_verified_block.height().to_consensus_u32() + 1;
+        let next_height = self.last_verified_block.height() + 1;
         if !next_height.is_multiple_of(self.params.difficulty_adjustment_interval() as u32) {
             return self.next_block_target;
         }
@@ -158,7 +156,7 @@ impl HeaderVerificationState {
     fn update_timestamps(&mut self, timestamp: u32) {
         self.block_timestamp_history.insert(timestamp);
 
-        let new_block_num = self.last_verified_block.height().to_consensus_u32();
+        let new_block_num = self.last_verified_block.height();
         if new_block_num.is_multiple_of(self.params.difficulty_adjustment_interval() as u32) {
             self.epoch_start_timestamp = timestamp;
         }
@@ -215,10 +213,7 @@ impl HeaderVerificationState {
         }
 
         // Increase the last verified block number by 1 and set the new block hash
-        let next_height = absolute::Height::from_consensus(
-            self.last_verified_block.height().to_consensus_u32() + 1,
-        )
-        .expect("height + 1 should be valid");
+        let next_height = self.last_verified_block.height() + 1;
         self.last_verified_block = L1BlockCommitment::new(next_height, block_hash_raw.into());
 
         // Update the timestamps
@@ -475,10 +470,7 @@ mod tests {
 
         // Verify we successfully crossed the boundary
         assert_eq!(
-            verification_state
-                .last_verified_block
-                .height()
-                .to_consensus_u32(),
+            verification_state.last_verified_block.height(),
             end_height as u32
         );
     }

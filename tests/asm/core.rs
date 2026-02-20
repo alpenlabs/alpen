@@ -90,7 +90,7 @@ async fn test_multiple_block_processing() {
     let (l1, state) = harness.get_latest_asm_state().unwrap().unwrap();
     assert_eq!(l1, state.state().chain_view.pow_state.last_verified_block);
     assert_eq!(
-        l1.height().to_consensus_u32() as u64,
+        l1.height() as u64,
         state
             .state()
             .chain_view
@@ -108,7 +108,7 @@ async fn test_multiple_block_processing() {
     assert_eq!(tip_height, harness.genesis_height + 3);
     assert_eq!(l1, state.state().chain_view.pow_state.last_verified_block);
     assert_eq!(
-        l1.height().to_consensus_u32() as u64,
+        l1.height() as u64,
         state
             .state()
             .chain_view

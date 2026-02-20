@@ -156,7 +156,7 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     use async_trait::async_trait;
-    use bitcoin::{BlockHash, Network, absolute::Height, block::Header};
+    use bitcoin::{BlockHash, Network, block::Header};
     use bitcoind_async_client::{
         Client,
         traits::{Reader, Wallet},
@@ -232,10 +232,7 @@ mod tests {
 
         // Construct L1BlockCommitment
         let blkid: L1BlockId = header.block_hash().into();
-        let blk_commitment = L1BlockCommitment::new(
-            Height::from_consensus(height as u32).expect("Height u32 overflow"),
-            blkid,
-        );
+        let blk_commitment = L1BlockCommitment::new(height as u32, blkid);
 
         // Create dummy/default values for other fields
         let next_target = header.bits.to_consensus();

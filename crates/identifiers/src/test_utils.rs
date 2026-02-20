@@ -84,23 +84,6 @@ pub fn l1_block_id_strategy() -> impl Strategy<Value = L1BlockId> {
 }
 
 /// Strategy for generating random [`L1BlockCommitment`] values.
-///
-/// When the `bitcoin` feature is enabled, heights are validated against bitcoin
-/// consensus rules and invalid heights are filtered out.
-#[cfg(feature = "bitcoin")]
-pub fn l1_block_commitment_strategy() -> impl Strategy<Value = L1BlockCommitment> {
-    use bitcoin::absolute;
-    (any::<u32>(), l1_block_id_strategy()).prop_filter_map(
-        "valid bitcoin height",
-        |(height, blkid)| {
-            let height = absolute::Height::from_consensus(height).ok()?;
-            Some(L1BlockCommitment::new(height, blkid))
-        },
-    )
-}
-
-/// Strategy for generating random [`L1BlockCommitment`] values.
-#[cfg(not(feature = "bitcoin"))]
 pub fn l1_block_commitment_strategy() -> impl Strategy<Value = L1BlockCommitment> {
     (any::<u32>(), l1_block_id_strategy())
         .prop_map(|(height, blkid)| L1BlockCommitment::new(height, blkid))

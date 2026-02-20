@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bitcoin::{absolute::Height, block::Header, Block, BlockHash, Network, Txid};
+use bitcoin::{block::Header, Block, BlockHash, Network, Txid};
 use bitcoind_async_client::{traits::Reader, Client};
 use strata_asm_manifest_types::AsmManifest;
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
@@ -224,10 +224,7 @@ pub async fn get_genesis_l1_view(
 
     // Construct L1BlockCommitment
     let blkid: L1BlockId = header.block_hash().into();
-    let blk_commitment = L1BlockCommitment::new(
-        Height::from_consensus(height as u32).expect("Height u32 overflow"),
-        blkid,
-    );
+    let blk_commitment = L1BlockCommitment::new(height as u32, blkid);
 
     // Create dummy/default values for other fields
     let next_target = header.bits.to_consensus();

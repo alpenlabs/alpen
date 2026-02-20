@@ -7,7 +7,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-use bitcoin::locktime::absolute::Height;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, tree_hash::TreeHash};
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
@@ -615,8 +614,7 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     }
 
     // Store ASM state at the highest L1 block
-    let height = Height::from_consensus(end as u32).expect("Invalid height");
-    let l1_commitment = L1BlockCommitment::new(height, last_blkid);
+    let l1_commitment = L1BlockCommitment::new(end as u32, last_blkid);
 
     // Create minimal ASM state for testing
     let pow_state = HeaderVerificationState::default();
