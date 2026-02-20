@@ -10,7 +10,9 @@ mod snark_acct_update;
 mod txn;
 
 pub use account_state::RpcSnarkAccountState;
-pub use account_summary::{RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry};
+pub use account_summary::{
+    RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry, RpcUpdateInputData,
+};
 pub use block::RpcBlockRangeEntry;
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::RpcOLChainStatus;

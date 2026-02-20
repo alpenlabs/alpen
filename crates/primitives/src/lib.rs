@@ -42,11 +42,11 @@ pub mod constants;
 pub mod errors;
 pub mod indexed;
 pub mod l1;
+pub mod nonempty_vec;
 pub mod prelude;
 pub mod proof;
 pub mod serde_helpers;
 pub mod sorted_vec;
-pub mod nonempty_vec;
 pub mod utils;
 
 pub use bitcoin_bosd;
