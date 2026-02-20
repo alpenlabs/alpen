@@ -15,6 +15,9 @@ from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
 
 logger = logging.getLogger(__name__)
 
+EXPECT_UPDATE_WITHIN_EPOCH = 5
+CHECK_N_UPDATES = 3  # How many updates from alpen to check in strata
+
 @flexitest.register
 class TestAlpenSequencerToStrataSequencer(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
@@ -33,8 +36,6 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
         acct_summary: AccountEpochSummary = strata_rpc.strata_getAccountEpochSummary(ALPEN_ACCOUNT_ID, 0)
         assert acct_summary["update_input"] is None, "No update input at epoch 0"
 
-        EXPECT_UPDATE_WITHIN_EPOCH = 5
-        CHECK_N_UPDATES = 2
         last_new_update_at = 0
         new_updates_count = 0
         nxt_epoch = 1
@@ -51,7 +52,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
             for ep in range(nxt_epoch, status["confirmed"]["epoch"] + 1):
                 acct_summary: AccountEpochSummary = strata_rpc.strata_getAccountEpochSummary(ALPEN_ACCOUNT_ID, ep)
                 if acct_summary["update_input"] is not None:
-                    logger.info(f"Received update input. Alpen is submitting updates to strata. {acct_summary}")
+                    logger.info(f"Received update input {new_updates_count + 1}. Alpen is submitting updates to strata. {acct_summary}")
                     last_new_update_at = ep
                     new_updates_count += 1
                 elif ep > last_new_update_at + EXPECT_UPDATE_WITHIN_EPOCH:

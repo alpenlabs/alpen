@@ -400,6 +400,7 @@ where
         let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer);
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
+        debug!(%txid, ?tx, "processing transaction");
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
                 // Success: merge logs and keep state changes
@@ -413,6 +414,7 @@ where
                 failed_txs.push((txid, stf_exec_error_to_mempool_reason(&e)));
             }
         }
+        debug!(%txid, "successful tx execution in block assembly");
     }
 
     ProcessTransactionsOutput {
