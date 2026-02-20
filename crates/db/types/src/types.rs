@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, CheckpointSidecar};
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
-use strata_identifiers::OLTxId;
+use strata_identifiers::{OLTxId, Slot};
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::buf::Buf32;
+use strata_primitives::{buf::Buf32, OLBlockCommitment};
 use zkaleido::Proof;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
@@ -468,6 +468,22 @@ impl ChunkedEnvelopeEntry {
             .last()
             .map(|r| r.wtxid)
             .unwrap_or(self.prev_tail_wtxid)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+pub struct AccountExtraDataEntry {
+    extra_data: Vec<u8>,
+    block: OLBlockCommitment,
+}
+
+impl AccountExtraDataEntry {
+    pub fn new(extra_data: Vec<u8>, block: OLBlockCommitment) -> Self {
+        Self { extra_data, block }
+    }
+
+    pub fn into_parts(self) -> (Vec<u8>, OLBlockCommitment) {
+        (self.extra_data, self.block)
     }
 }
 

@@ -4,12 +4,12 @@ use std::{thread::sleep, time::Duration};
 
 use anyhow::{Result, anyhow};
 use strata_codec::encode_to_vec;
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::{traits::BlockStatus, types::AccountExtraDataEntry};
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ledger_types::AsmManifest;
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts_with_manifest};
 use strata_ol_params::OLParams;
-use strata_primitives::{Buf32, L1BlockId, OLBlockCommitment};
+use strata_primitives::{L1BlockId, OLBlockCommitment};
 use strata_storage::NodeStorage;
 use tracing::{info, instrument};
 
@@ -56,9 +56,10 @@ pub(crate) fn init_ol_genesis(
         ];
         let extra = UpdateExtraData::new(gen_hash.into(), 0, 0);
         let extra_data = encode_to_vec(&extra).expect("Can't encode genesis extradata");
+        let extra_entry = AccountExtraDataEntry::new(extra_data, commitment);
         storage
             .account()
-            .insert_account_extra_data_blocking((entry.id, 0), extra_data)
+            .insert_account_extra_data_blocking((entry.id, 0), extra_entry)
     })?;
 
     storage.ol_block().put_block_data_blocking(ol_block)?;

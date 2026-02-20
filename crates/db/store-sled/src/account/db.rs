@@ -1,6 +1,6 @@
 //! Sled-backed account genesis database implementation.
 
-use strata_db_types::{DbError, DbResult, traits::AccountDatabase};
+use strata_db_types::{DbError, DbResult, traits::AccountDatabase, types::AccountExtraDataEntry};
 use strata_identifiers::{AccountId, Epoch};
 
 use super::schemas::{AccountExtraDataSchema, AccountGenesisSchema};
@@ -30,13 +30,26 @@ impl AccountDatabase for AccountGenesisDBSled {
     fn insert_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-        extra_data: Vec<u8>,
+        extra_data: AccountExtraDataEntry,
     ) -> DbResult<()> {
-        self.extra_data_tree.insert(&key, &extra_data)?;
+        // Append to existing list of entries
+        let curr = self.extra_data_tree.get(&key)?;
+        let new = if let Some(ref d) = curr {
+            let mut new = d.clone();
+            new.push(extra_data);
+            new
+        } else {
+            vec![extra_data]
+        };
+        self.extra_data_tree
+            .compare_and_swap(key, curr, Some(new))?;
         Ok(())
     }
 
-    fn get_account_extra_data(&self, key: (AccountId, Epoch)) -> DbResult<Option<Vec<u8>>> {
+    fn get_account_extra_data(
+        &self,
+        key: (AccountId, Epoch),
+    ) -> DbResult<Option<Vec<AccountExtraDataEntry>>> {
         Ok(self.extra_data_tree.get(&key)?)
     }
 }

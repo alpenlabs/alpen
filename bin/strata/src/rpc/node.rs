@@ -85,6 +85,12 @@ impl OLRpcServer {
                 .await
                 .map_err(db_error)?
             {
+                let extra_data = extra_data
+                    .last() // Get the latest. TODO: this needs to be updated
+                    .cloned()
+                    .expect("need to have at least one entry")
+                    .into_parts()
+                    .0;
                 return Ok(extra_data);
             }
             if epoch == 0 {
