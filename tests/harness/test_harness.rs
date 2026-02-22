@@ -53,12 +53,10 @@ use bitcoind_async_client::{
 use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
+use strata_btc_types::BlockHashExt;
 use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
 use strata_params::RollupParams;
-use strata_primitives::{
-    buf::Buf32,
-    l1::{L1BlockCommitment, L1BlockId},
-};
+use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::{runtime::Handle, task::block_in_place, time::sleep};
@@ -154,7 +152,7 @@ impl AsmTestHarness {
         };
 
         // Submit genesis block to ASM worker
-        let genesis_block_id = L1BlockId::from(genesis_hash);
+        let genesis_block_id = genesis_hash.to_l1_block_id();
         let genesis_commitment = L1BlockCommitment::new(genesis_height as u32, genesis_block_id);
 
         // Fetch and cache genesis block
@@ -216,7 +214,7 @@ impl AsmTestHarness {
         let height = self.client.get_block_height(&block_hash).await?;
 
         // Create L1BlockCommitment and submit to ASM worker
-        let block_id = block_hash.into();
+        let block_id = block_hash.to_l1_block_id();
         let block_commitment = L1BlockCommitment::new(height as u32, block_id);
 
         // Use block_in_place to submit synchronously within async context

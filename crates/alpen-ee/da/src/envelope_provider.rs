@@ -9,6 +9,7 @@ use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
 use bitcoin::{Txid, Wtxid};
 use eyre::{bail, ensure};
+use strata_btc_types::Buf32BitcoinExt;
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
 use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxStatus};
 use strata_identifiers::{L1BlockCommitment, L1BlockId};
@@ -144,7 +145,7 @@ impl ChunkedEnvelopeDaProvider {
             block_map
                 .entry((block_hash, block_height))
                 .or_default()
-                .push((Txid::from(*txid_buf), Wtxid::from(*wtxid_buf)));
+                .push((txid_buf.to_txid(), wtxid_buf.to_wtxid()));
         }
 
         // Build sorted L1DaBlockRef list (ascending by block height).

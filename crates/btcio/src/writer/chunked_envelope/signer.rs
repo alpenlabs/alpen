@@ -14,8 +14,9 @@
 
 use std::sync::Arc;
 
-use bitcoin::{consensus::encode::serialize as btc_serialize, hashes::Hash};
+use bitcoin::consensus::encode::serialize as btc_serialize;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
+use strata_btc_types::{TxidExt, WtxidExt};
 use strata_config::btcio::FeePolicy;
 use strata_db_types::types::{
     ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, RevealTxMeta,
@@ -94,7 +95,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         .await
         .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
         .tx;
-    let commit_txid: Buf32 = signed_commit.compute_txid().into();
+    let commit_txid: Buf32 = signed_commit.compute_txid().to_buf32();
 
     // Store ONLY the commit tx in broadcast DB. Reveals will be added after
     // commit is published to prevent InvalidInputs errors.
@@ -107,8 +108,8 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     // DB by the watcher after commit is published.
     let mut reveals = Vec::with_capacity(built.reveal_txs.len());
     for (i, reveal_tx) in built.reveal_txs.iter().enumerate() {
-        let txid: Buf32 = reveal_tx.compute_txid().into();
-        let wtxid: Buf32 = reveal_tx.compute_wtxid().as_byte_array().into();
+        let txid: Buf32 = reveal_tx.compute_txid().to_buf32();
+        let wtxid: Buf32 = reveal_tx.compute_wtxid().to_buf32();
         let tx_bytes = btc_serialize(reveal_tx);
 
         reveals.push(RevealTxMeta {

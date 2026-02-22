@@ -1,9 +1,6 @@
 use std::{cmp::Ordering, fmt};
 
 use arbitrary::{Arbitrary, Result as ArbitraryResult, Unstructured};
-// Re-export bitcoin types for internal use
-#[cfg(feature = "bitcoin")]
-pub(crate) use bitcoin::BlockHash;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -60,22 +57,6 @@ impl From<L1BlockId> for Buf32 {
 
 // Manual TreeHash implementation for transparent wrapper
 crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
-
-#[cfg(feature = "bitcoin")]
-impl From<BlockHash> for L1BlockId {
-    fn from(value: BlockHash) -> Self {
-        use bitcoin::hashes::Hash;
-        L1BlockId(RBuf32(*value.as_raw_hash().as_byte_array()))
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<L1BlockId> for BlockHash {
-    fn from(value: L1BlockId) -> Self {
-        use bitcoin::hashes::Hash;
-        BlockHash::from_byte_array(value.0.0)
-    }
-}
 
 /// Witness transaction ID merkle root from a Bitcoin block.
 ///
@@ -204,8 +185,6 @@ mod tests {
     use crate::test_utils::{buf32_strategy, l1_block_commitment_strategy};
 
     mod l1_block_id {
-        use bitcoin::BlockHash;
-
         use super::*;
 
         ssz_proptest!(
@@ -220,49 +199,6 @@ mod tests {
             let encoded = zero.as_ssz_bytes();
             let decoded = L1BlockId::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(zero, decoded);
-        }
-
-        /// Verifies that `L1BlockId`'s `Debug` output matches Bitcoin's `BlockHash` `Display`,
-        /// i.e. the full reversed-byte hex string.
-        #[test]
-        fn debug_matches_bitcoin_display() {
-            let block_hash: BlockHash =
-                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-                    .parse()
-                    .unwrap();
-            let l1_id = L1BlockId::from(block_hash);
-
-            assert_eq!(format!("{:?}", l1_id), format!("{}", block_hash));
-        }
-
-        /// Verifies that `L1BlockId`'s human-readable serde serialization matches
-        /// Bitcoin's `BlockHash` serialization (both produce the reversed-hex string).
-        #[test]
-        fn serde_json_matches_bitcoin() {
-            let block_hash: BlockHash =
-                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-                    .parse()
-                    .unwrap();
-            let l1_id = L1BlockId::from(block_hash);
-
-            let l1_json = serde_json::to_string(&l1_id).unwrap();
-            let btc_json = serde_json::to_string(&block_hash).unwrap();
-            assert_eq!(l1_json, btc_json);
-        }
-
-        /// Verifies round-trip: deserializing a Bitcoin `BlockHash` JSON string as
-        /// `L1BlockId` produces the same value as converting via `From`.
-        #[test]
-        fn serde_json_roundtrip_from_bitcoin() {
-            let block_hash: BlockHash =
-                "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-                    .parse()
-                    .unwrap();
-
-            let json = serde_json::to_string(&block_hash).unwrap();
-            let deserialized: L1BlockId = serde_json::from_str(&json).unwrap();
-
-            assert_eq!(deserialized, L1BlockId::from(block_hash));
         }
     }
 

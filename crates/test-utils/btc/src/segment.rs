@@ -18,6 +18,7 @@ use bitcoind_async_client::{
 };
 use strata_asm_common::AsmManifest;
 use strata_asm_types::HeaderVerificationState;
+use strata_btc_types::BlockHashExt;
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_identifiers::WtxidsRoot;
 use strata_primitives::{buf::Buf32, l1::GenesisL1View};
@@ -135,7 +136,7 @@ impl BtcChainSegment {
 
     pub fn get_block_manifest(&self, height: u64) -> AsmManifest {
         let header = self.get_block_header_at(height).unwrap();
-        let blkid = header.block_hash().into();
+        let blkid = header.block_hash().to_l1_block_id();
         let wtxs_root = WtxidsRoot::from(Buf32::from(
             header.merkle_root.as_raw_hash().to_byte_array(),
         ));

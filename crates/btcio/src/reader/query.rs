@@ -8,10 +8,11 @@ use anyhow::bail;
 use bitcoin::{params, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use strata_asm_types::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
+use strata_btc_types::BlockHashExt;
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1BlockId},
+    l1::{BtcParams, GenesisL1View, L1BlockCommitment},
 };
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
@@ -203,7 +204,7 @@ async fn poll_for_new_blocks<R: Reader>(
         if pivot_height < state.best_block_idx() {
             info!(%pivot_height, %pivot_blkid, "found apparent reorg");
             let block =
-                L1BlockCommitment::from_height_u64(pivot_height, L1BlockId::from(pivot_blkid))
+                L1BlockCommitment::from_height_u64(pivot_height, pivot_blkid.to_l1_block_id())
                     .expect("valid height");
             state.rollback_to_height(pivot_height);
 
@@ -357,7 +358,7 @@ pub async fn fetch_genesis_l1_view(
     );
 
     // Compute the block ID for the verified block.
-    let block_id: L1BlockId = block_header.block_hash().into();
+    let block_id = block_header.block_hash().to_l1_block_id();
 
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
     // next_block_target, else next_block_target will be current block's target

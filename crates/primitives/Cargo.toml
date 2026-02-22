@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 strata-btc-types.workspace = true
 strata-crypto.workspace = true
-strata-identifiers = { workspace = true, features = ["bitcoin"] }
+strata-identifiers.workspace = true
 
 bitcoin = { workspace = true, features = ["serde", "rand-std"] }
 bitcoin-bosd = { workspace = true, features = [

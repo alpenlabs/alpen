@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 alpen-chainspec.workspace = true
 strata-asm-types.workspace = true
+strata-btc-types.workspace = true
 strata-crypto.workspace = true
 strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true

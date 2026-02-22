@@ -12,7 +12,7 @@ use bitcoin::{block::Header, Block, BlockHash, Network, Txid};
 use bitcoind_async_client::{traits::Reader, Client};
 use strata_asm_manifest_types::AsmManifest;
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
-use strata_btc_types::{GenesisL1View, RawBitcoinTx};
+use strata_btc_types::{BlockHashExt, GenesisL1View, L1BlockIdBitcoinExt, RawBitcoinTx};
 use strata_primitives::{
     buf::Buf32,
     hash::Hash,
@@ -62,7 +62,7 @@ impl TestAsmWorkerContext {
     /// Fetch a block from regtest by hash, caching it for future use
     pub async fn fetch_and_cache_block(&self, block_hash: BlockHash) -> anyhow::Result<Block> {
         let block = self.client.get_block(&block_hash).await?;
-        let block_id = L1BlockId::from(block_hash);
+        let block_id = block_hash.to_l1_block_id();
         self.block_cache
             .lock()
             .unwrap()
@@ -79,7 +79,7 @@ impl WorkerContext for TestAsmWorkerContext {
         }
 
         // If not cached, fetch from regtest (synchronously)
-        let block_hash: BlockHash = (*blockid).into();
+        let block_hash = blockid.to_block_hash();
 
         // Try to use current runtime if available, otherwise create a new one
         let block = match Handle::try_current() {
@@ -223,7 +223,7 @@ pub async fn get_genesis_l1_view(
     let height = client.get_block_height(hash).await?;
 
     // Construct L1BlockCommitment
-    let blkid: L1BlockId = header.block_hash().into();
+    let blkid = header.block_hash().to_l1_block_id();
     let blk_commitment = L1BlockCommitment::new(height as u32, blkid);
 
     // Create dummy/default values for other fields

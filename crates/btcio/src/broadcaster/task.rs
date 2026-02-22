@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use bitcoin::{hashes::Hash, Txid};
 use bitcoind_async_client::traits::{Broadcaster, Wallet};
+use strata_btc_types::{BlockHashExt, Buf32BitcoinExt};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
@@ -36,9 +37,9 @@ pub async fn broadcaster_task(
             _ = interval.tick() => {}
 
             Some((idx, txentry)) = entry_receiver.recv() => {
-                let txid: Txid = ops.get_txid_async(idx).await?.
-                    ok_or(BroadcasterError::TxNotFound(idx))
-                    .map(Into::into)?;
+                let txid: Txid = ops.get_txid_async(idx).await?
+                    .ok_or(BroadcasterError::TxNotFound(idx))
+                    .map(|b| b.to_txid())?;
                 info!(%idx, %txid, "Received txentry");
                 state.unfinalized_entries.push(IndexedEntry::new(idx, txentry));
             }
@@ -149,7 +150,7 @@ async fn check_tx_confirmations(
                 let block_hash: Buf32 = info
                     .block_hash
                     .expect("confirmed tx must have block_hash")
-                    .into();
+                    .to_buf32();
                 let block_height =
                     info.block_height
                         .expect("confirmed tx must have block_height") as u64;

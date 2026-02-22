@@ -163,7 +163,7 @@ mod tests {
     };
     use corepc_node::Node;
     use strata_asm_common::AsmManifest;
-    use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
+    use strata_btc_types::{BitcoinTxid, BlockHashExt, RawBitcoinTx};
     use strata_primitives::{L1BlockId, hash::Hash, l1::GenesisL1View};
     use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
     use strata_test_utils_l2::gen_params;
@@ -231,7 +231,7 @@ mod tests {
         let height = client.get_block_height(hash).await?;
 
         // Construct L1BlockCommitment
-        let blkid: L1BlockId = header.block_hash().into();
+        let blkid = header.block_hash().to_l1_block_id();
         let blk_commitment = L1BlockCommitment::new(height as u32, blkid);
 
         // Create dummy/default values for other fields

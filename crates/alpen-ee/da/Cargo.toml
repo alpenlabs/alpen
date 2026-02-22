@@ -14,6 +14,7 @@ alpen-ee-common.workspace = true
 alpen-ee-database.workspace = true
 alpen-reth-db.workspace = true
 alpen-reth-statediff.workspace = true
+strata-btc-types.workspace = true
 strata-btcio.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true

@@ -4,6 +4,7 @@ use std::marker;
 
 use bitcoin::hashes::Hash;
 use serde::{Deserialize, Serialize};
+use strata_btc_types::BlockHashExt;
 use strata_primitives::prelude::*;
 use strata_service::{Response, Service, SyncService};
 use strata_state::asm_state::AsmState;
@@ -68,7 +69,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             let parent_height = pivot_block.height() - 1;
             let parent_block_id = L1BlockCommitment::from_height_u64(
                 parent_height as u64,
-                block.header.prev_blockhash.into(),
+                block.header.prev_blockhash.to_l1_block_id(),
             )
             .expect("parent height should be valid");
 
