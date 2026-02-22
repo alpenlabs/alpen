@@ -34,7 +34,7 @@ use strata_asm_txs_admin::{
             predicate::{PredicateUpdate, ProofType},
             seq::SequencerUpdate,
         },
-        CancelAction, MultisigAction, UpdateAction,
+        CancelAction, MultisigAction, Sighash, UpdateAction,
     },
     constants::ADMINISTRATION_SUBPROTOCOL_ID,
     parser::SignedPayload,

@@ -58,8 +58,7 @@ impl TryFrom<u8> for AdminTxType {
 macro_rules! lazy_tag_hash {
     ($suffix:expr) => {{
         const TAG: &str = concat!("strata/admin/", $suffix);
-        static HASH: LazyLock<[u8; 32]> =
-            LazyLock::new(|| hash::raw(TAG.as_bytes()).0);
+        static HASH: LazyLock<[u8; 32]> = LazyLock::new(|| hash::raw(TAG.as_bytes()).0);
         &HASH
     }};
 }

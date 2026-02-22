@@ -37,8 +37,9 @@ use integration_tests::harness;
 use rand::rngs::OsRng;
 use strata_asm_params::Role;
 use strata_asm_txs_admin::{
-    actions::updates::predicate::ProofType, constants::ADMINISTRATION_SUBPROTOCOL_ID,
-    parser::SignedPayload, test_utils::create_signature_set,
+    actions::{constants::ADMINISTRATION_SUBPROTOCOL_ID, updates::predicate::ProofType, Sighash},
+    parser::SignedPayload,
+    test_utils::create_signature_set,
 };
 use strata_crypto::{
     keys::compressed::CompressedPublicKey,
@@ -351,7 +352,11 @@ async fn test_wrong_key_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, action.tx_type(), payload)
+        .build_envelope_tx(
+            ADMINISTRATION_SUBPROTOCOL_ID,
+            action.tx_type() as u8,
+            payload,
+        )
         .await
         .unwrap();
 
@@ -407,7 +412,11 @@ async fn test_corrupted_signature_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, action.tx_type(), payload)
+        .build_envelope_tx(
+            ADMINISTRATION_SUBPROTOCOL_ID,
+            action.tx_type() as u8,
+            payload,
+        )
         .await
         .unwrap();
 
