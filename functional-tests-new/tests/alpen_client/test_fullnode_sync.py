@@ -24,35 +24,35 @@ class TestFullnodeSync(AlpenClientTest):
     """Test historical block sync from fullnode to late-joining fullnode."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client")
+        ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        fullnode_0 = self.get_service("fullnode")
+        ee_sequencer = self.get_service("ee_sequencer")
+        ee_fullnode_0 = self.get_service("ee_fullnode")
 
         _, pubkey = generate_sequencer_keypair()
         factory = AlpenClientFactory(range(30600, 30700))
 
         # Wait for initial sync
         logger.info("Waiting for initial sync...")
-        sequencer.wait_for_peers(1, timeout=30)
-        fullnode_0.wait_for_peers(1, timeout=30)
+        ee_sequencer.wait_for_peers(1, timeout=15)
+        ee_fullnode_0.wait_for_peers(1, timeout=15)
 
         # Produce blocks
-        initial_block = sequencer.get_block_number()
+        initial_block = ee_sequencer.get_block_number()
         target_block = initial_block + 10
-        sequencer.wait_for_block(target_block, timeout=120)
-        fullnode_0.wait_for_block(target_block, timeout=60)
+        ee_sequencer.wait_for_block(target_block, timeout=30)
+        ee_fullnode_0.wait_for_block(target_block, timeout=30)
 
-        expected_hash = fullnode_0.get_block_by_number(target_block)["hash"]
-        fn0_enode = fullnode_0.get_enode()
+        expected_hash = ee_fullnode_0.get_block_by_number(target_block)["hash"]
+        fn0_enode = ee_fullnode_0.get_enode()
 
-        # Start late-joining fullnode_1
-        logger.info("Starting late-joining fullnode_1...")
+        # Start late-joining ee_fullnode_1
+        logger.info("Starting late-joining ee_fullnode_1...")
         tmpdir = tempfile.mkdtemp(prefix="alpen_fullnode_1_")
-        fullnode_1 = None
+        ee_fullnode_1 = None
         try:
-            fullnode_1 = factory.create_fullnode(
+            ee_fullnode_1 = factory.create_fullnode(
                 sequencer_pubkey=pubkey,
                 trusted_peers=[fn0_enode],
                 bootnodes=None,
@@ -60,27 +60,27 @@ class TestFullnodeSync(AlpenClientTest):
                 instance_id=1,
                 datadir_override=tmpdir,
             )
-            fullnode_1.wait_for_ready(timeout=60)
+            ee_fullnode_1.wait_for_ready(timeout=30)
 
-            # Connect fullnode_1 to fullnode_0
-            fn0_rpc = fullnode_0.create_rpc()
-            fn0_rpc.admin_addPeer(fullnode_1.get_enode())
+            # Connect ee_fullnode_1 to ee_fullnode_0
+            fn0_rpc = ee_fullnode_0.create_rpc()
+            fn0_rpc.admin_addPeer(ee_fullnode_1.get_enode())
 
-            fullnode_1.wait_for_peers(1, timeout=30)
+            ee_fullnode_1.wait_for_peers(1, timeout=15)
 
             # Verify historical sync
-            fullnode_1.wait_for_block(target_block, timeout=120)
-            fn1_hash = fullnode_1.get_block_by_number(target_block)["hash"]
+            ee_fullnode_1.wait_for_block(target_block, timeout=60)
+            fn1_hash = ee_fullnode_1.get_block_by_number(target_block)["hash"]
             assert expected_hash == fn1_hash, "Historical block hash mismatch"
 
             # Verify new block relay
             new_target = target_block + 5
-            sequencer.wait_for_block(new_target, timeout=120)
-            fullnode_1.wait_for_block(new_target, timeout=60)
+            ee_sequencer.wait_for_block(new_target, timeout=15)
+            ee_fullnode_1.wait_for_block(new_target, timeout=15)
 
-            logger.info(f"fullnode_1 synced block {target_block} and new block {new_target}")
+            logger.info(f"ee_fullnode_1 synced block {target_block} and new block {new_target}")
             return True
         finally:
-            if fullnode_1 is not None:
+            if ee_fullnode_1 is not None:
                 with contextlib.suppress(Exception):
-                    fullnode_1.stop()
+                    ee_fullnode_1.stop()

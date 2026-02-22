@@ -35,7 +35,7 @@ class TestDaBytecodeDeduplicationTest(BaseTest):
 
     def main(self, ctx) -> bool:
         bitcoin: BitcoinService = self.runctx.get_service("bitcoin")
-        sequencer: AlpenClientService = self.runctx.get_service("sequencer")
+        sequencer: AlpenClientService = self.runctx.get_service("ee_sequencer")
         btc_rpc = bitcoin.create_rpc()
         eth_rpc = sequencer.create_rpc()
         baseline_l1_height = btc_rpc.proxy.getblockcount()
