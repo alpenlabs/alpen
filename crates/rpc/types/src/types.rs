@@ -8,6 +8,7 @@ use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
 use strata_asm_proto_bridge_v1::{DepositEntry, OperatorBitmap};
 use strata_bridge_types::WithdrawalIntent;
+use strata_btc_types::{Buf32BitcoinExt, L1BlockIdBitcoinExt};
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
 #[expect(
@@ -292,9 +293,9 @@ impl From<CheckpointL1Ref> for RpcCheckpointL1Ref {
     fn from(l1ref: CheckpointL1Ref) -> Self {
         Self {
             block_height: l1ref.l1_commitment.height_u64(),
-            block_id: (*l1ref.l1_commitment.blkid()).into(),
-            txid: l1ref.txid.into(),
-            wtxid: l1ref.wtxid.into(),
+            block_id: l1ref.l1_commitment.blkid().to_block_hash(),
+            txid: l1ref.txid.to_txid(),
+            wtxid: l1ref.wtxid.to_wtxid(),
         }
     }
 }

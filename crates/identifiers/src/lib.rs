@@ -21,7 +21,7 @@ pub use acct::{
     AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SUBJ_ID_LEN, SYSTEM_RESERVED_ACCTS,
     SubjectId, SubjectIdBytes,
 };
-pub use buf::{Buf20, Buf32, Buf64};
+pub use buf::{Buf20, Buf32, Buf64, RBuf32};
 pub use cred_rule::CredRule;
 pub use deposit::{DepositDescriptor, DepositDescriptorError};
 pub use exec::{
@@ -50,11 +50,7 @@ pub mod ssz_generated {
 }
 
 // Re-export generated commitment types
-#[cfg(feature = "bitcoin")]
-pub use l1::L1BlockCommitment;
-#[cfg(not(feature = "bitcoin"))]
-pub use ssz_generated::ssz::commitments::L1BlockCommitment;
 pub use ssz_generated::ssz::commitments::{
-    EpochCommitment, EpochCommitmentRef, L1BlockCommitmentRef, OLBlockCommitment,
-    OLBlockCommitmentRef,
+    EpochCommitment, EpochCommitmentRef, L1BlockCommitment, L1BlockCommitmentRef,
+    OLBlockCommitment, OLBlockCommitmentRef,
 };

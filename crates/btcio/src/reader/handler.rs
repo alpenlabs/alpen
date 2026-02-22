@@ -1,5 +1,6 @@
 use bitcoind_async_client::traits::Reader;
-use strata_identifiers::{Buf32, Epoch, L1BlockCommitment};
+use strata_btc_types::BlockHashExt;
+use strata_identifiers::{Epoch, L1BlockCommitment};
 use strata_state::BlockSubmitter;
 use tracing::*;
 
@@ -59,8 +60,7 @@ async fn handle_blockdata<R: Reader>(
     }
 
     let block = blockdata.block();
-    let blkid: Buf32 = block.block_hash().into();
-    let l1blockid = blkid.into();
+    let l1blockid = block.block_hash().to_l1_block_id();
 
     // Store chain tracking data only - ASM worker will handle manifest creation
     storage
@@ -71,6 +71,6 @@ async fn handle_blockdata<R: Reader>(
 
     // Create a sync event - the ASM worker will listen to this and create manifests
     Ok(Option::Some(
-        L1BlockCommitment::from_height_u64(height, blkid.into()).expect("valid height"),
+        L1BlockCommitment::from_height_u64(height, l1blockid).expect("valid height"),
     ))
 }

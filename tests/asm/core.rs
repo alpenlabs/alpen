@@ -11,7 +11,7 @@ use bitcoin::Network;
 use harness::{test_harness::create_test_harness, worker_context::TestAsmWorkerContext};
 use integration_tests::harness;
 use strata_asm_worker::WorkerContext;
-use strata_primitives::L1BlockId;
+use strata_btc_types::BlockHashExt;
 use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
 
 // ============================================================================
@@ -41,7 +41,7 @@ async fn test_block_fetching_and_caching() {
 
     // Fetch each block through the context
     for block_hash in block_hashes.iter() {
-        let block_id = L1BlockId::from(*block_hash);
+        let block_id = block_hash.to_l1_block_id();
         context
             .get_l1_block(&block_id)
             .expect("Failed to get block");
@@ -51,7 +51,7 @@ async fn test_block_fetching_and_caching() {
     assert_eq!(context.block_cache.lock().unwrap().len(), 5);
 
     // Fetch again - should come from cache
-    let block_id = L1BlockId::from(block_hashes[0]);
+    let block_id = block_hashes[0].to_l1_block_id();
     let block = context
         .get_l1_block(&block_id)
         .expect("Failed to get cached block");
@@ -90,7 +90,7 @@ async fn test_multiple_block_processing() {
     let (l1, state) = harness.get_latest_asm_state().unwrap().unwrap();
     assert_eq!(l1, state.state().chain_view.pow_state.last_verified_block);
     assert_eq!(
-        l1.height().to_consensus_u32() as u64,
+        l1.height() as u64,
         state
             .state()
             .chain_view
@@ -108,7 +108,7 @@ async fn test_multiple_block_processing() {
     assert_eq!(tip_height, harness.genesis_height + 3);
     assert_eq!(l1, state.state().chain_view.pow_state.last_verified_block);
     assert_eq!(
-        l1.height().to_consensus_u32() as u64,
+        l1.height() as u64,
         state
             .state()
             .chain_view

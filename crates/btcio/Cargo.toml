@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 strata-asm-types.workspace = true
+strata-btc-types.workspace = true
 strata-config.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true

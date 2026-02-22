@@ -35,7 +35,6 @@ tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
 [dev-dependencies]
-bitcoin.workspace = true
 proptest.workspace = true
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true

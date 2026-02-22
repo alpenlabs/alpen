@@ -483,7 +483,6 @@ impl AssignmentTable {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::absolute::Height;
     use strata_primitives::l1::{BitcoinBlockHeight, L1BlockId};
     use strata_test_utils::ArbitraryGenerator;
 
@@ -717,8 +716,7 @@ mod tests {
         // Create test data
         let current_height: BitcoinBlockHeight = 150;
         let seed: L1BlockId = arb.generate();
-        let l1_block =
-            L1BlockCommitment::new(Height::from_consensus(current_height as u32).unwrap(), seed);
+        let l1_block = L1BlockCommitment::new(current_height as u32, seed);
 
         // Create a unified operator bitmap for both deposits
         let current_active_operators = OperatorBitmap::new_with_size(5, true);

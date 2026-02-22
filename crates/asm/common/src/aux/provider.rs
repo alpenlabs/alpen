@@ -185,7 +185,7 @@ impl VerifiedAuxData {
 #[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
-    use strata_btc_types::RawBitcoinTx;
+    use strata_btc_types::{Buf32BitcoinExt, RawBitcoinTx};
     use strata_identifiers::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -201,7 +201,7 @@ mod tests {
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0u8; 32].into();
-        let result = verified.get_bitcoin_tx(Txid::from(txid));
+        let result = verified.get_bitcoin_tx(txid.to_txid());
         assert!(result.is_err());
 
         // Should return error for non-existent manifest hash
@@ -222,7 +222,7 @@ mod tests {
 
         // Should successfully return the bitcoin tx
         let txid_buf: Buf32 = txid.into();
-        let result = verified.get_bitcoin_tx(Txid::from(txid_buf)).unwrap();
+        let result = verified.get_bitcoin_tx(txid_buf.to_txid()).unwrap();
         assert_eq!(result.compute_txid().as_raw_hash().to_byte_array(), txid);
     }
 
@@ -235,7 +235,7 @@ mod tests {
 
         // Should return error for non-existent txid
         let txid: Buf32 = [0xFF; 32].into();
-        let result = verified.get_bitcoin_tx(Txid::from(txid));
+        let result = verified.get_bitcoin_tx(txid.to_txid());
         assert!(matches!(result, Err(AuxError::BitcoinTxNotFound { .. })));
     }
 }

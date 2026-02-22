@@ -32,7 +32,7 @@ use std::{
 };
 
 use bitcoin::{
-    absolute::{Height, LockTime},
+    absolute::LockTime,
     blockdata::script,
     key::UntweakedKeypair,
     opcodes::{
@@ -53,12 +53,10 @@ use bitcoind_async_client::{
 use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
+use strata_btc_types::BlockHashExt;
 use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
 use strata_params::RollupParams;
-use strata_primitives::{
-    buf::Buf32,
-    l1::{L1BlockCommitment, L1BlockId},
-};
+use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
 use strata_tasks::{TaskExecutor, TaskManager};
 use tokio::{runtime::Handle, task::block_in_place, time::sleep};
@@ -154,11 +152,8 @@ impl AsmTestHarness {
         };
 
         // Submit genesis block to ASM worker
-        let genesis_block_id = L1BlockId::from(genesis_hash);
-        let genesis_commitment = L1BlockCommitment::new(
-            Height::from_consensus(genesis_height as u32)?,
-            genesis_block_id,
-        );
+        let genesis_block_id = genesis_hash.to_l1_block_id();
+        let genesis_commitment = L1BlockCommitment::new(genesis_height as u32, genesis_block_id);
 
         // Fetch and cache genesis block
         let _genesis_block = harness.context.fetch_and_cache_block(genesis_hash).await?;
@@ -219,9 +214,8 @@ impl AsmTestHarness {
         let height = self.client.get_block_height(&block_hash).await?;
 
         // Create L1BlockCommitment and submit to ASM worker
-        let block_id = block_hash.into();
-        let block_commitment =
-            L1BlockCommitment::new(Height::from_consensus(height as u32)?, block_id);
+        let block_id = block_hash.to_l1_block_id();
+        let block_commitment = L1BlockCommitment::new(height as u32, block_id);
 
         // Use block_in_place to submit synchronously within async context
         block_in_place(|| self.asm_handle.submit_block(block_commitment))?;
@@ -307,7 +301,7 @@ impl AsmTestHarness {
             }
 
             if let Some((commitment, _state)) = self.context.get_latest_asm_state()? {
-                let current_height = commitment.height().to_consensus_u32() as u64;
+                let current_height = commitment.height() as u64;
                 if current_height >= target_height {
                     return Ok(());
                 }
@@ -361,7 +355,7 @@ impl AsmTestHarness {
         let (commitment, _) = self
             .get_latest_asm_state()?
             .ok_or_else(|| anyhow::anyhow!("No ASM state available"))?;
-        Ok(commitment.height().to_consensus_u32() as u64)
+        Ok(commitment.height() as u64)
     }
 
     /// Get the latest ASM state from the worker context.

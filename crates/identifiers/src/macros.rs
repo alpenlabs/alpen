@@ -116,7 +116,12 @@ macro_rules! impl_buf_wrapper {
 pub(crate) mod internal {
     // Crate-internal impls.
 
-    macro_rules! impl_buf_common {
+    /// Generates the foundational API for a fixed-size byte buffer type.
+    ///
+    /// Provides constructors (`new`, `zero`), accessors (`as_slice`, `as_mut_slice`,
+    /// `as_bytes`, `is_zero`), the `LEN` constant, standard conversion traits (`AsRef`,
+    /// `AsMut`, `From`, `TryFrom`), and `Default`.
+    macro_rules! impl_buf_core {
         ($name:ident, $len:expr) => {
             impl $name {
                 pub const LEN: usize = $len;
@@ -202,7 +207,12 @@ pub(crate) mod internal {
                     Self([0; $len])
                 }
             }
+        };
+    }
 
+    /// Generates `Debug` (full hex) and `Display` (truncated hex) formatting.
+    macro_rules! impl_buf_fmt {
+        ($name:ident, $len:expr) => {
             impl ::std::fmt::Debug for $name {
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                     // twice as large, required by the hex::encode_to_slice.
@@ -224,7 +234,12 @@ pub(crate) mod internal {
                     Ok(())
                 }
             }
+        };
+    }
 
+    /// Generates `BorshSerialize` and `BorshDeserialize` impls.
+    macro_rules! impl_buf_borsh {
+        ($name:ident, $len:expr) => {
             impl ::borsh::BorshSerialize for $name {
                 fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
                     let bytes = self.0.as_ref();
@@ -242,7 +257,12 @@ pub(crate) mod internal {
                     Ok(array.into())
                 }
             }
+        };
+    }
 
+    /// Generates `Arbitrary` impl for property-based testing.
+    macro_rules! impl_buf_arbitrary {
+        ($name:ident, $len:expr) => {
             impl<'a> ::arbitrary::Arbitrary<'a> for $name {
                 fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
                     let mut array = [0u8; $len];
@@ -250,21 +270,23 @@ pub(crate) mod internal {
                     Ok(array.into())
                 }
             }
+        };
+    }
 
-            // Codec implementation for Buf types
+    /// Generates `strata_codec::Codec` impl.
+    macro_rules! impl_buf_codec {
+        ($name:ident, $len:expr) => {
             impl $crate::strata_codec::Codec for $name {
                 fn encode(
                     &self,
                     enc: &mut impl $crate::strata_codec::Encoder,
                 ) -> Result<(), $crate::strata_codec::CodecError> {
-                    // Encode the underlying byte array
                     self.0.encode(enc)
                 }
 
                 fn decode(
                     dec: &mut impl $crate::strata_codec::Decoder,
                 ) -> Result<Self, $crate::strata_codec::CodecError> {
-                    // Decode the byte array and wrap it
                     let bytes = <[u8; $len]>::decode(dec)?;
                     Ok(Self(bytes))
                 }
@@ -387,8 +409,163 @@ pub(crate) mod internal {
         };
     }
 
-    pub(crate) use impl_buf_common;
+    /// Generates `Debug` (full reversed hex) and `Display` (truncated reversed hex) formatting.
+    ///
+    /// Same as [`impl_buf_fmt`] but reverses the byte order before hex encoding,
+    /// matching Bitcoin's display convention for block/transaction hashes.
+    macro_rules! impl_rbuf_fmt {
+        ($name:ident, $len:expr) => {
+            impl ::std::fmt::Debug for $name {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    let mut bytes = self.0;
+                    bytes.reverse();
+                    let mut buf = [0; $len * 2];
+                    ::hex::encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
+                    f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })
+                }
+            }
+
+            impl ::std::fmt::Display for $name {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    let mut bytes = self.0;
+                    bytes.reverse();
+                    // fmt only first and last bits of the reversed data.
+                    let mut buf = [0; 6];
+                    ::hex::encode_to_slice(&bytes[..3], &mut buf).expect("buf: enc hex");
+                    f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
+                    f.write_str("..")?;
+                    ::hex::encode_to_slice(&bytes[$len - 3..], &mut buf).expect("buf: enc hex");
+                    f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
+                    Ok(())
+                }
+            }
+        };
+    }
+
+    /// Generates reversed-byte `Serialize` and `Deserialize` impls.
+    ///
+    /// Same as [`impl_buf_serde`] but reverses the byte order for human-readable formats,
+    /// matching Bitcoin's display convention for block/transaction hashes. Binary formats
+    /// (e.g. bincode) are unaffected and use raw byte order.
+    macro_rules! impl_rbuf_serde {
+        ($name:ident, $len:expr) => {
+            impl ::serde::Serialize for $name {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: ::serde::Serializer,
+                {
+                    if serializer.is_human_readable() {
+                        let mut bytes = self.0;
+                        bytes.reverse();
+                        let hex_str = ::hex::encode(&bytes);
+                        serializer.serialize_str(&hex_str)
+                    } else {
+                        let hex_str = ::hex::encode(&self.0);
+                        serializer.serialize_str(&hex_str)
+                    }
+                }
+            }
+
+            impl<'de> ::serde::Deserialize<'de> for $name {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: ::serde::Deserializer<'de>,
+                {
+                    struct RBufVisitor;
+
+                    impl<'de> ::serde::de::Visitor<'de> for RBufVisitor {
+                        type Value = $name;
+
+                        fn expecting(
+                            &self,
+                            formatter: &mut ::std::fmt::Formatter<'_>,
+                        ) -> ::std::fmt::Result {
+                            write!(
+                                formatter,
+                                "a hex string with an optional 0x prefix representing {} bytes \
+                                 in reversed (Bitcoin) byte order",
+                                $len
+                            )
+                        }
+
+                        fn visit_str<E>(self, v: &str) -> Result<$name, E>
+                        where
+                            E: ::serde::de::Error,
+                        {
+                            let hex_str = if v.starts_with("0x") || v.starts_with("0X") {
+                                &v[2..]
+                            } else {
+                                v
+                            };
+
+                            let bytes = ::hex::decode(hex_str).map_err(E::custom)?;
+
+                            if bytes.len() != $len {
+                                return Err(E::custom(format!(
+                                    "expected {} bytes, got {}",
+                                    $len,
+                                    bytes.len()
+                                )));
+                            }
+
+                            let mut array = [0u8; $len];
+                            array.copy_from_slice(&bytes);
+                            array.reverse();
+                            Ok($name(array))
+                        }
+
+                        fn visit_bytes<E>(self, v: &[u8]) -> Result<$name, E>
+                        where
+                            E: ::serde::de::Error,
+                        {
+                            if v.len() == $len {
+                                let mut array = [0u8; $len];
+                                array.copy_from_slice(v);
+                                Ok($name(array))
+                            } else {
+                                let s = ::std::str::from_utf8(v).map_err(E::custom)?;
+                                self.visit_str(s)
+                            }
+                        }
+
+                        fn visit_seq<A>(self, mut seq: A) -> Result<$name, A::Error>
+                        where
+                            A: ::serde::de::SeqAccess<'de>,
+                        {
+                            let mut array = [0u8; $len];
+                            for i in 0..$len {
+                                array[i] = seq
+                                    .next_element::<u8>()?
+                                    .ok_or_else(|| ::serde::de::Error::invalid_length(i, &self))?;
+                            }
+                            if let Some(_) = seq.next_element::<u8>()? {
+                                return Err(::serde::de::Error::custom(format!(
+                                    "expected a sequence of exactly {} bytes, but found extra elements",
+                                    $len
+                                )));
+                            }
+                            Ok($name(array))
+                        }
+                    }
+
+                    if deserializer.is_human_readable() {
+                        deserializer.deserialize_any(RBufVisitor)
+                    } else {
+                        deserializer.deserialize_str(RBufVisitor)
+                    }
+                }
+            }
+        };
+    }
+
+    pub(crate) use impl_buf_arbitrary;
+    pub(crate) use impl_buf_borsh;
+    pub(crate) use impl_buf_codec;
+    pub(crate) use impl_buf_core;
+    pub(crate) use impl_buf_fmt;
     pub(crate) use impl_buf_serde;
+    pub(crate) use impl_rbuf_fmt;
+    pub(crate) use impl_rbuf_serde;
 }
 
 /// Implements Borsh serialization as a shim over SSZ bytes with length-prefixing.
@@ -720,7 +897,11 @@ mod tests {
     #[derive(PartialEq)]
     pub struct TestBuf20([u8; 20]);
 
-    crate::macros::internal::impl_buf_common!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_core!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_fmt!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_borsh!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_arbitrary!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_codec!(TestBuf20, 20);
     crate::macros::internal::impl_buf_serde!(TestBuf20, 20);
 
     #[test]
