@@ -261,6 +261,7 @@ class BasicEnvConfig(flexitest.EnvConfig):
             initdir, settings, self.n_operators, bitcoind_config
         )
         params = params_gen_data["params"]
+        asm_params = params_gen_data["asm_params"]
         # Instantiaze the generated rollup config so it's convenient to work with.
         rollup_cfg = RollupConfig.model_validate_json(params)
 
@@ -315,7 +316,9 @@ class BasicEnvConfig(flexitest.EnvConfig):
             secret=reth_secret_path,
         )
 
-        sequencer = seq_fac.create_sequencer_node(bitcoind_config, reth_config, seqaddr, params)
+        sequencer = seq_fac.create_sequencer_node(
+            bitcoind_config, reth_config, seqaddr, params, asm_params=asm_params
+        )
 
         reth_rpc_http_port = reth.get_prop("eth_rpc_http_port")
         seq_host = sequencer.get_prop("rpc_host")
@@ -419,6 +422,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
             initdir, settings, self.n_operators, bitcoind_config
         )
         params = params_gen_data["params"]
+        asm_params = params_gen_data["asm_params"]
         # Instantiaze the generated rollup config so it's convenient to work with.
         rollup_cfg = RollupConfig.model_validate_json(params)
 
@@ -448,7 +452,9 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         )
         reth_rpc_http_port = reth.get_prop("eth_rpc_http_port")
 
-        sequencer = seq_fac.create_sequencer_node(bitcoind_config, reth_config, seqaddr, params)
+        sequencer = seq_fac.create_sequencer_node(
+            bitcoind_config, reth_config, seqaddr, params, asm_params=asm_params
+        )
 
         seq_host = sequencer.get_prop("rpc_host")
         seq_port = sequencer.get_prop("rpc_port")
@@ -472,6 +478,7 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
             fullnode_reth_config,
             sequencer_rpc,
             params,
+            asm_params=asm_params,
         )
 
         prover_client_fac = ctx.get_factory("prover_client")
@@ -554,6 +561,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             jwt_path=jwt_path,
             seqaddr=addr,
             params_json=params["fast"],
+            asm_params=params["asm_params"],
         )
         strict_bundle = self._create_sequencer_bundle(
             name_suffix="strict",
@@ -562,6 +570,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             jwt_path=jwt_path,
             seqaddr=addr,
             params_json=params["strict"],
+            asm_params=params["asm_params"],
         )
 
         # 5. Fullnode creation
@@ -574,6 +583,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             strict_params=params["strict"],
             strict_label="strictfollower",
             fast_label="fastfollower",
+            asm_params=params["asm_params"],
         )
 
         # 6. Aggregate services
@@ -599,12 +609,13 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             init_dir, settings_fast, self.n_operators, bitcoind_config
         )
         params_fast = params_data["params"]
+        asm_params = params_data["asm_params"]
         params_dict = json.loads(params_fast)
         strict_dict = copy.deepcopy(params_dict)
         strict_dict["proof_publish_mode"] = "strict"
         params_strict = json.dumps(strict_dict)
 
-        return {"fast": params_fast, "strict": params_strict}
+        return {"fast": params_fast, "strict": params_strict, "asm_params": asm_params}
 
     def _prepare_bitcoin(self) -> Any:
         btc_fac = self.ctx.get_factory("bitcoin")
@@ -635,6 +646,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
         jwt_path: str,
         seqaddr: str,
         params_json: str,
+        asm_params: str = "",
     ) -> dict[str, Any]:
         ctx = self.ctx
         reth_fac = ctx.get_factory("reth")
@@ -659,6 +671,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             reth_cfg,
             seqaddr,
             params_json,
+            asm_params=asm_params,
             multi_instance_enabled=True,
             instance_id=instance_id,
             name_suffix=name_suffix,
@@ -701,6 +714,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
         strict_params: str,
         strict_label: str,
         fast_label: str,
+        asm_params: str = "",
     ) -> dict[str, Any]:
         ctx = self.ctx
         fn_fac = ctx.get_factory("fullnode")
@@ -728,6 +742,7 @@ class DualSequencerMixedPolicyEnvConfig(flexitest.EnvConfig):
             fn_reth_cfg,
             ws_endpoint,
             strict_params,
+            asm_params=asm_params,
             name_suffix=label,
         )
 

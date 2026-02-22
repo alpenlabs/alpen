@@ -2,6 +2,7 @@
 use std::sync::Arc;
 
 use bitcoind_async_client::Client;
+use strata_asm_params::AsmParams;
 use strata_config::Config;
 use strata_ol_params::OLParams;
 use strata_params::Params;
@@ -19,6 +20,7 @@ pub struct NodeContext {
     executor: Arc<TaskExecutor>,
     config: Config,
     params: Arc<Params>,
+    asm_params: Arc<AsmParams>,
     ol_params: Arc<OLParams>,
     task_manager: TaskManager,
     storage: Arc<NodeStorage>,
@@ -27,10 +29,15 @@ pub struct NodeContext {
 }
 
 impl NodeContext {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Constructor needs all fields to initialize NodeContext"
+    )]
     pub fn new(
         handle: Handle,
         config: Config,
         params: Arc<Params>,
+        asm_params: Arc<AsmParams>,
         ol_params: Arc<OLParams>,
         storage: Arc<NodeStorage>,
         bitcoin_client: Arc<Client>,
@@ -42,6 +49,7 @@ impl NodeContext {
             executor: Arc::new(executor),
             config,
             params,
+            asm_params,
             ol_params,
             task_manager,
             storage,
@@ -60,6 +68,10 @@ impl NodeContext {
 
     pub fn params(&self) -> &Arc<Params> {
         &self.params
+    }
+
+    pub fn asm_params(&self) -> &Arc<AsmParams> {
+        &self.asm_params
     }
 
     pub fn ol_params(&self) -> &Arc<OLParams> {
@@ -88,6 +100,7 @@ impl NodeContext {
             CommonContext {
                 executor: self.executor,
                 params: self.params,
+                asm_params: self.asm_params,
                 config: self.config,
                 storage: self.storage,
                 status_channel: self.status_channel,
@@ -104,6 +117,7 @@ impl NodeContext {
 pub struct CommonContext {
     executor: Arc<TaskExecutor>,
     params: Arc<Params>,
+    asm_params: Arc<AsmParams>,
     config: Config,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
@@ -116,6 +130,10 @@ impl CommonContext {
 
     pub fn params(&self) -> &Arc<Params> {
         &self.params
+    }
+
+    pub fn asm_params(&self) -> &Arc<AsmParams> {
+        &self.asm_params
     }
 
     pub fn config(&self) -> &Config {

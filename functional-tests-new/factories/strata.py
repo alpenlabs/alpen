@@ -11,6 +11,7 @@ from pathlib import Path
 import flexitest
 
 from common.config import (
+    AsmParams,
     BitcoindConfig,
     ClientConfig,
     OLParams,
@@ -112,6 +113,12 @@ class StrataFactory(flexitest.Factory):
         with open(ol_params_path, "w") as f:
             f.write(ol_params.as_json_string())
 
+        # Create ASM params
+        asm_params = AsmParams().with_genesis_l1(genesis_l1)
+        asm_params_path = datadir / "asm-params.json"
+        with open(asm_params_path, "w") as f:
+            f.write(asm_params.as_json_string())
+
         # Build command
         cmd = [
             "strata",
@@ -123,6 +130,8 @@ class StrataFactory(flexitest.Factory):
             str(params_path),
             "--ol-params",
             str(ol_params_path),
+            "--asm-params",
+            str(asm_params_path),
             "--rpc-host",
             rpc_host,
             "--rpc-port",

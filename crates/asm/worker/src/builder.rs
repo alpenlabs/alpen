@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_params::RollupParams;
+use strata_asm_params::AsmParams;
 use strata_service::ServiceBuilder;
 use strata_tasks::TaskExecutor;
 
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AsmWorkerBuilder<W> {
     context: Option<W>,
-    params: Option<Arc<RollupParams>>,
+    asm_params: Option<Arc<AsmParams>>,
 }
 
 impl<W> AsmWorkerBuilder<W> {
@@ -26,7 +26,7 @@ impl<W> AsmWorkerBuilder<W> {
     pub fn new() -> Self {
         Self {
             context: None,
-            params: None,
+            asm_params: None,
         }
     }
 
@@ -36,9 +36,8 @@ impl<W> AsmWorkerBuilder<W> {
         self
     }
 
-    /// Set the rollup parameters.
-    pub fn with_params(mut self, params: Arc<RollupParams>) -> Self {
-        self.params = Some(params);
+    pub fn with_asm_params(mut self, asm_params: Arc<AsmParams>) -> Self {
+        self.asm_params = Some(asm_params);
         self
     }
 
@@ -54,12 +53,12 @@ impl<W> AsmWorkerBuilder<W> {
         let context = self
             .context
             .ok_or(WorkerError::MissingDependency("context"))?;
-        let params = self
-            .params
-            .ok_or(WorkerError::MissingDependency("params"))?;
+        let asm_params = self
+            .asm_params
+            .ok_or(WorkerError::MissingDependency("asm_params"))?;
 
         // Create the service state.
-        let service_state = AsmWorkerServiceState::new(context, params);
+        let service_state = AsmWorkerServiceState::new(context, asm_params);
 
         // Create the service builder and get command handle.
         let mut service_builder =

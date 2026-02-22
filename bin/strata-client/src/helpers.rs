@@ -4,6 +4,7 @@ use alloy_rpc_types::engine::JwtSecret;
 use bitcoin::{Address, Network};
 use bitcoind_async_client::{traits::Wallet, Auth, Client};
 use format_serde_error::SerdeError;
+use strata_asm_params::AsmParams;
 use strata_btcio::BtcioParams;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::L1Status;
@@ -115,6 +116,13 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     let rollup_params =
         serde_json::from_str::<RollupParams>(&json).map_err(|err| SerdeError::new(json, err))?;
     Ok(rollup_params)
+}
+
+pub(crate) fn load_asm_params(path: &Path) -> Result<AsmParams, InitError> {
+    let json = fs::read_to_string(path)?;
+    let asm_params =
+        serde_json::from_str::<AsmParams>(&json).map_err(|err| SerdeError::new(json, err))?;
+    Ok(asm_params)
 }
 
 // TODO: remove this after builder is done

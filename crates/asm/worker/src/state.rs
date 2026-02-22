@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use bitcoin::{Block, hashes::Hash};
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
+use strata_asm_params::AsmParams;
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_asm_types::HeaderVerificationState;
-use strata_params::RollupParams;
 use strata_primitives::{Buf32, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_state::asm_state::AsmState;
@@ -17,7 +17,7 @@ use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResol
 #[derive(Debug)]
 pub struct AsmWorkerServiceState<W> {
     /// Params.
-    pub(crate) params: Arc<RollupParams>,
+    pub(crate) asm_params: Arc<AsmParams>,
 
     /// Context for the state to interact with outer world.
     pub(crate) context: W,
@@ -37,10 +37,10 @@ pub struct AsmWorkerServiceState<W> {
 
 impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     /// A new (uninitialized) instance of the service state.
-    pub fn new(context: W, params: Arc<RollupParams>) -> Self {
-        let asm_spec = StrataAsmSpec::from_params(&params);
+    pub fn new(context: W, asm_params: Arc<AsmParams>) -> Self {
+        let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
         Self {
-            params,
+            asm_params,
             context,
             anchor: None,
             blkid: None,
@@ -60,7 +60,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             }
             None => {
                 // Create genesis anchor state.
-                let genesis_l1_view = &self.params.genesis_l1_view;
+                let genesis_l1_view = &self.asm_params.l1_view;
                 let empty_accumulator =
                     AsmHistoryAccumulatorState::new(genesis_l1_view.height_u64());
                 let state = AnchorState {
@@ -108,7 +108,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             let span = tracing::debug_span!("asm.stf.aux_resolve");
             let _guard = span.enter();
 
-            let resolver = AuxDataResolver::new(&self.context, self.params.clone());
+            let resolver = AuxDataResolver::new(&self.context, self.asm_params.l1_view.blk);
             resolver.resolve(&pre_process.aux_requests)?
         };
 
@@ -164,8 +164,8 @@ mod tests {
     use strata_asm_common::AsmManifest;
     use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
     use strata_primitives::{L1BlockId, hash::Hash, l1::GenesisL1View};
+    use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
-    use strata_test_utils_l2::gen_params;
 
     use super::*;
 
@@ -189,20 +189,17 @@ mod tests {
         let tip_hash = client.get_block_hash(101).await.unwrap();
 
         // 2. Setup Params
-        let mut params = gen_params().rollup;
-        params.network = Network::Regtest;
-
+        let mut asm_params: AsmParams = ArbitraryGenerator::new().generate();
         // Sync parameters with the actual bitcoind state
         let genesis_view = get_genesis_l1_view(&client, &tip_hash)
             .await
             .expect("Failed to fetch genesis view");
-        params.genesis_l1_view = genesis_view;
-
-        let params = Arc::new(params);
+        asm_params.l1_view = genesis_view;
+        let asm_params = Arc::new(asm_params);
 
         // 3. Set worker context and initialize service state
         let context = MockWorkerContext::new();
-        let mut service_state = AsmWorkerServiceState::new(context.clone(), params.clone());
+        let mut service_state = AsmWorkerServiceState::new(context.clone(), asm_params);
 
         // Initialize: this should create genesis state based on our `genesis_l1_view`
         service_state

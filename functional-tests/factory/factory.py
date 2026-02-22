@@ -82,6 +82,7 @@ class StrataFactory(flexitest.Factory):
         sequencer_address: str,  # TODO: remove this
         rollup_params: str,
         ctx: flexitest.EnvContext,
+        asm_params: str,
         multi_instance_enabled: bool = False,
         name_suffix: str = "",
         instance_id: int = 0,
@@ -98,6 +99,11 @@ class StrataFactory(flexitest.Factory):
         rollup_params_file = os.path.join(datadir, "rollup_params.json")
         with open(rollup_params_file, "w") as f:
             f.write(rollup_params)
+
+        # Write ASM params to file
+        asm_params_file = os.path.join(datadir, "asm_params.json")
+        with open(asm_params_file, "w") as f:
+            f.write(asm_params)
 
         # Create config
         config = Config(
@@ -116,6 +122,7 @@ class StrataFactory(flexitest.Factory):
             "--datadir", datadir,
             "--config", config_file,
             "--rollup-params", rollup_params_file,
+            "--asm-params", asm_params_file,
             "--rpc-host", rpc_host,
             "--rpc-port", str(rpc_port),
 
@@ -225,6 +232,7 @@ class FullNodeFactory(flexitest.Factory):
         sequencer_rpc: str,
         rollup_params: str,
         ctx: flexitest.EnvContext,
+        asm_params: str = "",
         name_suffix: str = "",
     ) -> flexitest.Service:
         idx = self.next_idx()
@@ -239,6 +247,11 @@ class FullNodeFactory(flexitest.Factory):
         rollup_params_file = os.path.join(datadir, "rollup_params.json")
         with open(rollup_params_file, "w") as f:
             f.write(rollup_params)
+
+        # Write ASM params to file
+        asm_params_file = os.path.join(datadir, "asm_params.json")
+        with open(asm_params_file, "w") as f:
+            f.write(asm_params)
 
         # Create config
         config = Config(
@@ -258,6 +271,7 @@ class FullNodeFactory(flexitest.Factory):
             "--datadir", datadir,
             "--config", config_file,
             "--rollup-params", rollup_params_file,
+            "--asm-params", asm_params_file,
             "--rpc-host", rpc_host,
             "--rpc-port", str(rpc_port),
         ]

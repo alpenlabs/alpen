@@ -5,20 +5,26 @@
 //! # Example
 //!
 //! ```ignore
-//! use harness::test_harness::create_test_harness;
-//! use harness::admin::{AdminExt, sequencer_update};
+//! use harness::test_harness::AsmTestHarnessBuilder;
+//! use harness::admin::{create_test_admin_setup, sequencer_update, AdminExt};
 //!
-//! let harness = create_test_harness().await?;
-//! let mut ctx = harness.admin_context();
+//! let (admin_params, mut ctx) = create_test_admin_setup(2);
+//! let harness = AsmTestHarnessBuilder::default()
+//!     .with_admin_params(admin_params)
+//!     .build()
+//!     .await?;
 //! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
 //! let state = harness.admin_state()?;
 //! ```
 
 use std::{collections::HashMap, future::Future, num::NonZero, time::Duration};
 
-use bitcoin::{secp256k1::SecretKey, BlockHash};
+use bitcoin::{
+    secp256k1::{PublicKey, Secp256k1, SecretKey},
+    BlockHash,
+};
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_params::Role;
+use strata_asm_params::{AdministrationSubprotoParams, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
     actions::{
@@ -30,30 +36,27 @@ use strata_asm_txs_admin::{
         },
         CancelAction, MultisigAction, UpdateAction,
     },
+    constants::ADMINISTRATION_SUBPROTOCOL_ID,
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
 use strata_crypto::{
-    keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfigUpdate,
+    keys::compressed::CompressedPublicKey,
+    threshold_signature::{ThresholdConfig, ThresholdConfigUpdate},
 };
-use strata_params::RollupParams;
 use strata_predicate::PredicateKey;
 use strata_primitives::buf::Buf32;
-use strata_test_utils_l2::get_test_operator_secret_key;
 
 use super::test_harness::AsmTestHarness;
 
-/// Admin subprotocol ID per SPS-50.
-pub const SUBPROTOCOL_ID: u8 = 0;
+/// The default allowed seqno gap for admin subprotocol.
+const DEFAULT_MAX_SEQNO_GAP: NonZero<u8> = NonZero::new(10).expect("10 is non-zero");
 
 /// Extension trait for admin subprotocol operations on the test harness.
 ///
 /// This trait provides admin-specific convenience methods while keeping
 /// the core harness infrastructure-focused.
 pub trait AdminExt {
-    /// Get an admin signing context.
-    fn admin_context(&self) -> AdminContext;
-
     /// Get admin subprotocol state.
     fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState>;
 
@@ -85,13 +88,11 @@ pub struct AdminContext {
 }
 
 impl AdminContext {
-    /// Create admin context from rollup parameters.
-    ///
-    /// Uses the test operator key which is configured for both admin roles.
-    pub fn from_params(_params: &RollupParams) -> Self {
+    /// Creates an admin context with the given signing keys.
+    pub fn new(privkeys: Vec<SecretKey>, signer_indices: Vec<u8>) -> Self {
         Self {
-            privkeys: vec![get_test_operator_secret_key()],
-            signer_indices: vec![0],
+            privkeys,
+            signer_indices,
             seqnos: HashMap::new(),
         }
     }
@@ -191,6 +192,34 @@ pub fn predicate_update(key: PredicateKey, proof_type: ProofType) -> MultisigAct
     )))
 }
 
+// ============================================================================
+// Test Setup
+// ============================================================================
+
+/// Creates matching admin subprotocol params and signing context.
+///
+/// Generates a random 1-of-1 [`ThresholdConfig`] keypair for both admin roles, so that
+/// signatures produced by the returned [`AdminContext`] pass verification against the
+/// returned [`AdministrationSubprotoParams`].
+pub fn create_test_admin_setup(
+    confirmation_depth: u16,
+) -> (AdministrationSubprotoParams, AdminContext) {
+    let secp = Secp256k1::new();
+    let sk = SecretKey::new(&mut rand::thread_rng());
+    let pk = CompressedPublicKey::from(PublicKey::from_secret_key(&secp, &sk));
+    let config =
+        ThresholdConfig::try_new(vec![pk], NonZero::new(1).unwrap()).expect("valid config");
+
+    let params = AdministrationSubprotoParams {
+        strata_administrator: config.clone(),
+        strata_sequencer_manager: config,
+        confirmation_depth,
+        max_seqno_gap: DEFAULT_MAX_SEQNO_GAP,
+    };
+    let ctx = AdminContext::new(vec![sk], vec![0]);
+    (params, ctx)
+}
+
 /// Extract admin subprotocol state from AnchorState.
 pub fn extract_admin_state(
     anchor_state: &AnchorState,
@@ -203,10 +232,6 @@ pub fn extract_admin_state(
 }
 
 impl AdminExt for AsmTestHarness {
-    fn admin_context(&self) -> AdminContext {
-        AdminContext::from_params(&self.params)
-    }
-
     fn admin_state(&self) -> anyhow::Result<AdministrationSubprotoState> {
         let (_, asm_state) = self
             .get_latest_asm_state()?
@@ -222,7 +247,7 @@ impl AdminExt for AsmTestHarness {
         let (payload, tx_type) = ctx.sign(action);
         let target_height = self.get_processed_height()? + 1;
         let tx = self
-            .build_envelope_tx(SUBPROTOCOL_ID, tx_type, payload)
+            .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type, payload)
             .await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))
@@ -239,7 +264,7 @@ impl AdminExt for AsmTestHarness {
         let (payload, tx_type) = ctx.sign_with_seqno(action, seqno);
         let target_height = self.get_processed_height()? + 1;
         let tx = self
-            .build_envelope_tx(SUBPROTOCOL_ID, tx_type, payload)
+            .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type, payload)
             .await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))

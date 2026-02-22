@@ -18,11 +18,14 @@
 //! # Example
 //!
 //! ```ignore
-//! use harness::test_harness::create_test_harness;
-//! use harness::admin::{AdminExt, sequencer_update};
+//! use harness::test_harness::AsmTestHarnessBuilder;
+//! use harness::admin::{create_test_admin_setup, sequencer_update, AdminExt};
 //!
-//! let harness = create_test_harness().await?;
-//! let mut ctx = harness.admin_context();  // From AdminExt
+//! let (admin_params, mut ctx) = create_test_admin_setup(2);
+//! let harness = AsmTestHarnessBuilder::default()
+//!     .with_admin_params(admin_params)
+//!     .build()
+//!     .await?;
 //! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
 //! ```
 
@@ -52,15 +55,18 @@ use bitcoind_async_client::{
 };
 use corepc_node::Node;
 use rand::RngCore;
+use strata_asm_params::{
+    AdministrationSubprotoParams, AsmParams, BridgeV1Config, CheckpointConfig, SubprotocolInstance,
+};
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
-use strata_params::RollupParams;
 use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
 };
 use strata_state::{asm_state::AsmState, BlockSubmitter};
 use strata_tasks::{TaskExecutor, TaskManager};
+use strata_test_utils::ArbitraryGenerator;
 use tokio::{runtime::Handle, task::block_in_place, time::sleep};
 
 use super::worker_context::{get_genesis_l1_view, TestAsmWorkerContext};
@@ -90,8 +96,8 @@ pub struct AsmTestHarness {
     pub asm_handle: AsmWorkerHandle,
     /// ASM worker context for querying state
     pub context: TestAsmWorkerContext,
-    /// Rollup parameters
-    pub params: Arc<RollupParams>,
+    /// ASM-specific parameters
+    pub asm_params: Arc<AsmParams>,
     /// Task executor for spawning tasks
     pub executor: TaskExecutor,
     /// Genesis block height
@@ -101,87 +107,6 @@ pub struct AsmTestHarness {
 impl AsmTestHarness {
     /// Default transaction fee.
     pub const DEFAULT_FEE: Amount = Amount::from_sat(1000);
-
-    /// Create a new test harness with ASM worker service.
-    ///
-    /// This will:
-    /// 1. Start Bitcoin regtest node
-    /// 2. Mine initial blocks to genesis height
-    /// 3. Initialize ASM worker context
-    /// 4. Launch ASM worker service in background
-    ///
-    /// # Arguments
-    /// * `genesis_height` - Height of the genesis block (e.g., 101)
-    pub async fn new(genesis_height: u64) -> anyhow::Result<Self> {
-        // 1. Start Bitcoin regtest
-        let (bitcoind, client) = strata_test_utils_btcio::get_bitcoind_and_client();
-        let client = Arc::new(client);
-
-        // 2. Mine blocks to genesis height
-        strata_test_utils_btcio::mine_blocks(&bitcoind, &client, genesis_height as usize, None)
-            .await?;
-
-        let genesis_hash = client.get_block_hash(genesis_height).await?;
-
-        // 3. Setup parameters
-        let mut params = strata_test_utils_l2::gen_params().rollup;
-        params.network = Network::Regtest;
-        let genesis_view = get_genesis_l1_view(&client, &genesis_hash).await?;
-        params.genesis_l1_view = genesis_view;
-        let params = Arc::new(params);
-
-        // 4. Create worker context
-        let context = TestAsmWorkerContext::new((*client).clone());
-
-        // 5. Create task executor
-        let task_manager = TaskManager::new(Handle::current());
-        let executor = task_manager.create_executor();
-
-        // 6. Launch ASM worker service
-        let asm_handle = AsmWorkerBuilder::new()
-            .with_context(context.clone())
-            .with_params(params.clone())
-            .launch(&executor)?;
-
-        let harness = Self {
-            bitcoind,
-            client,
-            asm_handle,
-            context,
-            params,
-            executor,
-            genesis_height,
-        };
-
-        // Submit genesis block to ASM worker
-        let genesis_block_id = L1BlockId::from(genesis_hash);
-        let genesis_commitment = L1BlockCommitment::new(
-            Height::from_consensus(genesis_height as u32)?,
-            genesis_block_id,
-        );
-
-        // Fetch and cache genesis block
-        let _genesis_block = harness.context.fetch_and_cache_block(genesis_hash).await?;
-
-        // Submit genesis block
-        block_in_place(|| harness.asm_handle.submit_block(genesis_commitment))?;
-
-        // Wait for ASM worker to process genesis block
-        // Poll until we have an initial state (with timeout)
-        let start = Instant::now();
-        let timeout = Duration::from_secs(10);
-        loop {
-            if harness.get_latest_asm_state().ok().flatten().is_some() {
-                break;
-            }
-            if start.elapsed() > timeout {
-                anyhow::bail!("Timeout waiting for ASM worker to process genesis block");
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
-
-        Ok(harness)
-    }
 
     // ========================================================================
     // Block Mining
@@ -500,7 +425,7 @@ impl AsmTestHarness {
 
         // Build SPS-50 compliant OP_RETURN tag using TagData and ParseConfig
         let tag_data = TagDataRef::new(subprotocol_id, tx_type, &[])?;
-        let parse_config = ParseConfig::new(self.params.magic_bytes);
+        let parse_config = ParseConfig::new(self.asm_params.magic);
         let op_return_script = parse_config.encode_script_buf(&tag_data)?;
 
         let op_return_output = TxOut {
@@ -598,10 +523,149 @@ fn create_taproot_spend_info(
 }
 
 // ============================================================================
-// Factory Function
+// Builder
 // ============================================================================
 
-/// Helper to create a test harness with default genesis height (101).
-pub async fn create_test_harness() -> anyhow::Result<AsmTestHarness> {
-    AsmTestHarness::new(101).await
+/// Builder for [`AsmTestHarness`] with optional subprotocol param overrides.
+///
+/// Any subprotocol params not explicitly set will use arbitrary-generated defaults.
+///
+/// # Example
+///
+/// ```ignore
+/// let harness = AsmTestHarnessBuilder::default()
+///     .with_admin_params(my_admin_params)
+///     .build()
+///     .await?;
+/// ```
+#[derive(Debug, Default)]
+pub struct AsmTestHarnessBuilder {
+    genesis_height: Option<u64>,
+    admin_params: Option<AdministrationSubprotoParams>,
+    bridge_params: Option<BridgeV1Config>,
+    checkpoint_params: Option<CheckpointConfig>,
+}
+
+impl AsmTestHarnessBuilder {
+    /// Default genesis block height for tests.
+    pub const DEFAULT_GENESIS_HEIGHT: u64 = 101;
+
+    /// Sets the genesis block height (default: [`Self::DEFAULT_GENESIS_HEIGHT`]).
+    pub fn with_genesis_height(mut self, height: u64) -> Self {
+        self.genesis_height = Some(height);
+        self
+    }
+
+    /// Overrides the admin subprotocol params.
+    pub fn with_admin_params(mut self, params: AdministrationSubprotoParams) -> Self {
+        self.admin_params = Some(params);
+        self
+    }
+
+    /// Overrides the bridge subprotocol params.
+    pub fn with_bridge_params(mut self, params: BridgeV1Config) -> Self {
+        self.bridge_params = Some(params);
+        self
+    }
+
+    /// Overrides the checkpoint subprotocol params.
+    pub fn with_checkpoint_params(mut self, params: CheckpointConfig) -> Self {
+        self.checkpoint_params = Some(params);
+        self
+    }
+
+    /// Builds the test harness, applying any subprotocol param overrides.
+    pub async fn build(self) -> anyhow::Result<AsmTestHarness> {
+        let genesis_height = self.genesis_height.unwrap_or(Self::DEFAULT_GENESIS_HEIGHT);
+
+        // 1. Start Bitcoin regtest
+        let (bitcoind, client) = strata_test_utils_btcio::get_bitcoind_and_client();
+        let client = Arc::new(client);
+
+        // 2. Mine blocks to genesis height
+        strata_test_utils_btcio::mine_blocks(&bitcoind, &client, genesis_height as usize, None)
+            .await?;
+
+        let genesis_hash = client.get_block_hash(genesis_height).await?;
+
+        // 3. Setup parameters
+        let genesis_view = get_genesis_l1_view(&client, &genesis_hash).await?;
+
+        // 4. Build AsmParams via arbitrary, then apply overrides
+        let mut asm_params: AsmParams = ArbitraryGenerator::new().generate();
+        asm_params.l1_view = genesis_view;
+
+        for instance in &mut asm_params.subprotocols {
+            match instance {
+                SubprotocolInstance::Admin(ref mut cfg) => {
+                    if let Some(ref override_cfg) = self.admin_params {
+                        *cfg = override_cfg.clone();
+                    }
+                }
+                SubprotocolInstance::Bridge(ref mut cfg) => {
+                    if let Some(ref override_cfg) = self.bridge_params {
+                        *cfg = override_cfg.clone();
+                    }
+                }
+                SubprotocolInstance::Checkpoint(ref mut cfg) => {
+                    if let Some(ref override_cfg) = self.checkpoint_params {
+                        *cfg = override_cfg.clone();
+                    }
+                }
+            }
+        }
+
+        let asm_params = Arc::new(asm_params);
+
+        // 5. Create worker context
+        let context = TestAsmWorkerContext::new((*client).clone());
+
+        // 6. Create task executor
+        let task_manager = TaskManager::new(Handle::current());
+        let executor = task_manager.create_executor();
+
+        // 7. Launch ASM worker service
+        let asm_handle = AsmWorkerBuilder::new()
+            .with_context(context.clone())
+            .with_asm_params(asm_params.clone())
+            .launch(&executor)?;
+
+        let harness = AsmTestHarness {
+            bitcoind,
+            client,
+            asm_handle,
+            context,
+            asm_params,
+            executor,
+            genesis_height,
+        };
+
+        // Submit genesis block to ASM worker
+        let genesis_block_id = L1BlockId::from(genesis_hash);
+        let genesis_commitment = L1BlockCommitment::new(
+            Height::from_consensus(genesis_height as u32)?,
+            genesis_block_id,
+        );
+
+        // Fetch and cache genesis block
+        let _genesis_block = harness.context.fetch_and_cache_block(genesis_hash).await?;
+
+        // Submit genesis block
+        block_in_place(|| harness.asm_handle.submit_block(genesis_commitment))?;
+
+        // Wait for ASM worker to process genesis block
+        let start = Instant::now();
+        let timeout = Duration::from_secs(10);
+        loop {
+            if harness.get_latest_asm_state().ok().flatten().is_some() {
+                break;
+            }
+            if start.elapsed() > timeout {
+                anyhow::bail!("Timeout waiting for ASM worker to process genesis block");
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+
+        Ok(harness)
+    }
 }

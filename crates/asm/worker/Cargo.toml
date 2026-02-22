@@ -9,12 +9,12 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
+strata-asm-params.workspace = true
 strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
 strata-asm-types.workspace = true
 strata-btc-types.workspace = true
 strata-merkle = { workspace = true, features = ["ssz"] }
-strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-state.workspace = true
@@ -28,8 +28,9 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-test-utils.workspace = true
 strata-test-utils-btcio.workspace = true
-strata-test-utils-l2.workspace = true
+strata-asm-params = { workspace = true, features = ["arbitrary"] }
 
 async-trait.workspace = true
 bitcoind-async-client.workspace = true

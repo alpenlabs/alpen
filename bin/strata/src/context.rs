@@ -5,6 +5,7 @@ use std::{fs, path::Path, sync::Arc};
 use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
+use strata_asm_params::AsmParams;
 use strata_config::{BitcoindConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
@@ -46,6 +47,13 @@ pub(crate) fn init_node_context(
         .ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(params_path, &config)?;
 
+    // Load ASM params
+    let asm_params_path = args
+        .asm_params
+        .as_ref()
+        .ok_or(InitError::MissingAsmParams)?;
+    let asm_params = load_asm_params(asm_params_path)?;
+
     // Load OL params
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
     let ol_params = load_ol_params(ol_params_path)?;
@@ -63,6 +71,7 @@ pub(crate) fn init_node_context(
         handle,
         config,
         params,
+        Arc::new(asm_params),
         ol_params.into(),
         storage,
         bitcoin_client,
@@ -141,6 +150,13 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     let rollup_params =
         serde_json::from_str::<RollupParams>(&json).map_err(|err| SerdeError::new(json, err))?;
     Ok(rollup_params)
+}
+
+fn load_asm_params(path: &Path) -> Result<AsmParams, InitError> {
+    let json = fs::read_to_string(path)?;
+    let asm_params =
+        serde_json::from_str::<AsmParams>(&json).map_err(|err| SerdeError::new(json, err))?;
+    Ok(asm_params)
 }
 
 fn load_ol_params(path: &Path) -> Result<OLParams, InitError> {

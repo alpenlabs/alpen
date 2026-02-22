@@ -8,7 +8,7 @@
 )]
 
 use bitcoin::Network;
-use harness::{test_harness::create_test_harness, worker_context::TestAsmWorkerContext};
+use harness::{test_harness::AsmTestHarnessBuilder, worker_context::TestAsmWorkerContext};
 use integration_tests::harness;
 use strata_asm_worker::WorkerContext;
 use strata_primitives::L1BlockId;
@@ -65,7 +65,8 @@ async fn test_block_fetching_and_caching() {
 /// Verifies ASM worker processes a single mined block.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_single_block_processing() {
-    let harness = create_test_harness()
+    let harness = AsmTestHarnessBuilder::default()
+        .build()
         .await
         .expect("Failed to create test harness");
 
@@ -84,7 +85,8 @@ async fn test_single_block_processing() {
 /// Verifies ASM worker processes multiple mined blocks.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multiple_block_processing() {
-    let harness = create_test_harness()
+    let harness = AsmTestHarnessBuilder::default()
+        .build()
         .await
         .expect("Failed to create test harness");
     let (l1, state) = harness.get_latest_asm_state().unwrap().unwrap();
@@ -157,7 +159,8 @@ async fn test_multiple_block_processing() {
 /// verify the invariant holds incrementally, not just at the end.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_proven_and_external_mmr_index_alignment() {
-    let harness = create_test_harness()
+    let harness = AsmTestHarnessBuilder::default()
+        .build()
         .await
         .expect("Failed to create test harness");
 

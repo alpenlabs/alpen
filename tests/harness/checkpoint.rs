@@ -5,10 +5,10 @@
 //! # Example
 //!
 //! ```ignore
-//! use harness::test_harness::create_test_harness;
+//! use harness::test_harness::AsmTestHarnessBuilder;
 //! use harness::checkpoint::CheckpointExt;
 //!
-//! let harness = create_test_harness().await?;
+//! let harness = AsmTestHarnessBuilder::default().build().await?;
 //! let state = harness.checkpoint_state()?;
 //! ```
 
