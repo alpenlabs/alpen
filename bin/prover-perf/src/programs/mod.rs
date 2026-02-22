@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 mod checkpoint;
+mod checkpoint_new;
 mod cl_stf;
 mod evm_ee;
 
@@ -12,6 +13,7 @@ pub enum GuestProgram {
     EvmEeStf,
     ClStf,
     Checkpoint,
+    CheckpointNew,
 }
 
 impl FromStr for GuestProgram {
@@ -22,6 +24,7 @@ impl FromStr for GuestProgram {
             "evm-ee-stf" => Ok(GuestProgram::EvmEeStf),
             "cl-stf" => Ok(GuestProgram::ClStf),
             "checkpoint" => Ok(GuestProgram::Checkpoint),
+            "checkpoint-new" => Ok(GuestProgram::CheckpointNew),
             // Add more matches
             _ => Err(format!("unknown program: {s}")),
         }
@@ -33,7 +36,9 @@ impl FromStr for GuestProgram {
 /// Generates [`PerformanceReport`] for each invocation.
 #[cfg(feature = "sp1")]
 pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
-    use strata_zkvm_hosts::sp1::{CHECKPOINT_HOST, CL_STF_HOST, EVM_EE_STF_HOST};
+    use strata_zkvm_hosts::sp1::{
+        CHECKPOINT_HOST, CHECKPOINT_NEW_HOST, CL_STF_HOST, EVM_EE_STF_HOST,
+    };
     programs
         .iter()
         .map(|program| match program {
@@ -45,6 +50,9 @@ pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
                 &**CHECKPOINT_HOST,
                 cl_stf::proof_with_vk(&**CL_STF_HOST, &**EVM_EE_STF_HOST),
             ),
+            GuestProgram::CheckpointNew => {
+                checkpoint_new::gen_perf_report(&**CHECKPOINT_NEW_HOST)
+            }
         })
         .collect()
 }
