@@ -2,7 +2,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::Role;
 use strata_crypto::hash::{compute_borsh_hash, raw};
-use strata_l1_txfmt::{TagData, TxType};
+use strata_l1_txfmt::TagData;
 
 mod cancel;
 pub mod updates;
@@ -13,11 +13,7 @@ pub use updates::UpdateAction;
 
 use crate::{
     actions::updates::predicate::ProofType,
-    constants::{
-        ADMINISTRATION_SUBPROTOCOL_ID, ASM_STF_VK_UPDATE_TX_TYPE, CANCEL_TX_TYPE,
-        OL_STF_VK_UPDATE_TX_TYPE, OPERATOR_UPDATE_TX_TYPE, SEQUENCER_UPDATE_TX_TYPE,
-        STRATA_ADMIN_MULTISIG_UPDATE_TX_TYPE, STRATA_SEQ_MANAGER_MULTISIG_UPDATE_TX_TYPE,
-    },
+    constants::{AdminTxType, ADMINISTRATION_SUBPROTOCOL_ID},
 };
 
 pub type UpdateId = u32;
@@ -52,19 +48,19 @@ impl MultisigAction {
         raw(&data)
     }
 
-    pub fn tx_type(&self) -> TxType {
+    pub fn tx_type(&self) -> AdminTxType {
         match self {
-            MultisigAction::Cancel(_) => CANCEL_TX_TYPE,
+            MultisigAction::Cancel(_) => AdminTxType::Cancel,
             MultisigAction::Update(update) => match update {
                 UpdateAction::Multisig(update) => match update.role() {
-                    Role::StrataAdministrator => STRATA_ADMIN_MULTISIG_UPDATE_TX_TYPE,
-                    Role::StrataSequencerManager => STRATA_SEQ_MANAGER_MULTISIG_UPDATE_TX_TYPE,
+                    Role::StrataAdministrator => AdminTxType::StrataAdminMultisigUpdate,
+                    Role::StrataSequencerManager => AdminTxType::StrataSeqManagerMultisigUpdate,
                 },
-                UpdateAction::OperatorSet(_) => OPERATOR_UPDATE_TX_TYPE,
-                UpdateAction::Sequencer(_) => SEQUENCER_UPDATE_TX_TYPE,
+                UpdateAction::OperatorSet(_) => AdminTxType::OperatorUpdate,
+                UpdateAction::Sequencer(_) => AdminTxType::SequencerUpdate,
                 UpdateAction::VerifyingKey(vk) => match vk.kind() {
-                    ProofType::Asm => ASM_STF_VK_UPDATE_TX_TYPE,
-                    ProofType::OLStf => OL_STF_VK_UPDATE_TX_TYPE,
+                    ProofType::Asm => AdminTxType::AsmStfVkUpdate,
+                    ProofType::OLStf => AdminTxType::OlStfVkUpdate,
                 },
             },
         }
@@ -75,7 +71,7 @@ impl MultisigAction {
     /// The tag is built from the administration subprotocol ID and the
     /// action's [`TxType`], with no auxiliary data.
     pub fn tag(&self) -> TagData {
-        TagData::new(ADMINISTRATION_SUBPROTOCOL_ID, self.tx_type(), vec![])
+        TagData::new(ADMINISTRATION_SUBPROTOCOL_ID, self.tx_type().into(), vec![])
             .expect("empty aux data always fits")
     }
 }

@@ -14002,6 +14002,7 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
+ "proptest",
  "rand 0.8.5",
  "strata-asm-common",
  "strata-asm-params",
