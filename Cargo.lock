@@ -15651,6 +15651,7 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
+ "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
  "strata-snark-acct-types",

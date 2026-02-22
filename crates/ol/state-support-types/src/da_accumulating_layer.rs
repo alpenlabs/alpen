@@ -686,6 +686,10 @@ where
     fn asm_manifests_mmr(&self) -> &Mmr64 {
         self.inner.asm_manifests_mmr()
     }
+
+    fn asm_manifests_mmr_start_height(&self) -> L1Height {
+        self.inner.asm_manifests_mmr_start_height()
+    }
 }
 
 fn encode_payload(state_diff: StateDiff) -> Result<Vec<u8>, DaAccumulationError> {

@@ -76,7 +76,7 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
 /// Uses unit types for mempool and state provider since
 /// proof generation only requires storage access.
 pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContext<(), ()> {
-    BlockAssemblyContext::new(storage, (), ())
+    BlockAssemblyContext::new(storage, (), (), 0)
 }
 
 /// Mock mempool provider for tests that stores transactions in memory.
@@ -279,12 +279,16 @@ impl<'a> StorageAsmMmr<'a> {
         &self.indices
     }
 
-    /// Returns all claims as AccumulatorClaim objects.
-    pub(crate) fn claims(&self) -> Vec<AccumulatorClaim> {
+    /// Returns all claims as AccumulatorClaim objects with L1 block heights.
+    ///
+    /// The `genesis_l1_height` is used to compute the height from the MMR leaf
+    /// index: `height = mmr_leaf_index + genesis_l1_height + 1`.
+    pub(crate) fn claims(&self, genesis_l1_height: u64) -> Vec<AccumulatorClaim> {
+        let offset = genesis_l1_height + 1;
         self.indices
             .iter()
             .zip(self.entries.iter())
-            .map(|(&idx, &hash)| AccumulatorClaim::new(idx, hash))
+            .map(|(&idx, &hash)| AccumulatorClaim::new(idx + offset, hash))
             .collect()
     }
 }
@@ -644,7 +648,7 @@ pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
 
 /// Info about a manifest in the MMR - links index and hash together.
 pub(crate) struct ManifestInfo {
-    pub index: u64,
+    pub height: u64,
     pub hash: Hash,
 }
 
@@ -722,14 +726,14 @@ impl TestEnvBuilder {
         // Setup claim manifests if requested (populates both state and storage MMRs)
         let manifests = if let Some(count) = self.claim_manifest_count {
             let test_manifests = create_deterministic_manifests(count);
-            let (hashes, indices) =
+            let (hashes, _indices) =
                 setup_manifests_in_state_and_storage(&storage, &mut state, test_manifests.clone());
 
             test_manifests
                 .iter()
                 .enumerate()
-                .map(|(i, _)| ManifestInfo {
-                    index: indices[i],
+                .map(|(i, m)| ManifestInfo {
+                    height: m.height(),
                     hash: hashes[i],
                 })
                 .collect()
@@ -872,6 +876,6 @@ pub(crate) fn create_test_block_assembly_context(
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
     let state_provider = StateProviderHandle(storage.ol_state().clone());
-    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider);
+    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider, 0);
     (ctx, mempool_provider)
 }

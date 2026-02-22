@@ -26,12 +26,14 @@ impl OLState {
         let total_ledger_funds = ledger.calculate_total_funds();
 
         let global = GlobalState::new(params.header.slot);
+        let manifests_mmr_offset = params.last_l1_block.height_u64() + 1;
         let epoch = EpochalState::new(
             total_ledger_funds,
             params.header.epoch,
             params.last_l1_block,
             checkpointed_epoch,
             manifests_mmr,
+            manifests_mmr_offset,
         );
         Ok(Self {
             epoch,
@@ -191,6 +193,13 @@ impl IStateAccessor for OLState {
 
     fn asm_manifests_mmr(&self) -> &Mmr64 {
         self.epoch.asm_manifests_mmr()
+    }
+
+    fn asm_manifests_mmr_start_height(&self) -> L1Height {
+        self.epoch
+            .manifests_mmr_offset()
+            .try_into()
+            .expect("state: manifests MMR offset does not fit in L1Height")
     }
 
     // ===== Account methods =====

@@ -143,6 +143,15 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .unwrap_or_else(|| self.base.asm_manifests_mmr())
     }
 
+    fn asm_manifests_mmr_start_height(&self) -> L1Height {
+        self.batches
+            .last()
+            .map(|b| b.epochal().manifests_mmr_offset())
+            .unwrap_or_else(|| self.base.asm_manifests_mmr_start_height() as u64)
+            .try_into()
+            .expect("state: manifests MMR offset does not fit in L1Height")
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {

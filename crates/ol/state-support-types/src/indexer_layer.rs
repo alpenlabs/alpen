@@ -436,6 +436,10 @@ where
         self.inner.asm_manifests_mmr()
     }
 
+    fn asm_manifests_mmr_start_height(&self) -> L1Height {
+        self.inner.asm_manifests_mmr_start_height()
+    }
+
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {

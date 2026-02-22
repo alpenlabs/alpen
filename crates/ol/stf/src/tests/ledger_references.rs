@@ -73,8 +73,10 @@ fn test_snark_update_with_valid_ledger_reference() {
     assert_eq!(manifest1_index, 0, "First manifest should be at index 0");
 
     // Step 2: Create a snark update that references the manifest
+    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
+    let manifest1_height = manifest1_index + 1;
     let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
-        manifest1_index,
+        manifest1_height,
         manifest1_hash.into_inner(),
     )]);
 
@@ -174,8 +176,10 @@ fn test_snark_update_with_invalid_ledger_reference() {
     let (manifest1_index, _valid_proof) = manifest_tracker.add_manifest(&manifest1);
 
     // Step 2: Create a snark update with INVALID ledger reference proof
+    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
+    let manifest1_height = manifest1_index + 1;
     let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
-        manifest1_index,
+        manifest1_height,
         manifest1_hash.into_inner(),
     )]);
 
@@ -184,7 +188,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
         manifest1_hash.into_inner(),
         strata_acct_types::MerkleProof::from_cohashes(
             vec![[0xff; 32]], // Invalid cohash
-            manifest1_index,
+            manifest1_index,  // proof uses raw MMR index
         ),
     );
 
@@ -232,7 +236,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
     match result.unwrap_err() {
         ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
             assert_eq!(
-                ref_idx, manifest1_index,
+                ref_idx, manifest1_height,
                 "Should fail on the invalid reference"
             );
         }

@@ -64,6 +64,16 @@ pub trait IStateAccessor {
     /// Gets the ASM manifests MMR for ledger reference verification.
     fn asm_manifests_mmr(&self) -> &Mmr64;
 
+    /// Gets the first L1 block height represented in the manifests MMR.
+    fn asm_manifests_mmr_start_height(&self) -> L1Height;
+
+    /// Resolves an L1 block height into the corresponding ASM manifests MMR leaf index.
+    ///
+    /// Returns `None` when the height is before the MMR start height.
+    fn asm_manifest_mmr_index_for_height(&self, height: L1Height) -> Option<u64> {
+        (height as u64).checked_sub(self.asm_manifests_mmr_start_height() as u64)
+    }
+
     // ===== Account methods =====
 
     /// Checks if an account exists.
