@@ -2,7 +2,7 @@ use std::num::NonZero;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::Role;
-use strata_asm_txs_admin::parser::SignedPayload;
+use strata_asm_txs_admin::{actions::Sighash, parser::SignedPayload};
 use strata_crypto::threshold_signature::{ThresholdConfig, verify_threshold_signatures};
 
 use crate::error::AdministrationError;

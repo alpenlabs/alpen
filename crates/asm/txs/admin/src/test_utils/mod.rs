@@ -6,7 +6,10 @@ use strata_asm_txs_test_utils::create_reveal_transaction_stub;
 use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
 use strata_primitives::buf::Buf32;
 
-use crate::{actions::MultisigAction, parser::SignedPayload};
+use crate::{
+    actions::{MultisigAction, Sighash},
+    parser::SignedPayload,
+};
 
 /// Creates an ECDSA signature with recoverable public key for a message hash.
 ///
