@@ -29,6 +29,7 @@ test-utils = [
 ]
 
 [dev-dependencies]
+proptest.workspace = true
 rand.workspace = true
 
 strata-test-utils.workspace = true
