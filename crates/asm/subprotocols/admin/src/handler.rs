@@ -186,7 +186,7 @@ mod tests {
     use strata_asm_params::{AdministrationSubprotoParams, Role};
     use strata_asm_txs_admin::{
         actions::{
-            CancelAction, MultisigAction, UpdateAction,
+            CancelAction, MultisigAction, Sighash, UpdateAction,
             updates::{
                 predicate::{PredicateUpdate, ProofType},
                 seq::SequencerUpdate,

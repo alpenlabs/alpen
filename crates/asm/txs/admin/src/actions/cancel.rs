@@ -1,7 +1,8 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::actions::UpdateId;
+use super::Sighash;
+use crate::{actions::UpdateId, constants::AdminTxType};
 
 #[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
 pub struct CancelAction {
@@ -16,5 +17,15 @@ impl CancelAction {
 
     pub fn target_id(&self) -> &UpdateId {
         &self.target_id
+    }
+}
+
+impl Sighash for CancelAction {
+    fn tx_type(&self) -> AdminTxType {
+        AdminTxType::Cancel
+    }
+
+    fn sighash_payload(&self) -> Vec<u8> {
+        self.target_id.to_be_bytes().to_vec()
     }
 }

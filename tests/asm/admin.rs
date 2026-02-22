@@ -37,8 +37,10 @@ use integration_tests::harness;
 use rand::rngs::OsRng;
 use strata_asm_params::Role;
 use strata_asm_txs_admin::{
-    actions::updates::predicate::ProofType, constants::ADMINISTRATION_SUBPROTOCOL_ID,
-    parser::SignedPayload, test_utils::create_signature_set,
+    actions::{updates::predicate::ProofType, Sighash},
+    constants::ADMINISTRATION_SUBPROTOCOL_ID,
+    parser::SignedPayload,
+    test_utils::create_signature_set,
 };
 use strata_crypto::{
     keys::compressed::CompressedPublicKey,
@@ -351,7 +353,7 @@ async fn test_wrong_key_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, action.tx_type(), payload)
+        .build_envelope_tx(action.tag(), payload)
         .await
         .unwrap();
 
@@ -407,7 +409,7 @@ async fn test_corrupted_signature_rejected() {
     let payload = borsh::to_vec(&signed).unwrap();
 
     let tx = harness
-        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, action.tx_type(), payload)
+        .build_envelope_tx(action.tag(), payload)
         .await
         .unwrap();
 
@@ -477,20 +479,24 @@ async fn test_multiple_updates_same_block() {
         .unwrap();
 
     // Build 3 transactions with sequential seqnos
-    let (payload1, tx_type1) = ctx.sign(sequencer_update([7u8; 32]));
-    let (payload2, tx_type2) = ctx.sign(sequencer_update([8u8; 32]));
-    let (payload3, tx_type3) = ctx.sign(sequencer_update([9u8; 32]));
+    let action1 = sequencer_update([7u8; 32]);
+    let action2 = sequencer_update([8u8; 32]);
+    let action3 = sequencer_update([9u8; 32]);
+
+    let payload1 = ctx.sign(&action1);
+    let payload2 = ctx.sign(&action2);
+    let payload3 = ctx.sign(&action3);
 
     let tx1 = harness
-        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type1, payload1)
+        .build_envelope_tx(action1.tag(), payload1)
         .await
         .unwrap();
     let tx2 = harness
-        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type2, payload2)
+        .build_envelope_tx(action2.tag(), payload2)
         .await
         .unwrap();
     let tx3 = harness
-        .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type3, payload3)
+        .build_envelope_tx(action3.tag(), payload3)
         .await
         .unwrap();
 

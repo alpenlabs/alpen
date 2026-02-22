@@ -34,9 +34,8 @@ use strata_asm_txs_admin::{
             predicate::{PredicateUpdate, ProofType},
             seq::SequencerUpdate,
         },
-        CancelAction, MultisigAction, UpdateAction,
+        CancelAction, MultisigAction, Sighash, UpdateAction,
     },
-    constants::ADMINISTRATION_SUBPROTOCOL_ID,
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
@@ -97,13 +96,13 @@ impl AdminContext {
         }
     }
 
-    /// Sign an action and return (serialized_payload, tx_type).
+    /// Sign an action and return the serialized payload.
     ///
     /// Auto-increments the appropriate role's sequence number after signing.
-    pub fn sign(&mut self, action: MultisigAction) -> (Vec<u8>, u8) {
-        let role = Self::role_for_action(&action);
+    pub fn sign(&mut self, action: &MultisigAction) -> Vec<u8> {
+        let role = Self::role_for_action(action);
         let seqno = *self.seqnos.entry(role).or_insert(1);
-        let result = self.sign_impl(&action, seqno);
+        let result = self.sign_impl(action, seqno);
         *self.seqnos.get_mut(&role).unwrap() += 1;
         result
     }
@@ -111,8 +110,8 @@ impl AdminContext {
     /// Sign an action with a specific sequence number (for replay attack testing).
     ///
     /// Does NOT auto-increment the internal sequence number.
-    pub fn sign_with_seqno(&self, action: MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
-        self.sign_impl(&action, seqno)
+    pub fn sign_with_seqno(&self, action: &MultisigAction, seqno: u64) -> Vec<u8> {
+        self.sign_impl(action, seqno)
     }
 
     /// Get the private keys (for manual signature construction in tests).
@@ -133,12 +132,11 @@ impl AdminContext {
         }
     }
 
-    fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> (Vec<u8>, u8) {
+    fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> Vec<u8> {
         let sighash = action.compute_sighash(seqno);
         let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        let payload = borsh::to_vec(&SignedPayload::new(seqno, action.clone(), sig_set))
-            .expect("serialization should succeed");
-        (payload, action.tx_type())
+        borsh::to_vec(&SignedPayload::new(seqno, action.clone(), sig_set))
+            .expect("serialization should succeed")
     }
 }
 
@@ -244,11 +242,9 @@ impl AdminExt for AsmTestHarness {
         ctx: &mut AdminContext,
         action: MultisigAction,
     ) -> anyhow::Result<BlockHash> {
-        let (payload, tx_type) = ctx.sign(action);
+        let payload = ctx.sign(&action);
         let target_height = self.get_processed_height()? + 1;
-        let tx = self
-            .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type, payload)
-            .await?;
+        let tx = self.build_envelope_tx(action.tag(), payload).await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))
             .await?;
@@ -261,11 +257,10 @@ impl AdminExt for AsmTestHarness {
         action: MultisigAction,
         seqno: u64,
     ) -> anyhow::Result<BlockHash> {
-        let (payload, tx_type) = ctx.sign_with_seqno(action, seqno);
+        let tag = action.tag();
+        let payload = ctx.sign_with_seqno(&action, seqno);
         let target_height = self.get_processed_height()? + 1;
-        let tx = self
-            .build_envelope_tx(ADMINISTRATION_SUBPROTOCOL_ID, tx_type, payload)
-            .await?;
+        let tx = self.build_envelope_tx(tag, payload).await?;
         let hash = self.submit_and_mine_tx(&tx).await?;
         self.wait_for_height(target_height, Duration::from_secs(5))
             .await?;
