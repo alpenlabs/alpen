@@ -1,6 +1,7 @@
-use std::fmt;
+use std::{fmt, sync::LazyLock};
 
 use strata_asm_common::SubprotocolId;
+use strata_crypto::hash;
 
 /// Unique identifier for the Administration Subprotocol.
 pub const ADMINISTRATION_SUBPROTOCOL_ID: SubprotocolId = 0;
@@ -47,6 +48,36 @@ impl TryFrom<u8> for AdminTxType {
             30 => Ok(AdminTxType::OlStfVkUpdate),
             31 => Ok(AdminTxType::AsmStfVkUpdate),
             invalid => Err(invalid),
+        }
+    }
+}
+
+/// Defines a `static LazyLock<[u8; 32]>` that computes
+/// `SHA256("strata/admin/" + suffix)` once on first access and returns a
+/// `&'static` reference to the result.
+macro_rules! lazy_tag_hash {
+    ($suffix:expr) => {{
+        const TAG: &str = concat!("strata/admin/", $suffix);
+        static HASH: LazyLock<[u8; 32]> =
+            LazyLock::new(|| hash::raw(TAG.as_bytes()).0);
+        &HASH
+    }};
+}
+
+impl AdminTxType {
+    /// Returns the precomputed `SHA256(tag)` for this transaction type's BIP-340
+    /// sighash tag. Each tag hash is computed once on first access.
+    pub fn sighash_tag_hash(&self) -> &'static [u8; 32] {
+        match self {
+            Self::Cancel => lazy_tag_hash!("cancel"),
+            Self::StrataAdminMultisigUpdate => lazy_tag_hash!("strata_admin_multisig_update"),
+            Self::StrataSeqManagerMultisigUpdate => {
+                lazy_tag_hash!("strata_seq_manager_multisig_update")
+            }
+            Self::OperatorUpdate => lazy_tag_hash!("operator_update"),
+            Self::SequencerUpdate => lazy_tag_hash!("sequencer_update"),
+            Self::OlStfVkUpdate => lazy_tag_hash!("ol_stf_vk_update"),
+            Self::AsmStfVkUpdate => lazy_tag_hash!("asm_stf_vk_update"),
         }
     }
 }
