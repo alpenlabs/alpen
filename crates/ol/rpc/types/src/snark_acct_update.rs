@@ -3,6 +3,7 @@ use strata_primitives::{HexBytes, HexBytes32};
 
 /// Snark account update payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcSnarkAccountUpdate {
     /// The target account.
     target: HexBytes32,

@@ -12,6 +12,7 @@ use crate::RpcSnarkAccountUpdate;
 
 /// OL transaction for submission (excludes accumulator proofs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLTransaction {
     /// The payload.
     payload: RpcTransactionPayload,
@@ -42,6 +43,7 @@ impl RpcOLTransaction {
 
 /// Transaction payload: generic message or snark account update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RpcTransactionPayload {
     /// Generic account message.
@@ -53,6 +55,7 @@ pub enum RpcTransactionPayload {
 
 /// Generic account message payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcGenericAccountMessage {
     /// The target account.
     target: HexBytes32,
@@ -80,6 +83,7 @@ impl RpcGenericAccountMessage {
 
 /// Transaction extra: slot constraints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcTransactionAttachment {
     /// Minimum slot.
     min_slot: Option<u64>,

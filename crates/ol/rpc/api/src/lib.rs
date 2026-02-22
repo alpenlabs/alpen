@@ -1,12 +1,15 @@
 //! OL RPC API definitions.
 
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
+#[cfg(test)]
+use serde_json as _;
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;
 use strata_primitives::{HexBytes, HexBytes64};
 
 /// Common OL RPC methods that are served by all kinds of nodes(DA, block executing).
+#[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Client Node")]
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLClientRpc {
@@ -63,6 +66,7 @@ pub trait OLClientRpc {
 }
 
 /// OL RPC methods served by block executing nodes.
+#[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Full Node")]
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLFullNodeRpc {
@@ -81,6 +85,7 @@ pub trait OLFullNodeRpc {
 }
 
 /// OL RPC methods served by sequencer node for sequencer signer.
+#[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Sequencer")]
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLSequencerRpc {
