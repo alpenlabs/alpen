@@ -6,15 +6,7 @@
 //!
 //! ## Transaction Types
 //!
-//! The administration subprotocol supports the following transaction types:
-//!
-//! - **Cancel Transaction** (`CANCEL_TX_TYPE = 0`): Cancels a previously queued update
-//! - **Multisig Config Update** (`MULTISIG_CONFIG_UPDATE_TX_TYPE = 10`): Updates multisignature
-//!   configuration
-//! - **Operator Set Update** (`OPERATOR_UPDATE_TX_TYPE = 11`): Updates the set of authorized
-//!   operators
-//! - **Sequencer Update** (`SEQUENCER_UPDATE_TX_TYPE = 12`): Updates sequencer configuration
-//! - **Verifying Key Update** (`VK_UPDATE_TX_TYPE = 13`): Updates the protocol's verifying key
+//! See [`constants::AdminTxType`] for the full list of supported transaction types.
 //!
 //! ## Core Structures
 //!
