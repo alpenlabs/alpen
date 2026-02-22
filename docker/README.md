@@ -136,7 +136,7 @@ This setup builds both `strata` (OL) and `alpen-client` (EL) from the repo Docke
   ```
 
 ### Run EL only (silo)
-- Assumes an OL endpoint is available at `--ol-client-http` (update the command in `docker/docker-compose-ol-el.yml` if needed).
+- Assumes an OL endpoint is available at `--ol-client-url` (update the command in `docker/docker-compose-ol-el.yml` if needed).
 - Start only EL:
   ```bash
   docker compose -f docker/docker-compose-ol-el.yml up -d --build alpen-client
