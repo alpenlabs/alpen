@@ -233,7 +233,7 @@ strata-ee-chain-types = { path = "crates/ee-chain-types" }
 strata-eectl = { path = "crates/eectl" }
 strata-evm-ee = { path = "crates/evm-ee" }
 strata-evmexec = { path = "crates/evmexec" }
-strata-identifiers = { path = "crates/identifiers", default-features = false }
+strata-identifiers = { path = "crates/identifiers" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mpt = { path = "crates/mpt" }

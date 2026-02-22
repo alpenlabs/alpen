@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bitcoin::Txid;
+use strata_btc_types::Buf32BitcoinExt;
 use strata_db_types::types::L1TxEntry;
 use strata_primitives::indexed::Indexed;
 use strata_storage::BroadcastDbOps;
@@ -83,7 +83,7 @@ async fn filter_unfinalized_from_db(
         };
 
         let status = &txentry.status;
-        let txid = ops.get_txid_async(idx).await?.map(Txid::from);
+        let txid = ops.get_txid_async(idx).await?.map(|b| b.to_txid());
         debug!(?idx, ?txid, ?status, "TxEntry");
 
         if txentry.is_valid() && !txentry.is_finalized() {

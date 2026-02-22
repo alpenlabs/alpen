@@ -5,6 +5,7 @@ use bitcoind_async_client::{
     traits::{Reader, Signer, Wallet},
     Client,
 };
+use strata_btc_types::Buf32BitcoinExt;
 use strata_config::btcio::WriterConfig;
 use strata_csm_types::{PayloadDest, PayloadIntent};
 use strata_db_types::{
@@ -329,7 +330,7 @@ async fn update_l1_status(
         || *new_status == L1BundleStatus::Finalized
     {
         let status_updates = [
-            L1StatusUpdate::LastPublishedTxid(payloadentry.reveal_txid.into()),
+            L1StatusUpdate::LastPublishedTxid(payloadentry.reveal_txid.to_txid()),
             L1StatusUpdate::IncrementPublishedRevealCount,
         ];
         apply_status_updates(&status_updates, status_channel).await;

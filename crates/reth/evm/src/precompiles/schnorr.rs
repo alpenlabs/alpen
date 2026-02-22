@@ -66,7 +66,10 @@ mod tests {
         let secret_key = Buf32::new([1u8; 32]);
         let message_hash = Buf32::new([1u8; 32]);
         let schnorr_sig = sign_schnorr_sig(&message_hash, &secret_key);
-        let keypair = Keypair::from_secret_key(SECP256K1, &SecretKey::from(secret_key));
+        let keypair = Keypair::from_secret_key(
+            SECP256K1,
+            &SecretKey::from_slice(secret_key.as_ref()).unwrap(),
+        );
         let public_key = keypair.x_only_public_key().0;
 
         let mut input = Vec::new();
