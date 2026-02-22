@@ -60,7 +60,7 @@ use strata_asm_params::{
 };
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_db_types::mmr_helpers::leaf_index_to_pos;
-use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
+use strata_l1_txfmt::{ParseConfig, TagData};
 use strata_primitives::{
     buf::Buf32,
     l1::{L1BlockCommitment, L1BlockId},
@@ -394,8 +394,7 @@ impl AsmTestHarness {
     /// * `payload` - Serialized payload to embed in witness
     pub async fn build_envelope_tx(
         &self,
-        subprotocol_id: SubprotocolId,
-        tx_type: TxType,
+        sps50_tag: TagData,
         payload: Vec<u8>,
     ) -> anyhow::Result<Transaction> {
         let fee = Self::DEFAULT_FEE;
@@ -432,9 +431,8 @@ impl AsmTestHarness {
         let commit_outpoint = OutPoint::new(commit_txid, commit_vout);
 
         // Build SPS-50 compliant OP_RETURN tag using TagData and ParseConfig
-        let tag_data = TagDataRef::new(subprotocol_id, tx_type, &[])?;
-        let parse_config = ParseConfig::new(self.asm_params.magic);
-        let op_return_script = parse_config.encode_script_buf(&tag_data)?;
+        let op_return_script =
+            ParseConfig::new(self.asm_params.magic).encode_script_buf(&sps50_tag.as_ref())?;
 
         let op_return_output = TxOut {
             value: Amount::ZERO,
