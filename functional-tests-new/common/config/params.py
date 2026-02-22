@@ -157,6 +157,7 @@ class AdminSubprotocolConfig:
     strata_administrator: ThresholdConfig
     strata_sequencer_manager: ThresholdConfig
     confirmation_depth: int = 144
+    max_seqno_gap: int = 100
 
 
 @dataclass
