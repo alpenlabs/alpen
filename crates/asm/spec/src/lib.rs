@@ -4,9 +4,6 @@
 //! The ASM specification defines which subprotocols are enabled, their genesis configurations,
 //! and protocol-level parameters like magic bytes.
 
-use std::num::NonZero;
-
-use bitcoin::secp256k1::{Parity, PublicKey};
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_params::{
     AdministrationSubprotoParams, AsmParams, BridgeV1Config, SubprotocolInstance,
@@ -16,10 +13,8 @@ use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_checkpoint_v0::{
     CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
-use strata_crypto::{keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig};
 use strata_l1_txfmt::MagicBytes;
-use strata_params::RollupParams;
-use strata_primitives::{CredRule, l1::BitcoinAmount};
+use strata_primitives::CredRule;
 
 /// ASM specification for the Strata protocol.
 ///
@@ -65,54 +60,6 @@ impl StrataAsmSpec {
     ) -> Self {
         Self {
             magic_bytes,
-            checkpoint_v0_params,
-            bridge_v1_genesis,
-            admin_params,
-        }
-    }
-
-    pub fn from_params(params: &RollupParams) -> Self {
-        let checkpoint_v0_params = CheckpointV0Params {
-            verification_params: CheckpointV0VerificationParams {
-                genesis_l1_block: params.genesis_l1_view.blk,
-                cred_rule: params.cred_rule.clone(),
-                predicate: params.checkpoint_predicate.clone(),
-            },
-        };
-
-        let operators = params.operators.iter().map(|o| (*o).into()).collect();
-
-        let bridge_v1_genesis = BridgeV1Config {
-            operators,
-            denomination: BitcoinAmount::from_sat(params.deposit_amount.to_sat()),
-            assignment_duration: params.dispatch_assignment_dur,
-            // TODO(QQ): adjust
-            operator_fee: BitcoinAmount::ZERO,
-            recovery_delay: params.recovery_delay,
-        };
-
-        // For now, use the same operator config for admin roles
-        // TODO(STR-2024): Add proper admin config to RollupParams
-        let admin_pubkeys: Vec<CompressedPublicKey> = params
-            .operators
-            .iter()
-            .map(|xonly| {
-                let pk = PublicKey::from_x_only_public_key(*xonly, Parity::Even);
-                CompressedPublicKey::from(pk)
-            })
-            .collect();
-        let threshold = NonZero::new(1).unwrap();
-        let admin_config = ThresholdConfig::try_new(admin_pubkeys.clone(), threshold).unwrap();
-
-        let admin_params = AdministrationSubprotoParams::new(
-            admin_config.clone(),
-            admin_config,
-            2, // confirmation_depth: updates activate 2 blocks after submission
-            NonZero::new(10).unwrap(),
-        );
-
-        Self {
-            magic_bytes: params.magic_bytes,
             checkpoint_v0_params,
             bridge_v1_genesis,
             admin_params,
