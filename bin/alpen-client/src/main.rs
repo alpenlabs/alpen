@@ -117,6 +117,7 @@ fn main() {
             // TODO: define how we want to deterministically generate the AccountId
             const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 
+            println!("GENESIS INFO: {}", genesis_info.blockhash());
             let params = AlpenEeParams::new(
                 ALPEN_EE_ACCOUNT_ID,
                 genesis_info.blockhash(),
@@ -282,6 +283,9 @@ fn main() {
                 sequencer_http: ext.sequencer_http.clone(),
             };
 
+            let consensus_watcher = ol_tracker.consensus_watcher();
+            let status_watcher = ol_tracker.ol_status_watcher();
+
             let mut node_builder = builder
                 .node(AlpenEthereumNode::new(node_args))
                 // Register Alpen gossip RLPx subprotocol
@@ -337,7 +341,7 @@ fn main() {
 
             let engine_control_task = create_engine_control_task(
                 preconf_rx.clone(),
-                ol_tracker.consensus_watcher(),
+                consensus_watcher.clone(),
                 node.provider.clone(),
                 AlpenRethExecEngine::new(node.beacon_engine_handle.clone()),
             );
@@ -376,7 +380,7 @@ fn main() {
 
                 let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
                     ol_chain_tracker_state,
-                    ol_tracker.ol_status_watcher(),
+                    status_watcher.clone(),
                     ol_client.clone(),
                     storage.clone(),
                 );
@@ -496,7 +500,7 @@ fn main() {
                     storage.clone(),
                     batch_prover,
                     batch_lifecycle_handle.latest_proof_ready_watcher(),
-                    ol_tracker.ol_status_watcher(),
+                    status_watcher,
                 );
 
                 node.task_executor
@@ -505,7 +509,7 @@ fn main() {
                     "exec_chain_consensus_forwarder",
                     build_exec_chain_consensus_forwarder_task(
                         exec_chain_handle.clone(),
-                        ol_tracker.consensus_watcher(),
+                        consensus_watcher,
                     ),
                 );
                 node.task_executor

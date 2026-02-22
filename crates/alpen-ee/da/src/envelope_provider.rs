@@ -84,6 +84,8 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             bail!("envelope entry {envelope_idx} missing from DB for batch {batch_id:?}");
         };
 
+        debug!(?batch_id, ?entry.status, "checking chunked envelope status");
+
         match entry.status {
             ChunkedEnvelopeStatus::Finalized => {
                 let block_refs = self.build_da_block_refs(&entry).await?;

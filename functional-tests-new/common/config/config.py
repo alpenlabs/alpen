@@ -110,6 +110,12 @@ class EpochSealingConfig:
 
 
 @dataclass
+class EpochSealingConfig:
+    policy: str = field(default="FixedSlot")
+    slots_per_epoch: int | None = field(default=4)
+
+
+@dataclass
 class StrataConfig:
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)

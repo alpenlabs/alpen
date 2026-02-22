@@ -3,6 +3,7 @@ use alpen_ee_common::{
 };
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::EpochCommitment;
+use tracing::info;
 
 use crate::error::{OLTrackerError, Result};
 
@@ -66,6 +67,7 @@ where
         return Err(OLTrackerError::MissingGenesisEpoch);
     };
 
+    info!(?best_state, "Building tracker state during init");
     build_tracker_state(best_state, &ol_chain_status, storage).await
 }
 
@@ -102,6 +104,7 @@ async fn effective_account_state(
     ol: &EpochCommitment,
     storage: &impl Storage,
 ) -> Result<EeAccountStateAtEpoch> {
+    info!(?local, ?ol, "Effective state");
     let min_epoch = if local.last_slot() < ol.last_slot() {
         local
     } else {

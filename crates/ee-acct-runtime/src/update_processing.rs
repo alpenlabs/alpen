@@ -308,6 +308,7 @@ pub fn apply_final_update_changes(
     extra: &UpdateExtraData,
 ) -> EnvResult<()> {
     // 1. Update final execution head block.
+    println!("Setting last exec blkid: {}", extra.new_tip_blkid());
     state.set_last_exec_blkid(*extra.new_tip_blkid());
 
     // 2. Update queues.

@@ -21,8 +21,8 @@ class TestMultiFullnodeBlockPropagation(AlpenClientTest):
         ctx.set_env("alpen_client_multi")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        fullnodes = [self.get_service(f"fullnode_{i}") for i in range(FULLNODE_COUNT)]
+        sequencer = self.get_service("alpen_sequencer")
+        fullnodes = [self.get_service(f"alpen_fullnode_{i}") for i in range(FULLNODE_COUNT)]
 
         # Wait for connections
         logger.info("Waiting for P2P connections...")

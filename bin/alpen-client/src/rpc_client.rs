@@ -133,23 +133,28 @@ impl OLClient for RpcOLClient {
                 let epoch_summary =
                     call_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
 
-                let update = UpdateInputData::new(
-                    epoch_summary.next_seq_no,
-                    epoch_summary
-                        .processed_msgs
-                        .into_iter()
-                        .map(Into::into)
-                        .collect(),
-                    UpdateStateData::new(
-                        epoch_summary.proof_state.into(),
-                        epoch_summary.extra_data.into(),
-                    ),
-                );
+                let mut updates = vec![];
+                if let Some(update) = epoch_summary.update_input() {
+                    let update = UpdateInputData::new(
+                        update.seq_no,
+                        update
+                            .messages
+                            .clone()
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                        UpdateStateData::new(
+                            update.proof_state.clone().into(),
+                            update.extra_data.clone().into(),
+                        ),
+                    );
+                    updates.push(update);
+                };
 
                 Ok(OLEpochSummary::new(
                     epoch_summary.epoch_commitment,
                     epoch_summary.prev_epoch_commitment,
-                    vec![update],
+                    updates,
                 ))
             },
         )

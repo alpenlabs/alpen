@@ -2,6 +2,7 @@
 set -e
 
 export RUST_BACKTRACE=1
+export RUST_LOG="debug,sled=warn,hyper=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
 
 # Sets up PATH for built binaries.
 setup_path() {

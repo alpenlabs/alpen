@@ -8,6 +8,7 @@ use reth_node_builder::{
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff_async, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
+use tracing::info;
 
 /// Execution engine implementation using Reth for Alpen EE.
 #[derive(Debug, Clone)]
@@ -55,6 +56,7 @@ impl ExecutionEngine for AlpenRethExecEngine {
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
+                info!(?state, "Sending fork choice state to beacon");
                 self.beacon_engine_handle
                     .fork_choice_updated(state, None, EngineApiMessageVersion::V4)
                     .await

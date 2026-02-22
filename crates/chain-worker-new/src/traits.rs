@@ -55,6 +55,7 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Stores the block execution output (write batch, state root).
     fn store_block_output(
         &self,
+        block: &OLBlock,
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()>;
