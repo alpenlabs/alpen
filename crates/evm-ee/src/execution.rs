@@ -21,7 +21,7 @@ use strata_ee_acct_types::{
     ExecutionEnvironment,
 };
 use strata_ee_chain_types::{BlockInputs, BlockOutputs};
-use strata_ol_msg_types::WithdrawalMsgData;
+use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WithdrawalMsgData};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
@@ -52,9 +52,12 @@ fn convert_withdrawal_intents_to_messages(
     outputs: &mut BlockOutputs,
 ) {
     for intent in withdrawal_intents {
-        // Create withdrawal message data with fees=0 (currently ignored) and destination descriptor
-        let withdrawal_msg = WithdrawalMsgData::new(0, intent.destination.to_bytes().to_vec())
-            .expect("destination descriptor too long");
+        let withdrawal_msg = WithdrawalMsgData::new(
+            DEFAULT_OPERATOR_FEE,
+            intent.destination.to_bytes().to_vec(),
+            intent.selected_operator,
+        )
+        .expect("invalid withdrawal destination descriptor");
 
         let msg_data = encode_to_vec(&withdrawal_msg).expect("encoding failed");
         let bridge_gateway_account = AccountId::from(BRIDGE_GATEWAY_ACCOUNT);

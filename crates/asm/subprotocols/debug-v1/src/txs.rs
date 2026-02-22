@@ -6,12 +6,13 @@
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::TxInputRef;
 use strata_l1_txfmt::TxType;
+use strata_ol_msg_types::resolve_selected_operator;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
 
 use crate::constants::{
     AMOUNT_OFFSET, AMOUNT_SIZE, DESCRIPTOR_OFFSET, MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
-    MOCK_ASM_LOG_TX_TYPE, MOCK_WITHDRAW_INTENT_TX_TYPE,
+    MOCK_ASM_LOG_TX_TYPE, MOCK_WITHDRAW_INTENT_TX_TYPE, OPERATOR_INDEX_OFFSET, OPERATOR_INDEX_SIZE,
 };
 
 /// Errors that can occur during debug transaction parsing.
@@ -86,6 +87,10 @@ fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxPa
 }
 
 /// Parses withdrawal data from auxiliary data bytes.
+///
+/// Format: `[amount: 8 bytes][selected_operator: 4 bytes (big-endian u32)][descriptor: variable]`
+/// - `u32::MAX`: no operator selection (`selected_operator = None`)
+/// - Any other value: `selected_operator = Some(value)`
 fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, DebugTxParseError> {
     if aux_data.len() < MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN {
         return Err(DebugTxParseError::AuxDataTooShort {
@@ -94,25 +99,34 @@ fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, Deb
         });
     }
 
-    // Extract amount using constants
+    // Extract amount (8 bytes, big-endian)
     let amount_end = AMOUNT_OFFSET + AMOUNT_SIZE;
     let amount_bytes: [u8; AMOUNT_SIZE] = aux_data[AMOUNT_OFFSET..amount_end].try_into().unwrap();
     let amount = u64::from_be_bytes(amount_bytes);
     let amt = BitcoinAmount::from_sat(amount);
 
-    // Extract descriptor (self-describing, no length field needed)
+    // Extract selected operator (4 bytes, big-endian u32)
+    let operator_end = OPERATOR_INDEX_OFFSET + OPERATOR_INDEX_SIZE;
+    let operator_bytes: [u8; OPERATOR_INDEX_SIZE] = aux_data[OPERATOR_INDEX_OFFSET..operator_end]
+        .try_into()
+        .unwrap();
+    let operator_raw = u32::from_be_bytes(operator_bytes);
+    let selected_operator = resolve_selected_operator(operator_raw);
+
+    // Extract descriptor (self-describing, variable length, consumes rest of aux_data)
     let desc_bytes = &aux_data[DESCRIPTOR_OFFSET..];
     let dest = Descriptor::from_bytes(desc_bytes)
         .map_err(|e| DebugTxParseError::InvalidDescriptorFormat(e.to_string()))?;
 
-    let withdraw_output = WithdrawOutput::new(dest, amt);
+    let withdraw_output = WithdrawOutput::new(dest, amt, selected_operator);
     Ok(withdraw_output)
 }
 
 /// Parses a mock withdrawal transaction.
 ///
 /// Auxiliary data format:
-/// - `[amount: 8 bytes]` - The withdrawal amount in satoshis
+/// - `[amount: 8 bytes]` - The withdrawal amount in satoshis (big-endian)
+/// - `[selected_operator: 4 bytes]` - Operator index (big-endian u32, `u32::MAX` = no selection)
 /// - `[descriptor: variable]` - The self-describing Bitcoin descriptor
 fn parse_mock_withdraw_intent_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxParseError> {
     let aux_data = tx.tag().aux_data();
@@ -161,17 +175,17 @@ mod tests {
 
     #[test]
     fn test_parse_withdrawal_from_aux_data_p2wpkh() {
-        // P2WPKH: type tag (0x00) + 20-byte hash = 21 bytes total
+        // P2WPKH: type tag (0x03) + 20-byte hash = 21 bytes total
         let amount = 100_000u64;
         let hash160 = [0x14; 20]; // 20-byte hash
         let p2wpkh_descriptor = Descriptor::new_p2wpkh(&hash160);
 
-        // Create auxiliary data: [amount: 8 bytes][descriptor: 21 bytes]
+        // Create auxiliary data: [amount: 8][operator: 4 (u32::MAX = no selection)][descriptor: 21]
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.extend_from_slice(&u32::MAX.to_be_bytes());
         aux_data.extend_from_slice(&p2wpkh_descriptor.to_bytes());
 
-        // Test the internal parsing function directly
         let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
         assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(100_000));
@@ -179,6 +193,7 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2wpkh_descriptor.to_bytes()
         );
+        assert_eq!(withdraw_output.selected_operator, None);
     }
 
     #[test]
@@ -188,12 +203,12 @@ mod tests {
         let hash256 = [0x32; 32]; // 32-byte hash
         let p2wsh_descriptor = Descriptor::new_p2wsh(&hash256);
 
-        // Create auxiliary data: [amount: 8 bytes][descriptor: 33 bytes]
+        // Create auxiliary data: [amount: 8][operator: 4 (42)][descriptor: 33]
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.extend_from_slice(&42u32.to_be_bytes());
         aux_data.extend_from_slice(&p2wsh_descriptor.to_bytes());
 
-        // Test the internal parsing function directly
         let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
         assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(200_000));
@@ -201,6 +216,7 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2wsh_descriptor.to_bytes()
         );
+        assert_eq!(withdraw_output.selected_operator, Some(42));
     }
 
     #[test]
@@ -215,12 +231,12 @@ mod tests {
         ];
         let p2tr_descriptor = Descriptor::new_p2tr(&x_only_pubkey).unwrap();
 
-        // Create auxiliary data: [amount: 8 bytes][descriptor: 33 bytes]
+        // Create auxiliary data: [amount: 8][operator: 4 (u32::MAX = no selection)][descriptor: 33]
         let mut aux_data = Vec::new();
         aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.extend_from_slice(&u32::MAX.to_be_bytes());
         aux_data.extend_from_slice(&p2tr_descriptor.to_bytes());
 
-        // Test the internal parsing function directly
         let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
         assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(300_000));
@@ -228,12 +244,13 @@ mod tests {
             withdraw_output.destination.to_bytes(),
             p2tr_descriptor.to_bytes()
         );
+        assert_eq!(withdraw_output.selected_operator, None);
     }
 
     #[test]
     fn test_parse_withdrawal_error_handling() {
         // Test too short auxiliary data
-        let short_aux_data = vec![1, 2, 3]; // Only 3 bytes, need at least 28
+        let short_aux_data = vec![1, 2, 3]; // Only 3 bytes, need at least 32
 
         let result = parse_withdrawal_from_aux_data(&short_aux_data);
         match result {
@@ -243,6 +260,28 @@ mod tests {
             }
             _ => panic!("Expected AuxDataTooShort error"),
         }
+    }
+
+    #[test]
+    fn test_parse_withdrawal_large_operator_index() {
+        let amount = 500_000u64;
+        let operator_idx: u32 = 0x01020304;
+        let hash160 = [0x14; 20];
+        let descriptor = Descriptor::new_p2wpkh(&hash160);
+
+        let mut aux_data = Vec::new();
+        aux_data.extend_from_slice(&amount.to_be_bytes());
+        aux_data.extend_from_slice(&operator_idx.to_be_bytes());
+        aux_data.extend_from_slice(&descriptor.to_bytes());
+
+        let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
+
+        assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(500_000));
+        assert_eq!(withdraw_output.selected_operator, Some(0x01020304));
+        assert_eq!(
+            withdraw_output.destination.to_bytes(),
+            descriptor.to_bytes()
+        );
     }
 
     #[test]

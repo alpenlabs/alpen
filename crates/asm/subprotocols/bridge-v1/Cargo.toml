@@ -29,4 +29,5 @@ strata-primitives.workspace = true
 [dev-dependencies]
 strata-test-utils.workspace = true
 strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
+proptest.workspace = true
 rand.workspace = true

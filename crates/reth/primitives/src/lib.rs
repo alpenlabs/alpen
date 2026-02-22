@@ -19,6 +19,10 @@ pub struct WithdrawalIntent {
 
     /// withdrawal request transaction id
     pub withdrawal_txid: Buf32,
+
+    /// User's selected operator index for withdrawal assignment.
+    /// `u32::MAX` means no selection (random assignment).
+    pub selected_operator: u32,
 }
 
 sol! {
@@ -27,5 +31,7 @@ sol! {
         uint64 amount,
         /// BOSD descriptor for withdrawal destinations in L1.
         bytes destination,
+        /// Selected operator index. `u32::MAX` means no selection.
+        uint32 selectedOperator,
     );
 }

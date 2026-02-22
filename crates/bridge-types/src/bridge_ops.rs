@@ -16,14 +16,24 @@ pub struct WithdrawalIntent {
 
     /// withdrawal request transaction id
     withdrawal_txid: Buf32,
+
+    /// User's selected operator index for withdrawal assignment.
+    /// `u32::MAX` means no selection (random assignment).
+    selected_operator: u32,
 }
 
 impl WithdrawalIntent {
-    pub const fn new(amt: BitcoinAmount, destination: Descriptor, withdrawal_txid: Buf32) -> Self {
+    pub const fn new(
+        amt: BitcoinAmount,
+        destination: Descriptor,
+        withdrawal_txid: Buf32,
+        selected_operator: u32,
+    ) -> Self {
         Self {
             amt,
             destination,
             withdrawal_txid,
+            selected_operator,
         }
     }
 
@@ -41,6 +51,10 @@ impl WithdrawalIntent {
 
     pub const fn withdrawal_txid(&self) -> &Buf32 {
         &self.withdrawal_txid
+    }
+
+    pub const fn selected_operator(&self) -> u32 {
+        self.selected_operator
     }
 }
 

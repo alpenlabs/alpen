@@ -426,8 +426,14 @@ fn to_bridge_withdrawal_intent(
         amt,
         destination,
         withdrawal_txid,
+        selected_operator,
     } = rpc_withdrawal_intent;
-    WithdrawalIntent::new(BitcoinAmount::from_sat(amt), destination, withdrawal_txid)
+    WithdrawalIntent::new(
+        BitcoinAmount::from_sat(amt),
+        destination,
+        withdrawal_txid,
+        selected_operator,
+    )
 }
 
 #[cfg(test)]
@@ -441,7 +447,7 @@ mod tests {
     use revm_primitives::{alloy_primitives::Bloom, Address, Bytes, FixedBytes, U256};
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
     use strata_ol_chain_types::{L2Block, L2BlockAccessory};
-    use strata_primitives::buf::Buf32;
+    use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
     use super::*;
     use crate::http_client::MockEngineRpc;
@@ -671,5 +677,25 @@ mod tests {
         let result = rpc_exec_engine_inner.submit_new_payload(payload_data).await;
 
         assert!(matches!(result, EngineResult::Ok(BlockStatus::Valid)));
+    }
+
+    #[test]
+    fn test_to_bridge_withdrawal_intent_preserves_selected_operator() {
+        let descriptor = Descriptor::from_bytes(&[0x00; 21]).unwrap();
+        let txid = Buf32::zero();
+
+        let rpc_intent = alpen_reth_node::WithdrawalIntent {
+            amt: 100_000,
+            destination: descriptor.clone(),
+            withdrawal_txid: txid,
+            selected_operator: 42,
+        };
+
+        let bridge_intent = to_bridge_withdrawal_intent(rpc_intent);
+
+        assert_eq!(bridge_intent.amt().to_sat(), 100_000);
+        assert_eq!(*bridge_intent.destination(), descriptor);
+        assert_eq!(*bridge_intent.withdrawal_txid(), txid);
+        assert_eq!(bridge_intent.selected_operator(), 42);
     }
 }

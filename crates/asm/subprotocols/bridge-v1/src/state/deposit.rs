@@ -278,6 +278,7 @@ impl DepositsTable {
 
 #[cfg(test)]
 mod tests {
+    use proptest::{collection, prelude::*, prop_assert, prop_assert_eq, proptest};
     use strata_primitives::l1::BitcoinAmount;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -330,34 +331,54 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_deposits_table_inserts_and_removals() {
-        let mut table = DepositsTable::new_empty();
-        let mut arb = ArbitraryGenerator::new();
+    /// Strategy for generating a `Vec` of [`DepositEntry`] with unique indices.
+    fn unique_deposit_entries_strategy(count: usize) -> impl Strategy<Value = Vec<DepositEntry>> {
+        collection::hash_set(any::<u32>(), count).prop_flat_map(move |indices| {
+            let entry_strategies: Vec<_> = indices
+                .into_iter()
+                .map(|idx| {
+                    (1usize..=64, 1u64..=2_100_000_000_000).prop_map(move |(op_count, sats)| {
+                        let operators = OperatorBitmap::new_with_size(op_count, true);
+                        DepositEntry::new(idx, operators, BitcoinAmount::from_sat(sats))
+                            .expect("non-empty operators")
+                    })
+                })
+                .collect();
+            entry_strategies
+        })
+    }
 
-        let len = 10;
-        assert_eq!(table.len(), 0);
-        assert!(table.is_empty());
-        for _ in 0..len {
-            let entry: DepositEntry = arb.generate();
-            assert!(table.insert_deposit(entry).is_ok());
+    proptest! {
+        #[test]
+        fn test_deposits_table_inserts_and_removals(
+            entries in unique_deposit_entries_strategy(10),
+        ) {
+            let mut table = DepositsTable::new_empty();
+            let len = entries.len() as u32;
+
+            prop_assert_eq!(table.len(), 0);
+            prop_assert!(table.is_empty());
+
+            for entry in entries {
+                prop_assert!(table.insert_deposit(entry).is_ok());
+            }
+            prop_assert_eq!(table.len(), len);
+
+            // Verify they are stored in sorted order.
+            let deposit_indices: Vec<_> = table.deposits().map(|e| e.deposit_idx).collect();
+            prop_assert!(deposit_indices.is_sorted());
+
+            let mut removed_indices = Vec::new();
+            for i in 0..len {
+                let removed = table.remove_oldest_deposit();
+                prop_assert!(removed.is_some());
+                let idx = removed.unwrap().idx();
+                removed_indices.push(idx);
+                prop_assert!(table.len() == (len - i - 1));
+            }
+            prop_assert!(table.remove_oldest_deposit().is_none());
+
+            prop_assert!(removed_indices.is_sorted());
         }
-        assert_eq!(table.len(), len);
-
-        // Verify they are stored in sorted order
-        let deposit_indices: Vec<_> = table.deposits().map(|e| e.deposit_idx).collect();
-        assert!(deposit_indices.is_sorted());
-
-        let mut removed_indices = Vec::new();
-        for i in 0..len {
-            let removed = table.remove_oldest_deposit();
-            assert!(removed.is_some());
-            let idx = removed.unwrap().idx();
-            removed_indices.push(idx);
-            assert!(table.len() == (len - i - 1));
-        }
-        assert!(table.remove_oldest_deposit().is_none());
-
-        assert!(removed_indices.is_sorted());
     }
 }

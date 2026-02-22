@@ -8,7 +8,7 @@ use strata_ee_chain_types::{
     BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage, SubjectDepositData,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
-use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
+use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
 use tracing::warn;
 
 /// Builds [`BlockInputs`] from parsed input messages.
@@ -45,6 +45,7 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
         let msg_payload = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),
             BitcoinAmount::from_sat(withdrawal_intent.amt),
+            withdrawal_intent.selected_operator,
         );
         outputs.add_message(SentMessage::new(bridge_gateway_account_id, msg_payload));
     }
@@ -75,10 +76,15 @@ pub(crate) fn build_block_package<TPayload: EnginePayload>(
 fn create_withdrawal_init_message_payload(
     dest_desc: Descriptor,
     value: BitcoinAmount,
+    selected_operator: u32,
 ) -> MsgPayload {
     // Encode the deposit message data
-    let withdrawal_data =
-        WithdrawalMsgData::new(0, dest_desc.to_bytes()).expect("valid descriptor");
+    let withdrawal_data = WithdrawalMsgData::new(
+        DEFAULT_OPERATOR_FEE,
+        dest_desc.to_bytes(),
+        selected_operator,
+    )
+    .expect("valid descriptor");
     let body = encode_to_vec(&withdrawal_data).expect("encode withdrawal data");
 
     // Create properly formatted message

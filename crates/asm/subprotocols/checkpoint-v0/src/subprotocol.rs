@@ -17,6 +17,7 @@ use strata_asm_txs_checkpoint_v0::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };
+use strata_ol_msg_types::resolve_selected_operator;
 use strata_predicate::PredicateKey;
 use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
 
@@ -165,7 +166,12 @@ fn process_checkpoint_transaction_v0(
 
     // Forward each withdrawal message to the bridge subprotocol
     for intent in withdrawal_intents {
-        let withdraw_output = WithdrawOutput::new(intent.destination().clone(), *intent.amt());
+        let selected_operator = resolve_selected_operator(intent.selected_operator());
+        let withdraw_output = WithdrawOutput::new(
+            intent.destination().clone(),
+            *intent.amt(),
+            selected_operator,
+        );
         // Wrap it in [`BridgeIncomingMsg`]
         let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
 
