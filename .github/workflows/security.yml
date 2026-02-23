@@ -31,7 +31,9 @@ jobs:
           cache-on-failure: true
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --force --locked
+        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d # v2
+        with:
+          tool: cargo-audit@0.22.1
 
         #  HACK: not denying warnings as we depend on `yaml-rust` via `format-serde-error` which is unmaintained
       - name: Check for audit warnings

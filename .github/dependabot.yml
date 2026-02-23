@@ -7,11 +7,11 @@ updates:
       interval: "monthly"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 7
   - package-ecosystem: "pip"
     directory: "/functional-tests/"
     schedule:
       interval: "monthly"
     # Cooldown
     cooldown:
-      default-days: 5
+      default-days: 7
