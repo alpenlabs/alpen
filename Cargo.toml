@@ -449,6 +449,7 @@ format_serde_error = { git = "https://github.com/AlexanderThaller/format_serde_e
 futures = "0.3"
 futures-util = "0.3"
 hex = { version = "0.4", features = ["serde"] }
+hex-literal = "0.4"
 http = "1.0.0"
 hyper = "0.14.25"
 int-enum = "1.2"
