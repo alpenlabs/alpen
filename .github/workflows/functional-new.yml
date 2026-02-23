@@ -113,7 +113,6 @@ jobs:
 
       - name: Run functional tests
         id: funcTestsRun
-        continue-on-error: true
         env:
           RUST_LOG: "debug,sled=warn,hyper=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
           NO_COLOR: "1"
@@ -126,6 +125,7 @@ jobs:
           cd functional-tests-new && uv run python entry.py
 
       - name: Generate combined coverage lcov
+        if: always()
         id: genFunctionalLcov
         continue-on-error: true
         env:
@@ -135,7 +135,7 @@ jobs:
           cargo llvm-cov -F debug-utils report --lcov > lcov.functional.info
 
       - name: Upload coverage lcov artifact
-        if: hashFiles('lcov.functional.info') != ''
+        if: always() && hashFiles('lcov.functional.info') != ''
         continue-on-error: true
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
         with:
@@ -143,7 +143,7 @@ jobs:
           path: lcov.functional.info
 
       - name: Zip log files on failure
-        if: steps.funcTestsRun.outcome == 'failure'
+        if: failure()
         # Create a zip archive (logs.zip) that includes only service.log files,
         # preserving the folder structure starting from functional-tests-new/_dd
         # NOTE: Entire _dd ends up hundreds of MBs, so keep only logs (still huge...).
@@ -154,7 +154,7 @@ jobs:
           zip -r logs.zip functional-tests-new/_dd -i '*/logs/*.log' 2>/dev/null || true
 
       - name: Upload logs as build artifact on failure
-        if: steps.funcTestsRun.outcome == 'failure'
+        if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
         with:
           name: fntest_dd
@@ -162,12 +162,6 @@ jobs:
           retention-days: 30
           if-no-files-found: error
           compression-level: 0 # already compressed
-
-      - name: Fail job if functional tests fail
-        if: steps.funcTestsRun.outcome == 'failure'
-        run: |
-          echo "Functional tests failed"
-          exit 1
 
   functional-tests-success:
     name: Check that all checks pass

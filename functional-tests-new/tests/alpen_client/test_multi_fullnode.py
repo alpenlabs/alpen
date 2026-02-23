@@ -18,26 +18,26 @@ class TestMultiFullnodeBlockPropagation(AlpenClientTest):
     """Test block propagation to multiple fullnodes (star topology)."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_client_multi")
+        ctx.set_env("alpen_ee_multi")
 
     def main(self, ctx):
-        sequencer = self.get_service("sequencer")
-        fullnodes = [self.get_service(f"fullnode_{i}") for i in range(FULLNODE_COUNT)]
+        ee_sequencer = self.get_service("ee_sequencer")
+        ee_fullnodes = [self.get_service(f"ee_fullnode_{i}") for i in range(FULLNODE_COUNT)]
 
         # Wait for connections
         logger.info("Waiting for P2P connections...")
-        sequencer.wait_for_peers(FULLNODE_COUNT, timeout=60)
-        for fn in fullnodes:
+        ee_sequencer.wait_for_peers(FULLNODE_COUNT, timeout=60)
+        for fn in ee_fullnodes:
             fn.wait_for_peers(1, timeout=30)
 
         # Verify block propagation
-        seq_block = sequencer.get_block_number()
+        seq_block = ee_sequencer.get_block_number()
         target_block = seq_block + 5
 
-        sequencer.wait_for_block(target_block, timeout=60)
-        seq_hash = sequencer.get_block_by_number(target_block)["hash"]
+        ee_sequencer.wait_for_block(target_block, timeout=60)
+        seq_hash = ee_sequencer.get_block_by_number(target_block)["hash"]
 
-        for i, fn in enumerate(fullnodes):
+        for i, fn in enumerate(ee_fullnodes):
             fn.wait_for_block(target_block, timeout=60)
             fn_hash = fn.get_block_by_number(target_block)["hash"]
             assert seq_hash == fn_hash, f"Fullnode {i} hash mismatch"
