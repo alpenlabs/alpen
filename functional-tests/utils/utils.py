@@ -390,10 +390,49 @@ def generate_params(
     return res
 
 
+def generate_ol_params(
+    base_path: str,
+    bitcoind_config: BitcoindConfig,
+    genesis_l1_height: int,
+) -> str:
+    """Generates OL params JSON and writes it to a file in base_path.
+
+    Returns the path to the generated OL params file.
+    """
+    ol_params_path = os.path.join(base_path, "ol_params.json")
+
+    # fmt: off
+    cmd = [
+        "strata-datatool",
+        "-b", "regtest",
+    ]
+
+    cmd.extend([
+        "--bitcoin-rpc-url", bitcoind_config.rpc_url,
+        "--bitcoin-rpc-user", bitcoind_config.rpc_user,
+        "--bitcoin-rpc-password", bitcoind_config.rpc_password,
+    ])
+
+    cmd.extend([
+        "gen-ol-params",
+        "--genesis-l1-height", str(genesis_l1_height),
+        "-o", ol_params_path,
+    ])
+    # fmt: on
+
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        details = res.stderr.strip() or res.stdout.strip()
+        raise RuntimeError(f"strata-datatool gen-ol-params failed: {details}")
+
+    return ol_params_path
+
+
 def generate_asm_params(
     opxprivs: list[str],
     bitcoind_config: BitcoindConfig,
     genesis_l1_height: int,
+    ol_params_path: str,
 ) -> str:
     """Generates ASM params JSON from config values."""
     # fmt: off
@@ -412,6 +451,7 @@ def generate_asm_params(
         "gen-asm-params",
         "--name", "ALPN",
         "--genesis-l1-height", str(genesis_l1_height),
+        "--ol-params", ol_params_path,
     ])
     # fmt: on
 
@@ -436,7 +476,7 @@ def generate_simple_params(
 
     If bitcoind_config is provided, will fetch the L1 block hash from Bitcoin RPC.
 
-    Result options are `params`, `asm_params`, and `opseedpaths`.
+    Result options are `params`, `asm_params`, `ol_params_path`, and `opseedpaths`.
     """
     seqseedpath = os.path.join(base_path, "seqkey.bin")
     opseedpaths = [os.path.join(base_path, "opkey%s.bin") % i for i in range(operator_cnt)]
@@ -452,10 +492,20 @@ def generate_simple_params(
     params = generate_params(settings, seqkey, opxprivs, bitcoind_config)
     print(f"Params {params}")
 
-    asm_params = generate_asm_params(opxprivs, bitcoind_config, settings.genesis_trigger)
+    ol_params_path = generate_ol_params(base_path, bitcoind_config, settings.genesis_trigger)
+    print(f"OL Params written to {ol_params_path}")
+
+    asm_params = generate_asm_params(
+        opxprivs, bitcoind_config, settings.genesis_trigger, ol_params_path
+    )
     print(f"ASM Params {asm_params}")
 
-    return {"params": params, "asm_params": asm_params, "opseedpaths": opseedpaths}
+    return {
+        "params": params,
+        "asm_params": asm_params,
+        "ol_params_path": ol_params_path,
+        "opseedpaths": opseedpaths,
+    }
 
 
 def broadcast_tx(btcrpc: BitcoindClient, outputs: list[dict], options: dict) -> str:

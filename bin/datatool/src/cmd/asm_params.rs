@@ -108,6 +108,14 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         .map_err(|e| anyhow::anyhow!("failed to read OL params file {:?}: {e}", cmd.ol_params))?;
     let ol_params: OLParams = serde_json::from_str(&ol_params_str)
         .map_err(|e| anyhow::anyhow!("failed to parse OL params: {e}"))?;
+
+    if ol_params.last_l1_block != genesis_l1_view.blk {
+        anyhow::bail!(
+            "OL params and ASM params have different genesis L1 block: OL={:?}, ASM={:?}",
+            ol_params.last_l1_block,
+            genesis_l1_view.blk
+        );
+    }
     let genesis_artifacts = build_genesis_artifacts(&ol_params)
         .map_err(|e| anyhow::anyhow!("failed to build genesis artifacts: {e}"))?;
     let genesis_ol_blkid = *genesis_artifacts.commitment.blkid();
