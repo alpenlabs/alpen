@@ -48,12 +48,9 @@ pub(crate) fn handle_checkpoint_tx(
             state.update_verified_tip(new_tip);
 
             let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip);
-            match AsmLogEntry::from_log(&checkpoint_tip_update) {
-                Ok(log_entry) => relayer.emit_log(log_entry),
-                Err(err) => {
-                    logging::error!(error = ?err, "failed to encode checkpoint tip update log")
-                }
-            }
+            let log_entry = AsmLogEntry::from_log(&checkpoint_tip_update)
+                .expect("CheckpointTipUpdate encoding is infallible for fixed-size SSZ");
+            relayer.emit_log(log_entry);
 
             for withdraw_output in withdrawal_intents {
                 let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);

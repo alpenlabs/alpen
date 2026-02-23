@@ -16,3 +16,6 @@ strata-codec-utils.workspace = true
 strata-msg-fmt.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
+
+[dev-dependencies]
+strata-identifiers.workspace = true

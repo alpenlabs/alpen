@@ -13837,6 +13837,7 @@ dependencies = [
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils",
+ "strata-identifiers",
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
