@@ -22,17 +22,35 @@ use crate::{commit::PendingCommit, private_input::SharedPrivateInput};
 /// path, so that its contents (the references) can be moved into `VState`.
 #[expect(missing_debug_implementations, reason = "E may not implement Debug")]
 pub struct EeVerificationInput<'a, E: ExecutionEnvironment> {
-    /// Shared private input data.
-    pub shared_private: &'a SharedPrivateInput,
+    /// Raw header corresponding to the blkid we have stored in the account.
+    raw_prev_header: &'a [u8],
+
+    /// Pre-state needed for processing and verifying the update transitions.
+    raw_partial_pre_state: &'a [u8],
 
     /// Execution environment for block execution.
-    pub ee: &'a E,
+    ee: &'a E,
 }
 
 impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
-    /// Creates new verification input.
-    pub fn new(shared_private: &'a SharedPrivateInput, ee: &'a E) -> Self {
-        Self { shared_private, ee }
+    pub fn new(raw_prev_header: &'a [u8], raw_partial_pre_state: &'a [u8], ee: &'a E) -> Self {
+        Self {
+            raw_prev_header,
+            raw_partial_pre_state,
+            ee,
+        }
+    }
+
+    pub fn raw_prev_header(&self) -> &'a [u8] {
+        self.raw_prev_header
+    }
+
+    pub fn raw_partial_pre_state(&self) -> &'a [u8] {
+        self.raw_partial_pre_state
+    }
+
+    pub fn ee(&self) -> &'a E {
+        self.ee
     }
 }
 
