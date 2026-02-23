@@ -3,6 +3,7 @@ use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
 /// OL chain status with latest, confirmed, and finalized blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLChainStatus {
     /// Latest block commitment.
     pub latest: OLBlockCommitment,

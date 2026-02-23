@@ -9,6 +9,7 @@ use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateS
 /// Summary for an account's data for an epoch.
 /// This information can be reconstructed fully from data in DA.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcAccountEpochSummary {
     /// The epoch commitment.
     pub epoch_commitment: EpochCommitment,
@@ -82,6 +83,7 @@ impl RpcAccountEpochSummary {
 
 /// RPC serializable account data at given ol block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcAccountBlockSummary {
     /// Account Id
     pub account: HexBytes32,
@@ -158,6 +160,7 @@ impl RpcAccountBlockSummary {
 
 /// RPC serializable version of [`UpdateInputData`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcUpdateInputData {
     /// Sequence number of the update.
     seq_no: u64,
@@ -192,6 +195,7 @@ impl From<RpcUpdateInputData> for UpdateInputData {
 
 /// RPC serializable version of [`MessageEntry`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcMessageEntry {
     /// Sender of the message.
     source: HexBytes32,
@@ -223,6 +227,7 @@ impl From<RpcMessageEntry> for MessageEntry {
 
 /// RPC serializable version of [`MsgPayload`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcMsgPayload {
     /// Value in sats.
     value: u64,
@@ -247,6 +252,7 @@ impl From<RpcMsgPayload> for MsgPayload {
 
 /// RPC serializable version of [`ProofState`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcProofState {
     /// The state root.
     inner_state: HexBytes32,

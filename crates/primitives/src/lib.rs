@@ -37,6 +37,9 @@ pub mod crypto {
     pub use strata_crypto::{even_kp, schnorr::*, EvenPublicKey, EvenSecretKey};
 }
 
+#[cfg(feature = "jsonschema")]
+mod jsonschema;
+
 pub mod block_credential;
 pub mod constants;
 pub mod errors;

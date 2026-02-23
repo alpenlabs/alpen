@@ -97,6 +97,8 @@ members = [
   "crates/reth/rpc",
   "crates/reth/witness",
   "crates/rpc/api",
+  "crates/rpc/open-rpc",
+  "crates/rpc/open-rpc-macros",
   "crates/rpc/prover-client-api",
   "crates/rpc/types",
   "crates/rpc/utils",
@@ -254,6 +256,8 @@ strata-ol-sequencer = { path = "crates/ol/sequencer" }
 strata-ol-state-support-types = { path = "crates/ol/state-support-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-stf = { path = "crates/ol/stf" }
+strata-open-rpc = { path = "crates/rpc/open-rpc" }
+strata-open-rpc-macros = { path = "crates/rpc/open-rpc-macros" }
 strata-paas = { path = "crates/paas" }
 strata-params = { path = "crates/params" }
 strata-primitives = { path = "crates/primitives" }
@@ -474,6 +478,7 @@ reqwest = { version = "0.12.7", default-features = false, features = [
   "json",
 ] }
 rlp = "0.5.2"
+schemars = "1"
 secp256k1 = { version = "0.29.1", features = ["global-context", "std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.94"

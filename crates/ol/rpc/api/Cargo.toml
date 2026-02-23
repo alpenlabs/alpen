@@ -7,12 +7,17 @@ version = "0.1.0"
 workspace = true
 
 [dependencies]
-strata-identifiers.workspace = true
-strata-ol-rpc-types.workspace = true
-strata-ol-sequencer.workspace = true
-strata-primitives.workspace = true
+strata-identifiers = { workspace = true, features = ["jsonschema"] }
+strata-ol-rpc-types = { workspace = true, features = ["jsonschema"] }
+strata-ol-sequencer = { workspace = true, features = ["jsonschema"] }
+strata-open-rpc.workspace = true
+strata-open-rpc-macros.workspace = true
+strata-primitives = { workspace = true, features = ["jsonschema"] }
 
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [features]
 client = ["jsonrpsee/client"]

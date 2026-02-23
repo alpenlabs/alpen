@@ -7,17 +7,20 @@ use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub enum RpcDuty {
     SignBlock(RpcBlockSigningDuty),
     SignCheckpoint(RpcCheckpointSigningDuty),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcBlockSigningDuty {
     template: RpcBlockTemplate,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcBlockTemplate {
     /// ssz serialized OL block header
     header: Vec<u8>,
@@ -45,6 +48,7 @@ impl From<Duty> for RpcDuty {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcCheckpointSigningDuty {
     /// ssz serialized checkpoint payload.
     checkpoint: Vec<u8>,
