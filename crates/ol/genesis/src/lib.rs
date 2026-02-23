@@ -4,8 +4,7 @@ use std::result::Result as StdResult;
 
 use strata_acct_types::AcctError;
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{Buf32, Buf64, OLBlockCommitment};
-use strata_ledger_types::AsmManifest;
+use strata_identifiers::{Buf64, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::OLState;
@@ -49,23 +48,9 @@ pub enum GenesisError {
 
 pub type Result<T> = StdResult<T, GenesisError>;
 
-/// Build the default genesis manifest from rollup params.
-pub fn default_genesis_manifest(params: &OLParams) -> AsmManifest {
-    AsmManifest::new(
-        params.last_l1_block.height_u64(),
-        *params.last_l1_block.blkid(),
-        // Placeholder manifest root for non-ASM genesis (tests/fallback paths).
-        Buf32::zero().into(),
-        vec![],
-    )
-}
-
-/// Construct genesis state + block artifacts using a supplied manifest.
+/// Constructs the genesis OL state and block artifacts from the given parameters.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
-pub fn build_genesis_artifacts_with_manifest(
-    params: &OLParams,
-    _genesis_manifest: AsmManifest,
-) -> Result<GenesisArtifacts> {
+pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
     // Create initial OL state (uses genesis params).
@@ -110,10 +95,4 @@ pub fn build_genesis_artifacts_with_manifest(
         commitment,
         epoch_summary,
     })
-}
-
-/// Construct genesis state + block artifacts using the default manifest.
-pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
-    let genesis_manifest = default_genesis_manifest(params);
-    build_genesis_artifacts_with_manifest(params, genesis_manifest)
 }

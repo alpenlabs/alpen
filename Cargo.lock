@@ -15140,7 +15140,6 @@ dependencies = [
  "strata-acct-types",
  "strata-checkpoint-types",
  "strata-identifiers",
- "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-params",
  "strata-ol-state-types",

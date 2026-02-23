@@ -1,18 +1,12 @@
 //! OL genesis initialization for the new strata binary.
 
-use std::{thread::sleep, time::Duration};
-
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use strata_db_types::traits::BlockStatus;
-use strata_ledger_types::AsmManifest;
-use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts_with_manifest};
+use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts};
 use strata_ol_params::OLParams;
-use strata_primitives::{L1BlockId, OLBlockCommitment};
+use strata_primitives::OLBlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, instrument};
-
-const GENESIS_MANIFEST_MAX_ATTEMPTS: u32 = 60;
-const GENESIS_MANIFEST_WAIT_INTERVAL_MS: u64 = 1_000;
 
 /// Initialize the OL genesis block and state for a fresh database.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
@@ -28,16 +22,7 @@ pub(crate) fn init_ol_genesis(
         ol_block,
         commitment,
         epoch_summary,
-    } = {
-        let genesis_l1 = ol_params.last_l1_block;
-        let genesis_manifest = wait_for_genesis_manifest(
-            storage,
-            genesis_l1.blkid(),
-            GENESIS_MANIFEST_MAX_ATTEMPTS,
-            GENESIS_MANIFEST_WAIT_INTERVAL_MS,
-        )?;
-        build_genesis_artifacts_with_manifest(ol_params, genesis_manifest)?
-    };
+    } = build_genesis_artifacts(ol_params)?;
     let genesis_blkid = *commitment.blkid();
 
     // Insert creation epoch 0 for all genesis accounts.
@@ -64,42 +49,4 @@ pub(crate) fn init_ol_genesis(
 
     info!(%genesis_blkid, slot = 0, "OL genesis initialization complete");
     Ok(commitment)
-}
-
-/// Wait for the genesis block manifest to be available in the database.
-/// Retries periodically until the manifest is found or max attempts is reached.
-fn wait_for_genesis_manifest(
-    storage: &NodeStorage,
-    block_id: &L1BlockId,
-    max_attempts: u32,
-    wait_interval_ms: u64,
-) -> Result<AsmManifest> {
-    for attempt in 0..max_attempts {
-        if let Some(manifest) = storage.l1().get_block_manifest(block_id)? {
-            if attempt > 0 {
-                info!("Block manifest found after {} attempts", attempt);
-            }
-            return Ok(manifest);
-        }
-
-        if attempt == 0 {
-            info!(
-                "Waiting for block manifest {} to be available in database...",
-                block_id
-            );
-        }
-        info!(
-            "Still waiting for block manifest {} (attempt {}/{})",
-            block_id,
-            attempt + 1,
-            max_attempts
-        );
-
-        sleep(Duration::from_millis(wait_interval_ms));
-    }
-
-    let total_wait_ms = max_attempts as u64 * wait_interval_ms;
-    Err(anyhow!(
-        "Block manifest {block_id} not found after {total_wait_ms} ms",
-    ))
 }
