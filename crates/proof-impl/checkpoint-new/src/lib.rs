@@ -6,6 +6,8 @@
 //! to the protocol rules.
 #[cfg(not(target_os = "zkvm"))]
 pub mod program;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
 mod statements;
 

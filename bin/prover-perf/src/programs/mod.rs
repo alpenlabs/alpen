@@ -50,9 +50,7 @@ pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
                 &**CHECKPOINT_HOST,
                 cl_stf::proof_with_vk(&**CL_STF_HOST, &**EVM_EE_STF_HOST),
             ),
-            GuestProgram::CheckpointNew => {
-                checkpoint_new::gen_perf_report(&**CHECKPOINT_NEW_HOST)
-            }
+            GuestProgram::CheckpointNew => checkpoint_new::gen_perf_report(&**CHECKPOINT_NEW_HOST),
         })
         .collect()
 }

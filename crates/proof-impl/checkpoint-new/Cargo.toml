@@ -18,6 +18,13 @@ strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
 zkaleido.workspace = true
 
+# test-utils dependencies (only included with the feature)
+strata-acct-types = { workspace = true, optional = true }
+strata-asm-common = { workspace = true, optional = true }
+strata-identifiers = { workspace = true, optional = true }
+strata-predicate = { workspace = true, optional = true }
+strata-snark-acct-types = { workspace = true, optional = true }
+
 [target.'cfg(not(target_os = "zkvm"))'.dependencies]
 zkaleido-native-adapter.workspace = true
 
@@ -25,3 +32,13 @@ zkaleido-native-adapter.workspace = true
 strata-identifiers.workspace = true
 strata-ol-params.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
+
+[features]
+test-utils = [
+  "strata-ol-stf/test-utils",
+  "dep:strata-acct-types",
+  "dep:strata-asm-common",
+  "dep:strata-identifiers",
+  "dep:strata-predicate",
+  "dep:strata-snark-acct-types",
+]
