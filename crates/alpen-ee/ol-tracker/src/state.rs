@@ -77,21 +77,15 @@ pub(crate) async fn build_tracker_state(
     storage: &impl Storage,
 ) -> Result<OLTrackerState> {
     // determine confirmed, finalized states
-    let confirmed_state = effective_account_state(
-        best_state.epoch_commitment(),
-        ol_chain_status.confirmed(),
-        storage,
-    )
-    .await
-    .map_err(|e| OLTrackerError::BuildStateFailed(format!("confirmed state: {}", e)))?;
+    let confirmed_state =
+        effective_account_state(&best_state, ol_chain_status.confirmed(), storage)
+            .await
+            .map_err(|e| OLTrackerError::BuildStateFailed(format!("confirmed state: {}", e)))?;
 
-    let finalized_state = effective_account_state(
-        best_state.epoch_commitment(),
-        ol_chain_status.finalized(),
-        storage,
-    )
-    .await
-    .map_err(|e| OLTrackerError::BuildStateFailed(format!("finalized state: {}", e)))?;
+    let finalized_state =
+        effective_account_state(&best_state, ol_chain_status.finalized(), storage)
+            .await
+            .map_err(|e| OLTrackerError::BuildStateFailed(format!("finalized state: {}", e)))?;
 
     Ok(OLTrackerState {
         confirmed: confirmed_state,
@@ -100,23 +94,20 @@ pub(crate) async fn build_tracker_state(
 }
 
 async fn effective_account_state(
-    local: &EpochCommitment,
+    local_state: &EeAccountStateAtEpoch,
     ol: &EpochCommitment,
     storage: &impl Storage,
 ) -> Result<EeAccountStateAtEpoch> {
-    info!(?local, ?ol, "Effective state");
-    let min_epoch = if local.last_slot() < ol.last_slot() {
-        local
+    if local_state.ol_slot() <= ol.last_slot() {
+        Ok(local_state.clone())
     } else {
-        ol
-    };
-
-    storage
-        .ee_account_state(min_epoch.last_blkid().into())
-        .await?
-        .ok_or_else(|| OLTrackerError::MissingBlock {
-            block_id: min_epoch.to_string(),
-        })
+        storage
+            .ee_account_state(ol.last_blkid().into())
+            .await?
+            .ok_or_else(|| OLTrackerError::MissingBlock {
+                block_id: ol.last_blkid().to_string(),
+            })
+    }
 }
 
 #[cfg(test)]

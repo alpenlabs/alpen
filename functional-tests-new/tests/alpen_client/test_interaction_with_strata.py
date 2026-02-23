@@ -66,7 +66,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                 if acct_summary["update_input"] is not None:
                     logger.info(
                         f"Received update input {new_updates_count + 1}. "
-                        "Alpen is submitting updates to strata. {acct_summary}"
+                        f"Alpen is submitting updates to strata. {acct_summary}"
                     )
                     last_new_update_at = ep
                     new_updates_count += 1
@@ -74,7 +74,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                 elif ep > last_new_update_at + EXPECT_UPDATE_WITHIN_EPOCH:
                     raise AssertionError(
                         f"No new update(nth={new_updates_count + 1}) received"
-                        " within {EXPECT_UPDATE_WITHIN_EPOCH} epochs"
+                        f" within {EXPECT_UPDATE_WITHIN_EPOCH} epochs"
                     )
 
                 next_epoch += 1
