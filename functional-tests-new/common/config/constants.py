@@ -39,7 +39,6 @@ GWEI_TO_WEI = 1_000_000_000
 # Service Types
 # =============================================================================
 
-
 # Account Id of Alpen EE in Strata
 ALPEN_ACCOUNT_ID = "01" * 32
 

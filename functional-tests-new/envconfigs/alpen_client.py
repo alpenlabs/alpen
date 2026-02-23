@@ -4,10 +4,10 @@ Alpen-client test environment configurations.
 
 from typing import cast
 
-from common.services.bitcoin import BitcoinService
 import flexitest
 
 from common.config import EeDaConfig, ServiceType
+from common.services.bitcoin import BitcoinService
 from factories.alpen_client import AlpenClientFactory, generate_sequencer_keypair
 from factories.bitcoin import BitcoinFactory
 

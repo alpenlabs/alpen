@@ -1,5 +1,8 @@
-from typing import List, Optional, TypedDict
+"""
+Strata RPC types
+"""
 
+from typing import TypedDict
 
 HexBytes32 = str  # TODO: stricter
 HexBytes = str
@@ -47,11 +50,11 @@ class UpdateInputData(TypedDict):
     seq_no: int
     proof_state: ProofState
     extra_data: HexBytes
-    messages: List[MessageEntry]
+    messages: list[MessageEntry]
 
 
 class AccountEpochSummary(TypedDict):
     epoch_commitment: EpochCommitment
     prev_epoch_commitment: EpochCommitment
     balance: int
-    update_input: Optional[UpdateInputData]
+    update_input: UpdateInputData | None

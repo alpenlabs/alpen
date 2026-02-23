@@ -17,17 +17,16 @@ import logging
 import os
 import sys
 
-from envconfigs.el_ol import EeOLEnv
 import flexitest
 from flexitest.runtime import load_candidate_modules, scan_dir_for_modules
 
+# Import environments
 from common.config import ServiceType
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
-
-# Import environments
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
+from envconfigs.el_ol import EeOLEnv
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories

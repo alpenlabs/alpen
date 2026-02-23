@@ -5,13 +5,13 @@ import logging
 
 import flexitest
 
+from common.base_test import BaseTest
+from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
 from common.rpc_types.strata import AccountEpochSummary
+from common.services.alpen_client import AlpenClientService
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
-from common.base_test import BaseTest
-from common.services.alpen_client import AlpenClientService
-from common.config.constants import ALPEN_ACCOUNT_ID, ServiceType
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                     new_updates_count += 1
 
                 elif ep > last_new_update_at + EXPECT_UPDATE_WITHIN_EPOCH:
-                    assert False, (
+                    raise AssertionError(
                         f"No new update(nth={new_updates_count + 1}) received"
                         " within {EXPECT_UPDATE_WITHIN_EPOCH} epochs"
                     )

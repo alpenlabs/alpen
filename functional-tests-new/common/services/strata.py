@@ -6,9 +6,9 @@ import logging
 from typing import TypedDict
 
 from common.rpc import JsonRpcClient
+from common.rpc_types.strata import *
 from common.services.base import RpcService
 from common.wait import wait_until, wait_until_with_value
-from common.rpc_types.strata import *
 
 logger = logging.getLogger(__name__)
 
