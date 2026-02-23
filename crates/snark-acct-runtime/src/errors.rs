@@ -2,11 +2,21 @@
 
 use std::{error::Error, fmt::Debug};
 
+use ssz::DecodeError;
 use strata_codec::CodecError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ProgramError<I: Error> {
+    #[error("mismatched pre-state")]
+    MismatchedPreState,
+
+    #[error("mismatched post-state")]
+    MismatchedPostState,
+
+    #[error("inconsistent message count")]
+    InconsistentMessageCount,
+
     /// Mismatched coinput count between messages and coinputs.
     #[error("mismatched coinput count (expected {expected}, got {actual})")]
     MismatchedCoinputCount { expected: usize, actual: usize },
@@ -47,6 +57,9 @@ pub enum ProgramError<I: Error> {
     /// Some other generic codec error.
     #[error("codec: {0}")]
     Codec(#[from] CodecError),
+
+    #[error("ssz decode: {0}")]
+    SszDecode(#[from] DecodeError),
 
     #[error("internal: {0}")]
     Internal(I),

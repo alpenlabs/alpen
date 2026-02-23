@@ -11,82 +11,83 @@
 //! [`SnarkAccountProgramVerification`] for the verification path), allowing
 //! different account types to reuse the same processing logic.
 
+use strata_codec::decode_buf_exact;
+
 use crate::{
-    InputMessage,
+    IInnerState, InputMessage,
     errors::{ProgramError, ProgramResult},
+    private_input::PrivateInput,
     traits::{SnarkAccountProgram, SnarkAccountProgramVerification},
 };
 
-/// Verifies and applies an update using the [`SnarkAccountProgramVerification`]
-/// trait.
-///
-/// This is the full verification path used within SNARK proofs. It processes
-/// each message with both coinput verification and state updates.
-///
-/// Messages are wrapped in [`InputMessage`] - can be `Valid` or `Unknown`.
-/// ALL messages (including `Unknown`) are passed to the program, which decides
-/// how to handle them.
-///
-/// # Type Parameters
-///
-/// - `P`: The snark account program implementation (must implement verification).
-/// - `M`: Iterator over input messages.
-/// - `C`: Iterator over coinput byte slices.
-// TODO refactor this signature to operate less on already-decoded types and do
-// more of the decoding itself
-pub fn verify_and_apply_update<'a, 'c, P, M, C>(
-    program: &'a P,
-    state: &mut P::State,
-    messages: M,
-    coinputs: C,
-    extra_data: P::ExtraData,
+pub fn process_update<'a, P: SnarkAccountProgramVerification>(
+    program: &P,
+    private_input: &PrivateInput,
     vinput: P::VInput<'a>,
-) -> ProgramResult<(), P::Error>
-where
-    P: SnarkAccountProgramVerification + 'a,
-    M: IntoIterator<Item = InputMessage<P::Msg>>,
-    C: IntoIterator<Item = &'c [u8]>,
-{
-    // 1. Start verification context with private input (moved).
-    let mut vstate = program.start_verification(state, &extra_data, vinput)?;
-
-    // 2. Start update.
-    program.start_update(state, &extra_data)?;
-
-    // 3. Process messages with verification.
-    // ALL messages (Valid and Unknown) are passed to program.
-    let mut coinp_iter = coinputs.into_iter().fuse();
-    let mut msg_count = 0usize;
-    for (idx, msg) in messages.into_iter().enumerate() {
-        msg_count += 1;
-        let coinp = coinp_iter.next().unwrap_or(&[]);
-
-        program
-            .verify_coinput(state, &mut vstate, &msg, coinp, &extra_data)
-            .map_err(|e| e.at_msg(idx))?;
-
-        program
-            .process_message(state, msg, &extra_data)
-            .map_err(|e| e.at_msg(idx))?;
+) -> ProgramResult<(), P::Error> {
+    // 1. Decode fields and verify consistency.
+    let update = private_input.try_decode_update_pub_params()?;
+    let mut state: P::State = private_input.try_decode_pre_state()?;
+    if state.compute_state_root() != update.cur_state().inner_state() {
+        return Err(ProgramError::MismatchedPreState);
     }
 
-    // Check for extra coinputs that weren't consumed.
-    let extra_coinputs = coinp_iter.count();
-    if extra_coinputs > 0 {
+    let msg_count = update.message_inputs().len();
+    if private_input.coinputs().len() != msg_count {
         return Err(ProgramError::MismatchedCoinputCount {
             expected: msg_count,
-            actual: msg_count + extra_coinputs,
+            actual: private_input.coinputs().len(),
         });
     }
 
-    // 4. Pre-finalize state.
-    program.pre_finalize_state(state, &extra_data)?;
+    // TODO maybe we should remove the inbox indexes from the pub params?
+    if update.cur_state().next_inbox_msg_idx() + msg_count as u64
+        != update.new_state().next_inbox_msg_idx()
+    {
+        return Err(ProgramError::InconsistentMessageCount);
+    }
 
-    // 5. Finalize verification (consumes vstate).
-    program.finalize_verification(state, vstate, &extra_data)?;
+    // 2. Decode extra data.
+    let extra_data = decode_buf_exact::<P::ExtraData>(update.extra_data())
+        .map_err(|_| ProgramError::MalformedExtraData)?;
 
-    // 6. Finalize state.
-    program.finalize_state(state, extra_data)?;
+    // 3. Create verification context and start verification.
+    let mut vstate = program.start_verification(&state, &extra_data, vinput)?;
+    program.start_update(&mut state, &extra_data)?;
+
+    // 4. Process each message and coinput.
+    for i in 0..msg_count {
+        let msg_entry = &update.message_inputs()[i];
+        let raw_coinp = private_input.coinputs()[i].raw_data();
+
+        // Decode the message payload itself.
+        let inp_msg = InputMessage::<P::Msg>::from_msg_entry(msg_entry);
+        if !inp_msg.is_valid() && !raw_coinp.is_empty() {
+            return Err(ProgramError::InvalidCoinput.at_msg(i));
+        }
+
+        // Verify the coinput against the message and then process the message itself.
+        program
+            .verify_coinput(&mut state, &mut vstate, &inp_msg, raw_coinp, &extra_data)
+            .map_err(|e| e.at_msg(i))?;
+        program
+            .process_message(&mut state, inp_msg, &extra_data)
+            .map_err(|e| e.at_msg(i))?;
+    }
+
+    // 5. Pre-finalize state to prepare for final verification.
+    program.pre_finalize_state(&mut state, &extra_data)?;
+
+    // 6. Final verification step.
+    program.finalize_verification(&state, vstate, &extra_data)?;
+
+    // 7. Final state update.
+    program.finalize_state(&mut state, extra_data)?;
+
+    // 8. Verify final state is consistent with proof.
+    if state.compute_state_root() != update.new_state().inner_state() {
+        return Err(ProgramError::MismatchedPostState);
+    }
 
     Ok(())
 }
@@ -279,7 +280,8 @@ mod tests {
         let coinputs: Vec<&[u8]> = vec![&[], &[]];
         let extra = TestExtraData { multiplier: 1 };
 
-        let result = verify_and_apply_update(&program, &mut state, messages, coinputs, extra, ());
+        let result =
+            verify_and_apply_update_old(&program, &mut state, messages, coinputs, extra, ());
         assert!(result.is_ok());
         // (5 + 3) * 1 = 8
         assert_eq!(state.value, 8);
@@ -306,7 +308,8 @@ mod tests {
         let coinputs: Vec<&[u8]> = vec![&[1, 2, 3]]; // Non-empty coinput
         let extra = TestExtraData { multiplier: 1 };
 
-        let result = verify_and_apply_update(&program, &mut state, messages, coinputs, extra, ());
+        let result =
+            verify_and_apply_update_old(&program, &mut state, messages, coinputs, extra, ());
         assert!(matches!(
             result,
             Err(ProgramError::AtMessage { idx: 0, .. })
@@ -329,7 +332,8 @@ mod tests {
         let coinputs: Vec<&[u8]> = vec![&[], &[], &[]];
         let extra = TestExtraData { multiplier: 1 };
 
-        let result = verify_and_apply_update(&program, &mut state, messages, coinputs, extra, ());
+        let result =
+            verify_and_apply_update_old(&program, &mut state, messages, coinputs, extra, ());
         assert!(result.is_ok());
         // Only valid messages contribute: (5 + 3) * 1 = 8
         assert_eq!(state.value, 8);
