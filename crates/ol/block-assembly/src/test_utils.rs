@@ -646,8 +646,8 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
 /// Default balance for test accounts (100 billion sats).
 pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
 
-/// Info about a manifest in the MMR - links index and hash together.
-pub(crate) struct ManifestInfo {
+/// Manifest commitment metadata for tests (L1 height + committed manifest hash).
+pub(crate) struct ManifestCommitment {
     pub height: u64,
     pub hash: Hash,
 }
@@ -658,7 +658,7 @@ pub(crate) struct TestEnv {
     pub parent_commitment: OLBlockCommitment,
     pub sequencer_config: SequencerConfig,
     pub epoch_sealing_policy: FixedSlotSealing,
-    pub manifests: Vec<ManifestInfo>,
+    pub manifests: Vec<ManifestCommitment>,
 }
 
 /// Builder for block assembly test environments.
@@ -697,7 +697,7 @@ impl TestEnvBuilder {
     }
 
     /// Sets up manifests in BOTH storage MMR AND state MMR for claim testing.
-    /// The manifests field in TestEnv will be populated with ManifestInfo.
+    /// The manifests field in [`TestEnv`] will be populated with [`ManifestCommitment`]s.
     pub(crate) fn with_claim_manifests(mut self, count: usize) -> Self {
         self.claim_manifest_count = Some(count);
         self
@@ -732,7 +732,7 @@ impl TestEnvBuilder {
             test_manifests
                 .iter()
                 .enumerate()
-                .map(|(i, m)| ManifestInfo {
+                .map(|(i, m)| ManifestCommitment {
                     height: m.height(),
                     hash: hashes[i],
                 })
