@@ -1,23 +1,4 @@
 #!/usr/bin/env bash
-#
-# init-alpen-client-keys.sh
-#
-# Generates all cryptographic material needed for the alpen-client Docker
-# compose setup (1 sequencer + 2 fullnodes):
-#
-#   - 3 P2P secret keys  (secp256k1 private keys for RLPx)
-#   - Computed enode URLs (uncompressed public keys derived from P2P keys)
-#   - Sequencer Schnorr keypair (for gossip message signing/validation)
-#   - JWT secrets (for Engine API auth between OL and EE)
-#   - .env.alpen-client with all computed values
-#
-# Prerequisites:
-#   pip install coincurve
-#
-# Usage:
-#   cd vertex-core/docker
-#   ./init-alpen-client-keys.sh
-#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,15 +39,15 @@ generate_secret_key() {
 # ---------------------------------------------------------------------------
 derive_pubkey_uncompressed() {
     local privkey_hex="$1"
-    "${PYTHON}" -c "
+    echo -n "${privkey_hex}" | "${PYTHON}" -c "
 import coincurve
 import sys
 
-privkey_bytes = bytes.fromhex('${privkey_hex}')
+privkey_bytes = bytes.fromhex(sys.stdin.read())
 pk = coincurve.PublicKey.from_secret(privkey_bytes)
 # format=False gives 65-byte uncompressed (04 || x || y)
 uncompressed = pk.format(compressed=False)
-# Strip the 04 prefix → 64 bytes → 128 hex chars
+# Strip the 04 prefix -> 64 bytes -> 128 hex chars
 sys.stdout.write(uncompressed[1:].hex())
 "
 }
@@ -77,11 +58,11 @@ sys.stdout.write(uncompressed[1:].hex())
 # ---------------------------------------------------------------------------
 derive_schnorr_pubkey() {
     local privkey_hex="$1"
-    "${PYTHON}" -c "
+    echo -n "${privkey_hex}" | "${PYTHON}" -c "
 import coincurve
 import sys
 
-privkey_bytes = bytes.fromhex('${privkey_hex}')
+privkey_bytes = bytes.fromhex(sys.stdin.read())
 pk = coincurve.PublicKey.from_secret(privkey_bytes)
 # Compressed is 33 bytes: prefix || x-coordinate
 compressed = pk.format(compressed=True)
@@ -198,14 +179,14 @@ TRUSTED_PEERS_FN1=${TRUSTED_PEERS_FN1}
 TRUSTED_PEERS_FN2=${TRUSTED_PEERS_FN2}
 
 # --- Chain spec (dev | devnet | testnet) ------------------------------------
-CHAIN_SPEC=testnet
+CHAIN_SPEC=${CHAIN_SPEC:-testnet}
 
 # --- Bitcoin RPC -------------------------------------------------------------
-BITCOIND_RPC_USER=rpcuser
-BITCOIND_RPC_PASSWORD=rpcpassword
+BITCOIND_RPC_USER=${BITCOIND_RPC_USER:-rpcuser}
+BITCOIND_RPC_PASSWORD=${BITCOIND_RPC_PASSWORD:-rpcpassword}
 
 # --- Logging ----------------------------------------------------------------
-RUST_LOG=info
+RUST_LOG=${RUST_LOG:-info}
 EOF
 
 echo ""

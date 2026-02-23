@@ -118,7 +118,7 @@ This setup builds both `strata` (OL) and `alpen-client` (EL) from the repo Docke
    ```
 3. Services:
    - `strata` listens on `8432` and reads the mounted config/params at `/config/config.toml` and `/config/params.json`.
-   - `alpen-client` exposes `8545/8546/30303` and is pointed at `http://strata:8432`.
+   - `alpen-client` exposes `8545/8546/30303` and is pointed at `ws://strata:8432`.
 4. Stop the stack when done:
    ```bash
    docker compose -f docker/docker-compose-ol-el.yml down
