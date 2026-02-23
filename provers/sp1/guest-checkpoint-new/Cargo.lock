@@ -1312,6 +1312,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-txs-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "ssz",
+ "strata-asm-common",
+ "strata-checkpoint-types-ssz",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-asm-types"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1450,6 +1463,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-l1-envelope-fmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
+dependencies = [
+ "bitcoin",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
@@ -1525,10 +1547,15 @@ dependencies = [
 name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "strata-acct-types",
+ "strata-asm-common",
+ "strata-asm-txs-checkpoint",
+ "strata-btc-types",
  "strata-codec",
  "strata-da-framework",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-predicate",
  "strata-snark-acct-types",

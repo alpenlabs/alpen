@@ -15377,8 +15377,6 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "ssz_primitives",
- "strata-acct-types",
- "strata-asm-common",
  "strata-asm-manifest-types",
  "strata-checkpoint-types-ssz",
  "strata-crypto",
@@ -15388,8 +15386,6 @@ dependencies = [
  "strata-ol-params",
  "strata-ol-state-types",
  "strata-ol-stf",
- "strata-predicate",
- "strata-snark-acct-types",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
@@ -15502,6 +15498,9 @@ dependencies = [
  "reqwest 0.12.28",
  "serde_json",
  "sp1-sdk",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "strata-ol-stf",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-checkpoint-new",
  "strata-proofimpl-cl-stf",
