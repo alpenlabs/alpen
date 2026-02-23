@@ -52,13 +52,13 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     #[expect(dead_code, reason = "for future use")]
     total_val_recv: BitcoinAmount,
 
-    // Commits to check
+    /// Commits to check
     pending_commits: Vec<PendingCommit>,
 
-    // Number of inputs we've consumed
+    /// Number of inputs we've consumed.
     consumed_inputs: usize,
 
-    // Recorded outputs we'll check later
+    /// Recorded outputs we'll check later.
     accumulated_outputs: UpdateOutputs,
 
     // Recorded DA.
@@ -151,7 +151,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             )
             .unwrap_or_else(|e| {
                 panic!(
-                    "output transfers capacity exceeded: {e}. Current: {}, Adding: {}, Max: {}",
+                    "output transfers capacity exceeded: {e} (current {}, adding {}, max {})",
                     self.accumulated_outputs.transfers().len(),
                     outputs.output_transfers().len(),
                     MAX_TRANSFERS
@@ -170,7 +170,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             )
             .unwrap_or_else(|e| {
                 panic!(
-                    "output messages capacity exceeded: {e}. Current: {}, Adding: {}, Max: {}",
+                    "output messages capacity exceeded: {e} (current {}, adding {}, max {})",
                     self.accumulated_outputs.messages().len(),
                     outputs.output_messages().len(),
                     MAX_MESSAGES
