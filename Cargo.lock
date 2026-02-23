@@ -14338,7 +14338,7 @@ dependencies = [
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
- "strata-crypto",
+ "strata-asm-manifest-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "strata-test-utils-ssz",

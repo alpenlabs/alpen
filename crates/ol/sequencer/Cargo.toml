@@ -26,5 +26,8 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
+
 [features]
 jsonschema = ["strata-ol-block-assembly/jsonschema"]

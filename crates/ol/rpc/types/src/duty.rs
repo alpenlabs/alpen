@@ -96,34 +96,14 @@ impl TryFrom<RpcDuty> for Duty {
 
 #[cfg(test)]
 mod tests {
-    use std::convert::TryInto;
-
-    use strata_checkpoint_types_ssz::{CheckpointSidecar, CheckpointTip};
-    use strata_primitives::{Buf32, OLBlockCommitment};
+    use strata_checkpoint_types_ssz::test_utils::create_test_checkpoint_payload;
 
     use super::*;
-
-    fn create_checkpoint_payload(epoch: u32) -> CheckpointPayload {
-        let tip = CheckpointTip {
-            epoch,
-            l1_height: 200,
-            l2_commitment: OLBlockCommitment::new(1, Buf32::zero().into()),
-        };
-        let sidecar = CheckpointSidecar {
-            ol_state_diff: vec![2; 100].into(),
-            ol_logs: vec![].into(),
-        };
-        CheckpointPayload {
-            new_tip: tip,
-            sidecar,
-            proof: vec![0].into(),
-        }
-    }
 
     #[test]
     fn test_rpc_duty_roundtrip_conversion() {
         // Create a simple checkpoint duty for testing
-        let checkpoint_payload = create_checkpoint_payload(1);
+        let checkpoint_payload = create_test_checkpoint_payload(1);
         let checkpoint_duty = CheckpointSigningDuty::new(checkpoint_payload);
         let duty = Duty::SignCheckpoint(checkpoint_duty);
 

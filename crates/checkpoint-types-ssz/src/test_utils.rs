@@ -2,16 +2,34 @@
 
 use proptest::prelude::*;
 use strata_identifiers::{
-    AccountSerial,
+    AccountSerial, Buf32, OLBlockCommitment,
     test_utils::{
-        buf64_strategy, epoch_strategy, fixed_bytes_32_strategy, ol_block_commitment_strategy,
+        buf32_strategy, buf64_strategy, epoch_strategy, fixed_bytes_32_strategy,
+        ol_block_commitment_strategy, ol_block_id_strategy,
     },
 };
 
 use crate::{
     CheckpointClaim, CheckpointPayload, CheckpointSidecar, CheckpointTip, L2BlockRange,
-    MAX_LOG_PAYLOAD_BYTES, SignedCheckpointPayload,
+    MAX_LOG_PAYLOAD_BYTES, SignedCheckpointPayload, TerminalHeaderSupplement,
 };
+
+/// Creates a minimal [`CheckpointPayload`] for the given epoch using validated constructors.
+pub fn create_test_checkpoint_payload(epoch: u32) -> CheckpointPayload {
+    let tip = CheckpointTip::new(
+        epoch,
+        200,
+        OLBlockCommitment::new(1, Buf32::zero().into()),
+    );
+    let sidecar = CheckpointSidecar::new(
+        vec![2; 100],
+        vec![],
+        TerminalHeaderSupplement::new(0, Buf32::zero().into(), Buf32::zero(), Buf32::zero()),
+    )
+    .expect("test sidecar is within size limits");
+
+    CheckpointPayload::new(tip, sidecar, vec![0]).expect("test payload is within size limits")
+}
 
 /// Strategy for generating random [`CheckpointTip`] values.
 pub fn checkpoint_tip_strategy() -> impl Strategy<Value = CheckpointTip> {
@@ -47,11 +65,30 @@ fn ol_logs_strategy() -> impl Strategy<Value = Vec<crate::OLLog>> {
     )
 }
 
+/// Strategy for generating random [`crate::TerminalHeaderSupplement`] values.
+fn terminal_header_supplement_strategy() -> impl Strategy<Value = crate::TerminalHeaderSupplement> {
+    (
+        any::<u64>(),
+        ol_block_id_strategy(),
+        buf32_strategy(),
+        buf32_strategy(),
+    )
+        .prop_map(|(timestamp, parent_blkid, body_root, logs_root)| {
+            crate::TerminalHeaderSupplement::new(timestamp, parent_blkid, body_root, logs_root)
+        })
+}
+
 /// Strategy for generating random [`CheckpointSidecar`] values.
 pub fn checkpoint_sidecar_strategy() -> impl Strategy<Value = CheckpointSidecar> {
-    (state_diff_strategy(), ol_logs_strategy()).prop_map(|(state_diff, ol_logs)| {
-        CheckpointSidecar::new(state_diff, ol_logs).expect("valid sidecar")
-    })
+    (
+        state_diff_strategy(),
+        ol_logs_strategy(),
+        terminal_header_supplement_strategy(),
+    )
+        .prop_map(|(state_diff, ol_logs, terminal_header_supplement)| {
+            CheckpointSidecar::new(state_diff, ol_logs, terminal_header_supplement)
+                .expect("valid sidecar")
+        })
 }
 
 /// Strategy for generating random [`CheckpointPayload`] values.
@@ -89,15 +126,24 @@ pub fn checkpoint_claim_strategy() -> impl Strategy<Value = CheckpointClaim> {
         fixed_bytes_32_strategy(),
         fixed_bytes_32_strategy(),
         fixed_bytes_32_strategy(),
+        fixed_bytes_32_strategy(),
     )
         .prop_map(
-            |(epoch, l2_range, asm_manifests_hash, state_diff_hash, ol_logs_hash)| {
+            |(
+                epoch,
+                l2_range,
+                asm_manifests_hash,
+                state_diff_hash,
+                ol_logs_hash,
+                terminal_header_supplement_hash,
+            )| {
                 CheckpointClaim::new(
                     epoch,
                     l2_range,
                     asm_manifests_hash,
                     state_diff_hash,
                     ol_logs_hash,
+                    terminal_header_supplement_hash,
                 )
             },
         )

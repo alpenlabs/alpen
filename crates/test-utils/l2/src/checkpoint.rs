@@ -8,8 +8,8 @@ use strata_asm_common::{
     AsmHistoryAccumulatorState, AuxData, VerifiableManifestHash, VerifiedAuxData,
 };
 use strata_checkpoint_types_ssz::{
-    compute_asm_manifests_hash, CheckpointClaim, CheckpointPayload, CheckpointSidecar,
-    CheckpointTip, L2BlockRange, SignedCheckpointPayload,
+    compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload, CheckpointSidecar,
+    CheckpointTip, L2BlockRange, SignedCheckpointPayload, TerminalHeaderSupplement,
 };
 use strata_crypto::hash;
 use strata_identifiers::{Buf64, OLBlockCommitment, OLBlockId};
@@ -174,13 +174,23 @@ impl CheckpointTestHarness {
     pub fn build_payload_with_tip(&self, new_tip: CheckpointTip) -> CheckpointPayload {
         let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
         let ol_logs = Vec::new();
-        let sidecar = CheckpointSidecar::new(state_diff.clone(), ol_logs.clone()).unwrap();
+        let mut arb = ArbitraryGenerator::new();
+        let terminal_header_supplement = TerminalHeaderSupplement::new(
+            thread_rng().gen(),
+            arb.generate(),
+            arb.generate(),
+            arb.generate(),
+        );
+        let terminal_header_supplement_hash = hash::raw(&terminal_header_supplement.as_ssz_bytes()).into();
+        let sidecar =
+            CheckpointSidecar::new(state_diff.clone(), ol_logs.clone(), terminal_header_supplement)
+                .unwrap();
 
         let state_diff_hash = hash::raw(&state_diff).into();
         let ol_logs_hash = hash::raw(&ol_logs.as_ssz_bytes()).into();
 
         let manifest_hashes = self.gen_manifest_leaves(&new_tip);
-        let asm_manifests_hash = compute_asm_manifests_hash(&manifest_hashes);
+        let asm_manifests_hash = compute_asm_manifests_hash_from_leaves(&manifest_hashes);
 
         let l2_range = L2BlockRange::new(self.verified_tip.l2_commitment, new_tip.l2_commitment);
         let claim = CheckpointClaim::new(
@@ -189,6 +199,7 @@ impl CheckpointTestHarness {
             asm_manifests_hash,
             state_diff_hash,
             ol_logs_hash,
+            terminal_header_supplement_hash,
         );
 
         let proof = self
