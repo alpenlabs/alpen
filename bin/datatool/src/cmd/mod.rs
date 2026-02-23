@@ -3,6 +3,7 @@
 mod asm_params;
 #[cfg(feature = "btc-client")]
 mod l1_view;
+mod ol_params;
 mod params;
 mod seq_privkey;
 mod seq_pubkey;
@@ -18,6 +19,7 @@ pub(crate) fn exec_subc(cmd: Subcommand, ctx: &mut CmdContext) -> anyhow::Result
         Subcommand::SeqPrivkey(subc) => seq_privkey::exec(subc, ctx),
         Subcommand::Params(subc) => params::exec(subc, ctx),
         Subcommand::AsmParams(subc) => asm_params::exec(subc, ctx),
+        Subcommand::OlParams(subc) => ol_params::exec(subc, ctx),
         #[cfg(feature = "btc-client")]
         Subcommand::GenL1View(subc) => l1_view::exec(subc, ctx),
     }
