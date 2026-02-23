@@ -28,7 +28,7 @@ use strata_snark_acct_types::MessageEntry;
 
 use crate::program::CheckpointProverInput;
 
-const SLOTS_PER_EPOCH: u64 = 100;
+const SLOTS_PER_EPOCH: u64 = 9;
 const NUM_BLOCKS: usize = 10;
 const SNARK_INITIAL_BALANCE: u64 = 100_000_000;
 const TRANSFER_AMOUNT: u64 = 1_000_000;
@@ -64,8 +64,9 @@ fn build_chain_with_transactions(
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
 
-    // Create snark account and recipient account before genesis
+    // Create accounts before genesis
     create_snark_account(state);
+    create_empty_account(state, gam_target);
     create_empty_account(state, recipient_id);
 
     // Terminal genesis (with manifest) so epoch advances from 0 to 1
