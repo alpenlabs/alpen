@@ -16171,6 +16171,8 @@ dependencies = [
 name = "strata-snark-acct-runtime"
 version = "0.1.0"
 dependencies = [
+ "rkyv",
+ "rkyv_impl",
  "ssz",
  "ssz_derive",
  "strata-acct-types",
